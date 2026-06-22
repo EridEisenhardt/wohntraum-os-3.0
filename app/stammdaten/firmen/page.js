@@ -1,5 +1,6 @@
 'use client'
 import { useEffect, useState, useCallback } from 'react'
+import Link from 'next/link'
 import { supabase, supabaseConfigured } from '@/lib/supabaseClient'
 import { sampleCompanies, companyTypeLabel } from '@/lib/sampleData'
 import CompanyForm from '@/components/CompanyForm'
@@ -60,7 +61,7 @@ export default function FirmenPage() {
         <tbody>
           {rows.map((f) => (
             <tr key={f.id}>
-              <td>{f.name}</td>
+              <td><Link href={'/stammdaten/firmen/' + f.id} style={{ color: 'var(--brand)', fontWeight: 500 }}>{f.name}</Link></td>
               <td><span className="badge">{companyTypeLabel[f.company_type] || f.company_type || '—'}</span></td>
               <td>{f.city || '—'}</td>
               <td>{f.phone || '—'}</td>

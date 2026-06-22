@@ -41,7 +41,7 @@ export default function ActivityGlobalForm({ initial, contacts, companies, profi
       company_id: f.company_id || null,
       assigned_to: f.assigned_to || null
     }
-    if (initial) {
+    if (initial && initial.id) {
       const { error } = await supabase.from('activities').update(payload).eq('id', initial.id)
       if (error) { setErr(error.message); setBusy(false); return }
     } else {
@@ -57,7 +57,7 @@ export default function ActivityGlobalForm({ initial, contacts, companies, profi
         <div className="modal-head">
           <div className="ic"><i className="ti ti-plus" /></div>
           <div>
-            <h3>{initial ? 'Aktivität bearbeiten' : 'Neue Aktivität'}</h3>
+            <h3>{initial && initial.id ? 'Aktivität bearbeiten' : 'Neue Aktivität'}</h3>
             <div className="sub">Anruf, E-Mail, Termin, Notiz, Besichtigung oder Aufgabe</div>
           </div>
           <button type="button" className="x" onClick={onClose}><i className="ti ti-x" /></button>
