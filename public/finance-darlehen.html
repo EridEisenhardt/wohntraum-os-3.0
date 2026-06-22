@@ -1,0 +1,738 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Macher OS · Darlehens-Management</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+:root {
+  --bg:       #f6f7f9;
+  --surf:     #ffffff;
+  --surf2:    #f1f3f6;
+  --surf3:    #e7ebf0;
+  --border:   #e6e8ec;
+  --bord2:    #eef0f3;
+  --text:     #1c2024;
+  --dim:      #4b5563;
+  --muted:    #8b91a3;
+  --bank:     #2563eb;
+  --bank-bg:  rgba(37,99,235,.09);
+  --bank-bd:  rgba(37,99,235,.25);
+  --intern:   #7c3aed;
+  --intern-bg:rgba(124,58,237,.09);
+  --intern-bd:rgba(124,58,237,.25);
+  --co:       #0f9d6b;
+  --co-bg:    rgba(15,157,107,.10);
+  --co-bd:    rgba(15,157,107,.25);
+  --ok:       #0f9d6b;
+  --ok-bg:    rgba(15,157,107,.12);
+  --warn:     #b45309;
+  --warn-bg:  rgba(180,83,9,.12);
+  --danger:   #dc2626;
+  --danger-bg:rgba(220,38,38,.10);
+  --accent:   #185fa5;
+  --r:        8px;
+  --rl:       12px;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--text);font-family:'Inter',system-ui,-apple-system,'Segoe UI',sans-serif;font-size:14px;line-height:1.5;min-height:100vh;font-variant-numeric:tabular-nums;-webkit-font-smoothing:antialiased}
+/* ── HEADER ── */
+.hdr{background:var(--surf);border-bottom:1px solid var(--border);padding:14px 24px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:100;gap:12px;flex-wrap:wrap}
+.hdr-l{display:flex;align-items:center;gap:12px}
+.logo{background:var(--accent);color:#fff;font-weight:700;font-size:11px;letter-spacing:.08em;padding:4px 9px;border-radius:4px;white-space:nowrap}
+.hdr-title{font-size:15px;font-weight:600}
+.hdr-sub{font-size:11px;color:var(--muted)}
+.hdr-r{display:flex;gap:8px;flex-wrap:wrap}
+.btn{font-family:'Inter',system-ui,-apple-system,'Segoe UI',sans-serif;font-size:13px;font-weight:500;padding:7px 14px;border-radius:var(--r);border:1px solid var(--border);background:var(--surf2);color:var(--text);cursor:pointer;transition:all .14s;white-space:nowrap}
+.btn:hover{background:var(--surf3);border-color:var(--dim)}
+.btn-accent{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:600}
+.btn-accent:hover{background:#134a82;border-color:#134a82}
+.btn-green{background:rgba(52,211,153,.15);border-color:var(--co-bd);color:var(--ok)}
+.btn-green:hover{background:rgba(52,211,153,.25)}
+/* ── LAYOUT ── */
+.main{padding:22px 24px;max-width:1440px;margin:0 auto}
+/* ── KPI ── */
+.kpi-row{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:11px;margin-bottom:22px}
+.kpi{background:var(--surf);border:1px solid var(--border);border-radius:var(--rl);padding:14px 16px}
+.kpi-lbl{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:5px}
+.kpi-val{font-family:'Inter',system-ui,-apple-system,'Segoe UI',sans-serif;font-size:21px;font-weight:500}
+.kpi-sub{font-size:10px;color:var(--muted);margin-top:3px}
+.kpi.accent{border-color:rgba(24,95,165,.35)}.kpi.accent .kpi-val{color:var(--accent)}
+.kpi.ok .kpi-val{color:var(--ok)}.kpi.danger .kpi-val{color:var(--danger)}
+/* ── TABS + FILTER ── */
+.toolbar{display:flex;align-items:center;gap:10px;margin-bottom:18px;flex-wrap:wrap}
+.tabs{display:flex;gap:3px;background:var(--surf);border:1px solid var(--border);border-radius:var(--rl);padding:3px}
+.tab{font-family:'Inter',system-ui,-apple-system,'Segoe UI',sans-serif;font-size:12px;font-weight:500;padding:7px 15px;border-radius:7px;border:none;background:transparent;color:var(--muted);cursor:pointer;transition:all .14s;display:flex;align-items:center;gap:6px}
+.tab:hover{color:var(--text);background:var(--surf2)}
+.tab.on{background:var(--surf3);color:var(--text)}
+.tdot{width:7px;height:7px;border-radius:50%}
+.tcnt{font-family:'Inter',system-ui,-apple-system,'Segoe UI',sans-serif;font-size:10px;background:var(--surf3);padding:1px 5px;border-radius:9px}
+.sel{font-size:12px;padding:7px 10px;background:var(--surf2);border:1px solid var(--border);border-radius:var(--r);color:var(--text);font-family:'Inter',system-ui,-apple-system,'Segoe UI',sans-serif}
+.sel:focus{outline:none;border-color:var(--accent)}
+/* ── TABLE ── */
+.twrap{background:var(--surf);border:1px solid var(--border);border-radius:var(--rl);overflow:hidden;margin-bottom:22px}
+table{width:100%;border-collapse:collapse}
+thead{background:var(--surf2)}
+th{font-size:10px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;padding:10px 13px;text-align:left;border-bottom:1px solid var(--border);white-space:nowrap}
+td{padding:11px 13px;border-bottom:1px solid var(--bord2);vertical-align:middle}
+tr:last-child td{border-bottom:none}
+tr:hover td{background:rgba(0,0,0,.022)}
+.mono{font-family:'Inter',system-ui,-apple-system,'Segoe UI',sans-serif;font-size:12px}
+.tr{text-align:right}.tc{text-align:center}
+/* PILLS */
+.pill{font-size:10px;font-weight:600;letter-spacing:.03em;padding:2px 8px;border-radius:20px;display:inline-block;white-space:nowrap}
+.pill-bank{background:var(--bank-bg);color:var(--bank);border:1px solid var(--bank-bd)}
+.pill-intern{background:var(--intern-bg);color:var(--intern);border:1px solid var(--intern-bd)}
+.pill-co{background:var(--co-bg);color:var(--co);border:1px solid var(--co-bd)}
+.sbadge{font-size:10px;font-weight:600;padding:2px 8px;border-radius:20px;display:inline-block}
+.s-aktiv{background:var(--ok-bg);color:var(--ok);border:1px solid rgba(52,211,153,.25)}
+.s-tilgung{background:var(--warn-bg);color:var(--warn);border:1px solid rgba(251,191,36,.25)}
+.s-faellig{background:var(--danger-bg);color:var(--danger);border:1px solid rgba(248,113,113,.25)}
+.s-entwurf{background:rgba(92,98,120,.15);color:var(--muted);border:1px solid var(--border)}
+/* LTV bar */
+.ltvw{display:flex;align-items:center;gap:7px}
+.ltvbar{flex:1;height:4px;background:var(--surf3);border-radius:2px;overflow:hidden;min-width:55px}
+.ltvfill{height:100%;border-radius:2px}
+.ltv-ok{background:var(--ok)}.ltv-warn{background:var(--warn)}.ltv-danger{background:var(--danger)}
+.ltvlbl{font-family:'Inter',system-ui,-apple-system,'Segoe UI',sans-serif;font-size:10px;color:var(--muted);width:35px;text-align:right}
+/* gtag */
+.gtag{font-size:10px;background:var(--surf3);border:1px solid var(--border);border-radius:4px;padding:1px 6px;color:var(--dim)}
+/* action btns */
+.abtn{font-family:'Inter',system-ui,-apple-system,'Segoe UI',sans-serif;font-size:11px;font-weight:500;padding:3px 9px;border-radius:4px;border:1px solid var(--border);background:transparent;color:var(--muted);cursor:pointer;transition:all .12s}
+.abtn:hover{background:var(--surf3);color:var(--text)}
+.abtn.del:hover{color:var(--danger);border-color:var(--danger-bg)}
+/* ── TWIN PANELS: SUMMARY + TIMELINE ── */
+.twin{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:22px}
+@media(max-width:900px){.twin{grid-template-columns:1fr}}
+.panel{background:var(--surf);border:1px solid var(--border);border-radius:var(--rl);overflow:hidden}
+.panel-hdr{padding:13px 18px;border-bottom:1px solid var(--border);font-size:13px;font-weight:600;display:flex;align-items:center;gap:8px}
+/* Summary blocks */
+.sum-block{padding:14px 18px;border-bottom:1px solid var(--bord2)}
+.sum-block:last-child{border-bottom:none}
+.sum-lbl{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px}
+.sum-row{display:flex;justify-content:space-between;align-items:center;padding:5px 0;border-bottom:1px solid var(--bord2);font-size:12px}
+.sum-row:last-child{border-bottom:none;font-weight:600}
+.sum-name{color:var(--dim);flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding-right:8px}
+.sum-cnt{font-family:'Inter',system-ui,-apple-system,'Segoe UI',sans-serif;font-size:11px;color:var(--muted);width:20px;text-align:center}
+.sum-vol{font-family:'Inter',system-ui,-apple-system,'Segoe UI',sans-serif;font-size:11px;text-align:right;width:90px}
+.sum-pct{font-family:'Inter',system-ui,-apple-system,'Segoe UI',sans-serif;font-size:10px;color:var(--muted);width:40px;text-align:right}
+/* bar inline */
+.pctbar-wrap{display:flex;align-items:center;gap:6px;width:120px;justify-content:flex-end}
+.pctbar{height:3px;background:var(--surf3);border-radius:2px;overflow:hidden;flex:1}
+.pctfill-bank{background:var(--bank)}.pctfill-intern{background:var(--intern)}.pctfill-co{background:var(--co)}.pctfill-def{background:var(--dim)}
+/* Timeline */
+.tl-item{display:flex;gap:12px;align-items:flex-start;padding:11px 18px;border-bottom:1px solid var(--bord2)}
+.tl-item:last-child{border-bottom:none}
+.tl-dot{width:9px;height:9px;border-radius:50%;margin-top:4px;flex-shrink:0}
+.tl-ok{background:var(--ok)}.tl-warn{background:var(--warn)}.tl-danger{background:var(--danger)}
+.tl-lbl{font-size:12px;font-weight:500}
+.tl-meta{font-size:10px;color:var(--muted);margin-top:2px}
+.tl-date{font-family:'Inter',system-ui,-apple-system,'Segoe UI',sans-serif;font-size:11px;color:var(--dim);flex-shrink:0;padding-top:2px}
+/* ── MODAL ── */
+.ov{position:fixed;inset:0;background:rgba(15,23,42,.45);display:flex;align-items:center;justify-content:center;z-index:999;opacity:0;pointer-events:none;transition:opacity .2s}
+.ov.open{opacity:1;pointer-events:all}
+.modal{background:var(--surf);border:1px solid var(--border);border-radius:14px;width:660px;max-width:95vw;max-height:90vh;overflow-y:auto;padding:26px;transform:translateY(10px);transition:transform .2s}
+.ov.open .modal{transform:translateY(0)}
+.modal-hdr{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:22px}
+.modal-title{font-size:17px;font-weight:600}
+.modal-close{background:none;border:none;color:var(--muted);font-size:19px;cursor:pointer;padding:2px 6px;line-height:1}
+.modal-close:hover{color:var(--text)}
+.fgrid{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.fg{display:flex;flex-direction:column;gap:5px}
+.fg.full{grid-column:1/-1}
+label{font-size:11px;font-weight:500;color:var(--dim)}
+input,select,textarea{font-family:'Inter',system-ui,-apple-system,'Segoe UI',sans-serif;font-size:13px;background:var(--surf2);border:1px solid var(--border);border-radius:var(--r);color:var(--text);padding:8px 11px;width:100%;transition:border-color .14s}
+input:focus,select:focus,textarea:focus{outline:none;border-color:var(--accent)}
+select option{background:var(--surf2)}
+textarea{resize:vertical;min-height:60px}
+.fsec{font-size:10px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;grid-column:1/-1;padding-top:6px;border-top:1px solid var(--border);margin-top:4px}
+.mfoot{display:flex;gap:9px;justify-content:flex-end;margin-top:22px;padding-top:18px;border-top:1px solid var(--border)}
+/* ── DETAIL PANEL ── */
+.dp{position:fixed;right:0;top:0;bottom:0;width:420px;background:var(--surf);border-left:1px solid var(--border);z-index:200;transform:translateX(100%);transition:transform .25s cubic-bezier(.4,0,.2,1);overflow-y:auto}
+.dp.open{transform:translateX(0)}
+.dp-hdr{padding:18px 22px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:flex-start;position:sticky;top:0;background:var(--surf);z-index:10}
+.dp-body{padding:20px 22px}
+.dp-sec{font-size:10px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin:18px 0 7px}
+.dp-row{display:flex;justify-content:space-between;align-items:flex-start;padding:8px 0;border-bottom:1px solid var(--bord2);gap:12px}
+.dp-row:last-child{border-bottom:none}
+.dp-k{font-size:11px;color:var(--muted);flex-shrink:0}
+.dp-v{font-size:12px;text-align:right}
+.cfbox{background:var(--surf2);border:1px solid var(--border);border-radius:var(--r);padding:13px;margin-top:14px}
+.cfrow{display:flex;justify-content:space-between;padding:3px 0;font-size:12px}
+.cfrow.tot{border-top:1px solid var(--border);margin-top:5px;padding-top:7px;font-weight:600}
+.cf-neg{color:var(--danger)}.cf-pos{color:var(--ok)}
+/* toast */
+.toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:var(--surf3);border:1px solid var(--border);border-radius:var(--r);padding:10px 20px;font-size:13px;z-index:9999;opacity:0;transition:opacity .3s;pointer-events:none}
+.toast.show{opacity:1}
+.empty{text-align:center;padding:44px 20px;color:var(--muted)}
+.empty-ico{font-size:30px;margin-bottom:10px}
+@media(max-width:800px){
+  .fgrid{grid-template-columns:1fr}
+  .dp{width:100%}
+  .kpi-row{grid-template-columns:repeat(2,1fr)}
+}
+</style>
+</head>
+<body>
+<!-- HEADER -->
+<div class="hdr">
+  <div class="hdr-l">
+    <div class="logo">MACHER OS</div>
+    <div>
+      <div class="hdr-title">Darlehens-Management</div>
+      <div class="hdr-sub">Anders MACHER GmbH · Bank · Intern · Co-Investor</div>
+    </div>
+  </div>
+  <div class="hdr-r">
+    <button class="btn btn-green" onclick="exportXLSX()">↓ Google Sheets / Excel</button>
+    <button class="btn btn-accent" onclick="openModal()">+ Neues Darlehen</button>
+  </div>
+</div>
+<div class="main">
+  <!-- KPI -->
+  <div class="kpi-row" id="kpiRow"></div>
+  <!-- TOOLBAR -->
+  <div class="toolbar">
+    <div class="tabs" id="tabs"></div>
+    <div style="margin-left:auto;display:flex;gap:8px;flex-wrap:wrap">
+      <select class="sel" id="fGmbH" onchange="render()">
+        <option value="">Alle Gesellschaften</option>
+        <option>Anders MACHER GmbH</option>
+        <option>Wohn(T)raum Rheinhessen GmbH</option>
+        <option>Wohntraum Kibo GmbH</option>
+        <option>Wohntraum Wonnegau GmbH</option>
+        <option>Eric Eisenhardt Immobilien</option>
+        <option>E&A Weinstrasse Wohninvest eGBR</option>
+      </select>
+      <select class="sel" id="fStatus" onchange="render()">
+        <option value="">Alle Status</option>
+        <option>Aktiv</option>
+        <option>In Tilgung</option>
+        <option>Fällig</option>
+        <option>Entwurf</option>
+      </select>
+    </div>
+  </div>
+  <!-- TABLE -->
+  <div id="tableArea"></div>
+  <!-- TWIN: ZUSAMMENFASSUNG + TIMELINE -->
+  <div class="twin">
+    <div class="panel">
+      <div class="panel-hdr">📊 Zusammenfassung</div>
+      <div id="sumPanel"></div>
+    </div>
+    <div class="panel">
+      <div class="panel-hdr">📅 Fälligkeits-Radar <span style="font-size:10px;font-weight:400;color:var(--muted);margin-left:4px">nächste 24 Monate</span></div>
+      <div id="tlPanel"></div>
+    </div>
+  </div>
+</div>
+<!-- MODAL -->
+<div class="ov" id="ov" onclick="closeModal(event)">
+  <div class="modal">
+    <div class="modal-hdr">
+      <div>
+        <div class="modal-title" id="modalTitle">Neues Darlehen</div>
+        <div style="font-size:11px;color:var(--muted);margin-top:3px">Bank · Intern · Co-Investor</div>
+      </div>
+      <button class="modal-close" onclick="closeModal(null,true)">✕</button>
+    </div>
+    <div class="fgrid">
+      <div class="fg">
+        <label>Darlehenstyp *</label>
+        <select id="f_typ">
+          <option value="">— auswählen —</option>
+          <option value="bank">🏦 Bankdarlehen</option>
+          <option value="intern">🔄 Internes Darlehen</option>
+          <option value="coinvest">🤝 Co-Investor-Darlehen</option>
+        </select>
+      </div>
+      <div class="fg">
+        <label>Bezeichnung / Objekt *</label>
+        <input id="f_bez" type="text" placeholder="z.B. MFH Rh24 Finanzierung">
+      </div>
+      <div class="fg">
+        <label>Darlehensgeber *</label>
+        <input id="f_geber" type="text" placeholder="z.B. Sparkasse Worms">
+      </div>
+      <div class="fg">
+        <label>Darlehensnehmer *</label>
+        <select id="f_nehmer">
+          <option value="">— auswählen —</option>
+          <option>Anders MACHER GmbH</option>
+          <option>Wohn(T)raum Rheinhessen GmbH</option>
+          <option>Wohntraum Kibo GmbH</option>
+          <option>Wohntraum Wonnegau GmbH</option>
+          <option>Eric Eisenhardt Immobilien</option>
+          <option>E&A Weinstrasse Wohninvest eGBR</option>
+        </select>
+      </div>
+      <div class="fsec">Konditionen</div>
+      <div class="fg">
+        <label>Betrag lt. Vertrag (€) *</label>
+        <input id="f_betrag" type="number" placeholder="250000" oninput="calcLTV()">
+      </div>
+      <div class="fg">
+        <label>Aktuelle Restschuld (€)</label>
+        <input id="f_aktuell" type="number" placeholder="= Betrag wenn neu">
+      </div>
+      <div class="fg">
+        <label>Zinssatz % p.a. *</label>
+        <input id="f_zins" type="number" step="0.01" placeholder="3.85">
+      </div>
+      <div class="fg">
+        <label>Tilgung % p.a.</label>
+        <input id="f_tilg" type="number" step="0.01" placeholder="2.0">
+      </div>
+      <div class="fg">
+        <label>Auszahlungsdatum</label>
+        <input id="f_aus" type="date">
+      </div>
+      <div class="fg">
+        <label>Zinsbindung bis</label>
+        <input id="f_zinsbind" type="date">
+      </div>
+      <div class="fg">
+        <label>Laufzeit bis</label>
+        <input id="f_laufzeit" type="date">
+      </div>
+      <div class="fg">
+        <label>Objektwert / Besicherung (€)</label>
+        <input id="f_obj" type="number" placeholder="400000" oninput="calcLTV()">
+      </div>
+      <div class="fsec">Zusatz</div>
+      <div class="fg">
+        <label>Status</label>
+        <select id="f_status">
+          <option value="Aktiv">Aktiv</option>
+          <option value="In Tilgung">In Tilgung</option>
+          <option value="Fällig">Fällig</option>
+          <option value="Entwurf">Entwurf</option>
+        </select>
+      </div>
+      <div class="fg">
+        <label>LTV % (berechnet)</label>
+        <input id="f_ltv" type="text" readonly placeholder="—" style="color:var(--muted)">
+      </div>
+      <div class="fg full">
+        <label>Kontonummer / Referenz</label>
+        <input id="f_konto" type="text" placeholder="DE12 5505 ...">
+      </div>
+      <div class="fg full">
+        <label>Notizen</label>
+        <textarea id="f_notizen" placeholder="Sondertilgung, Bereitstellungszinsen, Besonderheiten..."></textarea>
+      </div>
+    </div>
+    <div class="mfoot">
+      <button class="btn" onclick="closeModal(null,true)">Abbrechen</button>
+      <button class="btn btn-accent" id="saveBtn" onclick="saveDarlehen()">Speichern</button>
+    </div>
+  </div>
+</div>
+<!-- DETAIL PANEL -->
+<div class="dp" id="dp">
+  <div class="dp-hdr">
+    <div>
+      <div id="dp_title" style="font-size:15px;font-weight:600"></div>
+      <div id="dp_type" style="margin-top:6px"></div>
+    </div>
+    <button class="modal-close" onclick="closeDP()">✕</button>
+  </div>
+  <div class="dp-body" id="dp_body"></div>
+</div>
+<div class="toast" id="toast"></div>
+<script>
+// ══════ DATA ══════
+const STORAGE_KEY = 'macherOS_v2_darlehen';
+let editId = null;
+let DB = [];
+let activeTab = 'alle';
+let idCounter = 10;
+const SB_URL = 'https://jqzxctfqvcwbctpjksvg.supabase.co';
+const SB_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpxenhjdGZxdmN3YmN0cGprc3ZnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODIxMzA0MzIsImV4cCI6MjA5NzcwNjQzMn0.RKIbZxJdusKWWPjBJqlxZ8e1m8So02UslOg55YRsn3o';
+const sb = window.supabase.createClient(SB_URL, SB_KEY);
+const LOAN_COLS = 'id,ref,typ,bez,geber,nehmer,company_id,betrag,aktuell,zins,tilg,aus,zinsbind,laufzeit,obj,status,konto,notizen';
+async function loadDB(){
+  const { data, error } = await sb.from('loans').select(LOAN_COLS).order('ref',{ascending:true});
+  if(error){ toast('Fehler beim Laden: '+error.message); return; }
+  DB = (data||[]).map(r=>({ ...r,
+    betrag:Number(r.betrag), aktuell:r.aktuell!=null?Number(r.aktuell):null,
+    zins:Number(r.zins), tilg:r.tilg!=null?Number(r.tilg):0, obj:r.obj!=null?Number(r.obj):0 }));
+  render();
+}
+// ══════ HELPERS ══════
+function fmtE(n){ return n != null ? '€ '+n.toLocaleString('de-DE',{maximumFractionDigits:0}) : '—'; }
+function fmtD(d){ if(!d) return '—'; const p=d.split('-'); return p[2]+'.'+p[1]+'.'+p[0]; }
+function ann(d){ return Math.round(d.betrag*(d.zins+(d.tilg||0))/100/12); }
+function ltv(d){ return d.obj ? Math.round(d.betrag/d.obj*100*10)/10 : null; }
+function ltvCls(v){ return !v?'':v<=60?'ltv-ok':v<=80?'ltv-warn':'ltv-danger'; }
+function days(ds){ if(!ds) return null; return Math.round((new Date(ds)-new Date())/86400000); }
+function gShort(s){
+  return s.replace('Wohn(T)raum Rheinhessen GmbH','WTR Rhh.')
+          .replace('Wohntraum Kibo GmbH','Kibo GmbH')
+          .replace('Wohntraum Wonnegau GmbH','Wonnegau')
+          .replace('Anders MACHER GmbH','Holding')
+          .replace('Eric Eisenhardt Immobilien','EEI')
+          .replace('E&A Weinstrasse Wohninvest eGBR','E&A');
+}
+const TL = {bank:'Bank',intern:'Intern',coinvest:'Co-Investor'};
+const PC = {bank:'pill-bank',intern:'pill-intern',coinvest:'pill-co'};
+const SC = {Aktiv:'s-aktiv','In Tilgung':'s-tilgung',Fällig:'s-faellig',Entwurf:'s-entwurf'};
+// ══════ KPI ══════
+function renderKPI(){
+  const total = DB.reduce((s,d)=>s+d.betrag,0);
+  const bank = DB.filter(d=>d.typ==='bank').reduce((s,d)=>s+d.betrag,0);
+  const intern = DB.filter(d=>d.typ==='intern').reduce((s,d)=>s+d.betrag,0);
+  const co = DB.filter(d=>d.typ==='coinvest').reduce((s,d)=>s+d.betrag,0);
+  const totalAnn = DB.reduce((s,d)=>s+ann(d),0);
+  const faellig = DB.filter(d=>d.status==='Fällig').length;
+  document.getElementById('kpiRow').innerHTML = `
+    <div class="kpi accent"><div class="kpi-lbl">Gesamtvolumen</div><div class="kpi-val">${fmtE(total)}</div><div class="kpi-sub">${DB.length} Darlehen</div></div>
+    <div class="kpi"><div class="kpi-lbl">🏦 Bankdarlehen</div><div class="kpi-val" style="color:var(--bank)">${fmtE(bank)}</div><div class="kpi-sub">${DB.filter(d=>d.typ==='bank').length} Positionen</div></div>
+    <div class="kpi"><div class="kpi-lbl">🔄 Interne Darlehen</div><div class="kpi-val" style="color:var(--intern)">${fmtE(intern)}</div><div class="kpi-sub">${DB.filter(d=>d.typ==='intern').length} Positionen</div></div>
+    <div class="kpi"><div class="kpi-lbl">🤝 Co-Investor</div><div class="kpi-val" style="color:var(--co)">${fmtE(co)}</div><div class="kpi-sub">${DB.filter(d=>d.typ==='coinvest').length} Positionen</div></div>
+    <div class="kpi"><div class="kpi-lbl">Monatl. Annuität</div><div class="kpi-val">${fmtE(totalAnn)}</div><div class="kpi-sub">Gesamt-Schuldendienst</div></div>
+    <div class="kpi ${faellig?'danger':'ok'}"><div class="kpi-lbl">Fällige Darlehen</div><div class="kpi-val">${faellig}</div><div class="kpi-sub">${faellig?'⚠ Handlungsbedarf':'Alles im grünen Bereich'}</div></div>
+  `;
+}
+// ══════ TABS ══════
+function renderTabs(){
+  const cnts = {alle:DB.length,bank:DB.filter(d=>d.typ==='bank').length,intern:DB.filter(d=>d.typ==='intern').length,coinvest:DB.filter(d=>d.typ==='coinvest').length};
+  const tabs = [{id:'alle',lbl:'Alle'},{id:'bank',lbl:'Bank'},{id:'intern',lbl:'Intern'},{id:'coinvest',lbl:'Co-Investor'}];
+  const dotCol = {bank:'var(--bank)',intern:'var(--intern)',coinvest:'var(--co)'};
+  document.getElementById('tabs').innerHTML = tabs.map(t=>`
+    <button class="tab ${activeTab===t.id?'on':''}" onclick="setTab('${t.id}')">
+      ${t.id!=='alle'?`<span class="tdot" style="background:${dotCol[t.id]}"></span>`:''}
+      ${t.lbl} <span class="tcnt">${cnts[t.id]}</span>
+    </button>`).join('');
+}
+function setTab(id){ activeTab=id; render(); }
+// ══════ TABLE ══════
+function getFiltered(){
+  let list = [...DB];
+  const gF = document.getElementById('fGmbH')?.value;
+  const sF = document.getElementById('fStatus')?.value;
+  if(activeTab!=='alle') list=list.filter(d=>d.typ===activeTab);
+  if(gF) list=list.filter(d=>d.nehmer===gF||d.geber===gF);
+  if(sF) list=list.filter(d=>d.status===sF);
+  return list;
+}
+function renderTable(){
+  const list = getFiltered();
+  if(!list.length) return `<div class="twrap"><div class="empty"><div class="empty-ico">📭</div>Keine Darlehen in diesem Filter</div></div>`;
+  const rows = list.map(d=>{
+    const a = ann(d), l = ltv(d);
+    const dz = d.zinsbind ? days(d.zinsbind) : null;
+    const zWarn = dz!==null && dz<365 ? `<span style="font-size:9px;color:var(--warn);margin-left:3px">⚠ ${Math.round(dz/30)}M</span>` : '';
+    return `<tr>
+      <td><span class="pill ${PC[d.typ]}">${TL[d.typ]}</span></td>
+      <td style="max-width:190px">
+        <div style="font-weight:500;font-size:13px">${d.bez}</div>
+        <div style="font-size:10px;color:var(--muted);margin-top:1px">${d.ref||''} · ${d.geber}</div>
+      </td>
+      <td><span class="gtag">${gShort(d.nehmer)}</span></td>
+      <td class="mono tr">${fmtE(d.betrag)}</td>
+      <td class="mono tr">${fmtE(d.aktuell||d.betrag)}</td>
+      <td class="mono tc">${d.zins.toFixed(2)} %${zWarn}</td>
+      <td class="mono tr">${fmtE(a)}<span style="font-size:9px;color:var(--muted)">/Mo</span></td>
+      <td>${l!==null?`<div class="ltvw"><div class="ltvbar"><div class="ltvfill ${ltvCls(l)}" style="width:${Math.min(l,100)}%"></div></div><span class="ltvlbl">${l}%</span></div>`:'<span style="color:var(--muted);font-size:11px">n/a</span>'}</td>
+      <td class="mono" style="font-size:11px">${fmtD(d.zinsbind||d.laufzeit)}</td>
+      <td><span class="sbadge ${SC[d.status]}">${d.status}</span></td>
+      <td style="white-space:nowrap">
+        <button class="abtn" onclick="openDP('${d.id}')">Detail</button>
+        <button class="abtn" style="margin-left:4px" onclick="startEdit('${d.id}')">✎</button>
+        <button class="abtn del" style="margin-left:4px" onclick="del('${d.id}')">✕</button>
+      </td>
+    </tr>`;
+  }).join('');
+  return `<div class="twrap"><table>
+    <thead><tr>
+      <th>Typ</th><th>Bezeichnung</th><th>Gesellschaft</th>
+      <th class="tr">Summe lt. Vertrag</th><th class="tr">Aktuelle Summe</th>
+      <th class="tc">Zins p.a.</th><th class="tr">Annuität</th>
+      <th style="min-width:110px">LTV</th><th>Zinsbindung</th><th>Status</th><th></th>
+    </tr></thead>
+    <tbody>${rows}</tbody>
+  </table></div>`;
+}
+// ══════ SUMMARY PANEL ══════
+function renderSum(){
+  const total = DB.reduce((s,d)=>s+d.betrag,0)||1;
+  // By Geber
+  const byG = {}; DB.forEach(d=>{ if(!byG[d.geber]) byG[d.geber]={n:0,v:0}; byG[d.geber].n++; byG[d.geber].v+=d.betrag; });
+  const byGRows = Object.entries(byG).sort((a,b)=>b[1].v-a[1].v).map(([k,v])=>`
+    <div class="sum-row">
+      <span class="sum-name" title="${k}">${k}</span>
+      <span class="sum-cnt">${v.n}</span>
+      <span class="sum-vol">${fmtE(v.v)}</span>
+      <div class="pctbar-wrap"><div class="pctbar"><div class="pctfill-def" style="width:${v.v/total*100}%;height:100%;border-radius:2px;background:var(--bank)"></div></div><span class="sum-pct">${(v.v/total*100).toFixed(0)}%</span></div>
+    </div>`).join('');
+  // By Nehmer
+  const byN = {}; DB.forEach(d=>{ if(!byN[d.nehmer]) byN[d.nehmer]={n:0,v:0}; byN[d.nehmer].n++; byN[d.nehmer].v+=d.betrag; });
+  const byNRows = Object.entries(byN).sort((a,b)=>b[1].v-a[1].v).map(([k,v])=>`
+    <div class="sum-row">
+      <span class="sum-name" title="${k}">${gShort(k)}</span>
+      <span class="sum-cnt">${v.n}</span>
+      <span class="sum-vol">${fmtE(v.v)}</span>
+      <div class="pctbar-wrap"><div class="pctbar"><div style="width:${v.v/total*100}%;height:100%;border-radius:2px;background:var(--intern)"></div></div><span class="sum-pct">${(v.v/total*100).toFixed(0)}%</span></div>
+    </div>`).join('');
+  // By Typ
+  const byT = {}; DB.forEach(d=>{ const k=TL[d.typ]; if(!byT[k]) byT[k]={n:0,v:0,typ:d.typ}; byT[k].n++; byT[k].v+=d.betrag; });
+  const typColors = {bank:'var(--bank)',intern:'var(--intern)',coinvest:'var(--co)'};
+  const byTRows = Object.entries(byT).sort((a,b)=>b[1].v-a[1].v).map(([k,v])=>`
+    <div class="sum-row">
+      <span class="sum-name">${k}</span>
+      <span class="sum-cnt">${v.n}</span>
+      <span class="sum-vol">${fmtE(v.v)}</span>
+      <div class="pctbar-wrap"><div class="pctbar"><div style="width:${v.v/total*100}%;height:100%;border-radius:2px;background:${typColors[v.typ]}"></div></div><span class="sum-pct">${(v.v/total*100).toFixed(0)}%</span></div>
+    </div>`).join('');
+  document.getElementById('sumPanel').innerHTML = `
+    <div class="sum-block">
+      <div class="sum-lbl">🏦 Nach Darlehensgeber</div>
+      <div style="display:flex;justify-content:flex-end;gap:8px;margin-bottom:4px;font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">
+        <span style="width:20px;text-align:center">Anz.</span><span style="width:90px;text-align:right">Volumen</span><span style="width:120px;text-align:right">Anteil</span>
+      </div>
+      ${byGRows}
+    </div>
+    <div class="sum-block">
+      <div class="sum-lbl">🏢 Nach Gesellschaft (Nehmer)</div>
+      ${byNRows}
+    </div>
+    <div class="sum-block">
+      <div class="sum-lbl">📊 Nach Darlehenstyp</div>
+      ${byTRows}
+    </div>`;
+}
+// ══════ TIMELINE ══════
+function renderTL(){
+  const evs = [];
+  DB.forEach(d=>{
+    if(d.zinsbind){ const dv=days(d.zinsbind); if(dv!==null&&dv<730) evs.push({dv,lbl:'Zinsbindungsende: '+d.bez,meta:gShort(d.nehmer)+' · '+TL[d.typ],date:d.zinsbind}); }
+    if(d.laufzeit){ const dv=days(d.laufzeit); if(dv!==null&&dv<730) evs.push({dv,lbl:'Endfälligkeit: '+d.bez,meta:gShort(d.nehmer)+' · '+fmtE(d.aktuell||d.betrag),date:d.laufzeit}); }
+  });
+  evs.sort((a,b)=>a.dv-b.dv);
+  if(!evs.length){ document.getElementById('tlPanel').innerHTML=`<div class="empty"><div class="empty-ico">✅</div>Keine Fälligkeiten in 24 Monaten</div>`; return; }
+  document.getElementById('tlPanel').innerHTML = evs.map(e=>{
+    const cls = e.dv<0?'tl-danger':e.dv<90?'tl-danger':e.dv<180?'tl-warn':'tl-ok';
+    const urg = e.dv<0?'🔴 Überfällig':e.dv<90?`⚠ in ${e.dv} Tagen`:`in ${Math.round(e.dv/30)} Monaten`;
+    return `<div class="tl-item">
+      <div class="tl-dot ${cls}"></div>
+      <div style="flex:1"><div class="tl-lbl">${e.lbl}</div><div class="tl-meta">${e.meta} · <strong>${urg}</strong></div></div>
+      <div class="tl-date">${fmtD(e.date)}</div>
+    </div>`;
+  }).join('');
+}
+// ══════ DETAIL PANEL ══════
+function openDP(id){
+  const d = DB.find(x=>x.id===id); if(!d) return;
+  const a = ann(d), l = ltv(d), zinsen = Math.round(d.betrag*d.zins/100/12), tilgung = a-zinsen;
+  document.getElementById('dp_title').textContent = d.bez;
+  document.getElementById('dp_type').innerHTML = `<span class="pill ${PC[d.typ]}">${TL[d.typ]}</span> <span class="sbadge ${SC[d.status]}" style="margin-left:6px">${d.status}</span>`;
+  document.getElementById('dp_body').innerHTML = `
+    <div class="dp-sec">Parteien</div>
+    <div class="dp-row"><span class="dp-k">Darlehensgeber</span><span class="dp-v">${d.geber}</span></div>
+    <div class="dp-row"><span class="dp-k">Darlehensnehmer</span><span class="dp-v">${d.nehmer}</span></div>
+    <div class="dp-sec">Konditionen</div>
+    <div class="dp-row"><span class="dp-k">Summe lt. Vertrag</span><span class="dp-v mono">${fmtE(d.betrag)}</span></div>
+    <div class="dp-row"><span class="dp-k">Aktuelle Restschuld</span><span class="dp-v mono">${fmtE(d.aktuell||d.betrag)}</span></div>
+    <div class="dp-row"><span class="dp-k">Zinssatz</span><span class="dp-v mono">${d.zins.toFixed(2)} %</span></div>
+    <div class="dp-row"><span class="dp-k">Tilgungssatz</span><span class="dp-v mono">${(d.tilg||0).toFixed(2)} %</span></div>
+    ${l?`<div class="dp-row"><span class="dp-k">LTV</span><span class="dp-v mono">${l} %</span></div>`:''}
+    <div class="dp-sec">Laufzeiten</div>
+    <div class="dp-row"><span class="dp-k">Auszahlung</span><span class="dp-v">${fmtD(d.aus)}</span></div>
+    <div class="dp-row"><span class="dp-k">Zinsbindung bis</span><span class="dp-v">${fmtD(d.zinsbind)}</span></div>
+    <div class="dp-row"><span class="dp-k">Laufzeit bis</span><span class="dp-v">${fmtD(d.laufzeit)}</span></div>
+    <div class="dp-sec">Monatlicher Cashflow</div>
+    <div class="cfbox">
+      <div class="cfrow"><span>Zinsen</span><span class="cf-neg">−${fmtE(zinsen)}</span></div>
+      <div class="cfrow"><span>Tilgung</span><span class="cf-neg">−${fmtE(tilgung)}</span></div>
+      <div class="cfrow tot"><span>Schuldendienst gesamt</span><span class="cf-neg">−${fmtE(a)}</span></div>
+    </div>
+    ${d.konto?`<div class="dp-sec">Bank</div><div class="dp-row"><span class="dp-k">Konto</span><span class="dp-v mono" style="font-size:11px">${d.konto}</span></div>`:''}
+    ${d.notizen?`<div class="dp-sec">Notizen</div><div style="background:var(--surf2);border:1px solid var(--border);border-radius:var(--r);padding:11px;font-size:11px;color:var(--dim);margin-top:4px">${d.notizen}</div>`:''}
+    <div style="display:flex;gap:8px;margin-top:20px;padding-top:16px;border-top:1px solid var(--border)">
+      <button class="btn btn-accent" style="flex:1" onclick="startEdit('${d.id}');closeDP()">Bearbeiten</button>
+      <button class="btn" style="color:var(--danger);flex:1" onclick="del('${d.id}')">Löschen</button>
+    </div>`;
+  document.getElementById('dp').classList.add('open');
+}
+function closeDP(){ document.getElementById('dp').classList.remove('open'); }
+// ══════ MODAL ══════
+function openModal(){ editId=null; document.getElementById('modalTitle').textContent='Neues Darlehen'; clearForm(); document.getElementById('ov').classList.add('open'); }
+function closeModal(e,force){ if(force||(e&&e.target===document.getElementById('ov'))){ document.getElementById('ov').classList.remove('open'); editId=null; } }
+function clearForm(){
+  ['f_typ','f_bez','f_geber','f_nehmer','f_betrag','f_aktuell','f_zins','f_tilg','f_aus','f_zinsbind','f_laufzeit','f_obj','f_status','f_konto','f_notizen'].forEach(id=>{ const el=document.getElementById(id); if(el) el.value=''; });
+  document.getElementById('f_ltv').value='';
+}
+function calcLTV(){
+  const b=parseFloat(document.getElementById('f_betrag').value);
+  const o=parseFloat(document.getElementById('f_obj').value);
+  document.getElementById('f_ltv').value=(b&&o)?Math.round(b/o*100)+' %':'—';
+}
+function startEdit(id){
+  const d=DB.find(x=>x.id===id); if(!d) return;
+  editId=id; document.getElementById('modalTitle').textContent='Darlehen bearbeiten';
+  document.getElementById('f_typ').value=d.typ;
+  document.getElementById('f_bez').value=d.bez;
+  document.getElementById('f_geber').value=d.geber;
+  document.getElementById('f_nehmer').value=d.nehmer;
+  document.getElementById('f_betrag').value=d.betrag;
+  document.getElementById('f_aktuell').value=d.aktuell||'';
+  document.getElementById('f_zins').value=d.zins;
+  document.getElementById('f_tilg').value=d.tilg||'';
+  document.getElementById('f_aus').value=d.aus||'';
+  document.getElementById('f_zinsbind').value=d.zinsbind||'';
+  document.getElementById('f_laufzeit').value=d.laufzeit||'';
+  document.getElementById('f_obj').value=d.obj||'';
+  document.getElementById('f_status').value=d.status;
+  document.getElementById('f_konto').value=d.konto||'';
+  document.getElementById('f_notizen').value=d.notizen||'';
+  calcLTV();
+  document.getElementById('ov').classList.add('open');
+}
+function saveDarlehen(){
+  const typ=document.getElementById('f_typ').value;
+  const bez=document.getElementById('f_bez').value;
+  const betrag=parseFloat(document.getElementById('f_betrag').value);
+  const zins=parseFloat(document.getElementById('f_zins').value);
+  if(!typ||!bez||!betrag||!zins){ alert('Pflichtfelder ausfüllen: Typ, Bezeichnung, Betrag, Zinssatz'); return; }
+  const rec = {
+    typ, bez,
+    geber: document.getElementById('f_geber').value,
+    nehmer: document.getElementById('f_nehmer').value,
+    betrag, aktuell: parseFloat(document.getElementById('f_aktuell').value)||betrag,
+    zins, tilg: parseFloat(document.getElementById('f_tilg').value)||0,
+    aus: document.getElementById('f_aus').value,
+    zinsbind: document.getElementById('f_zinsbind').value,
+    laufzeit: document.getElementById('f_laufzeit').value,
+    obj: parseFloat(document.getElementById('f_obj').value)||0,
+    status: document.getElementById('f_status').value||'Aktiv',
+    konto: document.getElementById('f_konto').value,
+    notizen: document.getElementById('f_notizen').value,
+  };
+  ['aus','zinsbind','laufzeit'].forEach(k=>{ if(!rec[k]) rec[k]=null; });
+  (async()=>{
+    let error;
+    if(editId){ ({ error } = await sb.from('loans').update(rec).eq('id',editId)); }
+    else { const u=(await sb.auth.getUser()).data.user; ({ error } = await sb.from('loans').insert({ ...rec, created_by: u?u.id:null })); }
+    if(error){ alert('Speichern fehlgeschlagen: '+error.message); return; }
+    const wasEdit=!!editId; closeModal(null,true); await loadDB(); toast(wasEdit?'Darlehen aktualisiert ✓':'Darlehen gespeichert ✓');
+  })();
+}
+function del(id){ if(!confirm('Darlehen löschen?')) return; (async()=>{ const { error } = await sb.from('loans').delete().eq('id',id); if(error){ alert('Löschen fehlgeschlagen: '+error.message); return; } closeDP(); await loadDB(); toast('Darlehen gelöscht'); })(); }
+// ══════ TOAST ══════
+function toast(msg){ const t=document.getElementById('toast'); t.textContent=msg; t.classList.add('show'); setTimeout(()=>t.classList.remove('show'),2500); }
+// ══════ EXCEL EXPORT (SheetJS) ══════
+function exportXLSX(){
+  const wb = XLSX.utils.book_new();
+  // ── Sheet 1: Darlehens-Register ──
+  const hdr1 = ['Darlehensnr.','Bezeichnung / Objekt','Darlehensgeber','Darlehensnehmer (Gesellschaft)','Typ','Summe lt. Vertrag (€)','Aktuelle Summe (€)','Zinssatz % p.a.','Tilgung % p.a.','Annuität / Monat (€)','LTV %','Zinsbindung bis','Laufzeit bis','Status','Notizen'];
+  const rows1 = DB.map(d=>[
+    d.ref, d.bez, d.geber, d.nehmer, TL[d.typ],
+    d.betrag, d.aktuell||d.betrag,
+    d.zins/100, (d.tilg||0)/100,
+    ann(d),
+    ltv(d) ? ltv(d)/100 : null,
+    fmtD(d.zinsbind), fmtD(d.laufzeit),
+    d.status, d.notizen
+  ]);
+  // Summe row
+  const sumRow = ['SUMME GESAMT','','','','',
+    DB.reduce((s,d)=>s+d.betrag,0),
+    DB.reduce((s,d)=>s+(d.aktuell||d.betrag),0),
+    '','',
+    DB.reduce((s,d)=>s+ann(d),0),
+    '','','','',''];
+  const ws1 = XLSX.utils.aoa_to_sheet([hdr1,...rows1,sumRow]);
+  // Column widths
+  ws1['!cols'] = [8,38,26,32,12,16,16,11,11,14,9,14,14,12,30].map(w=>({wch:w}));
+  // Formats
+  const fmtMap = {5:'#,##0',6:'#,##0',7:'0.00%',8:'0.00%',9:'#,##0',10:'0.0%'};
+  const range = XLSX.utils.decode_range(ws1['!ref']);
+  for(let R=1; R<=range.e.r; R++){
+    for(const [colIdx,fmt] of Object.entries(fmtMap)){
+      const addr = XLSX.utils.encode_cell({r:R,c:parseInt(colIdx)});
+      if(ws1[addr] && ws1[addr].v != null) ws1[addr].z = fmt;
+    }
+  }
+  XLSX.utils.book_append_sheet(wb, ws1, 'Darlehens-Register');
+  // ── Sheet 2: Zusammenfassung ──
+  const total = DB.reduce((s,d)=>s+d.betrag,0)||1;
+  // By Geber
+  const byG = {}; DB.forEach(d=>{ if(!byG[d.geber]) byG[d.geber]={n:0,v:0,ak:0,neh:new Set()}; byG[d.geber].n++; byG[d.geber].v+=d.betrag; byG[d.geber].ak+=d.aktuell||d.betrag; byG[d.geber].neh.add(gShort(d.nehmer)); });
+  const byN = {}; DB.forEach(d=>{ if(!byN[d.nehmer]) byN[d.nehmer]={n:0,v:0,ak:0,typen:new Set()}; byN[d.nehmer].n++; byN[d.nehmer].v+=d.betrag; byN[d.nehmer].ak+=d.aktuell||d.betrag; byN[d.nehmer].typen.add(TL[d.typ]); });
+  const byT = {}; DB.forEach(d=>{ const k=TL[d.typ]; if(!byT[k]) byT[k]={n:0,v:0,ak:0}; byT[k].n++; byT[k].v+=d.betrag; byT[k].ak+=d.aktuell||d.betrag; });
+  const g_hdr = ['Darlehensgeber','Anzahl','Volumen lt. Vertrag (€)','Aktuelle Summe (€)','Anteil %','Gesellschaft(en)'];
+  const g_rows = Object.entries(byG).sort((a,b)=>b[1].v-a[1].v).map(([k,v])=>[k,v.n,v.v,v.ak,v.v/total,[...v.neh].join(', ')]);
+  const g_sum = ['GESAMT',DB.length,DB.reduce((s,d)=>s+d.betrag,0),DB.reduce((s,d)=>s+(d.aktuell||d.betrag),0),1,''];
+  const n_hdr = ['Gesellschaft (Nehmer)','Anzahl','Volumen lt. Vertrag (€)','Aktuelle Summe (€)','Anteil %','Darlehenstypen'];
+  const n_rows = Object.entries(byN).sort((a,b)=>b[1].v-a[1].v).map(([k,v])=>[k,v.n,v.v,v.ak,v.v/total,[...v.typen].join(' + ')]);
+  const t_hdr = ['Darlehenstyp','Anzahl','Volumen lt. Vertrag (€)','Aktuelle Summe (€)','Anteil %','Hinweis'];
+  const typNotes = {'Bank':'Extern, besichert – Zinsbindung überwachen','Intern':'Fremdvergleich / Arm\'s-length beachten','Co-Investor':'Gesellschaftsvertrag / GbR-Regelung prüfen'};
+  const t_rows = Object.entries(byT).sort((a,b)=>b[1].v-a[1].v).map(([k,v])=>[k,v.n,v.v,v.ak,v.v/total,typNotes[k]||'']);
+  const topG = Object.entries(byG).sort((a,b)=>b[1].v-a[1].v)[0];
+  const topN = Object.entries(byN).sort((a,b)=>b[1].v-a[1].v)[0];
+  const totalAnn = DB.reduce((s,d)=>s+ann(d),0);
+  const insights = [
+    ['KEY INSIGHTS','','',''],
+    ['Größter externer Gläubiger',topG[0],`€ ${topG[1].v.toLocaleString('de-DE')} / ${(topG[1].v/total*100).toFixed(1)}%`,''],
+    ['Meistfinanzierte Gesellschaft',topN[0],`€ ${topN[1].v.toLocaleString('de-DE')}`,''],
+    ['Interner Kapitalgeber (Holding)','Anders MACHER GmbH',`€ ${(byG['Anders MACHER GmbH']?.v||0).toLocaleString('de-DE')} an Töchtern`,''],
+    ['Monatl. Gesamtschuldendienst',`€ ${totalAnn.toLocaleString('de-DE')} / Monat`,`${DB.filter(d=>d.status==='Aktiv').length} aktive Darlehen`,''],
+    ['Gesamtvolumen Portfolio',`€ ${total.toLocaleString('de-DE')}`,`${DB.length} Darlehen gesamt`,''],
+  ];
+  const ws2data = [
+    ['MACHER OS · DARLEHENS-ZUSAMMENFASSUNG','','','','',''],
+    ['Anders MACHER GmbH · Anteilige Verteilung nach Gläubiger / Gesellschaft / Typ','','','','',''],
+    [],
+    ['🏦 NACH DARLEHENSGEBER','','','','',''],
+    g_hdr,
+    ...g_rows,
+    g_sum,
+    [],
+    ['🏢 NACH DARLEHENSNEHMER (GESELLSCHAFT)','','','','',''],
+    n_hdr,
+    ...n_rows,
+    ['GESAMT',DB.length,DB.reduce((s,d)=>s+d.betrag,0),DB.reduce((s,d)=>s+(d.aktuell||d.betrag),0),1,''],
+    [],
+    ['📊 NACH DARLEHENSTYP','','','','',''],
+    t_hdr,
+    ...t_rows,
+    ['GESAMT',DB.length,DB.reduce((s,d)=>s+d.betrag,0),DB.reduce((s,d)=>s+(d.aktuell||d.betrag),0),1,''],
+    [],
+    ...insights
+  ];
+  const ws2 = XLSX.utils.aoa_to_sheet(ws2data);
+  ws2['!cols'] = [32,20,20,20,12,28].map(w=>({wch:w}));
+  // Format % columns in summary
+  const r2 = XLSX.utils.decode_range(ws2['!ref']);
+  for(let R=0;R<=r2.e.r;R++){
+    const c4 = XLSX.utils.encode_cell({r:R,c:4});
+    if(ws2[c4]&&typeof ws2[c4].v==='number'&&ws2[c4].v<=1) ws2[c4].z='0.0%';
+    for(const c of [2,3]){
+      const addr = XLSX.utils.encode_cell({r:R,c});
+      if(ws2[addr]&&typeof ws2[addr].v==='number'&&ws2[addr].v>1) ws2[addr].z='#,##0';
+    }
+  }
+  XLSX.utils.book_append_sheet(wb, ws2, 'Zusammenfassung');
+  XLSX.writeFile(wb, 'MacherOS_Darlehensregister.xlsx');
+  toast('Excel-Datei wird heruntergeladen ↓');
+}
+// ══════ MAIN RENDER ══════
+function render(){
+  renderKPI();
+  renderTabs();
+  document.getElementById('tableArea').innerHTML = renderTable();
+  renderSum();
+  renderTL();
+}
+(async()=>{
+  const { data:{ session } } = await sb.auth.getSession();
+  if(!session){ renderKPI(); renderTabs(); document.getElementById('tableArea').innerHTML='<div class="twrap"><div class="empty"><div class="empty-ico">\uD83D\uDD12</div>Bitte zuerst im OS einloggen.</div></div>'; return; }
+  loadDB();
+})();
+</script>
+</body>
+</html>
