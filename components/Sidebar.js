@@ -50,6 +50,9 @@ export default function Sidebar({ user, demo, onLogout }) {
       <Link href="/vermietung/steckbrief" className={subCls(path.startsWith('/vermietung/steckbrief'))}>
         <i className="ti ti-id-badge-2" /> Steckbrief Generator
       </Link>
+      <Link href="/vermietung/laufende-vermietungen" className={subCls(path.startsWith('/vermietung/laufende-vermietungen'))}>
+        <i className="ti ti-progress" /> Laufende Vermietungen
+      </Link>
 
       <div className="nav-group">
         <i className="ti ti-rocket lead" /> Produktivität

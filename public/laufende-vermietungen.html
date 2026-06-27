@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Laufende Vermietungen · Macher OS</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+:root{
+  --bg:#f6f7f9;--surf:#fff;--surf2:#f1f3f6;--surf3:#e7ebf0;--line:#e6e8ec;--bord2:#eef0f3;
+  --text:#1c2024;--muted:#6b7280;--dim:#4b5563;--accent:#0f9d6b;--warn:#b45309;
+  --r:8px;--rl:12px;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--text);font-family:'Inter',system-ui,-apple-system,'Segoe UI',sans-serif;font-size:14px;line-height:1.5}
+.hdr{background:var(--surf);border-bottom:1px solid var(--line);padding:16px 24px;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;position:sticky;top:0;z-index:10}
+.hdr-l{display:flex;align-items:center;gap:12px}
+.logo{background:#185fa5;color:#fff;font-weight:700;font-size:11px;letter-spacing:.08em;padding:5px 9px;border-radius:4px}
+.hdr-title{font-size:16px;font-weight:600}
+.hdr-sub{font-size:11px;color:var(--muted)}
+.btn{font-size:13px;font-weight:500;padding:8px 14px;border-radius:var(--r);border:1px solid var(--line);background:var(--surf2);color:var(--text);cursor:pointer}
+.btn:hover{background:var(--surf3)}
+.main{max-width:1160px;margin:0 auto;padding:20px 24px 60px}
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:11px;margin-bottom:18px}
+.kpi{background:var(--surf);border:1px solid var(--line);border-radius:var(--rl);padding:14px 16px}
+.kpi .l{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px}
+.kpi .v{font-size:24px;font-weight:700;margin-top:4px}
+.kpi .h{font-size:10px;color:var(--muted);margin-top:3px}
+.sec{background:var(--surf);border:1px solid var(--line);border-radius:var(--rl);margin-bottom:16px;overflow:hidden}
+.sec-hd{padding:11px 16px;border-bottom:1px solid var(--line);font-size:13px;font-weight:600;display:flex;align-items:center;justify-content:space-between;gap:8px}
+.sec-hd .cnt{font-size:11px;font-weight:600;color:#fff;background:var(--accent);border-radius:20px;padding:1px 9px}
+.row{display:flex;align-items:center;gap:10px;padding:9px 16px;border-bottom:1px solid var(--bord2);font-size:13px}
+.row:last-child{border-bottom:none}
+.objtag{flex-shrink:0;font-size:11px;font-weight:700;background:var(--surf2);border:1px solid var(--line);color:var(--dim);border-radius:6px;padding:2px 8px;min-width:54px;text-align:center}
+.row .tx{flex:1;min-width:0}
+.row .who{flex-shrink:0;font-size:11px;color:var(--muted)}
+.row a{flex-shrink:0;font-size:11px;color:#185fa5;text-decoration:none}
+.row a:hover{text-decoration:underline}
+.loading,.empty{text-align:center;padding:50px 20px;color:var(--muted)}
+.foot{font-size:11px;color:var(--muted);margin-top:20px;border-top:1px solid var(--line);padding-top:12px;line-height:1.6}
+</style>
+</head>
+<body>
+<div class="hdr">
+  <div class="hdr-l">
+    <div class="logo">MACHER OS</div>
+    <div>
+      <div class="hdr-title">Laufende Vermietungen</div>
+      <div class="hdr-sub" id="stamp">Quelle: Asana-Board „3000 – Prozess der Vermietungen"</div>
+    </div>
+  </div>
+  <button class="btn" onclick="window.print()">↧ Drucken / PDF</button>
+</div>
+
+<div class="main" id="main">
+  <div class="loading" id="loading">Lädt aktuelle Vermietungen…</div>
+  <div id="content" style="display:none">
+    <div class="kpis" id="kpis"></div>
+    <div id="sections"></div>
+    <div class="foot" id="foot"></div>
+  </div>
+</div>
+
+<script>
+const SB_URL='https://jqzxctfqvcwbctpjksvg.supabase.co';
+const SB_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpxenhjdGZxdmN3YmN0cGprc3ZnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODIxMzA0MzIsImV4cCI6MjA5NzcwNjQzMn0.RKIbZxJdusKWWPjBJqlxZ8e1m8So02UslOg55YRsn3o';
+const sb=window.supabase.createClient(SB_URL,SB_KEY);
+const esc=s=>(s==null?'':String(s)).replace(/&/g,'&amp;').replace(/</g,'&lt;');
+function objOf(name){ const m=(name||'').match(/^([A-Za-zÄÖÜ]+\d+|[A-Z]{1,4}\d*)/); return m?m[1]:'—'; }
+
+async function load(){
+  const { data, error } = await sb.from('vermietungen').select('aufgabe,status,sort,zugewiesen,asana_url,updated_at,erledigt').order('sort',{ascending:true}).order('aufgabe',{ascending:true});
+  if(error){ document.getElementById('loading').textContent='Fehler beim Laden: '+error.message; return; }
+  if(!data || !data.length){ document.getElementById('loading').textContent='Noch keine Vermietungen erfasst.'; return; }
+  render(data);
+}
+
+function render(rows){
+  const total=rows.length;
+  const objekte=new Set(rows.map(r=>objOf(r.aufgabe))).size;
+  // KPIs: Gesamt + je Status
+  const byStatus={};
+  rows.forEach(r=>{ (byStatus[r.status]=byStatus[r.status]||[]).push(r); });
+  const statusKeys=Object.keys(byStatus).sort((a,b)=>byStatus[a][0].sort-byStatus[b][0].sort);
+  const kpiCards=[['accent',total,'Einheiten in Bearbeitung','laufende Vermietungen'],['',objekte,'Objekte betroffen','Liegenschaften']];
+  statusKeys.forEach(s=>kpiCards.push(['',byStatus[s].length,s,'Phase']));
+  document.getElementById('kpis').innerHTML=kpiCards.slice(0,6).map(a=>`<div class="kpi"><div class="l">${esc(a[2])}</div><div class="v">${a[1]}</div><div class="h">${esc(a[3])}</div></div>`).join('');
+
+  document.getElementById('sections').innerHTML=statusKeys.map(s=>{
+    const list=byStatus[s];
+    const items=list.map(r=>`<div class="row">
+      <span class="objtag">${esc(objOf(r.aufgabe))}</span>
+      <div class="tx">${esc(r.aufgabe)}</div>
+      <span class="who">${r.zugewiesen?esc(r.zugewiesen):'—'}</span>
+      ${r.asana_url?`<a href="${esc(r.asana_url)}" target="_blank" rel="noopener">↗ Asana</a>`:''}
+    </div>`).join('');
+    return `<div class="sec">
+      <div class="sec-hd"><span>${esc(s)}</span><span class="cnt">${list.length}</span></div>
+      ${items}
+    </div>`;
+  }).join('');
+
+  const stand=rows.map(r=>r.updated_at).filter(Boolean).sort().pop();
+  if(stand){ const d=new Date(stand); document.getElementById('stamp').textContent='Quelle: Asana-Board „3000 – Prozess der Vermietungen" · Stand '+d.toLocaleDateString('de-DE',{day:'2-digit',month:'2-digit',year:'numeric'}); }
+  document.getElementById('foot').innerHTML='Zusammenfassung der laufenden Vermietungen aus dem Asana-Board „3000 – Prozess der Vermietungen" (Workspace Anders MACHER). Status = Pipeline-Phase. Automatische Aktualisierung täglich; in Asana gepflegt.';
+
+  document.getElementById('loading').style.display='none';
+  document.getElementById('content').style.display='block';
+}
+load();
+</script>
+</body>
+</html>
