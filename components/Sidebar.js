@@ -66,8 +66,11 @@ export default function Sidebar({ user, demo, onLogout }) {
         <i className="ti ti-cash lead" /> Finance
         <i className="ti ti-chevron-down chev" />
       </div>
-      <Link href="/finance/darlehen" className={subCls(path.startsWith('/finance/darlehen'))}>
+      <Link href="/finance/darlehen" className={subCls(path === '/finance/darlehen' || path.startsWith('/finance/darlehen/'))}>
         <i className="ti ti-businessplan" /> Darlehen
+      </Link>
+      <Link href="/finance/darlehensgenerator" className={subCls(path.startsWith('/finance/darlehensgenerator'))}>
+        <i className="ti ti-calculator" /> Darlehensgenerator
       </Link>
       <Link href="/finance/selbstauskunft" className={subCls(path.startsWith('/finance/selbstauskunft'))}>
         <i className="ti ti-user-search" /> Selbstauskunft für die Bank
