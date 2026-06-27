@@ -404,6 +404,22 @@ function tilgPct(d){
   const annualTilg = m*12 - base*d.zins/100;
   return annualTilg/base*100;             // kann theoretisch negativ sein (Zins > Kapitaldienst)
 }
+// Restschuld zum Datum des Zinsbindungsendes (annuitätische Projektion ab heute mit fixem Kapitaldienst).
+// Ohne Zinsbindungsdatum oder bei Datum in der Vergangenheit: heutiger Darlehensstand.
+function restschuldAtZinsbind(d){
+  const B0 = (d.aktuell!=null && d.aktuell>0) ? d.aktuell : d.betrag;
+  if(!B0) return 0;
+  if(!d.zinsbind) return B0;                                  // kein Datum → heutiger Stand
+  const msMonth = 365.25/12*86400000;
+  const n = (new Date(d.zinsbind) - new Date())/msMonth;      // Monate bis Zinsbindungsende
+  const p = kd(d);                                            // fixer monatl. Kapitaldienst
+  if(n<=0 || !p) return B0;                                   // Datum erreicht / kein Kapitaldienst → akt. Stand
+  const i = d.zins/100/12;
+  let Bn;
+  if(i===0){ Bn = B0 - p*n; }
+  else { const g = Math.pow(1+i,n); Bn = B0*g - p*(g-1)/i; }
+  return Bn>0 ? Bn : 0;                                       // nicht unter 0
+}
 function ltv(d){ return d.obj ? Math.round(d.betrag/d.obj*100*10)/10 : null; }
 function ltvCls(v){ return !v?'':v<=60?'ltv-ok':v<=80?'ltv-warn':'ltv-danger'; }
 function days(ds){ if(!ds) return null; return Math.round((new Date(ds)-new Date())/86400000); }
@@ -474,6 +490,7 @@ function renderTable(){
       <td class="mono tr">${fmtE(d.betrag)}</td>
       <td class="mono tr">${fmtE(d.aktuell||d.betrag)}</td>
       <td class="mono tc">${d.zins.toFixed(2)} %${zWarn}</td>
+      <td class="mono tr" title="Berechnet aus Kapitaldienst × 12 − Zins auf akt. Restschuld, bezogen auf akt. Restschuld">${(()=>{const t=tilgPct(d);return t!=null?`<span style="color:${t<0?'var(--danger)':'var(--ok)'}">${t.toFixed(2)} %</span>`:'<span style="color:var(--muted);font-size:11px">—</span>';})()}</td>
       <td class="kd-cell tr">
         <input class="kd-inline ${d.kapitaldienst!=null?'manual':''}" type="number" min="0" step="50"
           value="${d.kapitaldienst!=null?Math.round(d.kapitaldienst):''}"
@@ -483,9 +500,9 @@ function renderTable(){
           onchange="saveKD('${d.id}', this.value)">
         <span class="kd-auto">${d.kapitaldienst!=null?'/Mo':'auto'}</span>
       </td>
-      <td class="mono tr" title="Berechnet aus Kapitaldienst × 12 − Zins auf akt. Restschuld, bezogen auf akt. Restschuld">${(()=>{const t=tilgPct(d);return t!=null?`<span style="color:${t<0?'var(--danger)':'var(--ok)'}">${t.toFixed(2)} %</span>`:'<span style="color:var(--muted);font-size:11px">—</span>';})()}</td>
       <td>${l!==null?`<div class="ltvw"><div class="ltvbar"><div class="ltvfill ${ltvCls(l)}" style="width:${Math.min(l,100)}%"></div></div><span class="ltvlbl">${l}%</span></div>`:'<span style="color:var(--muted);font-size:11px">n/a</span>'}</td>
       <td class="mono" style="font-size:11px">${fmtD(d.zinsbind||d.laufzeit)}</td>
+      <td class="mono tr" title="Projizierte Restschuld zum Zinsbindungsende (fixer Kapitaldienst, annuitätisch). Ohne Datum = heutiger Stand.">${fmtE(restschuldAtZinsbind(d))}</td>
       <td><span class="sbadge ${SC[d.status]}">${d.status}</span></td>
       <td style="white-space:nowrap">
         <button class="abtn" onclick="openDP('${d.id}')">Detail</button>
@@ -498,8 +515,8 @@ function renderTable(){
     <thead><tr>
       <th>Typ</th><th>Bezeichnung</th><th>Gesellschaft</th>
       <th class="tr">Summe lt. Vertrag</th><th class="tr">Aktuelle Summe</th>
-      <th class="tc">Zins p.a.</th><th class="tr">Kapitaldienst /Mo</th><th class="tr">Tilgung % p.a.<br><span style="font-weight:400;text-transform:none;letter-spacing:0;font-size:9px">berechnet</span></th>
-      <th style="min-width:110px">LTV</th><th>Zinsbindung</th><th>Status</th><th></th>
+      <th class="tc">Zins p.a.</th><th class="tr">Tilgung % p.a.<br><span style="font-weight:400;text-transform:none;letter-spacing:0;font-size:9px">berechnet</span></th><th class="tr">Kapitaldienst /Mo</th>
+      <th style="min-width:110px">LTV</th><th>Zinsbindung</th><th class="tr">Restschuld<br><span style="font-weight:400;text-transform:none;letter-spacing:0;font-size:9px">b. Zinsbindung</span></th><th>Status</th><th></th>
     </tr></thead>
     <tbody>${rows}</tbody>
   </table></div>`;
@@ -592,6 +609,7 @@ function openDP(id){
     <div class="dp-sec">Laufzeiten</div>
     <div class="dp-row"><span class="dp-k">Auszahlung</span><span class="dp-v">${fmtD(d.aus)}</span></div>
     <div class="dp-row"><span class="dp-k">Zinsbindung bis</span><span class="dp-v">${fmtD(d.zinsbind)}</span></div>
+    <div class="dp-row"><span class="dp-k">Restschuld b. Zinsbindungsende</span><span class="dp-v mono">${fmtE(restschuldAtZinsbind(d))}${d.zinsbind?'':' <span style="color:var(--muted);font-size:10px">(akt. Stand)</span>'}</span></div>
     <div class="dp-row"><span class="dp-k">Laufzeit bis</span><span class="dp-v">${fmtD(d.laufzeit)}</span></div>
     <div class="dp-sec">Monatlicher Cashflow</div>
     <div class="cfbox">
@@ -680,14 +698,14 @@ function toast(msg){ const t=document.getElementById('toast'); t.textContent=msg
 function exportXLSX(){
   const wb = XLSX.utils.book_new();
   // ── Sheet 1: Darlehens-Register ──
-  const hdr1 = ['Darlehensnr.','Bezeichnung / Objekt','Darlehensgeber','Darlehensnehmer (Gesellschaft)','Typ','Summe lt. Vertrag (€)','Aktuelle Summe (€)','Zinssatz % p.a.','Tilgung % p.a. (berechnet)','Kapitaldienst / Monat (€)','Kapitaldienst-Quelle','LTV %','Zinsbindung bis','Laufzeit bis','Status','Notizen'];
+  const hdr1 = ['Darlehensnr.','Bezeichnung / Objekt','Darlehensgeber','Darlehensnehmer (Gesellschaft)','Typ','Summe lt. Vertrag (€)','Aktuelle Summe (€)','Zinssatz % p.a.','Tilgung % p.a. (berechnet)','Kapitaldienst / Monat (€)','Kapitaldienst-Quelle','LTV %','Zinsbindung bis','Restschuld b. Zinsbindungsende (€)','Laufzeit bis','Status','Notizen'];
   const rows1 = DB.map(d=>[
     d.ref, d.bez, d.geber, d.nehmer, TL[d.typ],
     d.betrag, d.aktuell||d.betrag,
     d.zins/100, (tilgPct(d)!=null?tilgPct(d)/100:null),
     kd(d), d.kapitaldienst!=null?'manuell':'berechnet',
     ltv(d) ? ltv(d)/100 : null,
-    fmtD(d.zinsbind), fmtD(d.laufzeit),
+    fmtD(d.zinsbind), restschuldAtZinsbind(d), fmtD(d.laufzeit),
     d.status, d.notizen
   ]);
   // Summe row
@@ -696,12 +714,14 @@ function exportXLSX(){
     DB.reduce((s,d)=>s+(d.aktuell||d.betrag),0),
     '','',
     DB.reduce((s,d)=>s+kd(d),0),
-    '','','','','',''];
+    '','','',
+    DB.reduce((s,d)=>s+restschuldAtZinsbind(d),0),
+    '','',''];
   const ws1 = XLSX.utils.aoa_to_sheet([hdr1,...rows1,sumRow]);
   // Column widths
-  ws1['!cols'] = [8,38,26,32,12,16,16,11,11,16,16,9,14,14,12,30].map(w=>({wch:w}));
+  ws1['!cols'] = [8,38,26,32,12,16,16,11,11,16,16,9,14,18,14,12,30].map(w=>({wch:w}));
   // Formats
-  const fmtMap = {5:'#,##0',6:'#,##0',7:'0.00%',8:'0.00%',9:'#,##0',11:'0.0%'};
+  const fmtMap = {5:'#,##0',6:'#,##0',7:'0.00%',8:'0.00%',9:'#,##0',11:'0.0%',13:'#,##0'};
   const range = XLSX.utils.decode_range(ws1['!ref']);
   for(let R=1; R<=range.e.r; R++){
     for(const [colIdx,fmt] of Object.entries(fmtMap)){
