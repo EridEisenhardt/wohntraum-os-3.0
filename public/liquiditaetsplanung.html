@@ -82,6 +82,22 @@ tr.tot td{background:#eef1f4;font-weight:700;border-top:2px solid var(--line)}
     <div class="panel-hd">+ Neue Zahlung erfassen</div>
     <div class="form">
       <div class="fg"><label>Datum</label><input id="f_datum" type="date"></div>
+      <div class="fg"><label>Gesellschaft</label>
+        <select id="f_gesell">
+          <option value="">— keine —</option>
+          <option>Anders MACHER GmbH</option>
+          <option>Wohn(T)raum Rheinhessen GmbH</option>
+          <option>Wohntraum Kibo GmbH</option>
+          <option>Wohntraum Wonnegau GmbH</option>
+          <option>Eric Eisenhardt Immobilien</option>
+          <option>E&amp;A Weinstrasse Wohninvest eGBR</option>
+          <option>Fly with Aly GmbH</option>
+        </select>
+      </div>
+      <div class="fg"><label>Objekt</label><input id="f_objekt" list="objekte" type="text" placeholder="z. B. KW30" style="width:120px"></div>
+      <datalist id="objekte">
+        <option>S16</option><option>E4</option><option>A14</option><option>R6</option><option>K28</option><option>K10</option><option>V11</option><option>H3</option><option>K7</option><option>M8</option><option>H44</option><option>KW30</option><option>U6</option><option>S58</option><option>K6</option>
+      </datalist>
       <div class="fg" style="flex:1;min-width:140px"><label>Firma</label><input id="f_firma" type="text" placeholder="z. B. Handwerker GmbH" style="width:100%"></div>
       <div class="fg" style="flex:2;min-width:180px"><label>Thema</label><input id="f_thema" type="text" placeholder="z. B. Sanierung WE3" style="width:100%"></div>
       <div class="fg"><label>Richtung</label>
@@ -129,7 +145,7 @@ async function loadAll(){
   const cfg=await sb.from('liquiditaet_config').select('anfangssaldo').eq('id',1).maybeSingle();
   ANFANG = cfg.data ? Number(cfg.data.anfangssaldo) : 0;
   $('anfang').value=ANFANG;
-  const { data, error } = await sb.from('liquiditaet').select('id,datum,firma,thema,richtung,betrag,status').order('datum',{ascending:true}).order('created_at',{ascending:true});
+  const { data, error } = await sb.from('liquiditaet').select('id,datum,gesellschaft,objekt,firma,thema,richtung,betrag,status').order('datum',{ascending:true}).order('created_at',{ascending:true});
   if(error){ toast('Fehler beim Laden: '+error.message); ROWS=[]; }
   else ROWS=data||[];
   render();
@@ -145,6 +161,8 @@ async function saveAnfang(){
 async function addRow(){
   const rec={
     datum: $('f_datum').value || new Date().toISOString().slice(0,10),
+    gesellschaft: $('f_gesell').value || null,
+    objekt: $('f_objekt').value.trim() || null,
     firma: $('f_firma').value.trim() || null,
     thema: $('f_thema').value.trim() || null,
     richtung: $('f_richtung').value,
@@ -155,7 +173,7 @@ async function addRow(){
   const u=(await sb.auth.getUser()).data.user;
   const { error } = await sb.from('liquiditaet').insert({ ...rec, created_by:u?u.id:null });
   if(error){ toast('Speichern fehlgeschlagen: '+error.message); return; }
-  $('f_firma').value=''; $('f_thema').value=''; $('f_betrag').value='';
+  $('f_objekt').value=''; $('f_firma').value=''; $('f_thema').value=''; $('f_betrag').value='';
   await loadAll(); toast('Zahlung hinzugefügt ✓');
 }
 
@@ -200,6 +218,8 @@ function render(){
     const opts=STATI.map(o=>`<option ${o===r.status?'selected':''}>${o}</option>`).join('');
     return `<tr>
       <td class="l">${fmtD(r.datum)}</td>
+      <td class="l">${r.gesellschaft||'—'}</td>
+      <td class="l">${r.objekt||'—'}</td>
       <td class="l">${r.firma||'—'}</td>
       <td class="l">${r.thema||'—'}</td>
       <td>${r.richtung==='Eingang'?'Eingang':'Ausgang'}</td>
@@ -210,9 +230,9 @@ function render(){
     </tr>`;
   }).join('');
   $('tbl').innerHTML=`
-    <thead><tr><th class="l">Datum</th><th class="l">Firma</th><th class="l">Thema</th><th>Richtung</th><th>Betrag</th><th>Status</th><th>Kontostand</th><th></th></tr></thead>
+    <thead><tr><th class="l">Datum</th><th class="l">Gesellschaft</th><th class="l">Objekt</th><th class="l">Firma</th><th class="l">Thema</th><th>Richtung</th><th>Betrag</th><th>Status</th><th>Kontostand</th><th></th></tr></thead>
     <tbody>${rows}</tbody>
-    <tbody><tr class="tot"><td class="l" colspan="4">Endstand (inkl. Planung)</td><td></td><td></td><td class="${saldo<0?'neg':''}">${eur(saldo)}</td><td></td></tr></tbody>`;
+    <tbody><tr class="tot"><td class="l" colspan="6">Endstand (inkl. Planung)</td><td></td><td></td><td class="${saldo<0?'neg':''}">${eur(saldo)}</td><td></td></tr></tbody>`;
 }
 
 (async()=>{
