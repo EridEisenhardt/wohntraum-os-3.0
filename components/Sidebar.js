@@ -40,6 +40,14 @@ export default function Sidebar({ user, demo, onLogout }) {
       </Link>
 
       <div className="nav-group">
+        <i className="ti ti-home-search lead" /> Vermietung
+        <i className="ti ti-chevron-down chev" />
+      </div>
+      <Link href="/vermietung/steckbrief" className={subCls(path.startsWith('/vermietung/steckbrief'))}>
+        <i className="ti ti-id-badge-2" /> Steckbrief Generator
+      </Link>
+
+      <div className="nav-group">
         <i className="ti ti-rocket lead" /> Produktivität
         <i className="ti ti-chevron-down chev" />
       </div>
