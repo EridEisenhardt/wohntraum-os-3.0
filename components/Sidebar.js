@@ -55,6 +55,14 @@ export default function Sidebar({ user, demo, onLogout }) {
       </Link>
 
       <div className="nav-group">
+        <i className="ti ti-chart-histogram lead" /> Controlling
+        <i className="ti ti-chevron-down chev" />
+      </div>
+      <Link href="/controlling/statistik" className={subCls(path.startsWith('/controlling/statistik'))}>
+        <i className="ti ti-chart-bar" /> Statistik
+      </Link>
+
+      <div className="nav-group">
         <i className="ti ti-rocket lead" /> Produktivität
         <i className="ti ti-chevron-down chev" />
       </div>

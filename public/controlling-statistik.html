@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Controlling · Statistik – Macher OS</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+:root{
+  --bg:#f6f7f9;--surf:#fff;--surf2:#f1f3f6;--surf3:#e7ebf0;--line:#e6e8ec;--bord2:#eef0f3;
+  --text:#1c2024;--muted:#6b7280;--dim:#4b5563;--accent:#185fa5;--green:#1f7a4d;--red:#c0392b;
+  --r:8px;--rl:12px;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--text);font-family:'Inter',system-ui,-apple-system,'Segoe UI',sans-serif;font-size:14px;line-height:1.5}
+.hdr{background:var(--surf);border-bottom:1px solid var(--line);padding:16px 24px;display:flex;align-items:center;gap:12px;position:sticky;top:0;z-index:10}
+.logo{background:#1a1a2e;color:#fff;font-weight:700;font-size:11px;letter-spacing:.08em;padding:5px 9px;border-radius:4px}
+.hdr-title{font-size:16px;font-weight:600}
+.hdr-sub{font-size:11px;color:var(--muted)}
+.main{max-width:1080px;margin:0 auto;padding:20px 24px 60px}
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:11px;margin-bottom:20px}
+.kpi{background:var(--surf);border:1px solid var(--line);border-radius:var(--rl);padding:14px 16px}
+.kpi .l{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px}
+.kpi .v{font-size:23px;font-weight:700;margin-top:4px}
+.kpi .d{font-size:11px;margin-top:3px}
+.up{color:var(--green)}.down{color:var(--red)}.flat{color:var(--muted)}
+.card{background:var(--surf);border:1px solid var(--line);border-radius:var(--rl);margin-bottom:18px;overflow:hidden}
+.card-hd{padding:12px 16px;border-bottom:1px solid var(--line);font-size:13px;font-weight:600}
+.form{padding:16px;display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:14px}
+.fld{display:flex;flex-direction:column;gap:4px}
+.fld label{font-size:11px;color:var(--muted);font-weight:600}
+.fld input,.fld select{font-family:inherit;font-size:14px;padding:8px 10px;border:1px solid var(--line);border-radius:var(--r);background:var(--surf);color:var(--text)}
+.fld input:focus,.fld select:focus{outline:none;border-color:var(--accent)}
+.form-foot{padding:0 16px 16px;display:flex;gap:10px;align-items:center}
+.btn{font-size:13px;font-weight:600;padding:9px 16px;border-radius:var(--r);border:1px solid var(--accent);background:var(--accent);color:#fff;cursor:pointer}
+.btn:hover{opacity:.92}
+.btn.sec{background:var(--surf2);color:var(--text);border-color:var(--line)}
+#msg{font-size:12px;color:var(--green)}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th,td{padding:9px 12px;text-align:right;border-bottom:1px solid var(--bord2);white-space:nowrap}
+th:first-child,td:first-child{text-align:left}
+th{font-size:10.5px;text-transform:uppercase;letter-spacing:.3px;color:var(--muted);font-weight:700;background:var(--surf2)}
+tbody tr:hover{background:#fafbfd}
+.delcol a{color:var(--red);text-decoration:none;font-size:12px;cursor:pointer}
+.loading,.empty{text-align:center;padding:40px;color:var(--muted)}
+.foot{font-size:11px;color:var(--muted);margin-top:18px;border-top:1px solid var(--line);padding-top:12px}
+</style>
+</head>
+<body>
+<div class="hdr">
+  <div class="logo">MACHER OS</div>
+  <div>
+    <div class="hdr-title">Controlling · Statistik</div>
+    <div class="hdr-sub">Monatliche Kennzahlen zum Monatswechsel erfassen</div>
+  </div>
+</div>
+
+<div class="main">
+  <div class="kpis" id="kpis"></div>
+
+  <div class="card">
+    <div class="card-hd">Monatswerte erfassen / aktualisieren</div>
+    <div class="form">
+      <div class="fld"><label>Jahr</label><input type="number" id="f_jahr" min="2020" max="2099"></div>
+      <div class="fld"><label>Monat</label>
+        <select id="f_monat">
+          <option value="1">Januar</option><option value="2">Februar</option><option value="3">März</option>
+          <option value="4">April</option><option value="5">Mai</option><option value="6">Juni</option>
+          <option value="7">Juli</option><option value="8">August</option><option value="9">September</option>
+          <option value="10">Oktober</option><option value="11">November</option><option value="12">Dezember</option>
+        </select>
+      </div>
+      <div class="fld"><label>Anzahl Gebäude</label><input type="number" id="f_geb" min="0" step="1" placeholder="z. B. 15"></div>
+      <div class="fld"><label>Anzahl Einheiten in der Vermietung</label><input type="number" id="f_einh" min="0" step="1" placeholder="z. B. 120"></div>
+      <div class="fld"><label>Jahressollmiete (€)</label><input type="number" id="f_miete" min="0" step="0.01" placeholder="z. B. 980000"></div>
+      <div class="fld"><label>Summe aller Kredite (€)</label><input type="number" id="f_kredit" min="0" step="0.01" placeholder="z. B. 14500000"></div>
+      <div class="fld" style="grid-column:1/-1"><label>Notiz (optional)</label><input type="text" id="f_notiz" placeholder="Bemerkung zum Monat"></div>
+    </div>
+    <div class="form-foot">
+      <button class="btn" onclick="save()">Speichern</button>
+      <button class="btn sec" onclick="clearForm()">Felder leeren</button>
+      <span id="msg"></span>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-hd">Verlauf</div>
+    <div id="tblwrap"><div class="loading" id="loading">Lädt…</div></div>
+  </div>
+
+  <div class="foot">Kennzahlen werden je Monat einmalig erfasst (ein Datensatz pro Monat). Erneutes Speichern desselben Monats überschreibt den Wert. Δ-Spalten zeigen die Veränderung zum jeweils vorherigen erfassten Monat.</div>
+</div>
+
+<script>
+const SB_URL='https://jqzxctfqvcwbctpjksvg.supabase.co';
+const SB_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpxenhjdGZxdmN3YmN0cGprc3ZnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODIxMzA0MzIsImV4cCI6MjA5NzcwNjQzMn0.RKIbZxJdusKWWPjBJqlxZ8e1m8So02UslOg55YRsn3o';
+const sb=window.supabase.createClient(SB_URL,SB_KEY);
+const MN=['','Jan','Feb','Mär','Apr','Mai','Jun','Jul','Aug','Sep','Okt','Nov','Dez'];
+const eur=n=>n==null?'–':new Intl.NumberFormat('de-DE',{style:'currency',currency:'EUR',maximumFractionDigits:0}).format(n);
+const num=n=>n==null?'–':new Intl.NumberFormat('de-DE').format(n);
+
+function initForm(){ const d=new Date(); document.getElementById('f_jahr').value=d.getFullYear(); document.getElementById('f_monat').value=String(d.getMonth()+1); }
+function clearForm(){ ['f_geb','f_einh','f_miete','f_kredit','f_notiz'].forEach(id=>document.getElementById(id).value=''); document.getElementById('msg').textContent=''; }
+function v(id){ const x=document.getElementById(id).value; return x===''?null:x; }
+
+async function save(){
+  const row={
+    jahr:parseInt(document.getElementById('f_jahr').value,10),
+    monat:parseInt(document.getElementById('f_monat').value,10),
+    anzahl_gebaeude:v('f_geb')==null?null:parseInt(v('f_geb'),10),
+    anzahl_einheiten:v('f_einh')==null?null:parseInt(v('f_einh'),10),
+    jahressollmiete:v('f_miete')==null?null:parseFloat(v('f_miete')),
+    summe_kredite:v('f_kredit')==null?null:parseFloat(v('f_kredit')),
+    notiz:v('f_notiz'),
+    updated_at:new Date().toISOString()
+  };
+  if(!row.jahr||!row.monat){ document.getElementById('msg').textContent='Jahr und Monat erforderlich.'; return; }
+  const { error } = await sb.from('controlling_statistik').upsert(row,{onConflict:'jahr,monat'});
+  const m=document.getElementById('msg');
+  if(error){ m.style.color='var(--red)'; m.textContent='Fehler: '+error.message; return; }
+  m.style.color='var(--green)'; m.textContent='Gespeichert ✓'; load();
+}
+
+async function del(jahr,monat){
+  if(!confirm(`Eintrag ${MN[monat]} ${jahr} löschen?`)) return;
+  await sb.from('controlling_statistik').delete().eq('jahr',jahr).eq('monat',monat); load();
+}
+
+function delta(cur,prev,money){
+  if(cur==null||prev==null) return '<span class="flat">–</span>';
+  const d=cur-prev; if(d===0) return '<span class="flat">±0</span>';
+  const cls=d>0?'up':'down', sign=d>0?'▲ ':'▼ ';
+  return `<span class="${cls}">${sign}${money?eur(Math.abs(d)):num(Math.abs(d))}</span>`;
+}
+
+async function load(){
+  const { data, error } = await sb.from('controlling_statistik').select('*').order('jahr',{ascending:false}).order('monat',{ascending:false});
+  if(error){ document.getElementById('loading').textContent='Fehler: '+error.message; return; }
+  const rows=data||[];
+  // KPIs vom jüngsten Monat + Δ zum Vormonat-Datensatz
+  const k=document.getElementById('kpis');
+  if(rows.length){
+    const c=rows[0], p=rows[1]||{};
+    k.innerHTML=[
+      ['Anzahl Gebäude',num(c.anzahl_gebaeude),delta(c.anzahl_gebaeude,p.anzahl_gebaeude,false)],
+      ['Einheiten in Vermietung',num(c.anzahl_einheiten),delta(c.anzahl_einheiten,p.anzahl_einheiten,false)],
+      ['Jahressollmiete',eur(c.jahressollmiete),delta(c.jahressollmiete,p.jahressollmiete,true)],
+      ['Summe aller Kredite',eur(c.summe_kredite),delta(c.summe_kredite,p.summe_kredite,true)]
+    ].map(a=>`<div class="kpi"><div class="l">${a[0]}</div><div class="v">${a[1]}</div><div class="d">${a[2]} · ggü. Vormonat</div></div>`).join('')
+      + `<div class="kpi" style="grid-column:1/-1;background:var(--surf2)"><div class="l">Stand</div><div class="v" style="font-size:16px">${MN[c.monat]} ${c.jahr}</div></div>`;
+  } else { k.innerHTML='<div class="kpi"><div class="l">Noch keine Daten</div><div class="v">–</div></div>'; }
+
+  const w=document.getElementById('tblwrap');
+  if(!rows.length){ w.innerHTML='<div class="empty">Noch keine Einträge. Erfasse oben den ersten Monat.</div>'; return; }
+  // chronologisch für Δ (älteste zuerst), dann absteigend anzeigen
+  const asc=[...rows].reverse(); const prevMap={};
+  asc.forEach((r,i)=>{ prevMap[r.jahr+'-'+r.monat]= i>0?asc[i-1]:{}; });
+  w.innerHTML=`<table><thead><tr>
+    <th>Monat</th><th>Gebäude</th><th>Δ</th><th>Einheiten</th><th>Δ</th>
+    <th>Jahressollmiete</th><th>Δ</th><th>Summe Kredite</th><th>Δ</th><th></th></tr></thead><tbody>`
+    + rows.map(r=>{ const p=prevMap[r.jahr+'-'+r.monat]||{}; return `<tr>
+      <td>${MN[r.monat]} ${r.jahr}</td>
+      <td>${num(r.anzahl_gebaeude)}</td><td>${delta(r.anzahl_gebaeude,p.anzahl_gebaeude,false)}</td>
+      <td>${num(r.anzahl_einheiten)}</td><td>${delta(r.anzahl_einheiten,p.anzahl_einheiten,false)}</td>
+      <td>${eur(r.jahressollmiete)}</td><td>${delta(r.jahressollmiete,p.jahressollmiete,true)}</td>
+      <td>${eur(r.summe_kredite)}</td><td>${delta(r.summe_kredite,p.summe_kredite,true)}</td>
+      <td class="delcol"><a onclick="del(${r.jahr},${r.monat})">löschen</a></td></tr>`; }).join('')
+    + '</tbody></table>';
+}
+
+initForm(); load();
+</script>
+</body>
+</html>
