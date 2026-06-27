@@ -181,6 +181,19 @@ input.cell:hover{border-color:var(--line)} input.cell:focus{border-color:var(--b
     </table>
     <div class="note">Die Deal-Ebene (Ankaufspreis, Sanierungsinvest, Verkaufserlös, realisierter Gewinn) ist hier zu pflegen – sobald die abgeschlossenen Projekte eingetragen sind, erscheinen Gewinn und ROI automatisch und fließen in das Bank-PDF ein.</div>
 
+    <!-- H Abgeschlossene Immobilienprojekte -->
+    <h2><span class="n">H</span>Abgeschlossene Immobilienprojekte
+      <button style="margin-left:8px;padding:3px 9px;font-size:11px;font-weight:600" onclick="addExit()">+ Projekt hinzufügen</button></h2>
+    <table id="tblExit">
+      <thead><tr>
+        <th>Objekt</th><th>Eigentümer</th><th>Aktueller Status</th>
+        <th>Miete bei Eigentumsübergang</th><th>Miete bei Exit</th>
+        <th>Kaufpreis</th><th>Verkaufspreis</th><th>Datum Projektabschluss</th><th></th>
+      </tr></thead>
+      <tbody id="exitBody"></tbody>
+    </table>
+    <div class="note"><b>„Im Verkauf"</b> = beurkundet / in Vermarktung · <b>„Verkauft"</b> = Eigentum übergegangen. Mieten als Jahresnettomiete (Soll). Vorbelegt sind die drei aktuell im Verkauf befindlichen Objekte – <b>Eigentümer und alle Beträge bitte vor Abgabe an die Bank bestätigen</b>. Werte werden lokal gespeichert.</div>
+
     <div class="sign">
       <div class="box">Ort, Datum</div>
       <div class="box">Eric Eisenhardt · Wohn(T)raum Rheinhessen GmbH</div>
@@ -240,6 +253,38 @@ const TR_FIN=[
 
 let OBJ=load();
 let DEALS=loadDeals();
+// ---- H: Abgeschlossene Immobilienprojekte (pflegbar) ----
+const EXIT_DEFAULT=[
+ {obj:'Rh24 · Rheinstraße 24, Nierstein',own:'GmbH',st:'Im Verkauf',mu:null,me:null,kp:null,vp:null,dt:''},
+ {obj:'W48 · Wormser Straße 48, Oppenheim',own:'GmbH',st:'Im Verkauf',mu:null,me:null,kp:null,vp:null,dt:''},
+ {obj:'B20 · Am Bogen 20, Westhofen',own:'GmbH',st:'Im Verkauf',mu:null,me:null,kp:null,vp:null,dt:''},
+];
+let EXITS=loadExits();
+function loadExits(){try{const s=localStorage.getItem('bankreport_exits');return s?JSON.parse(s):JSON.parse(JSON.stringify(EXIT_DEFAULT));}catch(e){return JSON.parse(JSON.stringify(EXIT_DEFAULT));}}
+function saveExits(){localStorage.setItem('bankreport_exits',JSON.stringify(EXITS));}
+function addExit(){EXITS.push({obj:'',own:'GmbH',st:'Im Verkauf',mu:null,me:null,kp:null,vp:null,dt:''});saveExits();renderExits();}
+function delExit(i){EXITS.splice(i,1);saveExits();renderExits();}
+function renderExits(){
+  const tb=document.getElementById('exitBody');tb.innerHTML='';
+  if(EXITS.length===0){tb.innerHTML='<tr><td colspan="9" style="text-align:center;color:var(--muted);font-style:italic">Noch keine Projekte erfasst – „+ Projekt hinzufügen" klicken.</td></tr>';return;}
+  EXITS.forEach((d,i)=>{
+    tb.insertAdjacentHTML('beforeend',`<tr>
+      <td><input class="cell" style="text-align:left;min-width:170px" data-x="${i}" data-k="obj" value="${d.obj||''}" placeholder="Objekt"></td>
+      <td><select class="cell" data-x="${i}" data-k="own"><option ${d.own==='GmbH'?'selected':''}>GmbH</option><option ${d.own==='privat'?'selected':''}>privat</option></select></td>
+      <td><select class="cell" data-x="${i}" data-k="st"><option ${d.st==='Im Verkauf'?'selected':''}>Im Verkauf</option><option ${d.st==='Verkauft'?'selected':''}>Verkauft</option></select></td>
+      <td><input class="cell" data-x="${i}" data-k="mu" value="${d.mu!=null?d.mu:''}" placeholder="0"></td>
+      <td><input class="cell" data-x="${i}" data-k="me" value="${d.me!=null?d.me:''}" placeholder="0"></td>
+      <td><input class="cell" data-x="${i}" data-k="kp" value="${d.kp!=null?d.kp:''}" placeholder="0"></td>
+      <td><input class="cell" data-x="${i}" data-k="vp" value="${d.vp!=null?d.vp:''}" placeholder="0"></td>
+      <td><input class="cell" style="text-align:left;min-width:100px" data-x="${i}" data-k="dt" value="${d.dt||''}" placeholder="TT.MM.JJJJ"></td>
+      <td><button style="padding:2px 7px;font-size:11px" onclick="delExit(${i})">✕</button></td></tr>`);
+  });
+  document.querySelectorAll('[data-x]').forEach(el=>{el.addEventListener('change',e=>{
+    const i=+e.target.dataset.x,k=e.target.dataset.k;let v=e.target.value;
+    if(['mu','me','kp','vp'].includes(k)){v=v.replace(/\./g,'').replace(',','.');EXITS[i][k]=v===''?null:parseFloat(v);}else{EXITS[i][k]=v;}
+    saveExits();renderExits();
+  });});
+}
 function loadDeals(){try{const s=localStorage.getItem('bankreport_deals');return s?JSON.parse(s):[];}catch(e){return[];}}
 function saveDeals(){localStorage.setItem('bankreport_deals',JSON.stringify(DEALS));}
 function addDeal(){DEALS.push({p:'',g:'GmbH',an:'',ap:null,san:null,vk:'',ve:null,st:'in Umsetzung'});saveDeals();renderDeals();}
@@ -332,7 +377,7 @@ function render(){
   const ev=[['2026','KK-Linie Donnersberg',true],['2027','E4 · S58',false],['2028','KW30 (2×) · H44',false],['2030','M8 (2×)',false],['2034','S16·K28·K6·V11',false]];
   document.getElementById('timeline').innerHTML=ev.map((e,i)=>`<div class="row"><span><b>${e[0]}</b></span><div class="bar" style="width:${30+i*16}%;background:${e[2]?'var(--red)':'var(--brand)'}"></div><span style="text-align:right">${e[1]}</span></div>`).join('');
 
-  renderTr(); renderDeals();
+  renderTr(); renderDeals(); renderExits();
   document.getElementById('genstamp').textContent='Erstellt: '+new Date().toLocaleDateString('de-DE');
   bind();
 }

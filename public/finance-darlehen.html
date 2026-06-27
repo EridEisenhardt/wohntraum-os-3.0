@@ -279,6 +279,15 @@ textarea{resize:vertical;min-height:60px}
           <option>E&A Weinstrasse Wohninvest eGBR</option>
         </select>
       </div>
+      <div class="fsec">Darlehensnummern</div>
+      <div class="fg">
+        <label>Darlehensnr. (von uns)</label>
+        <input id="f_dnr_intern" type="text" placeholder="interne Nr.">
+      </div>
+      <div class="fg">
+        <label>Darlehensnr. (der Bank)</label>
+        <input id="f_dnr_bank" type="text" placeholder="Konto-/Vertragsnr. der Bank">
+      </div>
       <div class="fsec">Konditionen</div>
       <div class="fg">
         <label>Betrag lt. Vertrag (€) *</label>
@@ -367,7 +376,7 @@ let idCounter = 10;
 const SB_URL = 'https://jqzxctfqvcwbctpjksvg.supabase.co';
 const SB_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpxenhjdGZxdmN3YmN0cGprc3ZnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODIxMzA0MzIsImV4cCI6MjA5NzcwNjQzMn0.RKIbZxJdusKWWPjBJqlxZ8e1m8So02UslOg55YRsn3o';
 const sb = window.supabase.createClient(SB_URL, SB_KEY);
-const LOAN_COLS = 'id,ref,typ,bez,geber,nehmer,company_id,betrag,aktuell,zins,tilg,aus,zinsbind,laufzeit,obj,status,konto,notizen,kapitaldienst';
+const LOAN_COLS = 'id,ref,typ,bez,geber,nehmer,company_id,betrag,aktuell,zins,tilg,aus,zinsbind,laufzeit,obj,status,konto,notizen,kapitaldienst,dnr_intern,dnr_bank';
 async function loadDB(){
   const { data, error } = await sb.from('loans').select(LOAN_COLS).order('ref',{ascending:true});
   if(error){ toast('Fehler beim Laden: '+error.message); return; }
@@ -393,6 +402,21 @@ function saveKD(id, raw){
     const rec = DB.find(x=>x.id===id); if(rec) rec.kapitaldienst = v;
     render();
     toast(v==null ? 'Kapitaldienst → automatisch berechnet' : 'Kapitaldienst gespeichert ✓');
+  })();
+}
+// Inline-Feld speichern (text oder numerisch). Leer = null.
+function saveField(id, field, raw, numeric){
+  let v = raw==null ? null : String(raw).trim();
+  if(numeric){
+    v = (v==='') ? null : parseFloat(v.replace(/\./g,'').replace(',','.'));
+    if(v!=null && (isNaN(v)||v<0)){ toast('Ungültiger Wert'); render(); return; }
+  } else if(v===''){ v=null; }
+  (async()=>{
+    const { error } = await sb.from('loans').update({ [field]:v }).eq('id',id);
+    if(error){ toast('Speichern fehlgeschlagen: '+error.message); return; }
+    const rec = DB.find(x=>x.id===id); if(rec) rec[field]=v;
+    render();
+    toast(field==='aktuell' ? 'Aktuelle Summe gespeichert ✓' : 'Gespeichert ✓');
   })();
 }
 // Berechneter Tilgungssatz % p.a. aus fixem Kapitaldienst & Zins, bezogen auf aktuelle Restschuld.
@@ -487,8 +511,26 @@ function renderTable(){
         <div style="font-size:10px;color:var(--muted);margin-top:1px">${d.ref||''} · ${d.geber}</div>
       </td>
       <td><span class="gtag">${gShort(d.nehmer)}</span></td>
+      <td class="kd-cell">
+        <input class="kd-inline ${d.dnr_intern?'manual':''}" type="text" style="text-align:left;width:96px"
+          value="${d.dnr_intern?String(d.dnr_intern).replace(/"/g,'&quot;'):''}" placeholder="—"
+          title="Unsere interne Darlehensnummer"
+          onclick="event.stopPropagation()" onchange="saveField('${d.id}','dnr_intern',this.value,false)">
+      </td>
+      <td class="kd-cell">
+        <input class="kd-inline ${d.dnr_bank?'manual':''}" type="text" style="text-align:left;width:110px"
+          value="${d.dnr_bank?String(d.dnr_bank).replace(/"/g,'&quot;'):''}" placeholder="—"
+          title="Darlehensnummer der Bank"
+          onclick="event.stopPropagation()" onchange="saveField('${d.id}','dnr_bank',this.value,false)">
+      </td>
       <td class="mono tr">${fmtE(d.betrag)}</td>
-      <td class="mono tr">${fmtE(d.aktuell||d.betrag)}</td>
+      <td class="kd-cell tr">
+        <input class="kd-inline ${d.aktuell!=null?'manual':''}" type="number" min="0" step="1000"
+          value="${d.aktuell!=null?Math.round(d.aktuell):''}"
+          placeholder="${Math.round(d.betrag)}"
+          title="Aktuelle Restschuld manuell eintragen – leer = Betrag lt. Vertrag (${fmtE(d.betrag)})"
+          onclick="event.stopPropagation()" onchange="saveField('${d.id}','aktuell',this.value,true)">
+      </td>
       <td class="mono tc">${d.zins.toFixed(2)} %${zWarn}</td>
       <td class="mono tr" title="Berechnet aus Kapitaldienst × 12 − Zins auf akt. Restschuld, bezogen auf akt. Restschuld">${(()=>{const t=tilgPct(d);return t!=null?`<span style="color:${t<0?'var(--danger)':'var(--ok)'}">${t.toFixed(2)} %</span>`:'<span style="color:var(--muted);font-size:11px">—</span>';})()}</td>
       <td class="kd-cell tr">
@@ -514,7 +556,9 @@ function renderTable(){
   return `<div class="twrap"><table>
     <thead><tr>
       <th>Typ</th><th>Bezeichnung</th><th>Gesellschaft</th>
-      <th class="tr">Summe lt. Vertrag</th><th class="tr">Aktuelle Summe</th>
+      <th>Darlehensnr.<br><span style="font-weight:400;text-transform:none;letter-spacing:0;font-size:9px">von uns</span></th>
+      <th>Darlehensnr.<br><span style="font-weight:400;text-transform:none;letter-spacing:0;font-size:9px">der Bank</span></th>
+      <th class="tr">Summe lt. Vertrag</th><th class="tr">Aktuelle Summe<br><span style="font-weight:400;text-transform:none;letter-spacing:0;font-size:9px">manuell</span></th>
       <th class="tc">Zins p.a.</th><th class="tr">Tilgung % p.a.<br><span style="font-weight:400;text-transform:none;letter-spacing:0;font-size:9px">berechnet</span></th><th class="tr">Kapitaldienst /Mo</th>
       <th style="min-width:110px">LTV</th><th>Zinsbindung</th><th class="tr">Restschuld<br><span style="font-weight:400;text-transform:none;letter-spacing:0;font-size:9px">b. Zinsbindung</span></th><th>Status</th><th></th>
     </tr></thead>
@@ -631,7 +675,7 @@ function closeDP(){ document.getElementById('dp').classList.remove('open'); }
 function openModal(){ editId=null; document.getElementById('modalTitle').textContent='Neues Darlehen'; clearForm(); document.getElementById('ov').classList.add('open'); }
 function closeModal(e,force){ if(force||(e&&e.target===document.getElementById('ov'))){ document.getElementById('ov').classList.remove('open'); editId=null; } }
 function clearForm(){
-  ['f_typ','f_bez','f_geber','f_nehmer','f_betrag','f_aktuell','f_zins','f_tilg','f_kapitaldienst','f_aus','f_zinsbind','f_laufzeit','f_obj','f_status','f_konto','f_notizen'].forEach(id=>{ const el=document.getElementById(id); if(el) el.value=''; });
+  ['f_typ','f_bez','f_geber','f_nehmer','f_dnr_intern','f_dnr_bank','f_betrag','f_aktuell','f_zins','f_tilg','f_kapitaldienst','f_aus','f_zinsbind','f_laufzeit','f_obj','f_status','f_konto','f_notizen'].forEach(id=>{ const el=document.getElementById(id); if(el) el.value=''; });
   document.getElementById('f_ltv').value='';
 }
 function calcLTV(){
@@ -646,6 +690,8 @@ function startEdit(id){
   document.getElementById('f_bez').value=d.bez;
   document.getElementById('f_geber').value=d.geber;
   document.getElementById('f_nehmer').value=d.nehmer;
+  document.getElementById('f_dnr_intern').value=d.dnr_intern||'';
+  document.getElementById('f_dnr_bank').value=d.dnr_bank||'';
   document.getElementById('f_betrag').value=d.betrag;
   document.getElementById('f_aktuell').value=d.aktuell||'';
   document.getElementById('f_zins').value=d.zins;
@@ -671,6 +717,8 @@ function saveDarlehen(){
     typ, bez,
     geber: document.getElementById('f_geber').value,
     nehmer: document.getElementById('f_nehmer').value,
+    dnr_intern: document.getElementById('f_dnr_intern').value.trim()||null,
+    dnr_bank: document.getElementById('f_dnr_bank').value.trim()||null,
     betrag, aktuell: parseFloat(document.getElementById('f_aktuell').value)||betrag,
     zins, tilg: parseFloat(document.getElementById('f_tilg').value)||0,
     kapitaldienst: document.getElementById('f_kapitaldienst').value!=='' ? parseFloat(document.getElementById('f_kapitaldienst').value) : null,
@@ -698,7 +746,7 @@ function toast(msg){ const t=document.getElementById('toast'); t.textContent=msg
 function exportXLSX(){
   const wb = XLSX.utils.book_new();
   // ── Sheet 1: Darlehens-Register ──
-  const hdr1 = ['Darlehensnr.','Bezeichnung / Objekt','Darlehensgeber','Darlehensnehmer (Gesellschaft)','Typ','Summe lt. Vertrag (€)','Aktuelle Summe (€)','Zinssatz % p.a.','Tilgung % p.a. (berechnet)','Kapitaldienst / Monat (€)','Kapitaldienst-Quelle','LTV %','Zinsbindung bis','Restschuld b. Zinsbindungsende (€)','Laufzeit bis','Status','Notizen'];
+  const hdr1 = ['Darlehensnr.','Bezeichnung / Objekt','Darlehensgeber','Darlehensnehmer (Gesellschaft)','Typ','Summe lt. Vertrag (€)','Aktuelle Summe (€)','Zinssatz % p.a.','Tilgung % p.a. (berechnet)','Kapitaldienst / Monat (€)','Kapitaldienst-Quelle','LTV %','Zinsbindung bis','Restschuld b. Zinsbindungsende (€)','Laufzeit bis','Status','Notizen','Darlehensnr. (von uns)','Darlehensnr. (der Bank)'];
   const rows1 = DB.map(d=>[
     d.ref, d.bez, d.geber, d.nehmer, TL[d.typ],
     d.betrag, d.aktuell||d.betrag,
@@ -706,7 +754,8 @@ function exportXLSX(){
     kd(d), d.kapitaldienst!=null?'manuell':'berechnet',
     ltv(d) ? ltv(d)/100 : null,
     fmtD(d.zinsbind), restschuldAtZinsbind(d), fmtD(d.laufzeit),
-    d.status, d.notizen
+    d.status, d.notizen,
+    d.dnr_intern||'', d.dnr_bank||''
   ]);
   // Summe row
   const sumRow = ['SUMME GESAMT','','','','',
@@ -716,10 +765,10 @@ function exportXLSX(){
     DB.reduce((s,d)=>s+kd(d),0),
     '','','',
     DB.reduce((s,d)=>s+restschuldAtZinsbind(d),0),
-    '','',''];
+    '','','','',''];
   const ws1 = XLSX.utils.aoa_to_sheet([hdr1,...rows1,sumRow]);
   // Column widths
-  ws1['!cols'] = [8,38,26,32,12,16,16,11,11,16,16,9,14,18,14,12,30].map(w=>({wch:w}));
+  ws1['!cols'] = [8,38,26,32,12,16,16,11,11,16,16,9,14,18,14,12,30,16,18].map(w=>({wch:w}));
   // Formats
   const fmtMap = {5:'#,##0',6:'#,##0',7:'0.00%',8:'0.00%',9:'#,##0',11:'0.0%',13:'#,##0'};
   const range = XLSX.utils.decode_range(ws1['!ref']);
