@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Liquiditätsplanung Investitionskonto · Macher OS</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+:root{
+  --bg:#f6f7f9;--surf:#fff;--surf2:#f1f3f6;--surf3:#e7ebf0;--line:#e6e8ec;--bord2:#eef0f3;
+  --text:#1c2024;--muted:#6b7280;--dim:#4b5563;
+  --accent:#185fa5;--accent-dk:#134a82;--ok:#0f9d6b;--warn:#b45309;--danger:#c62828;
+  --bezahlt:#0f9d6b;--offen:#c62828;--geplant:#185fa5;--beauftragt:#b45309;
+  --r:8px;--rl:12px;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--text);font-family:'Inter',system-ui,-apple-system,'Segoe UI',sans-serif;font-size:14px;line-height:1.5;font-variant-numeric:tabular-nums}
+.hdr{background:var(--surf);border-bottom:1px solid var(--line);padding:14px 24px;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;position:sticky;top:0;z-index:10}
+.hdr-l{display:flex;align-items:center;gap:12px}
+.logo{background:var(--accent);color:#fff;font-weight:700;font-size:11px;letter-spacing:.08em;padding:5px 9px;border-radius:4px}
+.hdr-title{font-size:16px;font-weight:600}
+.hdr-sub{font-size:11px;color:var(--muted)}
+.main{max-width:1240px;margin:0 auto;padding:20px 24px 60px}
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:11px;margin-bottom:18px}
+.kpi{background:var(--surf);border:1px solid var(--line);border-radius:var(--rl);padding:13px 15px}
+.kpi .l{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px}
+.kpi .v{font-size:21px;font-weight:600;margin-top:4px}
+.kpi .h{font-size:10px;color:var(--muted);margin-top:3px}
+.kpi.accent .v{color:var(--accent)} .kpi.ok .v{color:var(--ok)} .kpi.danger .v{color:var(--danger)}
+.panel{background:var(--surf);border:1px solid var(--line);border-radius:var(--rl);margin-bottom:18px}
+.panel-hd{padding:12px 16px;border-bottom:1px solid var(--line);font-size:13px;font-weight:600;display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}
+.form{padding:14px 16px;display:flex;flex-wrap:wrap;gap:10px;align-items:flex-end}
+.fg{display:flex;flex-direction:column;gap:4px}
+.fg label{font-size:11px;font-weight:500;color:var(--dim)}
+.fg input,.fg select{font-family:inherit;font-size:13px;background:var(--surf2);border:1px solid var(--line);border-radius:var(--r);color:var(--text);padding:8px 10px}
+.fg input:focus,.fg select:focus{outline:none;border-color:var(--accent)}
+.btn{font-size:13px;font-weight:600;padding:9px 16px;border-radius:var(--r);border:1px solid var(--accent);background:var(--accent);color:#fff;cursor:pointer;white-space:nowrap}
+.btn:hover{background:var(--accent-dk)}
+.btn-sec{background:var(--surf2);color:var(--text);border-color:var(--line);font-weight:500}
+.btn-sec:hover{background:var(--surf3)}
+.saldo-edit{display:flex;align-items:center;gap:8px}
+.saldo-edit input{width:140px;text-align:right;font-family:inherit;font-size:13px;background:var(--surf2);border:1px solid var(--line);border-radius:var(--r);color:var(--text);padding:7px 10px}
+.tablewrap{overflow-x:auto}
+table{width:100%;border-collapse:collapse;font-size:12.5px}
+th,td{padding:9px 12px;text-align:right;border-bottom:1px solid var(--bord2);white-space:nowrap}
+th:first-child,td:first-child,th.l,td.l{text-align:left}
+th{font-size:10px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;background:var(--surf2);position:sticky;top:0}
+tbody tr:hover td{background:rgba(0,0,0,.018)}
+tr.tot td{background:#eef1f4;font-weight:700;border-top:2px solid var(--line)}
+.sb{font-size:10px;font-weight:600;padding:2px 9px;border-radius:20px;display:inline-block}
+.s-Bezahlt{background:rgba(15,157,107,.12);color:var(--bezahlt)}
+.s-Offen{background:rgba(198,40,40,.1);color:var(--offen)}
+.s-Geplant{background:rgba(24,95,165,.1);color:var(--geplant)}
+.s-Beauftragt{background:rgba(180,83,9,.12);color:var(--beauftragt)}
+.neg{color:var(--danger)} .pos{color:var(--ok)}
+.abtn{font-size:11px;padding:3px 8px;border-radius:5px;border:1px solid var(--line);background:transparent;color:var(--muted);cursor:pointer}
+.abtn:hover{color:var(--danger);border-color:var(--danger)}
+.empty{text-align:center;padding:40px 20px;color:var(--muted)}
+.toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:var(--surf3);border:1px solid var(--line);border-radius:var(--r);padding:10px 20px;font-size:13px;z-index:9999;opacity:0;transition:opacity .3s;pointer-events:none}
+.toast.show{opacity:1}
+</style>
+</head>
+<body>
+<div class="hdr">
+  <div class="hdr-l">
+    <div class="logo">MACHER OS</div>
+    <div>
+      <div class="hdr-title">Liquiditätsplanung — Investitionskonto</div>
+      <div class="hdr-sub">Datum · Firma · Thema · Betrag · Status · laufender Kontostand</div>
+    </div>
+  </div>
+  <div class="saldo-edit">
+    <label style="font-size:11px;color:var(--dim)">Anfangskontostand (€)</label>
+    <input id="anfang" type="number" step="100" value="0" onchange="saveAnfang()">
+  </div>
+</div>
+
+<div class="main">
+  <div class="kpis" id="kpis"></div>
+
+  <div class="panel">
+    <div class="panel-hd">+ Neue Zahlung erfassen</div>
+    <div class="form">
+      <div class="fg"><label>Datum</label><input id="f_datum" type="date"></div>
+      <div class="fg" style="flex:1;min-width:140px"><label>Firma</label><input id="f_firma" type="text" placeholder="z. B. Handwerker GmbH" style="width:100%"></div>
+      <div class="fg" style="flex:2;min-width:180px"><label>Thema</label><input id="f_thema" type="text" placeholder="z. B. Sanierung WE3" style="width:100%"></div>
+      <div class="fg"><label>Richtung</label>
+        <select id="f_richtung">
+          <option value="Ausgang">Ausgang (−)</option>
+          <option value="Eingang">Eingang (+)</option>
+        </select>
+      </div>
+      <div class="fg"><label>Betrag (€)</label><input id="f_betrag" type="number" min="0" step="0.01" placeholder="0,00" style="width:130px;text-align:right"></div>
+      <div class="fg"><label>Status</label>
+        <select id="f_status">
+          <option>Geplant</option>
+          <option>Beauftragt</option>
+          <option>Offen</option>
+          <option>Bezahlt</option>
+        </select>
+      </div>
+      <button class="btn" onclick="addRow()">Hinzufügen</button>
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-hd">Zahlungen &amp; Kontostand
+      <span style="font-size:11px;font-weight:400;color:var(--muted)">sortiert nach Datum</span>
+    </div>
+    <div class="tablewrap"><table id="tbl"></table></div>
+  </div>
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+const SB_URL='https://jqzxctfqvcwbctpjksvg.supabase.co';
+const SB_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpxenhjdGZxdmN3YmN0cGprc3ZnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODIxMzA0MzIsImV4cCI6MjA5NzcwNjQzMn0.RKIbZxJdusKWWPjBJqlxZ8e1m8So02UslOg55YRsn3o';
+const sb=window.supabase.createClient(SB_URL,SB_KEY);
+const $=id=>document.getElementById(id);
+const eur=n=>n==null||isNaN(n)?'—':n.toLocaleString('de-DE',{minimumFractionDigits:2,maximumFractionDigits:2})+' €';
+const fmtD=d=>{if(!d)return '—';const p=String(d).slice(0,10).split('-');return p[2]+'.'+p[1]+'.'+p[0];};
+function toast(m){const t=$('toast');t.textContent=m;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),2400);}
+function signed(r){ return r.richtung==='Eingang' ? Number(r.betrag) : -Number(r.betrag); }
+
+let ROWS=[], ANFANG=0;
+$('f_datum').value=new Date().toISOString().slice(0,10);
+
+async function loadAll(){
+  const cfg=await sb.from('liquiditaet_config').select('anfangssaldo').eq('id',1).maybeSingle();
+  ANFANG = cfg.data ? Number(cfg.data.anfangssaldo) : 0;
+  $('anfang').value=ANFANG;
+  const { data, error } = await sb.from('liquiditaet').select('id,datum,firma,thema,richtung,betrag,status').order('datum',{ascending:true}).order('created_at',{ascending:true});
+  if(error){ toast('Fehler beim Laden: '+error.message); ROWS=[]; }
+  else ROWS=data||[];
+  render();
+}
+
+async function saveAnfang(){
+  const v=parseFloat($('anfang').value)||0;
+  const { error } = await sb.from('liquiditaet_config').update({ anfangssaldo:v, updated_at:new Date().toISOString() }).eq('id',1);
+  if(error){ toast('Speichern fehlgeschlagen: '+error.message); return; }
+  ANFANG=v; render(); toast('Anfangskontostand gespeichert ✓');
+}
+
+async function addRow(){
+  const rec={
+    datum: $('f_datum').value || new Date().toISOString().slice(0,10),
+    firma: $('f_firma').value.trim() || null,
+    thema: $('f_thema').value.trim() || null,
+    richtung: $('f_richtung').value,
+    betrag: parseFloat($('f_betrag').value)||0,
+    status: $('f_status').value,
+  };
+  if(!rec.betrag){ toast('Bitte einen Betrag eingeben.'); return; }
+  const u=(await sb.auth.getUser()).data.user;
+  const { error } = await sb.from('liquiditaet').insert({ ...rec, created_by:u?u.id:null });
+  if(error){ toast('Speichern fehlgeschlagen: '+error.message); return; }
+  $('f_firma').value=''; $('f_thema').value=''; $('f_betrag').value='';
+  await loadAll(); toast('Zahlung hinzugefügt ✓');
+}
+
+async function delRow(id){
+  if(!confirm('Eintrag löschen?')) return;
+  const { error } = await sb.from('liquiditaet').delete().eq('id',id);
+  if(error){ toast('Löschen fehlgeschlagen: '+error.message); return; }
+  await loadAll(); toast('Eintrag gelöscht');
+}
+
+async function setStatus(id, val){
+  const { error } = await sb.from('liquiditaet').update({ status:val }).eq('id',id);
+  if(error){ toast('Status-Update fehlgeschlagen: '+error.message); return; }
+  const r=ROWS.find(x=>x.id===id); if(r) r.status=val; render();
+}
+
+function render(){
+  // KPIs
+  const ausgang = ROWS.filter(r=>r.richtung==='Ausgang').reduce((s,r)=>s+Number(r.betrag),0);
+  const eingang = ROWS.filter(r=>r.richtung==='Eingang').reduce((s,r)=>s+Number(r.betrag),0);
+  const bezahlt = ROWS.filter(r=>r.status==='Bezahlt').reduce((s,r)=>s+signed(r),0);
+  const offen = ROWS.filter(r=>r.status!=='Bezahlt').reduce((s,r)=>s+signed(r),0);
+  const endstand = ANFANG + ROWS.reduce((s,r)=>s+signed(r),0);
+  const istStand = ANFANG + bezahlt; // nur bezahlte berücksichtigt
+  $('kpis').innerHTML=[
+    ['accent','Anfangskontostand',eur(ANFANG),''],
+    ['','Ist-Kontostand (bezahlt)',eur(istStand),'nur Status „Bezahlt"'],
+    ['','Σ Ausgänge / Eingänge',eur(-ausgang)+' / '+eur(eingang),ROWS.length+' Einträge'],
+    ['','Noch offen (geplant)',eur(offen),'nicht bezahlt'],
+    [endstand>=0?'ok':'danger','Prognose-Endstand',eur(endstand),'inkl. aller Planungen'],
+  ].map(a=>`<div class="kpi ${a[0]}"><div class="l">${a[1]}</div><div class="v">${a[2]}</div><div class="h">${a[3]}</div></div>`).join('');
+
+  // Tabelle mit laufendem Kontostand
+  if(!ROWS.length){
+    $('tbl').innerHTML='<tbody><tr><td><div class="empty">Noch keine Zahlungen erfasst – oben „Hinzufügen".</div></td></tr></tbody>';
+    return;
+  }
+  let saldo=ANFANG;
+  const STATI=['Geplant','Beauftragt','Offen','Bezahlt'];
+  const rows=ROWS.map(r=>{
+    const s=signed(r); saldo+=s;
+    const opts=STATI.map(o=>`<option ${o===r.status?'selected':''}>${o}</option>`).join('');
+    return `<tr>
+      <td class="l">${fmtD(r.datum)}</td>
+      <td class="l">${r.firma||'—'}</td>
+      <td class="l">${r.thema||'—'}</td>
+      <td>${r.richtung==='Eingang'?'Eingang':'Ausgang'}</td>
+      <td class="${s<0?'neg':'pos'}">${eur(s)}</td>
+      <td><select class="sb s-${r.status}" style="border:none;background:transparent;font:inherit;cursor:pointer" onchange="setStatus('${r.id}',this.value)">${opts}</select></td>
+      <td class="${saldo<0?'neg':''}" style="font-weight:600">${eur(saldo)}</td>
+      <td><button class="abtn" onclick="delRow('${r.id}')">✕</button></td>
+    </tr>`;
+  }).join('');
+  $('tbl').innerHTML=`
+    <thead><tr><th class="l">Datum</th><th class="l">Firma</th><th class="l">Thema</th><th>Richtung</th><th>Betrag</th><th>Status</th><th>Kontostand</th><th></th></tr></thead>
+    <tbody>${rows}</tbody>
+    <tbody><tr class="tot"><td class="l" colspan="4">Endstand (inkl. Planung)</td><td></td><td></td><td class="${saldo<0?'neg':''}">${eur(saldo)}</td><td></td></tr></tbody>`;
+}
+
+(async()=>{
+  const { data:{ session } } = await sb.auth.getSession();
+  if(!session){ document.querySelector('.main').innerHTML='<div class="empty" style="padding:60px">Bitte zuerst im OS einloggen.</div>'; return; }
+  loadAll();
+})();
+</script>
+</body>
+</html>

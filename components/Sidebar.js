@@ -84,6 +84,9 @@ export default function Sidebar({ user, demo, onLogout }) {
       <Link href="/finance/steuer-bilanz" className={subCls(path.startsWith('/finance/steuer-bilanz'))}>
         <i className="ti ti-receipt-tax" /> Steuer und Bilanzunterlagen
       </Link>
+      <Link href="/finance/liquiditaetsplanung" className={subCls(path.startsWith('/finance/liquiditaetsplanung'))}>
+        <i className="ti ti-wallet" /> Liquiditätsplanung
+      </Link>
 
       <Link href="/dokumente" className={cls(path.startsWith('/dokumente'))}>
         <i className="ti ti-files" /> Dokumente
