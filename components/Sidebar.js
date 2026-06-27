@@ -27,6 +27,10 @@ export default function Sidebar({ user, demo, onLogout }) {
         <i className="ti ti-chart-pie" /> GF-Dashboard
       </Link>
 
+      <Link href="/portfolio" className={cls(path.startsWith('/portfolio'))}>
+        <i className="ti ti-building-community" /> Portfolio
+      </Link>
+
       <div className="nav-group">
         <i className="ti ti-clipboard-list lead" /> Planung
         <i className="ti ti-chevron-down chev" />
