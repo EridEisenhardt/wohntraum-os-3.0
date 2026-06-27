@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Statusbericht offene Aufgaben des GF · Macher OS</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+:root{
+  --bg:#f6f7f9;--surf:#fff;--surf2:#f1f3f6;--line:#e6e8ec;--bord2:#eef0f3;
+  --text:#1c2024;--muted:#6b7280;--dim:#4b5563;
+  --accent:#185fa5;--ok:#1a7f37;--warn:#b45309;--danger:#c62828;
+  --r:8px;--rl:12px;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--text);font-family:'Inter',system-ui,-apple-system,'Segoe UI',sans-serif;font-size:14px;line-height:1.5;font-variant-numeric:tabular-nums}
+.hdr{background:var(--surf);border-bottom:1px solid var(--line);padding:16px 24px;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;position:sticky;top:0;z-index:10}
+.hdr-l{display:flex;align-items:center;gap:12px}
+.logo{background:var(--accent);color:#fff;font-weight:700;font-size:11px;letter-spacing:.08em;padding:5px 9px;border-radius:4px}
+.hdr-title{font-size:16px;font-weight:600}
+.hdr-sub{font-size:11px;color:var(--muted)}
+.btn{font-size:13px;font-weight:500;padding:8px 14px;border-radius:var(--r);border:1px solid var(--line);background:var(--surf2);color:var(--text);cursor:pointer}
+.btn:hover{background:var(--line)}
+.main{max-width:1200px;margin:0 auto;padding:22px 24px 60px}
+h2{font-size:14px;font-weight:600;margin:26px 0 12px;display:flex;align-items:center;gap:8px}
+h2 .dot{width:9px;height:9px;border-radius:3px;display:inline-block}
+.note{font-size:11.5px;color:var(--muted);margin:-4px 0 14px}
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:11px}
+.kpi{background:var(--surf);border:1px solid var(--line);border-radius:var(--rl);padding:14px 16px}
+.kpi .l{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px}
+.kpi .v{font-size:26px;font-weight:700;margin-top:4px}
+.kpi .h{font-size:10px;color:var(--muted);margin-top:3px}
+.kpi.danger .v{color:var(--danger)} .kpi.warn .v{color:var(--warn)} .kpi.accent .v{color:var(--accent)}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+@media(max-width:880px){.grid{grid-template-columns:1fr}}
+.cat{background:var(--surf);border:1px solid var(--line);border-radius:var(--rl);overflow:hidden}
+.cat-hd{padding:11px 15px;font-size:13px;font-weight:600;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--line)}
+.cat-hd .cnt{font-size:11px;font-weight:600;color:#fff;border-radius:20px;padding:1px 9px}
+.row{display:flex;align-items:flex-start;gap:9px;padding:9px 15px;border-bottom:1px solid var(--bord2);font-size:12.5px}
+.row:last-child{border-bottom:none}
+.row .due{flex-shrink:0;font-size:10.5px;font-weight:600;padding:2px 7px;border-radius:5px;white-space:nowrap}
+.due-over{background:rgba(198,40,40,.1);color:var(--danger)}
+.due-soon{background:rgba(180,83,9,.12);color:var(--warn)}
+.due-ok{background:var(--surf2);color:var(--muted)}
+.row .tx{flex:1}
+.row .src{font-size:9.5px;color:var(--muted);margin-top:1px}
+.mailtbl{background:var(--surf);border:1px solid var(--line);border-radius:var(--rl);overflow:hidden}
+.mailrow{display:flex;align-items:flex-start;gap:10px;padding:11px 15px;border-bottom:1px solid var(--bord2);font-size:12.5px}
+.mailrow:last-child{border-bottom:none}
+.prio{flex-shrink:0;font-size:9.5px;font-weight:700;padding:2px 8px;border-radius:20px;white-space:nowrap}
+.p-hoch{background:rgba(198,40,40,.1);color:var(--danger)}
+.p-mittel{background:rgba(180,83,9,.12);color:var(--warn)}
+.p-niedrig{background:var(--surf2);color:var(--muted)}
+.p-termin{background:rgba(24,95,165,.1);color:var(--accent)}
+.mailrow .mfrom{font-weight:600;width:160px;flex-shrink:0}
+@media(max-width:600px){.mailrow .mfrom{width:auto}}
+.loading{text-align:center;padding:60px 20px;color:var(--muted)}
+.foot{font-size:11px;color:var(--muted);margin-top:28px;border-top:1px solid var(--line);padding-top:14px;line-height:1.6}
+@media print{.hdr{position:static}.btn{display:none}}
+</style>
+</head>
+<body>
+<div class="hdr">
+  <div class="hdr-l">
+    <div class="logo">MACHER OS</div>
+    <div>
+      <div class="hdr-title">Statusbericht — offene Aufgaben des GF</div>
+      <div class="hdr-sub" id="stamp">Asana · Mailpostfach · Todoist · Stand wird geladen…</div>
+    </div>
+  </div>
+  <button class="btn" onclick="window.print()">↧ Drucken / PDF</button>
+</div>
+
+<div class="main" id="main">
+  <div class="loading" id="loading">Lädt aktuellen Statusbericht…</div>
+  <div id="content" style="display:none">
+    <h2><span class="dot" style="background:var(--accent)"></span>Überblick</h2>
+    <div class="kpis" id="kpis"></div>
+
+    <h2><span class="dot" style="background:var(--danger)"></span>Kritische Schwerpunkte (überfällig &amp; fällig)</h2>
+    <div class="note" id="catNote"></div>
+    <div class="grid" id="cats"></div>
+
+    <h2><span class="dot" style="background:var(--warn)"></span>Offene Vorgänge aus dem Mailpostfach</h2>
+    <div class="mailtbl" id="mails"></div>
+
+    <div class="foot" id="foot"></div>
+  </div>
+</div>
+
+<script>
+const SB_URL='https://jqzxctfqvcwbctpjksvg.supabase.co';
+const SB_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpxenhjdGZxdmN3YmN0cGprc3ZnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODIxMzA0MzIsImV4cCI6MjA5NzcwNjQzMn0.RKIbZxJdusKWWPjBJqlxZ8e1m8So02UslOg55YRsn3o';
+const sb=window.supabase.createClient(SB_URL,SB_KEY);
+
+const TODAY=new Date();
+function fmtD(iso){ if(!iso) return '—'; const p=iso.split('-'); return p[2]+'.'+p[1]+'.'+p[0]; }
+function dueClass(iso){ if(!iso) return 'due-ok'; const d=new Date(iso); const diff=(d-TODAY)/86400000; if(diff<0) return 'due-over'; if(diff<=7) return 'due-soon'; return 'due-ok'; }
+function dueLabel(iso){ if(!iso) return 'kein Datum'; const d=new Date(iso); const diff=Math.round((d-TODAY)/86400000); if(diff<0) return Math.abs(diff)+' T überfällig'; if(diff===0) return 'heute'; if(diff<=7) return 'in '+diff+' T'; return fmtD(iso); }
+const esc=s=>(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+
+async function load(){
+  const { data, error } = await sb.from('gf_statusbericht').select('payload,generated_at').order('generated_at',{ascending:false}).limit(1);
+  if(error){ document.getElementById('loading').textContent='Fehler beim Laden: '+error.message; return; }
+  if(!data || !data.length){ document.getElementById('loading').textContent='Noch kein Statusbericht vorhanden.'; return; }
+  render(data[0].payload, data[0].generated_at);
+}
+
+function render(p, gen){
+  const k=p.kpis||{};
+  document.getElementById('kpis').innerHTML=[
+    ['danger', k.overdue_asana!=null?k.overdue_asana:'—', 'Überfällige Aufgaben', 'Asana'],
+    ['warn', k.due_week!=null?k.due_week:'—', 'Fällig diese Woche', 'Asana'],
+    ['accent', k.mail_open!=null?k.mail_open:'—', 'Offene Mail-Vorgänge', 'Postfach'],
+    ['', k.todoist!=null?k.todoist:'n/v', 'Todoist', k.todoist!=null?'Aufgaben':'nicht verbunden'],
+  ].map(a=>`<div class="kpi ${a[0]}"><div class="l">${a[2]}</div><div class="v">${a[1]}</div><div class="h">${a[3]}</div></div>`).join('');
+
+  document.getElementById('catNote').textContent='Kuratierte Schwerpunkte je Bereich — vollständige Liste in Asana.';
+  document.getElementById('cats').innerHTML=(p.categories||[]).map(c=>{
+    const col=c.color||'#185fa5';
+    const rows=(c.items||[]).map(it=>`
+      <div class="row">
+        <span class="due ${dueClass(it.due)}">${dueLabel(it.due)}</span>
+        <div class="tx">${esc(it.task)}<div class="src">${esc(it.source||'')}${it.due?' · '+fmtD(it.due):''}</div></div>
+      </div>`).join('');
+    return `<div class="cat">
+      <div class="cat-hd" style="border-left:4px solid ${col}"><span>${esc(c.name)}</span><span class="cnt" style="background:${col}">${(c.items||[]).length}</span></div>
+      ${rows}
+    </div>`;
+  }).join('');
+
+  document.getElementById('mails').innerHTML=(p.mails||[]).map(m=>`
+    <div class="mailrow">
+      <span class="prio p-${m.prio||'niedrig'}">${(m.prio||'').toUpperCase()||'—'}</span>
+      <span class="mfrom">${esc(m.from)}</span>
+      <div style="flex:1">${esc(m.subject)}</div>
+      <span style="flex-shrink:0;color:var(--muted);font-size:11px">${m.date?fmtD(m.date):''}</span>
+    </div>`).join('');
+
+  const genD=new Date(gen||p.generated_at);
+  document.getElementById('stamp').textContent='Asana · Mailpostfach · Todoist · Stand '+genD.toLocaleString('de-DE',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'});
+  document.getElementById('foot').innerHTML=esc(p.note||'')+' · Automatische Aktualisierung täglich.';
+
+  document.getElementById('loading').style.display='none';
+  document.getElementById('content').style.display='block';
+}
+load();
+</script>
+</body>
+</html>

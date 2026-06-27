@@ -61,6 +61,9 @@ export default function Sidebar({ user, demo, onLogout }) {
       <Link href="/produktivitaet/planung" className={subCls(path.startsWith('/produktivitaet/planung'))}>
         <i className="ti ti-calendar-event" /> Planung
       </Link>
+      <Link href="/produktivitaet/statusbericht" className={subCls(path.startsWith('/produktivitaet/statusbericht'))}>
+        <i className="ti ti-clipboard-check" /> Statusbericht GF
+      </Link>
 
       <div className="nav-group">
         <i className="ti ti-cash lead" /> Finance
