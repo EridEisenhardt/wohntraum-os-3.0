@@ -115,7 +115,8 @@ tr.tot td{background:#eef1f4;font-weight:700;border-top:2px solid var(--line)}
           <option>Bezahlt</option>
         </select>
       </div>
-      <button class="btn" onclick="addRow()">Hinzufügen</button>
+      <button class="btn" id="saveBtn" onclick="saveRow()">Hinzufügen</button>
+      <button class="btn btn-sec" id="cancelBtn" onclick="cancelEdit()" style="display:none">Abbrechen</button>
     </div>
   </div>
 
@@ -158,7 +159,33 @@ async function saveAnfang(){
   ANFANG=v; render(); toast('Anfangskontostand gespeichert ✓');
 }
 
-async function addRow(){
+let EDIT_ID=null;
+
+function clearForm(){
+  $('f_datum').value=new Date().toISOString().slice(0,10);
+  $('f_gesell').value=''; $('f_objekt').value=''; $('f_firma').value='';
+  $('f_thema').value=''; $('f_richtung').value='Ausgang'; $('f_betrag').value=''; $('f_status').value='Geplant';
+}
+function cancelEdit(){
+  EDIT_ID=null; $('saveBtn').textContent='Hinzufügen'; $('cancelBtn').style.display='none'; clearForm();
+}
+function editRow(id){
+  const r=ROWS.find(x=>x.id===id); if(!r) return;
+  EDIT_ID=id;
+  $('f_datum').value=String(r.datum).slice(0,10);
+  $('f_gesell').value=r.gesellschaft||'';
+  $('f_objekt').value=r.objekt||'';
+  $('f_firma').value=r.firma||'';
+  $('f_thema').value=r.thema||'';
+  $('f_richtung').value=r.richtung||'Ausgang';
+  $('f_betrag').value=r.betrag!=null?r.betrag:'';
+  $('f_status').value=r.status||'Geplant';
+  $('saveBtn').textContent='Aktualisieren';
+  $('cancelBtn').style.display='inline-block';
+  window.scrollTo({top:0,behavior:'smooth'});
+}
+
+async function saveRow(){
   const rec={
     datum: $('f_datum').value || new Date().toISOString().slice(0,10),
     gesellschaft: $('f_gesell').value || null,
@@ -170,11 +197,16 @@ async function addRow(){
     status: $('f_status').value,
   };
   if(!rec.betrag){ toast('Bitte einen Betrag eingeben.'); return; }
-  const u=(await sb.auth.getUser()).data.user;
-  const { error } = await sb.from('liquiditaet').insert({ ...rec, created_by:u?u.id:null });
+  let error;
+  if(EDIT_ID){
+    ({ error } = await sb.from('liquiditaet').update(rec).eq('id',EDIT_ID));
+  } else {
+    const u=(await sb.auth.getUser()).data.user;
+    ({ error } = await sb.from('liquiditaet').insert({ ...rec, created_by:u?u.id:null }));
+  }
   if(error){ toast('Speichern fehlgeschlagen: '+error.message); return; }
-  $('f_objekt').value=''; $('f_firma').value=''; $('f_thema').value=''; $('f_betrag').value='';
-  await loadAll(); toast('Zahlung hinzugefügt ✓');
+  const wasEdit=!!EDIT_ID; cancelEdit();
+  await loadAll(); toast(wasEdit?'Zahlung aktualisiert ✓':'Zahlung hinzugefügt ✓');
 }
 
 async function delRow(id){
@@ -226,7 +258,7 @@ function render(){
       <td class="${s<0?'neg':'pos'}">${eur(s)}</td>
       <td><select class="sb s-${r.status}" style="border:none;background:transparent;font:inherit;cursor:pointer" onchange="setStatus('${r.id}',this.value)">${opts}</select></td>
       <td class="${saldo<0?'neg':''}" style="font-weight:600">${eur(saldo)}</td>
-      <td><button class="abtn" onclick="delRow('${r.id}')">✕</button></td>
+      <td style="white-space:nowrap"><button class="abtn" onclick="editRow('${r.id}')" title="Bearbeiten">✎</button> <button class="abtn" onclick="delRow('${r.id}')" title="Löschen">✕</button></td>
     </tr>`;
   }).join('');
   $('tbl').innerHTML=`
