@@ -1,23 +1,12 @@
 'use client'
-export default function ProduktivitaetPlanungPage() {
+export default function WochenplanungPage() {
   return (
-    <>
-      <div className="pagehead">
-        <div>
-          <h1>Planung</h1>
-          <div className="sub">Produktivität · in Vorbereitung</div>
-        </div>
-        <div className="actions">
-          <span className="pill demo">in Aufbau</span>
-        </div>
-      </div>
-
-      <div className="card">
-        <h2>Planung</h2>
-        <p className="sub">
-          Diese Seite befindet sich im Aufbau. Hier entsteht das Planungs-Modul für Produktivität.
-        </p>
-      </div>
-    </>
+    <div style={{ margin: '-26px -30px', height: '100vh' }}>
+      <iframe
+        src="/wochenplanung.html"
+        title="Wochenplanung"
+        style={{ width: '100%', height: '100%', border: 'none', display: 'block' }}
+      />
+    </div>
   )
 }

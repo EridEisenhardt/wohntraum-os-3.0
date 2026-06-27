@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Wochenplanung · Macher OS</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+:root{
+  --bg:#f6f7f9;--surf:#fff;--surf2:#f1f3f6;--surf3:#e7ebf0;--line:#e6e8ec;--bord2:#eef0f3;
+  --text:#1c2024;--muted:#6b7280;--dim:#4b5563;
+  --accent:#185fa5;--accent-dk:#134a82;
+  --ok:#1f7a4d;--inarbeit:#185fa5;--warn:#b45309;--danger:#c62828;
+  --top3:#c8741f;
+  --r:8px;--rl:12px;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--text);font-family:'Inter',system-ui,-apple-system,'Segoe UI',sans-serif;font-size:14px;line-height:1.5;font-variant-numeric:tabular-nums}
+.hdr{background:var(--surf);border-bottom:1px solid var(--line);padding:14px 24px;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;position:sticky;top:0;z-index:10}
+.hdr-l{display:flex;align-items:center;gap:12px}
+.logo{background:var(--accent);color:#fff;font-weight:700;font-size:11px;letter-spacing:.08em;padding:5px 9px;border-radius:4px}
+.hdr-title{font-size:16px;font-weight:600}
+.hdr-sub{font-size:11px;color:var(--muted)}
+.wknav{display:flex;align-items:center;gap:6px}
+.wknav button{font-size:14px;font-weight:600;width:30px;height:30px;border-radius:var(--r);border:1px solid var(--line);background:var(--surf2);color:var(--text);cursor:pointer}
+.wknav button:hover{background:var(--surf3)}
+.wknav .kwlbl{font-size:14px;font-weight:600;min-width:120px;text-align:center}
+.main{max-width:1240px;margin:0 auto;padding:20px 24px 60px}
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;margin-bottom:18px}
+.kpi{background:var(--surf);border:1px solid var(--line);border-radius:var(--rl);padding:14px 16px}
+.kpi .l{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px}
+.kpi .v{font-size:24px;font-weight:700;margin-top:4px}
+.kpi .h{font-size:10px;color:var(--muted);margin-top:3px}
+.kpi.big{grid-column:span 2}
+@media(max-width:600px){.kpi.big{grid-column:span 1}}
+.bar{height:12px;background:var(--surf3);border-radius:20px;overflow:hidden;margin-top:8px}
+.bar > div{height:100%;border-radius:20px;background:linear-gradient(90deg,var(--accent),var(--ok));transition:width .4s}
+.sec{background:var(--surf);border:1px solid var(--line);border-radius:var(--rl);margin-bottom:18px;overflow:hidden}
+.sec-hd{padding:12px 16px;border-bottom:1px solid var(--line);display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}
+.sec-hd .t{font-size:14px;font-weight:600;display:flex;align-items:center;gap:8px}
+.sec-hd .dot{width:9px;height:9px;border-radius:3px}
+.sec-hd .prog{font-size:11px;color:var(--muted);font-weight:500}
+.addbtn{font-size:12px;font-weight:600;padding:6px 12px;border-radius:var(--r);border:1px dashed var(--line);background:var(--surf2);color:var(--accent);cursor:pointer}
+.addbtn:hover{background:var(--surf3)}
+.tablewrap{overflow-x:auto}
+table{width:100%;border-collapse:collapse;font-size:12.5px;min-width:760px}
+th,td{padding:7px 10px;text-align:left;border-bottom:1px solid var(--bord2);vertical-align:middle}
+th{font-size:10px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;background:var(--surf2)}
+tr.done td{background:rgba(31,122,77,.05)}
+.cin{width:100%;border:1px solid transparent;background:transparent;font:inherit;color:var(--text);padding:5px 6px;border-radius:5px}
+.cin:hover{border-color:var(--line)} .cin:focus{outline:none;border-color:var(--accent);background:var(--surf)}
+.stsel{font:inherit;font-size:12px;font-weight:600;border:1px solid var(--line);border-radius:20px;padding:4px 8px;cursor:pointer;background:var(--surf2)}
+.st-offen{color:var(--muted)} .st-in_arbeit{color:var(--inarbeit)} .st-erledigt{color:var(--ok)} .st-verschoben{color:var(--warn)} .st-nicht_erledigt{color:var(--danger)}
+.abtn{font-size:12px;padding:3px 8px;border-radius:5px;border:1px solid var(--line);background:transparent;color:var(--muted);cursor:pointer}
+.abtn:hover{color:var(--danger);border-color:var(--danger)}
+.empty{text-align:center;padding:18px;color:var(--muted);font-size:12.5px}
+.toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:var(--surf3);border:1px solid var(--line);border-radius:var(--r);padding:10px 20px;font-size:13px;z-index:9999;opacity:0;transition:opacity .3s;pointer-events:none}
+.toast.show{opacity:1}
+</style>
+</head>
+<body>
+<div class="hdr">
+  <div class="hdr-l">
+    <div class="logo">MACHER OS</div>
+    <div>
+      <div class="hdr-title">Wochenplanung</div>
+      <div class="hdr-sub">Top 3 · Top 9 · laufende Aufgaben · Zielerfüllung in %</div>
+    </div>
+  </div>
+  <div class="wknav">
+    <button onclick="shiftWeek(-1)" title="Vorherige Woche">‹</button>
+    <div class="kwlbl" id="kwlbl">KW —</div>
+    <button onclick="shiftWeek(1)" title="Nächste Woche">›</button>
+    <button onclick="thisWeek()" title="Aktuelle Woche" style="width:auto;padding:0 10px;font-size:12px">heute</button>
+  </div>
+</div>
+
+<div class="main" id="main">
+  <div class="kpis" id="kpis"></div>
+  <div id="sections"></div>
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+const SB_URL='https://jqzxctfqvcwbctpjksvg.supabase.co';
+const SB_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpxenhjdGZxdmN3YmN0cGprc3ZnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODIxMzA0MzIsImV4cCI6MjA5NzcwNjQzMn0.RKIbZxJdusKWWPjBJqlxZ8e1m8So02UslOg55YRsn3o';
+const sb=window.supabase.createClient(SB_URL,SB_KEY);
+const $=id=>document.getElementById(id);
+const esc=s=>(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+function toast(m){const t=$('toast');t.textContent=m;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),2200);}
+
+const BEREICHE=[
+  {key:'top3',    t:'🎯 TOP 3 Ziele — Fokus der Woche', color:'var(--top3)'},
+  {key:'weitere6',t:'TOP 9 — 6 weitere wichtige Aufgaben', color:'var(--accent)'},
+  {key:'laufend', t:'Laufende wichtige Aufgaben', color:'var(--muted)'},
+];
+const STATI=[['offen','Offen ⬜'],['in_arbeit','In Arbeit ▶️'],['erledigt','Erledigt ✅'],['verschoben','Verschoben ⏭️'],['nicht_erledigt','Nicht erledigt ❌']];
+const KATS=['Ankauf','Verkauf','Vermietung','Sanierungen','Bauprojekte','Mitarbeiter','Assetmanagement','Steuer','Finanzierung','Recht','Privat','Sonstiges'];
+
+function isoWeek(d){
+  const date=new Date(Date.UTC(d.getFullYear(),d.getMonth(),d.getDate()));
+  const dayNum=(date.getUTCDay()+6)%7;
+  date.setUTCDate(date.getUTCDate()-dayNum+3);
+  const firstThursday=new Date(Date.UTC(date.getUTCFullYear(),0,4));
+  const kw=1+Math.round(((date-firstThursday)/86400000-3+((firstThursday.getUTCDay()+6)%7))/7);
+  return {kw, jahr:date.getUTCFullYear()};
+}
+function mondayOf(jahr,kw){
+  const simple=new Date(Date.UTC(jahr,0,1+(kw-1)*7));
+  const dow=simple.getUTCDay();
+  const monday=simple;
+  if(dow<=4) monday.setUTCDate(simple.getUTCDate()-((dow+6)%7));
+  else monday.setUTCDate(simple.getUTCDate()+(8-dow));
+  return monday;
+}
+function fmtRange(jahr,kw){
+  const mo=mondayOf(jahr,kw); const su=new Date(mo); su.setUTCDate(mo.getUTCDate()+6);
+  const f=d=>('0'+d.getUTCDate()).slice(-2)+'.'+('0'+(d.getUTCMonth()+1)).slice(-2)+'.';
+  return f(mo)+'–'+f(su)+mo.getUTCFullYear();
+}
+
+let CUR=isoWeek(new Date());
+let ROWS=[];
+
+function shiftWeek(n){
+  const mo=mondayOf(CUR.jahr,CUR.kw); mo.setUTCDate(mo.getUTCDate()+n*7);
+  CUR=isoWeek(new Date(mo.getUTCFullYear(),mo.getUTCMonth(),mo.getUTCDate()));
+  load();
+}
+function thisWeek(){ CUR=isoWeek(new Date()); load(); }
+
+async function load(){
+  $('kwlbl').textContent='KW '+CUR.kw+' · '+CUR.jahr;
+  $('kwlbl').title=fmtRange(CUR.jahr,CUR.kw);
+  const { data, error } = await sb.from('wochenplanung').select('id,bereich,pos,aufgabe,kategorie,prioritaet,status,notizen')
+    .eq('jahr',CUR.jahr).eq('kw',CUR.kw).order('bereich',{ascending:true}).order('pos',{ascending:true}).order('created_at',{ascending:true});
+  if(error){ toast('Fehler beim Laden: '+error.message); ROWS=[]; }
+  else ROWS=data||[];
+  render();
+}
+
+async function addRow(bereich){
+  const max=Math.max(0,...ROWS.filter(r=>r.bereich===bereich).map(r=>r.pos||0));
+  const u=(await sb.auth.getUser()).data.user;
+  const { error } = await sb.from('wochenplanung').insert({ jahr:CUR.jahr, kw:CUR.kw, bereich, pos:max+1, status:'offen', created_by:u?u.id:null });
+  if(error){ toast('Anlegen fehlgeschlagen: '+error.message); return; }
+  await load();
+}
+async function updField(id, field, val){
+  const { error } = await sb.from('wochenplanung').update({ [field]: (val===''?null:val) }).eq('id',id);
+  if(error){ toast('Speichern fehlgeschlagen: '+error.message); return; }
+  const r=ROWS.find(x=>x.id===id); if(r){ r[field]=val; if(field==='status') render(); }
+}
+async function delRow(id){
+  if(!confirm('Aufgabe löschen?')) return;
+  const { error } = await sb.from('wochenplanung').delete().eq('id',id);
+  if(error){ toast('Löschen fehlgeschlagen: '+error.message); return; }
+  await load();
+}
+
+function pct(done,total){ return total? Math.round(done/total*100):0; }
+
+function render(){
+  const top9=ROWS.filter(r=>r.bereich==='top3'||r.bereich==='weitere6');
+  const top9done=top9.filter(r=>r.status==='erledigt').length;
+  const top3=ROWS.filter(r=>r.bereich==='top3');
+  const top3done=top3.filter(r=>r.status==='erledigt').length;
+  const lauf=ROWS.filter(r=>r.bereich==='laufend');
+  const laufdone=lauf.filter(r=>r.status==='erledigt').length;
+  const p=pct(top9done,top9.length);
+  $('kpis').innerHTML=`
+    <div class="kpi big"><div class="l">Zielerfüllung der Woche (Top 9)</div><div class="v">${p}%</div>
+      <div class="bar"><div style="width:${p}%"></div></div>
+      <div class="h">${top9done} von ${top9.length} Wochenzielen erledigt</div></div>
+    <div class="kpi"><div class="l">Top 3 Fokus</div><div class="v">${top3done}/${top3.length||0}</div><div class="h">${pct(top3done,top3.length)}% erledigt</div></div>
+    <div class="kpi"><div class="l">Laufende Aufgaben</div><div class="v">${laufdone}/${lauf.length||0}</div><div class="h">${pct(laufdone,lauf.length)}% erledigt</div></div>`;
+
+  $('sections').innerHTML=BEREICHE.map(b=>{
+    const items=ROWS.filter(r=>r.bereich===b.key);
+    const done=items.filter(r=>r.status==='erledigt').length;
+    const rows=items.map(r=>{
+      const stOpts=STATI.map(s=>`<option value="${s[0]}" ${s[0]===r.status?'selected':''}>${s[1]}</option>`).join('');
+      const katOpts=KATS.map(k=>`<option>${k}</option>`).join('');
+      const prOpts=['','Hoch','Mittel','Niedrig'].map(p=>`<option ${p===(r.prioritaet||'')?'selected':''}>${p||'—'}</option>`).join('');
+      return `<tr class="${r.status==='erledigt'?'done':''}">
+        <td style="min-width:240px"><input class="cin" value="${esc(r.aufgabe)}" placeholder="Aufgabe…" onchange="updField('${r.id}','aufgabe',this.value)"></td>
+        <td><input class="cin" list="katlist" value="${esc(r.kategorie)}" placeholder="Kategorie" style="min-width:120px" onchange="updField('${r.id}','kategorie',this.value)"></td>
+        <td><select class="cin" onchange="updField('${r.id}','prioritaet',this.value==='—'?'':this.value)">${prOpts}</select></td>
+        <td><select class="stsel st-${r.status}" onchange="updField('${r.id}','status',this.value)">${stOpts}</select></td>
+        <td><input class="cin" value="${esc(r.notizen)}" placeholder="Notiz" style="min-width:140px" onchange="updField('${r.id}','notizen',this.value)"></td>
+        <td><button class="abtn" onclick="delRow('${r.id}')" title="Löschen">✕</button></td>
+      </tr>`;
+    }).join('');
+    return `<div class="sec">
+      <div class="sec-hd">
+        <div class="t"><span class="dot" style="background:${b.color}"></span>${b.t}</div>
+        <div style="display:flex;align-items:center;gap:12px">
+          <span class="prog">${done}/${items.length} erledigt</span>
+          <button class="addbtn" onclick="addRow('${b.key}')">+ Aufgabe</button>
+        </div>
+      </div>
+      <div class="tablewrap"><table>
+        <thead><tr><th>Aufgabe</th><th>Kategorie</th><th>Priorität</th><th>Status</th><th>Notiz</th><th></th></tr></thead>
+        <tbody>${rows || `<tr><td colspan="6"><div class="empty">Noch keine Aufgaben — „+ Aufgabe" klicken.</div></td></tr>`}</tbody>
+      </table></div>
+    </div>`;
+  }).join('') + `<datalist id="katlist">${KATS.map(k=>`<option>${k}</option>`).join('')}</datalist>`;
+}
+
+(async()=>{
+  const { data:{ session } } = await sb.auth.getSession();
+  if(!session){ $('main').innerHTML='<div class="empty" style="padding:60px">Bitte zuerst im OS einloggen.</div>'; return; }
+  load();
+})();
+</script>
+</body>
+</html>

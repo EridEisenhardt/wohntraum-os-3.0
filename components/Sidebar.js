@@ -59,7 +59,7 @@ export default function Sidebar({ user, demo, onLogout }) {
         <i className="ti ti-chart-line" /> Tracking
       </Link>
       <Link href="/produktivitaet/planung" className={subCls(path.startsWith('/produktivitaet/planung'))}>
-        <i className="ti ti-calendar-event" /> Planung
+        <i className="ti ti-calendar-event" /> Wochenplanung
       </Link>
       <Link href="/produktivitaet/statusbericht" className={subCls(path.startsWith('/produktivitaet/statusbericht'))}>
         <i className="ti ti-clipboard-check" /> Statusbericht GF
