@@ -92,6 +92,11 @@ table.num td:nth-child(2),table.num th:nth-child(2){text-align:right}
     </tbody>
   </table></div>
 
+  <h2><span class="dot" style="background:var(--dim)"></span>Gesellschaften — Firmenkonto &amp; Steuerdaten</h2>
+  <div class="note">Je Gesellschaft: Bank des Firmenkontos, IBAN, Steuernummer und Steuer-ID — pflegbar, in Supabase gespeichert.</div>
+  <div class="tablewrap"><table class="mini" id="firmtbl"></table></div>
+  <div style="margin-top:8px"><button class="btn" onclick="addFirm()">+ Gesellschaft hinzufügen</button></div>
+
   <h2><span class="dot" style="background:var(--accent)"></span>Vermögensübersicht (Zusammenfassung)</h2>
   <div class="kpis" id="kpis"></div>
 
@@ -102,8 +107,8 @@ table.num td:nth-child(2),table.num th:nth-child(2){text-align:right}
   <h2><span class="dot" style="background:var(--warn)"></span>Weitere Angaben für die Bank</h2>
   <div class="tablewrap"><table class="mini wtbl" id="weitere"></table></div>
 
-  <h2><span class="dot" style="background:var(--rh)"></span>Bürgschaften / Grundschulden je Bank &amp; Objekt</h2>
-  <div class="note">Datenquelle: Register „Darlehen" → Bürgschaften / Grundschulden. Änderungen dort werden hier automatisch übernommen.</div>
+  <h2><span class="dot" style="background:var(--rh)"></span>4 · Bürgschaften / Grundschulden</h2>
+  <div class="note">Datenquelle: Register „Darlehen" → Bürgschaften / Grundschulden (Bank, Nummer der Bank, Objekt, Höhe der Grundschuld). Änderungen dort werden hier automatisch übernommen.</div>
   <div class="tablewrap"><table class="mini" id="buergtbl"></table></div>
 
   <h2><span class="dot" style="background:var(--ee)"></span>2 · Monatliche Einnahmen (Liquidität)</h2>
@@ -234,6 +239,43 @@ function weitere(){
    `</tbody>`;
 }
 
+// ——— Gesellschaften: Firmenkonto & Steuerdaten (Supabase) ———
+const FINL='width:100%;border:1px solid transparent;background:transparent;font:inherit;font-size:12px;color:var(--text);padding:4px 6px;border-radius:5px';
+let FIRM=[];
+async function loadFirm(){
+  const el=document.getElementById('firmtbl'); if(!el) return;
+  const { data, error } = await sb.from('firmenkonten').select('id,gesellschaft,bank,iban,steuernummer,steuer_id,pos').order('pos',{ascending:true}).order('created_at',{ascending:true});
+  FIRM = error ? [] : (data||[]);
+  renderFirm();
+}
+function renderFirm(){
+  const el=document.getElementById('firmtbl'); if(!el) return;
+  const cols=['Gesellschaft','Bank (Firmenkonto)','IBAN','Steuernummer','Steuer-ID',''];
+  const head='<thead><tr>'+cols.map((h,i)=>`<th style="text-align:left${i===0?';min-width:170px':''}">${h}</th>`).join('')+'</tr></thead>';
+  if(!FIRM.length){ el.innerHTML=head+'<tbody><tr><td colspan="6" style="text-align:center;color:var(--muted)">Keine Gesellschaften — „+ Gesellschaft hinzufügen".</td></tr></tbody>'; return; }
+  const v=s=>(s==null?'':String(s)).replace(/"/g,'&quot;');
+  el.innerHTML=head+'<tbody>'+FIRM.map(f=>`<tr>
+    <td><input style="${FINL};font-weight:600" value="${v(f.gesellschaft)}" onchange="updFirm('${f.id}','gesellschaft',this.value)"></td>
+    <td><input style="${FINL}" value="${v(f.bank)}" placeholder="Bank" onchange="updFirm('${f.id}','bank',this.value)"></td>
+    <td><input style="${FINL}" value="${v(f.iban)}" placeholder="DE.." onchange="updFirm('${f.id}','iban',this.value)"></td>
+    <td><input style="${FINL}" value="${v(f.steuernummer)}" placeholder="Steuernr." onchange="updFirm('${f.id}','steuernummer',this.value)"></td>
+    <td><input style="${FINL}" value="${v(f.steuer_id)}" placeholder="Steuer-ID" onchange="updFirm('${f.id}','steuer_id',this.value)"></td>
+    <td style="text-align:center"><button class="btn" style="padding:3px 8px;font-size:11px" onclick="delFirm('${f.id}')">✕</button></td>
+  </tr>`).join('')+'</tbody>';
+}
+async function addFirm(){
+  const max=Math.max(0,...FIRM.map(f=>f.pos||0));
+  const u=(await sb.auth.getUser()).data.user;
+  const { error } = await sb.from('firmenkonten').insert({ gesellschaft:'Neue Gesellschaft', pos:max+1, created_by:u?u.id:null });
+  if(error){ alert('Fehler: '+error.message); return; }
+  loadFirm();
+}
+async function updFirm(id,field,val){
+  const { error } = await sb.from('firmenkonten').update({ [field]: (val.trim()||null) }).eq('id',id);
+  if(!error){ const r=FIRM.find(x=>x.id===id); if(r) r[field]=val; }
+}
+async function delFirm(id){ if(!confirm('Gesellschaft entfernen?'))return; await sb.from('firmenkonten').delete().eq('id',id); loadFirm(); }
+
 // ——— Ergänzende Selbstangaben (localStorage) ———
 const STORE="macherOS_selbstauskunft_v1";
 const FIELDS=[
@@ -263,7 +305,7 @@ function saveF(){
 document.getElementById("foot").innerHTML=
  `<b>Hinweis:</b> Immobilien, Mieteinnahmen, Darlehensraten und Restschulden stammen aus dem Register 'Portfolio' (Macher OS, Stand 21.06.2026, Summe Restschuld 3.233.157,46 €) und entsprechen den im Chat 'Selbstauskunft bei der Bank' festgelegten aktuellen Bankwerten. Marktwerte: PriceHubble. Bürgschaften und Eventualverbindlichkeiten vertraglich fixiert. Persönliche Angaben (Einkommen, Vermögen, Kontostände) werden hier nicht fest gespeichert, sondern lokal im Browser gepflegt.`;
 
-kpis(); objtbl(); weitere(); form(); loadBuergSA();
+kpis(); objtbl(); weitere(); form(); loadBuergSA(); loadFirm();
 </script>
 </body>
 </html>
