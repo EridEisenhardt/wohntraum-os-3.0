@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Selbstauskunft für die Bank · Macher OS</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
 :root{
   --bg:#f6f7f9;--surf:#fff;--surf2:#f1f3f6;--line:#e6e8ec;--bord2:#eef0f3;
@@ -101,6 +102,10 @@ table.num td:nth-child(2),table.num th:nth-child(2){text-align:right}
   <h2><span class="dot" style="background:var(--warn)"></span>Weitere Angaben für die Bank</h2>
   <div class="tablewrap"><table class="mini wtbl" id="weitere"></table></div>
 
+  <h2><span class="dot" style="background:var(--rh)"></span>Bürgschaften / Grundschulden je Bank &amp; Objekt</h2>
+  <div class="note">Datenquelle: Register „Darlehen" → Bürgschaften / Grundschulden. Änderungen dort werden hier automatisch übernommen.</div>
+  <div class="tablewrap"><table class="mini" id="buergtbl"></table></div>
+
   <h2><span class="dot" style="background:var(--ee)"></span>2 · Monatliche Einnahmen (Liquidität)</h2>
   <div class="note">Monatliche Netto-Einnahmen. Nachrichtlich: zu versteuerndes Einkommen laut Steuerbescheid 2022 = 27.421 € / Jahr.</div>
   <div class="tablewrap"><table class="mini">
@@ -152,6 +157,22 @@ const OBJ=[
 const ENT={ee:{n:"Eric Eisenhardt (privat)",c:"var(--ee)"},rh:{n:"Wohn(T)raum Rheinhessen GmbH",c:"var(--rh)"}};
 const eur=n=>n==null?"—":Math.round(n).toLocaleString("de-DE")+" €";
 const eur2=n=>n==null?"—":n.toLocaleString("de-DE",{minimumFractionDigits:2,maximumFractionDigits:2})+" €";
+const SB_URL='https://jqzxctfqvcwbctpjksvg.supabase.co';
+const SB_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpxenhjdGZxdmN3YmN0cGprc3ZnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODIxMzA0MzIsImV4cCI6MjA5NzcwNjQzMn0.RKIbZxJdusKWWPjBJqlxZ8e1m8So02UslOg55YRsn3o';
+const sb=window.supabase.createClient(SB_URL,SB_KEY);
+const escH=s=>(s==null||s==='')?'—':String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;');
+async function loadBuergSA(){
+  const el=document.getElementById('buergtbl'); if(!el) return;
+  const head='<thead><tr><th>Bank</th><th style="text-align:left">Nummer der Bank</th><th style="text-align:left">Objekt</th><th>Höhe Grundschuld</th></tr></thead>';
+  const { data, error } = await sb.from('buergschaften').select('bank,nummer,objekt,grundschuld').order('created_at',{ascending:true});
+  if(error || !data || !data.length){
+    el.innerHTML=head+'<tbody><tr><td colspan="4" style="text-align:center;color:var(--muted);white-space:normal">Noch keine Bürgschaften / Grundschulden erfasst — im Register „Darlehen" pflegen.</td></tr></tbody>';
+    return;
+  }
+  const total=data.reduce((s,b)=>s+Number(b.grundschuld||0),0);
+  el.innerHTML=head+'<tbody>'+data.map(b=>`<tr><td>${escH(b.bank)}</td><td style="text-align:left">${escH(b.nummer)}</td><td style="text-align:left">${escH(b.objekt)}</td><td>${eur(b.grundschuld)}</td></tr>`).join('')+
+    `<tr class="totrow"><td colspan="3">Summe Grundschulden</td><td>${eur(total)}</td></tr></tbody>`;
+}
 
 function sum(list,f){return list.reduce((s,o)=>s+(f(o)||0),0);}
 const ALL=OBJ, EE=OBJ.filter(o=>o.ent==="ee"), RH=OBJ.filter(o=>o.ent==="rh");
@@ -242,7 +263,7 @@ function saveF(){
 document.getElementById("foot").innerHTML=
  `<b>Hinweis:</b> Immobilien, Mieteinnahmen, Darlehensraten und Restschulden stammen aus dem Register 'Portfolio' (Macher OS, Stand 21.06.2026, Summe Restschuld 3.233.157,46 €) und entsprechen den im Chat 'Selbstauskunft bei der Bank' festgelegten aktuellen Bankwerten. Marktwerte: PriceHubble. Bürgschaften und Eventualverbindlichkeiten vertraglich fixiert. Persönliche Angaben (Einkommen, Vermögen, Kontostände) werden hier nicht fest gespeichert, sondern lokal im Browser gepflegt.`;
 
-kpis(); objtbl(); weitere(); form();
+kpis(); objtbl(); weitere(); form(); loadBuergSA();
 </script>
 </body>
 </html>

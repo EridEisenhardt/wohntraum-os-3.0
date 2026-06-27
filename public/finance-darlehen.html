@@ -239,6 +239,22 @@ textarea{resize:vertical;min-height:60px}
       <div id="tlPanel"></div>
     </div>
   </div>
+
+  <!-- BÜRGSCHAFTEN / GRUNDSCHULDEN -->
+  <div class="panel" style="margin-bottom:22px">
+    <div class="panel-hdr">🛡️ Bürgschaften / Grundschulden
+      <span style="font-size:10px;font-weight:400;color:var(--muted);margin-left:6px">Datenquelle · wird in der Selbstauskunft für die Bank geführt</span>
+    </div>
+    <div style="padding:12px 16px;display:flex;flex-wrap:wrap;gap:8px;align-items:flex-end;border-bottom:1px solid var(--bord2)">
+      <input class="sel" id="b_bank" type="text" placeholder="Bank" style="min-width:150px">
+      <input class="sel" id="b_nummer" type="text" placeholder="Nummer der Bank" style="min-width:150px">
+      <input class="sel" id="b_objekt" type="text" list="b_objekte" placeholder="Objekt" style="min-width:110px">
+      <input class="sel" id="b_grund" type="number" min="0" step="1000" placeholder="Höhe Grundschuld €" style="min-width:150px;text-align:right">
+      <button class="btn btn-accent" onclick="addBuerg()">+ Hinzufügen</button>
+      <datalist id="b_objekte"><option>S16</option><option>E4</option><option>A14</option><option>R6</option><option>K28</option><option>K10</option><option>V11</option><option>H3</option><option>K7</option><option>M8</option><option>H44</option><option>KW30</option><option>U6</option><option>S58</option><option>K6</option></datalist>
+    </div>
+    <div id="buergArea"></div>
+  </div>
 </div>
 <!-- MODAL -->
 <div class="ov" id="ov" onclick="closeModal(event)">
@@ -844,6 +860,49 @@ function exportXLSX(){
   XLSX.writeFile(wb, 'MacherOS_Darlehensregister.xlsx');
   toast('Excel-Datei wird heruntergeladen ↓');
 }
+// ══════ BÜRGSCHAFTEN / GRUNDSCHULDEN ══════
+let BUERG=[];
+const CINL='width:100%;border:1px solid transparent;background:transparent;font:inherit;font-size:12px;color:var(--text);padding:5px 7px;border-radius:5px';
+async function loadBuerg(){
+  const { data, error } = await sb.from('buergschaften').select('id,bank,nummer,objekt,grundschuld').order('created_at',{ascending:true});
+  if(error){ toast('Bürgschaften: '+error.message); BUERG=[]; } else BUERG=data||[];
+  renderBuerg();
+}
+async function addBuerg(){
+  const g=id=>document.getElementById(id);
+  const rec={ bank:g('b_bank').value.trim()||null, nummer:g('b_nummer').value.trim()||null, objekt:g('b_objekt').value.trim()||null, grundschuld:parseFloat(g('b_grund').value)||0 };
+  if(!rec.bank && !rec.objekt && !rec.grundschuld){ toast('Bitte Bank, Objekt oder Grundschuld angeben'); return; }
+  const u=(await sb.auth.getUser()).data.user;
+  const { error } = await sb.from('buergschaften').insert({ ...rec, created_by:u?u.id:null });
+  if(error){ toast('Speichern fehlgeschlagen: '+error.message); return; }
+  ['b_bank','b_nummer','b_objekt','b_grund'].forEach(i=>g(i).value='');
+  await loadBuerg(); toast('Bürgschaft gespeichert ✓');
+}
+async function updBuerg(id,field,val){
+  const v = field==='grundschuld' ? (parseFloat(val)||0) : (String(val).trim()||null);
+  const { error } = await sb.from('buergschaften').update({ [field]: v }).eq('id',id);
+  if(error){ toast('Speichern fehlgeschlagen: '+error.message); return; }
+  const r=BUERG.find(x=>x.id===id); if(r) r[field]=v; renderBuerg();
+}
+async function delBuerg(id){ if(!confirm('Bürgschaft löschen?'))return; const { error } = await sb.from('buergschaften').delete().eq('id',id); if(error){ toast('Löschen fehlgeschlagen: '+error.message); return; } await loadBuerg(); toast('Bürgschaft gelöscht'); }
+function renderBuerg(){
+  const area=document.getElementById('buergArea'); if(!area) return;
+  if(!BUERG.length){ area.innerHTML='<div class="empty" style="padding:22px">Noch keine Bürgschaften / Grundschulden erfasst.</div>'; return; }
+  const total=BUERG.reduce((s,b)=>s+Number(b.grundschuld||0),0);
+  const esc=s=>(s||'').replace(/"/g,'&quot;');
+  const rows=BUERG.map(b=>`<tr>
+    <td><input style="${CINL}" value="${esc(b.bank)}" onchange="updBuerg('${b.id}','bank',this.value)"></td>
+    <td><input style="${CINL}" value="${esc(b.nummer)}" onchange="updBuerg('${b.id}','nummer',this.value)"></td>
+    <td><input style="${CINL}" value="${esc(b.objekt)}" onchange="updBuerg('${b.id}','objekt',this.value)"></td>
+    <td class="tr"><input type="number" style="${CINL};text-align:right" value="${b.grundschuld!=null?b.grundschuld:''}" onchange="updBuerg('${b.id}','grundschuld',this.value)"></td>
+    <td class="tc"><button class="abtn del" onclick="delBuerg('${b.id}')">✕</button></td>
+  </tr>`).join('');
+  area.innerHTML=`<table>
+    <thead><tr><th>Bank</th><th>Nummer der Bank</th><th>Objekt</th><th class="tr">Höhe Grundschuld</th><th></th></tr></thead>
+    <tbody>${rows}</tbody>
+    <tbody><tr><td colspan="3" class="tr" style="font-weight:600;border-top:2px solid var(--border)">Summe Grundschulden</td><td class="tr mono" style="font-weight:700;border-top:2px solid var(--border)">${fmtE(total)}</td><td style="border-top:2px solid var(--border)"></td></tr></tbody>
+  </table>`;
+}
 // ══════ MAIN RENDER ══════
 function render(){
   renderKPI();
@@ -855,7 +914,7 @@ function render(){
 (async()=>{
   const { data:{ session } } = await sb.auth.getSession();
   if(!session){ renderKPI(); renderTabs(); document.getElementById('tableArea').innerHTML='<div class="twrap"><div class="empty"><div class="empty-ico">\uD83D\uDD12</div>Bitte zuerst im OS einloggen.</div></div>'; return; }
-  loadDB();
+  loadDB(); loadBuerg();
 })();
 </script>
 </body>
