@@ -77,6 +77,21 @@ tr.done td{background:rgba(31,122,77,.05)}
 
 <div class="main" id="main">
   <div class="kpis" id="kpis"></div>
+
+  <div class="sec" style="margin-bottom:18px">
+    <div class="sec-hd"><div class="t"><span class="dot" style="background:#c8741f"></span>Top 3 Fragen zur Wochenplanung</div>
+      <span class="prog" id="fragenSaved"></span>
+    </div>
+    <div style="padding:14px 16px;display:grid;gap:14px">
+      <div><label style="font-size:12.5px;font-weight:600;color:var(--dim)">1 · Was ist kommende Woche wirklich wichtig?</label>
+        <textarea id="fa1" rows="2" style="width:100%;margin-top:5px;border:1px solid var(--line);border-radius:8px;padding:8px 10px;font:inherit;font-size:13px;resize:vertical;background:var(--surf2)" onchange="saveFragen()"></textarea></div>
+      <div><label style="font-size:12.5px;font-weight:600;color:var(--dim)">2 · Was bringt mich und meine Jahresziele wirklich voran?</label>
+        <textarea id="fa2" rows="2" style="width:100%;margin-top:5px;border:1px solid var(--line);border-radius:8px;padding:8px 10px;font:inherit;font-size:13px;resize:vertical;background:var(--surf2)" onchange="saveFragen()"></textarea></div>
+      <div><label style="font-size:12.5px;font-weight:600;color:var(--dim)">3 · Von welchen Dingen möchte ich mich nicht ablenken lassen?</label>
+        <textarea id="fa3" rows="2" style="width:100%;margin-top:5px;border:1px solid var(--line);border-radius:8px;padding:8px 10px;font:inherit;font-size:13px;resize:vertical;background:var(--surf2)" onchange="saveFragen()"></textarea></div>
+    </div>
+  </div>
+
   <div id="sections"></div>
 </div>
 <div class="toast" id="toast"></div>
@@ -137,6 +152,20 @@ async function load(){
   if(error){ toast('Fehler beim Laden: '+error.message); ROWS=[]; }
   else ROWS=data||[];
   render();
+  loadFragen();
+}
+
+async function loadFragen(){
+  const { data } = await sb.from('wochen_fragen').select('antwort1,antwort2,antwort3').eq('jahr',CUR.jahr).eq('kw',CUR.kw).maybeSingle();
+  $('fa1').value=data?.antwort1||''; $('fa2').value=data?.antwort2||''; $('fa3').value=data?.antwort3||'';
+  $('fragenSaved').textContent='';
+}
+let fragenTimer=null;
+async function saveFragen(){
+  const rec={ jahr:CUR.jahr, kw:CUR.kw, antwort1:$('fa1').value.trim()||null, antwort2:$('fa2').value.trim()||null, antwort3:$('fa3').value.trim()||null, updated_at:new Date().toISOString() };
+  const { error } = await sb.from('wochen_fragen').upsert(rec, { onConflict:'jahr,kw' });
+  $('fragenSaved').textContent = error ? 'Fehler: '+error.message : 'gespeichert ✓';
+  clearTimeout(fragenTimer); fragenTimer=setTimeout(()=>{ $('fragenSaved').textContent=''; }, 2000);
 }
 
 async function addRow(bereich){
