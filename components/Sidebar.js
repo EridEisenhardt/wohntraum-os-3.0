@@ -40,11 +40,28 @@ export default function Sidebar({ user, demo, onLogout }) {
       </Link>
 
       <div className="nav-group">
+        <i className="ti ti-rocket lead" /> Produktivität
+        <i className="ti ti-chevron-down chev" />
+      </div>
+      <Link href="/produktivitaet/tracking" className={subCls(path.startsWith('/produktivitaet/tracking'))}>
+        <i className="ti ti-chart-line" /> Tracking
+      </Link>
+      <Link href="/produktivitaet/planung" className={subCls(path.startsWith('/produktivitaet/planung'))}>
+        <i className="ti ti-calendar-event" /> Planung
+      </Link>
+
+      <div className="nav-group">
         <i className="ti ti-cash lead" /> Finance
         <i className="ti ti-chevron-down chev" />
       </div>
       <Link href="/finance/darlehen" className={subCls(path.startsWith('/finance/darlehen'))}>
         <i className="ti ti-businessplan" /> Darlehen
+      </Link>
+      <Link href="/finance/selbstauskunft" className={subCls(path.startsWith('/finance/selbstauskunft'))}>
+        <i className="ti ti-user-search" /> Selbstauskunft für die Bank
+      </Link>
+      <Link href="/finance/reporting" className={subCls(path.startsWith('/finance/reporting'))}>
+        <i className="ti ti-report-analytics" /> Reporting für die Bank
       </Link>
 
       <Link href="/dokumente" className={cls(path.startsWith('/dokumente'))}>
