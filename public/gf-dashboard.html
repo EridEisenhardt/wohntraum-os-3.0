@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Macher OS – GF Dashboard</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
   :root {
     --bg: #f6f7f9;
@@ -315,6 +316,17 @@
         <button class="chip chip-privat"      data-gfilter="Privat"           onclick="setGesFilter(this)">Privat</button>
       </div>
     </div>
+    <div class="addproj" style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);padding:14px 16px;margin-bottom:14px">
+      <div style="font-size:13px;font-weight:600;margin-bottom:10px;color:var(--text)">+ Neues Projekt</div>
+      <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:flex-end">
+        <div style="flex:2;min-width:200px"><label style="display:block;font-size:11px;color:var(--text-muted);margin-bottom:3px">Projektname *</label><input id="np_name" type="text" placeholder="Projektname" style="width:100%;padding:8px 10px;border:1px solid var(--border);border-radius:var(--radius);font-family:inherit;font-size:13px"></div>
+        <div style="flex:1;min-width:140px"><label style="display:block;font-size:11px;color:var(--text-muted);margin-bottom:3px">Gesellschaft</label><select id="np_ges" style="width:100%;padding:8px 10px;border:1px solid var(--border);border-radius:var(--radius);font-family:inherit;font-size:13px"><option>Holding</option><option>Wohn(T)raum Rhh</option><option>EE Immobilien</option><option>Kibo GmbH</option><option>Wonnegau GmbH</option><option>Privat</option><option selected>Intern</option></select></div>
+        <div style="flex:1;min-width:130px"><label style="display:block;font-size:11px;color:var(--text-muted);margin-bottom:3px">Fachbereich</label><select id="np_cat" style="width:100%;padding:8px 10px;border:1px solid var(--border);border-radius:var(--radius);font-family:inherit;font-size:13px"><option value="ankauf">Ankauf</option><option value="verkauf">Verkauf</option><option value="einzug">Einzug</option><option value="auszug">Auszug</option><option value="verw">Verwaltung</option><option value="sonstige" selected>Sonstige</option></select></div>
+        <div style="flex:1;min-width:130px"><label style="display:block;font-size:11px;color:var(--text-muted);margin-bottom:3px">Fällig bis</label><input id="np_due" type="date" style="width:100%;padding:8px 10px;border:1px solid var(--border);border-radius:var(--radius);font-family:inherit;font-size:13px"></div>
+        <button onclick="addProject()" style="padding:9px 16px;background:var(--gold);color:#fff;border:none;border-radius:var(--radius);font-weight:600;font-size:13px;cursor:pointer;white-space:nowrap">Hinzufügen</button>
+      </div>
+      <div style="margin-top:8px"><input id="np_url" type="text" placeholder="Asana-Link (optional)" style="width:100%;padding:8px 10px;border:1px solid var(--border);border-radius:var(--radius);font-family:inherit;font-size:13px"></div>
+    </div>
     <div class="result-count" id="result-count"></div>
     <div class="project-list" id="project-list"></div>
   </div>
@@ -435,58 +447,34 @@ const CAT_CONFIG = {
   verw:    { label: "Verwaltung",  cls: "cat-verw" },
   sonstige:{ label: "Sonstige",    cls: "cat-sonstige" },
 };
-const PROJECTS = [
-  { name:"Wohntraum Kommunikation und ToDo´s Intern",               url:"https://app.asana.com/1/1206683226417804/project/1210556180872903", cat:"verw",    due:null,         gesellschaft:"Intern" },
-  { name:"Ziele Jahresplaner 2026",                                 url:"https://app.asana.com/1/1206683226417804/project/1212677018559610", cat:"sonstige", due:null,         gesellschaft:"Holding" },
-  { name:"Organisationsboard Eric mit Außendienst",                 url:"https://app.asana.com/1/1206683226417804/project/1207726557859272", cat:"sonstige", due:null,         gesellschaft:"Holding" },
-  { name:"Claude AI Einführen",                                     url:"https://app.asana.com/1/1206683226417804/project/1215205124364644", cat:"sonstige", due:null,         gesellschaft:"Holding" },
-  { name:"Anschaffungen Eric",                                      url:"https://app.asana.com/1/1206683226417804/project/1208542400147784", cat:"sonstige", due:null,         gesellschaft:"Privat" },
-  { name:"Eric´s schönes zu Hause",                                 url:"https://app.asana.com/1/1206683226417804/project/1214576684151364", cat:"sonstige", due:null,         gesellschaft:"Privat" },
-  { name:"Ziele von Eric für 2026",                                 url:"https://app.asana.com/1/1206683226417804/project/1212600884794790", cat:"sonstige", due:null,         gesellschaft:"Holding" },
-  { name:"VERKAUF · B20 · Am Bogen 20, Westhofen",                 url:"https://app.asana.com/1/1206683226417804/project/1210472823727685", cat:"verkauf",  due:null,         gesellschaft:"Wohn(T)raum Rhh" },
-  { name:"Mietanpassungen / Mieterhöhung",                         url:"https://app.asana.com/1/1206683226417804/project/1207767638849620", cat:"verw",    due:null,         gesellschaft:"EE Immobilien" },
-  { name:"Dealtrading Board – Ankauf/Verkauf Status",              url:"https://app.asana.com/1/1206683226417804/project/1208091432714166", cat:"ankauf",  due:null,         gesellschaft:"Wohn(T)raum Rhh" },
-  { name:"VERKAUF · WTW48 · Wormser Str. 48, Oppenheim",          url:"https://app.asana.com/1/1206683226417804/project/1207548142449825", cat:"verkauf",  due:null,         gesellschaft:"Wohn(T)raum Rhh" },
-  { name:"R6 Stammdatenerfassung",                                  url:"https://app.asana.com/1/1206683226417804/project/1215622921859626", cat:"verw",    due:null,         gesellschaft:"EE Immobilien" },
-  { name:"Hausverwaltung",                                          url:"https://app.asana.com/1/1206683226417804/project/1206725008645595", cat:"verw",    due:null,         gesellschaft:"Kibo GmbH" },
-  { name:"Liquidität, Kredite, Anschlussfinanzierungen",           url:"https://app.asana.com/1/1206683226417804/project/1206718410079470", cat:"verw",    due:null,         gesellschaft:"Wonnegau GmbH" },
-  { name:"R6 · WE9 · KUCHYNSKA Nataliia",                          url:"https://app.asana.com/1/1206683226417804/project/1215351741958997", cat:"verw",    due:null,         gesellschaft:"EE Immobilien" },
-  { name:"EINZUG · R6 · KUCHYNSKA Nataliia · 01.06.2026",         url:"https://app.asana.com/1/1206683226417804/project/1215351820992607", cat:"einzug",  due:"2026-07-15", gesellschaft:"EE Immobilien" },
-  { name:"R6 · WE10 · Humeniuk, Tetiana",                          url:"https://app.asana.com/1/1206683226417804/project/1215339713156555", cat:"verw",    due:null,         gesellschaft:"EE Immobilien" },
-  { name:"EINZUG · R6 · Humeniuk, Tetiana · 01.06.2026",          url:"https://app.asana.com/1/1206683226417804/project/1215339713156533", cat:"einzug",  due:"2026-07-15", gesellschaft:"EE Immobilien" },
-  { name:"Aquise Ankauf von Immobilien",                            url:"https://app.asana.com/1/1206683226417804/project/1207414840575489", cat:"ankauf",  due:null,         gesellschaft:"Wohn(T)raum Rhh" },
-  { name:"Prozessoptimierung",                                      url:"https://app.asana.com/1/1206683226417804/project/1206721124851026", cat:"sonstige", due:null,         gesellschaft:"Holding" },
-  { name:"Projekte (Kibo)",                                         url:"https://app.asana.com/1/1206683226417804/project/1211436050367893", cat:"verw",    due:null,         gesellschaft:"Kibo GmbH" },
-  { name:"M8 · WE6 · FOLLER, Steven",                              url:"https://app.asana.com/1/1206683226417804/project/1215339713156421", cat:"verw",    due:null,         gesellschaft:"EE Immobilien" },
-  { name:"M8 Wasserschaden Segeth – 2.OG Stirnseite",              url:"https://app.asana.com/1/1206683226417804/project/1206808246791251", cat:"verw",    due:"2024-03-11", gesellschaft:"EE Immobilien" },
-  { name:"Wohnung von Eric",                                        url:"https://app.asana.com/1/1206683226417804/project/1213744471036746", cat:"sonstige", due:null,         gesellschaft:"Privat" },
-  { name:"7110 Offene Mieten von Mietern",                         url:"https://app.asana.com/1/1206683226417804/project/1210694240411231", cat:"verw",    due:null,         gesellschaft:"Kibo GmbH" },
-  { name:"EINZUG · A14 · Hans Keml · 01.04.2026",                 url:"https://app.asana.com/1/1206683226417804/project/1213710909717467", cat:"einzug",  due:"2026-04-29", gesellschaft:"EE Immobilien" },
-  { name:"Zählerablesung 2025/26 – alle Gebäude",                  url:"https://app.asana.com/1/1206683226417804/project/1212514112507376", cat:"verw",    due:null,         gesellschaft:"Kibo GmbH" },
-  { name:"3000 Kautionsübersicht",                                  url:"https://app.asana.com/1/1206683226417804/project/1213582775034480", cat:"verw",    due:null,         gesellschaft:"EE Immobilien" },
-  { name:"VERMIETUNG – Leadbearbeitung & Interessentenpool",       url:"https://app.asana.com/1/1206683226417804/project/1211952219116515", cat:"verw",    due:null,         gesellschaft:"Kibo GmbH" },
-  { name:"EBK Einbauküchen – Aufbau, Reparatur, Tausch",          url:"https://app.asana.com/1/1206683226417804/project/1206773535068652", cat:"verw",    due:null,         gesellschaft:"Kibo GmbH" },
-  { name:"Reparaturen & Hausmeisterdienst in Abarbeitung",         url:"https://app.asana.com/1/1206683226417804/project/1211241816724306", cat:"verw",    due:null,         gesellschaft:"Kibo GmbH" },
-  { name:"AUSZUG · H44 · Foller, Steven · 31.05.2026",            url:"https://app.asana.com/1/1206683226417804/project/1215120980076964", cat:"auszug",  due:"2026-05-26", gesellschaft:"Wohn(T)raum Rhh" },
-  { name:"EINZUG · M8 · Foller, Steven · 01.06.2026",             url:"https://app.asana.com/1/1206683226417804/project/1215120980076955", cat:"einzug",  due:"2026-07-07", gesellschaft:"EE Immobilien" },
-  { name:"AUSZUG · M8 · Plitzko-Foller · 31.05.2026",             url:"https://app.asana.com/1/1206683226417804/project/1215121089962160", cat:"auszug",  due:"2026-05-26", gesellschaft:"EE Immobilien" },
-  { name:"V_Ziele Jahresplaner 202x",                              url:"https://app.asana.com/1/1206683226417804/project/1212634187071165", cat:"sonstige", due:null,         gesellschaft:"Holding" },
-  { name:"Netzwerk",                                               url:"https://app.asana.com/1/1206683226417804/project/1206876152044689", cat:"sonstige", due:null,         gesellschaft:"Holding" },
-  { name:"ANKAUF · EER6 · Am Römer 6, Gundersheim",               url:"https://app.asana.com/1/1206683226417804/project/1213697184510788", cat:"ankauf",  due:null,         gesellschaft:"EE Immobilien" },
-  { name:"VERKAUF · K28 · Krämerstr. 28, Oppenheim",              url:"https://app.asana.com/1/1206683226417804/project/1208146946325227", cat:"verkauf",  due:null,         gesellschaft:"Wohn(T)raum Rhh" },
-  { name:"VERKAUF · B61 · Bädergasse 61, Oppenheim",              url:"https://app.asana.com/1/1206683226417804/project/1208794785795649", cat:"verkauf",  due:null,         gesellschaft:"Wohn(T)raum Rhh" },
-  { name:"VERKAUF · M55 · Marnheimer Str. 55, Kirchheimbolanden", url:"https://app.asana.com/1/1206683226417804/project/1211795252931011", cat:"verkauf",  due:null,         gesellschaft:"Wohn(T)raum Rhh" },
-  { name:"VERKAUF · S6 · Stiftstraße 6a, Worms – Karl Platt",    url:"https://app.asana.com/1/1206683226417804/project/1207247092602374", cat:"verkauf",  due:null,         gesellschaft:"Wohn(T)raum Rhh" },
-  { name:"VERKAUF · Rh24 · Rheinstraße 24, Nierstein",            url:"https://app.asana.com/1/1206683226417804/project/1209138161030342", cat:"verkauf",  due:null,         gesellschaft:"Wohn(T)raum Rhh" },
-  { name:"VERKAUF · WTKibo · Marnheimer Str. 55, KIB",            url:"https://app.asana.com/1/1206683226417804/project/1212899116381459", cat:"verkauf",  due:null,         gesellschaft:"Kibo GmbH" },
-  { name:"ANKAUF · S16 · St.-Georgenstr. 16, Alzey",              url:"https://app.asana.com/1/1206683226417804/project/1207608963041352", cat:"ankauf",  due:null,         gesellschaft:"EE Immobilien" },
-  { name:"Ideenparkhaus",                                           url:"https://app.asana.com/1/1206683226417804/project/1213520578799397", cat:"sonstige", due:null,         gesellschaft:"Holding" },
-  { name:"Ideen & Aufgabenparkhaus – Business Mentoring",          url:"https://app.asana.com/1/1206683226417804/project/1206797192826475", cat:"sonstige", due:null,         gesellschaft:"Holding" },
-  { name:"S16 · WE2.7 · AHMAD, Majid",                             url:"https://app.asana.com/1/1206683226417804/project/1214911038272277", cat:"verw",    due:null,         gesellschaft:"EE Immobilien" },
-  { name:"EINZUG · S16 · AHMAD, Majid · 15.05.2026",             url:"https://app.asana.com/1/1206683226417804/project/1214882918149504", cat:"einzug",  due:"2026-06-29", gesellschaft:"EE Immobilien" },
-  { name:"K28 · WE1.1 · EFTHYMIA Loakeimidou",                    url:"https://app.asana.com/1/1206683226417804/project/1214727809770997", cat:"verw",    due:null,         gesellschaft:"EE Immobilien" },
-  { name:"EINZUG · K28 · EFTHYMIA Loakeimidou · 15.05.2026",     url:"https://app.asana.com/1/1206683226417804/project/1214727809770940", cat:"einzug",  due:"2026-06-24", gesellschaft:"EE Immobilien" },
-];
+let PROJECTS = []; // Daten kommen aus Supabase (gf_projects)
+// ——— SUPABASE ———
+const SB_URL='https://jqzxctfqvcwbctpjksvg.supabase.co';
+const SB_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpxenhjdGZxdmN3YmN0cGprc3ZnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODIxMzA0MzIsImV4cCI6MjA5NzcwNjQzMn0.RKIbZxJdusKWWPjBJqlxZ8e1m8So02UslOg55YRsn3o';
+const sb=window.supabase.createClient(SB_URL,SB_KEY);
+async function loadProjects(){
+  const {data,error}=await sb.from('gf_projects').select('id,name,url,cat,due,gesellschaft').order('created_at',{ascending:false});
+  if(error){console.error('gf_projects load:',error.message);PROJECTS=[];}
+  else PROJECTS=(data||[]).map(r=>({id:r.id,name:r.name,url:r.url||'',cat:r.cat||'sonstige',due:r.due||null,gesellschaft:r.gesellschaft||'Intern'}));
+  renderProjects();
+}
+async function addProject(){
+  const g=id=>document.getElementById(id);
+  const name=g('np_name').value.trim();
+  if(!name){alert('Bitte einen Projektnamen eingeben.');return;}
+  const rec={name,url:g('np_url').value.trim()||null,cat:g('np_cat').value,due:g('np_due').value||null,gesellschaft:g('np_ges').value};
+  const u=(await sb.auth.getUser()).data.user;
+  const {error}=await sb.from('gf_projects').insert({...rec,created_by:u?u.id:null});
+  if(error){alert('Speichern fehlgeschlagen: '+error.message);return;}
+  ['np_name','np_url','np_due'].forEach(i=>g(i).value='');
+  await loadProjects();
+}
+async function delProject(id){
+  if(!confirm('Projekt löschen?'))return;
+  const {error}=await sb.from('gf_projects').delete().eq('id',id);
+  if(error){alert('Löschen fehlgeschlagen: '+error.message);return;}
+  await loadProjects();
+}
 // ——— STATE ———
 let activeCat = "all";
 let activeGes = "all";
@@ -528,7 +516,8 @@ function renderProjects() {
       </div>
       <div class="project-right">
         <span class="cat-badge ${cc.cls}">${cc.label}</span>
-        <a class="asana-link" href="${p.url}" target="_blank" rel="noopener">↗ Asana</a>
+        ${p.url?`<a class="asana-link" href="${p.url}" target="_blank" rel="noopener">↗ Asana</a>`:""}
+        <button onclick="delProject('${p.id}')" title="Löschen" style="background:none;border:1px solid var(--border);color:var(--text-dim);border-radius:var(--radius);padding:3px 9px;cursor:pointer;font-size:12px">✕</button>
       </div>
     </div>`;
   }).join("");
@@ -581,7 +570,7 @@ const now = new Date();
 document.getElementById("live-date").textContent =
   now.toLocaleDateString("de-DE", { day:"2-digit", month:"2-digit", year:"numeric" });
 // ——— INIT ———
-renderProjects();
+loadProjects();
 </script>
 </body>
 </html>
