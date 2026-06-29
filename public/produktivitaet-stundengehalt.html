@@ -6,6 +6,7 @@
 <title>Produktivität · Stundengehalt – Macher OS</title>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
 <style>
 :root{
   --bg:#f6f7f9;--surf:#fff;--surf2:#f1f3f6;--surf3:#e7ebf0;--line:#e6e8ec;--bord2:#eef0f3;
@@ -58,6 +59,15 @@ pre{background:#0f1115;color:#e7ebf0;border-radius:var(--r);padding:16px;overflo
 .cw{background:var(--surf2);border:1px solid var(--line);border-radius:var(--r);padding:8px 12px;font-size:12.5px;font-weight:600}
 ol{margin:0 0 0 18px}ol li{margin-bottom:7px}
 .empty{text-align:center;padding:34px;color:var(--muted)}
+.drop{border:2px dashed var(--line);border-radius:var(--r);padding:22px;text-align:center;font-size:13px;transition:border-color .15s,background .15s}
+.drop.over{border-color:var(--accent);background:var(--surf2)}
+.imp-sum{display:flex;gap:12px;flex-wrap:wrap;margin-bottom:12px}
+.imp-sum .b{flex:1;min-width:130px;background:var(--surf2);border:1px solid var(--line);border-radius:var(--r);padding:10px 13px}
+.imp-sum .l{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.4px}
+.imp-sum .v{font-size:18px;font-weight:700;margin-top:2px}
+.bars{display:flex;height:14px;border-radius:5px;overflow:hidden;margin:4px 0 14px}
+.bars span{display:block}
+.warn{background:#fef6e0;border-left:3px solid var(--C);padding:8px 12px;font-size:12px;border-radius:0 6px 6px 0;margin-top:10px}
 </style>
 </head>
 <body>
@@ -87,7 +97,19 @@ ol{margin:0 0 0 18px}ol li{margin-bottom:7px}
   </div>
 
   <div class="card">
-    <div class="card-hd"><span>Wochenwert erfassen</span><span class="cw" id="cwbadge">Aktuelle Woche …</span></div>
+    <div class="card-hd"><span>CSV auswerten (Toggl-Export)</span><span class="cw" id="cwbadge">Aktuelle Woche …</span></div>
+    <div class="card-bd">
+      <div class="drop" id="drop">
+        <input type="file" id="csvfile" accept=".csv" style="display:none" onchange="onFile(this.files[0])">
+        <div><b>CSV hierher ziehen</b> oder <button class="btn sec" onclick="document.getElementById('csvfile').click()">Datei wählen</button></div>
+        <div class="muted" style="margin-top:6px">Toggl „Summary report" (Spalten: Project, Description, Duration). Die ID wird aus dem Projekt-Text (#001 …) erkannt, KW aus dem Dateinamen.</div>
+      </div>
+      <div id="importbox" style="display:none;margin-top:16px"></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-hd"><span>Wochenwert erfassen</span></div>
     <div class="card-bd">
       <div class="form">
         <div class="fld"><label>Jahr</label><input type="number" id="f_jahr" min="2020" max="2099"></div>
@@ -299,6 +321,77 @@ EINGABE: je ID die erfasste Zeit (hh:mm:ss) und das Datum der laufenden Woche.`;
 document.getElementById('prompt').textContent=buildPrompt();
 document.getElementById('cwbadge').textContent=`Aktuelle Woche: KW ${CW.kw}/${CW.jahr}`;
 function copyPrompt(){ navigator.clipboard.writeText(buildPrompt()).then(()=>{ const b=document.getElementById('copybtn');const t=b.textContent;b.textContent='✓ Kopiert';setTimeout(()=>b.textContent=t,1600); }); }
+
+// ---- CSV-Import (Toggl Summary report) ----
+const RATEBYID={}, NAMEBYID={};
+Object.values(RATES).flat().forEach(r=>{ const id=parseInt(r[0].replace('#',''),10); RATEBYID[id]=r[2]; NAMEBYID[id]=r[1]; });
+function klass(rate){ return rate>=8?'A':rate>=4?'B':rate>=1?'C':'D'; }
+function durToH(s){ const p=String(s).trim().split(':').map(Number); if(p.length===3) return p[0]+p[1]/60+p[2]/3600; if(p.length===2) return p[0]/60+p[1]/3600; return 0; }
+function kwFromName(name){
+  const m=name && name.match(/from[_ ](\d{2})[_.](\d{2})[_.](\d{4})/i);
+  if(!m) return null;
+  const d=new Date(Date.UTC(+m[3],+m[2]-1,+m[1])); return isoWeek(new Date(d.getUTCFullYear(),d.getUTCMonth(),d.getUTCDate()));
+}
+let LAST=null;
+const drop=document.getElementById('drop');
+['dragenter','dragover'].forEach(e=>drop.addEventListener(e,ev=>{ev.preventDefault();drop.classList.add('over');}));
+['dragleave','drop'].forEach(e=>drop.addEventListener(e,ev=>{ev.preventDefault();drop.classList.remove('over');}));
+drop.addEventListener('drop',ev=>{ if(ev.dataTransfer.files[0]) onFile(ev.dataTransfer.files[0]); });
+
+function onFile(file){
+  if(!file) return;
+  const kw=kwFromName(file.name);
+  Papa.parse(file,{header:true,skipEmptyLines:true,complete:res=>evalRows(res.data,kw,file.name)});
+}
+function evalRows(rows,kw,fname){
+  const agg={}; let toth=0; const unmatched=[];
+  rows.forEach(r=>{
+    const proj=r.Project||r.project||''; const dur=r.Duration||r.duration||'';
+    if(!proj||!dur) return;
+    const h=durToH(dur); if(!h) return;
+    const m=proj.match(/#0*(\d+)/);
+    if(!m){ unmatched.push([proj,dur,h]); return; }
+    const id=parseInt(m[1],10); agg[id]=(agg[id]||0)+h; toth+=h;
+  });
+  let total=0; const cls={A:0,B:0,C:0,D:0};
+  const list=Object.keys(agg).map(Number).sort((a,b)=>a-b).map(id=>{
+    const rate=RATEBYID[id]!=null?RATEBYID[id]:0, h=agg[id], earn=h*rate;
+    total+=earn; cls[klass(rate)]+=earn;
+    return {id,name:NAMEBYID[id]||'?',rate,h,earn};
+  });
+  const unmh=unmatched.reduce((s,u)=>s+u[2],0);
+  LAST={kw,total:Math.round(total*100)/100,toth:Math.round((toth+unmh)*100)/100,cls};
+  // Formular vorbefüllen
+  if(kw){ document.getElementById('f_jahr').value=kw.jahr; document.getElementById('f_kw').value=kw.kw; }
+  document.getElementById('f_verd').value=LAST.total.toFixed(2);
+  document.getElementById('f_std').value=(toth).toFixed(2);
+  document.getElementById('f_a').value=cls.A.toFixed(2);
+  document.getElementById('f_b').value=cls.B.toFixed(2);
+  document.getElementById('f_c').value=cls.C.toFixed(2);
+  document.getElementById('f_d').value=cls.D.toFixed(2);
+  renderImport(list,total,toth,cls,kw,unmatched,fname);
+}
+function renderImport(list,total,toth,cls,kw,unmatched,fname){
+  const box=document.getElementById('importbox'); box.style.display='block';
+  const dev=(total-BENCH)/BENCH*100;
+  const colors={A:'#1f7a4d',B:'#2e7d32',C:'#c98a00',D:'#c0392b'};
+  const sumAbs=Math.max(1,cls.A+cls.B+cls.C+Math.max(0,cls.D));
+  const bars=['A','B','C','D'].map(k=>`<span title="Klasse ${k}: ${eur(cls[k])}" style="width:${Math.max(0,cls[k])/sumAbs*100}%;background:${colors[k]}"></span>`).join('');
+  box.innerHTML=`
+    <div class="imp-sum">
+      <div class="b"><div class="l">Datei</div><div class="v" style="font-size:12px">${esc(fname||'')}</div></div>
+      <div class="b"><div class="l">Woche</div><div class="v">${kw?('KW '+kw.kw+'/'+kw.jahr):'manuell'}</div></div>
+      <div class="b"><div class="l">Wochenverdienst</div><div class="v">${eur(total)}</div></div>
+      <div class="b"><div class="l">Stunden</div><div class="v">${num(toth)} h</div></div>
+      <div class="b"><div class="l">Δ Benchmark</div><div class="v" style="color:${dev>=0?'var(--green)':'var(--red)'}">${dev>=0?'▲ ':'▼ '}${Math.abs(dev).toFixed(0)} %</div></div>
+    </div>
+    <div class="bars">${bars}</div>
+    <table><thead><tr><th>ID</th><th>Projekt</th><th>Satz</th><th>Stunden</th><th>Verdienst</th></tr></thead><tbody>`
+    + list.map(r=>`<tr><td style="text-align:left;font-family:ui-monospace,monospace;color:var(--muted)">#${String(r.id).padStart(3,'0')}</td><td style="text-align:left">${esc(r.name)}</td><td>${r.rate} €</td><td>${num(r.h)} h</td><td>${eur(r.earn)}</td></tr>`).join('')
+    + `<tr style="font-weight:700;border-top:2px solid var(--text)"><td style="text-align:left">Σ</td><td style="text-align:left">Gesamt</td><td></td><td>${num(toth)} h</td><td>${eur(total)}</td></tr></tbody></table>`
+    + (unmatched.length?`<div class="warn">${unmatched.length} Einträge ohne ID (z. B. „${esc(unmatched[0][0])}") = ${num(unmatched.reduce((s,u)=>s+u[2],0))} h, mit 0 € bewertet.</div>`:'')
+    + `<div class="form-foot"><button class="btn" onclick="save()">In Verlauf speichern (KW ${kw?kw.kw:'?'})</button><span class="muted">Werte sind unten im Formular vorausgefüllt und editierbar.</span></div>`;
+}
 
 setCurrentWeek();
 load();
