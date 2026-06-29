@@ -78,6 +78,9 @@ export default function Sidebar({ user, demo, onLogout }) {
       <Link href="/produktivitaet/statusbericht" className={subCls(path.startsWith('/produktivitaet/statusbericht'))}>
         <i className="ti ti-clipboard-check" /> Statusbericht GF
       </Link>
+      <Link href="/produktivitaet/stundengehalt" className={subCls(path.startsWith('/produktivitaet/stundengehalt'))}>
+        <i className="ti ti-clock-dollar" /> Stundengehalt
+      </Link>
 
       <div className="nav-group">
         <i className="ti ti-cash lead" /> Finance
