@@ -100,7 +100,12 @@ table.num td:nth-child(2),table.num th:nth-child(2){text-align:right}
   <div class="kpis" id="kpis"></div>
 
   <h2><span class="dot" style="background:var(--ee)"></span>Immobilienvermögen — je Objekt</h2>
-  <div class="note">Quelle: Register „Portfolio" (Stand 21.06.2026). Mieteinnahmen = aktuelle Jahresmiete (Soll) · Darlehensrate = aktueller Kapitaldienst (Zins + Tilgung) · Restschuld = aktueller Darlehensstand.</div>
+  <div class="note">Quelle: Register „Portfolio" (Stand 21.06.2026). Mieteinnahmen = aktuelle Jahresmiete (Soll) · Darlehensrate = aktueller Kapitaldienst (Zins + Tilgung) · Restschuld = aktueller Darlehensstand. Bewirtschaftungskosten = % der Jahresmiete (je Eigentümer einstellbar).</div>
+  <div style="display:flex;gap:18px;flex-wrap:wrap;align-items:center;margin:8px 0 10px;font-size:12.5px">
+    <span style="color:var(--muted)">Bewirtschaftungskosten (% der Jahresmiete):</span>
+    <label style="display:flex;gap:6px;align-items:center">Eric Eisenhardt <input id="bewk_ee" inputmode="decimal" oninput="bewkSave()" placeholder="%" style="width:64px;text-align:right;border:1px solid #d5dbe2;border-radius:6px;padding:4px 6px;font:inherit"> %</label>
+    <label style="display:flex;gap:6px;align-items:center">Wohn(T)raum Rheinhessen GmbH <input id="bewk_rh" inputmode="decimal" oninput="bewkSave()" placeholder="%" style="width:64px;text-align:right;border:1px solid #d5dbe2;border-radius:6px;padding:4px 6px;font:inherit"> %</label>
+  </div>
   <div class="tablewrap"><table id="objtbl"></table></div>
 
   <h2><span class="dot" style="background:var(--ee)"></span>2 · Einkommensverhältnisse</h2>
@@ -200,6 +205,15 @@ function kpis(){
   ].map(a=>`<div class="kpi ${a[0]}"><div class="l">${a[1]}</div><div class="v">${a[2]}</div><div class="h">${a[3]}</div></div>`).join("");
 }
 
+// ——— Bewirtschaftungskosten (% je Eigentümer, localStorage) ———
+const BEWKSTORE="macherOS_bewk_v1";
+function bewkLoad(){ try{ return JSON.parse(localStorage.getItem(BEWKSTORE))||{}; }catch(e){ return {}; } }
+function bewkPct(){ const d=bewkLoad(); const p=s=>{ const n=parseFloat(String(s==null?'':s).replace(',','.')); return isNaN(n)?0:n; }; return {ee:p(d.ee), rh:p(d.rh)}; }
+function pctOf(o){ const p=bewkPct(); return o.ent==='ee'? p.ee : p.rh; }
+function bewkOf(o){ return o.miete*pctOf(o)/100; }
+function bewkInit(){ const d=bewkLoad(); const e=document.getElementById('bewk_ee'), r=document.getElementById('bewk_rh'); if(e)e.value=(d.ee==null?'':d.ee); if(r)r.value=(d.rh==null?'':d.rh); }
+function bewkSave(){ const d={ee:document.getElementById('bewk_ee').value, rh:document.getElementById('bewk_rh').value}; localStorage.setItem(BEWKSTORE,JSON.stringify(d)); objtbl(); }
+
 // ——— Objekttabelle ———
 function objRow(o){
   const cf=o.miete-o.rate_pa;
@@ -208,6 +222,7 @@ function objRow(o){
    <td>${o.mw==null?'<span style="color:var(--muted)">R2R</span>':eur(o.mw)}</td>
    <td>${eur(o.rest)}</td>
    <td>${eur(o.miete)}</td>
+   <td>${eur(bewkOf(o))}</td>
    <td>${o.rate_mo?eur2(o.rate_mo):'—'}</td>
    <td>${o.rate_pa?eur(o.rate_pa):'—'}</td>
    <td class="${cf>=0?'pos':'neg'}">${eur(cf)}</td>
@@ -216,15 +231,15 @@ function objRow(o){
 }
 function subRow(list,lab,col){
   const cf=sum(list,o=>o.miete)-sum(list,o=>o.rate_pa);
-  return `<tr class="subrow"><td style="color:${col}">Σ ${lab}</td><td>${eur(sum(list,o=>o.mw))}</td><td>${eur(sum(list,o=>o.rest))}</td><td>${eur(sum(list,o=>o.miete))}</td><td>—</td><td>${eur(sum(list,o=>o.rate_pa))}</td><td class="${cf>=0?'pos':'neg'}">${eur(cf)}</td><td></td></tr>`;
+  return `<tr class="subrow"><td style="color:${col}">Σ ${lab}</td><td>${eur(sum(list,o=>o.mw))}</td><td>${eur(sum(list,o=>o.rest))}</td><td>${eur(sum(list,o=>o.miete))}</td><td>${eur(sum(list,o=>bewkOf(o)))}</td><td>—</td><td>${eur(sum(list,o=>o.rate_pa))}</td><td class="${cf>=0?'pos':'neg'}">${eur(cf)}</td><td></td></tr>`;
 }
 function objtbl(){
-  const head=`<thead><tr><th>Objekt</th><th>Marktwert</th><th>Restschuld</th><th>Mieteinnahmen p.a.</th><th>Rate /Mo</th><th>Darlehensrate p.a.</th><th>Cashflow p.a.</th><th style="text-align:left">Finanzierende Bank</th></tr></thead>`;
+  const head=`<thead><tr><th>Objekt</th><th>Marktwert</th><th>Restschuld</th><th>Mieteinnahmen p.a.</th><th>Bewirtschaftungskosten p.a.</th><th>Rate /Mo</th><th>Darlehensrate p.a.</th><th>Cashflow p.a.</th><th style="text-align:left">Finanzierende Bank</th></tr></thead>`;
   let b="<tbody>";
-  b+=`<tr class="entrow"><td colspan="8" style="color:${ENT.ee.c}">${ENT.ee.n}</td></tr>`+EE.map(objRow).join("")+subRow(EE,"Eric Eisenhardt privat",ENT.ee.c);
-  b+=`<tr class="entrow"><td colspan="8" style="color:${ENT.rh.c}">${ENT.rh.n}</td></tr>`+RH.map(objRow).join("")+subRow(RH,"Wohn(T)raum Rheinhessen GmbH",ENT.rh.c);
+  b+=`<tr class="entrow"><td colspan="9" style="color:${ENT.ee.c}">${ENT.ee.n}</td></tr>`+EE.map(objRow).join("")+subRow(EE,"Eric Eisenhardt privat",ENT.ee.c);
+  b+=`<tr class="entrow"><td colspan="9" style="color:${ENT.rh.c}">${ENT.rh.n}</td></tr>`+RH.map(objRow).join("")+subRow(RH,"Wohn(T)raum Rheinhessen GmbH",ENT.rh.c);
   const cf=sum(ALL,o=>o.miete)-sum(ALL,o=>o.rate_pa);
-  b+=`<tr class="totrow"><td>GESAMT</td><td>${eur(sum(ALL,o=>o.mw))}</td><td>${eur(sum(ALL,o=>o.rest))}</td><td>${eur(sum(ALL,o=>o.miete))}</td><td>—</td><td>${eur(sum(ALL,o=>o.rate_pa))}</td><td class="${cf>=0?'pos':'neg'}">${eur(cf)}</td><td></td></tr>`;
+  b+=`<tr class="totrow"><td>GESAMT</td><td>${eur(sum(ALL,o=>o.mw))}</td><td>${eur(sum(ALL,o=>o.rest))}</td><td>${eur(sum(ALL,o=>o.miete))}</td><td>${eur(sum(ALL,o=>bewkOf(o)))}</td><td>—</td><td>${eur(sum(ALL,o=>o.rate_pa))}</td><td class="${cf>=0?'pos':'neg'}">${eur(cf)}</td><td></td></tr>`;
   b+="</tbody>";
   document.getElementById("objtbl").innerHTML=head+b;
 }
@@ -445,7 +460,7 @@ function saveF(){
 document.getElementById("foot").innerHTML=
  `<b>Hinweis:</b> Immobilien, Mieteinnahmen, Darlehensraten und Restschulden stammen aus dem Register 'Portfolio' (Macher OS, Stand 21.06.2026, Summe Restschuld 3.233.157,46 €) und entsprechen den im Chat 'Selbstauskunft bei der Bank' festgelegten aktuellen Bankwerten. Marktwerte: PriceHubble. Bürgschaften und Eventualverbindlichkeiten vertraglich fixiert. Persönliche Angaben (Einkommen, Vermögen, Kontostände) werden hier nicht fest gespeichert, sondern lokal im Browser gepflegt.`;
 
-kpis(); objtbl(); weitere(); form(); loadBuergSA(); loadFirm(); loadBau(); renderInc(); renderExp(); renderVerm();
+kpis(); bewkInit(); objtbl(); weitere(); form(); loadBuergSA(); loadFirm(); loadBau(); renderInc(); renderExp(); renderVerm();
 </script>
 </body>
 </html>
