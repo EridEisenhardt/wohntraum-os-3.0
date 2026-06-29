@@ -106,17 +106,13 @@ table.num td:nth-child(2),table.num th:nth-child(2){text-align:right}
   <h2><span class="dot" style="background:var(--warn)"></span>Weitere Angaben für die Bank</h2>
   <div class="tablewrap"><table class="mini wtbl" id="weitere"></table></div>
 
-  <h2><span class="dot" style="background:var(--ee)"></span>2 · Monatliche Einnahmen (Liquidität)</h2>
-  <div class="note">Monatliche Netto-Einnahmen. Nachrichtlich: zu versteuerndes Einkommen laut Steuerbescheid 2022 = 27.421 € / Jahr.</div>
-  <div class="tablewrap"><table class="mini">
-    <thead><tr><th>Einnahmeart</th><th>Betrag / Monat</th></tr></thead>
-    <tbody>
-      <tr><td>Selbstständige Arbeit</td><td>600 €</td></tr>
-      <tr><td>Vermietung &amp; Verpachtung</td><td>5.224 €</td></tr>
-      <tr><td>Photovoltaikanlage (Sonstiges)</td><td>138 €</td></tr>
-      <tr class="totrow"><td>Gesamtes monatliches Nettoeinkommen</td><td>5.962 €</td></tr>
-    </tbody>
-  </table></div>
+  <h2><span class="dot" style="background:var(--ee)"></span>2 · Einkommensverhältnisse</h2>
+  <div class="note">Monatliche Netto-Einnahmen je Einkommensart (2.1–2.6); 2.7 wird automatisch summiert. 2.8 = zu versteuerndes Einkommen pro Jahr laut aktueller Steuererklärung. Werte editierbar, lokal im Browser gespeichert.</div>
+  <div class="tablewrap"><table class="mini" id="einktbl"></table></div>
+
+  <h2><span class="dot" style="background:var(--warn)"></span>3 · Ausgaben</h2>
+  <div class="note">Monatliche Ausgaben je Position (3.1–3.8); 3.9 wird automatisch summiert. Werte editierbar, lokal im Browser gespeichert.</div>
+  <div class="tablewrap"><table class="mini" id="austbl"></table></div>
 
   <h2><span class="dot" style="background:var(--rh)"></span>4 · Bürgschaften / Grundschulden</h2>
   <div class="note">Datenquelle: Register „Darlehen" → Bürgschaften / Grundschulden (Bank, Nummer der Bank, Objekt, Höhe der Grundschuld). Änderungen dort werden hier automatisch übernommen.</div>
@@ -328,6 +324,69 @@ async function updBauNum(id,field,val){
 }
 async function delBau(id){ if(!confirm('Bausparvertrag entfernen?'))return; await sb.from('bausparvertraege').delete().eq('id',id); loadBau(); }
 
+// ——— 2 · Einkommensverhältnisse (localStorage) ———
+const INCSTORE="macherOS_selbst_einkommen_v1";
+const INC=[
+ ['se','2.1','Selbstständige Arbeit','600'],
+ ['nse','2.2','Nichtselbstständige Arbeit',''],
+ ['vuv','2.3','Vermietung u. Verpachtung','5224'],
+ ['sonst','2.4','Sonstige Einkommen','138'],
+ ['rente','2.5','Renten',''],
+ ['kg','2.6','Kindergeld',''],
+];
+function incLoad(){ try{ return JSON.parse(localStorage.getItem(INCSTORE))||{}; }catch(e){ return {}; } }
+function incEUR(n){ return new Intl.NumberFormat('de-DE',{style:'currency',currency:'EUR',maximumFractionDigits:0}).format(n||0); }
+function incParse(s){ const n=parseFloat(String(s).replace(/\./g,'').replace(',','.')); return isNaN(n)?0:n; }
+function renderInc(){
+  const el=document.getElementById('einktbl'); if(!el) return;
+  const d=incLoad(); const q=s=>(s==null?'':String(s)).replace(/"/g,'&quot;');
+  let sum=0;
+  const rows=INC.map(f=>{
+    const val=(f[0] in d)? d[f[0]] : f[3];
+    sum+=incParse(val);
+    return `<tr><td style="width:42px;color:var(--muted)">${f[1]}</td><td>${f[2]}</td>
+      <td style="text-align:right"><input style="${FINL};text-align:right;max-width:160px" inputmode="decimal" value="${q(val)}" placeholder="€ / Monat" onchange="incSave('${f[0]}',this.value)"></td></tr>`;
+  }).join('');
+  const zve=('zve' in d)? d['zve'] : '27421';
+  el.innerHTML='<thead><tr><th style="width:42px">Nr.</th><th>Einkommensart</th><th style="text-align:right">Betrag / Monat</th></tr></thead><tbody>'
+    + rows
+    + `<tr class="totrow"><td>2.7</td><td>Gesamtes monatliches Einkommen</td><td style="text-align:right">${incEUR(sum)}</td></tr>`
+    + `<tr><td style="color:var(--muted)">2.8</td><td>Gesamtes zu versteuerndes Einkommen / Jahr <span style="color:var(--muted)">(aktuelle Steuererklärung)</span></td>
+        <td style="text-align:right"><input style="${FINL};text-align:right;max-width:160px" inputmode="decimal" value="${q(zve)}" placeholder="€ / Jahr" onchange="incSave('zve',this.value)"></td></tr>`
+    + '</tbody>';
+}
+function incSave(key,val){ const d=incLoad(); d[key]=val; localStorage.setItem(INCSTORE,JSON.stringify(d)); renderInc(); }
+
+// ——— 3 · Ausgaben (localStorage) ———
+const EXPSTORE="macherOS_selbst_ausgaben_v1";
+const EXP=[
+ ['miete','3.1','Miete'],
+ ['nebenk','3.2','Wohnnebenkosten'],
+ ['eigenheim','3.3','Selbstgenutzte Immobilie (Zins u. Tilgung)'],
+ ['leben','3.4','Lebenshaltungskosten'],
+ ['kfz','3.5','KFZ-Finanzierung oder Leasing'],
+ ['kredite','3.6','Sonstige Kreditverpflichtungen'],
+ ['versich','3.7','Versicherungsbeiträge'],
+ ['pkv','3.8','Private Krankenversicherung'],
+];
+function expLoad(){ try{ return JSON.parse(localStorage.getItem(EXPSTORE))||{}; }catch(e){ return {}; } }
+function renderExp(){
+  const el=document.getElementById('austbl'); if(!el) return;
+  const d=expLoad(); const q=s=>(s==null?'':String(s)).replace(/"/g,'&quot;');
+  let sum=0;
+  const rows=EXP.map(f=>{
+    const val=(f[0] in d)? d[f[0]] : '';
+    sum+=incParse(val);
+    return `<tr><td style="width:42px;color:var(--muted)">${f[1]}</td><td>${f[2]}</td>
+      <td style="text-align:right"><input style="${FINL};text-align:right;max-width:160px" inputmode="decimal" value="${q(val)}" placeholder="€ / Monat" onchange="expSave('${f[0]}',this.value)"></td></tr>`;
+  }).join('');
+  el.innerHTML='<thead><tr><th style="width:42px">Nr.</th><th>Ausgabenart</th><th style="text-align:right">Betrag / Monat</th></tr></thead><tbody>'
+    + rows
+    + `<tr class="totrow"><td>3.9</td><td>Gesamte Ausgaben</td><td style="text-align:right">${incEUR(sum)}</td></tr>`
+    + '</tbody>';
+}
+function expSave(key,val){ const d=expLoad(); d[key]=val; localStorage.setItem(EXPSTORE,JSON.stringify(d)); renderExp(); }
+
 // ——— Ergänzende Selbstangaben (localStorage) ———
 const STORE="macherOS_selbstauskunft_v1";
 const FIELDS=[
@@ -357,7 +416,7 @@ function saveF(){
 document.getElementById("foot").innerHTML=
  `<b>Hinweis:</b> Immobilien, Mieteinnahmen, Darlehensraten und Restschulden stammen aus dem Register 'Portfolio' (Macher OS, Stand 21.06.2026, Summe Restschuld 3.233.157,46 €) und entsprechen den im Chat 'Selbstauskunft bei der Bank' festgelegten aktuellen Bankwerten. Marktwerte: PriceHubble. Bürgschaften und Eventualverbindlichkeiten vertraglich fixiert. Persönliche Angaben (Einkommen, Vermögen, Kontostände) werden hier nicht fest gespeichert, sondern lokal im Browser gepflegt.`;
 
-kpis(); objtbl(); weitere(); form(); loadBuergSA(); loadFirm(); loadBau();
+kpis(); objtbl(); weitere(); form(); loadBuergSA(); loadFirm(); loadBau(); renderInc(); renderExp();
 </script>
 </body>
 </html>
