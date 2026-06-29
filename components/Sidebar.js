@@ -53,6 +53,9 @@ export default function Sidebar({ user, demo, onLogout }) {
       <Link href="/vermietung/laufende-vermietungen" className={subCls(path.startsWith('/vermietung/laufende-vermietungen'))}>
         <i className="ti ti-progress" /> Laufende Vermietungen
       </Link>
+      <Link href="/vermietung/zahlungsvereinbarung" className={subCls(path.startsWith('/vermietung/zahlungsvereinbarung'))}>
+        <i className="ti ti-file-dollar" /> Zahlungsvereinbarungsgenerator
+      </Link>
 
       <div className="nav-group">
         <i className="ti ti-chart-histogram lead" /> Controlling
