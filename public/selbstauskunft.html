@@ -132,6 +132,11 @@ table.num td:nth-child(2),table.num th:nth-child(2){text-align:right}
     </tbody>
   </table></div>
 
+  <h2><span class="dot" style="background:var(--accent)"></span>6 · Bausparverträge</h2>
+  <div class="note">Bausparkasse, Vertragsnummer, Bausparsumme, aktuelles Guthaben, monatlicher Sparbeitrag und Status — pflegbar, in Supabase gespeichert.</div>
+  <div class="tablewrap"><table class="mini" id="bautbl"></table></div>
+  <div style="margin-top:8px"><button class="btn" onclick="addBau()">+ Bausparvertrag hinzufügen</button></div>
+
   <h2><span class="dot" style="background:var(--dim)"></span>Ergänzende Selbstangaben <span class="saved" id="saved" style="font-weight:400"></span></h2>
   <div class="note">Diese Felder werden lokal in deinem Browser gespeichert (nicht im Code) — vor jeder Abgabe an die Bank aktualisieren.</div>
   <div class="formgrid" id="form"></div>
@@ -276,6 +281,53 @@ async function updFirm(id,field,val){
 }
 async function delFirm(id){ if(!confirm('Gesellschaft entfernen?'))return; await sb.from('firmenkonten').delete().eq('id',id); loadFirm(); }
 
+// ——— Bausparverträge (Supabase) ———
+let BAU=[];
+const eurBau=n=>(n==null||n==='')?'':new Intl.NumberFormat('de-DE',{style:'currency',currency:'EUR',maximumFractionDigits:0}).format(Number(n));
+async function loadBau(){
+  const el=document.getElementById('bautbl'); if(!el) return;
+  const { data, error } = await sb.from('bausparvertraege').select('id,bausparkasse,vertragsnr,bausparsumme,guthaben,sparrate,status,pos').order('pos',{ascending:true}).order('created_at',{ascending:true});
+  BAU = error ? [] : (data||[]);
+  renderBau();
+}
+function renderBau(){
+  const el=document.getElementById('bautbl'); if(!el) return;
+  const cols=['Bausparkasse','Vertragsnummer','Bausparsumme','Guthaben','Sparrate / Monat','Status',''];
+  const head='<thead><tr>'+cols.map((h,i)=>`<th style="text-align:${i>=2&&i<=4?'right':'left'}${i===0?';min-width:160px':''}">${h}</th>`).join('')+'</tr></thead>';
+  if(!BAU.length){ el.innerHTML=head+'<tbody><tr><td colspan="7" style="text-align:center;color:var(--muted)">Keine Bausparverträge — „+ Bausparvertrag hinzufügen".</td></tr></tbody>'; return; }
+  const v=s=>(s==null?'':String(s)).replace(/"/g,'&quot;');
+  const sumBsp=BAU.reduce((s,b)=>s+(Number(b.bausparsumme)||0),0);
+  const sumGut=BAU.reduce((s,b)=>s+(Number(b.guthaben)||0),0);
+  el.innerHTML=head+'<tbody>'+BAU.map(b=>`<tr>
+    <td><input style="${FINL};font-weight:600" value="${v(b.bausparkasse)}" placeholder="Bausparkasse" onchange="updBau('${b.id}','bausparkasse',this.value)"></td>
+    <td><input style="${FINL}" value="${v(b.vertragsnr)}" placeholder="Vertragsnr." onchange="updBau('${b.id}','vertragsnr',this.value)"></td>
+    <td><input style="${FINL};text-align:right" inputmode="decimal" value="${v(b.bausparsumme)}" placeholder="€" onchange="updBauNum('${b.id}','bausparsumme',this.value)"></td>
+    <td><input style="${FINL};text-align:right" inputmode="decimal" value="${v(b.guthaben)}" placeholder="€" onchange="updBauNum('${b.id}','guthaben',this.value)"></td>
+    <td><input style="${FINL};text-align:right" inputmode="decimal" value="${v(b.sparrate)}" placeholder="€" onchange="updBauNum('${b.id}','sparrate',this.value)"></td>
+    <td><input style="${FINL}" value="${v(b.status)}" placeholder="z. B. Sparphase" onchange="updBau('${b.id}','status',this.value)"></td>
+    <td style="text-align:center"><button class="btn" style="padding:3px 8px;font-size:11px" onclick="delBau('${b.id}')">✕</button></td>
+  </tr>`).join('')
+  +`<tr class="totrow"><td>Summe (${BAU.length})</td><td></td><td style="text-align:right">${eurBau(sumBsp)}</td><td style="text-align:right">${eurBau(sumGut)}</td><td colspan="3"></td></tr>`
+  +'</tbody>';
+}
+async function addBau(){
+  const max=Math.max(0,...BAU.map(b=>b.pos||0));
+  const u=(await sb.auth.getUser()).data.user;
+  const { error } = await sb.from('bausparvertraege').insert({ bausparkasse:'Neue Bausparkasse', status:'Sparphase', pos:max+1, created_by:u?u.id:null });
+  if(error){ alert('Fehler: '+error.message); return; }
+  loadBau();
+}
+async function updBau(id,field,val){
+  const { error } = await sb.from('bausparvertraege').update({ [field]: (val.trim()||null) }).eq('id',id);
+  if(!error){ const r=BAU.find(x=>x.id===id); if(r) r[field]=val; }
+}
+async function updBauNum(id,field,val){
+  const n = val.trim()===''? null : parseFloat(val.replace(/\./g,'').replace(',','.'));
+  const { error } = await sb.from('bausparvertraege').update({ [field]: (isNaN(n)?null:n) }).eq('id',id);
+  if(!error) loadBau();
+}
+async function delBau(id){ if(!confirm('Bausparvertrag entfernen?'))return; await sb.from('bausparvertraege').delete().eq('id',id); loadBau(); }
+
 // ——— Ergänzende Selbstangaben (localStorage) ———
 const STORE="macherOS_selbstauskunft_v1";
 const FIELDS=[
@@ -305,7 +357,7 @@ function saveF(){
 document.getElementById("foot").innerHTML=
  `<b>Hinweis:</b> Immobilien, Mieteinnahmen, Darlehensraten und Restschulden stammen aus dem Register 'Portfolio' (Macher OS, Stand 21.06.2026, Summe Restschuld 3.233.157,46 €) und entsprechen den im Chat 'Selbstauskunft bei der Bank' festgelegten aktuellen Bankwerten. Marktwerte: PriceHubble. Bürgschaften und Eventualverbindlichkeiten vertraglich fixiert. Persönliche Angaben (Einkommen, Vermögen, Kontostände) werden hier nicht fest gespeichert, sondern lokal im Browser gepflegt.`;
 
-kpis(); objtbl(); weitere(); form(); loadBuergSA(); loadFirm();
+kpis(); objtbl(); weitere(); form(); loadBuergSA(); loadFirm(); loadBau();
 </script>
 </body>
 </html>
