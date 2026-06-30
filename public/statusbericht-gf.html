@@ -56,6 +56,13 @@ h2 .dot{width:9px;height:9px;border-radius:3px;display:inline-block}
 @media(max-width:600px){.mailrow .mfrom{width:auto}}
 .loading{text-align:center;padding:60px 20px;color:var(--muted)}
 .foot{font-size:11px;color:var(--muted);margin-top:28px;border-top:1px solid var(--line);padding-top:14px;line-height:1.6}
+.deleggrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(270px,1fr));gap:16px}
+.dlist{list-style:none;margin:0}
+.dlist li{display:flex;gap:8px;padding:6px 15px;font-size:12.5px;border-bottom:1px solid var(--bord2)}
+.dlist li:last-child{border-bottom:none}
+.dlist li span:first-child{flex-shrink:0;font-weight:700}
+.dl-h{font-size:10px;text-transform:uppercase;letter-spacing:.4px;color:var(--muted);padding:8px 15px 4px;font-weight:700}
+.dl-bereich{font-size:11px;color:var(--muted);padding:2px 15px 6px}
 @media print{.hdr{position:static}.btn{display:none}}
 </style>
 </head>
@@ -83,6 +90,10 @@ h2 .dot{width:9px;height:9px;border-radius:3px;display:inline-block}
 
     <h2><span class="dot" style="background:var(--warn)"></span>Offene Vorgänge aus dem Mailpostfach</h2>
     <div class="mailtbl" id="mails"></div>
+
+    <h2><span class="dot" style="background:var(--ok)"></span>Aufgaben zum Abgeben — Delegationsvorschläge</h2>
+    <div class="note">Konkrete Aufgaben, die der GF an das Team delegieren kann (nach Zuständigkeit). Passende offene Vorgänge aus Asana/Mail werden automatisch zugeordnet.</div>
+    <div class="deleggrid" id="deleg"></div>
 
     <div class="foot" id="foot"></div>
   </div>
@@ -137,6 +148,8 @@ function render(p, gen){
       <span style="flex-shrink:0;color:var(--muted);font-size:11px">${m.date?fmtD(m.date):''}</span>
     </div>`).join('');
 
+  renderDeleg(p);
+
   const genD=new Date(gen||p.generated_at);
   document.getElementById('stamp').textContent='Asana · Mailpostfach · Todoist · Stand '+genD.toLocaleString('de-DE',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'});
   document.getElementById('foot').innerHTML=esc(p.note||'')+' · Automatische Aktualisierung täglich.';
@@ -144,6 +157,62 @@ function render(p, gen){
   document.getElementById('loading').style.display='none';
   document.getElementById('content').style.display='block';
 }
+// ——— Delegationsvorschläge (Zuständigkeiten Team) ———
+const DELEG=[
+  { key:'juergen', name:'Jürgen', bereich:'Hausverwaltung & Mieterkommunikation (Büro)', color:'#185fa5',
+    tasks:[
+      'Mieteranfragen & Beschwerden im Büro beantworten',
+      'Schriftverkehr mit Mietern (Bestätigungen, Kündigungen)',
+      'Mahnwesen & Zahlungserinnerungen an säumige Mieter',
+      'Nebenkostenabrechnungen vorbereiten & versenden',
+      'Mietvertrags- und Mieterstammdaten pflegen',
+      'Laufende Hausverwaltung & Ablage koordinieren'
+    ],
+    kw:['miet','mieter','kündig','nebenkost','abrechnung','hausverwaltung','mahn','zahlungserinner','vertrag','büro','beschwerde'] },
+  { key:'stephan', name:'Stephan', bereich:'Hausmeisterdienst, Übergaben & Vor-Ort-Termine', color:'#1a7f37',
+    tasks:[
+      'Wohnungsübergaben & -abnahmen mit Mietern',
+      'Besichtigungstermine vor Ort durchführen',
+      'Schlüsselübergaben organisieren',
+      'Kleinreparaturen & Handwerkertermine vor Ort begleiten',
+      'Zählerstände ablesen & Objektkontrollen',
+      'Mängel vor Ort aufnehmen und melden'
+    ],
+    kw:['übergabe','abnahme','besichtig','schlüssel','hausmeister','reparatur','handwerk','vor ort','zähler','objekt','mängel','wohnung'] },
+  { key:'ramona', name:'Ramona', bereich:'Backoffice, Buchhaltung & Personal', color:'#b45309',
+    tasks:[
+      'Belegerfassung & vorbereitende Buchhaltung',
+      'Eingangsrechnungen prüfen & zur Zahlung vorbereiten',
+      'Lohn- & Personalunterlagen pflegen',
+      'Onboarding neuer Mitarbeiter / Dienstleister',
+      'Dokumentenablage & Backoffice-Organisation',
+      'Termin-/Kalenderkoordination & Reporting-Zuarbeit'
+    ],
+    kw:['rechnung','buchhalt','beleg','lohn','personal','mitarbeiter','backoffice','ablage','dokument','steuer','konto','bilanz'] },
+];
+function matchPerson(text){ const t=(text||'').toLowerCase(); for(const p of DELEG){ if(p.kw.some(k=>t.includes(k))) return p.key; } return null; }
+function renderDeleg(p){
+  const open=[];
+  (p.categories||[]).forEach(c=>(c.items||[]).forEach(it=>open.push({text:it.task||'', show:it.task||''})));
+  (p.mails||[]).forEach(m=>open.push({text:((m.subject||'')+' '+(m.from||'')), show:m.subject||m.from||''}));
+  document.getElementById('deleg').innerHTML=DELEG.map(pp=>{
+    const matched=open.filter(o=>matchPerson(o.text)===pp.key);
+    const tasks=pp.tasks.map(t=>`<li><span style="color:${pp.color}">→</span><span>${esc(t)}</span></li>`).join('');
+    const mtch=matched.length
+      ? `<div class="dl-h">Aktuell offen, passend (${matched.length})</div><ul class="dlist">`
+        + matched.slice(0,8).map(o=>`<li><span style="color:${pp.color}">•</span><span>${esc(o.show)}</span></li>`).join('')
+        + `</ul>`
+      : '';
+    return `<div class="cat">
+      <div class="cat-hd" style="border-left:4px solid ${pp.color}"><span>${esc(pp.name)}</span><span class="cnt" style="background:${pp.color}">${matched.length}</span></div>
+      <div class="dl-bereich">Zuständig: ${esc(pp.bereich)}</div>
+      <div class="dl-h">Diese Aufgaben kannst du abgeben</div>
+      <ul class="dlist">${tasks}</ul>
+      ${mtch}
+    </div>`;
+  }).join('');
+}
+
 load();
 </script>
 </body>
