@@ -54,6 +54,7 @@ body{background:var(--bg);color:var(--text);font-family:'Inter',system-ui,-apple
 .daytg{display:flex;gap:3px}
 .daytg button{min-width:30px;height:27px;border-radius:6px;border:1px solid var(--line);background:var(--surf2);color:var(--muted);font-size:11px;font-weight:700;cursor:pointer}
 .daytg button.on{background:#e7effd;color:var(--accent);border-color:#bcd4f5}
+.daytg button.kept{background:#e3f4ea;color:var(--ok);border-color:#bfe3cd}
 .trash{border:1px solid var(--line);background:var(--surf);border-radius:6px;width:30px;height:28px;cursor:pointer;color:var(--muted)}
 .trash:hover{color:var(--danger);border-color:var(--danger)}
 /* Zeitfenster-Matrix */
@@ -139,7 +140,9 @@ select.cin{cursor:pointer}
 
   <!-- Routinezeitfenster -->
   <div class="sec">
-    <div class="sec-hd"><div class="t">Routinezeitfenster <span class="cnt" id="rzCnt"></span></div></div>
+    <div class="sec-hd"><div class="t">Routinezeitfenster <span class="cnt" id="rzCnt"></span></div>
+      <span class="prog" id="rzProg"></span></div>
+    <div class="pad" style="padding-top:10px;padding-bottom:0"><div style="font-size:11px;color:var(--muted)">Klick auf Tag: <b style="color:var(--accent)">blau</b> = geplant · nochmal klicken <b style="color:var(--ok)">grün</b> = eingehalten (fließt in die Statistik)</div></div>
     <div id="rzList"></div>
     <div class="pad" style="border-top:1px solid var(--bord2)">
       <div class="addrow">
@@ -149,12 +152,6 @@ select.cin{cursor:pointer}
         <button class="btn g" onclick="addRoutine()">+ Fenster</button>
       </div>
     </div>
-  </div>
-
-  <!-- Tages-Zeitfenster (Umsetzung) -->
-  <div class="sec">
-    <div class="sec-hd"><div class="t">Tages-Zeitfenster · Umsetzung <span class="cnt">5 pro Tag</span></div><span class="prog" id="zfProg"></span></div>
-    <div class="tablewrap"><table class="zftbl" id="zfTbl"></table></div>
   </div>
 
   <!-- Top 3 Fragen -->
@@ -221,15 +218,11 @@ async function load(){
   const now=new Date();
   $('heute').textContent='Heute ist '+TAGNAME[(now.getDay()+6)%7]+' · '+('0'+now.getDate()).slice(-2)+'. '+MON[now.getMonth()]+' '+now.getFullYear();
   $('kwlbl').textContent='KW '+CUR.kw+' · '+CUR.jahr; $('kwlbl').title=fmtRange(CUR.jahr,CUR.kw);
-  const { data, error } = await sb.from('wochenplanung').select('id,bereich,pos,aufgabe,kategorie,prioritaet,wochentag,uhrzeit,ziel,rhythmus,uebernommen,status,notizen')
+  const { data, error } = await sb.from('wochenplanung').select('id,bereich,pos,aufgabe,kategorie,prioritaet,wochentag,uhrzeit,ziel,erledigt_tage,uebernommen,status,notizen')
     .eq('jahr',CUR.jahr).eq('kw',CUR.kw).order('pos',{ascending:true}).order('created_at',{ascending:true});
   ROWS = error ? [] : (data||[]);
   if(error) toast('Fehler beim Laden: '+error.message);
-  await loadZF(); render(); loadFragen();
-}
-async function loadZF(){
-  const { data } = await sb.from('wochen_zeitfenster').select('tag,slot,inhalt,eingehalten').eq('jahr',CUR.jahr).eq('kw',CUR.kw);
-  ZF={}; (data||[]).forEach(r=>{ ZF[r.tag+'_'+r.slot]=r; });
+  render(); loadFragen();
 }
 async function loadFragen(){
   const { data } = await sb.from('wochen_fragen').select('antwort1,antwort2,antwort3').eq('jahr',CUR.jahr).eq('kw',CUR.kw).maybeSingle();
@@ -269,38 +262,37 @@ async function updField(id, field, val){
   if(error){ toast('Speichern fehlgeschlagen: '+error.message); return; }
   const r=ROWS.find(x=>x.id===id); if(r){ r[field]=val; render(); }
 }
-async function toggleDay(id,day){
-  const r=ROWS.find(x=>x.id===id); if(!r) return;
-  let set=(r.wochentag||'').split(/[,\s]+/).filter(Boolean);
-  if(set.includes(day)) set=set.filter(d=>d!==day); else set.push(day);
-  set.sort((a,b)=>TAGV[a]-TAGV[b]);
-  await updField(id,'wochentag',set.join(','));
-}
 async function delRow(id){
   const { error } = await sb.from('wochenplanung').delete().eq('id',id);
   if(error){ toast('Löschen fehlgeschlagen: '+error.message); return; }
   await load();
 }
-async function zfSet(tag,slot,field,val){
-  const rec={ jahr:CUR.jahr, kw:CUR.kw, tag, slot, updated_at:new Date().toISOString() };
-  rec[field] = field==='inhalt' ? (String(val).trim()||null) : !!val;
-  const { error } = await sb.from('wochen_zeitfenster').upsert(rec,{ onConflict:'jahr,kw,tag,slot' });
+async function cycleDay(id,day){
+  const r=ROWS.find(x=>x.id===id); if(!r) return;
+  let sched=(r.wochentag||'').split(/[,\s]+/).filter(Boolean);
+  let kept=(r.erledigt_tage||'').split(/[,\s]+/).filter(Boolean);
+  const isS=sched.includes(day), isK=kept.includes(day);
+  if(!isS){ sched.push(day); }                                   // off -> geplant (blau)
+  else if(isS && !isK){ kept.push(day); }                        // geplant -> eingehalten (grün)
+  else { sched=sched.filter(d=>d!==day); kept=kept.filter(d=>d!==day); } // grün -> aus
+  sched.sort((a,b)=>TAGV[a]-TAGV[b]); kept.sort((a,b)=>TAGV[a]-TAGV[b]);
+  const { error } = await sb.from('wochenplanung').update({ wochentag:sched.join(',')||null, erledigt_tage:kept.join(',')||null }).eq('id',id);
   if(error){ toast('Speichern fehlgeschlagen: '+error.message); return; }
-  const k=tag+'_'+slot; ZF[k]=Object.assign({tag,slot,inhalt:null,eingehalten:false}, ZF[k]||{}, {[field]:rec[field]}); render();
+  r.wochentag=sched.join(','); r.erledigt_tage=kept.join(','); render();
 }
 async function carryOver(){
   const mo=mondayOf(CUR.jahr,CUR.kw); mo.setUTCDate(mo.getUTCDate()-7);
   const prev=isoWeek(new Date(mo.getUTCFullYear(),mo.getUTCMonth(),mo.getUTCDate()));
-  const { data, error } = await sb.from('wochenplanung').select('*').eq('jahr',prev.jahr).eq('kw',prev.kw).neq('status','erledigt').in('bereich',['aufgabe','sport']);
+  const { data, error } = await sb.from('wochenplanung').select('*').eq('jahr',prev.jahr).eq('kw',prev.kw).in('bereich',['aufgabe','sport','routine']).or('status.neq.erledigt,bereich.eq.routine');
   if(error){ toast('Fehler: '+error.message); return; }
   const src=(data||[]).filter(r=>(r.aufgabe||'').trim());
-  if(!src.length){ toast('Keine offenen Aufgaben in KW '+prev.kw); return; }
+  if(!src.length){ toast('Nichts zu übernehmen aus KW '+prev.kw); return; }
   const ex=new Set(ROWS.map(r=>(r.aufgabe||'').trim().toLowerCase()));
   const todo=src.filter(r=>!ex.has(r.aufgabe.trim().toLowerCase()));
-  if(!todo.length){ toast('Alle offenen Aufgaben bereits übernommen'); return; }
-  if(!confirm(todo.length+' nicht erledigte Aufgabe(n) aus KW '+prev.kw+' übernehmen?')) return;
+  if(!todo.length){ toast('Alles bereits übernommen'); return; }
+  if(!confirm(todo.length+' Eintrag/Einträge (Aufgaben & Routinen) aus KW '+prev.kw+' übernehmen?')) return;
   const u=(await sb.auth.getUser()).data.user;
-  const recs=todo.map(r=>({ jahr:CUR.jahr,kw:CUR.kw,bereich:r.bereich,pos:r.pos||0,aufgabe:r.aufgabe,kategorie:r.kategorie,prioritaet:r.prioritaet||'P2',wochentag:r.wochentag,uhrzeit:r.uhrzeit,ziel:r.ziel,status:'offen',uebernommen:true,notizen:r.notizen,created_by:u?u.id:null }));
+  const recs=todo.map(r=>({ jahr:CUR.jahr,kw:CUR.kw,bereich:r.bereich,pos:r.pos||0,aufgabe:r.aufgabe,kategorie:r.kategorie,prioritaet:r.prioritaet||(r.bereich==='routine'?null:'P2'),wochentag:r.wochentag,uhrzeit:r.uhrzeit,ziel:r.ziel,erledigt_tage:null,status:'offen',uebernommen:r.bereich!=='routine',notizen:r.notizen,created_by:u?u.id:null }));
   const { error:e2 } = await sb.from('wochenplanung').insert(recs);
   if(e2){ toast('Übernahme fehlgeschlagen: '+e2.message); return; }
   toast(recs.length+' Aufgabe(n) übernommen ↪'); await load();
@@ -319,9 +311,12 @@ function renderZiele(){
 function renderRoutine(){
   const rz=ROWS.filter(r=>r.bereich==='routine').sort((a,b)=>{ const ta=(a.uhrzeit||''),tb=(b.uhrzeit||''); return ta.localeCompare(tb); });
   $('rzCnt').textContent=rz.length+' Fenster';
+  let tSched=0, tKept=0;
   $('rzList').innerHTML = rz.length ? rz.map(r=>{
-    const days=dayList(r);
-    const tg=TAGE.map(t=>`<button class="${days.includes(t)?'on':''}" onclick="toggleDay('${r.id}','${t}')">${t}</button>`).join('');
+    const sched=(r.wochentag||'').split(/[,\s]+/).filter(Boolean);
+    const kept=(r.erledigt_tage||'').split(/[,\s]+/).filter(Boolean);
+    tSched+=sched.length; tKept+=kept.filter(d=>sched.includes(d)).length;
+    const tg=TAGE.map(t=>{ const cls=kept.includes(t)?'kept':(sched.includes(t)?'on':''); const tip=kept.includes(t)?'eingehalten':(sched.includes(t)?'geplant':'nicht geplant'); return `<button class="${cls}" title="${tip}" onclick="cycleDay('${r.id}','${t}')">${t}</button>`; }).join('');
     return `<div class="rz">
       <div class="rztime"><input value="${esc(r.uhrzeit)}" placeholder="Zeit" onchange="updField('${r.id}','uhrzeit',this.value)"></div>
       <div class="rzname"><input value="${esc(r.aufgabe)}" placeholder="Routine…" onchange="updField('${r.id}','aufgabe',this.value)"></div>
@@ -329,25 +324,8 @@ function renderRoutine(){
       <button class="trash" onclick="delRow('${r.id}')" title="Löschen">🗑</button>
     </div>`;
   }).join('') : '<div class="empty">Noch keine Routinen — unten anlegen.</div>';
+  $('rzProg').textContent = tSched ? pct(tKept,tSched)+'% eingehalten ('+tKept+'/'+tSched+')' : '';
 }
-/* Zeitfenster-Matrix */
-function renderZF(){
-  let head='<thead><tr><th>Zeitfenster</th>'+TAGE.map(t=>`<th class="${t===TODAY_TAG&&isCurWeek()?'today':''}">${t}</th>`).join('')+'</tr></thead>';
-  let body='';
-  for(let slot=1;slot<=5;slot++){
-    body+='<tr><td class="slotlbl">Fenster '+slot+'</td>'+TAGE.map(t=>{
-      const r=ZF[t+'_'+slot]||{}; const on=!!r.eingehalten, td=(t===TODAY_TAG&&isCurWeek())?'today':'';
-      return `<td class="${td}"><div class="zfcell">
-        <input class="cin" value="${esc(r.inhalt)}" placeholder="—" onchange="zfSet('${t}',${slot},'inhalt',this.value)">
-        <label class="zfchk ${on?'on':''}"><input type="checkbox" ${on?'checked':''} onchange="zfSet('${t}',${slot},'eingehalten',this.checked)"> ${on?'eingehalten ✓':'eingehalten'}</label>
-      </div></td>`;
-    }).join('')+'</tr>';
-  }
-  $('zfTbl').innerHTML=head+'<tbody>'+body+'</tbody>';
-  const vals=Object.values(ZF).filter(r=>(r.inhalt||'').trim()); const kept=vals.filter(r=>r.eingehalten).length;
-  $('zfProg').textContent = vals.length ? pct(kept,vals.length)+'% eingehalten ('+kept+'/'+vals.length+')' : 'noch nichts erfasst';
-}
-
 /* Filter + Work */
 function baseItems(){
   return ROWS.filter(r=>r.bereich!=='jahresziele')
@@ -411,7 +389,7 @@ function boardView(items){
 }
 
 function render(){
-  renderZiele(); renderRoutine(); renderZF(); renderBereichChips(); renderTagChips();
+  renderZiele(); renderRoutine(); renderBereichChips(); renderTagChips();
   const items=baseItems().filter(tagMatch);
   $('work').innerHTML = VIEW==='list' ? listView(sortItems(items)) : boardView(items);
   const all=ROWS.filter(r=>r.bereich!=='jahresziele'); const done=all.filter(r=>r.status==='erledigt').length;
