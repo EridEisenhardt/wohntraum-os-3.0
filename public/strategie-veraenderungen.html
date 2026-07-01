@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Strategie · Veränderungen in der Organisation – Macher OS</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+:root{
+  --bg:#f6f7f9;--surf:#fff;--surf2:#f1f3f6;--surf3:#e7ebf0;--line:#e6e8ec;--bord2:#eef0f3;
+  --text:#1c2024;--muted:#6b7280;--dim:#4b5563;--accent:#185fa5;
+  --r:8px;--rl:12px;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--text);font-family:'Inter',system-ui,-apple-system,'Segoe UI',sans-serif;font-size:14px;line-height:1.5}
+.hdr{background:var(--surf);border-bottom:1px solid var(--line);padding:16px 24px;display:flex;align-items:center;gap:12px;position:sticky;top:0;z-index:10}
+.logo{background:#1a1a2e;color:#fff;font-weight:700;font-size:11px;letter-spacing:.08em;padding:5px 9px;border-radius:4px}
+.hdr-title{font-size:16px;font-weight:600}
+.hdr-sub{font-size:11px;color:var(--muted)}
+.main{max-width:1080px;margin:0 auto;padding:20px 24px 60px}
+.toolbar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:14px}
+.btn{font-size:12.5px;font-weight:600;padding:8px 14px;border-radius:var(--r);border:1px solid var(--accent);background:var(--accent);color:#fff;cursor:pointer}
+.btn:hover{opacity:.92}
+.search{flex:1;min-width:180px;border:1px solid var(--line);border-radius:var(--r);padding:8px 11px;font:inherit;font-size:13px;background:var(--surf)}
+.search:focus{outline:none;border-color:var(--accent)}
+.chips{display:flex;gap:7px;flex-wrap:wrap;margin-bottom:16px}
+.chip{padding:6px 11px;border-radius:20px;border:1px solid var(--line);background:var(--surf);font-size:12px;font-weight:600;color:var(--text);cursor:pointer;display:inline-flex;gap:6px;align-items:center}
+.chip .cnt{background:var(--surf2);border-radius:20px;padding:0 7px;font-size:11px;color:var(--muted)}
+.chip.on{background:var(--text);color:#fff;border-color:var(--text)}.chip.on .cnt{background:rgba(255,255,255,.22);color:#fff}
+.card{background:var(--surf);border:1px solid var(--line);border-radius:var(--rl);overflow:hidden}
+.tablewrap{overflow-x:auto}
+table{width:100%;border-collapse:collapse;font-size:13px;min-width:760px}
+th,td{padding:10px 12px;text-align:left;border-bottom:1px solid var(--bord2);vertical-align:top}
+th{font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;background:var(--surf2)}
+tbody tr:hover{background:#fafbfd}
+td.datum{white-space:nowrap;width:120px}
+td.thema{width:140px}
+.cin{width:100%;border:1px solid transparent;background:transparent;font:inherit;color:var(--text);padding:5px 6px;border-radius:5px}
+.cin:hover{border-color:var(--line)}.cin:focus{outline:none;border-color:var(--accent);background:var(--surf)}
+.ta{width:100%;resize:none;overflow:hidden;white-space:pre-wrap;word-break:break-word;line-height:1.4;min-height:30px;font:inherit;border:1px solid transparent;background:transparent;color:var(--text);padding:5px 6px;border-radius:5px}
+.ta:hover{border-color:var(--line)}.ta:focus{outline:none;border-color:var(--accent);background:var(--surf)}
+select.cin{cursor:pointer;font-weight:600}
+.tsel{border-left:3px solid var(--line)}
+.abtn{font-size:12px;padding:3px 8px;border-radius:5px;border:1px solid var(--line);background:transparent;color:var(--muted);cursor:pointer}
+.abtn:hover{color:#c0392b;border-color:#c0392b}
+.dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:5px;vertical-align:middle}
+.empty,.loading{text-align:center;padding:40px;color:var(--muted)}
+.foot{font-size:11px;color:var(--muted);margin-top:16px;border-top:1px solid var(--line);padding-top:12px}
+</style>
+</head>
+<body>
+<div class="hdr">
+  <div class="logo">MACHER OS</div>
+  <div>
+    <div class="hdr-title">Strategie · Veränderungen in der Organisation</div>
+    <div class="hdr-sub">Log-Buch der Organisationsentwicklung · neueste Einträge oben</div>
+  </div>
+</div>
+
+<div class="main">
+  <div class="toolbar">
+    <button class="btn" onclick="addRow()">+ Neuer Eintrag</button>
+    <input class="search" id="q" placeholder="Suche in Beschreibung / Thema …" oninput="render()">
+  </div>
+  <div class="chips" id="chips"></div>
+  <div class="card"><div class="tablewrap" id="tblwrap"><div class="loading" id="loading">Lädt…</div></div></div>
+  <div class="foot" id="foot"></div>
+</div>
+
+<script>
+const SB_URL='https://jqzxctfqvcwbctpjksvg.supabase.co';
+const SB_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpxenhjdGZxdmN3YmN0cGprc3ZnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODIxMzA0MzIsImV4cCI6MjA5NzcwNjQzMn0.RKIbZxJdusKWWPjBJqlxZ8e1m8So02UslOg55YRsn3o';
+const sb=window.supabase.createClient(SB_URL,SB_KEY);
+const $=id=>document.getElementById(id);
+const esc=s=>(s==null?'':String(s)).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+const THEMEN=['Verwaltung','Finanzen','Bank','Vermietung','Personal','Controlling','Reparaturen','Sonstiges'];
+const COL={Verwaltung:'#185fa5',Finanzen:'#7c3aed',Bank:'#0f766e',Vermietung:'#c8741f',Personal:'#c0392b',Controlling:'#b45309',Reparaturen:'#6b7280',Sonstiges:'#6b7280'};
+const fmtD=d=>{ if(!d) return '—'; const p=String(d).split('-'); return p[2]+'.'+p[1]+'.'+p[0]; };
+let ROWS=[], F_THEMA='';
+
+function autogrow(el){ el.style.height='auto'; el.style.height=el.scrollHeight+'px'; }
+
+async function load(){
+  const { data, error } = await sb.from('orga_veraenderungen').select('*').order('datum',{ascending:false}).order('sort',{ascending:true});
+  ROWS = error ? [] : (data||[]);
+  if(error){ $('loading').textContent='Fehler: '+error.message; return; }
+  render();
+}
+async function addRow(){
+  const today=new Date().toISOString().slice(0,10);
+  const minSort=Math.min(0,...ROWS.map(r=>r.sort||0));
+  const { error } = await sb.from('orga_veraenderungen').insert({ thema:'Verwaltung', beschreibung:'', datum:today, sort:minSort-1 });
+  if(error){ alert('Anlegen fehlgeschlagen: '+error.message); return; }
+  F_THEMA=''; $('q').value=''; await load();
+}
+async function upd(id,field,val){
+  const { error } = await sb.from('orga_veraenderungen').update({ [field]:(val===''?null:val) }).eq('id',id);
+  if(error){ alert('Speichern fehlgeschlagen: '+error.message); return; }
+  const r=ROWS.find(x=>x.id===id); if(r) r[field]=val;
+  if(field==='thema'||field==='datum') render();
+}
+async function del(id){ if(!confirm('Eintrag löschen?'))return; await sb.from('orga_veraenderungen').delete().eq('id',id); await load(); }
+
+function renderChips(){
+  const cnt={}; ROWS.forEach(r=>{ cnt[r.thema]=(cnt[r.thema]||0)+1; });
+  const themen=[...new Set(ROWS.map(r=>r.thema).filter(Boolean))].sort((a,b)=>(cnt[b]||0)-(cnt[a]||0));
+  const chip=(v,l,n)=>`<span class="chip ${F_THEMA===v?'on':''}" onclick="F_THEMA='${v}';render()">${v?`<span class="dot" style="background:${COL[v]||'#6b7280'}"></span>`:''}${l} <span class="cnt">${n}</span></span>`;
+  $('chips').innerHTML=chip('','Alle',ROWS.length)+themen.map(t=>chip(t,t,cnt[t])).join('');
+}
+function render(){
+  renderChips();
+  const q=($('q').value||'').toLowerCase();
+  const list=ROWS.filter(r=>(!F_THEMA||r.thema===F_THEMA) && (!q || (r.beschreibung||'').toLowerCase().includes(q) || (r.thema||'').toLowerCase().includes(q)));
+  const w=$('tblwrap');
+  const head='<thead><tr><th>Datum</th><th>Thema</th><th>Beschreibung</th><th></th></tr></thead>';
+  const opts=r=>THEMEN.map(t=>`<option ${t===r.thema?'selected':''}>${t}</option>`).join('');
+  w.innerHTML='<table>'+head+'<tbody>'+(list.length?list.map(r=>`<tr>
+    <td class="datum"><input class="cin" type="date" value="${r.datum||''}" onchange="upd('${r.id}','datum',this.value)"></td>
+    <td class="thema"><select class="cin tsel" style="border-left-color:${COL[r.thema]||'#ccc'}" onchange="upd('${r.id}','thema',this.value)">${opts(r)}</select></td>
+    <td><textarea class="ta" rows="1" placeholder="Beschreibung…" oninput="autogrow(this)" onchange="upd('${r.id}','beschreibung',this.value)">${esc(r.beschreibung)}</textarea></td>
+    <td style="width:40px"><button class="abtn" onclick="del('${r.id}')">✕</button></td>
+  </tr>`).join(''):`<tr><td colspan="4"><div class="empty">Keine Einträge für diese Auswahl.</div></td></tr>`)+'</tbody></table>';
+  document.querySelectorAll('#tblwrap .ta').forEach(autogrow);
+  $('foot').textContent=`${ROWS.length} Einträge im Log-Buch · Quelle: Organisationsentwicklung.xlsx · in Supabase gespeichert`;
+}
+
+(async()=>{
+  const { data:{ session } } = await sb.auth.getSession();
+  if(!session){ $('tblwrap').innerHTML='<div class="empty" style="padding:60px">Bitte zuerst im OS einloggen.</div>'; return; }
+  load();
+})();
+</script>
+</body>
+</html>

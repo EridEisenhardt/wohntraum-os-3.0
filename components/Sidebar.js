@@ -32,6 +32,14 @@ export default function Sidebar({ user, demo, onLogout }) {
       </Link>
 
       <div className="nav-group">
+        <i className="ti ti-chess lead" /> Strategie
+        <i className="ti ti-chevron-down chev" />
+      </div>
+      <Link href="/strategie/veraenderungen" className={subCls(path.startsWith('/strategie/veraenderungen'))}>
+        <i className="ti ti-arrows-shuffle" /> Veränderungen in der Organisation
+      </Link>
+
+      <div className="nav-group">
         <i className="ti ti-clipboard-list lead" /> Planung
         <i className="ti ti-chevron-down chev" />
       </div>
