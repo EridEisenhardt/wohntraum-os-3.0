@@ -77,6 +77,13 @@ select.cin{cursor:pointer}
 .card .meta{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
 .card .tag{font-size:10px;color:var(--muted);background:var(--surf2);border-radius:20px;padding:1px 7px}
 .card select{font:inherit;font-size:11px;border:1px solid var(--line);border-radius:5px;padding:2px 4px;margin-top:6px;background:var(--surf2)}
+.zftbl{min-width:1040px}
+.zftbl th.today,.zftbl td.today{background:rgba(200,116,31,.08)}
+.zftbl td{vertical-align:top}
+.zfcell{display:flex;flex-direction:column;gap:4px}
+.zfchk{display:flex;align-items:center;gap:5px;font-size:10px;color:var(--muted);cursor:pointer;user-select:none}
+.zfchk.on{color:var(--ok);font-weight:600}
+.slotlbl{font-weight:600;color:var(--dim);white-space:nowrap}
 .toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:var(--surf3);border:1px solid var(--line);border-radius:var(--r);padding:10px 20px;font-size:13px;z-index:9999;opacity:0;transition:opacity .3s;pointer-events:none}
 .toast.show{opacity:1}
 </style>
@@ -100,6 +107,15 @@ select.cin{cursor:pointer}
 
 <div class="main" id="main">
   <div class="kpis" id="kpis"></div>
+
+  <!-- Tages-Zeitfenster (ganz oben) -->
+  <div class="sec">
+    <div class="sec-hd">
+      <div class="t"><span class="dot" style="background:var(--top3)"></span>⏱ Tages-Zeitfenster <span style="font-weight:400;color:var(--muted);font-size:12px">(5 pro Tag · „eingehalten" abhaken)</span></div>
+      <span class="prog" id="zfProg"></span>
+    </div>
+    <div class="tablewrap"><table class="zftbl" id="zfTbl"></table></div>
+  </div>
 
   <!-- Top 3 Fragen -->
   <div class="sec">
@@ -179,7 +195,40 @@ async function load(){
     .eq('jahr',CUR.jahr).eq('kw',CUR.kw).order('pos',{ascending:true}).order('created_at',{ascending:true});
   ROWS = error ? [] : (data||[]);
   if(error) toast('Fehler beim Laden: '+error.message);
+  await loadZF();
   render(); loadFragen();
+}
+
+let ZF={};
+async function loadZF(){
+  const { data } = await sb.from('wochen_zeitfenster').select('tag,slot,inhalt,eingehalten').eq('jahr',CUR.jahr).eq('kw',CUR.kw);
+  ZF={}; (data||[]).forEach(r=>{ ZF[r.tag+'_'+r.slot]=r; });
+}
+async function zfSet(tag,slot,field,val){
+  const rec={ jahr:CUR.jahr, kw:CUR.kw, tag, slot, updated_at:new Date().toISOString() };
+  rec[field] = field==='inhalt' ? (String(val).trim()||null) : !!val;
+  const { error } = await sb.from('wochen_zeitfenster').upsert(rec,{ onConflict:'jahr,kw,tag,slot' });
+  if(error){ toast('Speichern fehlgeschlagen: '+error.message); return; }
+  const k=tag+'_'+slot; ZF[k]=Object.assign({tag,slot,inhalt:null,eingehalten:false}, ZF[k]||{}, {[field]:rec[field]});
+  render();
+}
+function renderZF(){
+  let head='<thead><tr><th>Zeitfenster</th>'+TAGE.map(t=>`<th class="${t===TODAY_TAG&&isCurWeek()?'today':''}">${t}</th>`).join('')+'</tr></thead>';
+  let body='';
+  for(let slot=1;slot<=5;slot++){
+    body+='<tr><td class="slotlbl">Zeitfenster '+slot+'</td>'+TAGE.map(t=>{
+      const r=ZF[t+'_'+slot]||{};
+      const on=!!r.eingehalten, td=(t===TODAY_TAG&&isCurWeek())?'today':'';
+      return `<td class="${td}"><div class="zfcell">
+        <input class="cin" value="${esc(r.inhalt)}" placeholder="—" style="min-width:120px" onchange="zfSet('${t}',${slot},'inhalt',this.value)">
+        <label class="zfchk ${on?'on':''}"><input type="checkbox" ${on?'checked':''} onchange="zfSet('${t}',${slot},'eingehalten',this.checked)"> ${on?'eingehalten ✓':'eingehalten'}</label>
+      </div></td>`;
+    }).join('')+'</tr>';
+  }
+  $('zfTbl').innerHTML=head+'<tbody>'+body+'</tbody>';
+  const vals=Object.values(ZF).filter(r=>(r.inhalt||'').trim());
+  const kept=vals.filter(r=>r.eingehalten).length;
+  $('zfProg').textContent = vals.length ? `${Math.round(kept/vals.length*100)}% eingehalten (${kept}/${vals.length})` : 'noch keine Zeitfenster erfasst';
 }
 
 async function loadFragen(){
@@ -333,11 +382,15 @@ function render(){
   const ziele=ROWS.filter(r=>r.bereich==='jahresziele');
   const ueberCnt=ROWS.filter(r=>r.uebernommen).length;
   const p=pct(done,items.length);
+  const zfv=Object.values(ZF).filter(r=>(r.inhalt||'').trim());
+  const zfKept=zfv.filter(r=>r.eingehalten).length;
+  const zfPct=pct(zfKept,zfv.length);
   $('kpis').innerHTML=`
     <div class="kpi big"><div class="l">Wochenfortschritt</div><div class="v">${p}%</div><div class="bar"><div style="width:${p}%"></div></div><div class="h">${done} von ${items.length} Einträgen erledigt</div></div>
+    <div class="kpi"><div class="l">Zeitfenster eingehalten</div><div class="v">${zfv.length?zfPct+'%':'—'}</div><div class="h">${zfKept}/${zfv.length} umgesetzt</div></div>
     <div class="kpi"><div class="l">Jahresziele</div><div class="v">${ziele.length}</div><div class="h">übergeordnete Ziele</div></div>
     <div class="kpi"><div class="l">Übernommen</div><div class="v">${ueberCnt}</div><div class="h">↪ aus Vorwoche</div></div>`;
-  zieleTable(); bereichSeg(); tagSeg();
+  renderZF(); zieleTable(); bereichSeg(); tagSeg();
   $('work').innerHTML = VIEW==='list' ? listView() : boardView();
 }
 
