@@ -70,6 +70,11 @@ input.ni.set{border-color:#bfe3cd;background:#f2fbf6}
     <div class="tablewrap" id="tblwrap"><div class="loading" id="loading">Lädt…</div></div>
   </div>
 
+  <div class="card" style="margin-top:18px">
+    <div class="card-hd"><span id="bauTitle">Bausparverträge</span><span class="hdr-sub">Neues Guthaben eintragen → aktualisiert die Selbstauskunft und speichert den Monatswert.</span></div>
+    <div class="tablewrap" id="bauwrap"><div class="loading" id="bauLoading">Lädt…</div></div>
+  </div>
+
   <div class="foot" id="foot"></div>
 </div>
 
@@ -82,7 +87,7 @@ const eur=n=>n==null?'—':new Intl.NumberFormat('de-DE',{style:'currency',curre
 const esc=s=>(s==null?'':String(s)).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;');
 const numDE=v=>{ if(v==null||v==='') return null; const n=parseFloat(String(v).replace(',','.')); return isNaN(n)?null:n; };
 
-let LOANS=[], MW={};
+let LOANS=[], MW={}, BAU=[], BMW={};
 
 function initYears(){ const y=new Date().getFullYear(); const s=$('jahr'); let o=''; for(let j=y-2;j<=y+1;j++) o+=`<option value="${j}" ${j===y?'selected':''}>${j}</option>`; s.innerHTML=o; }
 function $(id){ return document.getElementById(id); }
@@ -96,7 +101,46 @@ async function load(){
   LOANS = lo.error ? [] : (lo.data||[]);
   const mw = await sb.from('darlehen_monatswerte').select('loan_id,restschuld').eq('jahr',jahr).eq('monat',monat);
   MW={}; (mw.error?[]:(mw.data||[])).forEach(r=>{ MW[r.loan_id]=r.restschuld; });
-  render();
+  const bl = await sb.from('bausparvertraege').select('id,bausparkasse,vertragsnr,bausparsumme,guthaben,pos').order('pos',{ascending:true}).order('created_at',{ascending:true});
+  BAU = bl.error ? [] : (bl.data||[]);
+  const bmw = await sb.from('bauspar_monatswerte').select('bauspar_id,guthaben').eq('jahr',jahr).eq('monat',monat);
+  BMW={}; (bmw.error?[]:(bmw.data||[])).forEach(r=>{ BMW[r.bauspar_id]=r.guthaben; });
+  render(); renderBau();
+}
+
+async function saveBau(bauId, raw){
+  const {jahr,monat}=curSel();
+  const v=numDE(raw);
+  if(raw!=='' && v==null){ alert('Ungültiger Betrag'); return; }
+  const { error } = await sb.from('bauspar_monatswerte').upsert({ jahr, monat, bauspar_id:bauId, guthaben:v, updated_at:new Date().toISOString() }, { onConflict:'jahr,monat,bauspar_id' });
+  if(error){ alert('Speichern fehlgeschlagen: '+error.message); return; }
+  if(v!=null){ await sb.from('bausparvertraege').update({ guthaben:v }).eq('id',bauId); const b=BAU.find(x=>x.id===bauId); if(b) b.guthaben=v; }
+  BMW[bauId]=v; renderBau();
+}
+function renderBau(){
+  const w=$('bauwrap'); const {jahr,monat}=curSel();
+  $('bauTitle').textContent='Bausparverträge · '+MN[monat]+' '+jahr;
+  if(!BAU.length){ w.innerHTML='<div class="empty">Keine Bausparverträge erfasst — in der Selbstauskunft anlegen.</div>'; return; }
+  let sumAlt=0,sumNeu=0,cnt=0;
+  const rows=BAU.map(b=>{
+    const alt=b.guthaben!=null?Number(b.guthaben):0;
+    const neu=BMW[b.id]!=null?Number(BMW[b.id]):null;
+    sumAlt+=alt; if(neu!=null){ sumNeu+=neu; cnt++; } else { sumNeu+=alt; }
+    const d=neu!=null?neu-alt:null;
+    const dtxt=d==null?'<span class="flat">—</span>':(d>0?`<span class="down">▲ ${eur(d)}</span>`:(d<0?`<span class="up">▼ ${eur(Math.abs(d))}</span>`:'<span class="flat">±0</span>'));
+    return `<tr>
+      <td>${esc(b.bausparkasse||'—')}<div style="color:var(--muted);font-size:11px">${esc(b.vertragsnr||'')}</div></td>
+      <td>${b.bausparsumme!=null?eur(Number(b.bausparsumme)):'—'}</td>
+      <td>${eur(alt)}</td>
+      <td><input class="ni ${neu!=null?'set':''}" type="number" step="0.01" min="0" value="${neu!=null?neu:''}" placeholder="${alt.toFixed(2)}" onchange="saveBau('${b.id}',this.value)"></td>
+      <td>${dtxt}</td>
+    </tr>`;
+  }).join('');
+  w.innerHTML=`<table>
+    <thead><tr><th>Bausparvertrag</th><th>Bausparsumme</th><th>Guthaben (aktuell)</th><th>Neues Guthaben (${MN[monat]})</th><th>Δ</th></tr></thead>
+    <tbody>${rows}
+      <tr class="sum"><td>Summe (${BAU.length} Verträge · ${cnt} neu erfasst)</td><td>${eur(BAU.reduce((s,b)=>s+(b.bausparsumme!=null?Number(b.bausparsumme):0),0))}</td><td>${eur(sumAlt)}</td><td>${eur(sumNeu)}</td><td>${(()=>{const d=sumNeu-sumAlt;return d>0?`<span class="down">▲ ${eur(d)}</span>`:(d<0?`<span class="up">▼ ${eur(Math.abs(d))}</span>`:'<span class="flat">±0</span>');})()}</td></tr>
+    </tbody></table>`;
 }
 
 async function saveVal(loanId, raw){
