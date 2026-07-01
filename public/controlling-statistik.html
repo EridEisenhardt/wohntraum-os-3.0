@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Controlling · Statistik – Macher OS</title>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 <style>
 :root{
   --bg:#f6f7f9;--surf:#fff;--surf2:#f1f3f6;--surf3:#e7ebf0;--line:#e6e8ec;--bord2:#eef0f3;
@@ -42,6 +43,12 @@ th:first-child,td:first-child{text-align:left}
 th{font-size:10.5px;text-transform:uppercase;letter-spacing:.3px;color:var(--muted);font-weight:700;background:var(--surf2)}
 tbody tr:hover{background:#fafbfd}
 .delcol a{color:var(--red);text-decoration:none;font-size:12px;cursor:pointer}
+.delcol a.edit{color:var(--accent)}
+.charts{display:grid;grid-template-columns:1fr 1fr;gap:16px;padding:16px}
+.charts .full{grid-column:1/-1}
+@media(max-width:760px){.charts{grid-template-columns:1fr}}
+.chbox{position:relative;height:250px}
+.chtitle{font-size:12px;font-weight:600;color:var(--dim);margin-bottom:8px}
 .loading,.empty{text-align:center;padding:40px;color:var(--muted)}
 .foot{font-size:11px;color:var(--muted);margin-top:18px;border-top:1px solid var(--line);padding-top:12px}
 </style>
@@ -83,6 +90,15 @@ tbody tr:hover{background:#fafbfd}
       <button class="btn" onclick="save()">Speichern</button>
       <button class="btn sec" onclick="clearForm()">Felder leeren</button>
       <span id="msg"></span>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-hd">Entwicklung</div>
+    <div class="charts">
+      <div class="full"><div class="chtitle">Finanzkennzahlen (€)</div><div class="chbox"><canvas id="chFin"></canvas></div></div>
+      <div><div class="chtitle">Bestand (Gebäude & Einheiten)</div><div class="chbox"><canvas id="chBestand"></canvas></div></div>
+      <div><div class="chtitle">Vermietungen (Einzüge / Auszüge)</div><div class="chbox"><canvas id="chVerm"></canvas></div></div>
     </div>
   </div>
 
@@ -188,8 +204,34 @@ async function load(){
       <td>${eur(r.summe_kredite)}</td>
       <td>${eur(r.gesamtverbindlichkeit)}</td><td>${delta(r.gesamtverbindlichkeit,p.gesamtverbindlichkeit,true)}</td>
       <td>${num(r.einzuege)}</td><td>${num(r.auszuege)}</td>
-      <td class="delcol"><a onclick="del(${r.jahr},${r.monat})">löschen</a></td></tr>`; }).join('')
+      <td class="delcol"><a class="edit" onclick="editRow(${r.jahr},${r.monat})">bearbeiten</a> · <a onclick="del(${r.jahr},${r.monat})">löschen</a></td></tr>`; }).join('')
     + '</tbody></table>';
+  drawCharts(rows);
+}
+
+function editRow(j,m){
+  document.getElementById('f_jahr').value=j; document.getElementById('f_monat').value=String(m);
+  prefillForm();
+  document.querySelector('.form').scrollIntoView({behavior:'smooth',block:'center'});
+  const msg=document.getElementById('msg'); msg.style.color='var(--muted)'; msg.textContent=MN[m]+' '+j+' geladen – Werte anpassen und „Speichern".';
+}
+
+let CH={};
+function eurShort(v){ if(v==null) return ''; const a=Math.abs(v); if(a>=1e6) return (v/1e6).toLocaleString('de-DE',{maximumFractionDigits:1})+' Mio'; if(a>=1000) return (v/1000).toLocaleString('de-DE',{maximumFractionDigits:0})+'k'; return ''+v; }
+function mkChart(id,type,labels,datasets,eurAxis){
+  const ctx=document.getElementById(id); if(!ctx||!window.Chart) return;
+  if(CH[id]){ CH[id].destroy(); }
+  CH[id]=new Chart(ctx,{type,data:{labels,datasets},options:{responsive:true,maintainAspectRatio:false,interaction:{mode:'index',intersect:false},
+    plugins:{legend:{labels:{boxWidth:12,font:{size:11}}},tooltip:{callbacks:{label:c=>c.dataset.label+': '+(eurAxis?eur(c.parsed.y):num(c.parsed.y))}}},
+    scales:{y:{beginAtZero:true,ticks:{callback:v=>eurAxis?eurShort(v):v,font:{size:10}}},x:{ticks:{font:{size:10}}}}}});
+}
+function drawCharts(rowsDesc){
+  const asc=[...rowsDesc].sort((a,b)=> a.jahr-b.jahr || a.monat-b.monat);
+  const labels=asc.map(r=>MN[r.monat]+' '+String(r.jahr).slice(2));
+  const col=(l,k,c)=>({label:l,data:asc.map(r=>r[k]),borderColor:c,backgroundColor:c,tension:.25,pointRadius:3,borderWidth:2,spanGaps:true});
+  mkChart('chFin','line',labels,[col('Jahressollmiete','jahressollmiete','#1f7a4d'),col('Summe aller Kredite','summe_kredite','#185fa5'),col('Gesamtverbindlichkeit','gesamtverbindlichkeit','#c0392b')],true);
+  mkChart('chBestand','line',labels,[col('Anzahl Gebäude','anzahl_gebaeude','#c8741f'),col('Einheiten in Vermietung','anzahl_einheiten','#185fa5')],false);
+  mkChart('chVerm','bar',labels,[{label:'Einzüge',data:asc.map(r=>r.einzuege),backgroundColor:'#1f7a4d',borderRadius:4},{label:'Auszüge',data:asc.map(r=>r.auszuege),backgroundColor:'#c0392b',borderRadius:4}],false);
 }
 
 initForm(); load();
