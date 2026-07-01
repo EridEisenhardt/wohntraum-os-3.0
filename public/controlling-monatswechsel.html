@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Controlling · Monatswechsel – Macher OS</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+:root{
+  --bg:#f6f7f9;--surf:#fff;--surf2:#f1f3f6;--surf3:#e7ebf0;--line:#e6e8ec;--bord2:#eef0f3;
+  --text:#1c2024;--muted:#6b7280;--dim:#4b5563;--accent:#185fa5;--ok:#1f7a4d;--danger:#c0392b;
+  --r:8px;--rl:12px;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--text);font-family:'Inter',system-ui,-apple-system,'Segoe UI',sans-serif;font-size:14px;line-height:1.5;font-variant-numeric:tabular-nums}
+.hdr{background:var(--surf);border-bottom:1px solid var(--line);padding:16px 24px;display:flex;align-items:center;gap:12px;position:sticky;top:0;z-index:10;flex-wrap:wrap}
+.logo{background:#1a1a2e;color:#fff;font-weight:700;font-size:11px;letter-spacing:.08em;padding:5px 9px;border-radius:4px}
+.hdr-title{font-size:16px;font-weight:600}
+.hdr-sub{font-size:11px;color:var(--muted)}
+.main{max-width:1080px;margin:0 auto;padding:20px 24px 60px}
+.ctrls{display:flex;gap:12px;align-items:end;flex-wrap:wrap;margin-bottom:18px}
+.fld{display:flex;flex-direction:column;gap:4px}
+.fld label{font-size:11px;color:var(--muted);font-weight:600}
+.fld select{font-family:inherit;font-size:14px;padding:8px 10px;border:1px solid var(--line);border-radius:var(--r);background:var(--surf)}
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:11px;margin-bottom:18px}
+.kpi{background:var(--surf);border:1px solid var(--line);border-radius:var(--rl);padding:14px 16px}
+.kpi .l{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px}
+.kpi .v{font-size:22px;font-weight:700;margin-top:4px}
+.kpi .d{font-size:11px;margin-top:3px}
+.up{color:var(--danger)}.down{color:var(--ok)}.flat{color:var(--muted)}
+.card{background:var(--surf);border:1px solid var(--line);border-radius:var(--rl);overflow:hidden}
+.card-hd{padding:12px 16px;border-bottom:1px solid var(--line);font-size:13px;font-weight:600;display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap}
+.tablewrap{overflow-x:auto}
+table{width:100%;border-collapse:collapse;font-size:12.5px;min-width:820px}
+th,td{padding:8px 12px;text-align:right;border-bottom:1px solid var(--bord2);white-space:nowrap}
+th:first-child,td:first-child{text-align:left}
+th{font-size:10.5px;text-transform:uppercase;letter-spacing:.3px;color:var(--muted);font-weight:700;background:var(--surf2)}
+tbody tr:hover{background:#fafbfd}
+tr.sum td{font-weight:700;border-top:2px solid var(--text);background:var(--surf2)}
+input.ni{width:130px;text-align:right;border:1px solid var(--line);border-radius:6px;padding:6px 8px;font:inherit;background:var(--surf)}
+input.ni:focus{outline:none;border-color:var(--accent)}
+input.ni.set{border-color:#bfe3cd;background:#f2fbf6}
+.loading,.empty{text-align:center;padding:40px;color:var(--muted)}
+.foot{font-size:11px;color:var(--muted);margin-top:16px;border-top:1px solid var(--line);padding-top:12px;line-height:1.6}
+</style>
+</head>
+<body>
+<div class="hdr">
+  <div class="logo">MACHER OS</div>
+  <div>
+    <div class="hdr-title">Controlling · Monatswechsel</div>
+    <div class="hdr-sub">Neue Darlehensstände (Restschuld) je Monat erfassen</div>
+  </div>
+</div>
+
+<div class="main">
+  <div class="ctrls">
+    <div class="fld"><label>Jahr</label><select id="jahr" onchange="load()"></select></div>
+    <div class="fld"><label>Monat</label><select id="monat" onchange="load()">
+      <option value="1">Januar</option><option value="2">Februar</option><option value="3">März</option><option value="4">April</option>
+      <option value="5">Mai</option><option value="6">Juni</option><option value="7">Juli</option><option value="8">August</option>
+      <option value="9">September</option><option value="10">Oktober</option><option value="11">November</option><option value="12">Dezember</option>
+    </select></div>
+  </div>
+
+  <div class="kpis" id="kpis"></div>
+
+  <div class="card">
+    <div class="card-hd"><span id="cardTitle">Darlehensstände</span><span class="hdr-sub" id="hint">Neue Restschuld eintragen → aktualisiert das Register „Darlehen" und speichert den Monatswert.</span></div>
+    <div class="tablewrap" id="tblwrap"><div class="loading" id="loading">Lädt…</div></div>
+  </div>
+
+  <div class="foot" id="foot"></div>
+</div>
+
+<script>
+const SB_URL='https://jqzxctfqvcwbctpjksvg.supabase.co';
+const SB_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpxenhjdGZxdmN3YmN0cGprc3ZnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODIxMzA0MzIsImV4cCI6MjA5NzcwNjQzMn0.RKIbZxJdusKWWPjBJqlxZ8e1m8So02UslOg55YRsn3o';
+const sb=window.supabase.createClient(SB_URL,SB_KEY);
+const MN=['','Januar','Februar','März','April','Mai','Juni','Juli','August','September','Oktober','November','Dezember'];
+const eur=n=>n==null?'—':new Intl.NumberFormat('de-DE',{style:'currency',currency:'EUR',minimumFractionDigits:2,maximumFractionDigits:2}).format(n);
+const esc=s=>(s==null?'':String(s)).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;');
+const numDE=v=>{ if(v==null||v==='') return null; const n=parseFloat(String(v).replace(',','.')); return isNaN(n)?null:n; };
+
+let LOANS=[], MW={};
+
+function initYears(){ const y=new Date().getFullYear(); const s=$('jahr'); let o=''; for(let j=y-2;j<=y+1;j++) o+=`<option value="${j}" ${j===y?'selected':''}>${j}</option>`; s.innerHTML=o; }
+function $(id){ return document.getElementById(id); }
+function curSel(){ return { jahr:parseInt($('jahr').value,10), monat:parseInt($('monat').value,10) }; }
+
+async function load(){
+  const {jahr,monat}=curSel();
+  $('cardTitle').textContent='Darlehensstände · '+MN[monat]+' '+jahr;
+  $('loading').style.display='block';
+  const lo = await sb.from('loans').select('id,ref,dnr_intern,bez,geber,betrag,aktuell').order('dnr_intern',{ascending:true}).order('ref',{ascending:true});
+  LOANS = lo.error ? [] : (lo.data||[]);
+  const mw = await sb.from('darlehen_monatswerte').select('loan_id,restschuld').eq('jahr',jahr).eq('monat',monat);
+  MW={}; (mw.error?[]:(mw.data||[])).forEach(r=>{ MW[r.loan_id]=r.restschuld; });
+  render();
+}
+
+async function saveVal(loanId, raw){
+  const {jahr,monat}=curSel();
+  const v=numDE(raw);
+  if(raw!=='' && v==null){ alert('Ungültiger Betrag'); return; }
+  const { error } = await sb.from('darlehen_monatswerte').upsert({ jahr, monat, loan_id:loanId, restschuld:v, updated_at:new Date().toISOString() }, { onConflict:'jahr,monat,loan_id' });
+  if(error){ alert('Speichern fehlgeschlagen: '+error.message); return; }
+  if(v!=null){ await sb.from('loans').update({ aktuell:v, updated_at:new Date().toISOString() }).eq('id',loanId); const l=LOANS.find(x=>x.id===loanId); if(l) l.aktuell=v; }
+  MW[loanId]=v; render();
+}
+
+function render(){
+  const w=$('tblwrap');
+  if(!LOANS.length){ w.innerHTML='<div class="empty">Keine Darlehen gefunden.</div>'; return; }
+  let sumAlt=0, sumNeu=0, cntNeu=0;
+  const rows=LOANS.map(l=>{
+    const alt = l.aktuell!=null?Number(l.aktuell):Number(l.betrag);
+    const neu = MW[l.id]!=null?Number(MW[l.id]):null;
+    sumAlt+=alt; if(neu!=null){ sumNeu+=neu; cntNeu++; } else { sumNeu+=alt; }
+    const d = neu!=null ? neu-alt : null;
+    const dtxt = d==null?'<span class="flat">—</span>':(d>0?`<span class="up">▲ ${eur(d)}</span>`:(d<0?`<span class="down">▼ ${eur(Math.abs(d))}</span>`:'<span class="flat">±0</span>'));
+    const nr = l.dnr_intern?('#'+l.dnr_intern+' · '):'';
+    return `<tr>
+      <td>${nr}${esc(l.bez||l.ref)}<div style="color:var(--muted);font-size:11px">${esc(l.geber||'')}</div></td>
+      <td>${eur(Number(l.betrag))}</td>
+      <td>${eur(alt)}</td>
+      <td><input class="ni ${neu!=null?'set':''}" type="number" step="0.01" min="0" value="${neu!=null?neu:''}" placeholder="${alt.toFixed(2)}" onchange="saveVal('${l.id}',this.value)"></td>
+      <td>${dtxt}</td>
+    </tr>`;
+  }).join('');
+  w.innerHTML=`<table>
+    <thead><tr><th>Darlehen</th><th>Summe lt. Vertrag</th><th>Aktuell (Register)</th><th>Neue Restschuld (${MN[curSel().monat]})</th><th>Δ</th></tr></thead>
+    <tbody>${rows}
+      <tr class="sum"><td>Summe (${LOANS.length} Darlehen · ${cntNeu} neu erfasst)</td><td>${eur(LOANS.reduce((s,l)=>s+Number(l.betrag),0))}</td><td>${eur(sumAlt)}</td><td>${eur(sumNeu)}</td><td>${(()=>{const d=sumNeu-sumAlt;return d>0?`<span class="up">▲ ${eur(d)}</span>`:(d<0?`<span class="down">▼ ${eur(Math.abs(d))}</span>`:'<span class="flat">±0</span>');})()}</td></tr>
+    </tbody></table>`;
+
+  $('kpis').innerHTML=[
+    ['Restschuld gesamt (neu/aktuell)',eur(sumNeu),`Stand ${MN[curSel().monat]} ${curSel().jahr}`],
+    ['Veränderung ggü. Register',(()=>{const d=sumNeu-sumAlt;return d>0?'▲ '+eur(d):(d<0?'▼ '+eur(Math.abs(d)):'±0');})(),'Tilgung negativ = Abbau'],
+    ['Erfasst',cntNeu+' / '+LOANS.length,'Darlehen mit neuem Wert']
+  ].map(a=>`<div class="kpi"><div class="l">${a[0]}</div><div class="v" style="font-size:${String(a[1]).length>12?'17px':'22px'}">${a[1]}</div><div class="d">${a[2]}</div></div>`).join('');
+
+  $('foot').innerHTML='Eingetragene Werte aktualisieren die „aktuelle Restschuld" im Register „Darlehen" und werden je Monat gespeichert (Verlauf). Cent-Beträge möglich.';
+  $('loading').style.display='none';
+}
+
+initYears();
+document.getElementById('monat').value=String(new Date().getMonth()+1);
+load();
+</script>
+</body>
+</html>

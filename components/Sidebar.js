@@ -64,6 +64,9 @@ export default function Sidebar({ user, demo, onLogout }) {
       <Link href="/controlling/statistik" className={subCls(path.startsWith('/controlling/statistik'))}>
         <i className="ti ti-chart-bar" /> Statistik
       </Link>
+      <Link href="/controlling/monatswechsel" className={subCls(path.startsWith('/controlling/monatswechsel'))}>
+        <i className="ti ti-calendar-dollar" /> Monatswechsel
+      </Link>
 
       <div className="nav-group">
         <i className="ti ti-rocket lead" /> Produktivität
