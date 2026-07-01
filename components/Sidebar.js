@@ -40,11 +40,14 @@ export default function Sidebar({ user, demo, onLogout }) {
       </Link>
 
       <div className="nav-group">
-        <i className="ti ti-clipboard-list lead" /> Planung
+        <i className="ti ti-ruler-2 lead" /> Baustandard
         <i className="ti ti-chevron-down chev" />
       </div>
       <Link href="/planung/baustandard" className={subCls(path.startsWith('/planung/baustandard'))}>
         <i className="ti ti-ruler-2" /> Baustandard
+      </Link>
+      <Link href="/planung/materialliste" className={subCls(path.startsWith('/planung/materialliste'))}>
+        <i className="ti ti-list-details" /> Materialliste
       </Link>
 
       <Link href="/aktivitaeten" className={cls(path.startsWith('/aktivitaeten'))}>
