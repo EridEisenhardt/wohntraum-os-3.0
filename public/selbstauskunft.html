@@ -359,27 +359,41 @@ const INCSTORE="macherOS_selbst_einkommen_v1";
 const INC=[
  ['se','2.1','Selbstständige Arbeit','600'],
  ['nse','2.2','Nichtselbstständige Arbeit',''],
- ['vuv','2.3','Vermietung u. Verpachtung','5224'],
+ ['vuv','2.3','Vermietung u. Verpachtung',''],
  ['sonst','2.4','Sonstige Einkommen','138'],
  ['rente','2.5','Renten',''],
  ['kg','2.6','Kindergeld',''],
 ];
+const VV_OBJ=['A14','E14','S16','R6'];
 function incLoad(){ try{ return JSON.parse(localStorage.getItem(INCSTORE))||{}; }catch(e){ return {}; } }
 function incEUR(n){ return new Intl.NumberFormat('de-DE',{style:'currency',currency:'EUR',maximumFractionDigits:0}).format(n||0); }
 function incParse(s){ const n=parseFloat(String(s).replace(/\./g,'').replace(',','.')); return isNaN(n)?0:n; }
 function renderInc(){
   const el=document.getElementById('einktbl'); if(!el) return;
   const d=incLoad(); const q=s=>(s==null?'':String(s)).replace(/"/g,'&quot;');
-  let sum=0;
-  const rows=INC.map(f=>{
-    const val=(f[0] in d)? d[f[0]] : f[3];
-    sum+=incParse(val);
-    return `<tr><td style="width:42px;color:var(--muted)">${f[1]}</td><td>${f[2]}</td>
-      <td style="text-align:right"><input style="${FINL};text-align:right;max-width:160px" inputmode="decimal" value="${q(val)}" placeholder="€ / Monat" onchange="incSave('${f[0]}',this.value)"></td></tr>`;
-  }).join('');
+  let sum=0, body='';
+  INC.forEach(f=>{
+    if(f[0]==='vuv'){
+      let vv=0;
+      const subs=VV_OBJ.map(o=>{
+        const key='vv_'+o; const val=(key in d)? d[key] : '';
+        vv+=incParse(val);
+        return `<tr><td></td><td style="padding-left:22px;color:var(--dim)">↳ Objekt ${o}</td>
+          <td style="text-align:right"><input style="${FINL};text-align:right;max-width:160px" inputmode="decimal" value="${q(val)}" placeholder="€ / Monat" onchange="incSave('${key}',this.value)"></td></tr>`;
+      }).join('');
+      sum+=vv;
+      body+=`<tr><td style="width:42px;color:var(--muted)">2.3</td><td>Vermietung u. Verpachtung <span style="color:var(--muted);font-size:11px">(Summe der Objekte)</span></td>
+        <td style="text-align:right;font-weight:600">${incEUR(vv)}</td></tr>`+subs;
+    } else {
+      const val=(f[0] in d)? d[f[0]] : f[3];
+      sum+=incParse(val);
+      body+=`<tr><td style="width:42px;color:var(--muted)">${f[1]}</td><td>${f[2]}</td>
+        <td style="text-align:right"><input style="${FINL};text-align:right;max-width:160px" inputmode="decimal" value="${q(val)}" placeholder="€ / Monat" onchange="incSave('${f[0]}',this.value)"></td></tr>`;
+    }
+  });
   const zve=('zve' in d)? d['zve'] : '27421';
   el.innerHTML='<thead><tr><th style="width:42px">Nr.</th><th>Einkommensart</th><th style="text-align:right">Betrag / Monat</th></tr></thead><tbody>'
-    + rows
+    + body
     + `<tr class="totrow"><td>2.7</td><td>Gesamtes monatliches Einkommen</td><td style="text-align:right">${incEUR(sum)}</td></tr>`
     + `<tr><td style="color:var(--muted)">2.8</td><td>Gesamtes zu versteuerndes Einkommen / Jahr <span style="color:var(--muted)">(aktuelle Steuererklärung)</span></td>
         <td style="text-align:right"><input style="${FINL};text-align:right;max-width:160px" inputmode="decimal" value="${q(zve)}" placeholder="€ / Jahr" onchange="incSave('zve',this.value)"></td></tr>`
