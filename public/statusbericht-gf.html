@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Statusbericht offene Aufgaben des GF · Macher OS</title>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 <style>
 :root{
   --bg:#f6f7f9;--surf:#fff;--surf2:#f1f3f6;--line:#e6e8ec;--bord2:#eef0f3;
@@ -84,7 +85,12 @@ h2 .dot{width:9px;height:9px;border-radius:3px;display:inline-block}
     <h2><span class="dot" style="background:var(--accent)"></span>Überblick</h2>
     <div class="kpis" id="kpis"></div>
 
-    <h2><span class="dot" style="background:var(--danger)"></span>Kritische Schwerpunkte (überfällig &amp; fällig)</h2>
+    <h2><span class="dot" style="background:var(--accent)"></span>Entwicklung offener Vorgänge</h2>
+    <div class="note">Mails im Postfach sowie fällige &amp; überfällige Aufgaben in Asana und Todoist — täglich fortgeschrieben.</div>
+    <div class="kpis" id="metricKpis"></div>
+    <div class="cat" style="margin-top:14px;padding:14px 16px 6px"><div style="position:relative;height:300px"><canvas id="mchart"></canvas></div></div>
+
+    <h2><span class="dot" style="background:var(--danger)"></span>Alle fälligen &amp; überfälligen Aufgaben</h2>
     <div class="note" id="catNote"></div>
     <div class="grid" id="cats"></div>
 
@@ -110,11 +116,49 @@ function dueClass(iso){ if(!iso) return 'due-ok'; const d=new Date(iso); const d
 function dueLabel(iso){ if(!iso) return 'kein Datum'; const d=new Date(iso); const diff=Math.round((d-TODAY)/86400000); if(diff<0) return Math.abs(diff)+' T überfällig'; if(diff===0) return 'heute'; if(diff<=7) return 'in '+diff+' T'; return fmtD(iso); }
 const esc=s=>(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 
+let METRICS=[];
 async function load(){
   const { data, error } = await sb.from('gf_statusbericht').select('payload,generated_at').order('generated_at',{ascending:false}).limit(1);
   if(error){ document.getElementById('loading').textContent='Fehler beim Laden: '+error.message; return; }
   if(!data || !data.length){ document.getElementById('loading').textContent='Noch kein Statusbericht vorhanden.'; return; }
+  const m = await sb.from('gf_metrics').select('*').order('datum',{ascending:true});
+  METRICS = m.error ? [] : (m.data||[]);
   render(data[0].payload, data[0].generated_at);
+}
+
+let MCHART=null;
+function renderMetrics(p){
+  const cur = METRICS.length ? METRICS[METRICS.length-1] : null;
+  const k=p.kpis||{};
+  const mail = cur && cur.mail_count!=null ? cur.mail_count : (k.mail_open!=null?k.mail_open:'—');
+  const asana = cur && cur.asana_faellig!=null ? cur.asana_faellig : ((k.overdue_asana||0)+(k.due_week||0));
+  const todo = cur && cur.todoist_faellig!=null ? cur.todoist_faellig : (k.todoist!=null?k.todoist:'—');
+  const sum = (typeof asana==='number'&&typeof todo==='number') ? asana+todo : '—';
+  document.getElementById('metricKpis').innerHTML=[
+    ['accent', mail, 'Mails im Postfach', 'aktueller Stand'],
+    ['danger', asana, 'Asana fällig + überfällig', 'alle Aufgaben'],
+    ['warn', todo, 'Todoist fällig + überfällig', 'alle Aufgaben'],
+    ['', sum, 'Aufgaben gesamt', 'Asana + Todoist'],
+  ].map(a=>`<div class="kpi ${a[0]}"><div class="l">${a[2]}</div><div class="v">${a[1]}</div><div class="h">${a[3]}</div></div>`).join('');
+  drawChart();
+}
+function drawChart(){
+  const ctx=document.getElementById('mchart'); if(!ctx || !window.Chart) return;
+  if(MCHART){ MCHART.destroy(); MCHART=null; }
+  if(!METRICS.length) return;
+  const labels=METRICS.map(r=>{ const p=String(r.datum).split('-'); return p[2]+'.'+p[1]; });
+  const ds=(lab,key,col)=>({label:lab,data:METRICS.map(r=>r[key]),borderColor:col,backgroundColor:col,tension:.25,pointRadius:3,borderWidth:2});
+  const opts={
+    responsive:true, maintainAspectRatio:false,
+    interaction:{ mode:'index', intersect:false },
+    plugins:{ legend:{ labels:{ boxWidth:12, font:{ size:11 } } } },
+    scales:{ y:{ beginAtZero:true, ticks:{ precision:0 } }, x:{ ticks:{ font:{ size:10 } } } }
+  };
+  MCHART=new Chart(ctx,{ type:'line', data:{ labels, datasets:[
+    ds('Mails im Postfach','mail_count','#185fa5'),
+    ds('Asana fällig+überfällig','asana_faellig','#c62828'),
+    ds('Todoist fällig+überfällig','todoist_faellig','#b45309')
+  ] }, options:opts });
 }
 
 function render(p, gen){
@@ -126,7 +170,8 @@ function render(p, gen){
     ['', k.todoist!=null?k.todoist:'n/v', 'Todoist', k.todoist!=null?'Aufgaben':'nicht verbunden'],
   ].map(a=>`<div class="kpi ${a[0]}"><div class="l">${a[2]}</div><div class="v">${a[1]}</div><div class="h">${a[3]}</div></div>`).join('');
 
-  document.getElementById('catNote').textContent='Kuratierte Schwerpunkte je Bereich — vollständige Liste in Asana.';
+  renderMetrics(p);
+  document.getElementById('catNote').textContent='Vollständige Liste aller fälligen und überfälligen Aufgaben (Asana + Todoist), gruppiert nach Bereich.';
   document.getElementById('cats').innerHTML=(p.categories||[]).map(c=>{
     const col=c.color||'#185fa5';
     const rows=(c.items||[]).map(it=>`
