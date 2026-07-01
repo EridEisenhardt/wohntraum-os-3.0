@@ -308,11 +308,11 @@ textarea{resize:vertical;min-height:60px}
       <div class="fsec">Konditionen</div>
       <div class="fg">
         <label>Betrag lt. Vertrag (€) *</label>
-        <input id="f_betrag" type="number" placeholder="250000" oninput="calcLTV()">
+        <input id="f_betrag" type="number" step="0.01" placeholder="250000.00" oninput="calcLTV()">
       </div>
       <div class="fg">
         <label>Aktuelle Restschuld (€)</label>
-        <input id="f_aktuell" type="number" placeholder="= Betrag wenn neu">
+        <input id="f_aktuell" type="number" step="0.01" placeholder="= Betrag wenn neu">
       </div>
       <div class="fg">
         <label>Zinssatz % p.a. *</label>
@@ -404,7 +404,7 @@ async function loadDB(){
   render();
 }
 // ══════ HELPERS ══════
-function fmtE(n){ return n != null ? '€ '+n.toLocaleString('de-DE',{maximumFractionDigits:0}) : '—'; }
+function fmtE(n){ return n != null ? '€ '+n.toLocaleString('de-DE',{minimumFractionDigits:2,maximumFractionDigits:2}) : '—'; }
 function fmtD(d){ if(!d) return '—'; const p=d.split('-'); return p[2]+'.'+p[1]+'.'+p[0]; }
 function ann(d){ return Math.round(d.betrag*(d.zins+(d.tilg||0))/100/12); }
 // Effektiver monatlicher Kapitaldienst: manuell erfasst (übersteuert) oder automatisch berechnet
@@ -425,8 +425,9 @@ function saveKD(id, raw){
 function saveField(id, field, raw, numeric){
   let v = raw==null ? null : String(raw).trim();
   if(numeric){
-    v = (v==='') ? null : parseFloat(v.replace(/\./g,'').replace(',','.'));
+    v = (v==='') ? null : parseFloat(v.replace(',','.'));
     if(v!=null && (isNaN(v)||v<0)){ toast('Ungültiger Wert'); render(); return; }
+    if(field==='betrag' && v==null){ toast('Summe darf nicht leer sein'); render(); return; }
   } else if(v===''){ v=null; }
   (async()=>{
     const { error } = await sb.from('loans').update({ [field]:v }).eq('id',id);
@@ -542,11 +543,16 @@ function renderTable(){
           title="Darlehensnummer der Bank"
           onclick="event.stopPropagation()" onchange="saveField('${d.id}','dnr_bank',this.value,false)">
       </td>
-      <td class="mono tr">${fmtE(d.betrag)}</td>
       <td class="kd-cell tr">
-        <input class="kd-inline ${d.aktuell!=null?'manual':''}" type="number" min="0" step="1000"
-          value="${d.aktuell!=null?Math.round(d.aktuell):''}"
-          placeholder="${Math.round(d.betrag)}"
+        <input class="kd-inline" type="number" min="0" step="0.01"
+          value="${d.betrag!=null?d.betrag:''}"
+          title="Summe laut Vertrag – Cent-Beträge möglich"
+          onclick="event.stopPropagation()" onchange="saveField('${d.id}','betrag',this.value,true)">
+      </td>
+      <td class="kd-cell tr">
+        <input class="kd-inline ${d.aktuell!=null?'manual':''}" type="number" min="0" step="0.01"
+          value="${d.aktuell!=null?d.aktuell:''}"
+          placeholder="${d.betrag}"
           title="Aktuelle Restschuld manuell eintragen – leer = Betrag lt. Vertrag (${fmtE(d.betrag)})"
           onclick="event.stopPropagation()" onchange="saveField('${d.id}','aktuell',this.value,true)">
       </td>
