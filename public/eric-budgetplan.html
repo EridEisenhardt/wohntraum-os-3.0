@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Eric Privat · Budgetplan – Macher OS</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+:root{
+  --bg:#f6f7f9;--surf:#fff;--surf2:#f1f3f6;--surf3:#e7ebf0;--line:#e6e8ec;--bord2:#eef0f3;
+  --text:#1c2024;--muted:#6b7280;--dim:#4b5563;--accent:#185fa5;--green:#1f7a4d;--red:#c0392b;
+  --r:8px;--rl:12px;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--text);font-family:'Inter',system-ui,-apple-system,'Segoe UI',sans-serif;font-size:14px;line-height:1.5}
+.hdr{background:var(--surf);border-bottom:1px solid var(--line);padding:16px 24px;display:flex;align-items:center;gap:12px;position:sticky;top:0;z-index:10}
+.logo{background:#1a1a2e;color:#fff;font-weight:700;font-size:11px;letter-spacing:.08em;padding:5px 9px;border-radius:4px}
+.hdr-title{font-size:16px;font-weight:600}
+.hdr-sub{font-size:11px;color:var(--muted)}
+.main{max-width:1040px;margin:0 auto;padding:20px 24px 60px}
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:11px;margin-bottom:20px}
+.kpi{background:var(--surf);border:1px solid var(--line);border-radius:var(--rl);padding:14px 16px}
+.kpi .l{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px}
+.kpi .v{font-size:23px;font-weight:700;margin-top:4px}
+.kpi .d{font-size:11px;color:var(--muted);margin-top:3px}
+.kpi.pos .v{color:var(--green)} .kpi.neg .v{color:var(--red)}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+@media(max-width:820px){.grid{grid-template-columns:1fr}}
+.card{background:var(--surf);border:1px solid var(--line);border-radius:var(--rl);overflow:hidden;margin-bottom:16px}
+.card-hd{padding:12px 16px;border-bottom:1px solid var(--line);font-size:13px;font-weight:600;display:flex;justify-content:space-between;align-items:center}
+.card-hd .sum{font-weight:700}
+.card-hd.ein{border-left:4px solid var(--green)} .card-hd.aus{border-left:4px solid var(--red)}
+table{width:100%;border-collapse:collapse;font-size:13px}
+td{padding:6px 12px;border-bottom:1px solid var(--bord2)}
+tr:last-child td{border-bottom:none}
+.cin{width:100%;border:1px solid transparent;background:transparent;font:inherit;color:var(--text);padding:6px 7px;border-radius:5px}
+.cin:hover{border-color:var(--line)}.cin:focus{outline:none;border-color:var(--accent);background:var(--surf)}
+.bet{text-align:right;max-width:150px}
+.addbtn{font-size:12px;font-weight:600;padding:8px 14px;border:1px dashed var(--line);background:var(--surf2);color:var(--accent);border-radius:var(--r);cursor:pointer;margin:10px 16px 14px}
+.abtn{font-size:12px;padding:3px 8px;border-radius:5px;border:1px solid var(--line);background:transparent;color:var(--muted);cursor:pointer}
+.abtn:hover{color:var(--red);border-color:var(--red)}
+.loading,.empty{text-align:center;padding:30px;color:var(--muted)}
+.foot{font-size:11px;color:var(--muted);margin-top:16px;border-top:1px solid var(--line);padding-top:12px}
+.toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:var(--surf3);border:1px solid var(--line);border-radius:var(--r);padding:10px 20px;font-size:13px;opacity:0;transition:opacity .3s;pointer-events:none}
+.toast.show{opacity:1}
+</style>
+</head>
+<body>
+<div class="hdr">
+  <div class="logo">MACHER OS</div>
+  <div>
+    <div class="hdr-title">Eric Privat · Budgetplan</div>
+    <div class="hdr-sub">Private Haushaltsrechnung – alle Einnahmen und Ausgaben (monatlich)</div>
+  </div>
+</div>
+
+<div class="main">
+  <div class="kpis" id="kpis"></div>
+  <div class="grid">
+    <div>
+      <div class="card">
+        <div class="card-hd ein"><span>➕ Einnahmen / Monat</span><span class="sum" id="sumEin">–</span></div>
+        <table id="einTbl"></table>
+        <button class="addbtn" onclick="addRow('einnahme')">+ Einnahme</button>
+      </div>
+    </div>
+    <div>
+      <div class="card">
+        <div class="card-hd aus"><span>➖ Ausgaben / Monat</span><span class="sum" id="sumAus">–</span></div>
+        <table id="ausTbl"></table>
+        <button class="addbtn" onclick="addRow('ausgabe')">+ Ausgabe</button>
+      </div>
+    </div>
+  </div>
+  <div class="foot" id="foot"></div>
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+const SB_URL='https://jqzxctfqvcwbctpjksvg.supabase.co';
+const SB_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpxenhjdGZxdmN3YmN0cGprc3ZnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODIxMzA0MzIsImV4cCI6MjA5NzcwNjQzMn0.RKIbZxJdusKWWPjBJqlxZ8e1m8So02UslOg55YRsn3o';
+const sb=window.supabase.createClient(SB_URL,SB_KEY);
+const $=id=>document.getElementById(id);
+const esc=s=>(s==null?'':String(s)).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;');
+const eur=n=>new Intl.NumberFormat('de-DE',{style:'currency',currency:'EUR',minimumFractionDigits:2,maximumFractionDigits:2}).format(n||0);
+const numDE=v=>{ if(v==null||v==='') return null; const n=parseFloat(String(v).replace(/\./g,'').replace(',','.')); return isNaN(n)?null:n; };
+function toast(m){const t=$('toast');t.textContent=m;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),1800);}
+let ROWS=[];
+
+async function load(){
+  const { data, error } = await sb.from('budget_eric').select('*').order('art',{ascending:true}).order('pos',{ascending:true}).order('created_at',{ascending:true});
+  ROWS = error ? [] : (data||[]);
+  render();
+}
+async function addRow(art){
+  const max=Math.max(0,...ROWS.filter(r=>r.art===art).map(r=>r.pos||0));
+  const { error } = await sb.from('budget_eric').insert({ art, bezeichnung:'', pos:max+1 });
+  if(error){ toast('Fehler: '+error.message); return; }
+  await load();
+}
+async function upd(id,field,val){
+  const v = field==='betrag' ? numDE(val) : (val.trim()||null);
+  const { error } = await sb.from('budget_eric').update({ [field]:v }).eq('id',id);
+  if(error){ toast('Speichern fehlgeschlagen'); return; }
+  const r=ROWS.find(x=>x.id===id); if(r) r[field]=v; render();
+}
+async function del(id){ if(!confirm('Position löschen?'))return; await sb.from('budget_eric').delete().eq('id',id); await load(); }
+
+const THEAD='<thead><tr>'
+  +'<th style="text-align:left;font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;padding:7px 12px;background:var(--surf2)">Bezeichnung</th>'
+  +'<th style="text-align:right;font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;padding:7px 12px;background:var(--surf2)">Betrag / Monat</th>'
+  +'<th style="text-align:center;font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;padding:7px 12px;background:var(--surf2)">Weitergabe</th>'
+  +'<th style="background:var(--surf2)"></th></tr></thead>';
+function selWG(r){
+  const v=r.weitergabe||'';
+  return `<select class="cin" style="text-align:center" onchange="upd('${r.id}','weitergabe',this.value)">
+    <option value="" ${v===''?'selected':''}>—</option>
+    <option ${v==='Ja'?'selected':''}>Ja</option>
+    <option ${v==='Nein'?'selected':''}>Nein</option></select>`;
+}
+function rowsHtml(art){
+  const list=ROWS.filter(r=>r.art===art);
+  if(!list.length) return THEAD+`<tbody><tr><td colspan="4" class="empty">Noch keine Position — unten hinzufügen.</td></tr></tbody>`;
+  return THEAD+'<tbody>'+list.map(r=>`<tr>
+    <td><input class="cin" value="${esc(r.bezeichnung)}" placeholder="Bezeichnung…" onchange="upd('${r.id}','bezeichnung',this.value)"></td>
+    <td style="width:150px"><input class="cin bet" inputmode="decimal" value="${r.betrag!=null?r.betrag:''}" placeholder="€ / Monat" onchange="upd('${r.id}','betrag',this.value)"></td>
+    <td style="width:90px;text-align:center">${selWG(r)}</td>
+    <td style="width:36px"><button class="abtn" onclick="del('${r.id}')">✕</button></td>
+  </tr>`).join('')+'</tbody>';
+}
+function render(){
+  $('einTbl').innerHTML=rowsHtml('einnahme');
+  $('ausTbl').innerHTML=rowsHtml('ausgabe');
+  const ein=ROWS.filter(r=>r.art==='einnahme').reduce((s,r)=>s+(Number(r.betrag)||0),0);
+  const aus=ROWS.filter(r=>r.art==='ausgabe').reduce((s,r)=>s+(Number(r.betrag)||0),0);
+  const saldo=ein-aus;
+  $('sumEin').textContent=eur(ein); $('sumEin').style.color='var(--green)';
+  $('sumAus').textContent=eur(aus); $('sumAus').style.color='var(--red)';
+  const sq = ein>0 ? Math.round(saldo/ein*100) : 0;
+  $('kpis').innerHTML=[
+    ['','Einnahmen / Monat',eur(ein),eur(ein*12)+' / Jahr'],
+    ['','Ausgaben / Monat',eur(aus),eur(aus*12)+' / Jahr'],
+    [saldo>=0?'pos':'neg', saldo>=0?'Überschuss / Monat':'Defizit / Monat',eur(saldo),eur(saldo*12)+' / Jahr'],
+    [saldo>=0?'pos':'neg','Sparquote',sq+' %','Überschuss ÷ Einnahmen']
+  ].map(a=>`<div class="kpi ${a[0]}"><div class="l">${a[1]}</div><div class="v">${a[2]}</div><div class="d">${a[3]}</div></div>`).join('');
+  $('foot').innerHTML='Private Haushaltsrechnung von Eric · monatliche Beträge (Cent möglich) · in Supabase gespeichert. Beträge/Bezeichnungen frei editierbar; Positionen hinzufügen oder löschen.';
+}
+
+(async()=>{
+  const { data:{ session } } = await sb.auth.getSession();
+  if(!session){ $('main').innerHTML='<div class="empty" style="padding:60px">Bitte zuerst im OS einloggen.</div>'; return; }
+  load();
+})();
+</script>
+</body>
+</html>

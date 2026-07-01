@@ -137,6 +137,14 @@ export default function Sidebar({ user, demo, onLogout }) {
         <i className="ti ti-building" /> Firmen
       </Link>
 
+      <div className="nav-group">
+        <i className="ti ti-user-heart lead" /> Eric Privat
+        <i className="ti ti-chevron-down chev" />
+      </div>
+      <Link href="/eric-privat/budgetplan" className={subCls(path.startsWith('/eric-privat/budgetplan'))}>
+        <i className="ti ti-wallet" /> Budgetplan
+      </Link>
+
       <Link href="/nutzer" className={cls(path.startsWith('/nutzer'))}>
         <i className="ti ti-shield-lock" /> Nutzerverwaltung
       </Link>
