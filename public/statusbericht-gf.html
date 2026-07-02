@@ -180,13 +180,15 @@ function render(p, gen){
   document.getElementById('catNote').textContent='Vollständige Liste aller fälligen und überfälligen Aufgaben (Asana + Todoist), gruppiert nach Bereich.';
   document.getElementById('cats').innerHTML=(p.categories||[]).map(c=>{
     const col=c.color||'#185fa5';
-    const rows=(c.items||[]).map(it=>`
-      <div class="row">
-        <span class="due ${dueClass(it.due)}">${dueLabel(it.due)}</span>
-        <div class="tx">${esc(it.task)}<div class="src">${esc(it.source||'')}${it.due?' · '+fmtD(it.due):''}</div></div>
-      </div>`).join('');
+    const cname=c.name||c.title||c.bereich||'—';
+    const items=c.items||[];
+    const rows=items.map(it=>{ const task=it.task||it.name||it.content||''; const due=it.due||it.due_on||null; const src=it.source||it.project||it.projekt||'';
+      return `<div class="row">
+        <span class="due ${dueClass(due)}">${dueLabel(due)}</span>
+        <div class="tx">${esc(task)}<div class="src">${esc(src)}${due?' · '+fmtD(due):''}</div></div>
+      </div>`; }).join('');
     return `<div class="cat">
-      <div class="cat-hd" style="border-left:4px solid ${col}"><span>${esc(c.name)}</span><span class="cnt" style="background:${col}">${(c.items||[]).length}</span></div>
+      <div class="cat-hd" style="border-left:4px solid ${col}"><span>${esc(cname)}</span><span class="cnt" style="background:${col}">${items.length}</span></div>
       ${rows}
     </div>`;
   }).join('');
@@ -194,13 +196,15 @@ function render(p, gen){
   const mails=p.mails||[];
   const total = (METRICS.length && METRICS[METRICS.length-1].mail_count!=null) ? METRICS[METRICS.length-1].mail_count : (k.mail_total!=null?k.mail_total:null);
   const head=`<div class="mailrow" style="background:var(--surf2);font-weight:600;color:var(--muted)">Angezeigt: ${mails.length} wichtigste offene Vorgänge${total!=null?` · ${total} Mails im Postfach gesamt`:''}</div>`;
-  document.getElementById('mails').innerHTML=head+mails.map(m=>`
-    <div class="mailrow">
-      <span class="prio p-${m.prio||'niedrig'}">${(m.prio||'').toUpperCase()||'—'}</span>
-      <span class="mfrom">${esc(m.from)}</span>
-      <div style="flex:1">${esc(m.subject)}</div>
-      <span style="flex-shrink:0;color:var(--muted);font-size:11px">${m.date?fmtD(m.date):''}</span>
-    </div>`).join('');
+  document.getElementById('mails').innerHTML=head+mails.map(m=>{
+    const from=m.from||m.von||m.sender||''; const subject=m.subject||m.betreff||m.title||''; const date=m.date||m.datum||''; let prio=(m.prio||m.priority||'').toString().toLowerCase();
+    if(!prio && (m.status||'').toUpperCase()==='UNREAD') prio='mittel'; if(!prio) prio='niedrig';
+    return `<div class="mailrow">
+      <span class="prio p-${prio}">${prio.toUpperCase()}</span>
+      <span class="mfrom">${esc(from)}</span>
+      <div style="flex:1">${esc(subject)}</div>
+      <span style="flex-shrink:0;color:var(--muted);font-size:11px">${date?fmtD(date):''}</span>
+    </div>`; }).join('');
 
   renderDeleg(p);
 
@@ -247,8 +251,8 @@ const DELEG=[
 function matchPerson(text){ const t=(text||'').toLowerCase(); for(const p of DELEG){ if(p.kw.some(k=>t.includes(k))) return p.key; } return null; }
 function renderDeleg(p){
   const open=[];
-  (p.categories||[]).forEach(c=>(c.items||[]).forEach(it=>open.push({text:it.task||'', show:it.task||''})));
-  (p.mails||[]).forEach(m=>open.push({text:((m.subject||'')+' '+(m.from||'')), show:m.subject||m.from||''}));
+  (p.categories||[]).forEach(c=>(c.items||[]).forEach(it=>{ const t=it.task||it.name||it.content||''; open.push({text:t, show:t}); }));
+  (p.mails||[]).forEach(m=>{ const sub=m.subject||m.betreff||''; const frm=m.from||m.von||''; open.push({text:sub+' '+frm, show:sub||frm}); });
   document.getElementById('deleg').innerHTML=DELEG.map(pp=>{
     const matched=open.filter(o=>matchPerson(o.text)===pp.key);
     const tasks=pp.tasks.map(t=>`<li><span style="color:${pp.color}">→</span><span>${esc(t)}</span></li>`).join('');
