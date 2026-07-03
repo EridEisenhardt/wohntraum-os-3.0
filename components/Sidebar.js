@@ -78,6 +78,9 @@ export default function Sidebar({ user, demo, onLogout }) {
       <Link href="/controlling/monatswechsel" className={subCls(path.startsWith('/controlling/monatswechsel'))}>
         <i className="ti ti-calendar-dollar" /> Monatswechsel
       </Link>
+      <Link href="/controlling/nahaus-fixkosten" className={subCls(path.startsWith('/controlling/nahaus-fixkosten'))}>
+        <i className="ti ti-file-invoice" /> Nahaus – Fixkosten
+      </Link>
 
       <div className="nav-group">
         <i className="ti ti-rocket lead" /> Produktivität
