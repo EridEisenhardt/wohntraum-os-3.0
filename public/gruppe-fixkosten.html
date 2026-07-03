@@ -97,7 +97,7 @@ function toast(m){const t=$('toast');t.textContent=m;t.classList.add('show');set
 const MON=['Jan','Feb','Mär','Apr','Mai','Jun','Jul','Aug','Sep','Okt','Nov','Dez'];
 const GES=['WT','EE','Kibo'];
 let ROWS=[],IST={},pendingBeleg=null,curGes='';
-let PMA=[],PPM={},PSM={},PIST={};
+let MX=[],PIST={};
 const TABS=[['','Alle'],['WT','WT'],['EE','EE'],['Kibo','Kibo'],['__none','(nicht zugeordnet)']];
 function renderTabs(){$('gtabs').innerHTML=TABS.map(t=>`<button class="tab ${curGes===t[0]?'active':''}" onclick="setTab('${t[0]}')">${esc(t[1])}</button>`).join('');}
 function setTab(g){curGes=g;renderTabs();renderReg();renderMatrix();}
@@ -105,13 +105,8 @@ const num2=x=>x==null?0:Number(x);
 function nm(m){return((m.vorname||'')+' '+(m.name||'')).trim()||'—';}
 function gesOf(u){u=(u||'').toLowerCase();if(u.includes('kibo'))return 'Kibo';if(u.includes('rheinhessen')||u.includes('wohn(t)raum')||u.includes('wohntraum'))return 'WT';if(u.includes('eisenhardt')||u.includes('macher')||u==='ee')return 'EE';return '__none';}
 function personnelByGes(){const res={};[...GES,'__none'].forEach(k=>res[k]=[]);
-  const byG={};PMA.forEach(m=>{const k=gesOf(m.unternehmen);(byG[k]=byG[k]||[]).push(m);});
-  Object.keys(byG).forEach(k=>{const emps=byG[k];
-    emps.forEach(m=>{const vals=Array(13).fill(0);let any=false;for(let mo=1;mo<=12;mo++){vals[mo]=num2((PPM[m.id+'_'+mo]||{}).auszahlung);if(vals[mo])any=true;}if(any)res[k].push({label:(m.vorname||nm(m)),typ:'Gehalt (Auszahlung)',key:'geh:'+m.id,vals});});
-    const sbz=Array(13).fill(0);let a1=false;for(let mo=1;mo<=12;mo++){emps.forEach(m=>sbz[mo]+=num2((PPM[m.id+'_'+mo]||{}).sachbezug));if(sbz[mo])a1=true;}if(a1)res[k].push({label:'Sachbezug',typ:'Sachbezug',key:'sbz:'+k,vals:sbz});
-    ['Knappschaft','Firmus','BKK Linde'].forEach(kk=>{const a=Array(13).fill(0);let an=false;for(let mo=1;mo<=12;mo++){emps.forEach(m=>{if((m.krankenkasse||'').toLowerCase()===kk.toLowerCase())a[mo]+=num2((PPM[m.id+'_'+mo]||{}).kk_betrag);});if(a[mo])an=true;}if(an)res[k].push({label:kk,typ:'Krankenkasse',key:'kk:'+kk+':'+k,vals:a});});
-    const st=Array(13).fill(0);let as=false;for(let mo=1;mo<=12;mo++){st[mo]=num2(PSM[k+'_'+mo]);if(st[mo])as=true;}if(as)res[k].push({label:'Lohnsteuer',typ:'Lohnsteuer',key:'lst:'+k,vals:st});
-  });
+  MX.forEach(r=>{const k=gesOf(r.unternehmen);if(!res[k])res[k]=[];const vals=Array(13).fill(0);let any=false;for(let mo=1;mo<=12;mo++){vals[mo]=num2(r['m'+mo]);if(vals[mo])any=true;}
+    if((r.label&&r.label.trim())||any)res[k].push({label:r.label||'—',typ:'Personal',key:r.id,vals});});
   return res;}
 function initSel(){const y=new Date().getFullYear();let o='';for(let j=y-1;j<=y+1;j++)o+=`<option ${j===y?'selected':''}>${j}</option>`;$('jahr').innerHTML=o;}
 function parseDates(t){if(!t)return[];return[...String(t).matchAll(/([0-3]?\d)[.\/-]([01]?\d)[.\/-](\d{2,4})/g)].map(m=>{let y=m[3];if(y.length===2)y='20'+y;return new Date(+y,+m[2]-1,+m[1]);});}
@@ -124,9 +119,7 @@ function dueMonths(r){const wrap=m=>((m-1)%12)+1;let base=[...new Set(parseDates
   return base;}
 async function load(){ROWS=(await sb.from('gruppe_fixkosten').select('*').order('sort',{ascending:true}).order('created_at',{ascending:true})).data||[];renderReg();await loadIst();}
 async function loadIst(){const jahr=+$('jahr').value;const d=(await sb.from('gruppe_fixkosten_ist').select('fixkosten_id,monat,betrag').eq('jahr',jahr)).data||[];IST={};d.forEach(r=>IST[r.fixkosten_id+'_'+r.monat]=r.betrag);
-  PMA=(await sb.from('mitarbeiter').select('id,name,vorname,unternehmen,krankenkasse').order('pos')).data||[];
-  const pm=(await sb.from('personal_monat').select('mitarbeiter_id,monat,sachbezug,kk_betrag,auszahlung').eq('jahr',jahr)).data||[];PPM={};pm.forEach(r=>PPM[r.mitarbeiter_id+'_'+r.monat]=r);
-  const sm=(await sb.from('personal_steuer_monat').select('unternehmen,monat,betrag').eq('jahr',jahr)).data||[];PSM={};sm.forEach(r=>{const kk=gesOf(r.unternehmen);const key=kk+'_'+r.monat;PSM[key]=num2(PSM[key])+num2(r.betrag);});
+  MX=(await sb.from('personal_matrix').select('*').eq('jahr',jahr).order('sort',{ascending:true})).data||[];
   const pi=(await sb.from('gruppe_personal_ist').select('poskey,monat,betrag').eq('jahr',jahr)).data||[];PIST={};pi.forEach(r=>PIST[r.poskey+'_'+r.monat]=r.betrag);
   renderMatrix();}
 async function piSet(poskey,monat,val){const jahr=+$('jahr').value;const vv=numDE(val);const{error}=await sb.from('gruppe_personal_ist').upsert({jahr,monat,poskey,betrag:vv,updated_at:new Date().toISOString()},{onConflict:'jahr,monat,poskey'});if(error){toast(error.message);return;}PIST[poskey+'_'+monat]=vv;renderMatrix();}
