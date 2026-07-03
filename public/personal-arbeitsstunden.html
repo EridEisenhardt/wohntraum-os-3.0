@@ -46,14 +46,19 @@ const $=id=>document.getElementById(id);const esc=s=>(s==null?'':String(s)).repl
 const numDE=v=>{if(v==null||v==='')return null;const n=parseFloat(String(v).replace(',','.'));return isNaN(n)?null:n;};
 function toast(m){const t=$('toast');t.textContent=m;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),1600);}
 const MON=['Jan','Feb','Mär','Apr','Mai','Jun','Jul','Aug','Sep','Okt','Nov','Dez'];
-let MA=[],PM={};
+let MA=[],PM={},curGes='';
+const PREF=['Wohn(T)raum Rheinhessen GmbH','Eric Eisenhardt','Wohntraum Kibo GmbH'];
 function initYear(){const y=new Date().getFullYear();let o='';for(let j=y-1;j<=y+1;j++)o+=`<option ${j===y?'selected':''}>${j}</option>`;$('jahr').innerHTML=o;}
 function nm(m){return((m.vorname||'')+' '+(m.name||'')).trim()||'—';}
+function comps(){const s=[];MA.forEach(m=>{const u=m.unternehmen||'— ohne Unternehmen —';if(!s.includes(u))s.push(u);});s.sort((a,b)=>{const ia=PREF.indexOf(a),ib=PREF.indexOf(b);return(ia<0?99:ia)-(ib<0?99:ib);});return s;}
+function renderTabs(){const cs=comps();$('gtabs').innerHTML=[['','Alle'],...cs.map(c=>[c,c])].map(t=>`<button class="tab ${curGes===t[0]?'active':''}" onclick="setTab('${esc(t[0]).replace(/'/g,"\\'")}')">${esc(t[1])}</button>`).join('');}
+function fillMa(){const list=curGes?MA.filter(m=>(m.unternehmen||'— ohne Unternehmen —')===curGes):MA;$('ma').innerHTML=list.map(m=>`<option value="${m.id}">${esc(nm(m))}</option>`).join('');}
+function setTab(g){curGes=g;renderTabs();fillMa();render();}
 function n(x){return x==null?0:Number(x);}
 async function pmSet(maid,monat,field,val){const jahr=+$('jahr').value;const v=numDE(val);const{error}=await sb.from('personal_monat').upsert({mitarbeiter_id:maid,jahr,monat,[field]:v,updated_at:new Date().toISOString()},{onConflict:'mitarbeiter_id,jahr,monat'});if(error){toast('Fehler: '+error.message);return;}PM[maid+'_'+monat]=Object.assign({},PM[maid+'_'+monat]||{},{[field]:v});render();}
 async function load(){const jahr=+$('jahr').value;
-  MA=(await sb.from('mitarbeiter').select('id,name,vorname').order('pos')).data||[];
-  $('ma').innerHTML=MA.map(m=>`<option value="${m.id}">${esc(nm(m))}</option>`).join('');
+  MA=(await sb.from('mitarbeiter').select('id,name,vorname,unternehmen').order('pos')).data||[];
+  renderTabs();fillMa();
   const pm=(await sb.from('personal_monat').select('mitarbeiter_id,monat,stunden_soll,stunden_ist,stunden_auszahlung').eq('jahr',jahr)).data||[];
   PM={};pm.forEach(r=>PM[r.mitarbeiter_id+'_'+r.monat]=r);render();}
 function ueberFor(maid){const arr=[];let tr=0;for(let mo=1;mo<=12;mo++){const p=PM[maid+'_'+mo]||{};const ueber=n(p.stunden_ist)-n(p.stunden_soll);tr=tr+ueber-n(p.stunden_auszahlung);arr[mo]={ueber,uebertrag:tr};}return arr;}
@@ -66,12 +71,18 @@ function render(){const jahr=+$('jahr').value;const now=new Date();const cur=now
   let uSum=0;let ueberRow='<tr><td class="rl">Überstunden (Ist − Soll)</td>';for(let mo=1;mo<=12;mo++){const u=ub[mo].ueber;uSum+=u;ueberRow+=`<td class="calc ${u>0?'pos':(u<0?'neg':'')} ${mo===cur?'cur':''}">${u?(u>0?'+':'')+u:''}</td>`;}ueberRow+=`<td class="calc">${uSum?(uSum>0?'+':'')+uSum:''}</td></tr>`;
   let uebtrRow='<tr><td class="rl">Übertrag (Saldo)</td>';for(let mo=1;mo<=12;mo++){const t=ub[mo].uebertrag;uebtrRow+=`<td class="calc ${t<0?'neg':''} ${mo===cur?'cur':''}">${t||''}</td>`;}uebtrRow+='<td class="calc"></td></tr>';
   $('tblMA').innerHTML='<table>'+head+'<tbody>'+inRow('Soll','stunden_soll')+inRow('Ist','stunden_ist')+ueberRow+inRow('Auszahlung','stunden_auszahlung')+uebtrRow+'</tbody></table>';
-  // Jahres-Matrix Überstunden je Mitarbeiter
-  const monTot=Array(13).fill(0);
-  const h2='<thead><tr><th class="rl">Mitarbeiter</th>'+MON.map((x,i)=>`<th class="${i+1===cur?'cur':''}">${x}</th>`).join('')+'<th>Summe</th></tr></thead>';
-  let b2=MA.map(m=>{const u=ueberFor(m.id);let sum=0,c='';for(let mo=1;mo<=12;mo++){const val=u[mo].ueber;sum+=val;monTot[mo]+=val;c+=`<td class="${mo===cur?'cur':''} ${val>0?'pos':(val<0?'neg':'')}">${val?(val>0?'+':'')+val:''}</td>`;}return `<tr><td class="rl">${esc(nm(m))}</td>${c}<td class="calc">${sum?(sum>0?'+':'')+sum:''}</td></tr>`;}).join('');
-  let tot='<tr class="sum"><td class="rl">Summe</td>';for(let mo=1;mo<=12;mo++)tot+=`<td>${monTot[mo]?(monTot[mo]>0?'+':'')+monTot[mo]:''}</td>`;tot+=`<td>${monTot.reduce((a,b)=>a+b,0)||''}</td></tr>`;
-  $('tblJahr').innerHTML='<table>'+h2+'<tbody>'+b2+tot+'</tbody></table>';
+  // Jahres-Matrix Überstunden je Mitarbeiter — je Gesellschaft ein Register
+  const cs=comps().filter(u=>!curGes||curGes===u);let jhtml='';
+  cs.forEach(u=>{
+    const emps=MA.filter(m=>(m.unternehmen||'— ohne Unternehmen —')===u);
+    const monTot=Array(13).fill(0);
+    const h2='<thead><tr><th class="rl">Mitarbeiter</th>'+MON.map((x,i)=>`<th class="${i+1===cur?'cur':''}">${x}</th>`).join('')+'<th>Summe</th></tr></thead>';
+    let b2=emps.map(m=>{const ubb=ueberFor(m.id);let sum=0,c='';for(let mo=1;mo<=12;mo++){const val=ubb[mo].ueber;sum+=val;monTot[mo]+=val;c+=`<td class="${mo===cur?'cur':''} ${val>0?'pos':(val<0?'neg':'')}">${val?(val>0?'+':'')+val:''}</td>`;}return `<tr><td class="rl">${esc(nm(m))}</td>${c}<td class="calc">${sum?(sum>0?'+':'')+sum:''}</td></tr>`;}).join('');
+    if(!emps.length)b2='<tr><td class="rl" colspan="14" style="text-align:center;color:var(--muted)">Keine Mitarbeiter.</td></tr>';
+    let tot='<tr class="sum"><td class="rl">Summe</td>';for(let mo=1;mo<=12;mo++)tot+=`<td>${monTot[mo]?(monTot[mo]>0?'+':'')+monTot[mo]:''}</td>`;tot+=`<td>${monTot.reduce((a,b)=>a+b,0)||''}</td></tr>`;
+    jhtml+=`<div class="regtitle">${esc(u)}</div><div class="tablewrap"><table>${h2}<tbody>${b2}${tot}</tbody></table></div>`;
+  });
+  $('tblJahr').innerHTML=jhtml||'<div style="padding:16px;color:var(--muted)">Keine Daten.</div>';
 }
 (async()=>{const{data:{session}}=await sb.auth.getSession();if(!session){$('main').innerHTML='<div style="padding:60px;text-align:center;color:var(--muted)">Bitte einloggen.</div>';return;}initYear();load();})();
 </script></body></html>
