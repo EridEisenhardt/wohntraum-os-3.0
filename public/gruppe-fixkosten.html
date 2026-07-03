@@ -82,7 +82,7 @@ table.reg{width:100%;border-collapse:collapse;font-size:12.5px;min-width:1000px}
 
   <div class="card"><div class="card-hd"><span>Fixkosten-Register</span><span class="crumb" id="cnt"></span></div>
     <div class="tablewrap" id="reg"><div class="empty" id="loading">Lädt…</div></div></div>
-  <div class="foot">Zuordnung je Position zu WT / EE / Kibo. Die Soll-Matrix verteilt den Gesamtbetrag auf die Fälligkeitsmonate (aus Turnus/Fälligkeit) und ist nach Gesellschaft getrennt (Zwischensummen + Gesamt). Personalkosten-Positionen (Gehalt/KK/Lohnsteuer) sind als Zeilen angelegt – die Werte kommen aus der Jahres-Matrix Personalkosten (dort pflegen).</div>
+  <div class="foot">Zuordnung je Position zu WT / EE / Kibo. Die Soll-Matrix verteilt den Gesamtbetrag auf die Fälligkeitsmonate (aus Turnus/Fälligkeit) und ist nach Gesellschaft getrennt (Zwischensummen + Gesamt). Personalkosten (Gehalt-Auszahlung je Mitarbeiter, Sachbezug, Knappschaft, Firmus je Gesellschaft sowie Lohnsteuer gruppenweit) werden live aus Personal · Lohnkosten übernommen und fließen in Soll, Ist und Gesamt ein – dort pflegen.</div>
 </div>
 <datalist id="tl"><option value="Strom"><option value="Miete"><option value="Telefon"><option value="Internet"><option value="Software"><option value="Tankkarte"><option value="Versicherung"><option value="Gehalt"><option value="KK-Beitrag"><option value="Lohnsteuer"><option value="Sonstiges"></datalist>
 <datalist id="zl"><option value="Lastschrift (SEPA)"><option value="Überweisung"><option value="Dauerauftrag"><option value="Kreditkarte"></datalist>
@@ -97,6 +97,18 @@ function toast(m){const t=$('toast');t.textContent=m;t.classList.add('show');set
 const MON=['Jan','Feb','Mär','Apr','Mai','Jun','Jul','Aug','Sep','Okt','Nov','Dez'];
 const GES=['WT','EE','Kibo'];
 let ROWS=[],IST={},pendingBeleg=null;
+let PMA=[],PPM={},PSM={};
+const num2=x=>x==null?0:Number(x);
+function nm(m){return((m.vorname||'')+' '+(m.name||'')).trim()||'—';}
+function gesOf(u){u=(u||'').toLowerCase();if(u.includes('kibo'))return 'Kibo';if(u.includes('rheinhessen')||u.includes('wohn(t)raum')||u.includes('wohntraum'))return 'WT';if(u.includes('macher'))return 'EE';return '__none';}
+function personnelByGes(){const res={};[...GES,'__none'].forEach(k=>res[k]=[]);
+  const byG={};PMA.forEach(m=>{const k=gesOf(m.unternehmen);(byG[k]=byG[k]||[]).push(m);});
+  Object.keys(byG).forEach(k=>{const emps=byG[k];
+    emps.forEach(m=>{const vals=Array(13).fill(0);let any=false;for(let mo=1;mo<=12;mo++){vals[mo]=num2((PPM[m.id+'_'+mo]||{}).auszahlung);if(vals[mo])any=true;}if(any)res[k].push({label:(m.vorname||nm(m)),typ:'Gehalt (Auszahlung)',vals});});
+    const sbz=Array(13).fill(0);let a1=false;for(let mo=1;mo<=12;mo++){emps.forEach(m=>sbz[mo]+=num2((PPM[m.id+'_'+mo]||{}).sachbezug));if(sbz[mo])a1=true;}if(a1)res[k].push({label:'Sachbezug',typ:'Sachbezug',vals:sbz});
+    ['Knappschaft','Firmus'].forEach(kk=>{const a=Array(13).fill(0);let an=false;for(let mo=1;mo<=12;mo++){emps.forEach(m=>{if((m.krankenkasse||'').toLowerCase()===kk.toLowerCase())a[mo]+=num2((PPM[m.id+'_'+mo]||{}).kk_betrag);});if(a[mo])an=true;}if(an)res[k].push({label:kk,typ:'Krankenkasse',vals:a});});
+  });
+  return res;}
 function initSel(){const y=new Date().getFullYear();let o='';for(let j=y-1;j<=y+1;j++)o+=`<option ${j===y?'selected':''}>${j}</option>`;$('jahr').innerHTML=o;}
 function parseDates(t){if(!t)return[];return[...String(t).matchAll(/([0-3]?\d)[.\/-]([01]?\d)[.\/-](\d{2,4})/g)].map(m=>{let y=m[3];if(y.length===2)y='20'+y;return new Date(+y,+m[2]-1,+m[1]);});}
 function dueMonths(r){const wrap=m=>((m-1)%12)+1;let base=[...new Set(parseDates(r.faelligkeit).map(d=>d.getMonth()+1))].sort((a,b)=>a-b);const t=((r.turnus||'')+' '+(r.faelligkeit||'')).toLowerCase();
@@ -107,7 +119,11 @@ function dueMonths(r){const wrap=m=>((m-1)%12)+1;let base=[...new Set(parseDates
   if(/jähr|jahr/.test(t))return[base[0]];
   return base;}
 async function load(){ROWS=(await sb.from('gruppe_fixkosten').select('*').order('sort',{ascending:true}).order('created_at',{ascending:true})).data||[];renderReg();await loadIst();}
-async function loadIst(){const jahr=+$('jahr').value;const d=(await sb.from('gruppe_fixkosten_ist').select('fixkosten_id,monat,betrag').eq('jahr',jahr)).data||[];IST={};d.forEach(r=>IST[r.fixkosten_id+'_'+r.monat]=r.betrag);renderMatrix();}
+async function loadIst(){const jahr=+$('jahr').value;const d=(await sb.from('gruppe_fixkosten_ist').select('fixkosten_id,monat,betrag').eq('jahr',jahr)).data||[];IST={};d.forEach(r=>IST[r.fixkosten_id+'_'+r.monat]=r.betrag);
+  PMA=(await sb.from('mitarbeiter').select('id,name,vorname,unternehmen,krankenkasse').order('pos')).data||[];
+  const pm=(await sb.from('personal_monat').select('mitarbeiter_id,monat,sachbezug,kk_betrag,auszahlung').eq('jahr',jahr)).data||[];PPM={};pm.forEach(r=>PPM[r.mitarbeiter_id+'_'+r.monat]=r);
+  const sm=(await sb.from('personal_steuer_monat').select('monat,betrag').eq('jahr',jahr)).data||[];PSM={};sm.forEach(r=>PSM[r.monat]=r.betrag);
+  renderMatrix();}
 function v(id){const x=$(id).value;return x===''?null:(x.trim?x.trim():x);}
 function resetForm(){['f_id','f_gp','f_typ','f_rnr','f_knr','f_vnr','f_laufzeit','f_betrag','f_zahlart','f_faellig'].forEach(id=>$(id).value='');$('f_ges').value='';$('f_turnus').value='';$('f_status').value='offen';pendingBeleg=null;$('belegState').innerHTML='<b>Rechnung hochladen</b> — PDF/Bild ziehen oder <button class="btn sec" onclick="document.getElementById(\'file\').click()">Datei wählen</button>';$('formTitle').textContent='Neue Fixkosten-Position erfassen';$('msg').textContent='';}
 const drop=$('drop');['dragenter','dragover'].forEach(e=>drop.addEventListener(e,ev=>{ev.preventDefault();drop.classList.add('over');}));['dragleave','drop'].forEach(e=>drop.addEventListener(e,ev=>{ev.preventDefault();drop.classList.remove('over');}));drop.addEventListener('drop',ev=>{if(ev.dataTransfer.files[0])onFile(ev.dataTransfer.files[0]);});
@@ -133,24 +149,27 @@ function renderReg(){const w=$('reg');$('cnt').textContent=ROWS.length+' Positio
 }
 function groupOrder(){const f=$('fGes').value;const g={};ROWS.forEach(r=>{let key=r.gesellschaft||'__none';if(f&&f!==key)return;(g[key]=g[key]||[]).push(r);});const order=[...GES,'__none'].filter(k=>g[k]&&g[k].length);return {g,order};}
 function renderMatrix(){const now=new Date();const jahr=+$('jahr').value;const cur=now.getFullYear()===jahr?now.getMonth()+1:0;
-  const {g,order}=groupOrder();
+  $('mxSoll').innerHTML=buildMx('soll',cur);
+  $('mxIst').innerHTML=buildMx('ist',cur);
+}
+function buildMx(mode,cur){
+  const {g}=groupOrder();const pers=personnelByGes();const fsel=$('fGes').value;
   const head='<thead><tr><th class="p">Position</th><th class="p">Typ</th>'+MON.map((x,i)=>`<th class="${i+1===cur?'cur':''}">${x}</th>`).join('')+'<th>Summe</th></tr></thead>';
-  // SOLL
-  const gm=Array(13).fill(0);let bodyS='';
-  order.forEach(k=>{const list=g[k];const label=k==='__none'?'(nicht zugeordnet)':k;const sm=Array(13).fill(0);
-    bodyS+=`<tr class="grp"><td colspan="15">${esc(label)}</td></tr>`;
-    list.forEach(r=>{const due=dueMonths(r);const soll=Number(r.gesamtbetrag)||0;let rs=0,c='';for(let mo=1;mo<=12;mo++){const val=(due.includes(mo)&&soll)?soll:0;rs+=val;sm[mo]+=val;c+=`<td class="${mo===cur?'cur':''}">${val?eur0(val):''}</td>`;}bodyS+=`<tr><td class="p">${esc(r.geschaeftspartner||'—')}</td><td class="p">${esc(r.typ||'')}</td>${c}<td>${rs?eur0(rs):''}</td></tr>`;});
-    let sub='<tr class="sub"><td class="p" colspan="2">Zwischensumme '+esc(label)+'</td>';let subJ=0;for(let mo=1;mo<=12;mo++){sub+=`<td>${sm[mo]?eur0(sm[mo]):''}</td>`;gm[mo]+=sm[mo];subJ+=sm[mo];}sub+=`<td>${eur0(subJ)}</td></tr>`;bodyS+=sub;});
-  let totS='<tr class="tot"><td class="p" colspan="2">Gesamt Soll</td>';for(let mo=1;mo<=12;mo++)totS+=`<td>${gm[mo]?eur0(gm[mo]):''}</td>`;totS+=`<td>${eur0(gm.reduce((a,b)=>a+b,0))}</td></tr>`;
-  $('mxSoll').innerHTML = order.length ? '<table class="mx">'+head+'<tbody>'+bodyS+totS+'</tbody></table>' : '<div class="empty">Keine Positionen für diese Auswahl.</div>';
-  // IST (editierbar)
-  const im=Array(13).fill(0);let bodyI='';
-  order.forEach(k=>{const list=g[k];const label=k==='__none'?'(nicht zugeordnet)':k;const sm=Array(13).fill(0);
-    bodyI+=`<tr class="grp"><td colspan="15">${esc(label)}</td></tr>`;
-    list.forEach(r=>{let rs=0,c='';for(let mo=1;mo<=12;mo++){const val=IST[r.id+'_'+mo];if(val!=null){rs+=Number(val);sm[mo]+=Number(val);}c+=`<td class="${mo===cur?'cur':''}"><input class="c" inputmode="decimal" value="${val!=null?val:''}" onchange="istSet('${r.id}',${mo},this.value)"></td>`;}bodyI+=`<tr><td class="p">${esc(r.geschaeftspartner||'—')}</td><td class="p">${esc(r.typ||'')}</td>${c}<td>${rs?eur0(rs):''}</td></tr>`;});
-    let sub='<tr class="sub"><td class="p" colspan="2">Zwischensumme '+esc(label)+'</td>';let subJ=0;for(let mo=1;mo<=12;mo++){sub+=`<td>${sm[mo]?eur0(sm[mo]):''}</td>`;im[mo]+=sm[mo];subJ+=sm[mo];}sub+=`<td>${eur0(subJ)}</td></tr>`;bodyI+=sub;});
-  let totI='<tr class="tot"><td class="p" colspan="2">Gesamt Ist</td>';for(let mo=1;mo<=12;mo++)totI+=`<td>${im[mo]?eur0(im[mo]):''}</td>`;totI+=`<td>${eur0(im.reduce((a,b)=>a+b,0))}</td></tr>`;
-  $('mxIst').innerHTML = order.length ? '<table class="mx">'+head+'<tbody>'+bodyI+totI+'</tbody></table>' : '<div class="empty">Keine Positionen für diese Auswahl.</div>';
+  const groupKeys=[...GES,'__none'].filter(k=>((g[k]&&g[k].length)||(pers[k]&&pers[k].length))&&(!fsel||fsel===k));
+  const gm=Array(13).fill(0);let body='';
+  groupKeys.forEach(k=>{const label=k==='__none'?'(nicht zugeordnet)':k;const sm=Array(13).fill(0);
+    body+=`<tr class="grp"><td colspan="15">${esc(label)}</td></tr>`;
+    (g[k]||[]).forEach(r=>{let rs=0,c='';for(let mo=1;mo<=12;mo++){let val;if(mode==='soll'){const due=dueMonths(r);const soll=Number(r.gesamtbetrag)||0;val=(due.includes(mo)&&soll)?soll:0;c+=`<td class="${mo===cur?'cur':''}">${val?eur0(val):''}</td>`;}else{const iv=IST[r.id+'_'+mo];val=iv!=null?Number(iv):0;c+=`<td class="${mo===cur?'cur':''}"><input class="c" inputmode="decimal" value="${iv!=null?iv:''}" onchange="istSet('${r.id}',${mo},this.value)"></td>`;}rs+=val;sm[mo]+=val;}body+=`<tr><td class="p">${esc(r.geschaeftspartner||'—')}</td><td class="p">${esc(r.typ||'')}</td>${c}<td>${rs?eur0(rs):''}</td></tr>`;});
+    (pers[k]||[]).forEach(pr=>{let rs=0,c='';for(let mo=1;mo<=12;mo++){const val=pr.vals[mo];rs+=val;sm[mo]+=val;c+=`<td class="${mo===cur?'cur':''}">${val?eur0(val):''}</td>`;}body+=`<tr><td class="p">${esc(pr.label)} <span class="crumb">(Personal)</span></td><td class="p">${esc(pr.typ)}</td>${c}<td>${rs?eur0(rs):''}</td></tr>`;});
+    let sub='<tr class="sub"><td class="p" colspan="2">Zwischensumme '+esc(label)+'</td>';let subJ=0;for(let mo=1;mo<=12;mo++){sub+=`<td>${sm[mo]?eur0(sm[mo]):''}</td>`;gm[mo]+=sm[mo];subJ+=sm[mo];}sub+=`<td>${eur0(subJ)}</td></tr>`;body+=sub;
+  });
+  // Lohnsteuer — gruppenweit (nur ohne Gesellschaftsfilter)
+  let hasSt=false;const stv=Array(13).fill(0);for(let mo=1;mo<=12;mo++){stv[mo]=num2(PSM[mo]);if(stv[mo])hasSt=true;}
+  if(!fsel&&hasSt){body+=`<tr class="grp"><td colspan="15">Personal – gruppenweit</td></tr>`;let rs=0,c='';for(let mo=1;mo<=12;mo++){rs+=stv[mo];gm[mo]+=stv[mo];c+=`<td class="${mo===cur?'cur':''}">${stv[mo]?eur0(stv[mo]):''}</td>`;}body+=`<tr><td class="p">Lohnsteuer <span class="crumb">(Personal)</span></td><td class="p">Lohnsteuer</td>${c}<td>${rs?eur0(rs):''}</td></tr>`;
+    let sub='<tr class="sub"><td class="p" colspan="2">Zwischensumme Personal – gruppenweit</td>';let subJ=0;for(let mo=1;mo<=12;mo++){sub+=`<td>${stv[mo]?eur0(stv[mo]):''}</td>`;subJ+=stv[mo];}sub+=`<td>${eur0(subJ)}</td></tr>`;body+=sub;}
+  const totLbl=mode==='soll'?'Gesamt Soll':'Gesamt Ist';
+  let tot='<tr class="tot"><td class="p" colspan="2">'+totLbl+'</td>';for(let mo=1;mo<=12;mo++)tot+=`<td>${gm[mo]?eur0(gm[mo]):''}</td>`;tot+=`<td>${eur0(gm.reduce((a,b)=>a+b,0))}</td></tr>`;
+  return (groupKeys.length||(!fsel&&hasSt))?'<table class="mx">'+head+'<tbody>'+body+tot+'</tbody></table>':'<div class="empty">Keine Positionen für diese Auswahl.</div>';
 }
 (async()=>{const{data:{session}}=await sb.auth.getSession();if(!session){$('main').innerHTML='<div class="empty" style="padding:60px">Bitte zuerst im OS einloggen.</div>';return;}initSel();load();})();
 </script></body></html>
