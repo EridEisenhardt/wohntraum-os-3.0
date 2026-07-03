@@ -2,6 +2,8 @@
 <html lang="de"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Personal · Lohnkosten – Macher OS</title>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/tesseract.js/5.1.0/tesseract.min.js"></script>
 <style>
 :root{--bg:#f6f7f9;--surf:#fff;--surf2:#f1f3f6;--line:#e6e8ec;--text:#1c2024;--muted:#6b7280;--accent:#185fa5;--green:#1f7a4d;--red:#c0392b;--r:8px;--rl:12px;}
 *{box-sizing:border-box;margin:0;padding:0}body{background:var(--bg);color:var(--text);font-family:'Inter',system-ui,sans-serif;font-size:14px}
@@ -25,6 +27,21 @@ tr.sum td,td.sum{font-weight:700;background:var(--surf2)}
 <div class="main">
   <div class="bar"><label style="font-size:12px;color:var(--muted)">Jahr</label><select id="jahr" onchange="load()"></select>
     <label style="font-size:12px;color:var(--muted)">Mitarbeiter</label><select id="ma" onchange="render()"></select></div>
+
+  <div class="card">
+    <div class="card-hd" style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">
+      <span>📎 Lohnabrechnung hochladen &amp; auslesen</span>
+      <span style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+        <select id="upMonat" style="font:inherit;font-size:12px;padding:5px 8px;border:1px solid var(--line);border-radius:6px;background:var(--surf)"></select>
+        <input type="file" id="lohnFile" accept="application/pdf,image/*" style="display:none" onchange="onLohnFile(this.files[0])">
+        <button onclick="document.getElementById('lohnFile').click()" style="font:inherit;font-size:12px;font-weight:600;padding:7px 12px;border:1px solid var(--accent);background:var(--accent);color:#fff;border-radius:6px;cursor:pointer">Lohnabrechnung wählen</button>
+      </span>
+    </div>
+    <div style="padding:12px 16px"><span id="lohnState" style="font-size:12px;color:var(--muted)">PDF/Bild der Lohnabrechnung hochladen — die Werte werden ausgelesen und mit den erfassten Lohnbestandteilen abgeglichen.</span>
+      <div id="pruefung" style="margin-top:12px"></div>
+    </div>
+  </div>
+
   <div class="card"><div class="card-hd" id="t1">Lohnbestandteile</div><div class="tablewrap" id="tblMA"></div></div>
   <div class="card"><div class="card-hd" style="display:flex;justify-content:space-between;align-items:center">
     <span>Jahres-Matrix Personalkosten</span>
@@ -46,7 +63,7 @@ function nm(m){return((m.vorname||'')+' '+(m.name||'')).trim()||'—';}
 async function lkSet(maid,monat,field,val){const jahr=+$('jahr').value;const v=numDE(val);const{error}=await sb.from('personal_monat').upsert({mitarbeiter_id:maid,jahr,monat,[field]:v,updated_at:new Date().toISOString()},{onConflict:'mitarbeiter_id,jahr,monat'});if(error){toast(error.message);return;}PM[maid+'_'+monat]=Object.assign({},PM[maid+'_'+monat]||{},{[field]:v});render();}
 async function load(){const jahr=+$('jahr').value;MA=(await sb.from('mitarbeiter').select('id,name,vorname,unternehmen').order('pos')).data||[];
   $('ma').innerHTML=MA.map(m=>`<option value="${m.id}">${esc(nm(m))}</option>`).join('');
-  const pm=(await sb.from('personal_monat').select('mitarbeiter_id,monat,gehalt,sachbezug,steuern,kk_betrag,auszahlung').eq('jahr',jahr)).data||[];PM={};pm.forEach(r=>PM[r.mitarbeiter_id+'_'+r.monat]=r);
+  const pm=(await sb.from('personal_monat').select('mitarbeiter_id,monat,gehalt,sachbezug,steuern,kk_betrag,auszahlung,lohn_beleg_url,lohn_beleg_name').eq('jahr',jahr)).data||[];PM={};pm.forEach(r=>PM[r.mitarbeiter_id+'_'+r.monat]=r);
   const pk=(await sb.from('personalkosten_matrix').select('position,sort,monat,betrag').eq('jahr',jahr)).data||[];PKM={};const posMap={};pk.forEach(r=>{PKM[r.position+'_'+r.monat]=r.betrag;posMap[r.position]=r.sort||0;});POS=Object.keys(posMap).sort((a,b)=>posMap[a]-posMap[b]);
   render();}
 async function pkmSet(position,monat,val){const jahr=+$('jahr').value;const v=numDE(val);const sort=(POS.indexOf(position)>=0?POS.indexOf(position)+1:99);const{error}=await sb.from('personalkosten_matrix').upsert({jahr,position,monat,betrag:v,sort,updated_at:new Date().toISOString()},{onConflict:'jahr,position,monat'});if(error){toast(error.message);return;}PKM[position+'_'+monat]=v;render();}
@@ -64,5 +81,57 @@ function render(){const jahr=+$('jahr').value;const now=new Date();const cur=now
   if(!POS.length) b2='<tr><td colspan="14" style="padding:20px;text-align:center;color:var(--muted)">Keine Positionen — „+ Position".</td></tr>';
   let tot='<tr class="sum"><td class="rl">Gesamt</td>';for(let mo=1;mo<=12;mo++)tot+=`<td>${eur(monTot[mo])}</td>`;tot+=`<td>${eur(monTot.reduce((a,b)=>a+b,0))}</td></tr>`;
   $('tblJahr').innerHTML='<table>'+h2+'<tbody>'+b2+tot+'</tbody></table>';}
-(async()=>{const{data:{session}}=await sb.auth.getSession();if(!session){$('main').innerHTML='<div style="padding:60px;text-align:center;color:var(--muted)">Bitte einloggen.</div>';return;}initYear();load();})();
+// ——— Lohnabrechnung: Upload, Auslesen, Prüfung ———
+let PENDING=null;
+function initUpMonat(){ $('upMonat').innerHTML=MON.map((m,i)=>`<option value="${i+1}" ${i===new Date().getMonth()?'selected':''}>${m}</option>`).join(''); }
+async function extractText(file){
+  if(file.type==='application/pdf' && window.pdfjsLib){ pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js'; const buf=await file.arrayBuffer(); const pdf=await pdfjsLib.getDocument({data:buf}).promise; let txt=''; for(let i=1;i<=Math.min(pdf.numPages,4);i++){const pg=await pdf.getPage(i);const c=await pg.getTextContent();txt+=c.items.map(it=>it.str).join(' ')+'\n';} if(txt.replace(/\s/g,'').length>40)return txt; if(window.Tesseract){const{data}=await Tesseract.recognize(file,'deu');return data.text;} return txt; }
+  if(file.type.startsWith('image/') && window.Tesseract){const{data}=await Tesseract.recognize(file,'deu');return data.text;}
+  return '';
+}
+function parseLohn(t){ const T=(t||'').replace(/[ \t]+/g,' '); const g=re=>{const m=T.match(re);return m?numDE(m[1]):null;};
+  return {
+    gehalt:g(/(?:Gesamtbrutto|Steuerbrutto|Bruttolohn|Bruttogehalt|Bruttoverdienst|Bruttobezug|Gehalt|Brutto)[^\d\n]{0,25}?([\d.]{1,9},\d{2})/i),
+    sachbezug:g(/Sachbezug[^\d\n]{0,25}?([\d.]{1,9},\d{2})/i),
+    steuern:g(/(?:Gesamtbetrag Steuern|Steuern gesamt|Lohnsteuer|Steuerabzug|Summe Steuer)[^\d\n]{0,25}?([\d.]{1,9},\d{2})/i),
+    kk_betrag:g(/(?:zu zahlender Betrag|Krankenversicherung|KV-?Beitrag|Sozialversicherung|SV-?Beitrag|Sozialabgaben)[^\d\n]{0,25}?([\d.]{1,9},\d{2})/i),
+    auszahlung:g(/(?:Auszahlungsbetrag|Überweisungsbetrag|Nettoverdienst|Netto-?Verdienst|Auszahlung|Netto)[^\d\n]{0,25}?([\d.]{1,9},\d{2})/i)
+  };
+}
+async function onLohnFile(file){
+  if(!file)return; const maid=$('ma').value; if(!maid){toast('Mitarbeiter wählen');return;}
+  const monat=+$('upMonat').value, jahr=+$('jahr').value;
+  $('lohnState').innerHTML='⏳ Lädt hoch & liest aus…';
+  const path=Date.now()+'_'+file.name.replace(/[^a-zA-Z0-9._-]/g,'_');
+  const { error }=await sb.storage.from('personal').upload(path,file,{upsert:true,contentType:file.type||'application/octet-stream'});
+  if(error){$('lohnState').textContent='Upload fehlgeschlagen: '+error.message;return;}
+  const { data:pu }=sb.storage.from('personal').getPublicUrl(path);
+  await sb.from('personal_monat').upsert({mitarbeiter_id:maid,jahr,monat,lohn_beleg_url:pu.publicUrl,lohn_beleg_name:file.name,updated_at:new Date().toISOString()},{onConflict:'mitarbeiter_id,jahr,monat'});
+  PM[maid+'_'+monat]=Object.assign({},PM[maid+'_'+monat]||{},{lohn_beleg_url:pu.publicUrl,lohn_beleg_name:file.name});
+  let text=''; try{ text=await extractText(file); }catch(e){}
+  showPruefung(maid,monat,parseLohn(text),file.name,pu.publicUrl);
+}
+function showPruefung(maid,monat,d,fname,url){
+  const cur=PM[maid+'_'+monat]||{};
+  const rows=COMP.map(c=>{const now=cur[c[0]];const neu=d[c[0]];const changed=neu!=null&&(now==null||Number(now)!==Number(neu));return {key:c[0],label:c[1],now,neu,changed};});
+  const anyExtract=rows.some(r=>r.neu!=null); const changes=rows.filter(r=>r.changed);
+  PENDING={maid,monat,rows};
+  let h=`<div style="font-size:12px;margin-bottom:6px">📄 <b>${esc(fname)}</b> — Abgleich für ${MON[monat-1]} ${$('jahr').value}:</div>`;
+  h+='<table style="width:100%;border-collapse:collapse;font-size:12px;max-width:640px"><thead><tr>'+['Feld','Aktuell','Aus Dokument',''].map((x,i)=>`<th style="text-align:${i===0?'left':(i===3?'center':'right')};padding:5px 8px;background:var(--surf2);font-size:10px;text-transform:uppercase;color:var(--muted)">${x}</th>`).join('')+'</tr></thead><tbody>';
+  h+=rows.map(r=>`<tr style="border-bottom:1px solid var(--bord2)"><td style="padding:5px 8px">${r.label}</td><td style="padding:5px 8px;text-align:right">${r.now!=null?eur(r.now):'—'}</td><td style="padding:5px 8px;text-align:right;${r.changed?'color:var(--accent);font-weight:600':''}">${r.neu!=null?eur(r.neu):'—'}</td><td style="padding:5px 8px;text-align:center">${r.changed?'<span style="color:var(--accent)">Δ</span>':(r.neu!=null?'✓':'')}</td></tr>`).join('');
+  h+='</tbody></table>';
+  if(!anyExtract) h+='<div style="margin-top:8px;color:var(--red);font-size:12px">Keine Werte automatisch erkannt — bitte manuell prüfen.</div>';
+  else if(!changes.length) h+='<div style="margin-top:8px;color:var(--green);font-size:12px">Keine Abweichungen — Werte stimmen überein.</div>';
+  else h+=`<div style="margin-top:10px;display:flex;gap:8px;align-items:center;flex-wrap:wrap"><span style="font-size:12px">${changes.length} Änderung(en) übernehmen?</span><select onchange="applyPruefung(this.value)" style="font:inherit;font-size:12px;padding:6px 9px;border:1px solid var(--line);border-radius:6px"><option value="">— wählen —</option><option value="ja">Ja, übernehmen</option><option value="nein">Nein</option></select></div>`;
+  $('pruefung').innerHTML=h;
+  $('lohnState').innerHTML='📎 <a href="'+esc(url)+'" target="_blank" style="color:var(--accent)">'+esc(fname)+'</a> gespeichert.';
+}
+async function applyPruefung(val){
+  if(val==='nein'){ $('pruefung').innerHTML='<span style="font-size:12px;color:var(--muted)">Änderungen verworfen.</span>'; return; }
+  if(val!=='ja'||!PENDING)return; const {maid,monat,rows}=PENDING;
+  for(const r of rows){ if(r.changed){ await sb.from('personal_monat').upsert({mitarbeiter_id:maid,jahr:+$('jahr').value,monat,[r.key]:r.neu,updated_at:new Date().toISOString()},{onConflict:'mitarbeiter_id,jahr,monat'}); } }
+  toast('Werte übernommen ✓'); PENDING=null; $('pruefung').innerHTML='<span style="font-size:12px;color:var(--green)">Änderungen übernommen ✓</span>'; await load();
+}
+
+(async()=>{const{data:{session}}=await sb.auth.getSession();if(!session){$('main').innerHTML='<div style="padding:60px;text-align:center;color:var(--muted)">Bitte einloggen.</div>';return;}initYear();initUpMonat();load();})();
 </script></body></html>
