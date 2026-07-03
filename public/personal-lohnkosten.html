@@ -24,6 +24,8 @@ tr.sum td,td.sum{font-weight:700;background:var(--surf2)}
 .em select{font:inherit;font-size:12px;padding:5px 6px;border:1px solid var(--line);border-radius:5px;background:var(--surf)}
 .em td,.em th{padding:6px 8px}
 .emco{padding:9px 14px;background:#eef3fb;border-top:1px solid var(--line);font-size:12px;font-weight:700;color:var(--accent)}
+.regtitle{padding:9px 14px;margin:14px 0 0;background:#eef3fb;font-size:12px;font-weight:700;color:var(--accent);border-radius:8px}
+#tblJahr table{margin-bottom:6px}
 .toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:var(--surf2);border:1px solid var(--line);border-radius:var(--r);padding:10px 20px;font-size:13px;opacity:0;transition:.3s;pointer-events:none}.toast.show{opacity:1}
 </style></head><body>
 <div class="hdr"><div class="logo">MACHER OS</div><div><div class="hdr-title">Personal · Lohnkosten</div><div class="hdr-sub">Eingabemaske je Firma/Mitarbeiter · Jahres-Matrix Personalkosten</div></div></div>
@@ -60,11 +62,11 @@ function nm(m){return((m.vorname||'')+' '+(m.name||'')).trim()||'—';}
 function sumField(field,mo,filterFn){let s=0;MA.forEach(m=>{if(filterFn&&!filterFn(m))return;const v=(PM[m.id+'_'+mo]||{})[field];if(v!=null)s+=Number(v);});return s;}
 async function lkSet(maid,monat,field,val){const jahr=+$('jahr').value;const v=numDE(val);const{error}=await sb.from('personal_monat').upsert({mitarbeiter_id:maid,jahr,monat,[field]:v,updated_at:new Date().toISOString()},{onConflict:'mitarbeiter_id,jahr,monat'});if(error){toast(error.message);return;}PM[maid+'_'+monat]=Object.assign({},PM[maid+'_'+monat]||{},{[field]:v});render();}
 async function setKasse(maid,val){const{error}=await sb.from('mitarbeiter').update({krankenkasse:val||null}).eq('id',maid);if(error){toast(error.message);return;}const m=MA.find(x=>x.id===maid);if(m)m.krankenkasse=val||null;render();}
-async function smSet(monat,val){const jahr=+$('jahr').value;const v=numDE(val);const{error}=await sb.from('personal_steuer_monat').upsert({jahr,monat,betrag:v,updated_at:new Date().toISOString()},{onConflict:'jahr,monat'});if(error){toast(error.message);return;}SM[monat]=v;render();}
+async function smSet(unternehmen,monat,val){const jahr=+$('jahr').value;const v=numDE(val);const{error}=await sb.from('personal_steuer_monat').upsert({unternehmen,jahr,monat,betrag:v,updated_at:new Date().toISOString()},{onConflict:'unternehmen,jahr,monat'});if(error){toast(error.message);return;}SM[unternehmen+'_'+monat]=v;render();}
 async function load(){const jahr=+$('jahr').value;MA=(await sb.from('mitarbeiter').select('id,name,vorname,unternehmen,krankenkasse').order('pos')).data||[];
   $('ma').innerHTML=MA.map(m=>`<option value="${m.id}">${esc(nm(m))}</option>`).join('');
   const pm=(await sb.from('personal_monat').select('mitarbeiter_id,monat,gehalt,sachbezug,steuern,kk_betrag,auszahlung').eq('jahr',jahr)).data||[];PM={};pm.forEach(r=>PM[r.mitarbeiter_id+'_'+r.monat]=r);
-  const sm=(await sb.from('personal_steuer_monat').select('monat,betrag').eq('jahr',jahr)).data||[];SM={};sm.forEach(r=>SM[r.monat]=r.betrag);
+  const sm=(await sb.from('personal_steuer_monat').select('unternehmen,monat,betrag').eq('jahr',jahr)).data||[];SM={};sm.forEach(r=>SM[(r.unternehmen||'')+'_'+r.monat]=r.betrag);
   render();}
 function renderEingabe(){
   const mo=+$('emMonat').value;
@@ -75,7 +77,7 @@ function renderEingabe(){
       ['Mitarbeiter','Krankenkasse','Sachbezug €','Auszahlungsbetrag Gehalt €','Krankenkasse-Betrag €'].map((h,i)=>`<th class="${i===0?'rl':''}">${h}</th>`).join('')+'</tr></thead><tbody>';
     groups[u].forEach(m=>{const r=PM[m.id+'_'+mo]||{};
       html+=`<tr><td class="rl">${esc(nm(m))}</td>
-        <td><select onchange="setKasse('${m.id}',this.value)">`+['',...KKOPTS].map(k=>`<option ${(m.krankenkasse||'')===k?'selected':''}>${k||'—'}</option>`).join('')+`</select></td>
+        <td><select onchange="setKasse('${m.id}',this.value)"><option value="" ${!m.krankenkasse?'selected':''}>—</option>`+KKOPTS.map(k=>`<option ${(m.krankenkasse||'')===k?'selected':''}>${k}</option>`).join('')+`</select></td>
         <td><input class="c" inputmode="decimal" value="${r.sachbezug!=null?r.sachbezug:''}" onchange="lkSet('${m.id}',${mo},'sachbezug',this.value)"></td>
         <td><input class="c" inputmode="decimal" value="${r.auszahlung!=null?r.auszahlung:''}" onchange="lkSet('${m.id}',${mo},'auszahlung',this.value)"></td>
         <td><input class="c" inputmode="decimal" value="${r.kk_betrag!=null?r.kk_betrag:''}" onchange="lkSet('${m.id}',${mo},'kk_betrag',this.value)"></td></tr>`;
@@ -93,20 +95,27 @@ function render(){const jahr=+$('jahr').value;const now=new Date();const cur=now
   let h1='<thead><tr><th class="rl">Komponente</th>'+MON.map((x,i)=>`<th class="${i+1===cur?'cur':''}">${x}</th>`).join('')+'<th>Summe</th></tr></thead>';
   let b1=COMP.map(c=>{let sum=0,cells='';for(let mo=1;mo<=12;mo++){const val=(PM[maid+'_'+mo]||{})[c[0]];if(val!=null)sum+=Number(val);cells+=`<td class="${mo===cur?'cur':''}"><input class="c" inputmode="decimal" value="${val!=null?val:''}" onchange="lkSet('${maid}',${mo},'${c[0]}',this.value)"></td>`;}return `<tr><td class="rl">${c[1]}</td>${cells}<td class="sum">${eur(sum)}</td></tr>`;}).join('');
   $('tblMA').innerHTML='<table>'+h1+'<tbody>'+b1+'</tbody></table>';
-  // Jahres-Matrix Personalkosten — Aufbau nach Vorlage
-  const monTot=Array(13).fill(0);
+  // Jahres-Matrix Personalkosten — je Gesellschaft ein eigenes Register
   const KK=['Knappschaft','Firmus'];
-  const rows=[];
-  MA.forEach(m=>rows.push({label:(m.vorname||nm(m)),val:mo=>num2((PM[m.id+'_'+mo]||{}).auszahlung)}));
-  rows.push({label:'Sachbezug',val:mo=>sumField('sachbezug',mo)});
-  KK.forEach(kk=>rows.push({label:kk,val:mo=>sumField('kk_betrag',mo,m=>(m.krankenkasse||'').toLowerCase()===kk.toLowerCase())}));
-  const h2='<thead><tr><th class="rl">Unternehmen</th>'+MON.map((x,i)=>`<th class="${i+1===cur?'cur':''}">${x}</th>`).join('')+'<th>Summe</th></tr></thead>';
-  let b2=rows.map(r=>{let sum=0,cells='';for(let mo=1;mo<=12;mo++){const v=r.val(mo);sum+=v;monTot[mo]+=v;cells+=`<td class="${mo===cur?'cur':''}">${v?eur(v):''}</td>`;}return `<tr><td class="rl">${esc(r.label)}</td>${cells}<td class="sum">${sum?eur(sum):''}</td></tr>`;}).join('');
-  // Lohnsteuer — manuell befüllbare Zeile (je Monat)
-  let stSum=0,stCells='';for(let mo=1;mo<=12;mo++){const v=SM[mo];const nv=num2(v);stSum+=nv;monTot[mo]+=nv;stCells+=`<td class="${mo===cur?'cur':''}"><input class="c" inputmode="decimal" value="${v!=null?v:''}" onchange="smSet(${mo},this.value)"></td>`;}
-  b2+=`<tr><td class="rl">Lohnsteuer</td>${stCells}<td class="sum">${stSum?eur(stSum):''}</td></tr>`;
-  let tot='<tr class="sum" style="background:#e7effd"><td class="rl">Gesamt</td>';for(let mo=1;mo<=12;mo++)tot+=`<td>${monTot[mo]?eur(monTot[mo]):''}</td>`;tot+=`<td>${eur(monTot.reduce((a,b)=>a+b,0))}</td></tr>`;
-  $('tblJahr').innerHTML='<table>'+h2+'<tbody>'+b2+tot+'</tbody></table>';
+  const firmen=[];MA.forEach(m=>{const u=m.unternehmen||'— ohne Unternehmen —';if(!firmen.includes(u))firmen.push(u);});
+  const grandTot=Array(13).fill(0);let html='';
+  firmen.forEach(u=>{
+    const emps=MA.filter(m=>(m.unternehmen||'— ohne Unternehmen —')===u);
+    const monTot=Array(13).fill(0);const rows=[];
+    emps.forEach(m=>rows.push({label:(m.vorname||nm(m)),val:mo=>num2((PM[m.id+'_'+mo]||{}).auszahlung)}));
+    rows.push({label:'Sachbezug',val:mo=>{let s=0;emps.forEach(m=>s+=num2((PM[m.id+'_'+mo]||{}).sachbezug));return s;}});
+    KK.forEach(kk=>rows.push({label:kk,val:mo=>{let s=0;emps.forEach(m=>{if((m.krankenkasse||'').toLowerCase()===kk.toLowerCase())s+=num2((PM[m.id+'_'+mo]||{}).kk_betrag);});return s;}}));
+    const h2='<thead><tr><th class="rl">Position</th>'+MON.map((x,i)=>`<th class="${i+1===cur?'cur':''}">${x}</th>`).join('')+'<th>Summe</th></tr></thead>';
+    let b2=rows.map(r=>{let sum=0,cells='';for(let mo=1;mo<=12;mo++){const v=r.val(mo);sum+=v;monTot[mo]+=v;cells+=`<td class="${mo===cur?'cur':''}">${v?eur(v):''}</td>`;}return `<tr><td class="rl">${esc(r.label)}</td>${cells}<td class="sum">${sum?eur(sum):''}</td></tr>`;}).join('');
+    const ukey=esc(u).replace(/'/g,"\\'");
+    let stSum=0,stCells='';for(let mo=1;mo<=12;mo++){const v=SM[u+'_'+mo];const nv=num2(v);stSum+=nv;monTot[mo]+=nv;stCells+=`<td class="${mo===cur?'cur':''}"><input class="c" inputmode="decimal" value="${v!=null?v:''}" onchange="smSet('${ukey}',${mo},this.value)"></td>`;}
+    b2+=`<tr><td class="rl">Lohnsteuer</td>${stCells}<td class="sum">${stSum?eur(stSum):''}</td></tr>`;
+    let tot='<tr class="sum" style="background:#e7effd"><td class="rl">Gesamt</td>';for(let mo=1;mo<=12;mo++){tot+=`<td>${monTot[mo]?eur(monTot[mo]):''}</td>`;grandTot[mo]+=monTot[mo];}tot+=`<td>${eur(monTot.reduce((a,b)=>a+b,0))}</td></tr>`;
+    html+=`<div class="regtitle">${esc(u)}</div><table>${h2}<tbody>${b2}${tot}</tbody></table>`;
+  });
+  let gt='<div class="regtitle" style="background:#e7effd;color:var(--text)">Gesamt alle Gesellschaften</div><table><thead><tr><th class="rl">Position</th>'+MON.map((x,i)=>`<th class="${i+1===cur?'cur':''}">${x}</th>`).join('')+'<th>Summe</th></tr></thead><tbody><tr class="sum"><td class="rl">Gesamt</td>';
+  for(let mo=1;mo<=12;mo++)gt+=`<td>${grandTot[mo]?eur(grandTot[mo]):''}</td>`;gt+=`<td>${eur(grandTot.reduce((a,b)=>a+b,0))}</td></tr></tbody></table>`;
+  $('tblJahr').innerHTML=html+gt;
 }
 (async()=>{const{data:{session}}=await sb.auth.getSession();if(!session){$('main').innerHTML='<div style="padding:60px;text-align:center;color:var(--muted)">Bitte einloggen.</div>';return;}initYear();initMonat();load();})();
 </script></body></html>
