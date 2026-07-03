@@ -24,7 +24,17 @@ td.sum,tr.sum td{font-weight:700;background:var(--surf2)}
 <div class="main">
   <div class="bar"><label style="font-size:12px;color:var(--muted)">Jahr</label><select id="jahr" onchange="load()"></select></div>
   <div class="card"><div class="tablewrap" id="tbl"><div style="padding:30px;text-align:center;color:var(--muted)">Lädt…</div></div></div>
-  <div class="foot">Trage die Krankheitstage je Monat ein; Summen werden je Mitarbeiter und Monat berechnet.</div>
+
+  <div class="card" style="margin-top:16px">
+    <div style="padding:12px 15px;border-bottom:1px solid var(--line);font-size:13px;font-weight:600;display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">
+      <span>Krankheitserfassung (Von – Bis, mit AU/Dokument)</span>
+      <span style="display:flex;gap:8px;align-items:center"><select id="absMa" onchange="loadAbs()"></select>
+        <button onclick="addAbs()" style="font:inherit;font-size:12px;font-weight:600;padding:7px 12px;border:1px solid var(--accent);background:var(--accent);color:#fff;border-radius:var(--r);cursor:pointer">+ Zeitraum</button></span>
+    </div>
+    <div class="tablewrap" id="absTbl"></div>
+  </div>
+  <input type="file" id="absFile" accept="application/pdf,image/*" style="display:none" onchange="onAbsFile(this.files[0])">
+  <div class="foot">Krankheitstage je Monat (oben) plus Zeitraum-Erfassung je Mitarbeiter mit Dokument (Arbeitsunfähigkeitsbescheinigung / Krankmeldung).</div>
 </div><div class="toast" id="toast"></div>
 <script>
 const sb=window.supabase.createClient('https://jqzxctfqvcwbctpjksvg.supabase.co','eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpxenhjdGZxdmN3YmN0cGprc3ZnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODIxMzA0MzIsImV4cCI6MjA5NzcwNjQzMn0.RKIbZxJdusKWWPjBJqlxZ8e1m8So02UslOg55YRsn3o');
@@ -43,5 +53,27 @@ function render(){const jahr=+$('jahr').value;const now=new Date();const cur=now
   let body=MA.map(m=>{let sum=0,cells='';for(let mo=1;mo<=12;mo++){const t=(PM[m.id+'_'+mo]||{}).krank_tage;if(t!=null){sum+=Number(t);monTot[mo]+=Number(t);}cells+=`<td class="${mo===cur?'cur':''}"><input class="c" inputmode="decimal" value="${t!=null?t:''}" onchange="pmSet('${m.id}',${mo},this.value)"></td>`;}return `<tr><td class="ma">${esc(nm(m))}</td>${cells}<td class="sum">${sum||''}</td></tr>`;}).join('');
   let tot='<tr class="sum"><td class="ma">Summe / Monat</td>';for(let mo=1;mo<=12;mo++)tot+=`<td>${monTot[mo]||''}</td>`;tot+=`<td>${monTot.reduce((a,b)=>a+b,0)||''}</td></tr>`;
   $('tbl').innerHTML='<table>'+head+'<tbody>'+body+tot+'</tbody></table>';}
+// ——— Krankheitserfassung (Zeiträume + Dokument) ———
+let ABS=[], absUploadId=null;
+function absDays(v,b){ if(!v||!b)return null; const d=Math.floor((new Date(b)-new Date(v))/86400000)+1; return d>0?d:null; }
+function fillAbsMa(){ const cur=$('absMa').value; $('absMa').innerHTML=MA.map(m=>`<option value="${m.id}" ${m.id===cur?'selected':''}>${esc(nm(m))}</option>`).join(''); }
+async function loadAbs(){ const maid=$('absMa').value; if(!maid){ $('absTbl').innerHTML=''; return; } const { data }=await sb.from('personal_abwesenheit').select('*').eq('mitarbeiter_id',maid).eq('art','krankheit').order('von',{ascending:true,nullsFirst:false}); ABS=data||[]; renderAbs(); }
+function renderAbs(){ const INL='width:100%;border:1px solid transparent;background:transparent;font:inherit;font-size:12px;padding:4px 5px;border-radius:4px';
+  const head='<thead><tr><th style="text-align:left">Von</th><th style="text-align:left">Bis</th><th style="text-align:left">Tage</th><th style="text-align:left">Dokument (AU)</th><th style="text-align:left">Notiz</th><th></th></tr></thead>';
+  const body=ABS.length?ABS.map(a=>`<tr><td><input type="date" style="${INL}" value="${a.von||''}" onchange="updAbs('${a.id}','von',this.value)"></td>
+    <td><input type="date" style="${INL}" value="${a.bis||''}" onchange="updAbs('${a.id}','bis',this.value)"></td>
+    <td><input style="${INL};width:56px;text-align:center" inputmode="decimal" value="${a.tage!=null?a.tage:''}" onchange="updAbs('${a.id}','tage',this.value)"></td>
+    <td>${a.beleg_url?`<a href="${esc(a.beleg_url)}" target="_blank" style="color:var(--accent)">📎 ${esc(a.beleg_name||'Dokument')}</a> `:''}<button onclick="pickAbsFile('${a.id}')" style="font-size:11px;padding:3px 8px;border:1px solid var(--line);background:transparent;border-radius:5px;cursor:pointer">${a.beleg_url?'ersetzen':'hochladen'}</button></td>
+    <td><input style="${INL}" value="${esc(a.notiz)}" onchange="updAbs('${a.id}','notiz',this.value)"></td>
+    <td style="text-align:center"><button onclick="delAbs('${a.id}')" style="font-size:11px;padding:3px 8px;border:1px solid var(--line);background:transparent;color:var(--muted);border-radius:5px;cursor:pointer">✕</button></td></tr>`).join(''):'<tr><td colspan="6" style="padding:14px;color:var(--muted)">Noch keine Zeiträume — „+ Zeitraum".</td></tr>';
+  $('absTbl').innerHTML='<table style="width:100%;border-collapse:collapse;font-size:12px;min-width:760px">'+head+'<tbody>'+body+'</tbody></table>';
+}
+async function addAbs(){ const maid=$('absMa').value; if(!maid){toast('Mitarbeiter wählen');return;} const { error }=await sb.from('personal_abwesenheit').insert({mitarbeiter_id:maid,art:'krankheit'}); if(error){toast(error.message);return;} loadAbs(); }
+async function updAbs(id,field,val){ const a=ABS.find(x=>x.id===id); const patch={[field]:(field==='tage'?numDE(val):(val||null))}; if(field==='von'||field==='bis'){ const von=field==='von'?val:a.von, bis=field==='bis'?val:a.bis; const d=absDays(von,bis); if(d!=null&&(a.tage==null||a.tage==='')) patch.tage=d; } const { error }=await sb.from('personal_abwesenheit').update(patch).eq('id',id); if(error){toast('Speichern fehlgeschlagen');return;} Object.assign(a,patch); renderAbs(); }
+async function delAbs(id){ if(!confirm('Zeitraum löschen?'))return; await sb.from('personal_abwesenheit').delete().eq('id',id); loadAbs(); }
+function pickAbsFile(id){ absUploadId=id; $('absFile').value=''; $('absFile').click(); }
+async function onAbsFile(file){ if(!file||!absUploadId)return; toast('Lädt hoch…'); const path=Date.now()+'_'+file.name.replace(/[^a-zA-Z0-9._-]/g,'_'); const { error }=await sb.storage.from('personal').upload(path,file,{upsert:true,contentType:file.type||'application/octet-stream'}); if(error){toast('Upload fehlgeschlagen: '+error.message);return;} const { data }=sb.storage.from('personal').getPublicUrl(path); await sb.from('personal_abwesenheit').update({beleg_url:data.publicUrl,beleg_name:file.name}).eq('id',absUploadId); toast('Dokument hochgeladen ✓'); loadAbs(); }
+const _load=load; load=async function(){ await _load(); fillAbsMa(); loadAbs(); };
+
 (async()=>{const{data:{session}}=await sb.auth.getSession();if(!session){$('main').innerHTML='<div style="padding:60px;text-align:center;color:var(--muted)">Bitte einloggen.</div>';return;}initYear();load();})();
 </script></body></html>
