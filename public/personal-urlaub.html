@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="de"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Personal · Urlaub – Macher OS</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+:root{--bg:#f6f7f9;--surf:#fff;--surf2:#f1f3f6;--line:#e6e8ec;--text:#1c2024;--muted:#6b7280;--accent:#185fa5;--green:#1f7a4d;--red:#c0392b;--r:8px;--rl:12px;}
+*{box-sizing:border-box;margin:0;padding:0}body{background:var(--bg);color:var(--text);font-family:'Inter',system-ui,sans-serif;font-size:14px}
+.hdr{background:var(--surf);border-bottom:1px solid var(--line);padding:16px 24px;display:flex;align-items:center;gap:12px;position:sticky;top:0;z-index:10}
+.logo{background:#1a1a2e;color:#fff;font-weight:700;font-size:11px;padding:5px 9px;border-radius:4px}.hdr-title{font-size:16px;font-weight:600}.hdr-sub{font-size:11px;color:var(--muted)}
+.main{max-width:1240px;margin:0 auto;padding:20px 24px 60px}
+.bar{display:flex;gap:10px;align-items:center;margin-bottom:14px}
+.bar select{font:inherit;font-size:13px;padding:7px 9px;border:1px solid var(--line);border-radius:var(--r);background:var(--surf)}
+.card{background:var(--surf);border:1px solid var(--line);border-radius:var(--rl);overflow:hidden}
+.tablewrap{overflow-x:auto}table{width:100%;border-collapse:collapse;font-size:11px;min-width:1180px}
+th,td{border:1px solid var(--line);padding:5px 6px;text-align:center}th{background:var(--surf2);font-size:10px;text-transform:uppercase;color:var(--muted);font-weight:700}
+td.ma,th.ma{text-align:left;white-space:nowrap;position:sticky;left:0;background:var(--surf);font-weight:600;z-index:1}
+th.cur,td.cur{background:#fef9e7}
+input.c{width:46px;border:1px solid transparent;background:transparent;font:inherit;font-size:11px;text-align:center;border-radius:4px;padding:1px}
+input.c:hover{border-color:var(--line)}input.c:focus{outline:none;border-color:var(--accent);background:#fff}
+td.calc{font-weight:700;background:var(--surf2)}
+.foot{font-size:11px;color:var(--muted);margin-top:14px}
+.toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:var(--surf2);border:1px solid var(--line);border-radius:var(--r);padding:10px 20px;font-size:13px;opacity:0;transition:.3s;pointer-events:none}.toast.show{opacity:1}
+</style></head><body>
+<div class="hdr"><div class="logo">MACHER OS</div><div><div class="hdr-title">Personal · Urlaub</div><div class="hdr-sub">Jahresurlaub, Resturlaub & genommene Urlaubstage je Monat</div></div></div>
+<div class="main">
+  <div class="bar"><label style="font-size:12px;color:var(--muted)">Jahr</label><select id="jahr" onchange="load()"></select></div>
+  <div class="card"><div class="tablewrap" id="tbl"><div style="padding:30px;text-align:center;color:var(--muted)">Lädt…</div></div></div>
+  <div class="foot">Gesamt = Jahresurlaub + Resturlaub Vorjahr · Genommen = Summe der Monate · Rest = Gesamt − Genommen.</div>
+</div><div class="toast" id="toast"></div>
+<script>
+const sb=window.supabase.createClient('https://jqzxctfqvcwbctpjksvg.supabase.co','eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpxenhjdGZxdmN3YmN0cGprc3ZnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODIxMzA0MzIsImV4cCI6MjA5NzcwNjQzMn0.RKIbZxJdusKWWPjBJqlxZ8e1m8So02UslOg55YRsn3o');
+const $=id=>document.getElementById(id);const esc=s=>(s==null?'':String(s)).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;');
+const numDE=v=>{if(v==null||v==='')return null;const n=parseFloat(String(v).replace(',','.'));return isNaN(n)?null:n;};
+function toast(m){const t=$('toast');t.textContent=m;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),1600);}
+const MON=['Jan','Feb','Mär','Apr','Mai','Jun','Jul','Aug','Sep','Okt','Nov','Dez'];
+let MA=[],PM={},UJ={};
+function initYear(){const y=new Date().getFullYear();let o='';for(let j=y-1;j<=y+1;j++)o+=`<option ${j===y?'selected':''}>${j}</option>`;$('jahr').innerHTML=o;}
+async function pmSet(maid,monat,val){const jahr=+$('jahr').value;const v=numDE(val);const{error}=await sb.from('personal_monat').upsert({mitarbeiter_id:maid,jahr,monat,urlaub_tage:v,updated_at:new Date().toISOString()},{onConflict:'mitarbeiter_id,jahr,monat'});if(error){toast(error.message);return;}PM[maid+'_'+monat]=Object.assign({},PM[maid+'_'+monat]||{},{urlaub_tage:v});render();}
+async function ujSet(maid,field,val){const jahr=+$('jahr').value;const v=numDE(val);const{error}=await sb.from('personal_urlaubsjahr').upsert({mitarbeiter_id:maid,jahr,[field]:v,updated_at:new Date().toISOString()},{onConflict:'mitarbeiter_id,jahr'});if(error){toast(error.message);return;}UJ[maid]=Object.assign({},UJ[maid]||{},{[field]:v});render();}
+async function load(){const jahr=+$('jahr').value;
+  MA=(await sb.from('mitarbeiter').select('id,name,vorname').order('pos')).data||[];
+  const pm=(await sb.from('personal_monat').select('mitarbeiter_id,monat,urlaub_tage').eq('jahr',jahr)).data||[];PM={};pm.forEach(r=>PM[r.mitarbeiter_id+'_'+r.monat]=r);
+  const uj=(await sb.from('personal_urlaubsjahr').select('mitarbeiter_id,jahresurlaub,resturlaub_vorjahr').eq('jahr',jahr)).data||[];UJ={};uj.forEach(r=>UJ[r.mitarbeiter_id]=r);
+  render();}
+function nm(m){return((m.vorname||'')+' '+(m.name||'')).trim()||'—';}
+function render(){const jahr=+$('jahr').value;const now=new Date();const cur=now.getFullYear()===jahr?now.getMonth()+1:0;
+  if(!MA.length){$('tbl').innerHTML='<div style="padding:30px;text-align:center;color:var(--muted)">Keine Mitarbeiter.</div>';return;}
+  let head='<thead><tr><th class="ma">Mitarbeiter</th><th>Jahres&shy;urlaub</th><th>Rest Vorjahr</th><th>Gesamt</th>'+MON.map((x,i)=>`<th class="${i+1===cur?'cur':''}">${x}</th>`).join('')+'<th>Genommen</th><th>Rest</th></tr></thead>';
+  let body=MA.map(m=>{const uj=UJ[m.id]||{};const ju=Number(uj.jahresurlaub)||0,rv=Number(uj.resturlaub_vorjahr)||0;const ges=ju+rv;
+    let gen=0,cells='';for(let mo=1;mo<=12;mo++){const t=(PM[m.id+'_'+mo]||{}).urlaub_tage;if(t!=null)gen+=Number(t);cells+=`<td class="${mo===cur?'cur':''}"><input class="c" inputmode="decimal" value="${t!=null?t:''}" onchange="pmSet('${m.id}',${mo},this.value)"></td>`;}
+    return `<tr><td class="ma">${esc(nm(m))}</td>
+      <td><input class="c" inputmode="decimal" value="${uj.jahresurlaub!=null?uj.jahresurlaub:''}" onchange="ujSet('${m.id}','jahresurlaub',this.value)"></td>
+      <td><input class="c" inputmode="decimal" value="${uj.resturlaub_vorjahr!=null?uj.resturlaub_vorjahr:''}" onchange="ujSet('${m.id}','resturlaub_vorjahr',this.value)"></td>
+      <td class="calc">${ges||''}</td>${cells}<td class="calc">${gen||''}</td><td class="calc" style="color:${(ges-gen)<0?'var(--red)':'var(--green)'}">${ges-gen}</td></tr>`;}).join('');
+  $('tbl').innerHTML='<table>'+head+'<tbody>'+body+'</tbody></table>';}
+(async()=>{const{data:{session}}=await sb.auth.getSession();if(!session){$('main').innerHTML='<div style="padding:60px;text-align:center;color:var(--muted)">Bitte einloggen.</div>';return;}initYear();load();})();
+</script></body></html>

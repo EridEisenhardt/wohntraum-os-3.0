@@ -141,6 +141,26 @@ export default function Sidebar({ user, demo, onLogout }) {
       </Link>
 
       <div className="nav-group">
+        <i className="ti ti-users-group lead" /> Personal
+        <i className="ti ti-chevron-down chev" />
+      </div>
+      <Link href="/personal/akte" className={subCls(path.startsWith('/personal/akte'))}>
+        <i className="ti ti-id" /> Personalakte
+      </Link>
+      <Link href="/personal/urlaub" className={subCls(path.startsWith('/personal/urlaub'))}>
+        <i className="ti ti-beach" /> Urlaub
+      </Link>
+      <Link href="/personal/krankheit" className={subCls(path.startsWith('/personal/krankheit'))}>
+        <i className="ti ti-vaccine" /> Krankheit
+      </Link>
+      <Link href="/personal/arbeitsstunden" className={subCls(path.startsWith('/personal/arbeitsstunden'))}>
+        <i className="ti ti-clock-hour-4" /> Arbeitsstunden
+      </Link>
+      <Link href="/personal/lohnkosten" className={subCls(path.startsWith('/personal/lohnkosten'))}>
+        <i className="ti ti-coin-euro" /> Lohnkosten
+      </Link>
+
+      <div className="nav-group">
         <i className="ti ti-user-heart lead" /> Eric Privat
         <i className="ti ti-chevron-down chev" />
       </div>

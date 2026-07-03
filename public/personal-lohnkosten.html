@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="de"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Personal · Lohnkosten – Macher OS</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+:root{--bg:#f6f7f9;--surf:#fff;--surf2:#f1f3f6;--line:#e6e8ec;--text:#1c2024;--muted:#6b7280;--accent:#185fa5;--green:#1f7a4d;--red:#c0392b;--r:8px;--rl:12px;}
+*{box-sizing:border-box;margin:0;padding:0}body{background:var(--bg);color:var(--text);font-family:'Inter',system-ui,sans-serif;font-size:14px}
+.hdr{background:var(--surf);border-bottom:1px solid var(--line);padding:16px 24px;display:flex;align-items:center;gap:12px;position:sticky;top:0;z-index:10}
+.logo{background:#1a1a2e;color:#fff;font-weight:700;font-size:11px;padding:5px 9px;border-radius:4px}.hdr-title{font-size:16px;font-weight:600}.hdr-sub{font-size:11px;color:var(--muted)}
+.main{max-width:1260px;margin:0 auto;padding:20px 24px 60px}
+.bar{display:flex;gap:10px;align-items:center;margin-bottom:14px;flex-wrap:wrap}.bar select{font:inherit;font-size:13px;padding:7px 9px;border:1px solid var(--line);border-radius:var(--r);background:var(--surf)}
+.card{background:var(--surf);border:1px solid var(--line);border-radius:var(--rl);overflow:hidden;margin-bottom:16px}
+.card-hd{padding:11px 15px;border-bottom:1px solid var(--line);font-size:13px;font-weight:600}
+.tablewrap{overflow-x:auto}table{width:100%;border-collapse:collapse;font-size:11px;min-width:1120px}
+th,td{border:1px solid var(--line);padding:5px 6px;text-align:center}th{background:var(--surf2);font-size:10px;text-transform:uppercase;color:var(--muted);font-weight:700}
+td.rl,th.rl{text-align:left;white-space:nowrap;position:sticky;left:0;background:var(--surf);font-weight:600}
+th.cur,td.cur{background:#fef9e7}
+input.c{width:60px;border:1px solid transparent;background:transparent;font:inherit;font-size:11px;text-align:right;border-radius:4px;padding:1px 3px}
+input.c:hover{border-color:var(--line)}input.c:focus{outline:none;border-color:var(--accent);background:#fff}
+tr.sum td,td.sum{font-weight:700;background:var(--surf2)}
+.foot{font-size:11px;color:var(--muted);margin-top:10px}
+.toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:var(--surf2);border:1px solid var(--line);border-radius:var(--r);padding:10px 20px;font-size:13px;opacity:0;transition:.3s;pointer-events:none}.toast.show{opacity:1}
+</style></head><body>
+<div class="hdr"><div class="logo">MACHER OS</div><div><div class="hdr-title">Personal · Lohnkosten</div><div class="hdr-sub">Lohnbestandteile je Mitarbeiter/Monat · Jahres-Matrix Personalkosten</div></div></div>
+<div class="main">
+  <div class="bar"><label style="font-size:12px;color:var(--muted)">Jahr</label><select id="jahr" onchange="load()"></select>
+    <label style="font-size:12px;color:var(--muted)">Mitarbeiter</label><select id="ma" onchange="render()"></select></div>
+  <div class="card"><div class="card-hd" id="t1">Lohnbestandteile</div><div class="tablewrap" id="tblMA"></div></div>
+  <div class="card"><div class="card-hd">Jahres-Matrix Personalkosten (Auszahlungsbetrag je Mitarbeiter)</div><div class="tablewrap" id="tblJahr"></div></div>
+  <div class="foot">Komponenten: Gehalt · Sachbezug · Gesamtbetrag Steuern · zu zahlender Betrag Krankenkasse · Auszahlungsbetrag. Die Jahres-Matrix summiert die Auszahlungsbeträge je Monat.</div>
+</div><div class="toast" id="toast"></div>
+<script>
+const sb=window.supabase.createClient('https://jqzxctfqvcwbctpjksvg.supabase.co','eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpxenhjdGZxdmN3YmN0cGprc3ZnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODIxMzA0MzIsImV4cCI6MjA5NzcwNjQzMn0.RKIbZxJdusKWWPjBJqlxZ8e1m8So02UslOg55YRsn3o');
+const $=id=>document.getElementById(id);const esc=s=>(s==null?'':String(s)).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;');
+const numDE=v=>{if(v==null||v==='')return null;const n=parseFloat(String(v).replace(/\./g,'').replace(',','.'));return isNaN(n)?null:n;};
+const eur=n=>n==null||n===''?'':new Intl.NumberFormat('de-DE',{minimumFractionDigits:0,maximumFractionDigits:0}).format(n);
+function toast(m){const t=$('toast');t.textContent=m;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),1600);}
+const MON=['Jan','Feb','Mär','Apr','Mai','Jun','Jul','Aug','Sep','Okt','Nov','Dez'];
+const COMP=[['gehalt','Gehalt'],['sachbezug','Sachbezug'],['steuern','Gesamtbetrag Steuern'],['kk_betrag','zu zahlender Betrag KK'],['auszahlung','Auszahlungsbetrag']];
+let MA=[],PM={};
+function initYear(){const y=new Date().getFullYear();let o='';for(let j=y-1;j<=y+1;j++)o+=`<option ${j===y?'selected':''}>${j}</option>`;$('jahr').innerHTML=o;}
+function nm(m){return((m.vorname||'')+' '+(m.name||'')).trim()||'—';}
+async function lkSet(maid,monat,field,val){const jahr=+$('jahr').value;const v=numDE(val);const{error}=await sb.from('personal_monat').upsert({mitarbeiter_id:maid,jahr,monat,[field]:v,updated_at:new Date().toISOString()},{onConflict:'mitarbeiter_id,jahr,monat'});if(error){toast(error.message);return;}PM[maid+'_'+monat]=Object.assign({},PM[maid+'_'+monat]||{},{[field]:v});render();}
+async function load(){const jahr=+$('jahr').value;MA=(await sb.from('mitarbeiter').select('id,name,vorname,unternehmen').order('pos')).data||[];
+  $('ma').innerHTML=MA.map(m=>`<option value="${m.id}">${esc(nm(m))}</option>`).join('');
+  const pm=(await sb.from('personal_monat').select('mitarbeiter_id,monat,gehalt,sachbezug,steuern,kk_betrag,auszahlung').eq('jahr',jahr)).data||[];PM={};pm.forEach(r=>PM[r.mitarbeiter_id+'_'+r.monat]=r);render();}
+function render(){const jahr=+$('jahr').value;const now=new Date();const cur=now.getFullYear()===jahr?now.getMonth()+1:0;
+  if(!MA.length){$('tblMA').innerHTML='<div style="padding:26px;text-align:center;color:var(--muted)">Keine Mitarbeiter.</div>';$('tblJahr').innerHTML='';return;}
+  const maid=$('ma').value||MA[0].id;$('t1').textContent='Lohnbestandteile — '+esc(nm(MA.find(m=>m.id===maid)||MA[0]));
+  let h1='<thead><tr><th class="rl">Komponente</th>'+MON.map((x,i)=>`<th class="${i+1===cur?'cur':''}">${x}</th>`).join('')+'<th>Summe</th></tr></thead>';
+  let b1=COMP.map(c=>{let sum=0,cells='';for(let mo=1;mo<=12;mo++){const val=(PM[maid+'_'+mo]||{})[c[0]];if(val!=null)sum+=Number(val);cells+=`<td class="${mo===cur?'cur':''}"><input class="c" inputmode="decimal" value="${val!=null?val:''}" onchange="lkSet('${maid}',${mo},'${c[0]}',this.value)"></td>`;}return `<tr><td class="rl">${c[1]}</td>${cells}<td class="sum">${eur(sum)}</td></tr>`;}).join('');
+  $('tblMA').innerHTML='<table>'+h1+'<tbody>'+b1+'</tbody></table>';
+  // Jahres-Matrix: Auszahlung je MA
+  const monTot=Array(13).fill(0);
+  let h2='<thead><tr><th class="rl">Mitarbeiter</th>'+MON.map((x,i)=>`<th class="${i+1===cur?'cur':''}">${x}</th>`).join('')+'<th>Summe</th></tr></thead>';
+  let b2=MA.map(m=>{let sum=0,cells='';for(let mo=1;mo<=12;mo++){const val=(PM[m.id+'_'+mo]||{}).auszahlung;if(val!=null){sum+=Number(val);monTot[mo]+=Number(val);}cells+=`<td class="${mo===cur?'cur':''}">${eur(val)}</td>`;}return `<tr><td class="rl">${esc(nm(m))}</td>${cells}<td class="sum">${eur(sum)}</td></tr>`;}).join('');
+  let tot='<tr class="sum"><td class="rl">Gesamt</td>';for(let mo=1;mo<=12;mo++)tot+=`<td>${eur(monTot[mo])}</td>`;tot+=`<td>${eur(monTot.reduce((a,b)=>a+b,0))}</td></tr>`;
+  $('tblJahr').innerHTML='<table>'+h2+'<tbody>'+b2+tot+'</tbody></table>';}
+(async()=>{const{data:{session}}=await sb.auth.getSession();if(!session){$('main').innerHTML='<div style="padding:60px;text-align:center;color:var(--muted)">Bitte einloggen.</div>';return;}initYear();load();})();
+</script></body></html>

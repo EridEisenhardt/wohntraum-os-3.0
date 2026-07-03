@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Personal · Personalakte – Macher OS</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+:root{--bg:#f6f7f9;--surf:#fff;--surf2:#f1f3f6;--line:#e6e8ec;--bord2:#eef0f3;--text:#1c2024;--muted:#6b7280;--dim:#4b5563;--accent:#185fa5;--green:#1f7a4d;--red:#c0392b;--r:8px;--rl:12px;}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--text);font-family:'Inter',system-ui,-apple-system,'Segoe UI',sans-serif;font-size:14px;line-height:1.5}
+.hdr{background:var(--surf);border-bottom:1px solid var(--line);padding:16px 24px;display:flex;align-items:center;gap:12px;position:sticky;top:0;z-index:10}
+.logo{background:#1a1a2e;color:#fff;font-weight:700;font-size:11px;letter-spacing:.08em;padding:5px 9px;border-radius:4px}
+.hdr-title{font-size:16px;font-weight:600}.hdr-sub{font-size:11px;color:var(--muted)}
+.main{max-width:1080px;margin:0 auto;padding:20px 24px 60px}
+.bar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:16px}
+.bar select{font-family:inherit;font-size:14px;padding:8px 10px;border:1px solid var(--line);border-radius:var(--r);background:var(--surf);min-width:220px}
+.btn{font-size:13px;font-weight:600;padding:9px 15px;border-radius:var(--r);border:1px solid var(--accent);background:var(--accent);color:#fff;cursor:pointer}
+.btn:hover{opacity:.92}.btn.sec{background:var(--surf2);color:var(--text);border-color:var(--line)}.btn.del{border-color:var(--red);color:var(--red);background:transparent}
+.card{background:var(--surf);border:1px solid var(--line);border-radius:var(--rl);overflow:hidden;margin-bottom:16px}
+.card-hd{padding:12px 16px;border-bottom:1px solid var(--line);font-size:13px;font-weight:600}
+.drop{border:2px dashed var(--line);border-radius:var(--r);padding:16px;text-align:center;font-size:13px;color:var(--muted);margin:16px}
+.drop.over{border-color:var(--accent);background:var(--surf2)}
+.form{padding:16px;display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px}
+.fld{display:flex;flex-direction:column;gap:4px}
+.fld label{font-size:11px;color:var(--muted);font-weight:600}
+.fld input{font-family:inherit;font-size:13.5px;padding:8px 10px;border:1px solid var(--line);border-radius:var(--r);background:var(--surf);color:var(--text)}
+.fld input:focus{outline:none;border-color:var(--accent)}
+.foot-bar{padding:0 16px 16px;display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+#msg{font-size:12px;color:var(--green)}
+.toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:var(--surf2);border:1px solid var(--line);border-radius:var(--r);padding:10px 20px;font-size:13px;opacity:0;transition:opacity .3s;pointer-events:none;z-index:99}.toast.show{opacity:1}
+</style></head>
+<body>
+<div class="hdr"><div class="logo">MACHER OS</div><div>
+  <div class="hdr-title">Personal · Personalakte</div>
+  <div class="hdr-sub">Stammdatenerfassung je Mitarbeiter · Dokument hochladen</div></div></div>
+<div class="main">
+  <div class="bar">
+    <select id="maSel" onchange="pick(this.value)"></select>
+    <button class="btn" onclick="neu()">+ Neuer Mitarbeiter</button>
+    <button class="btn del" onclick="del()">Löschen</button>
+  </div>
+  <div class="card">
+    <div class="card-hd" id="ctitle">Stammdaten</div>
+    <div class="drop" id="drop">
+      <input type="file" id="file" accept="application/pdf,image/*" style="display:none" onchange="onFile(this.files[0])">
+      <span id="belegState"><b>Dokument hochladen</b> — PDF/Bild ziehen oder <button class="btn sec" onclick="document.getElementById('file').click()">Datei wählen</button></span>
+    </div>
+    <div class="form" id="form"></div>
+    <div class="foot-bar"><button class="btn" onclick="save()">Speichern</button><span id="msg"></span></div>
+  </div>
+</div>
+<div class="toast" id="toast"></div>
+<script>
+const SB_URL='https://jqzxctfqvcwbctpjksvg.supabase.co';
+const SB_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpxenhjdGZxdmN3YmN0cGprc3ZnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODIxMzA0MzIsImV4cCI6MjA5NzcwNjQzMn0.RKIbZxJdusKWWPjBJqlxZ8e1m8So02UslOg55YRsn3o';
+const sb=window.supabase.createClient(SB_URL,SB_KEY);
+const $=id=>document.getElementById(id);
+const esc=s=>(s==null?'':String(s)).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;');
+const numDE=v=>{ if(v==null||v==='')return null; const n=parseFloat(String(v).replace(/\./g,'').replace(',','.')); return isNaN(n)?null:n; };
+function toast(m){const t=$('toast');t.textContent=m;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),1800);}
+const FIELDS=[
+ ['name','Name'],['vorname','Vorname'],['str','Straße'],['hausnr','Hausnr.'],['plz','PLZ'],['ort','Ort'],
+ ['geburtsdatum','Geburtsdatum','date'],['geburtsort','Geburtsort'],['geschlecht','Geschlecht'],['versicherungsnr','Versicherungsnr.'],
+ ['familienstand','Familienstand'],['staatsangehoerigkeit','Staatsangehörigkeit'],['kontonummer','Kontonummer (IBAN)'],['bic','BIC'],
+ ['identifikationsnr','Identifikationsnr.'],['finanzamt_nr','Finanzamt-Nr.'],['steuerklasse','Steuerklasse / Faktor'],['kinderfreibetrag','Kinderfreibetrag'],
+ ['konfession','Konfession'],['eintrittsdatum','Eintrittsdatum','date'],['austrittsdatum','Austrittsdatum','date'],['berufsbezeichnung','Berufsbezeichnung'],
+ ['unternehmen','Unternehmen'],['beschaeftigung','Beschäftigung'],['probezeit_bis','Probezeit bis','date'],['schulabschluss','Höchster Schulabschluss'],
+ ['berufsausbildung','Höchste Berufsausbildung'],['woech_arbeitszeit','Wöchentliche Arbeitszeit'],['befristet_bis','Befristet bis','date'],
+ ['stundenlohn','Stundenlohn (€)','num'],['monatslohn','Monatlich (Stundenlohn × 173) (€)','num'],['urlaubstage','Urlaubstage','int']
+];
+let MA=[], cur=null, pendingBeleg=null;
+function label(m){ return ((m.vorname||'')+' '+(m.name||'')).trim()||'(ohne Name)'; }
+function renderForm(){
+  $('form').innerHTML=FIELDS.map(f=>{
+    const type=f[2]==='date'?'date':(f[2]==='num'||f[2]==='int'?'text':'text');
+    const val=cur?(cur[f[0]]==null?'':cur[f[0]]):'';
+    const im=(f[2]==='num'||f[2]==='int')?'inputmode="decimal"':'';
+    return `<div class="fld"><label>${f[1]}</label><input type="${type}" ${im} id="fld_${f[0]}" value="${esc(val)}"></div>`;
+  }).join('');
+  $('belegState').innerHTML = cur&&cur.beleg_url ? '📎 <a href="'+esc(cur.beleg_url)+'" target="_blank">'+esc(cur.beleg_name||'Dokument')+'</a> · <button class="btn sec" onclick="document.getElementById(\'file\').click()">ersetzen</button>' : '<b>Dokument hochladen</b> — PDF/Bild ziehen oder <button class="btn sec" onclick="document.getElementById(\'file\').click()">Datei wählen</button>';
+  $('ctitle').textContent = cur ? 'Stammdaten — '+label(cur) : 'Neuer Mitarbeiter';
+}
+function fillSelect(){
+  $('maSel').innerHTML=MA.map(m=>`<option value="${m.id}" ${cur&&cur.id===m.id?'selected':''}>${esc(label(m))}${m.unternehmen?' · '+esc(m.unternehmen):''}</option>`).join('');
+}
+function pick(id){ cur=MA.find(m=>m.id===id)||null; pendingBeleg=null; renderForm(); }
+function neu(){ cur=null; pendingBeleg=null; renderForm(); $('maSel').value=''; }
+const drop=$('drop');
+['dragenter','dragover'].forEach(e=>drop.addEventListener(e,ev=>{ev.preventDefault();drop.classList.add('over');}));
+['dragleave','drop'].forEach(e=>drop.addEventListener(e,ev=>{ev.preventDefault();drop.classList.remove('over');}));
+drop.addEventListener('drop',ev=>{ if(ev.dataTransfer.files[0]) onFile(ev.dataTransfer.files[0]); });
+async function onFile(file){
+  if(!file)return; $('belegState').textContent='Lädt hoch…';
+  const path=Date.now()+'_'+file.name.replace(/[^a-zA-Z0-9._-]/g,'_');
+  const { error }=await sb.storage.from('personal').upload(path,file,{upsert:true,contentType:file.type||'application/octet-stream'});
+  if(error){ toast('Upload fehlgeschlagen: '+error.message); renderForm(); return; }
+  const { data }=sb.storage.from('personal').getPublicUrl(path);
+  pendingBeleg={url:data.publicUrl,name:file.name};
+  $('belegState').innerHTML='📎 '+esc(file.name)+' hochgeladen ✓';
+}
+async function save(){
+  const row={};
+  FIELDS.forEach(f=>{ let v=$('fld_'+f[0]).value.trim(); if(f[2]==='num'){v=numDE(v);} else if(f[2]==='int'){v=v===''?null:parseInt(v,10);} else if(f[2]==='date'){v=v||null;} else {v=v||null;} row[f[0]]=v; });
+  if(row.stundenlohn && !row.monatslohn) row.monatslohn=Math.round(row.stundenlohn*173*100)/100;
+  if(pendingBeleg){ row.beleg_url=pendingBeleg.url; row.beleg_name=pendingBeleg.name; }
+  let error;
+  if(cur){ ({error}=await sb.from('mitarbeiter').update(row).eq('id',cur.id)); }
+  else { const max=Math.max(0,...MA.map(m=>m.pos||0)); row.pos=max+1; ({error}=await sb.from('mitarbeiter').insert(row)); }
+  const m=$('msg');
+  if(error){ m.style.color='var(--red)'; m.textContent='Fehler: '+error.message; return; }
+  m.style.color='var(--green)'; m.textContent='Gespeichert ✓'; await load();
+}
+async function del(){ if(!cur)return; if(!confirm('Mitarbeiter '+label(cur)+' löschen?'))return; await sb.from('mitarbeiter').delete().eq('id',cur.id); cur=null; await load(); }
+async function load(){
+  const { data }=await sb.from('mitarbeiter').select('*').order('pos',{ascending:true}).order('created_at',{ascending:true});
+  MA=data||[]; if(!cur && MA.length) cur=MA[0]; if(cur) cur=MA.find(m=>m.id===cur.id)||MA[0]||null;
+  fillSelect(); renderForm();
+}
+(async()=>{ const {data:{session}}=await sb.auth.getSession(); if(!session){$('main').innerHTML='<div style="padding:60px;text-align:center;color:var(--muted)">Bitte zuerst im OS einloggen.</div>';return;} load(); })();
+</script>
+</body></html>
