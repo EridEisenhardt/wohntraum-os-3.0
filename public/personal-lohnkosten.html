@@ -113,24 +113,29 @@ async function onLohnFile(file){
 }
 function showPruefung(maid,monat,d,fname,url){
   const cur=PM[maid+'_'+monat]||{};
-  const rows=COMP.map(c=>{const now=cur[c[0]];const neu=d[c[0]];const changed=neu!=null&&(now==null||Number(now)!==Number(neu));return {key:c[0],label:c[1],now,neu,changed};});
-  const anyExtract=rows.some(r=>r.neu!=null); const changes=rows.filter(r=>r.changed);
-  PENDING={maid,monat,rows};
-  let h=`<div style="font-size:12px;margin-bottom:6px">📄 <b>${esc(fname)}</b> — Abgleich für ${MON[monat-1]} ${$('jahr').value}:</div>`;
-  h+='<table style="width:100%;border-collapse:collapse;font-size:12px;max-width:640px"><thead><tr>'+['Feld','Aktuell','Aus Dokument',''].map((x,i)=>`<th style="text-align:${i===0?'left':(i===3?'center':'right')};padding:5px 8px;background:var(--surf2);font-size:10px;text-transform:uppercase;color:var(--muted)">${x}</th>`).join('')+'</tr></thead><tbody>';
-  h+=rows.map(r=>`<tr style="border-bottom:1px solid var(--bord2)"><td style="padding:5px 8px">${r.label}</td><td style="padding:5px 8px;text-align:right">${r.now!=null?eur(r.now):'—'}</td><td style="padding:5px 8px;text-align:right;${r.changed?'color:var(--accent);font-weight:600':''}">${r.neu!=null?eur(r.neu):'—'}</td><td style="padding:5px 8px;text-align:center">${r.changed?'<span style="color:var(--accent)">Δ</span>':(r.neu!=null?'✓':'')}</td></tr>`).join('');
+  PENDING={maid,monat};
+  const anyExtract=COMP.some(c=>d[c[0]]!=null);
+  const inl='width:110px;text-align:right;font:inherit;font-size:12px;border:1px solid var(--line);border-radius:5px;padding:4px 6px;background:var(--surf)';
+  let h=`<div style="font-size:12px;margin-bottom:8px">📄 <a href="${esc(url)}" target="_blank" style="color:var(--accent)">${esc(fname)}</a> — Abgleich für <b>${MON[monat-1]} ${$('jahr').value}</b>. Werte aus dem Dokument prüfen/ergänzen, dann übernehmen:</div>`;
+  h+='<table style="width:100%;border-collapse:collapse;font-size:12px;max-width:660px"><thead><tr>'+['Feld','Aktuell','Aus Dokument (editierbar)'].map((x,i)=>`<th style="text-align:${i===0?'left':'right'};padding:5px 8px;background:var(--surf2);font-size:10px;text-transform:uppercase;color:var(--muted)">${x}</th>`).join('')+'</tr></thead><tbody>';
+  h+=COMP.map(c=>{const now=cur[c[0]];const neu=d[c[0]];const chg=neu!=null&&(now==null||Number(now)!==Number(neu));
+    return `<tr style="border-bottom:1px solid var(--bord2)"><td style="padding:5px 8px">${c[1]}</td>
+      <td style="padding:5px 8px;text-align:right;color:var(--muted)">${now!=null?eur(now):'—'}</td>
+      <td style="padding:5px 8px;text-align:right"><input id="pf_${c[0]}" inputmode="decimal" value="${neu!=null?neu:''}" placeholder="—" style="${inl}${chg?';border-color:var(--accent)':''}"></td></tr>`;}).join('');
   h+='</tbody></table>';
-  if(!anyExtract) h+='<div style="margin-top:8px;color:var(--red);font-size:12px">Keine Werte automatisch erkannt — bitte manuell prüfen.</div>';
-  else if(!changes.length) h+='<div style="margin-top:8px;color:var(--green);font-size:12px">Keine Abweichungen — Werte stimmen überein.</div>';
-  else h+=`<div style="margin-top:10px;display:flex;gap:8px;align-items:center;flex-wrap:wrap"><span style="font-size:12px">${changes.length} Änderung(en) übernehmen?</span><select onchange="applyPruefung(this.value)" style="font:inherit;font-size:12px;padding:6px 9px;border:1px solid var(--line);border-radius:6px"><option value="">— wählen —</option><option value="ja">Ja, übernehmen</option><option value="nein">Nein</option></select></div>`;
+  h+=`<div style="margin-top:10px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+    <span style="font-size:12px;color:${anyExtract?'var(--green)':'var(--warn)'}">${anyExtract?'Automatisch erkannt – bitte prüfen.':'Nichts automatisch erkannt – Werte aus dem Dokument oben eintragen.'}</span>
+    <span style="font-size:12px">Übernehmen?</span>
+    <select onchange="applyPruefung(this.value)" style="font:inherit;font-size:12px;padding:6px 9px;border:1px solid var(--line);border-radius:6px">
+      <option value="">— wählen —</option><option value="ja">Ja, übernehmen</option><option value="nein">Nein</option></select></div>`;
   $('pruefung').innerHTML=h;
   $('lohnState').innerHTML='📎 <a href="'+esc(url)+'" target="_blank" style="color:var(--accent)">'+esc(fname)+'</a> gespeichert.';
 }
 async function applyPruefung(val){
-  if(val==='nein'){ $('pruefung').innerHTML='<span style="font-size:12px;color:var(--muted)">Änderungen verworfen.</span>'; return; }
-  if(val!=='ja'||!PENDING)return; const {maid,monat,rows}=PENDING;
-  for(const r of rows){ if(r.changed){ await sb.from('personal_monat').upsert({mitarbeiter_id:maid,jahr:+$('jahr').value,monat,[r.key]:r.neu,updated_at:new Date().toISOString()},{onConflict:'mitarbeiter_id,jahr,monat'}); } }
-  toast('Werte übernommen ✓'); PENDING=null; $('pruefung').innerHTML='<span style="font-size:12px;color:var(--green)">Änderungen übernommen ✓</span>'; await load();
+  if(val==='nein'){ $('pruefung').innerHTML='<span style="font-size:12px;color:var(--muted)">Verworfen.</span>'; return; }
+  if(val!=='ja'||!PENDING)return; const {maid,monat}=PENDING; const cur=PM[maid+'_'+monat]||{}; let applied=0;
+  for(const c of COMP){ const el=$('pf_'+c[0]); if(!el)continue; const vv=numDE(el.value); if(vv!=null && (cur[c[0]]==null||Number(cur[c[0]])!==vv)){ const {error}=await sb.from('personal_monat').upsert({mitarbeiter_id:maid,jahr:+$('jahr').value,monat,[c[0]]:vv,updated_at:new Date().toISOString()},{onConflict:'mitarbeiter_id,jahr,monat'}); if(error){toast('Fehler: '+error.message);return;} applied++; } }
+  toast(applied?applied+' Werte übernommen ✓':'Keine Änderungen'); PENDING=null; $('pruefung').innerHTML='<span style="font-size:12px;color:var(--green)">'+(applied?applied+' Werte übernommen ✓':'Keine Änderungen zu übernehmen')+'</span>'; await load();
 }
 
 (async()=>{const{data:{session}}=await sb.auth.getSession();if(!session){$('main').innerHTML='<div style="padding:60px;text-align:center;color:var(--muted)">Bitte einloggen.</div>';return;}initYear();initUpMonat();load();})();
