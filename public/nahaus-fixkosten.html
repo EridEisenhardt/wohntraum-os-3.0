@@ -71,6 +71,11 @@ a.dl{color:var(--accent);text-decoration:none}a.dl:hover{text-decoration:underli
 </div>
 
 <div class="main">
+  <div class="card">
+    <div class="card-hd"><span>📊 Dashboard — Zahlungen je Immobilie</span><span class="hint" id="dashSum"></span></div>
+    <div class="tablewrap" id="dash"><div class="empty">—</div></div>
+  </div>
+
   <div class="kpis" id="kpis"></div>
 
   <div class="card">
@@ -253,7 +258,36 @@ async function load(){
   ROWS = error ? [] : (data||[]);
   render();
 }
+function parseDates(txt){ if(!txt) return []; return [...String(txt).matchAll(/([0-3]?\d)[.\/-]([01]?\d)[.\/-](\d{2,4})/g)].map(m=>{ let y=m[3]; if(y.length===2)y='20'+y; return new Date(+y,+m[2]-1,+m[1]); }); }
+function nextDueStr(list){
+  const today=new Date(); today.setHours(0,0,0,0);
+  let dates=[]; list.forEach(r=>{ dates=dates.concat(parseDates(r.faelligkeit)); });
+  const up=dates.filter(d=>d>=today).sort((a,b)=>a-b);
+  const turni=[...new Set(list.map(r=>r.turnus).filter(Boolean))];
+  if(up.length){ const d=up[0]; return ('0'+d.getDate()).slice(-2)+'.'+('0'+(d.getMonth()+1)).slice(-2)+'.'+d.getFullYear(); }
+  if(turni.length) return turni.join(' / ');
+  return '—';
+}
+function renderDashboard(){
+  const el=$('dash');
+  if(!ROWS.length){ el.innerHTML='<div class="empty">Noch keine Zahlungen erfasst.</div>'; $('dashSum').textContent=''; return; }
+  const groups={}; ROWS.forEach(r=>{ const im=r.immobilie||'Ohne Immobilie'; (groups[im]=groups[im]||[]).push(r); });
+  const total=ROWS.reduce((s,r)=>s+(Number(r.gesamtbetrag)||0),0);
+  $('dashSum').textContent=Object.keys(groups).length+' Objekte · Summe '+eur(total);
+  let body='';
+  Object.keys(groups).sort().forEach(im=>{
+    const list=groups[im]; const sum=list.reduce((s,r)=>s+(Number(r.gesamtbetrag)||0),0);
+    body+=`<tr style="font-weight:700;background:var(--surf2)"><td>${esc(im)}</td><td>${list.length}</td><td class="eur">${eur(sum)}</td><td>${esc(nextDueStr(list))}</td></tr>`;
+    const byTyp={}; list.forEach(r=>{ const t=r.typ||'—'; (byTyp[t]=byTyp[t]||[]).push(r); });
+    Object.keys(byTyp).sort().forEach(t=>{ const l=byTyp[t]; const s=l.reduce((a,r)=>a+(Number(r.gesamtbetrag)||0),0);
+      body+=`<tr><td style="padding-left:26px;color:var(--dim)">↳ ${esc(t)}</td><td>${l.length}</td><td class="eur">${eur(s)}</td><td style="color:var(--muted)">${esc(nextDueStr(l))}</td></tr>`;
+    });
+  });
+  body+=`<tr style="font-weight:700;border-top:2px solid var(--text)"><td>GESAMT</td><td>${ROWS.length}</td><td class="eur">${eur(total)}</td><td></td></tr>`;
+  el.innerHTML='<table style="min-width:640px"><thead><tr><th>Immobilie / Typ</th><th>Anzahl</th><th class="eur">Summe</th><th>Nächste Fälligkeit</th></tr></thead><tbody>'+body+'</tbody></table>';
+}
 function render(){
+  renderDashboard();
   const w=$('tblwrap'); $('cnt').textContent=ROWS.length+' Einträge';
   const sum=ROWS.reduce((s,r)=>s+(Number(r.gesamtbetrag)||0),0);
   const byTyp={}; ROWS.forEach(r=>{ const t=r.typ||'—'; byTyp[t]=(byTyp[t]||0)+(Number(r.gesamtbetrag)||0); });
