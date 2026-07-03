@@ -56,6 +56,23 @@ a.dl{color:var(--accent);text-decoration:none}a.dl:hover{text-decoration:underli
 .abtn:hover{color:var(--red);border-color:var(--red)}
 .empty,.loading{text-align:center;padding:34px;color:var(--muted)}
 .foot{font-size:11px;color:var(--muted);margin-top:16px;border-top:1px solid var(--line);padding-top:12px}
+/* Dashboard-Matrix */
+.mx{width:100%;border-collapse:collapse;font-size:11px;min-width:1080px}
+.mx th,.mx td{border:1px solid var(--line);padding:5px 6px;text-align:center;vertical-align:middle}
+.mx th{background:var(--surf2);font-size:10px;text-transform:uppercase;letter-spacing:.03em;color:var(--muted);font-weight:700}
+.mx th.gp,.mx td.gp{text-align:left;white-space:nowrap;position:sticky;left:0;background:var(--surf);z-index:1}
+.mx td.gpname{font-weight:700}
+.mx td.cur{background:#fef9e7}
+.mx th.cur{background:#fdf1c4}
+.mx .cell-paid{background:#e8f6ee}
+.mx .cell-open{background:#fdeeee}
+.mx .soll{color:var(--muted)}
+.mx .ist-ok{color:var(--green);font-weight:600}
+.mx .ist-off{color:var(--red);font-weight:600}
+.mx input.istin{width:64px;border:1px solid transparent;background:transparent;font:inherit;font-size:11px;text-align:center;border-radius:4px;padding:1px 2px}
+.mx input.istin:hover{border-color:var(--line)} .mx input.istin:focus{outline:none;border-color:var(--accent);background:#fff}
+.mx tr.gesamt td{font-weight:700;background:var(--surf2);color:var(--red)}
+.mx tr.gesamt td.gp{color:var(--red)}
 .toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:var(--surf3);border:1px solid var(--line);border-radius:var(--r);padding:10px 20px;font-size:13px;opacity:0;transition:opacity .3s;pointer-events:none;z-index:9999}
 .toast.show{opacity:1}
 </style>
@@ -72,7 +89,17 @@ a.dl{color:var(--accent);text-decoration:none}a.dl:hover{text-decoration:underli
 
 <div class="main">
   <div class="card">
-    <div class="card-hd"><span>📊 Dashboard — Zahlungen je Immobilie</span><span class="hint" id="dashSum"></span></div>
+    <div class="card-hd" style="align-items:flex-end">
+      <div>
+        <div style="font-size:18px;font-weight:700" id="dashTitle">Servicerechnungen</div>
+        <div class="hint" id="dashObj"></div>
+        <div class="hint" id="dashDate"></div>
+      </div>
+      <div style="display:flex;gap:8px;align-items:center">
+        <select id="dashImmo" onchange="renderDashboard()" style="font-family:inherit;font-size:13px;padding:6px 9px;border:1px solid var(--line);border-radius:var(--r);background:var(--surf)"></select>
+        <select id="dashJahr" onchange="loadIst()" style="font-family:inherit;font-size:13px;padding:6px 9px;border:1px solid var(--line);border-radius:var(--r);background:var(--surf)"></select>
+      </div>
+    </div>
     <div class="tablewrap" id="dash"><div class="empty">—</div></div>
   </div>
 
@@ -256,35 +283,73 @@ async function del(id){ if(!confirm('Servicerechnung löschen?'))return; await s
 async function load(){
   const { data, error } = await sb.from('servicerechnungen').select('*').order('created_at',{ascending:false});
   ROWS = error ? [] : (data||[]);
-  render();
+  initDash(); await loadIst(); render();
 }
 function parseDates(txt){ if(!txt) return []; return [...String(txt).matchAll(/([0-3]?\d)[.\/-]([01]?\d)[.\/-](\d{2,4})/g)].map(m=>{ let y=m[3]; if(y.length===2)y='20'+y; return new Date(+y,+m[2]-1,+m[1]); }); }
-function nextDueStr(list){
-  const today=new Date(); today.setHours(0,0,0,0);
-  let dates=[]; list.forEach(r=>{ dates=dates.concat(parseDates(r.faelligkeit)); });
-  const up=dates.filter(d=>d>=today).sort((a,b)=>a-b);
-  const turni=[...new Set(list.map(r=>r.turnus).filter(Boolean))];
-  if(up.length){ const d=up[0]; return ('0'+d.getDate()).slice(-2)+'.'+('0'+(d.getMonth()+1)).slice(-2)+'.'+d.getFullYear(); }
-  if(turni.length) return turni.join(' / ');
-  return '—';
+function eur2(n){ return new Intl.NumberFormat('de-DE',{minimumFractionDigits:2,maximumFractionDigits:2}).format(n||0)+' €'; }
+const MON=['Jan','Feb','Mär','Apr','Mai','Jun','Jul','Aug','Sep','Okt','Nov','Dez'];
+let IST={};
+function dueMonths(r){
+  const base=[...new Set(parseDates(r.faelligkeit).map(d=>d.getMonth()+1))].sort((a,b)=>a-b);
+  const t=(r.turnus||'').toLowerCase(); const wrap=m=>((m-1)%12)+1;
+  if(t==='monatlich') return [1,2,3,4,5,6,7,8,9,10,11,12];
+  if(!base.length) return [];
+  if(t==='quartalsweise') return [0,3,6,9].map(k=>wrap(base[0]+k));
+  if(t.indexOf('halbj')===0) return [0,6].map(k=>wrap(base[0]+k));
+  if(t.indexOf('jähr')===0||t==='jahrlich') return [base[0]];
+  return base;
+}
+function initDash(){
+  const immoSel=$('dashImmo'), jahrSel=$('dashJahr');
+  const immos=[...new Set(ROWS.map(r=>r.immobilie).filter(Boolean))].sort();
+  const cur=immoSel.value;
+  immoSel.innerHTML = immos.length ? immos.map(o=>`<option ${o===cur?'selected':''}>${esc(o)}</option>`).join('') : '<option value="">(keine Immobilie)</option>';
+  if(!jahrSel.options.length){ const y=new Date().getFullYear(); let o=''; for(let j=y-1;j<=y+1;j++) o+=`<option ${j===y?'selected':''}>${j}</option>`; jahrSel.innerHTML=o; }
+}
+async function loadIst(){
+  const jahr=parseInt($('dashJahr').value,10)||new Date().getFullYear();
+  const { data } = await sb.from('servicerechnung_ist').select('servicerechnung_id,monat,betrag').eq('jahr',jahr);
+  IST={}; (data||[]).forEach(r=>{ IST[r.servicerechnung_id+'_'+r.monat]=r.betrag; });
+  renderDashboard();
+}
+async function istSet(rid,monat,val){
+  const jahr=parseInt($('dashJahr').value,10);
+  const v=numDE(val);
+  const { error } = await sb.from('servicerechnung_ist').upsert({servicerechnung_id:rid,jahr,monat,betrag:v,updated_at:new Date().toISOString()},{onConflict:'servicerechnung_id,jahr,monat'});
+  if(error){ toast('Speichern fehlgeschlagen: '+error.message); return; }
+  IST[rid+'_'+monat]=v; renderDashboard();
 }
 function renderDashboard(){
   const el=$('dash');
-  if(!ROWS.length){ el.innerHTML='<div class="empty">Noch keine Zahlungen erfasst.</div>'; $('dashSum').textContent=''; return; }
-  const groups={}; ROWS.forEach(r=>{ const im=r.immobilie||'Ohne Immobilie'; (groups[im]=groups[im]||[]).push(r); });
-  const total=ROWS.reduce((s,r)=>s+(Number(r.gesamtbetrag)||0),0);
-  $('dashSum').textContent=Object.keys(groups).length+' Objekte · Summe '+eur(total);
-  let body='';
-  Object.keys(groups).sort().forEach(im=>{
-    const list=groups[im]; const sum=list.reduce((s,r)=>s+(Number(r.gesamtbetrag)||0),0);
-    body+=`<tr style="font-weight:700;background:var(--surf2)"><td>${esc(im)}</td><td>${list.length}</td><td class="eur">${eur(sum)}</td><td>${esc(nextDueStr(list))}</td></tr>`;
-    const byTyp={}; list.forEach(r=>{ const t=r.typ||'—'; (byTyp[t]=byTyp[t]||[]).push(r); });
-    Object.keys(byTyp).sort().forEach(t=>{ const l=byTyp[t]; const s=l.reduce((a,r)=>a+(Number(r.gesamtbetrag)||0),0);
-      body+=`<tr><td style="padding-left:26px;color:var(--dim)">↳ ${esc(t)}</td><td>${l.length}</td><td class="eur">${eur(s)}</td><td style="color:var(--muted)">${esc(nextDueStr(l))}</td></tr>`;
-    });
+  const immo=$('dashImmo').value, jahr=parseInt($('dashJahr').value,10)||new Date().getFullYear();
+  const now=new Date();
+  $('dashTitle').textContent='Servicerechnungen '+jahr;
+  $('dashObj').textContent=immo||'—';
+  $('dashDate').textContent='Datum: '+now.getDate()+'.'+(now.getMonth()+1)+'.'+now.getFullYear();
+  const list=ROWS.filter(r=>(r.immobilie||'')===immo);
+  if(!list.length){ el.innerHTML='<div class="empty">Keine Servicerechnungen für dieses Objekt.</div>'; return; }
+  const curMonth=(now.getFullYear()===jahr)?now.getMonth()+1:0;
+  const head='<thead><tr><th class="gp">Geschäftspartner</th><th class="gp">Typ</th>'+MON.map((m,i)=>`<th class="${i+1===curMonth?'cur':''}">${m}</th>`).join('')+'</tr></thead>';
+  const monTot=Array(13).fill(0); let body='';
+  list.forEach(r=>{
+    const due=dueMonths(r), soll=Number(r.gesamtbetrag)||0; let cells='';
+    for(let m=1;m<=12;m++){
+      if(!due.includes(m)){ cells+=`<td class="${m===curMonth?'cur':''}"></td>`; continue; }
+      monTot[m]+=soll;
+      const ist=IST[r.id+'_'+m];
+      const paid = ist!=null && soll>0 && ist>=soll;
+      const istCls = ist==null?'':(ist>=soll?'ist-ok':'ist-off');
+      cells+=`<td class="${paid?'cell-paid':'cell-open'} ${m===curMonth?'cur':''}">
+        <div class="soll">Soll ${eur2(soll)}</div>
+        <div>Ist <input class="istin ${istCls}" inputmode="decimal" value="${ist!=null?ist:''}" placeholder="0,00" onchange="istSet('${r.id}',${m},this.value)"></div>
+      </td>`;
+    }
+    body+=`<tr><td class="gp gpname">${esc(r.geschaeftspartner||'—')}</td><td class="gp">${esc(r.typ||'—')}</td>${cells}</tr>`;
   });
-  body+=`<tr style="font-weight:700;border-top:2px solid var(--text)"><td>GESAMT</td><td>${ROWS.length}</td><td class="eur">${eur(total)}</td><td></td></tr>`;
-  el.innerHTML='<table style="min-width:640px"><thead><tr><th>Immobilie / Typ</th><th>Anzahl</th><th class="eur">Summe</th><th>Nächste Fälligkeit</th></tr></thead><tbody>'+body+'</tbody></table>';
+  const jahrTot=monTot.reduce((a,b)=>a+b,0);
+  let g=`<tr class="gesamt"><td class="gp">Gesamt: ${eur2(jahrTot)}</td><td class="gp"></td>`;
+  for(let m=1;m<=12;m++) g+=`<td class="${m===curMonth?'cur':''}">${monTot[m]?eur2(monTot[m]):''}</td>`;
+  el.innerHTML='<table class="mx">'+head+'<tbody>'+body+g+'</tr></tbody></table>';
 }
 function render(){
   renderDashboard();
