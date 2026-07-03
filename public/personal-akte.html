@@ -48,7 +48,16 @@ body{background:var(--bg);color:var(--text);font-family:'Inter',system-ui,-apple
     <div class="form" id="form"></div>
     <div class="foot-bar"><button class="btn" onclick="save()">Speichern</button><span id="msg"></span></div>
   </div>
+
+  <div class="card" id="gegCard">
+    <div class="card-hd" style="display:flex;justify-content:space-between;align-items:center">
+      <span>📦 Ausgehändigte Gegenstände</span>
+      <button class="btn sec" id="gegAdd" onclick="addGeg()">+ Gegenstand</button>
+    </div>
+    <div style="overflow-x:auto"><table id="gegTbl" style="width:100%;border-collapse:collapse;font-size:12.5px;min-width:760px"></table></div>
+  </div>
 </div>
+<datalist id="gegListe"><option value="Handy"><option value="Tablet"><option value="Laptop"><option value="Kreditkarte"><option value="Baumarktkarte"><option value="Tankkarte"><option value="Schlüssel"><option value="Werkzeug"><option value="Arbeitskleidung"><option value="Sonstiges"></datalist>
 <div class="toast" id="toast"></div>
 <script>
 const SB_URL='https://jqzxctfqvcwbctpjksvg.supabase.co';
@@ -83,8 +92,39 @@ function renderForm(){
 function fillSelect(){
   $('maSel').innerHTML=MA.map(m=>`<option value="${m.id}" ${cur&&cur.id===m.id?'selected':''}>${esc(label(m))}${m.unternehmen?' · '+esc(m.unternehmen):''}</option>`).join('');
 }
-function pick(id){ cur=MA.find(m=>m.id===id)||null; pendingBeleg=null; renderForm(); }
-function neu(){ cur=null; pendingBeleg=null; renderForm(); $('maSel').value=''; }
+function pick(id){ cur=MA.find(m=>m.id===id)||null; pendingBeleg=null; renderForm(); loadGeg(); }
+function neu(){ cur=null; pendingBeleg=null; renderForm(); $('maSel').value=''; loadGeg(); }
+
+// ——— Ausgehändigte Gegenstände ———
+let GEG=[];
+const GINL='width:100%;border:1px solid transparent;background:transparent;font:inherit;font-size:12.5px;padding:5px 6px;border-radius:5px;color:var(--text)';
+async function loadGeg(){
+  const tbl=$('gegTbl');
+  if(!cur){ $('gegAdd').disabled=true; tbl.innerHTML='<tbody><tr><td style="padding:14px;color:var(--muted)">Mitarbeiter zuerst speichern, dann Gegenstände erfassen.</td></tr></tbody>'; return; }
+  $('gegAdd').disabled=false;
+  const { data }=await sb.from('mitarbeiter_gegenstaende').select('*').eq('mitarbeiter_id',cur.id).order('created_at',{ascending:true});
+  GEG=data||[]; renderGeg();
+}
+function renderGeg(){
+  const tbl=$('gegTbl');
+  const head='<thead><tr><th style="text-align:left;font-size:10px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);padding:7px 8px;background:var(--surf2)">Gegenstand</th><th style="text-align:left;font-size:10px;text-transform:uppercase;color:var(--muted);padding:7px 8px;background:var(--surf2)">Bezeichnung / Nr.</th><th style="text-align:left;font-size:10px;text-transform:uppercase;color:var(--muted);padding:7px 8px;background:var(--surf2)">Ausgegeben am</th><th style="text-align:left;font-size:10px;text-transform:uppercase;color:var(--muted);padding:7px 8px;background:var(--surf2)">Zurück am</th><th style="text-align:left;font-size:10px;text-transform:uppercase;color:var(--muted);padding:7px 8px;background:var(--surf2)">Status</th><th style="background:var(--surf2)"></th></tr></thead>';
+  const q=s=>(s==null?'':String(s)).replace(/"/g,'&quot;');
+  const body = GEG.length ? GEG.map(g=>{
+    const status = g.zurueck_am ? '<span style="font-size:10px;font-weight:700;padding:2px 8px;border-radius:12px;background:#e8f6ee;color:var(--green)">zurückgegeben</span>' : '<span style="font-size:10px;font-weight:700;padding:2px 8px;border-radius:12px;background:#e6f1fb;color:var(--accent)">ausgehändigt</span>';
+    return `<tr style="border-bottom:1px solid var(--bord2)">
+      <td style="padding:2px 8px"><input list="gegListe" style="${GINL};font-weight:600" value="${q(g.gegenstand)}" placeholder="Handy, Kreditkarte…" onchange="updGeg('${g.id}','gegenstand',this.value)"></td>
+      <td style="padding:2px 8px"><input style="${GINL}" value="${q(g.bezeichnung)}" placeholder="Modell / Karten-Nr." onchange="updGeg('${g.id}','bezeichnung',this.value)"></td>
+      <td style="padding:2px 8px"><input type="date" style="${GINL}" value="${g.ausgegeben_am||''}" onchange="updGeg('${g.id}','ausgegeben_am',this.value)"></td>
+      <td style="padding:2px 8px"><input type="date" style="${GINL}" value="${g.zurueck_am||''}" onchange="updGeg('${g.id}','zurueck_am',this.value)"></td>
+      <td style="padding:2px 8px">${status}</td>
+      <td style="padding:2px 8px;text-align:center"><button class="btn sec" style="padding:3px 8px;font-size:11px" onclick="delGeg('${g.id}')">✕</button></td>
+    </tr>`;
+  }).join('') : '<tr><td colspan="6" style="padding:14px;color:var(--muted)">Noch keine Gegenstände — „+ Gegenstand".</td></tr>';
+  tbl.innerHTML=head+'<tbody>'+body+'</tbody>';
+}
+async function addGeg(){ if(!cur)return; const { error }=await sb.from('mitarbeiter_gegenstaende').insert({ mitarbeiter_id:cur.id, gegenstand:'', ausgegeben_am:new Date().toISOString().slice(0,10) }); if(error){ toast('Fehler: '+error.message); return; } loadGeg(); }
+async function updGeg(id,field,val){ const { error }=await sb.from('mitarbeiter_gegenstaende').update({ [field]:(val||null) }).eq('id',id); if(error){ toast('Speichern fehlgeschlagen'); return; } const r=GEG.find(x=>x.id===id); if(r){ r[field]=val; if(field==='zurueck_am') renderGeg(); } }
+async function delGeg(id){ if(!confirm('Gegenstand entfernen?'))return; await sb.from('mitarbeiter_gegenstaende').delete().eq('id',id); loadGeg(); }
 const drop=$('drop');
 ['dragenter','dragover'].forEach(e=>drop.addEventListener(e,ev=>{ev.preventDefault();drop.classList.add('over');}));
 ['dragleave','drop'].forEach(e=>drop.addEventListener(e,ev=>{ev.preventDefault();drop.classList.remove('over');}));
@@ -114,7 +154,7 @@ async function del(){ if(!cur)return; if(!confirm('Mitarbeiter '+label(cur)+' l�
 async function load(){
   const { data }=await sb.from('mitarbeiter').select('*').order('pos',{ascending:true}).order('created_at',{ascending:true});
   MA=data||[]; if(!cur && MA.length) cur=MA[0]; if(cur) cur=MA.find(m=>m.id===cur.id)||MA[0]||null;
-  fillSelect(); renderForm();
+  fillSelect(); renderForm(); loadGeg();
 }
 (async()=>{ const {data:{session}}=await sb.auth.getSession(); if(!session){$('main').innerHTML='<div style="padding:60px;text-align:center;color:var(--muted)">Bitte zuerst im OS einloggen.</div>';return;} load(); })();
 </script>
