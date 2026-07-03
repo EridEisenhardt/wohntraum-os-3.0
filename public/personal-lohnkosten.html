@@ -44,15 +44,15 @@ tr.sum td,td.sum{font-weight:700;background:var(--surf2)}
 
   <div class="card">
     <div class="card-hd" style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">
-      <span>🏥 Beitragsnachweis Krankenkasse hochladen &amp; auslesen</span>
+      <span>🏥 Beitragsnachweis / Lohnsteuer-Anmeldung hochladen &amp; auslesen</span>
       <span style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-        <select id="kkKasse" style="font:inherit;font-size:12px;padding:5px 8px;border:1px solid var(--line);border-radius:6px;background:var(--surf)"><option>Knappschaft</option><option>Firmus</option></select>
+        <select id="kkKasse" style="font:inherit;font-size:12px;padding:5px 8px;border:1px solid var(--line);border-radius:6px;background:var(--surf)"><option>Knappschaft</option><option>Firmus</option><option>Steuern</option></select>
         <select id="kkMonat" style="font:inherit;font-size:12px;padding:5px 8px;border:1px solid var(--line);border-radius:6px;background:var(--surf)"></select>
         <input type="file" id="kkFile" accept="application/pdf,image/*" style="display:none" onchange="onKKFile(this.files[0])">
         <button onclick="document.getElementById('kkFile').click()" style="font:inherit;font-size:12px;font-weight:600;padding:7px 12px;border:1px solid var(--accent);background:var(--accent);color:#fff;border-radius:6px;cursor:pointer">Beitragsnachweis wählen</button>
       </span>
     </div>
-    <div style="padding:12px 16px"><span id="kkState" style="font-size:12px;color:var(--muted)">DÜ-Protokoll / Beitragsnachweis (PDF/Bild) hochladen — „Zu zahlender Betrag" und Monat werden ausgelesen und in die Matrix-Zeile der gewählten Kasse übernommen.</span>
+    <div style="padding:12px 16px"><span id="kkState" style="font-size:12px;color:var(--muted)">DÜ-Protokoll (PDF/Bild) hochladen — bei Knappschaft/Firmus wird „Zu zahlender Betrag", bei Steuern der „Gesamtbetrag" der Lohnsteuer-Anmeldung samt Monat ausgelesen und in die passende Matrix-Zeile übernommen.</span>
       <div id="kkPruefung" style="margin-top:12px"></div>
     </div>
   </div>
@@ -94,7 +94,7 @@ function render(){const jahr=+$('jahr').value;const now=new Date();const cur=now
   MA.forEach(m=>rows.push({label:(m.vorname||nm(m)),val:mo=>num2((PM[m.id+'_'+mo]||{}).auszahlung)}));
   rows.push({label:'Sachbezug',val:mo=>sumField('sachbezug',mo)});
   KK.forEach(kk=>rows.push({label:kk,val:mo=>num2((KKM[kk.toLowerCase()+'_'+mo]||{}).betrag)}));
-  rows.push({label:'Steuern',val:mo=>sumField('steuern',mo)});
+  rows.push({label:'Steuern',val:mo=>{const s=KKM['steuern_'+mo];return s&&s.betrag!=null?num2(s.betrag):sumField('steuern',mo);}});
   const h2='<thead><tr><th class="rl">Unternehmen</th>'+MON.map((x,i)=>`<th class="${i+1===cur?'cur':''}">${x}</th>`).join('')+'<th>Summe</th></tr></thead>';
   const b2=rows.map(r=>{let sum=0,cells='';for(let mo=1;mo<=12;mo++){const v=r.val(mo);sum+=v;monTot[mo]+=v;cells+=`<td class="${mo===cur?'cur':''}">${v?eur(v):''}</td>`;}return `<tr><td class="rl">${esc(r.label)}</td>${cells}<td class="sum">${sum?eur(sum):''}</td></tr>`;}).join('');
   let tot='<tr class="sum" style="background:#e7effd"><td class="rl">Gesamt</td>';for(let mo=1;mo<=12;mo++)tot+=`<td>${monTot[mo]?eur(monTot[mo]):''}</td>`;tot+=`<td>${eur(monTot.reduce((a,b)=>a+b,0))}</td></tr>`;
@@ -105,7 +105,7 @@ function initUpMonat(){ const opts=MON.map((m,i)=>`<option value="${i+1}" ${i===
 const MONMAP={'januar':1,'februar':2,'märz':3,'maerz':3,'marz':3,'april':4,'mai':5,'juni':6,'juli':7,'august':8,'september':9,'oktober':10,'november':11,'dezember':12,'jan':1,'feb':2,'mär':3,'mrz':3,'apr':4,'jun':6,'jul':7,'aug':8,'sep':9,'sept':9,'okt':10,'nov':11,'dez':12};
 function detectMonat(txt){ const T=(txt||''); const m=T.match(/(Januar|Februar|M[äa]?rz|Maerz|Mrz|April|Mai|Juni|Juli|August|September|Sept|Oktober|November|Dezember)/i); if(m){const k=m[1].toLowerCase();if(MONMAP[k])return MONMAP[k];} return null; }
 function parseKK(t){ const T=(t||'').replace(/[ \t]+/g,' ');
-  const bm=T.match(/(?:Zu zahlender Betrag|Zahlungssumme|Gesamtsumme|Beitragssumme|Zu zahlen|Zahlbetrag)[^\d\n]{0,30}?([\d.]{1,9},\d{2})/i);
+  const bm=T.match(/(?:Zu zahlender Betrag|Gesamtbetrag|Zahlungssumme|Gesamtsumme|Beitragssumme|Zu zahlen|Zahlbetrag)[^\d\n]{0,30}?([\d.]{1,9},\d{2})/i);
   return { betrag: bm?numDE(bm[1]):null, monat: detectMonat(T) };
 }
 let KKPENDING=null;
@@ -130,7 +130,7 @@ function showKKPruefung(kasse,detMonat,betrag,fname,url){
   h+=`<table style="width:100%;border-collapse:collapse;font-size:12px;max-width:520px"><tbody>
     <tr><td style="padding:5px 8px">Monat</td><td style="padding:5px 8px;text-align:right">${monSel}</td></tr>
     <tr><td style="padding:5px 8px">Aktuell in Matrix (${esc(kasse)})</td><td style="padding:5px 8px;text-align:right;color:var(--muted)">${cur!=null?eur(cur):'—'}</td></tr>
-    <tr><td style="padding:5px 8px">Zu zahlender Betrag</td><td style="padding:5px 8px;text-align:right"><input id="kk_bt" inputmode="decimal" value="${betrag!=null?betrag:''}" placeholder="—" style="${inl}${betrag!=null?';border-color:var(--accent)':''}"></td></tr>
+    <tr><td style="padding:5px 8px">${kasse.toLowerCase()==='steuern'?'Gesamtbetrag':'Zu zahlender Betrag'}</td><td style="padding:5px 8px;text-align:right"><input id="kk_bt" inputmode="decimal" value="${betrag!=null?betrag:''}" placeholder="—" style="${inl}${betrag!=null?';border-color:var(--accent)':''}"></td></tr>
   </tbody></table>`;
   h+=`<div style="margin-top:10px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
     <span style="font-size:12px;color:${betrag!=null?'var(--green)':'var(--red)'}">${betrag!=null?'Betrag erkannt – bitte prüfen.':'Betrag nicht erkannt – bitte oben eintragen.'}</span>
