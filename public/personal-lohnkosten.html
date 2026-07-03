@@ -43,10 +43,7 @@ tr.sum td,td.sum{font-weight:700;background:var(--surf2)}
   </div>
 
   <div class="card"><div class="card-hd" id="t1">Lohnbestandteile</div><div class="tablewrap" id="tblMA"></div></div>
-  <div class="card"><div class="card-hd" style="display:flex;justify-content:space-between;align-items:center">
-    <span>Jahres-Matrix Personalkosten</span>
-    <button onclick="addPos()" style="font:inherit;font-size:12px;font-weight:600;padding:6px 11px;border:1px solid var(--accent);background:var(--accent);color:#fff;border-radius:var(--r);cursor:pointer">+ Position</button>
-    </div><div class="tablewrap" id="tblJahr"></div></div>
+  <div class="card"><div class="card-hd">Jahres-Matrix Personalkosten <span style="font-weight:400;color:var(--muted);font-size:12px">— automatisch aus den Lohnabrechnungen</span></div><div class="tablewrap" id="tblJahr"></div></div>
   <div class="foot">Komponenten: Gehalt · Sachbezug · Gesamtbetrag Steuern · zu zahlender Betrag Krankenkasse · Auszahlungsbetrag. Die Jahres-Matrix summiert die Auszahlungsbeträge je Monat.</div>
 </div><div class="toast" id="toast"></div>
 <script>
@@ -61,25 +58,31 @@ let MA=[],PM={},PKM={},POS=[];
 function initYear(){const y=new Date().getFullYear();let o='';for(let j=y-1;j<=y+1;j++)o+=`<option ${j===y?'selected':''}>${j}</option>`;$('jahr').innerHTML=o;}
 function nm(m){return((m.vorname||'')+' '+(m.name||'')).trim()||'—';}
 async function lkSet(maid,monat,field,val){const jahr=+$('jahr').value;const v=numDE(val);const{error}=await sb.from('personal_monat').upsert({mitarbeiter_id:maid,jahr,monat,[field]:v,updated_at:new Date().toISOString()},{onConflict:'mitarbeiter_id,jahr,monat'});if(error){toast(error.message);return;}PM[maid+'_'+monat]=Object.assign({},PM[maid+'_'+monat]||{},{[field]:v});render();}
-async function load(){const jahr=+$('jahr').value;MA=(await sb.from('mitarbeiter').select('id,name,vorname,unternehmen').order('pos')).data||[];
+async function load(){const jahr=+$('jahr').value;MA=(await sb.from('mitarbeiter').select('id,name,vorname,unternehmen,krankenkasse').order('pos')).data||[];
   $('ma').innerHTML=MA.map(m=>`<option value="${m.id}">${esc(nm(m))}</option>`).join('');
   const pm=(await sb.from('personal_monat').select('mitarbeiter_id,monat,gehalt,sachbezug,steuern,kk_betrag,auszahlung,lohn_beleg_url,lohn_beleg_name').eq('jahr',jahr)).data||[];PM={};pm.forEach(r=>PM[r.mitarbeiter_id+'_'+r.monat]=r);
-  const pk=(await sb.from('personalkosten_matrix').select('position,sort,monat,betrag').eq('jahr',jahr)).data||[];PKM={};const posMap={};pk.forEach(r=>{PKM[r.position+'_'+r.monat]=r.betrag;posMap[r.position]=r.sort||0;});POS=Object.keys(posMap).sort((a,b)=>posMap[a]-posMap[b]);
   render();}
-async function pkmSet(position,monat,val){const jahr=+$('jahr').value;const v=numDE(val);const sort=(POS.indexOf(position)>=0?POS.indexOf(position)+1:99);const{error}=await sb.from('personalkosten_matrix').upsert({jahr,position,monat,betrag:v,sort,updated_at:new Date().toISOString()},{onConflict:'jahr,position,monat'});if(error){toast(error.message);return;}PKM[position+'_'+monat]=v;render();}
-async function addPos(){const name=prompt('Neue Position (z. B. Mitarbeitername oder Kostenart):');if(!name)return;const jahr=+$('jahr').value;const sort=(POS.length+1);await sb.from('personalkosten_matrix').upsert({jahr,position:name.trim(),monat:1,betrag:null,sort},{onConflict:'jahr,position,monat'});load();}
+const num2=x=>x==null?0:Number(x);
+function sumField(field,mo,filterFn){let s=0;MA.forEach(m=>{if(filterFn&&!filterFn(m))return;const v=(PM[m.id+'_'+mo]||{})[field];if(v!=null)s+=Number(v);});return s;}
 function render(){const jahr=+$('jahr').value;const now=new Date();const cur=now.getFullYear()===jahr?now.getMonth()+1:0;
   if(!MA.length){$('tblMA').innerHTML='<div style="padding:26px;text-align:center;color:var(--muted)">Keine Mitarbeiter.</div>';$('tblJahr').innerHTML='';return;}
   const maid=$('ma').value||MA[0].id;$('t1').textContent='Lohnbestandteile — '+esc(nm(MA.find(m=>m.id===maid)||MA[0]));
   let h1='<thead><tr><th class="rl">Komponente</th>'+MON.map((x,i)=>`<th class="${i+1===cur?'cur':''}">${x}</th>`).join('')+'<th>Summe</th></tr></thead>';
   let b1=COMP.map(c=>{let sum=0,cells='';for(let mo=1;mo<=12;mo++){const val=(PM[maid+'_'+mo]||{})[c[0]];if(val!=null)sum+=Number(val);cells+=`<td class="${mo===cur?'cur':''}"><input class="c" inputmode="decimal" value="${val!=null?val:''}" onchange="lkSet('${maid}',${mo},'${c[0]}',this.value)"></td>`;}return `<tr><td class="rl">${c[1]}</td>${cells}<td class="sum">${eur(sum)}</td></tr>`;}).join('');
   $('tblMA').innerHTML='<table>'+h1+'<tbody>'+b1+'</tbody></table>';
-  // Jahres-Matrix Personalkosten (editierbar, aus personalkosten_matrix)
+  // Jahres-Matrix Personalkosten — automatisch aus den Lohnabrechnungen (personal_monat)
   const monTot=Array(13).fill(0);
-  let h2='<thead><tr><th class="rl">Position</th>'+MON.map((x,i)=>`<th class="${i+1===cur?'cur':''}">${x}</th>`).join('')+'<th>Summe</th></tr></thead>';
-  let b2=POS.map(p=>{let sum=0,cells='';for(let mo=1;mo<=12;mo++){const val=PKM[p+'_'+mo];if(val!=null){sum+=Number(val);monTot[mo]+=Number(val);}cells+=`<td class="${mo===cur?'cur':''}"><input class="c" inputmode="decimal" value="${val!=null?val:''}" onchange="pkmSet('${esc(p).replace(/'/g,'&#39;')}',${mo},this.value)"></td>`;}return `<tr><td class="rl">${esc(p)}</td>${cells}<td class="sum">${eur(sum)}</td></tr>`;}).join('');
-  if(!POS.length) b2='<tr><td colspan="14" style="padding:20px;text-align:center;color:var(--muted)">Keine Positionen — „+ Position".</td></tr>';
-  let tot='<tr class="sum"><td class="rl">Gesamt</td>';for(let mo=1;mo<=12;mo++)tot+=`<td>${eur(monTot[mo])}</td>`;tot+=`<td>${eur(monTot.reduce((a,b)=>a+b,0))}</td></tr>`;
+  const rows=[];
+  MA.forEach(m=>rows.push({label:nm(m),val:mo=>num2((PM[m.id+'_'+mo]||{}).auszahlung)}));
+  rows.push({label:'Sachbezug',val:mo=>sumField('sachbezug',mo)});
+  const kks=[...new Set(MA.map(m=>m.krankenkasse).filter(Boolean))];
+  kks.forEach(kk=>rows.push({label:kk,val:mo=>sumField('kk_betrag',mo,m=>m.krankenkasse===kk)}));
+  let hasOhne=false;for(let mo=1;mo<=12;mo++){if(sumField('kk_betrag',mo,m=>!m.krankenkasse))hasOhne=true;}
+  if(hasOhne) rows.push({label:'KK-Beitrag (ohne KK-Zuordnung)',val:mo=>sumField('kk_betrag',mo,m=>!m.krankenkasse)});
+  rows.push({label:'Steuern',val:mo=>sumField('steuern',mo)});
+  const h2='<thead><tr><th class="rl">Position</th>'+MON.map((x,i)=>`<th class="${i+1===cur?'cur':''}">${x}</th>`).join('')+'<th>Summe</th></tr></thead>';
+  const b2=rows.map(r=>{let sum=0,cells='';for(let mo=1;mo<=12;mo++){const v=r.val(mo);sum+=v;monTot[mo]+=v;cells+=`<td class="${mo===cur?'cur':''}">${v?eur(v):''}</td>`;}return `<tr><td class="rl">${esc(r.label)}</td>${cells}<td class="sum">${sum?eur(sum):''}</td></tr>`;}).join('');
+  let tot='<tr class="sum" style="background:#e7effd"><td class="rl">Gesamt</td>';for(let mo=1;mo<=12;mo++)tot+=`<td>${monTot[mo]?eur(monTot[mo]):''}</td>`;tot+=`<td>${eur(monTot.reduce((a,b)=>a+b,0))}</td></tr>`;
   $('tblJahr').innerHTML='<table>'+h2+'<tbody>'+b2+tot+'</tbody></table>';}
 // ——— Lohnabrechnung: Upload, Auslesen, Prüfung ———
 let PENDING=null;
