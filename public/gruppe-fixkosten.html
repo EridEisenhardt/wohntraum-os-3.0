@@ -40,6 +40,7 @@ table.reg{width:100%;border-collapse:collapse;font-size:12.5px;min-width:1000px}
 .reg tbody tr.rbez td{background:#e8f6ee}
 .pill{font-size:10px;font-weight:700;padding:2px 8px;border-radius:12px;cursor:pointer}.p-offen{background:#fdeeee;color:var(--red)}.p-bez{background:#e8f6ee;color:var(--green)}
 .gsel{font:inherit;font-size:12px;border:1px solid var(--line);border-radius:6px;padding:3px 5px;background:var(--surf)}
+.tabs{display:flex;gap:4px;flex-wrap:wrap}.tab{font:inherit;font-size:12px;font-weight:600;padding:6px 12px;border:1px solid var(--line);border-radius:8px;background:var(--surf);color:var(--dim);cursor:pointer}.tab:hover{border-color:var(--accent)}.tab.active{background:var(--accent);color:#fff;border-color:var(--accent)}
 .abtn{font-size:12px;padding:3px 8px;border-radius:5px;border:1px solid var(--line);background:transparent;color:var(--muted);cursor:pointer}.abtn:hover{color:var(--red);border-color:var(--red)}
 .empty{text-align:center;padding:26px;color:var(--muted)}
 .foot{font-size:11px;color:var(--muted);margin-top:12px;border-top:1px solid var(--line);padding-top:12px}
@@ -51,8 +52,7 @@ table.reg{width:100%;border-collapse:collapse;font-size:12.5px;min-width:1000px}
 <div class="main">
   <div class="bar">
     <label style="font-size:12px;color:var(--muted)">Jahr</label><select id="jahr" onchange="loadIst()"></select>
-    <label style="font-size:12px;color:var(--muted)">Gesellschaft</label>
-    <select id="fGes" onchange="renderMatrix()"><option value="">Alle</option><option>WT</option><option>EE</option><option>Kibo</option><option value="__none">(nicht zugeordnet)</option></select>
+    <div class="tabs" id="gtabs" style="margin-left:6px"></div>
   </div>
 
   <div class="card"><div class="card-hd"><span>📊 Jahres-Matrix Soll Fixkosten</span><span class="crumb">getrennt nach Gesellschaft</span></div>
@@ -96,17 +96,21 @@ const numDE=v=>{if(v==null||v==='')return null;const n=parseFloat(String(v).repl
 function toast(m){const t=$('toast');t.textContent=m;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),1800);}
 const MON=['Jan','Feb','Mär','Apr','Mai','Jun','Jul','Aug','Sep','Okt','Nov','Dez'];
 const GES=['WT','EE','Kibo'];
-let ROWS=[],IST={},pendingBeleg=null;
+let ROWS=[],IST={},pendingBeleg=null,curGes='';
 let PMA=[],PPM={},PSM={},PIST={};
+const TABS=[['','Alle'],['WT','WT'],['EE','EE'],['Kibo','Kibo'],['__none','(nicht zugeordnet)']];
+function renderTabs(){$('gtabs').innerHTML=TABS.map(t=>`<button class="tab ${curGes===t[0]?'active':''}" onclick="setTab('${t[0]}')">${esc(t[1])}</button>`).join('');}
+function setTab(g){curGes=g;renderTabs();renderReg();renderMatrix();}
 const num2=x=>x==null?0:Number(x);
 function nm(m){return((m.vorname||'')+' '+(m.name||'')).trim()||'—';}
-function gesOf(u){u=(u||'').toLowerCase();if(u.includes('kibo'))return 'Kibo';if(u.includes('rheinhessen')||u.includes('wohn(t)raum')||u.includes('wohntraum'))return 'WT';if(u.includes('macher'))return 'EE';return '__none';}
+function gesOf(u){u=(u||'').toLowerCase();if(u.includes('kibo'))return 'Kibo';if(u.includes('rheinhessen')||u.includes('wohn(t)raum')||u.includes('wohntraum'))return 'WT';if(u.includes('eisenhardt')||u.includes('macher')||u==='ee')return 'EE';return '__none';}
 function personnelByGes(){const res={};[...GES,'__none'].forEach(k=>res[k]=[]);
   const byG={};PMA.forEach(m=>{const k=gesOf(m.unternehmen);(byG[k]=byG[k]||[]).push(m);});
   Object.keys(byG).forEach(k=>{const emps=byG[k];
     emps.forEach(m=>{const vals=Array(13).fill(0);let any=false;for(let mo=1;mo<=12;mo++){vals[mo]=num2((PPM[m.id+'_'+mo]||{}).auszahlung);if(vals[mo])any=true;}if(any)res[k].push({label:(m.vorname||nm(m)),typ:'Gehalt (Auszahlung)',key:'geh:'+m.id,vals});});
     const sbz=Array(13).fill(0);let a1=false;for(let mo=1;mo<=12;mo++){emps.forEach(m=>sbz[mo]+=num2((PPM[m.id+'_'+mo]||{}).sachbezug));if(sbz[mo])a1=true;}if(a1)res[k].push({label:'Sachbezug',typ:'Sachbezug',key:'sbz:'+k,vals:sbz});
     ['Knappschaft','Firmus'].forEach(kk=>{const a=Array(13).fill(0);let an=false;for(let mo=1;mo<=12;mo++){emps.forEach(m=>{if((m.krankenkasse||'').toLowerCase()===kk.toLowerCase())a[mo]+=num2((PPM[m.id+'_'+mo]||{}).kk_betrag);});if(a[mo])an=true;}if(an)res[k].push({label:kk,typ:'Krankenkasse',key:'kk:'+kk+':'+k,vals:a});});
+    const st=Array(13).fill(0);let as=false;for(let mo=1;mo<=12;mo++){st[mo]=num2(PSM[k+'_'+mo]);if(st[mo])as=true;}if(as)res[k].push({label:'Lohnsteuer',typ:'Lohnsteuer',key:'lst:'+k,vals:st});
   });
   return res;}
 function initSel(){const y=new Date().getFullYear();let o='';for(let j=y-1;j<=y+1;j++)o+=`<option ${j===y?'selected':''}>${j}</option>`;$('jahr').innerHTML=o;}
@@ -122,7 +126,7 @@ async function load(){ROWS=(await sb.from('gruppe_fixkosten').select('*').order(
 async function loadIst(){const jahr=+$('jahr').value;const d=(await sb.from('gruppe_fixkosten_ist').select('fixkosten_id,monat,betrag').eq('jahr',jahr)).data||[];IST={};d.forEach(r=>IST[r.fixkosten_id+'_'+r.monat]=r.betrag);
   PMA=(await sb.from('mitarbeiter').select('id,name,vorname,unternehmen,krankenkasse').order('pos')).data||[];
   const pm=(await sb.from('personal_monat').select('mitarbeiter_id,monat,sachbezug,kk_betrag,auszahlung').eq('jahr',jahr)).data||[];PPM={};pm.forEach(r=>PPM[r.mitarbeiter_id+'_'+r.monat]=r);
-  const sm=(await sb.from('personal_steuer_monat').select('monat,betrag').eq('jahr',jahr)).data||[];PSM={};sm.forEach(r=>PSM[r.monat]=r.betrag);
+  const sm=(await sb.from('personal_steuer_monat').select('unternehmen,monat,betrag').eq('jahr',jahr)).data||[];PSM={};sm.forEach(r=>{const kk=gesOf(r.unternehmen);const key=kk+'_'+r.monat;PSM[key]=num2(PSM[key])+num2(r.betrag);});
   const pi=(await sb.from('gruppe_personal_ist').select('poskey,monat,betrag').eq('jahr',jahr)).data||[];PIST={};pi.forEach(r=>PIST[r.poskey+'_'+r.monat]=r.betrag);
   renderMatrix();}
 async function piSet(poskey,monat,val){const jahr=+$('jahr').value;const vv=numDE(val);const{error}=await sb.from('gruppe_personal_ist').upsert({jahr,monat,poskey,betrag:vv,updated_at:new Date().toISOString()},{onConflict:'jahr,monat,poskey'});if(error){toast(error.message);return;}PIST[poskey+'_'+monat]=vv;renderMatrix();}
@@ -138,9 +142,9 @@ async function toggleStatus(id){const r=ROWS.find(x=>x.id===id);const s=r.status
 async function istSet(fid,monat,val){const jahr=+$('jahr').value;const vv=numDE(val);const{error}=await sb.from('gruppe_fixkosten_ist').upsert({fixkosten_id:fid,jahr,monat,betrag:vv,updated_at:new Date().toISOString()},{onConflict:'fixkosten_id,jahr,monat'});if(error){toast(error.message);return;}IST[fid+'_'+monat]=vv;renderMatrix();}
 function gtag(g){const c=g==='WT'?'g-WT':g==='EE'?'g-EE':g==='Kibo'?'g-Kibo':'g-none';return `<span class="gtag ${c}">${esc(g||'—')}</span>`;}
 function fmtD(d){if(!d)return '—';const p=String(d).split('-');return p[2]+'.'+p[1]+'.'+p[0];}
-function renderReg(){const w=$('reg');$('cnt').textContent=ROWS.length+' Positionen';if(!ROWS.length){w.innerHTML='<div class="empty">Noch keine Positionen — unten erfassen.</div>';return;}
+function renderReg(){const w=$('reg');const list=curGes?ROWS.filter(r=>(r.gesellschaft||'__none')===curGes):ROWS;$('cnt').textContent=list.length+' Positionen';if(!list.length){w.innerHTML='<div class="empty">Keine Positionen für dieses Registerblatt.</div>';return;}
   w.innerHTML='<table class="reg"><thead><tr><th>Gesellschaft</th><th>Geschäftspartner</th><th>Typ</th><th class="eur">Betrag</th><th>Turnus</th><th>Fälligkeit</th><th>Status</th><th>Beleg</th><th></th></tr></thead><tbody>'
-   +ROWS.map(r=>`<tr class="${r.status==='bezahlt'?'rbez':''}">
+   +list.map(r=>`<tr class="${r.status==='bezahlt'?'rbez':''}">
      <td><select class="gsel" onchange="setGes('${r.id}',this.value)"><option value="" ${!r.gesellschaft?'selected':''}>—</option>${GES.map(g=>`<option ${r.gesellschaft===g?'selected':''}>${g}</option>`).join('')}</select></td>
      <td>${esc(r.geschaeftspartner||'—')}${r.quelle==='personalkosten'?' <span class="crumb">(aus Personalkosten)</span>':''}</td>
      <td>${esc(r.typ||'—')}</td><td class="eur">${r.gesamtbetrag!=null?eur(r.gesamtbetrag):'—'}</td>
@@ -149,13 +153,13 @@ function renderReg(){const w=$('reg');$('cnt').textContent=ROWS.length+' Positio
      <td>${r.beleg_url?`<a href="${esc(r.beleg_url)}" target="_blank" style="color:var(--accent)">📎</a>`:'—'}</td>
      <td style="white-space:nowrap"><button class="abtn" onclick="edit('${r.id}')">✎</button> <button class="abtn" onclick="del('${r.id}')">✕</button></td></tr>`).join('')+'</tbody></table>';
 }
-function groupOrder(){const f=$('fGes').value;const g={};ROWS.forEach(r=>{let key=r.gesellschaft||'__none';if(f&&f!==key)return;(g[key]=g[key]||[]).push(r);});const order=[...GES,'__none'].filter(k=>g[k]&&g[k].length);return {g,order};}
+function groupOrder(){const f=curGes;const g={};ROWS.forEach(r=>{let key=r.gesellschaft||'__none';if(f&&f!==key)return;(g[key]=g[key]||[]).push(r);});const order=[...GES,'__none'].filter(k=>g[k]&&g[k].length);return {g,order};}
 function renderMatrix(){const now=new Date();const jahr=+$('jahr').value;const cur=now.getFullYear()===jahr?now.getMonth()+1:0;
   $('mxSoll').innerHTML=buildMx('soll',cur);
   $('mxIst').innerHTML=buildMx('ist',cur);
 }
 function buildMx(mode,cur){
-  const {g}=groupOrder();const pers=personnelByGes();const fsel=$('fGes').value;
+  const {g}=groupOrder();const pers=personnelByGes();const fsel=curGes;
   const head='<thead><tr><th class="p">Position</th><th class="p">Typ</th>'+MON.map((x,i)=>`<th class="${i+1===cur?'cur':''}">${x}</th>`).join('')+'<th>Summe</th></tr></thead>';
   const groupKeys=[...GES,'__none'].filter(k=>((g[k]&&g[k].length)||(pers[k]&&pers[k].length))&&(!fsel||fsel===k));
   const gm=Array(13).fill(0);let body='';
@@ -165,13 +169,9 @@ function buildMx(mode,cur){
     (pers[k]||[]).forEach(pr=>{let rs=0,c='';for(let mo=1;mo<=12;mo++){let val,cell;if(mode==='soll'){val=pr.vals[mo];cell=`<td class="${mo===cur?'cur':''}">${val?eur0(val):''}</td>`;}else{const iv=PIST[pr.key+'_'+mo];val=iv!=null?Number(iv):0;cell=`<td class="${mo===cur?'cur':''}"><input class="c" inputmode="decimal" value="${iv!=null?iv:''}" onchange="piSet('${pr.key}',${mo},this.value)"></td>`;}rs+=val;sm[mo]+=val;c+=cell;}body+=`<tr><td class="p">${esc(pr.label)} <span class="crumb">(Personal)</span></td><td class="p">${esc(pr.typ)}</td>${c}<td>${rs?eur0(rs):''}</td></tr>`;});
     let sub='<tr class="sub"><td class="p" colspan="2">Zwischensumme '+esc(label)+'</td>';let subJ=0;for(let mo=1;mo<=12;mo++){sub+=`<td>${sm[mo]?eur0(sm[mo]):''}</td>`;gm[mo]+=sm[mo];subJ+=sm[mo];}sub+=`<td>${eur0(subJ)}</td></tr>`;body+=sub;
   });
-  // Lohnsteuer — gruppenweit (nur ohne Gesellschaftsfilter)
-  let hasSt=false;const stv=Array(13).fill(0);for(let mo=1;mo<=12;mo++){stv[mo]=num2(PSM[mo]);if(stv[mo])hasSt=true;}
-  if(!fsel&&hasSt){body+=`<tr class="grp"><td colspan="15">Personal – gruppenweit</td></tr>`;let rs=0,c='';const stsum=Array(13).fill(0);for(let mo=1;mo<=12;mo++){let val,cell;if(mode==='soll'){val=stv[mo];cell=`<td class="${mo===cur?'cur':''}">${val?eur0(val):''}</td>`;}else{const iv=PIST['lst_'+mo];val=iv!=null?Number(iv):0;cell=`<td class="${mo===cur?'cur':''}"><input class="c" inputmode="decimal" value="${iv!=null?iv:''}" onchange="piSet('lst',${mo},this.value)"></td>`;}rs+=val;gm[mo]+=val;stsum[mo]=val;c+=cell;}body+=`<tr><td class="p">Lohnsteuer <span class="crumb">(Personal)</span></td><td class="p">Lohnsteuer</td>${c}<td>${rs?eur0(rs):''}</td></tr>`;
-    let sub='<tr class="sub"><td class="p" colspan="2">Zwischensumme Personal – gruppenweit</td>';let subJ=0;for(let mo=1;mo<=12;mo++){sub+=`<td>${stsum[mo]?eur0(stsum[mo]):''}</td>`;subJ+=stsum[mo];}sub+=`<td>${eur0(subJ)}</td></tr>`;body+=sub;}
   const totLbl=mode==='soll'?'Gesamt Soll':'Gesamt Ist';
   let tot='<tr class="tot"><td class="p" colspan="2">'+totLbl+'</td>';for(let mo=1;mo<=12;mo++)tot+=`<td>${gm[mo]?eur0(gm[mo]):''}</td>`;tot+=`<td>${eur0(gm.reduce((a,b)=>a+b,0))}</td></tr>`;
-  return (groupKeys.length||(!fsel&&hasSt))?'<table class="mx">'+head+'<tbody>'+body+tot+'</tbody></table>':'<div class="empty">Keine Positionen für diese Auswahl.</div>';
+  return groupKeys.length?'<table class="mx">'+head+'<tbody>'+body+tot+'</tbody></table>':'<div class="empty">Keine Positionen für diese Auswahl.</div>';
 }
-(async()=>{const{data:{session}}=await sb.auth.getSession();if(!session){$('main').innerHTML='<div class="empty" style="padding:60px">Bitte zuerst im OS einloggen.</div>';return;}initSel();load();})();
+(async()=>{const{data:{session}}=await sb.auth.getSession();if(!session){$('main').innerHTML='<div class="empty" style="padding:60px">Bitte zuerst im OS einloggen.</div>';return;}initSel();renderTabs();load();})();
 </script></body></html>
