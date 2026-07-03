@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="de"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Nahaus · Rechnungen – Macher OS</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+:root{--bg:#f6f7f9;--surf:#fff;--surf2:#f1f3f6;--line:#e6e8ec;--bord2:#eef0f3;--text:#1c2024;--muted:#6b7280;--dim:#4b5563;--accent:#185fa5;--green:#1f7a4d;--red:#c0392b;--r:8px;--rl:12px;}
+*{box-sizing:border-box;margin:0;padding:0}body{background:var(--bg);color:var(--text);font-family:'Inter',system-ui,sans-serif;font-size:14px;line-height:1.5}
+.hdr{background:var(--surf);border-bottom:1px solid var(--line);padding:16px 24px;display:flex;align-items:center;gap:12px;position:sticky;top:0;z-index:10}
+.logo{background:#1a1a2e;color:#fff;font-weight:700;font-size:11px;letter-spacing:.08em;padding:5px 9px;border-radius:4px}.hdr-title{font-size:16px;font-weight:600}.crumb{font-size:11px;color:var(--muted)}
+.main{max-width:1160px;margin:0 auto;padding:20px 24px 60px}
+.card{background:var(--surf);border:1px solid var(--line);border-radius:var(--rl);overflow:hidden;margin-bottom:18px}
+.card-hd{padding:12px 16px;border-bottom:1px solid var(--line);font-size:13px;font-weight:600;display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap}
+.form{padding:16px;display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:13px}
+.fld{display:flex;flex-direction:column;gap:4px}.fld.wide{grid-column:1/-1}
+.fld label{font-size:11px;color:var(--muted);font-weight:600}
+.fld input,.fld select{font-family:inherit;font-size:13.5px;padding:8px 10px;border:1px solid var(--line);border-radius:var(--r);background:var(--surf);color:var(--text)}
+.fld input:focus,.fld select:focus{outline:none;border-color:var(--accent)}
+.form-foot{padding:0 16px 16px;display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.btn{font-size:13px;font-weight:600;padding:9px 15px;border-radius:var(--r);border:1px solid var(--accent);background:var(--accent);color:#fff;cursor:pointer}.btn:hover{opacity:.92}.btn.sec{background:var(--surf2);color:var(--text);border-color:var(--line)}
+#msg{font-size:12px;color:var(--green)}
+.bar{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.bar select{font:inherit;font-size:13px;padding:7px 9px;border:1px solid var(--line);border-radius:var(--r);background:var(--surf)}
+.tablewrap{overflow-x:auto}table{width:100%;border-collapse:collapse;font-size:12.5px;min-width:960px}
+th,td{padding:8px 11px;text-align:left;border-bottom:1px solid var(--bord2);white-space:nowrap}
+th{font-size:10px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);font-weight:700;background:var(--surf2)}
+td.eur{text-align:right;font-variant-numeric:tabular-nums}
+.pill{font-size:10px;font-weight:700;padding:2px 8px;border-radius:12px}.p-offen{background:#fdeeee;color:var(--red)}.p-bez{background:#e8f6ee;color:var(--green)}
+.abtn{font-size:12px;padding:3px 8px;border-radius:5px;border:1px solid var(--line);background:transparent;color:var(--muted);cursor:pointer}.abtn:hover{color:var(--red);border-color:var(--red)}
+/* Matrix */
+.mx{width:100%;border-collapse:collapse;font-size:12px;min-width:720px}
+.mx th,.mx td{border:1px solid var(--line);padding:8px 10px;text-align:right}
+.mx th{background:var(--surf2);font-size:10px;text-transform:uppercase;color:var(--muted);font-weight:700;text-align:center}
+.mx td.k,.mx th.k{text-align:left;font-weight:600}
+.mx td.paid{background:#e8f6ee}.mx td.open{background:#fdeeee}
+.mx tr.sum td{font-weight:700;background:var(--surf2)}
+.empty{text-align:center;padding:30px;color:var(--muted)}
+.foot{font-size:11px;color:var(--muted);margin-top:14px;border-top:1px solid var(--line);padding-top:12px}
+.toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:var(--surf2);border:1px solid var(--line);border-radius:var(--r);padding:10px 20px;font-size:13px;opacity:0;transition:.3s;pointer-events:none}.toast.show{opacity:1}
+</style></head><body>
+<div class="hdr"><div class="logo">MACHER OS</div><div>
+  <div class="crumb">Controlling › Nahaus › Rechnungen</div>
+  <div class="hdr-title">Nahaus · Rechnungen</div></div></div>
+<div class="main">
+  <!-- Monats-Matrix -->
+  <div class="card">
+    <div class="card-hd"><span>📊 Monats-Matrix je Konto</span>
+      <span class="bar"><select id="mxMonat" onchange="renderMatrix()"></select><select id="mxJahr" onchange="renderMatrix()"></select></span></div>
+    <div class="tablewrap" id="matrix"><div class="empty">—</div></div>
+  </div>
+
+  <!-- Erfassung -->
+  <div class="card">
+    <div class="card-hd"><span id="formTitle">Neue Rechnung erfassen</span></div>
+    <div class="form">
+      <div class="fld"><label>Unternehmen</label><select id="f_unt"><option value="">—</option><option>WT</option><option>EE</option><option>KIBO</option></select></div>
+      <div class="fld"><label>Konto</label><select id="f_konto"><option value="">—</option><option>WT Allgemein</option><option>WT Instandhaltung</option><option>EE Allgemein</option><option>EE Instandhaltung</option><option>Kibo Allgemein</option></select></div>
+      <div class="fld"><label>Geschäftspartner</label><input id="f_gp"></div>
+      <div class="fld"><label>Rechnungsnummer</label><input id="f_rnr"></div>
+      <div class="fld"><label>Rechnungsdatum</label><input type="date" id="f_rdatum"></div>
+      <div class="fld"><label>Fälligkeit</label><input type="date" id="f_faellig"></div>
+      <div class="fld"><label>Betrag (€)</label><input id="f_betrag" inputmode="decimal" placeholder="0,00"></div>
+      <div class="fld"><label>Zahlungsart</label><input id="f_zahlart" list="zl" placeholder="Lastschrift / Überweisung"></div>
+      <div class="fld"><label>Status</label><select id="f_status"><option>offen</option><option>bezahlt</option></select></div>
+      <div class="fld wide"><label>Notiz</label><input id="f_notiz"></div>
+    </div>
+    <div class="form-foot"><input type="hidden" id="f_id"><button class="btn" onclick="save()">Speichern</button><button class="btn sec" onclick="resetForm()">Zurücksetzen</button><span id="msg"></span></div>
+  </div>
+
+  <!-- Liste -->
+  <div class="card"><div class="card-hd"><span>Rechnungen</span><span class="crumb" id="cnt"></span></div>
+    <div class="tablewrap" id="tbl"><div class="empty" id="loading">Lädt…</div></div></div>
+  <div class="foot">Struktur nach Vorgabe (111.xlsx): Unternehmen · Konto · Geschäftspartner · Rechnungsnr. · Datum · Fälligkeit · Betrag · Zahlungsart · bez/offen. Die Monats-Matrix summiert die Beträge je Konto in 4 Wochenspalten anhand der Fälligkeit (offen = rot, bezahlt = grün).</div>
+</div>
+<datalist id="zl"><option value="Lastschrift (SEPA)"><option value="Überweisung"><option value="Dauerauftrag"><option value="Kreditkarte"></datalist>
+<div class="toast" id="toast"></div>
+<script>
+const sb=window.supabase.createClient('https://jqzxctfqvcwbctpjksvg.supabase.co','eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpxenhjdGZxdmN3YmN0cGprc3ZnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODIxMzA0MzIsImV4cCI6MjA5NzcwNjQzMn0.RKIbZxJdusKWWPjBJqlxZ8e1m8So02UslOg55YRsn3o');
+const $=id=>document.getElementById(id);const esc=s=>(s==null?'':String(s)).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;');
+const eur=n=>n==null?'—':new Intl.NumberFormat('de-DE',{style:'currency',currency:'EUR',minimumFractionDigits:2,maximumFractionDigits:2}).format(n);
+const eur0=n=>new Intl.NumberFormat('de-DE',{minimumFractionDigits:0,maximumFractionDigits:0}).format(n||0)+' €';
+const fmtD=d=>{if(!d)return '—';const p=String(d).split('-');return p[2]+'.'+p[1]+'.'+p[0];};
+const numDE=v=>{if(v==null||v==='')return null;const n=parseFloat(String(v).replace(/\./g,'').replace(',','.'));return isNaN(n)?null:n;};
+function toast(m){const t=$('toast');t.textContent=m;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),1800);}
+const KONTEN=['WT Allgemein','WT Instandhaltung','EE Allgemein','EE Instandhaltung','Kibo Allgemein'];
+const MON=['Januar','Februar','März','April','Mai','Juni','Juli','August','September','Oktober','November','Dezember'];
+const WEEKS=[['01.–07.',1,7],['08.–15.',8,15],['16.–22.',16,22],['23.–Ende',23,31]];
+let ROWS=[];
+function initSel(){const now=new Date();$('mxMonat').innerHTML=MON.map((m,i)=>`<option value="${i+1}" ${i===now.getMonth()?'selected':''}>${m}</option>`).join('');const y=now.getFullYear();let o='';for(let j=y-1;j<=y+1;j++)o+=`<option ${j===y?'selected':''}>${j}</option>`;$('mxJahr').innerHTML=o;}
+function v(id){const x=$(id).value;return x===''?null:x.trim?x.trim():x;}
+function resetForm(){['f_id','f_gp','f_rnr','f_rdatum','f_faellig','f_betrag','f_zahlart','f_notiz'].forEach(id=>$(id).value='');$('f_unt').value='';$('f_konto').value='';$('f_status').value='offen';$('formTitle').textContent='Neue Rechnung erfassen';$('msg').textContent='';}
+async function save(){
+  const row={unternehmen:v('f_unt'),konto:v('f_konto'),geschaeftspartner:v('f_gp'),rechnungsnummer:v('f_rnr'),rechnungsdatum:$('f_rdatum').value||null,faelligkeit:$('f_faellig').value||null,betrag:numDE($('f_betrag').value),zahlungsart:v('f_zahlart'),status:$('f_status').value,notiz:v('f_notiz')};
+  const id=$('f_id').value;let error;
+  if(id){({error}=await sb.from('nahaus_rechnungen').update(row).eq('id',id));}else{({error}=await sb.from('nahaus_rechnungen').insert(row));}
+  const m=$('msg');if(error){m.style.color='var(--red)';m.textContent='Fehler: '+error.message;return;}m.style.color='var(--green)';m.textContent='Gespeichert ✓';resetForm();load();
+}
+function edit(id){const r=ROWS.find(x=>x.id===id);if(!r)return;$('f_id').value=r.id;$('f_unt').value=r.unternehmen||'';$('f_konto').value=r.konto||'';$('f_gp').value=r.geschaeftspartner||'';$('f_rnr').value=r.rechnungsnummer||'';$('f_rdatum').value=r.rechnungsdatum||'';$('f_faellig').value=r.faelligkeit||'';$('f_betrag').value=r.betrag!=null?r.betrag:'';$('f_zahlart').value=r.zahlungsart||'';$('f_status').value=r.status||'offen';$('f_notiz').value=r.notiz||'';$('formTitle').textContent='Rechnung bearbeiten';window.scrollTo({top:document.querySelector('.form').offsetTop-80,behavior:'smooth'});}
+async function del(id){if(!confirm('Rechnung löschen?'))return;await sb.from('nahaus_rechnungen').delete().eq('id',id);load();}
+async function toggleStatus(id){const r=ROWS.find(x=>x.id===id);const s=r.status==='bezahlt'?'offen':'bezahlt';await sb.from('nahaus_rechnungen').update({status:s}).eq('id',id);load();}
+async function load(){const {data}=await sb.from('nahaus_rechnungen').select('*').order('faelligkeit',{ascending:true,nullsFirst:false}).order('created_at',{ascending:false});ROWS=data||[];renderList();renderMatrix();}
+function renderList(){const w=$('tbl');$('cnt').textContent=ROWS.length+' Rechnungen';if(!ROWS.length){w.innerHTML='<div class="empty">Noch keine Rechnungen — oben erfassen.</div>';return;}
+  w.innerHTML='<table><thead><tr><th>Unternehmen</th><th>Konto</th><th>Geschäftspartner</th><th>Rechnungsnr.</th><th>Datum</th><th>Fälligkeit</th><th class="eur">Betrag</th><th>Zahlungsart</th><th>Status</th><th></th></tr></thead><tbody>'
+   +ROWS.map(r=>`<tr>
+     <td>${esc(r.unternehmen||'—')}</td><td>${esc(r.konto||'—')}</td><td>${esc(r.geschaeftspartner||'—')}</td>
+     <td>${esc(r.rechnungsnummer||'—')}</td><td>${fmtD(r.rechnungsdatum)}</td><td>${fmtD(r.faelligkeit)}</td>
+     <td class="eur">${eur(r.betrag)}</td><td>${esc(r.zahlungsart||'—')}</td>
+     <td><span class="pill ${r.status==='bezahlt'?'p-bez':'p-offen'}" style="cursor:pointer" onclick="toggleStatus('${r.id}')">${r.status==='bezahlt'?'bezahlt':'offen'}</span></td>
+     <td style="white-space:nowrap"><button class="abtn" onclick="edit('${r.id}')">✎</button> <button class="abtn" onclick="del('${r.id}')">✕</button></td></tr>`).join('')+'</tbody></table>';
+}
+function renderMatrix(){const el=$('matrix');const monat=+$('mxMonat').value,jahr=+$('mxJahr').value;
+  const inMonth=ROWS.filter(r=>{if(!r.faelligkeit)return false;const d=new Date(r.faelligkeit);return d.getFullYear()===jahr&&d.getMonth()+1===monat;});
+  const cell={};KONTEN.forEach(k=>WEEKS.forEach((w,wi)=>cell[k+'_'+wi]={sum:0,offen:0}));
+  inMonth.forEach(r=>{const day=new Date(r.faelligkeit).getDate();let wi=WEEKS.findIndex(w=>day>=w[1]&&day<=w[2]);if(wi<0)wi=3;const k=r.konto||'—';const c=cell[(KONTEN.includes(k)?k:'—')+'_'+wi];if(c){c.sum+=Number(r.betrag)||0;if(r.status!=='bezahlt')c.offen+=Number(r.betrag)||0;}});
+  const colTot=[0,0,0,0];
+  let head='<thead><tr><th class="k">Konto</th>'+WEEKS.map(w=>`<th>${w[0]}</th>`).join('')+'<th>Summe</th></tr></thead>';
+  let body=KONTEN.map(k=>{let rowSum=0;let cells=WEEKS.map((w,wi)=>{const c=cell[k+'_'+wi];rowSum+=c.sum;colTot[wi]+=c.sum;const cls=c.sum<=0?'':(c.offen>0?'open':'paid');return `<td class="${cls}">${c.sum?eur0(c.sum):''}</td>`;}).join('');return `<tr><td class="k">${esc(k)}</td>${cells}<td>${rowSum?eur0(rowSum):''}</td></tr>`;}).join('');
+  let tot='<tr class="sum"><td class="k">Summe</td>'+colTot.map(t=>`<td>${t?eur0(t):''}</td>`).join('')+`<td>${eur0(colTot.reduce((a,b)=>a+b,0))}</td></tr>`;
+  el.innerHTML='<table class="mx">'+head+'<tbody>'+body+tot+'</tbody></table>';
+}
+(async()=>{const{data:{session}}=await sb.auth.getSession();if(!session){$('main').innerHTML='<div class="empty" style="padding:60px">Bitte zuerst im OS einloggen.</div>';return;}initSel();load();})();
+</script></body></html>
