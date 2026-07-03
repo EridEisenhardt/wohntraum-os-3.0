@@ -79,10 +79,10 @@ export default function Sidebar({ user, demo, onLogout }) {
         <i className="ti ti-calendar-dollar" /> Monatswechsel
       </Link>
       <Link href="/controlling/nahaus-fixkosten" className={subCls(path.startsWith('/controlling/nahaus-fixkosten'))}>
-        <i className="ti ti-file-invoice" /> Nahaus – Fixkosten
+        <i className="ti ti-file-invoice" /> Fixkosten Objekte
       </Link>
       <Link href="/controlling/nahaus-rechnungen" className={subCls(path.startsWith('/controlling/nahaus-rechnungen'))}>
-        <i className="ti ti-receipt" /> Nahaus – Rechnungen
+        <i className="ti ti-receipt" /> Rechnungen Unternehmen
       </Link>
 
       <div className="nav-group">
