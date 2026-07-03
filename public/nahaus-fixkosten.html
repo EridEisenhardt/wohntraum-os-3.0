@@ -51,6 +51,8 @@ th{font-size:10px;text-transform:uppercase;letter-spacing:.04em;color:var(--mute
 tbody tr:hover{background:#fafbfd}
 td.eur{text-align:right;font-variant-numeric:tabular-nums}
 .typ{font-size:10px;font-weight:700;padding:2px 8px;border-radius:12px;background:#e6f1fb;color:#185fa5}
+.pill{font-size:10px;font-weight:700;padding:3px 9px;border-radius:12px;cursor:pointer;white-space:nowrap;user-select:none}.p-offen{background:#fdeeee;color:#c0392b}.p-bez{background:#e8f6ee;color:#1f7a4d}
+tbody tr.rbez td{background:#e8f6ee}
 a.dl{color:var(--accent);text-decoration:none}a.dl:hover{text-decoration:underline}
 .abtn{font-size:12px;padding:3px 8px;border-radius:5px;border:1px solid var(--line);background:transparent;color:var(--muted);cursor:pointer}
 .abtn:hover{color:var(--red);border-color:var(--red)}
@@ -279,6 +281,7 @@ async function edit(id){
   window.scrollTo({top:0,behavior:'smooth'});
 }
 async function del(id){ if(!confirm('Servicerechnung löschen?'))return; await sb.from('servicerechnungen').delete().eq('id',id); load(); }
+async function toggleStatus(id){ const r=ROWS.find(x=>x.id===id); if(!r)return; const s=r.status==='bezahlt'?'offen':'bezahlt'; const{error}=await sb.from('servicerechnungen').update({status:s}).eq('id',id); if(error){alert(error.message);return;} r.status=s; render(); }
 
 async function load(){
   const { data, error } = await sb.from('servicerechnungen').select('*').order('created_at',{ascending:false});
@@ -369,8 +372,8 @@ function render(){
     ['Typen',Object.keys(byTyp).length,'unterschiedliche Kostenarten']
   ].map(a=>`<div class="kpi"><div class="l">${a[0]}</div><div class="v" style="font-size:${String(a[1]).length>10?'17px':'22px'}">${a[1]}</div><div class="d">${a[2]}</div></div>`).join('');
   if(!ROWS.length){ w.innerHTML='<div class="empty">Noch keine Servicerechnungen — oben erfassen.</div>'; return; }
-  w.innerHTML='<table><thead><tr><th>Immobilie / Einheit</th><th>Typ</th><th>Geschäftspartner</th><th>Rechnungsnr.</th><th>Datum</th><th>Kundennr.</th><th>Vertragsnr.</th><th>Laufzeit</th><th class="eur">Betrag</th><th>Zahlung</th><th>Fälligkeit</th><th>Beleg</th><th></th></tr></thead><tbody>'
-    + ROWS.map(r=>`<tr>
+  w.innerHTML='<table><thead><tr><th>Immobilie / Einheit</th><th>Typ</th><th>Geschäftspartner</th><th>Rechnungsnr.</th><th>Datum</th><th>Kundennr.</th><th>Vertragsnr.</th><th>Laufzeit</th><th class="eur">Betrag</th><th>Zahlung</th><th>Fälligkeit</th><th>Status</th><th>Beleg</th><th></th></tr></thead><tbody>'
+    + ROWS.map(r=>`<tr class="${r.status==='bezahlt'?'rbez':''}">
       <td><b>${esc(r.immobilie||'—')}</b><div style="color:var(--muted);font-size:11px">${esc(r.einheit||'')}</div></td>
       <td><span class="typ">${esc(r.typ||'—')}</span></td>
       <td>${esc(r.geschaeftspartner||'—')}<div style="color:var(--muted);font-size:11px">${esc(r.iban||'')}</div></td>
@@ -382,6 +385,7 @@ function render(){
       <td class="eur">${eur(r.gesamtbetrag)}</td>
       <td>${esc(r.zahlungsart||'—')}</td>
       <td style="white-space:normal;min-width:150px">${esc(r.faelligkeit||'—')}${r.turnus?`<div style="color:var(--muted);font-size:11px">${esc(r.turnus)}</div>`:''}</td>
+      <td><span class="pill ${r.status==='bezahlt'?'p-bez':'p-offen'}" title="klicken zum Umschalten" onclick="toggleStatus('${r.id}')">${r.status==='bezahlt'?'Rechnung bezahlt':'offen'}</span></td>
       <td>${r.beleg_url?`<a class="dl" href="${esc(r.beleg_url)}" target="_blank" rel="noopener">📎 öffnen</a>`:'—'}</td>
       <td style="white-space:nowrap"><button class="abtn" onclick="edit('${r.id}')">✎</button> <button class="abtn" onclick="del('${r.id}')">✕</button></td>
     </tr>`).join('')+'</tbody></table>';
