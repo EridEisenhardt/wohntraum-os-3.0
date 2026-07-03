@@ -84,6 +84,9 @@ export default function Sidebar({ user, demo, onLogout }) {
       <Link href="/controlling/nahaus-rechnungen" className={subCls(path.startsWith('/controlling/nahaus-rechnungen'))}>
         <i className="ti ti-receipt" /> Rechnungen Unternehmen
       </Link>
+      <Link href="/controlling/gruppe-fixkosten" className={subCls(path.startsWith('/controlling/gruppe-fixkosten'))}>
+        <i className="ti ti-building-bank" /> Fixkosten der Gruppe
+      </Link>
 
       <div className="nav-group">
         <i className="ti ti-rocket lead" /> Produktivität
