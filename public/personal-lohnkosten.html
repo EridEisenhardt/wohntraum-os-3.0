@@ -42,6 +42,21 @@ tr.sum td,td.sum{font-weight:700;background:var(--surf2)}
     </div>
   </div>
 
+  <div class="card">
+    <div class="card-hd" style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">
+      <span>🏥 Beitragsnachweis Krankenkasse hochladen &amp; auslesen</span>
+      <span style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+        <select id="kkKasse" style="font:inherit;font-size:12px;padding:5px 8px;border:1px solid var(--line);border-radius:6px;background:var(--surf)"><option>Knappschaft</option><option>Firmus</option></select>
+        <select id="kkMonat" style="font:inherit;font-size:12px;padding:5px 8px;border:1px solid var(--line);border-radius:6px;background:var(--surf)"></select>
+        <input type="file" id="kkFile" accept="application/pdf,image/*" style="display:none" onchange="onKKFile(this.files[0])">
+        <button onclick="document.getElementById('kkFile').click()" style="font:inherit;font-size:12px;font-weight:600;padding:7px 12px;border:1px solid var(--accent);background:var(--accent);color:#fff;border-radius:6px;cursor:pointer">Beitragsnachweis wählen</button>
+      </span>
+    </div>
+    <div style="padding:12px 16px"><span id="kkState" style="font-size:12px;color:var(--muted)">DÜ-Protokoll / Beitragsnachweis (PDF/Bild) hochladen — „Zu zahlender Betrag" und Monat werden ausgelesen und in die Matrix-Zeile der gewählten Kasse übernommen.</span>
+      <div id="kkPruefung" style="margin-top:12px"></div>
+    </div>
+  </div>
+
   <div class="card"><div class="card-hd" id="t1">Lohnbestandteile</div><div class="tablewrap" id="tblMA"></div></div>
   <div class="card"><div class="card-hd">Jahres-Matrix Personalkosten <span style="font-weight:400;color:var(--muted);font-size:12px">— automatisch aus den Lohnabrechnungen</span></div><div class="tablewrap" id="tblJahr"></div></div>
   <div class="foot">Komponenten: Gehalt · Sachbezug · Gesamtbetrag Steuern · zu zahlender Betrag Krankenkasse · Auszahlungsbetrag. Die Jahres-Matrix summiert die Auszahlungsbeträge je Monat.</div>
@@ -54,13 +69,14 @@ const eur=n=>n==null||n===''?'':new Intl.NumberFormat('de-DE',{minimumFractionDi
 function toast(m){const t=$('toast');t.textContent=m;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),1600);}
 const MON=['Jan','Feb','Mär','Apr','Mai','Jun','Jul','Aug','Sep','Okt','Nov','Dez'];
 const COMP=[['gehalt','Gehalt'],['sachbezug','Sachbezug'],['steuern','Gesamtbetrag Steuern'],['kk_betrag','zu zahlender Betrag KK'],['auszahlung','Auszahlungsbetrag']];
-let MA=[],PM={},PKM={},POS=[];
+let MA=[],PM={},KKM={};
 function initYear(){const y=new Date().getFullYear();let o='';for(let j=y-1;j<=y+1;j++)o+=`<option ${j===y?'selected':''}>${j}</option>`;$('jahr').innerHTML=o;}
 function nm(m){return((m.vorname||'')+' '+(m.name||'')).trim()||'—';}
 async function lkSet(maid,monat,field,val){const jahr=+$('jahr').value;const v=numDE(val);const{error}=await sb.from('personal_monat').upsert({mitarbeiter_id:maid,jahr,monat,[field]:v,updated_at:new Date().toISOString()},{onConflict:'mitarbeiter_id,jahr,monat'});if(error){toast(error.message);return;}PM[maid+'_'+monat]=Object.assign({},PM[maid+'_'+monat]||{},{[field]:v});render();}
 async function load(){const jahr=+$('jahr').value;MA=(await sb.from('mitarbeiter').select('id,name,vorname,unternehmen,krankenkasse').order('pos')).data||[];
   $('ma').innerHTML=MA.map(m=>`<option value="${m.id}">${esc(nm(m))}</option>`).join('');
   const pm=(await sb.from('personal_monat').select('mitarbeiter_id,monat,gehalt,sachbezug,steuern,kk_betrag,auszahlung,lohn_beleg_url,lohn_beleg_name').eq('jahr',jahr)).data||[];PM={};pm.forEach(r=>PM[r.mitarbeiter_id+'_'+r.monat]=r);
+  const kkm=(await sb.from('personal_kk_monat').select('kasse,monat,betrag,beleg_url,beleg_name').eq('jahr',jahr)).data||[];KKM={};kkm.forEach(r=>KKM[(r.kasse||'').toLowerCase()+'_'+r.monat]=r);
   render();}
 const num2=x=>x==null?0:Number(x);
 function sumField(field,mo,filterFn){let s=0;MA.forEach(m=>{if(filterFn&&!filterFn(m))return;const v=(PM[m.id+'_'+mo]||{})[field];if(v!=null)s+=Number(v);});return s;}
@@ -77,7 +93,7 @@ function render(){const jahr=+$('jahr').value;const now=new Date();const cur=now
   const rows=[];
   MA.forEach(m=>rows.push({label:(m.vorname||nm(m)),val:mo=>num2((PM[m.id+'_'+mo]||{}).auszahlung)}));
   rows.push({label:'Sachbezug',val:mo=>sumField('sachbezug',mo)});
-  KK.forEach(kk=>rows.push({label:kk,val:mo=>sumField('kk_betrag',mo,m=>(m.krankenkasse||'').toLowerCase()===kk.toLowerCase())}));
+  KK.forEach(kk=>rows.push({label:kk,val:mo=>num2((KKM[kk.toLowerCase()+'_'+mo]||{}).betrag)}));
   rows.push({label:'Steuern',val:mo=>sumField('steuern',mo)});
   const h2='<thead><tr><th class="rl">Unternehmen</th>'+MON.map((x,i)=>`<th class="${i+1===cur?'cur':''}">${x}</th>`).join('')+'<th>Summe</th></tr></thead>';
   const b2=rows.map(r=>{let sum=0,cells='';for(let mo=1;mo<=12;mo++){const v=r.val(mo);sum+=v;monTot[mo]+=v;cells+=`<td class="${mo===cur?'cur':''}">${v?eur(v):''}</td>`;}return `<tr><td class="rl">${esc(r.label)}</td>${cells}<td class="sum">${sum?eur(sum):''}</td></tr>`;}).join('');
@@ -85,7 +101,53 @@ function render(){const jahr=+$('jahr').value;const now=new Date();const cur=now
   $('tblJahr').innerHTML='<table>'+h2+'<tbody>'+b2+tot+'</tbody></table>';}
 // ——— Lohnabrechnung: Upload, Auslesen, Prüfung ———
 let PENDING=null;
-function initUpMonat(){ $('upMonat').innerHTML=MON.map((m,i)=>`<option value="${i+1}" ${i===new Date().getMonth()?'selected':''}>${m}</option>`).join(''); }
+function initUpMonat(){ const opts=MON.map((m,i)=>`<option value="${i+1}" ${i===new Date().getMonth()?'selected':''}>${m}</option>`).join(''); $('upMonat').innerHTML=opts; $('kkMonat').innerHTML=opts; }
+const MONMAP={'januar':1,'februar':2,'märz':3,'maerz':3,'marz':3,'april':4,'mai':5,'juni':6,'juli':7,'august':8,'september':9,'oktober':10,'november':11,'dezember':12,'jan':1,'feb':2,'mär':3,'mrz':3,'apr':4,'jun':6,'jul':7,'aug':8,'sep':9,'sept':9,'okt':10,'nov':11,'dez':12};
+function detectMonat(txt){ const T=(txt||''); const m=T.match(/(Januar|Februar|M[äa]?rz|Maerz|Mrz|April|Mai|Juni|Juli|August|September|Sept|Oktober|November|Dezember)/i); if(m){const k=m[1].toLowerCase();if(MONMAP[k])return MONMAP[k];} return null; }
+function parseKK(t){ const T=(t||'').replace(/[ \t]+/g,' ');
+  const bm=T.match(/(?:Zu zahlender Betrag|Zahlungssumme|Gesamtsumme|Beitragssumme|Zu zahlen|Zahlbetrag)[^\d\n]{0,30}?([\d.]{1,9},\d{2})/i);
+  return { betrag: bm?numDE(bm[1]):null, monat: detectMonat(T) };
+}
+let KKPENDING=null;
+async function onKKFile(file){
+  if(!file)return; const kasse=$('kkKasse').value, jahr=+$('jahr').value;
+  $('kkState').innerHTML='⏳ Lädt hoch &amp; liest aus…'; $('kkPruefung').innerHTML='';
+  const path='kk_'+Date.now()+'_'+file.name.replace(/[^a-zA-Z0-9._-]/g,'_');
+  const { error }=await sb.storage.from('personal').upload(path,file,{upsert:true,contentType:file.type||'application/octet-stream'});
+  if(error){$('kkState').textContent='Upload fehlgeschlagen: '+error.message;return;}
+  const { data:pu }=sb.storage.from('personal').getPublicUrl(path);
+  let text=''; try{ text=await extractText(file); }catch(e){}
+  let d=parseKK(text); if(d.monat==null)d.monat=detectMonat(file.name);
+  KKPENDING={kasse,url:pu.publicUrl,name:file.name};
+  showKKPruefung(kasse,d.monat,d.betrag,file.name,pu.publicUrl);
+}
+function showKKPruefung(kasse,detMonat,betrag,fname,url){
+  const mo=detMonat||(+$('kkMonat').value);
+  const inl='width:130px;text-align:right;font:inherit;font-size:12px;border:1px solid var(--line);border-radius:5px;padding:4px 6px;background:var(--surf)';
+  const cur=(KKM[kasse.toLowerCase()+'_'+mo]||{}).betrag;
+  const monSel='<select id="kk_mo" style="font:inherit;font-size:12px;padding:4px 6px;border:1px solid var(--line);border-radius:5px">'+MON.map((m,i)=>`<option value="${i+1}" ${i+1===mo?'selected':''}>${m}</option>`).join('')+'</select>';
+  let h=`<div style="font-size:12px;margin-bottom:8px">📄 <a href="${esc(url)}" target="_blank" style="color:var(--accent)">${esc(fname)}</a> — <b>${esc(kasse)}</b>. ${detMonat?'Erkannter Monat: <b>'+MON[detMonat-1]+'</b>. ':''}Betrag &amp; Monat prüfen, dann übernehmen:</div>`;
+  h+=`<table style="width:100%;border-collapse:collapse;font-size:12px;max-width:520px"><tbody>
+    <tr><td style="padding:5px 8px">Monat</td><td style="padding:5px 8px;text-align:right">${monSel}</td></tr>
+    <tr><td style="padding:5px 8px">Aktuell in Matrix (${esc(kasse)})</td><td style="padding:5px 8px;text-align:right;color:var(--muted)">${cur!=null?eur(cur):'—'}</td></tr>
+    <tr><td style="padding:5px 8px">Zu zahlender Betrag</td><td style="padding:5px 8px;text-align:right"><input id="kk_bt" inputmode="decimal" value="${betrag!=null?betrag:''}" placeholder="—" style="${inl}${betrag!=null?';border-color:var(--accent)':''}"></td></tr>
+  </tbody></table>`;
+  h+=`<div style="margin-top:10px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+    <span style="font-size:12px;color:${betrag!=null?'var(--green)':'var(--red)'}">${betrag!=null?'Betrag erkannt – bitte prüfen.':'Betrag nicht erkannt – bitte oben eintragen.'}</span>
+    <span style="font-size:12px">Übernehmen?</span>
+    <select onchange="applyKKPruefung(this.value)" style="font:inherit;font-size:12px;padding:6px 9px;border:1px solid var(--line);border-radius:6px">
+      <option value="">— wählen —</option><option value="ja">Ja, übernehmen</option><option value="nein">Nein</option></select></div>`;
+  $('kkPruefung').innerHTML=h;
+  $('kkState').innerHTML='📎 <a href="'+esc(url)+'" target="_blank" style="color:var(--accent)">'+esc(fname)+'</a> gespeichert.';
+}
+async function applyKKPruefung(val){
+  if(val==='nein'){ $('kkPruefung').innerHTML='<span style="font-size:12px;color:var(--muted)">Verworfen.</span>'; KKPENDING=null; return; }
+  if(val!=='ja'||!KKPENDING)return; const {kasse,url,name}=KKPENDING; const monat=+$('kk_mo').value, jahr=+$('jahr').value; const betrag=numDE($('kk_bt').value);
+  if(betrag==null){toast('Kein Betrag eingetragen');return;}
+  const {error}=await sb.from('personal_kk_monat').upsert({kasse,jahr,monat,betrag,beleg_url:url,beleg_name:name,updated_at:new Date().toISOString()},{onConflict:'kasse,jahr,monat'});
+  if(error){toast('Fehler: '+error.message);return;}
+  toast('Übernommen ✓'); KKPENDING=null; $('kkPruefung').innerHTML='<span style="font-size:12px;color:var(--green)">'+esc(kasse)+' '+MON[monat-1]+': '+eur(betrag)+' € übernommen ✓</span>'; await load();
+}
 async function extractText(file){
   if(file.type==='application/pdf' && window.pdfjsLib){ pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js'; const buf=await file.arrayBuffer(); const pdf=await pdfjsLib.getDocument({data:buf}).promise; let txt=''; for(let i=1;i<=Math.min(pdf.numPages,4);i++){const pg=await pdf.getPage(i);const c=await pg.getTextContent();txt+=c.items.map(it=>it.str).join(' ')+'\n';} if(txt.replace(/\s/g,'').length>40)return txt; if(window.Tesseract){const{data}=await Tesseract.recognize(file,'deu');return data.text;} return txt; }
   if(file.type.startsWith('image/') && window.Tesseract){const{data}=await Tesseract.recognize(file,'deu');return data.text;}
