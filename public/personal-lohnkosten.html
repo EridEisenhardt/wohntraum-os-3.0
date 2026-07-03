@@ -162,25 +162,36 @@ function parseLohn(t){ const T=(t||'').replace(/[ \t]+/g,' '); const g=re=>{cons
     auszahlung:g(/(?:Auszahlungsbetrag|Überweisungsbetrag|Nettoverdienst|Netto-?Verdienst|Auszahlung|Netto)[^\d\n]{0,25}?([\d.]{1,9},\d{2})/i)
   };
 }
+function matchMA(text){
+  const T=(text||'').toLowerCase(); let best=null;
+  MA.forEach(m=>{const vn=(m.vorname||'').toLowerCase().trim(),nn=(m.name||'').toLowerCase().trim();
+    if(nn&&T.includes(nn)){ if(vn&&T.includes(vn)){best=m;} else if(!best){best=m;} }});
+  return best;
+}
 async function onLohnFile(file){
-  if(!file)return; const maid=$('ma').value; if(!maid){toast('Mitarbeiter wählen');return;}
-  const monat=+$('upMonat').value, jahr=+$('jahr').value;
-  $('lohnState').innerHTML='⏳ Lädt hoch & liest aus…';
+  if(!file)return; const jahr=+$('jahr').value;
+  $('lohnState').innerHTML='⏳ Lädt hoch &amp; liest aus…'; $('pruefung').innerHTML='';
+  let text=''; try{ text=await extractText(file); }catch(e){}
+  const d=parseLohn(text);
+  const detMA=matchMA(text);
+  const maid=detMA?detMA.id:($('ma').value||(MA[0]&&MA[0].id));
+  if(!maid){toast('Kein Mitarbeiter erkannt/gewählt');$('lohnState').textContent='Kein Mitarbeiter erkannt.';return;}
+  if(detMA)$('ma').value=maid;
+  const monat=detectMonat(text)||detectMonat(file.name)||+$('upMonat').value;
   const path=Date.now()+'_'+file.name.replace(/[^a-zA-Z0-9._-]/g,'_');
   const { error }=await sb.storage.from('personal').upload(path,file,{upsert:true,contentType:file.type||'application/octet-stream'});
   if(error){$('lohnState').textContent='Upload fehlgeschlagen: '+error.message;return;}
   const { data:pu }=sb.storage.from('personal').getPublicUrl(path);
   await sb.from('personal_monat').upsert({mitarbeiter_id:maid,jahr,monat,lohn_beleg_url:pu.publicUrl,lohn_beleg_name:file.name,updated_at:new Date().toISOString()},{onConflict:'mitarbeiter_id,jahr,monat'});
   PM[maid+'_'+monat]=Object.assign({},PM[maid+'_'+monat]||{},{lohn_beleg_url:pu.publicUrl,lohn_beleg_name:file.name});
-  let text=''; try{ text=await extractText(file); }catch(e){}
-  showPruefung(maid,monat,parseLohn(text),file.name,pu.publicUrl);
+  showPruefung(maid,monat,d,file.name,pu.publicUrl,detMA?nm(detMA):null);
 }
-function showPruefung(maid,monat,d,fname,url){
+function showPruefung(maid,monat,d,fname,url,detName){
   const cur=PM[maid+'_'+monat]||{};
   PENDING={maid,monat};
   const anyExtract=COMP.some(c=>d[c[0]]!=null);
   const inl='width:110px;text-align:right;font:inherit;font-size:12px;border:1px solid var(--line);border-radius:5px;padding:4px 6px;background:var(--surf)';
-  let h=`<div style="font-size:12px;margin-bottom:8px">📄 <a href="${esc(url)}" target="_blank" style="color:var(--accent)">${esc(fname)}</a> — Abgleich für <b>${MON[monat-1]} ${$('jahr').value}</b>. Werte aus dem Dokument prüfen/ergänzen, dann übernehmen:</div>`;
+  let h=`<div style="font-size:12px;margin-bottom:8px">📄 <a href="${esc(url)}" target="_blank" style="color:var(--accent)">${esc(fname)}</a> — Abgleich für <b>${detName?esc(detName)+' · ':''}${MON[monat-1]} ${$('jahr').value}</b>${detName?' <span style="color:var(--green)">(Name erkannt)</span>':''}. Werte aus dem Dokument prüfen/ergänzen, dann übernehmen:</div>`;
   h+='<table style="width:100%;border-collapse:collapse;font-size:12px;max-width:660px"><thead><tr>'+['Feld','Aktuell','Aus Dokument (editierbar)'].map((x,i)=>`<th style="text-align:${i===0?'left':'right'};padding:5px 8px;background:var(--surf2);font-size:10px;text-transform:uppercase;color:var(--muted)">${x}</th>`).join('')+'</tr></thead><tbody>';
   h+=COMP.map(c=>{const now=cur[c[0]];const neu=d[c[0]];const chg=neu!=null&&(now==null||Number(now)!==Number(neu));
     return `<tr style="border-bottom:1px solid var(--bord2)"><td style="padding:5px 8px">${c[1]}</td>
