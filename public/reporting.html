@@ -238,7 +238,7 @@ input.cell:hover{border-color:var(--line)} input.cell:focus{border-color:var(--b
         <tr><td>Bürgschaften / Grundschulden</td><td><span class="flag f-green">live aus Register</span></td><td>Rubrik C bezieht die Daten direkt aus dem Register „Darlehen → Bürgschaften"; Summe automatisch.</td></tr>
         <tr><td>Kreditgeber im Darlehensspiegel</td><td><span class="flag f-green">abgeglichen</span></td><td>Banknamen je Darlehen mit dem Darlehensregister abgestimmt (u. a. KW30-Korrektur auf VR Bank Bad Salzungen).</td></tr>
         <tr><td>Objekt R6 (Am Römer 6)</td><td><span class="flag f-green">ergänzt</span></td><td>Lastenfreies Privatobjekt in die Vermögens- &amp; Mietübersicht aufgenommen.</td></tr>
-        <tr><td>Restschuld-Abstimmung Darlehensspiegel</td><td><span class="flag f-amber">in Arbeit</span></td><td>Restschuldbeträge in Rubrik B stichtagsgenau mit dem Live-Darlehensregister (loans) synchronisieren.</td></tr>
+        <tr><td>Darlehensspiegel (Rubrik B)</td><td><span class="flag f-green">live aus Register</span></td><td>Verzinsliche Verbindlichkeiten werden direkt aus dem Darlehensregister (loans) geladen – Restschuld, Zins, Rate &amp; Zinsbindung stets aktuell.</td></tr>
         <tr><td>DSCR / NOI je Objekt</td><td><span class="flag f-amber">offen</span></td><td>Nettomiete nach Bewirtschaftung je Objekt für objektgenauen Kapitaldienst-Deckungsgrad ergänzen (aktuell Brutto-Deckung).</td></tr>
         <tr><td>V11-Bewertungskorrektur</td><td><span class="flag f-green">erledigt</span></td><td>132.000 € angesetzt (PriceHubble-Rohwert bereinigt).</td></tr>
       </tbody>
@@ -310,7 +310,7 @@ const OBJ_DEFAULT=[
  {c:'H3',  o:'privat',mw:0,rs:0,m:3228}, // rent-to-rent
 ];
 const PORT={marktwert:5734700, w10:5161230, miete:458204}; // verifizierte Gesamtsummen
-const LOANS=[
+let LOANS=[
  [1,'KW30','VR Bank Bad Salzungen','GmbH',136417.25,3.95,1063.17,'30.09.2028'],
  [2,'U6','Sparkasse Rhein Nahe','GmbH',71049.31,2.084,502.00,'variabel'],
  [3,'E4','Sparkasse Rhein Nahe','privat',167884.17,4.853,1345.00,'30.10.2027'],
@@ -419,19 +419,22 @@ function render(){
   // loan table
   const lb=document.getElementById('loanBody');lb.innerHTML='';
   let lrs=0,lrate=0;
-  LOANS.forEach(l=>{ lrs+=l[4]; lrate+= (l[0]===13?0:l[6]);
-    const stat = l[0]===13?'<span class="flag f-red">Auslauf 08/2026</span>':'<span class="flag f-green">aktiv</span>';
+  const kkSum=LOANS.filter(l=>l[8]).reduce((a,l)=>a+l[4],0);
+  LOANS.forEach(l=>{ lrs+=l[4]; lrate+= (l[8]?0:l[6]);
+    const stat = l[8]?`<span class="flag f-red">Auslauf ${l[7]}</span>`:'<span class="flag f-green">aktiv</span>';
     lb.insertAdjacentHTML('beforeend',`<tr><td>${l[0]}</td><td>${l[1]}</td><td>${l[2]}</td><td>${tag(l[3])}</td><td>${fmt(l[4])}</td><td>${l[5].toLocaleString('de-DE',{minimumFractionDigits:2,maximumFractionDigits:3})} %</td><td>${l[6]?l[6].toLocaleString('de-DE',{minimumFractionDigits:2,maximumFractionDigits:2})+' €':'variabel'}</td><td>${l[7]}</td><td>${stat}</td></tr>`);
   });
-  const wavg=LOANS.filter(l=>l[0]!==13).reduce((a,l)=>a+l[4]*l[5],0)/LOANS.filter(l=>l[0]!==13).reduce((a,l)=>a+l[4],0);
-  lb.insertAdjacentHTML('beforeend',`<tr class="sum"><td colspan="4">Summe Kaufpreisdarlehen + KK-Linie</td><td>${fmt(lrs)}</td><td>Ø ${wavg.toLocaleString('de-DE',{minimumFractionDigits:2,maximumFractionDigits:2})} %</td><td>${lrate.toLocaleString('de-DE',{minimumFractionDigits:0})} €/Mo</td><td colspan="2"></td></tr>`);
+  const wbase=LOANS.filter(l=>!l[8]);
+  const wsum=wbase.reduce((a,l)=>a+l[4],0);
+  const wavg=wsum?wbase.reduce((a,l)=>a+l[4]*l[5],0)/wsum:0;
+  lb.insertAdjacentHTML('beforeend',`<tr class="sum"><td colspan="4">Summe verzinsliche Verbindlichkeiten (Register)</td><td>${fmt(lrs)}</td><td>Ø ${wavg.toLocaleString('de-DE',{minimumFractionDigits:2,maximumFractionDigits:2})} %</td><td>${lrate.toLocaleString('de-DE',{minimumFractionDigits:0})} €/Mo</td><td colspan="2"></td></tr>`);
 
   // KPI top
   const kp=[
     ['Marktwert Portfolio',fmt(PORT.marktwert),'PriceHubble, V11 korrigiert'],
     ['Beleihungsbasis (−10 %)',fmt(PORT.w10),'Bankseitige Bewertung'],
     ['Restschuld gesamt',fmt(grpRS),'Kaufpreisdarlehen (Register)'],
-    ['LTV (Wert −10 %)',pct(grpLTV),'inkl. KK-Linie '+pct((grpRS+200000)/grpW10*100)],
+    ['LTV (Wert −10 %)',pct(grpLTV),'inkl. KK-Linie '+pct((grpRS+kkSum)/grpW10*100)],
     ['Netto-Immobilienvermögen',fmt(grpW10-grpRS),'Wert −10 % − Restschuld'],
     ['Jahresnettomiete',fmt(PORT.miete),'IST, objektgenau'],
     ['Bruttomietrendite',pct(PORT.miete/PORT.w10*100),'auf Wert −10 %'],
@@ -527,6 +530,21 @@ async function loadBuergReport(){
   }catch(e){}
 }
 loadBuergReport();
+async function loadLoansReport(){
+  try{
+    const{data,error}=await _sbRep.from('loans').select('dnr_intern,bez,geber,nehmer,aktuell,zins,kapitaldienst,zinsbind,status');
+    if(error||!data||!data.length)return;
+    const isGroup=s=>/wohn\(t\)raum|wohntraum|eric eisenhardt|anders macher|kibo|wonnegau/i.test(s||'');
+    const isDone=s=>/beendet|abgeschl|zurückgef/i.test(s||'');
+    const fmtDate=d=>{if(!d)return 'variabel';const p=String(d).split('-');return p.length===3?p[2]+'.'+p[1]+'.'+p[0]:d;};
+    const rows=data.filter(l=>!isDone(l.status)&&!isGroup(l.geber)); // nur Verbindlichkeiten der Gruppe (Co-Invest/als Geber ausgeschlossen)
+    rows.sort((a,b)=>{const na=parseInt(String(a.dnr_intern||'').replace(/\D/g,''),10),nb=parseInt(String(b.dnr_intern||'').replace(/\D/g,''),10);return (isNaN(na)?9e9:na)-(isNaN(nb)?9e9:nb);});
+    LOANS=rows.map(l=>{const kk=/kontokorrent|kk-?linie/i.test(l.bez||'');const owner=/gmbh/i.test(l.nehmer||'')?'GmbH':'privat';
+      return [l.dnr_intern||'—', l.bez||'—', l.geber||'—', owner, Number(l.aktuell)||0, Number(l.zins)||0, Number(l.kapitaldienst)||0, fmtDate(l.zinsbind), kk];});
+    render();
+  }catch(e){}
+}
+loadLoansReport();
 // Editierbare Geschäftsmodell-Texte (lokal gespeichert)
 (function initGM(){document.querySelectorAll('[data-gm]').forEach(el=>{const k='gm_'+el.dataset.gm;try{const s=localStorage.getItem(k);if(s!=null)el.innerHTML=s;}catch(e){}el.addEventListener('blur',()=>{try{localStorage.setItem(k,el.innerHTML);}catch(e){}});});})();
 </script>
