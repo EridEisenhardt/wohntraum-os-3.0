@@ -87,6 +87,7 @@ tr:hover td{background:rgba(0,0,0,.022)}
 .pill-intern{background:var(--intern-bg);color:var(--intern);border:1px solid var(--intern-bd)}
 .pill-co{background:var(--co-bg);color:var(--co);border:1px solid var(--co-bd)}
 .sbadge{font-size:10px;font-weight:600;padding:2px 8px;border-radius:20px;display:inline-block}
+.s-beendet{background:#eef0f3;color:#4b5563}
 .s-aktiv{background:var(--ok-bg);color:var(--ok);border:1px solid rgba(52,211,153,.25)}
 .s-tilgung{background:var(--warn-bg);color:var(--warn);border:1px solid rgba(251,191,36,.25)}
 .s-faellig{background:var(--danger-bg);color:var(--danger);border:1px solid rgba(248,113,113,.25)}
@@ -223,6 +224,7 @@ textarea{resize:vertical;min-height:60px}
         <option>In Tilgung</option>
         <option>Fällig</option>
         <option>Entwurf</option>
+        <option>Beendet &amp; vollständig zurückgeführt</option>
       </select>
     </div>
   </div>
@@ -350,6 +352,7 @@ textarea{resize:vertical;min-height:60px}
           <option value="In Tilgung">In Tilgung</option>
           <option value="Fällig">Fällig</option>
           <option value="Entwurf">Entwurf</option>
+          <option value="Beendet &amp; vollständig zurückgeführt">Beendet &amp; vollständig zurückgeführt</option>
         </select>
       </div>
       <div class="fg">
@@ -475,7 +478,8 @@ function gShort(s){
 }
 const TL = {bank:'Bank',intern:'Intern',coinvest:'Co-Investor'};
 const PC = {bank:'pill-bank',intern:'pill-intern',coinvest:'pill-co'};
-const SC = {Aktiv:'s-aktiv','In Tilgung':'s-tilgung',Fällig:'s-faellig',Entwurf:'s-entwurf'};
+const SC = {Aktiv:'s-aktiv','In Tilgung':'s-tilgung',Fällig:'s-faellig',Entwurf:'s-entwurf','Beendet & vollständig zurückgeführt':'s-beendet'};
+function scOf(s){return SC[s]|| (/beendet|abgeschl|zurückgef/i.test(s||'')?'s-beendet':'s-entwurf');}
 // ══════ KPI ══════
 function renderKPI(){
   const total = DB.reduce((s,d)=>s+d.betrag,0);
@@ -511,9 +515,10 @@ function getFiltered(){
   const gF = document.getElementById('fGmbH')?.value;
   const sF = document.getElementById('fStatus')?.value;
   const q = (document.getElementById('fSearch')?.value||'').toLowerCase().trim();
+  const isDoneS=s=>/beendet|abgeschl|zurückgef/i.test(s||'');
   if(activeTab!=='alle') list=list.filter(d=>d.typ===activeTab);
   if(gF) list=list.filter(d=>d.nehmer===gF||d.geber===gF);
-  if(sF) list=list.filter(d=>d.status===sF);
+  if(sF) list=list.filter(d=>d.status===sF); else list=list.filter(d=>!isDoneS(d.status));
   if(q) list=list.filter(d=>[d.ref,d.bez,d.geber,d.nehmer,d.konto,d.notizen].filter(Boolean).some(x=>String(x).toLowerCase().includes(q)));
   return list;
 }
@@ -570,7 +575,7 @@ function renderTable(){
       <td>${l!==null?`<div class="ltvw"><div class="ltvbar"><div class="ltvfill ${ltvCls(l)}" style="width:${Math.min(l,100)}%"></div></div><span class="ltvlbl">${l}%</span></div>`:'<span style="color:var(--muted);font-size:11px">n/a</span>'}</td>
       <td class="mono" style="font-size:11px">${fmtD(d.zinsbind||d.laufzeit)}</td>
       <td class="mono tr" title="Projizierte Restschuld zum Zinsbindungsende (fixer Kapitaldienst, annuitätisch). Ohne Datum = heutiger Stand.">${fmtE(restschuldAtZinsbind(d))}</td>
-      <td><span class="sbadge ${SC[d.status]}">${d.status}</span></td>
+      <td><span class="sbadge ${scOf(d.status)}">${d.status}</span></td>
       <td style="white-space:nowrap">
         <button class="abtn" onclick="openDP('${d.id}')">Detail</button>
         <button class="abtn" style="margin-left:4px" onclick="startEdit('${d.id}')">✎</button>
@@ -663,7 +668,7 @@ function openDP(id){
   const a = kd(d), l = ltv(d), zinsen = Math.round(d.betrag*d.zins/100/12), tilgung = a-zinsen;
   const kdManual = d.kapitaldienst!=null;
   document.getElementById('dp_title').textContent = d.bez;
-  document.getElementById('dp_type').innerHTML = `<span class="pill ${PC[d.typ]}">${TL[d.typ]}</span> <span class="sbadge ${SC[d.status]}" style="margin-left:6px">${d.status}</span>`;
+  document.getElementById('dp_type').innerHTML = `<span class="pill ${PC[d.typ]}">${TL[d.typ]}</span> <span class="sbadge ${scOf(d.status)}" style="margin-left:6px">${d.status}</span>`;
   document.getElementById('dp_body').innerHTML = `
     <div class="dp-sec">Parteien</div>
     <div class="dp-row"><span class="dp-k">Darlehensgeber</span><span class="dp-v">${d.geber}</span></div>

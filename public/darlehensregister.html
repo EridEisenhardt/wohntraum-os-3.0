@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="de"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Finance · Darlehensregister – Macher OS</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+:root{--bg:#f6f7f9;--surf:#fff;--surf2:#f1f3f6;--line:#e6e8ec;--bord2:#eef0f3;--text:#1c2024;--muted:#6b7280;--dim:#4b5563;--accent:#185fa5;--green:#1f7a4d;--red:#c0392b;--r:8px;--rl:12px;}
+*{box-sizing:border-box;margin:0;padding:0}body{background:var(--bg);color:var(--text);font-family:'Inter',system-ui,sans-serif;font-size:14px}
+.hdr{background:var(--surf);border-bottom:1px solid var(--line);padding:16px 24px;display:flex;align-items:center;gap:12px;position:sticky;top:0;z-index:10}
+.logo{background:#1a1a2e;color:#fff;font-weight:700;font-size:11px;padding:5px 9px;border-radius:4px}.hdr-title{font-size:16px;font-weight:600}.crumb{font-size:11px;color:var(--muted)}
+.main{max-width:1300px;margin:0 auto;padding:20px 24px 60px}
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;margin-bottom:16px}
+.kpi{background:var(--surf);border:1px solid var(--line);border-radius:var(--rl);padding:13px 15px}.kpi .l{font-size:11px;color:var(--muted);font-weight:600}.kpi .v{font-size:21px;font-weight:700;margin-top:3px}.kpi .d{font-size:11px;color:var(--muted)}
+.tabs{display:flex;gap:4px;flex-wrap:wrap;margin-bottom:14px}.tab{font:inherit;font-size:12px;font-weight:600;padding:6px 13px;border:1px solid var(--line);border-radius:8px;background:var(--surf);color:var(--dim);cursor:pointer}.tab:hover{border-color:var(--accent)}.tab.active{background:var(--accent);color:#fff;border-color:var(--accent)}
+.card{background:var(--surf);border:1px solid var(--line);border-radius:var(--rl);overflow:hidden}
+.card-hd{padding:12px 16px;border-bottom:1px solid var(--line);font-size:13px;font-weight:600;display:flex;justify-content:space-between;align-items:center}
+.tablewrap{overflow-x:auto}
+table{width:100%;border-collapse:collapse;font-size:12.5px;min-width:1040px}
+th,td{padding:8px 11px;text-align:left;border-bottom:1px solid var(--bord2);white-space:nowrap}
+th{font-size:10px;text-transform:uppercase;color:var(--muted);font-weight:700;background:var(--surf2)}
+td.eur{text-align:right}
+tbody tr.done td{background:#f4f5f7;color:var(--muted)}
+tbody tr:hover td{background:#fafbfc}
+.dnr{font-weight:700;font-variant-numeric:tabular-nums}
+.pill{font-size:10px;font-weight:700;padding:3px 9px;border-radius:12px;cursor:pointer;user-select:none;white-space:nowrap}.p-aktiv{background:#e8f2fd;color:#185fa5}.p-done{background:#eef0f3;color:#4b5563}
+.empty{text-align:center;padding:30px;color:var(--muted)}
+.foot{font-size:11px;color:var(--muted);margin-top:12px}
+.toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:var(--surf2);border:1px solid var(--line);border-radius:var(--r);padding:10px 20px;font-size:13px;opacity:0;transition:.3s;pointer-events:none;z-index:99}.toast.show{opacity:1}
+</style></head><body>
+<div class="hdr"><div class="logo">MACHER OS</div><div>
+  <div class="crumb">Darlehens-Management › Darlehensregister</div>
+  <div class="hdr-title">Darlehensregister</div></div></div>
+<div class="main">
+  <div class="kpis" id="kpis"></div>
+  <div class="tabs" id="tabs"></div>
+  <div class="card"><div class="card-hd"><span>Darlehen — chronologisch nach interner Nummer</span><span class="crumb" id="cnt"></span></div>
+    <div class="tablewrap" id="reg"><div class="empty" id="loading">Lädt…</div></div></div>
+  <div class="foot">Alle Darlehen werden mit ihrer internen Darlehensnummer geführt. Über den Status-Klick lässt sich ein Darlehen zwischen <b>Aktiv</b> und <b>Abgeschlossen</b> umschalten — abgeschlossene bleiben zur chronologischen Nachverfolgung erhalten. Stammdaten werden unter „Darlehen" gepflegt.</div>
+</div><div class="toast" id="toast"></div>
+<script>
+const sb=window.supabase.createClient('https://jqzxctfqvcwbctpjksvg.supabase.co','eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpxenhjdGZxdmN3YmN0cGprc3ZnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODIxMzA0MzIsImV4cCI6MjA5NzcwNjQzMn0.RKIbZxJdusKWWPjBJqlxZ8e1m8So02UslOg55YRsn3o');
+const $=id=>document.getElementById(id);const esc=s=>(s==null?'':String(s)).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;');
+const eur=n=>n==null||n===''?'—':new Intl.NumberFormat('de-DE',{style:'currency',currency:'EUR',minimumFractionDigits:0,maximumFractionDigits:0}).format(n);
+function toast(m){const t=$('toast');t.textContent=m;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),1700);}
+function fmtD(d){if(!d)return '—';const p=String(d).split('-');return p.length===3?p[2]+'.'+p[1]+'.'+p[0]:d;}
+const STATUS_DONE='Beendet & vollständig zurückgeführt';
+function isDone(s){s=(s||'').toLowerCase();return s.startsWith('beendet')||s.startsWith('abgeschl')||s.includes('zurückgef');}
+let ROWS=[],filt='';
+const TABS=[['','Alle'],['aktiv','Aktiv'],['done','Beendet']];
+function sortKey(r){const n=parseInt(String(r.dnr_intern||'').replace(/\D/g,''),10);return isNaN(n)?9e9:n;}
+async function load(){
+  const{data,error}=await sb.from('loans').select('id,dnr_intern,dnr_bank,bez,geber,nehmer,betrag,aktuell,zins,aus,laufzeit,obj,status');
+  if(error){$('reg').innerHTML='<div class="empty">Fehler: '+esc(error.message)+'</div>';return;}
+  ROWS=(data||[]).sort((a,b)=>sortKey(a)-sortKey(b));
+  renderTabs();render();
+}
+function renderTabs(){$('tabs').innerHTML=TABS.map(t=>`<button class="tab ${filt===t[0]?'active':''}" onclick="setFilt('${t[0]}')">${t[1]}</button>`).join('');}
+function setFilt(f){filt=f;renderTabs();render();}
+async function toggleStatus(id){const r=ROWS.find(x=>x.id===id);if(!r)return;const s=isDone(r.status)?'Aktiv':STATUS_DONE;const{error}=await sb.from('loans').update({status:s}).eq('id',id);if(error){toast('Fehler: '+error.message);return;}r.status=s;render();}
+function render(){
+  const aktiv=ROWS.filter(r=>!isDone(r.status)),done=ROWS.filter(r=>isDone(r.status));
+  const sum=a=>a.reduce((s,r)=>s+(Number(r.aktuell)||0),0);
+  $('kpis').innerHTML=[
+    ['Darlehen gesamt',ROWS.length,'im Register'],
+    ['Aktiv',aktiv.length,'laufende Darlehen'],
+    ['Beendet',done.length,'vollständig zurückgeführt'],
+    ['Restschuld aktiv',eur(sum(aktiv)),'aktueller Saldo'],
+    ['Ursprungssumme aktiv',eur(aktiv.reduce((s,r)=>s+(Number(r.betrag)||0),0)),'Auszahlungsbetrag']
+  ].map(k=>`<div class="kpi"><div class="l">${k[0]}</div><div class="v">${k[1]}</div><div class="d">${k[2]}</div></div>`).join('');
+  let list=ROWS;if(filt==='aktiv')list=aktiv;else if(filt==='done')list=done;
+  $('cnt').textContent=list.length+' Einträge';
+  if(!list.length){$('reg').innerHTML='<div class="empty">Keine Darlehen in dieser Ansicht.</div>';return;}
+  $('reg').innerHTML='<table><thead><tr><th>Interne Nr.</th><th>Bank-Nr.</th><th>Bezeichnung</th><th>Darlehensgeber</th><th>Darlehensnehmer</th><th>Auszahlung</th><th class="eur">Betrag</th><th class="eur">Aktueller Saldo</th><th class="eur">Zins</th><th>Status</th></tr></thead><tbody>'
+   +list.map(r=>`<tr class="${isDone(r.status)?'done':''}">
+     <td class="dnr">${esc(r.dnr_intern||'—')}</td>
+     <td>${esc(r.dnr_bank||'—')}</td>
+     <td>${esc(r.bez||'—')}</td>
+     <td>${esc(r.geber||'—')}</td>
+     <td>${esc(r.nehmer||'—')}</td>
+     <td>${fmtD(r.aus)}</td>
+     <td class="eur">${r.betrag!=null?eur(r.betrag):'—'}</td>
+     <td class="eur">${r.aktuell!=null?eur(r.aktuell):'—'}</td>
+     <td class="eur">${r.zins!=null?(Number(r.zins).toLocaleString('de-DE',{minimumFractionDigits:2,maximumFractionDigits:2})+' %'):'—'}</td>
+     <td><span class="pill ${isDone(r.status)?'p-done':'p-aktiv'}" title="Status umschalten (Aktiv / Beendet & vollständig zurückgeführt)" onclick="toggleStatus('${r.id}')">${isDone(r.status)?'Beendet &amp; vollständig zurückgeführt':'Aktiv'}</span></td>
+   </tr>`).join('')+'</tbody></table>';
+}
+(async()=>{const{data:{session}}=await sb.auth.getSession();if(!session){$('main').innerHTML='<div class="empty" style="padding:60px">Bitte zuerst im OS einloggen.</div>';return;}load();})();
+</script></body></html>

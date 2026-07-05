@@ -130,6 +130,9 @@ export default function Sidebar({ user, demo, onLogout }) {
       <Link href="/finance/liquiditaetsplanung" className={subCls(path.startsWith('/finance/liquiditaetsplanung'))}>
         <i className="ti ti-wallet" /> Liquiditätsplanung
       </Link>
+      <Link href="/finance/darlehensregister" className={subCls(path.startsWith('/finance/darlehensregister'))}>
+        <i className="ti ti-list-numbers" /> Darlehensregister
+      </Link>
 
       <Link href="/dokumente" className={cls(path.startsWith('/dokumente'))}>
         <i className="ti ti-files" /> Dokumente
