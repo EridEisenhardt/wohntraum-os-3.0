@@ -187,7 +187,7 @@ input.cell:hover{border-color:var(--line)} input.cell:focus{border-color:var(--b
     <h2><span class="n">A</span>Vermögens- & Beleihungsübersicht</h2>
     <table id="tblObj">
       <thead><tr>
-        <th>Objekt</th><th>Eigentümer</th><th>Marktwert (PriceHubble)</th><th>Wert −10 %</th>
+        <th>Objekt</th><th>Eigentümer</th><th>Einheiten</th><th>Marktwert (PriceHubble)</th><th>Wert −10 %</th>
         <th>Restschuld</th><th>LTV</th><th>Netto-Wert</th><th>Miete p.a.</th><th>Rendite*</th>
       </tr></thead>
       <tbody id="objBody"></tbody>
@@ -386,18 +386,19 @@ function render(){
   // object table
   const tb=document.getElementById('objBody');tb.innerHTML='';
   const groups=[['GmbH','Wohn(T)raum Rheinhessen GmbH'],['privat','Eric Eisenhardt (privat)']];
-  let gT={mw:0,w10:0,rs:0,m:0};
+  let gT={mw:0,w10:0,rs:0,m:0,units:0};
   groups.forEach(([key,label])=>{
-    tb.insertAdjacentHTML('beforeend',`<tr class="grp"><td colspan="9">${label}</td></tr>`);
-    let s={mw:0,w10:0,rs:0,m:0};
+    tb.insertAdjacentHTML('beforeend',`<tr class="grp"><td colspan="10">${label}</td></tr>`);
+    let s={mw:0,w10:0,rs:0,m:0,units:0};
     OBJ.forEach((o,i)=>{ if(o.o!==key)return;
       const w10=o.mw!=null?o.mw*0.9:null;
       const ltv=w10?o.rs/w10*100:null;
       const netto=w10!=null?w10-o.rs:null;
       const rend=w10&&o.m!=null?o.m/w10*100:null;
-      s.mw+=o.mw||0;s.w10+=w10||0;s.rs+=o.rs;s.m+=o.m||0;
+      s.mw+=o.mw||0;s.w10+=w10||0;s.rs+=o.rs;s.m+=o.m||0;s.units+=Number(o.units)||0;
       tb.insertAdjacentHTML('beforeend',`<tr>
         <td>${o.c}${o.c==='H3'?' <span class="editbadge">(R2R)</span>':''}</td><td>${tag(o.o)}</td>
+        <td>${o.units!=null&&o.units!==''?o.units:'—'}</td>
         <td><input class="cell" data-i="${i}" data-f="mw" value="${o.mw!=null?o.mw:''}" placeholder="eintragen"></td>
         <td>${w10!=null?fmt(w10):'—'}</td>
         <td>${o.rs?fmt(o.rs):'—'}</td>
@@ -407,14 +408,14 @@ function render(){
         <td>${rend!=null?pct(rend):'—'}</td></tr>`);
     });
     const sl=s.w10?s.rs/s.w10*100:null;
-    tb.insertAdjacentHTML('beforeend',`<tr class="sum"><td>Zwischensumme</td><td></td><td>${fmt(s.mw)}</td><td>${fmt(s.w10)}</td><td>${fmt(s.rs)}</td><td>${sl!=null?pct(sl):'—'}</td><td>${fmt(s.w10-s.rs)}</td><td>${fmt(s.m)}</td><td></td></tr>`);
-    gT.mw+=s.mw;gT.w10+=s.w10;gT.rs+=s.rs;gT.m+=s.m;
+    tb.insertAdjacentHTML('beforeend',`<tr class="sum"><td>Zwischensumme</td><td></td><td>${s.units||''}</td><td>${fmt(s.mw)}</td><td>${fmt(s.w10)}</td><td>${fmt(s.rs)}</td><td>${sl!=null?pct(sl):'—'}</td><td>${fmt(s.w10-s.rs)}</td><td>${fmt(s.m)}</td><td></td></tr>`);
+    gT.mw+=s.mw;gT.w10+=s.w10;gT.rs+=s.rs;gT.m+=s.m;gT.units+=s.units;
   });
   // Gruppe – use verified totals where einzelwerte unvollständig
   const useMW = gT.mw>0 ? Math.max(gT.mw,PORT.marktwert) : PORT.marktwert;
   const grpMW=PORT.marktwert, grpW10=PORT.w10, grpRS=gT.rs, grpM=PORT.miete;
   const grpLTV=grpRS/grpW10*100;
-  tb.insertAdjacentHTML('beforeend',`<tr class="sum"><td>GESAMTGRUPPE (verifiziert)</td><td></td><td>${fmt(grpMW)}</td><td>${fmt(grpW10)}</td><td>${fmt(grpRS)}</td><td>${pct(grpLTV)}</td><td>${fmt(grpW10-grpRS)}</td><td>${fmt(grpM)}</td><td>${pct(grpM/grpW10*100)}</td></tr>`);
+  tb.insertAdjacentHTML('beforeend',`<tr class="sum"><td>GESAMTGRUPPE (verifiziert)</td><td></td><td>${gT.units||''}</td><td>${fmt(grpMW)}</td><td>${fmt(grpW10)}</td><td>${fmt(grpRS)}</td><td>${pct(grpLTV)}</td><td>${fmt(grpW10-grpRS)}</td><td>${fmt(grpM)}</td><td>${pct(grpM/grpW10*100)}</td></tr>`);
 
   // loan table
   const lb=document.getElementById('loanBody');lb.innerHTML='';
@@ -514,8 +515,8 @@ render();
 // Zentrale Datenquellen (Finance · Input, Bürgschaften-Register)
 const _sbRep=window.supabase.createClient('https://jqzxctfqvcwbctpjksvg.supabase.co','eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpxenhjdGZxdmN3YmN0cGprc3ZnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODIxMzA0MzIsImV4cCI6MjA5NzcwNjQzMn0.RKIbZxJdusKWWPjBJqlxZ8e1m8So02UslOg55YRsn3o');
 (async()=>{try{
-  const{data}=await _sbRep.from('finance_input').select('code,wert,kategorie').in('kategorie',['Marktwert (PriceHubble)','Miete p.a. (aktuell)']);
-  if(data&&data.length){const mw={},mi={};data.forEach(r=>{(r.kategorie==='Miete p.a. (aktuell)'?mi:mw)[r.code]=r.wert;});let ch=false;OBJ.forEach(o=>{if(o.c in mw){o.mw=(mw[o.c]==null?null:Number(mw[o.c]));ch=true;}if(o.c in mi&&mi[o.c]!=null){o.m=Number(mi[o.c]);ch=true;}});if(ch){save();render();}}
+  const{data}=await _sbRep.from('finance_input').select('code,wert,kategorie').in('kategorie',['Marktwert (PriceHubble)','Miete p.a. (aktuell)','Anzahl Einheiten']);
+  if(data&&data.length){const mw={},mi={},un={};data.forEach(r=>{const t=r.kategorie;(t==='Miete p.a. (aktuell)'?mi:t==='Anzahl Einheiten'?un:mw)[r.code]=r.wert;});let ch=false;OBJ.forEach(o=>{if(o.c in mw){o.mw=(mw[o.c]==null?null:Number(mw[o.c]));ch=true;}if(o.c in mi&&mi[o.c]!=null){o.m=Number(mi[o.c]);ch=true;}if(o.c in un){o.units=(un[o.c]==null?null:Number(un[o.c]));ch=true;}});if(ch){save();render();}}
 }catch(e){}})();
 async function loadBuergReport(){
   const tb=document.getElementById('buergBody'); if(!tb) return;
