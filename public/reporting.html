@@ -165,16 +165,11 @@ input.cell:hover{border-color:var(--line)} input.cell:focus{border-color:var(--b
 
     <!-- C Eventualverbindlichkeiten -->
     <h2><span class="n">C</span>Eventualverbindlichkeiten (Bürgschaften)</h2>
-    <table>
-      <thead><tr><th>Bürgschaft</th><th>für</th><th>Höchstbetrag</th><th>aktuell valutiert</th></tr></thead>
-      <tbody>
-        <tr><td>M8 / 1 (E. Eisenhardt persönlich)</td><td>Wohn(T)raum Rheinhessen GmbH</td><td>673.000 €</td><td class="r">—</td></tr>
-        <tr><td>M8 / 2 (E. Eisenhardt persönlich)</td><td>Wohn(T)raum Rheinhessen GmbH</td><td>100.000 €</td><td class="r">—</td></tr>
-        <tr><td>S58 / 1 (E. Eisenhardt persönlich)</td><td>Wohn(T)raum Rheinhessen GmbH</td><td>480.000 €</td><td class="r">—</td></tr>
-        <tr class="sum"><td>Summe Bürgschaften</td><td></td><td>1.253.000 €</td><td>1.095.275 €</td></tr>
-      </tbody>
+    <table id="tblBuerg">
+      <thead><tr><th>Bank</th><th>Nummer</th><th>Objekt</th><th>Höhe Grundschuld / Bürgschaft</th></tr></thead>
+      <tbody id="buergBody"><tr><td colspan="4" style="text-align:center;color:var(--muted)">Lädt…</td></tr></tbody>
     </table>
-    <div class="legend">Bürgschaften sind keine Darlehen und werden strikt getrennt als Eventualverbindlichkeiten ausgewiesen.</div>
+    <div class="legend">Quelle: Register „Darlehen → Bürgschaften / Grundschulden". Änderungen dort werden hier automatisch übernommen. Bürgschaften sind keine Darlehen und werden getrennt als Eventualverbindlichkeiten ausgewiesen.</div>
 
     <!-- D Kapitaldienst / Mieten -->
     <h2><span class="n">D</span>Kapitaldienst & Mietdeckung</h2>
@@ -284,7 +279,7 @@ const LOANS=[
  [12,'M8','Mainzer Volksbank','GmbH',564785.37,3.99,2400.00,'30.03.2030'],
  [13,'KK-Linie','Donnersbergsparkasse','GmbH',200000,13.44,0,'25.08.2026'],
 ];
-const BUERG=1095275, COINV=100000;
+let BUERG=1095275; const COINV=100000;
 // Trackrecord: realisierte Ankäufe (Objekt, Nehmer, urspr. Finanzierung, akt. Restschuld) – verifiziert
 const TR_FIN=[
  ['KW30','GmbH',547500.00,463323.13],['U6','GmbH',85000.00,71049.31],
@@ -467,12 +462,25 @@ function renderDeals(){
 }
 function bind(){document.querySelectorAll('input.cell').forEach(inp=>{inp.addEventListener('change',e=>{const i=+e.target.dataset.i,f=e.target.dataset.f;const v=e.target.value.replace(/\./g,'').replace(',','.');OBJ[i][f]=v===''?null:parseFloat(v);save();render();});});}
 render();
-// Marktwerte zentral aus Finance · Input beziehen
+// Zentrale Datenquellen (Finance · Input, Bürgschaften-Register)
+const _sbRep=window.supabase.createClient('https://jqzxctfqvcwbctpjksvg.supabase.co','eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpxenhjdGZxdmN3YmN0cGprc3ZnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODIxMzA0MzIsImV4cCI6MjA5NzcwNjQzMn0.RKIbZxJdusKWWPjBJqlxZ8e1m8So02UslOg55YRsn3o');
 (async()=>{try{
-  const sb=window.supabase.createClient('https://jqzxctfqvcwbctpjksvg.supabase.co','eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpxenhjdGZxdmN3YmN0cGprc3ZnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODIxMzA0MzIsImV4cCI6MjA5NzcwNjQzMn0.RKIbZxJdusKWWPjBJqlxZ8e1m8So02UslOg55YRsn3o');
-  const{data}=await sb.from('finance_input').select('code,wert').eq('kategorie','Marktwert (PriceHubble)');
+  const{data}=await _sbRep.from('finance_input').select('code,wert').eq('kategorie','Marktwert (PriceHubble)');
   if(data&&data.length){const m={};data.forEach(r=>m[r.code]=r.wert);let ch=false;OBJ.forEach(o=>{if(o.c in m){o.mw=(m[o.c]==null?null:Number(m[o.c]));ch=true;}});if(ch){save();render();}}
 }catch(e){}})();
+async function loadBuergReport(){
+  const tb=document.getElementById('buergBody'); if(!tb) return;
+  try{
+    const{data,error}=await _sbRep.from('buergschaften').select('bank,nummer,objekt,grundschuld').order('created_at',{ascending:true});
+    if(error||!data||!data.length){tb.innerHTML='<tr><td colspan="4" style="text-align:center;color:var(--muted)">Keine Bürgschaften / Grundschulden im Register erfasst.</td></tr>';BUERG=0;render();return;}
+    const total=data.reduce((s,b)=>s+Number(b.grundschuld||0),0);
+    const esc=s=>(s==null||s==='')?'—':String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;');
+    tb.innerHTML=data.map(b=>`<tr><td>${esc(b.bank)}</td><td>${esc(b.nummer)}</td><td>${esc(b.objekt)}</td><td class="r">${fmt(b.grundschuld)}</td></tr>`).join('')
+      +`<tr class="sum"><td>Summe Bürgschaften / Grundschulden</td><td></td><td></td><td class="r">${fmt(total)}</td></tr>`;
+    BUERG=total; render();
+  }catch(e){}
+}
+loadBuergReport();
 </script>
 </body>
 </html>
