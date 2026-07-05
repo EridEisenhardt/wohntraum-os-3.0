@@ -115,6 +115,9 @@ export default function Sidebar({ user, demo, onLogout }) {
       <Link href="/finance/darlehen" className={subCls(path === '/finance/darlehen' || path.startsWith('/finance/darlehen/'))}>
         <i className="ti ti-businessplan" /> Darlehen
       </Link>
+      <Link href="/finance/darlehensregister" className={subCls(path.startsWith('/finance/darlehensregister'))}>
+        <i className="ti ti-list-numbers" /> Darlehensregister
+      </Link>
       <Link href="/finance/darlehensgenerator" className={subCls(path.startsWith('/finance/darlehensgenerator'))}>
         <i className="ti ti-calculator" /> Darlehensgenerator
       </Link>
@@ -129,9 +132,6 @@ export default function Sidebar({ user, demo, onLogout }) {
       </Link>
       <Link href="/finance/liquiditaetsplanung" className={subCls(path.startsWith('/finance/liquiditaetsplanung'))}>
         <i className="ti ti-wallet" /> Liquiditätsplanung
-      </Link>
-      <Link href="/finance/darlehensregister" className={subCls(path.startsWith('/finance/darlehensregister'))}>
-        <i className="ti ti-list-numbers" /> Darlehensregister
       </Link>
 
       <Link href="/dokumente" className={cls(path.startsWith('/dokumente'))}>
