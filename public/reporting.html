@@ -286,11 +286,6 @@ input.cell:hover{border-color:var(--line)} input.cell:focus{border-color:var(--b
     <!-- KPI -->
     <div class="kpis" id="kpitop"></div>
 
-    <!-- Schlüsselkennzahlen: Portfoliofaktor & Stresstest -->
-    <h2 style="margin-top:16px"><span class="n" style="width:auto;padding:0 7px;font-size:11px">SK</span>Schlüsselkennzahlen</h2>
-    <div class="kpis" id="kpiSK"></div>
-    <div class="legend">Portfoliofaktor = Gesamtverschuldung ÷ Jahresnettomiete. Stresstest = jährlicher Kapitaldienst bei unterstellter 8 %-Annuität auf die Gesamtverschuldung, verglichen mit der Jahresnettomiete (Deckung).</div>
-
     <!-- A Vermögensübersicht -->
     <h2><span class="n">A</span>Vermögens- & Beleihungsübersicht</h2>
     <table id="tblObj">
@@ -360,6 +355,11 @@ input.cell:hover{border-color:var(--line)} input.cell:focus{border-color:var(--b
       <tbody id="pdBody"></tbody>
     </table>
     <div class="legend">Prognose auf Basis der Annahmen (keine Zusage). Eigenkapital = Marktwert − Gesamtverschuldung.</div>
+
+    <!-- SK Schlüsselkennzahlen -->
+    <h2><span class="n" style="width:auto;padding:0 7px;font-size:11px">SK</span>Schlüsselkennzahlen</h2>
+    <div class="kpis" id="kpiSK"></div>
+    <div class="legend">Stresstest (8er Annuität): Jahresnettosollmiete abzüglich 15 % Bewirtschaftung, abzüglich 8 % Kapitaldienst (Zins + Tilgung) auf die in die Selbstauskunft übernommenen Darlehen. Loan-to-Value = Gesamtverbindlichkeiten ÷ Marktwert. „Investition in Weiterbildung" wird in Finance · Input gepflegt.</div>
 
     <!-- B3 Operative Grafiken -->
     <h2><span class="n" style="width:auto;padding:0 7px;font-size:11px">B3</span>Operative Kennzahlen – Grafiken</h2>
@@ -490,6 +490,7 @@ const OBJ_DEFAULT=[
  {c:'H3',  o:'privat',mw:0,rs:0,m:3228}, // rent-to-rent
 ];
 const PORT={marktwert:5734700, w10:5161230, miete:458204}; // verifizierte Gesamtsummen
+let WEITERB=203917, SA_DEBT=0; // Weiterbildung (aus Input) · Darlehen in Selbstauskunft (Stresstest-Basis)
 let LOANS=[
  [1,'KW30','VR Bank Bad Salzungen','GmbH',136417.25,3.95,1063.17,'30.09.2028'],
  [2,'U6','Sparkasse Rhein Nahe','GmbH',71049.31,2.084,502.00,'variabel'],
@@ -657,8 +658,19 @@ function render(){
 }
 function objSet(i,f,v){OBJ[i][f]=(v===''?null:v);save();render();}
 function buildTOC(){const el=document.getElementById('toc');if(!el)return;const hs=document.querySelectorAll('.sheet h2');let out='';hs.forEach(h=>{const c=h.cloneNode(true);const n=c.querySelector('.n');if(n)n.remove();const t=c.textContent.trim();if(!t||/^Inhalt$/i.test(t))return;out+='<a>'+t+'</a>';});el.innerHTML=out;}
-function renderSK(){const el=document.getElementById('kpiSK');if(!el)return;let L0=0;LOANS.forEach(l=>L0+=l[4]||0);const miete=PORT.miete;const pf=miete?L0/miete:0;const stressKD=L0*0.08;const deck=stressKD?miete/stressKD:0;
-  el.innerHTML=[['Portfoliofaktor',pf.toLocaleString('de-DE',{minimumFractionDigits:1,maximumFractionDigits:1}),'Verschuldung ÷ Jahresmiete'],['Gesamtverschuldung',fmt(L0),'aus Darlehensregister'],['Stresstest 8 % Annuität',fmt(stressKD),'Kapitaldienst p.a. bei 8 %'],['Stress-Mietdeckung',deck.toLocaleString('de-DE',{minimumFractionDigits:2,maximumFractionDigits:2})+' ×',miete>=stressKD?'gedeckt':'unterdeckt']].map(k=>`<div class="kpi"><div class="l">${k[0]}</div><div class="v">${k[1]}</div><div class="s">${k[2]}</div></div>`).join('');}
+function renderSK(){const el=document.getElementById('kpiSK');if(!el)return;
+  const miete=PORT.miete, marktwert=PORT.marktwert;
+  let L0=0;LOANS.forEach(l=>L0+=l[4]||0);
+  const ltv=marktwert?L0/marktwert*100:0;
+  const stress=miete*0.85 - SA_DEBT*0.08;
+  el.innerHTML=[
+    ['Jahresnettosollmiete',fmt(miete),'Gesamtmiete p.a.'],
+    ['Stresstest (8er Annuität)',fmt(stress),(stress>=0?'Überschuss n. 8 % KD':'Unterdeckung')+' (Miete −15 % Bew.)'],
+    ['Loan to Value',pct(ltv),'Verbindlichkeiten ÷ Marktwert'],
+    ['Marktwert Immobilienbestand',fmt(marktwert),'verifiziert'],
+    ['Gesamtverbindlichkeiten',fmt(L0),'Stand heute (Register)'],
+    ['Investition in Weiterbildung',fmt(WEITERB),'aus Finance · Input'],
+  ].map(k=>`<div class="kpi"><div class="l">${k[0]}</div><div class="v">${k[1]}</div><div class="s">${k[2]}</div></div>`).join('');}
 function verbNum(id){try{const s=localStorage.getItem(id);return s==null||s===''?null:parseFloat(String(s).replace(/\./g,'').replace(',','.'));}catch(e){return null;}}
 function verbSet(id,v){try{localStorage.setItem(id,v);}catch(e){}renderVerb();}
 function renderVerb(){const tb=document.getElementById('verbBody');if(!tb)return;let L0=0,kdMo=0,zinsPa=0;LOANS.forEach(l=>{L0+=l[4]||0;kdMo+=l[6]||0;zinsPa+=(l[4]||0)*(l[5]||0)/100;});const zinsMo=zinsPa/12,tilgMo=kdMo-zinsMo,mieteMo=PORT.miete/12;
@@ -784,8 +796,8 @@ render();
 // Zentrale Datenquellen (Finance · Input, Bürgschaften-Register)
 const _sbRep=window.supabase.createClient('https://jqzxctfqvcwbctpjksvg.supabase.co','eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpxenhjdGZxdmN3YmN0cGprc3ZnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODIxMzA0MzIsImV4cCI6MjA5NzcwNjQzMn0.RKIbZxJdusKWWPjBJqlxZ8e1m8So02UslOg55YRsn3o');
 (async()=>{try{
-  const{data}=await _sbRep.from('finance_input').select('code,wert,kategorie').in('kategorie',['Marktwert (PriceHubble)','Miete p.a. (aktuell)','Anzahl Einheiten']);
-  if(data&&data.length){const mw={},mi={},un={};data.forEach(r=>{const t=r.kategorie;(t==='Miete p.a. (aktuell)'?mi:t==='Anzahl Einheiten'?un:mw)[r.code]=r.wert;});let ch=false;OBJ.forEach(o=>{if(o.c in mw){o.mw=(mw[o.c]==null?null:Number(mw[o.c]));ch=true;}if(o.c in mi&&mi[o.c]!=null){o.m=Number(mi[o.c]);ch=true;}if(o.c in un){o.units=(un[o.c]==null?null:Number(un[o.c]));ch=true;}});if(ch){save();render();}}
+  const{data}=await _sbRep.from('finance_input').select('code,wert,kategorie').in('kategorie',['Marktwert (PriceHubble)','Miete p.a. (aktuell)','Anzahl Einheiten','Investition in Weiterbildung']);
+  if(data&&data.length){const mw={},mi={},un={};data.forEach(r=>{const t=r.kategorie;if(t==='Investition in Weiterbildung'){if(r.wert!=null)WEITERB=Number(r.wert);return;}(t==='Miete p.a. (aktuell)'?mi:t==='Anzahl Einheiten'?un:mw)[r.code]=r.wert;});let ch=false;OBJ.forEach(o=>{if(o.c in mw){o.mw=(mw[o.c]==null?null:Number(mw[o.c]));ch=true;}if(o.c in mi&&mi[o.c]!=null){o.m=Number(mi[o.c]);ch=true;}if(o.c in un){o.units=(un[o.c]==null?null:Number(un[o.c]));ch=true;}});save();render();}
 }catch(e){}})();
 async function loadBuergReport(){
   const tb=document.getElementById('buergBody'); if(!tb) return;
@@ -802,10 +814,11 @@ async function loadBuergReport(){
 loadBuergReport();
 async function loadLoansReport(){
   try{
-    const{data,error}=await _sbRep.from('loans').select('dnr_intern,bez,geber,nehmer,aktuell,zins,kapitaldienst,zinsbind,status');
+    const{data,error}=await _sbRep.from('loans').select('dnr_intern,bez,geber,nehmer,aktuell,zins,kapitaldienst,zinsbind,status,in_selbstauskunft');
     if(error||!data||!data.length)return;
     const isGroup=s=>/wohn\(t\)raum|wohntraum|eric eisenhardt|anders macher|kibo|wonnegau/i.test(s||'');
     const isDone=s=>/beendet|abgeschl|zurückgef/i.test(s||'');
+    SA_DEBT=data.reduce((sum,l)=>(!isDone(l.status)&&!isGroup(l.geber)&&l.in_selbstauskunft!==false)?sum+(Number(l.aktuell)||0):sum,0);
     const fmtDate=d=>{if(!d)return 'variabel';const p=String(d).split('-');return p.length===3?p[2]+'.'+p[1]+'.'+p[0]:d;};
     const rows=data.filter(l=>!isDone(l.status)&&!isGroup(l.geber)); // nur Verbindlichkeiten der Gruppe (Co-Invest/als Geber ausgeschlossen)
     rows.sort((a,b)=>{const na=parseInt(String(a.dnr_intern||'').replace(/\D/g,''),10),nb=parseInt(String(b.dnr_intern||'').replace(/\D/g,''),10);return (isNaN(na)?9e9:na)-(isNaN(nb)?9e9:nb);});
