@@ -118,6 +118,17 @@ tr:hover td{background:rgba(0,0,0,.022)}
 .twin{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:22px}
 @media(max-width:900px){.twin{grid-template-columns:1fr}}
 .panel{background:var(--surf);border:1px solid var(--border);border-radius:var(--rl);overflow:hidden}
+.exgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(158px,1fr));gap:10px}
+.excard{border:1px solid var(--border);border-radius:10px;padding:11px 13px;background:var(--surf)}
+.excard.cur{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent) inset}
+.excard.past{background:#fdf3f3;border-color:#f0c9c9}
+.excard.nodate{background:var(--surf2)}
+.exyear{font-size:13px;font-weight:700;margin-bottom:3px;color:var(--text)}
+.exn{font-size:12px;color:var(--muted)}
+.exv{font-size:17px;font-weight:700;margin-top:2px;color:var(--text)}
+.exseg{font:inherit;font-size:12px;font-weight:600;padding:5px 12px;border:1px solid var(--border);border-radius:7px;background:var(--surf);color:var(--dim);cursor:pointer}
+.exseg.on{background:var(--accent);color:#fff;border-color:var(--accent)}
+.extot{font-size:12px;color:var(--muted);margin-top:10px}
 .panel-hdr{padding:13px 18px;border-bottom:1px solid var(--border);font-size:13px;font-weight:600;display:flex;align-items:center;gap:8px}
 /* Summary blocks */
 .sum-block{padding:14px 18px;border-bottom:1px solid var(--bord2)}
@@ -204,6 +215,11 @@ textarea{resize:vertical;min-height:60px}
 <div class="main">
   <!-- KPI -->
   <div class="kpi-row" id="kpiRow"></div>
+  <!-- AUSLAUFENDE DARLEHEN -->
+  <div class="panel" style="margin-bottom:14px">
+    <div class="panel-hdr">📆 Auslaufende Darlehen — Übersicht je Jahr <span style="font-size:10px;font-weight:400;color:var(--muted);margin-left:4px">Anzahl &amp; Volumen (aktuelle Restschuld)</span></div>
+    <div id="expiryDash" style="padding:14px 16px"></div>
+  </div>
   <!-- TOOLBAR -->
   <div class="toolbar">
     <div class="tabs" id="tabs"></div>
@@ -917,8 +933,32 @@ function renderBuerg(){
   </table>`;
 }
 // ══════ MAIN RENDER ══════
+let expiryMode='zinsbind';
+function setExpiryMode(m){expiryMode=m;renderExpiry();}
+function renderExpiry(){
+  const el=document.getElementById('expiryDash'); if(!el) return;
+  const isDoneS=s=>/beendet|abgeschl|zurückgef/i.test(s||'');
+  const act=DB.filter(d=>!isDoneS(d.status));
+  const byY={};let noDate={c:0,v:0};
+  act.forEach(d=>{const dt=expiryMode==='laufzeit'?d.laufzeit:d.zinsbind;const vol=Number(d.aktuell!=null?d.aktuell:d.betrag)||0;
+    const y=dt?parseInt(String(dt).slice(0,4),10):NaN;
+    if(isNaN(y)){noDate.c++;noDate.v+=vol;return;}
+    (byY[y]=byY[y]||{c:0,v:0});byY[y].c++;byY[y].v+=vol;});
+  const cur=new Date().getFullYear();
+  const years=Object.keys(byY).map(Number).sort((a,b)=>a-b);
+  const seg=`<div style="display:flex;gap:4px;margin-bottom:12px;flex-wrap:wrap">
+     <button class="exseg${expiryMode==='zinsbind'?' on':''}" onclick="setExpiryMode('zinsbind')">nach Zinsbindung</button>
+     <button class="exseg${expiryMode==='laufzeit'?' on':''}" onclick="setExpiryMode('laufzeit')">nach Laufzeit-Ende</button></div>`;
+  if(!years.length && !noDate.c){el.innerHTML=seg+'<div style="color:var(--muted);font-size:12px">Keine aktiven Darlehen mit '+(expiryMode==='laufzeit'?'Laufzeit-Ende':'Zinsbindungsende')+'.</div>';return;}
+  let cards=years.map(y=>{const o=byY[y];const st=y<cur?'past':(y===cur?'cur':'fut');const tag=y<cur?' <span style="font-size:9px;color:var(--danger)">überfällig</span>':(y===cur?' <span style="font-size:9px;color:var(--accent)">laufend</span>':'');
+    return `<div class="excard ${st}"><div class="exyear">${y}${tag}</div><div class="exn">${o.c} Darlehen</div><div class="exv">${fmtE(o.v)}</div></div>`;}).join('');
+  if(noDate.c)cards+=`<div class="excard nodate"><div class="exyear">ohne Datum</div><div class="exn">${noDate.c} Darlehen</div><div class="exv">${fmtE(noDate.v)}</div></div>`;
+  const totC=act.length,totV=act.reduce((s,d)=>s+(Number(d.aktuell!=null?d.aktuell:d.betrag)||0),0);
+  el.innerHTML=seg+'<div class="exgrid">'+cards+'</div><div class="extot">Aktive Darlehen gesamt: <b>'+totC+'</b> · Volumen (Restschuld): <b>'+fmtE(totV)+'</b></div>';
+}
 function render(){
   renderKPI();
+  renderExpiry();
   renderTabs();
   document.getElementById('tableArea').innerHTML = renderTable();
   renderSum();
