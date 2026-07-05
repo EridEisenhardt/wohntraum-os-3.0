@@ -112,6 +112,9 @@ export default function Sidebar({ user, demo, onLogout }) {
         <i className="ti ti-cash lead" /> Finance
         <i className="ti ti-chevron-down chev" />
       </div>
+      <Link href="/finance/input" className={subCls(path.startsWith('/finance/input'))}>
+        <i className="ti ti-forms" /> Input
+      </Link>
       <Link href="/finance/darlehen" className={subCls(path === '/finance/darlehen' || path.startsWith('/finance/darlehen/'))}>
         <i className="ti ti-businessplan" /> Darlehen
       </Link>

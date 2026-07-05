@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="de"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Finance · Input – Macher OS</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+:root{--bg:#f6f7f9;--surf:#fff;--surf2:#f1f3f6;--line:#e6e8ec;--text:#1c2024;--muted:#6b7280;--dim:#4b5563;--accent:#185fa5;--green:#1f7a4d;--r:8px;--rl:12px;}
+*{box-sizing:border-box;margin:0;padding:0}body{background:var(--bg);color:var(--text);font-family:'Inter',system-ui,sans-serif;font-size:14px}
+.hdr{background:var(--surf);border-bottom:1px solid var(--line);padding:16px 24px;display:flex;align-items:center;gap:12px;position:sticky;top:0;z-index:10}
+.logo{background:#1a1a2e;color:#fff;font-weight:700;font-size:11px;padding:5px 9px;border-radius:4px}.hdr-title{font-size:16px;font-weight:600}.crumb{font-size:11px;color:var(--muted)}
+.main{max-width:1080px;margin:0 auto;padding:20px 24px 60px}
+.intro{font-size:12.5px;color:var(--muted);margin-bottom:16px}
+.card{background:var(--surf);border:1px solid var(--line);border-radius:var(--rl);overflow:hidden;margin-bottom:16px}
+.card-hd{padding:12px 16px;border-bottom:1px solid var(--line);font-size:13px;font-weight:600;display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap}
+.card-hd .used{font-size:10px;font-weight:600;color:var(--dim);background:var(--surf2);border:1px solid var(--line);border-radius:12px;padding:2px 9px}
+.tablewrap{overflow-x:auto}
+table{width:100%;border-collapse:collapse;font-size:12.5px;min-width:560px}
+th,td{padding:8px 12px;text-align:left;border-bottom:1px solid #eef0f3;white-space:nowrap}
+th{font-size:10px;text-transform:uppercase;color:var(--muted);font-weight:700;background:var(--surf2)}
+td.code{font-weight:700;color:var(--accent);width:70px}
+td.eur{text-align:right}
+input.w{width:150px;text-align:right;font:inherit;font-size:13px;border:1px solid var(--line);border-radius:6px;padding:6px 8px;background:var(--surf)}
+input.w:focus{outline:none;border-color:var(--accent)}
+.sumrow td{font-weight:700;background:var(--surf2)}
+.foot{font-size:11px;color:var(--muted);margin-top:12px;border-top:1px solid var(--line);padding-top:12px}
+.empty{text-align:center;padding:28px;color:var(--muted)}
+.toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:var(--surf2);border:1px solid var(--line);border-radius:var(--r);padding:10px 20px;font-size:13px;opacity:0;transition:.3s;pointer-events:none;z-index:99}.toast.show{opacity:1}
+</style></head><body>
+<div class="hdr"><div class="logo">MACHER OS</div><div>
+  <div class="crumb">Finance › Input</div>
+  <div class="hdr-title">Input — zentrale Eingabewerte</div></div></div>
+<div class="main">
+  <div class="intro">Hier werden alle Werte gepflegt, die in <b>Selbstauskunft für die Bank</b> und <b>Reporting für die Bank</b> verwendet werden. Änderungen werden dort automatisch übernommen. Erste Kategorie: Immobilien-Marktwerte (PriceHubble).</div>
+  <div id="groups"><div class="empty" id="loading">Lädt…</div></div>
+  <div class="foot">Neue Eingabekategorien können jederzeit ergänzt werden. Die Werte werden zentral gespeichert (Supabase) und von den Bank-Auswertungen gelesen.</div>
+</div><div class="toast" id="toast"></div>
+<script>
+const sb=window.supabase.createClient('https://jqzxctfqvcwbctpjksvg.supabase.co','eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpxenhjdGZxdmN3YmN0cGprc3ZnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODIxMzA0MzIsImV4cCI6MjA5NzcwNjQzMn0.RKIbZxJdusKWWPjBJqlxZ8e1m8So02UslOg55YRsn3o');
+const $=id=>document.getElementById(id);const esc=s=>(s==null?'':String(s)).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;');
+const numDE=v=>{if(v==null||v==='')return null;const n=parseFloat(String(v).replace(/\./g,'').replace(',','.'));return isNaN(n)?null:n;};
+const eur=n=>n==null||n===''?'—':new Intl.NumberFormat('de-DE',{style:'currency',currency:'EUR',minimumFractionDigits:0,maximumFractionDigits:0}).format(n);
+function toast(m){const t=$('toast');t.textContent=m;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),1600);}
+let ROWS=[];
+const USED={'Marktwert (PriceHubble)':'genutzt in: Selbstauskunft · Reporting'};
+async function load(){
+  const{data,error}=await sb.from('finance_input').select('*').order('kategorie',{ascending:true}).order('sort',{ascending:true});
+  if(error){$('groups').innerHTML='<div class="empty">Fehler: '+esc(error.message)+'</div>';return;}
+  ROWS=data||[];render();
+}
+async function setWert(id,val){const v=numDE(val);const{error}=await sb.from('finance_input').update({wert:v,updated_at:new Date().toISOString()}).eq('id',id);if(error){toast('Fehler: '+error.message);return;}const r=ROWS.find(x=>x.id===id);if(r)r.wert=v;render();}
+function render(){
+  if(!ROWS.length){$('groups').innerHTML='<div class="empty">Noch keine Eingabewerte.</div>';return;}
+  const cats={};ROWS.forEach(r=>{(cats[r.kategorie||'Sonstige']=cats[r.kategorie||'Sonstige']||[]).push(r);});
+  let html='';
+  Object.keys(cats).forEach(cat=>{
+    const list=cats[cat];const total=list.reduce((s,r)=>s+(Number(r.wert)||0),0);
+    html+=`<div class="card"><div class="card-hd"><span>${esc(cat)}</span><span class="used">${esc(USED[cat]||'genutzt in Bank-Auswertungen')}</span></div>
+      <div class="tablewrap"><table><thead><tr><th>Kürzel</th><th>Immobilie / Position</th><th style="text-align:right">Wert</th><th>Quelle</th></tr></thead><tbody>`+
+      list.map(r=>`<tr>
+        <td class="code">${esc(r.code||'')}</td>
+        <td>${esc(r.label||'')}</td>
+        <td class="eur"><input class="w" inputmode="decimal" value="${r.wert!=null?r.wert:''}" onchange="setWert('${r.id}',this.value)"> <span style="color:var(--muted)">${esc(r.einheit||'€')}</span></td>
+        <td style="color:var(--muted)">${esc(r.quelle||'')}</td></tr>`).join('')+
+      `<tr class="sumrow"><td colspan="2">Summe (${list.length})</td><td class="eur">${eur(total)}</td><td></td></tr></tbody></table></div></div>`;
+  });
+  $('groups').innerHTML=html;
+}
+(async()=>{const{data:{session}}=await sb.auth.getSession();if(!session){$('main').innerHTML='<div class="empty" style="padding:60px">Bitte zuerst im OS einloggen.</div>';return;}load();})();
+</script></body></html>
