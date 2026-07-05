@@ -139,6 +139,10 @@ table.num td:nth-child(2),table.num th:nth-child(2){text-align:right}
   <div class="note">Datenquelle: Register „Darlehen" → Bürgschaften / Grundschulden (Bank, Nummer der Bank, Objekt, Höhe der Grundschuld). Änderungen dort werden hier automatisch übernommen.</div>
   <div class="tablewrap"><table class="mini" id="buergtbl"></table></div>
 
+  <h2><span class="dot" style="background:var(--accent)"></span>5b · Darlehensverbindlichkeiten</h2>
+  <div class="note">Datenquelle: Register „Darlehen" — es werden nur Darlehen übernommen, die dort in der Spalte „Selbstauskunft" auf <b>Ja</b> gesetzt sind. Beendete Darlehen werden nicht aufgeführt.</div>
+  <div class="tablewrap"><table class="mini" id="darltbl"></table></div>
+
   <h2><span class="dot" style="background:var(--warn)"></span>6 · Rentenansprüche (Zukunftsvorsorge)</h2>
   <div class="tablewrap"><table class="mini">
     <thead><tr><th>Träger</th><th>Anspruch / Monat</th></tr></thead>
@@ -216,6 +220,26 @@ async function loadBuergSA(){
     `<tr class="totrow"><td colspan="3">Summe Grundschulden</td><td>${eur(total)}</td></tr></tbody>`;
 }
 
+async function loadDarlehenSA(){
+  const el=document.getElementById('darltbl'); if(!el) return;
+  const head='<thead><tr><th style="text-align:left">Interne Nr.</th><th style="text-align:left">Bezeichnung</th><th style="text-align:left">Darlehensgeber</th><th style="text-align:left">Darlehensnehmer</th><th>Restschuld</th><th>Zins p.a.</th><th>Rate / Mo</th></tr></thead>';
+  const { data, error } = await sb.from('loans').select('dnr_intern,bez,geber,nehmer,betrag,aktuell,zins,kapitaldienst,status,in_selbstauskunft');
+  const isDone=s=>/beendet|abgeschl|zurückgef/i.test(s||'');
+  let rows=(data||[]).filter(d=>d.in_selbstauskunft!==false && !isDone(d.status));
+  rows.sort((a,b)=>{const na=parseInt(String(a.dnr_intern||'').replace(/\D/g,''),10),nb=parseInt(String(b.dnr_intern||'').replace(/\D/g,''),10);return (isNaN(na)?9e9:na)-(isNaN(nb)?9e9:nb);});
+  if(error || !rows.length){ el.innerHTML=head+'<tbody><tr><td colspan="7" style="text-align:center;color:var(--muted);white-space:normal">Keine Darlehen mit „Selbstauskunft: Ja" — im Register „Darlehen" festlegen.</td></tr></tbody>'; return; }
+  const totRest=rows.reduce((s,d)=>s+Number(d.aktuell!=null?d.aktuell:d.betrag||0),0);
+  const totRate=rows.reduce((s,d)=>s+Number(d.kapitaldienst||0),0);
+  el.innerHTML=head+'<tbody>'+rows.map(d=>{const rest=d.aktuell!=null?d.aktuell:d.betrag;return `<tr>
+      <td style="text-align:left">${escH(d.dnr_intern)}</td>
+      <td style="text-align:left">${escH(d.bez)}</td>
+      <td style="text-align:left">${escH(d.geber)}</td>
+      <td style="text-align:left">${escH(d.nehmer)}</td>
+      <td>${eur(rest)}</td>
+      <td>${d.zins!=null?Number(d.zins).toLocaleString('de-DE',{minimumFractionDigits:2,maximumFractionDigits:2})+' %':'—'}</td>
+      <td>${d.kapitaldienst!=null?eur(d.kapitaldienst):'—'}</td></tr>`;}).join('')+
+    `<tr class="totrow"><td colspan="4">Summe (${rows.length} Darlehen)</td><td>${eur(totRest)}</td><td></td><td>${eur(totRate)}</td></tr></tbody>`;
+}
 function sum(list,f){return list.reduce((s,o)=>s+(f(o)||0),0);}
 const ALL=OBJ, EE=OBJ.filter(o=>o.ent==="ee"), RH=OBJ.filter(o=>o.ent==="rh");
 
@@ -514,7 +538,7 @@ function sigInit(){
   sigLine();
 }
 
-kpis(); bewkInit(); objtbl(); weitere(); form(); loadBuergSA(); loadFirm(); loadBau(); renderInc(); renderExp(); renderVerm(); sigInit();
+kpis(); bewkInit(); objtbl(); weitere(); form(); loadBuergSA(); loadDarlehenSA(); loadFirm(); loadBau(); renderInc(); renderExp(); renderVerm(); sigInit();
 </script>
 </body>
 </html>
