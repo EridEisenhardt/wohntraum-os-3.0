@@ -170,6 +170,18 @@ select.cin{cursor:pointer}
     </div>
   </div>
 
+  <!-- Wochenrückblick -->
+  <div class="sec" id="secRueck" style="display:none">
+    <div class="sec-hd"><div class="t">Wochenrückblick <span class="cnt" id="rueckCnt"></span></div><span class="prog" id="rueckProg"></span></div>
+    <div class="pad" id="listRueck"></div>
+  </div>
+
+  <!-- Wochenvorausplanung -->
+  <div class="sec" id="secVoraus" style="display:none">
+    <div class="sec-hd"><div class="t">Wochenvorausplanung <span class="cnt" id="vorausCnt"></span></div><span class="prog" id="vorausProg"></span></div>
+    <div class="pad" id="listVoraus"></div>
+  </div>
+
   <!-- Toolbar -->
   <div class="toolbar" id="tagChips"></div>
   <div class="toolbar">
@@ -225,7 +237,7 @@ async function load(){
     .eq('jahr',CUR.jahr).eq('kw',CUR.kw).order('pos',{ascending:true}).order('created_at',{ascending:true});
   ROWS = error ? [] : (data||[]);
   if(error) toast('Fehler beim Laden: '+error.message);
-  render(); loadFragen();
+  render(); loadFragen(); loadExtra();
 }
 async function loadFragen(){
   const { data } = await sb.from('wochen_fragen').select('antwort1,antwort2,antwort3').eq('jahr',CUR.jahr).eq('kw',CUR.kw).maybeSingle();
@@ -239,6 +251,62 @@ async function saveFragen(){
   clearTimeout(fragenTimer); fragenTimer=setTimeout(()=>{ $('fragenSaved').textContent=''; }, 2000);
 }
 
+const ASANA='https://app.asana.com/1/1206683226417804/task/';
+const RUE_TASKS=[
+ ['1216296462000425','Wochenrückblick'],
+ ['1216296462000431','Zielsystem / Creator Journal'],
+ ['1216296462000437','Reflektionsfragen in OneNote eintragen: Fragen Wochenrückblick aus „Erschaffe dich neu“'],
+ ['1216296462000443','Toggle-Auswertung – über Claude – Arbeiten abgeben'],
+ ['1216296462000449','Welche Aufgaben konnte ich abgeben?'],
+ ['1216296462000455','Miro Zieleentwicklungsboard anpassen'],
+ ['1216296603209104','Papierkalender – Eintrag von Gesundheits- und Sportpunkten'],
+ ['1216296603209112','Eintrag ins Erfolgsjournal'],
+ ['1216296603209120','Update Jahresziele laufendes Jahr in Asana'],
+ ['1216296603209126','Welche Aufgabe muss ich wirklich nicht selber machen?'],
+];
+const VOR_TASKS=[
+ ['1216296603213447','Claude-Report holen über offene Aufgaben'],
+ ['1216296603213453','🚀 TOP 3 Fragen für den Sonntag'],
+ ['1216296603213461','Creator Journal – Übertragung der offenen To-do´s'],
+ ['1216296603213467','Sporttage einplanen unter der Woche → Eintrag im Kalender'],
+ ['1216296603193088','Sporttage einplanen am Wochenende → Eintrag im Kalender'],
+ ['1216296603193098','Claude Wochenziele auflisten'],
+ ['1216296635233867','Teambesprechung mit Ramona & Jürgen über Wochenziele von Eric'],
+ ['1216296635233877','Zeitfenster in den Kalender eintragen'],
+ ['1216296635233887','Welche Coachingzeitfenster nehme ich in Anspruch + Vorbereitung dafür'],
+ ['1216296462031035','Ernährungsplan mit 21 Standardgerichten in Notion anpassen'],
+ ['1216296462031045','Asana Jahresziele übernehmen für die laufende Woche'],
+];
+const EXTRA_START={jahr:2026,kw:28};
+function extraActive(){ return CUR.jahr>EXTRA_START.jahr || (CUR.jahr===EXTRA_START.jahr && CUR.kw>=EXTRA_START.kw); }
+let CHECKS={};
+async function loadExtra(){
+  const on=extraActive();
+  $('secRueck').style.display=on?'':'none'; $('secVoraus').style.display=on?'':'none';
+  if(!on){ CHECKS={}; return; }
+  const { data } = await sb.from('wochen_extra').select('checks').eq('jahr',CUR.jahr).eq('kw',CUR.kw).maybeSingle();
+  CHECKS=(data&&data.checks)||{}; renderExtra();
+}
+function ckHtml(prefix,tasks){
+  return tasks.map(t=>{const key=prefix+t[0];const done=!!CHECKS[key];
+    return `<label style="display:flex;gap:10px;align-items:flex-start;padding:7px 2px;border-bottom:1px solid var(--bord2);font-size:13px;cursor:pointer">
+      <input type="checkbox" ${done?'checked':''} style="margin-top:2px" onchange="toggleCheck('${key}',this.checked)">
+      <span style="flex:1;${done?'text-decoration:line-through;color:var(--muted)':''}">${esc(t[1])}</span>
+      <a href="${ASANA}${t[0]}" target="_blank" rel="noopener" style="color:var(--accent);text-decoration:none;font-weight:700" title="in Asana öffnen">↗</a></label>`;}).join('');
+}
+function renderExtra(){
+  if(!extraActive())return;
+  $('listRueck').innerHTML=ckHtml('r_',RUE_TASKS); $('listVoraus').innerHTML=ckHtml('v_',VOR_TASKS);
+  const rd=RUE_TASKS.filter(t=>CHECKS['r_'+t[0]]).length, vd=VOR_TASKS.filter(t=>CHECKS['v_'+t[0]]).length;
+  $('rueckCnt').textContent=RUE_TASKS.length+' Aufgaben'; $('vorausCnt').textContent=VOR_TASKS.length+' Aufgaben';
+  $('rueckProg').textContent=rd+'/'+RUE_TASKS.length+' erledigt'; $('vorausProg').textContent=vd+'/'+VOR_TASKS.length+' erledigt';
+}
+async function toggleCheck(key,val){
+  if(val)CHECKS[key]=true; else delete CHECKS[key];
+  renderExtra();
+  const { error } = await sb.from('wochen_extra').upsert({ jahr:CUR.jahr, kw:CUR.kw, checks:CHECKS, updated_at:new Date().toISOString() }, { onConflict:'jahr,kw' });
+  if(error) toast('Speichern fehlgeschlagen: '+error.message);
+}
 async function insertRow(rec){
   const u=(await sb.auth.getUser()).data.user; rec.jahr=CUR.jahr; rec.kw=CUR.kw; rec.created_by=u?u.id:null;
   const { error } = await sb.from('wochenplanung').insert(rec);
