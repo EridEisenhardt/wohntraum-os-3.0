@@ -80,7 +80,6 @@ tbody tr:hover{background:#fafbfd}
       <div class="fld"><label>Anzahl Gebäude</label><input type="number" id="f_geb" min="0" step="1" placeholder="z. B. 15"></div>
       <div class="fld"><label>Anzahl Einheiten in der Vermietung</label><input type="number" id="f_einh" min="0" step="1" placeholder="z. B. 120"></div>
       <div class="fld"><label>Jahressollmiete (€)</label><input type="number" id="f_miete" min="0" step="0.01" placeholder="z. B. 980000"></div>
-      <div class="fld"><label>Summe aller Kredite (€)</label><input type="number" id="f_kredit" min="0" step="0.01" placeholder="z. B. 14500000"></div>
       <div class="fld"><label>Gesamtverbindlichkeit (€) · autom. am 5.</label><input type="number" id="f_gv" min="0" step="0.01" placeholder="autom. aus Darlehen (Vormonat)"></div>
       <div class="fld"><label>Vermietungen – Einzüge</label><input type="number" id="f_ein" min="0" step="1" placeholder="Anzahl Einzüge"></div>
       <div class="fld"><label>Vermietungen – Auszüge</label><input type="number" id="f_aus" min="0" step="1" placeholder="Anzahl Auszüge"></div>
@@ -128,10 +127,10 @@ async function prefillForm(){
   if(!j||!m) return;
   const { data } = await sb.from('controlling_statistik').select('*').eq('jahr',j).eq('monat',m).maybeSingle();
   const set=(id,val)=>document.getElementById(id).value=(val==null?'':val);
-  set('f_geb',data?.anzahl_gebaeude); set('f_einh',data?.anzahl_einheiten); set('f_miete',data?.jahressollmiete); set('f_kredit',data?.summe_kredite);
+  set('f_geb',data?.anzahl_gebaeude); set('f_einh',data?.anzahl_einheiten); set('f_miete',data?.jahressollmiete);
   set('f_gv',data?.gesamtverbindlichkeit); set('f_ein',data?.einzuege); set('f_aus',data?.auszuege); set('f_notiz',data?.notiz);
 }
-function clearForm(){ ['f_geb','f_einh','f_miete','f_kredit','f_gv','f_ein','f_aus','f_notiz'].forEach(id=>document.getElementById(id).value=''); document.getElementById('msg').textContent=''; }
+function clearForm(){ ['f_geb','f_einh','f_miete','f_gv','f_ein','f_aus','f_notiz'].forEach(id=>document.getElementById(id).value=''); document.getElementById('msg').textContent=''; }
 function v(id){ const x=document.getElementById(id).value; return x===''?null:x; }
 
 async function save(){
@@ -141,7 +140,6 @@ async function save(){
     anzahl_gebaeude:v('f_geb')==null?null:parseInt(v('f_geb'),10),
     anzahl_einheiten:v('f_einh')==null?null:parseInt(v('f_einh'),10),
     jahressollmiete:v('f_miete')==null?null:parseFloat(v('f_miete')),
-    summe_kredite:v('f_kredit')==null?null:parseFloat(v('f_kredit')),
     gesamtverbindlichkeit:v('f_gv')==null?null:parseFloat(v('f_gv')),
     einzuege:v('f_ein')==null?null:parseInt(v('f_ein'),10),
     auszuege:v('f_aus')==null?null:parseInt(v('f_aus'),10),
@@ -179,7 +177,6 @@ async function load(){
       ['Anzahl Gebäude',num(c.anzahl_gebaeude),delta(c.anzahl_gebaeude,p.anzahl_gebaeude,false)],
       ['Einheiten in Vermietung',num(c.anzahl_einheiten),delta(c.anzahl_einheiten,p.anzahl_einheiten,false)],
       ['Jahressollmiete',eur(c.jahressollmiete),delta(c.jahressollmiete,p.jahressollmiete,true)],
-      ['Summe aller Kredite',eur(c.summe_kredite),delta(c.summe_kredite,p.summe_kredite,true)],
       ['Gesamtverbindlichkeit',eur(c.gesamtverbindlichkeit),delta(c.gesamtverbindlichkeit,p.gesamtverbindlichkeit,true)],
       ['Vermietungen · Einzüge',num(c.einzuege),delta(c.einzuege,p.einzuege,false)],
       ['Vermietungen · Auszüge',num(c.auszuege),delta(c.auszuege,p.auszuege,false)]
@@ -194,14 +191,13 @@ async function load(){
   asc.forEach((r,i)=>{ prevMap[r.jahr+'-'+r.monat]= i>0?asc[i-1]:{}; });
   w.innerHTML=`<table><thead><tr>
     <th>Monat</th><th>Gebäude</th><th>Einheiten</th>
-    <th>Jahressollmiete</th><th>Summe Kredite</th><th>Gesamtverbindl.</th><th>Δ</th>
+    <th>Jahressollmiete</th><th>Gesamtverbindl.</th><th>Δ</th>
     <th>Einzüge</th><th>Auszüge</th><th></th></tr></thead><tbody>`
     + rows.map(r=>{ const p=prevMap[r.jahr+'-'+r.monat]||{}; return `<tr>
       <td>${MN[r.monat]} ${r.jahr}</td>
       <td>${num(r.anzahl_gebaeude)}</td>
       <td>${num(r.anzahl_einheiten)}</td>
       <td>${eur(r.jahressollmiete)}</td>
-      <td>${eur(r.summe_kredite)}</td>
       <td>${eur(r.gesamtverbindlichkeit)}</td><td>${delta(r.gesamtverbindlichkeit,p.gesamtverbindlichkeit,true)}</td>
       <td>${num(r.einzuege)}</td><td>${num(r.auszuege)}</td>
       <td class="delcol"><a class="edit" onclick="editRow(${r.jahr},${r.monat})">bearbeiten</a> · <a onclick="del(${r.jahr},${r.monat})">löschen</a></td></tr>`; }).join('')
@@ -229,7 +225,7 @@ function drawCharts(rowsDesc){
   const asc=[...rowsDesc].sort((a,b)=> a.jahr-b.jahr || a.monat-b.monat);
   const labels=asc.map(r=>MN[r.monat]+' '+String(r.jahr).slice(2));
   const col=(l,k,c)=>({label:l,data:asc.map(r=>r[k]),borderColor:c,backgroundColor:c,tension:.25,pointRadius:3,borderWidth:2,spanGaps:true});
-  mkChart('chFin','line',labels,[col('Jahressollmiete','jahressollmiete','#1f7a4d'),col('Summe aller Kredite','summe_kredite','#185fa5'),col('Gesamtverbindlichkeit','gesamtverbindlichkeit','#c0392b')],true);
+  mkChart('chFin','line',labels,[col('Jahressollmiete','jahressollmiete','#1f7a4d'),col('Gesamtverbindlichkeit','gesamtverbindlichkeit','#c0392b')],true);
   mkChart('chBestand','line',labels,[col('Anzahl Gebäude','anzahl_gebaeude','#c8741f'),col('Einheiten in Vermietung','anzahl_einheiten','#185fa5')],false);
   mkChart('chVerm','bar',labels,[{label:'Einzüge',data:asc.map(r=>r.einzuege),backgroundColor:'#1f7a4d',borderRadius:4},{label:'Auszüge',data:asc.map(r=>r.auszuege),backgroundColor:'#c0392b',borderRadius:4}],false);
 }
