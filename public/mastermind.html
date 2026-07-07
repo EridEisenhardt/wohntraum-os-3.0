@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="de"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Prozesse · Mastermind – Macher OS</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+:root{--bg:#f6f7f9;--surf:#fff;--surf2:#f1f3f6;--line:#e6e8ec;--bord2:#eef0f3;--text:#1c2024;--muted:#6b7280;--dim:#4b5563;--accent:#185fa5;--green:#1f7a4d;--red:#c0392b;--r:8px;--rl:12px;}
+*{box-sizing:border-box;margin:0;padding:0}body{background:var(--bg);color:var(--text);font-family:'Inter',system-ui,sans-serif;font-size:14px}
+.hdr{background:var(--surf);border-bottom:1px solid var(--line);padding:16px 24px;display:flex;align-items:center;gap:12px;position:sticky;top:0;z-index:10}
+.logo{background:#1a1a2e;color:#fff;font-weight:700;font-size:11px;padding:5px 9px;border-radius:4px}.hdr-title{font-size:16px;font-weight:600}.crumb{font-size:11px;color:var(--muted)}
+.main{max-width:1000px;margin:0 auto;padding:20px 24px 60px}
+.card{background:var(--surf);border:1px solid var(--line);border-radius:var(--rl);margin-bottom:16px;overflow:hidden}
+.card-hd{padding:12px 16px;border-bottom:1px solid var(--line);font-size:13px;font-weight:600;display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap}
+.form{padding:14px 16px;display:grid;grid-template-columns:150px 1fr 1fr;gap:12px}
+.fld{display:flex;flex-direction:column;gap:4px}.fld.wide{grid-column:1/-1}
+.fld label{font-size:11px;color:var(--muted);font-weight:600}
+.fld input,.fld textarea{font:inherit;font-size:13px;padding:8px 10px;border:1px solid var(--line);border-radius:var(--r);background:var(--surf);resize:vertical}
+.fld input:focus,.fld textarea:focus{outline:none;border-color:var(--accent)}
+.btn{font-size:13px;font-weight:600;padding:9px 15px;border-radius:var(--r);border:1px solid var(--accent);background:var(--accent);color:#fff;cursor:pointer}.btn:hover{opacity:.92}.btn.sec{background:var(--surf2);color:var(--text);border-color:var(--line)}
+.foot-row{padding:0 16px 14px;display:flex;gap:10px;align-items:center}
+.entry{border:1px solid var(--line);border-radius:var(--rl);background:var(--surf);margin-bottom:12px;padding:13px 15px}
+.entry.done{background:#f4f7f5}
+.entry-hd{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:6px}
+.entry .dt{font-weight:700;font-size:13px}
+.entry .th{font-weight:600;flex:1;min-width:120px}
+.entry input.inl,.entry textarea.inl{width:100%;border:1px solid transparent;background:transparent;font:inherit;border-radius:5px;padding:4px 6px;resize:vertical}
+.entry input.inl:hover,.entry textarea.inl:hover{border-color:var(--line)}.entry input.inl:focus,.entry textarea.inl:focus{outline:none;border-color:var(--accent);background:var(--surf2)}
+.lbl{font-size:10px;text-transform:uppercase;color:var(--muted);font-weight:700;margin:6px 0 2px}
+.pill{font-size:10px;font-weight:700;padding:3px 9px;border-radius:12px;cursor:pointer;user-select:none}.p-offen{background:#fdeeee;color:var(--red)}.p-erledigt{background:#e8f6ee;color:var(--green)}
+.abtn{font-size:12px;padding:3px 8px;border-radius:5px;border:1px solid var(--line);background:transparent;color:var(--muted);cursor:pointer}.abtn:hover{color:var(--red);border-color:var(--red)}
+.empty{text-align:center;padding:26px;color:var(--muted)}
+.toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:var(--surf2);border:1px solid var(--line);border-radius:var(--r);padding:10px 20px;font-size:13px;opacity:0;transition:.3s;pointer-events:none;z-index:99}.toast.show{opacity:1}
+@media(max-width:720px){.form{grid-template-columns:1fr}}
+</style></head><body>
+<div class="hdr"><div class="logo">MACHER OS</div><div>
+  <div class="crumb">Prozesse › Mastermind</div>
+  <div class="hdr-title">Mastermind – Notizen &amp; Termine</div></div></div>
+<div class="main">
+  <div class="card">
+    <div class="card-hd">Neuen Eintrag erfassen</div>
+    <div class="form">
+      <div class="fld"><label>Datum</label><input type="date" id="f_datum"></div>
+      <div class="fld"><label>Thema / Termin</label><input id="f_thema" placeholder="z. B. Mastermind-Call #12"></div>
+      <div class="fld"><label>Teilnehmer</label><input id="f_teiln" placeholder="Namen"></div>
+      <div class="fld wide"><label>Notizen / Erkenntnisse</label><textarea id="f_notiz" rows="3" placeholder="Wichtigste Punkte, Impulse, Entscheidungen …"></textarea></div>
+      <div class="fld wide"><label>To-dos</label><textarea id="f_todos" rows="2" placeholder="Aufgaben, die daraus folgen …"></textarea></div>
+    </div>
+    <div class="foot-row"><button class="btn" onclick="save()">+ Eintrag speichern</button><button class="btn sec" onclick="clearForm()">Leeren</button><span id="msg" style="font-size:12px;color:var(--green)"></span></div>
+  </div>
+
+  <div class="card-hd" style="border:none;padding:4px 2px 8px"><span>Einträge</span><span class="crumb" id="cnt"></span></div>
+  <div id="list"><div class="empty" id="loading">Lädt…</div></div>
+</div><div class="toast" id="toast"></div>
+<script>
+const sb=window.supabase.createClient('https://jqzxctfqvcwbctpjksvg.supabase.co','eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpxenhjdGZxdmN3YmN0cGprc3ZnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODIxMzA0MzIsImV4cCI6MjA5NzcwNjQzMn0.RKIbZxJdusKWWPjBJqlxZ8e1m8So02UslOg55YRsn3o');
+const $=id=>document.getElementById(id);const esc=s=>(s==null?'':String(s)).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;');
+function toast(m){const t=$('toast');t.textContent=m;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),1700);}
+function fmtD(d){if(!d)return '—';const p=String(d).split('-');return p.length===3?p[2]+'.'+p[1]+'.'+p[0]:d;}
+let ROWS=[];
+function clearForm(){['f_thema','f_teiln','f_notiz','f_todos'].forEach(id=>$(id).value='');$('f_datum').value=new Date().toISOString().slice(0,10);$('msg').textContent='';}
+async function load(){
+  const{data,error}=await sb.from('mastermind_eintraege').select('*').order('datum',{ascending:false,nullsFirst:false}).order('created_at',{ascending:false});
+  if(error){$('list').innerHTML='<div class="empty">Fehler: '+esc(error.message)+'</div>';return;}
+  ROWS=data||[];render();
+}
+async function save(){
+  const row={datum:$('f_datum').value||null,thema:$('f_thema').value.trim()||null,teilnehmer:$('f_teiln').value.trim()||null,notizen:$('f_notiz').value.trim()||null,todos:$('f_todos').value.trim()||null,status:'offen'};
+  if(!row.thema&&!row.notizen){toast('Bitte Thema oder Notiz eingeben');return;}
+  const{error}=await sb.from('mastermind_eintraege').insert(row);
+  if(error){$('msg').style.color='var(--red)';$('msg').textContent='Fehler: '+error.message;return;}
+  $('msg').style.color='var(--green)';$('msg').textContent='Gespeichert ✓';clearForm();load();
+}
+async function upd(id,field,val){const{error}=await sb.from('mastermind_eintraege').update({[field]:(val===''?null:val),updated_at:new Date().toISOString()}).eq('id',id);if(error){toast('Fehler: '+error.message);return;}const r=ROWS.find(x=>x.id===id);if(r)r[field]=val;}
+async function toggleStatus(id){const r=ROWS.find(x=>x.id===id);const s=r.status==='erledigt'?'offen':'erledigt';await sb.from('mastermind_eintraege').update({status:s}).eq('id',id);r.status=s;render();}
+async function del(id){if(!confirm('Eintrag löschen?'))return;await sb.from('mastermind_eintraege').delete().eq('id',id);ROWS=ROWS.filter(r=>r.id!==id);render();}
+function render(){
+  $('cnt').textContent=ROWS.length+' Einträge';
+  if(!ROWS.length){$('list').innerHTML='<div class="empty">Noch keine Einträge — oben erfassen.</div>';return;}
+  $('list').innerHTML=ROWS.map(r=>`<div class="entry ${r.status==='erledigt'?'done':''}">
+    <div class="entry-hd">
+      <input class="inl dt" type="date" style="width:150px;font-weight:700" value="${r.datum||''}" onchange="upd('${r.id}','datum',this.value)">
+      <input class="inl th" value="${esc(r.thema)}" placeholder="Thema / Termin…" onchange="upd('${r.id}','thema',this.value)">
+      <input class="inl" style="max-width:160px" value="${esc(r.teilnehmer)}" placeholder="Teilnehmer" onchange="upd('${r.id}','teilnehmer',this.value)">
+      <span class="pill ${r.status==='erledigt'?'p-erledigt':'p-offen'}" onclick="toggleStatus('${r.id}')">${r.status==='erledigt'?'erledigt':'offen'}</span>
+      <button class="abtn" onclick="del('${r.id}')">✕</button>
+    </div>
+    <div class="lbl">Notizen / Erkenntnisse</div>
+    <textarea class="inl" rows="2" placeholder="Notizen…" onchange="upd('${r.id}','notizen',this.value)">${esc(r.notizen)}</textarea>
+    <div class="lbl">To-dos</div>
+    <textarea class="inl" rows="2" placeholder="To-dos…" onchange="upd('${r.id}','todos',this.value)">${esc(r.todos)}</textarea>
+  </div>`).join('');
+}
+(async()=>{const{data:{session}}=await sb.auth.getSession();if(!session){$('main').innerHTML='<div class="empty" style="padding:60px">Bitte zuerst im OS einloggen.</div>';return;}clearForm();load();})();
+</script></body></html>

@@ -109,6 +109,14 @@ export default function Sidebar({ user, demo, onLogout }) {
       </Link>
 
       <div className="nav-group">
+        <i className="ti ti-bulb lead" /> Prozesse &amp; Mastermind
+        <i className="ti ti-chevron-down chev" />
+      </div>
+      <Link href="/prozesse-mastermind" className={subCls(path.startsWith('/prozesse-mastermind'))}>
+        <i className="ti ti-users-group" /> Mastermind
+      </Link>
+
+      <div className="nav-group">
         <i className="ti ti-cash lead" /> Finance
         <i className="ti ti-chevron-down chev" />
       </div>
