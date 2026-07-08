@@ -3,8 +3,9 @@ import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { useState, useEffect } from 'react'
 
-const NAV = [
+export const NAV = [
   { type: 'link', href: '/', icon: 'ti-layout-dashboard', label: 'Cockpit', exact: true },
+  { type: 'link', href: '/tools', icon: 'ti-layout-grid', label: 'Alle Tools' },
   { type: 'link', href: '/gf-dashboard', icon: 'ti-chart-pie', label: 'GF-Dashboard' },
   { type: 'link', href: '/portfolio', icon: 'ti-building-community', label: 'Portfolio' },
   { type: 'group', key: 'strategie', icon: 'ti-chess', label: 'Strategie', items: [
