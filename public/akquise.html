@@ -113,7 +113,8 @@ td input:focus,td select:focus{border-color:var(--accent);background:var(--surf)
         <div class="fld"><label>PLZ</label><input id="f_plz"></div>
         <div class="fld"><label>Ort</label><input id="f_ort"></div>
         <div class="fld"><label>Angeboten von</label><input id="f_von" placeholder="Makler / Eigentümer"></div>
-        <div class="fld"><label>Quelle</label><input id="f_quelle" placeholder="z. B. Immoscout, Netzwerk"></div>
+        <div class="fld"><label>Lead-Eingang</label><input id="f_eingang" type="date"></div>
+        <div class="fld"><label>Quelle · wie kam der Lead?</label><select id="f_quelle"></select></div>
         <div class="fld"><label>Kaufpreis (€)</label><input id="f_kp" type="number" step="1000"></div>
         <div class="fld"><label>Miete IST p. a. (€)</label><input id="f_miete" type="number" step="100"></div>
         <div class="fld"><label>Einheiten</label><input id="f_einh" type="number" min="0" step="1"></div>
@@ -125,6 +126,7 @@ td input:focus,td select:focus{border-color:var(--accent);background:var(--surf)
       </div>
       <div class="foot-row">
         <button class="btn" onclick="save()">+ Objekt anlegen</button>
+        <button class="btn sec" onclick="addQuelle()">+ Quelle anlegen</button>
         <span id="msg" style="font-size:12px;color:var(--green)"></span>
       </div>
     </div>
@@ -192,7 +194,8 @@ const PORTALE=['','ImmobilienScout24','Immowelt','Immonet','eBay Kleinanzeigen',
 const linkOut=(u,t)=>u?`<a href="${esc(u)}" target="_blank" rel="noopener" class="lnk" onclick="event.stopPropagation()">${t||'Portal ↗'}</a>`:'—';
 const FLABEL={bezeichnung:'Bezeichnung',strasse:'Straße',plz:'PLZ',ort:'Ort',angeboten_von:'Angeboten von',quelle:'Quelle',eingang:'Eingang',stufe:'Stufe',einheiten:'Einheiten',wohnflaeche:'Wohnfläche',baujahr:'Baujahr',kaufpreis:'Kaufpreis',miete_ist:'Miete IST p. a.',miete_potenzial:'Miete Potenzial p. a.',grunderwerb_pct:'Grunderwerbsteuer %',notar_pct:'Notar & Grundbuch %',makler_pct:'Makler %',sanierung:'Sanierungskosten',angebot_eigen:'Eigenes Angebot',absage_grund:'Absagegrund',verantwortlich:'Verantwortlich',exposé_link:'Exposé-Link',portal:'Portal',portal_link:'Portal-Link'};
 
-let ROWS=[], NOTES=[], HIST=[], FSTAGE='', VIEW='liste', CUR=null, DRAG=null;
+let ROWS=[], NOTES=[], HIST=[], QUELLEN=[], FSTAGE='', FQUELLE='', VIEW='liste', CUR=null, DRAG=null;
+const heute=()=>new Date().toISOString().slice(0,10);
 
 const n0=v=>(v==null||v===''||isNaN(Number(v)))?null:Number(v);
 function kz(r){
@@ -214,14 +217,17 @@ const noteCount=id=>NOTES.filter(n=>n.objekt_id===id).length;
 const rowCls=r=>r.stufe==='X · Abgesagt'?'abgesagt':(/^(10|11)/.test(r.stufe||'')?'gekauft':'');
 
 async function load(){
-  const[o,n,h]=await Promise.all([
+  const[o,n,h,q]=await Promise.all([
     sb.from('akquise_objekte').select('*').order('nummer',{ascending:false}),
     sb.from('akquise_notizen').select('*').order('created_at',{ascending:false}),
-    sb.from('akquise_historie').select('*').order('created_at',{ascending:false})
+    sb.from('akquise_historie').select('*').order('created_at',{ascending:false}),
+    sb.from('akquise_quellen').select('name').order('pos').order('name')
   ]);
-  ROWS=o.data||[];NOTES=n.data||[];HIST=h.data||[];
+  ROWS=o.data||[];NOTES=n.data||[];HIST=h.data||[];QUELLEN=(q.data||[]).map(x=>x.name);
   $('f_ver').innerHTML=PERS.map(p=>`<option value="${esc(p)}">${p||'—'}</option>`).join('');
   $('f_portal').innerHTML=PORTALE.map(p=>`<option value="${esc(p)}">${p||'—'}</option>`).join('');
+  $('f_quelle').innerHTML='<option value="">—</option>'+QUELLEN.map(x=>`<option>${esc(x)}</option>`).join('');
+  if(!$('f_eingang').value)$('f_eingang').value=heute();
   render();
 }
 
@@ -248,7 +254,7 @@ function setView(v){VIEW=v;$('vListe').classList.toggle('on',v==='liste');$('vBo
 function tableView(list){
   return '<div class="tblwrap"><table><thead><tr><th>Nr</th><th>Bezeichnung</th><th>Ort</th><th>Stufe</th>'
     +'<th class="num">Kaufpreis</th><th class="num">Miete p.a.</th><th class="num">Faktor</th><th class="num">Rendite</th>'
-    +'<th class="num">Preis/m²</th><th class="num">Gesamtinvest</th><th>Angeboten von</th><th>Portal</th><th>Verantw.</th><th>Notizen</th><th>Eingang</th><th></th></tr></thead><tbody>'
+    +'<th class="num">Preis/m²</th><th class="num">Gesamtinvest</th><th>Eingang</th><th>Quelle</th><th>Angeboten von</th><th>Portal</th><th>Verantw.</th><th>Notizen</th><th></th></tr></thead><tbody>'
     +list.map(r=>{const k=kz(r);return `<tr class="${rowCls(r)}">
       <td class="nrcell">${r.nummer}</td>
       <td><span class="lnk" onclick="openOP('${r.id}')">${esc(r.bezeichnung||'(ohne Bezeichnung)')}</span></td>
@@ -260,11 +266,12 @@ function tableView(list){
       <td class="num">${k.rendite?pct(k.rendite):'—'}</td>
       <td class="num">${k.preisM2?eur(k.preisM2):'—'}</td>
       <td class="num">${eur(k.gesamt)}</td>
+      <td><input type="date" value="${r.eingang||''}" onchange="upd('${r.id}','eingang',this.value)"></td>
+      <td><select onchange="upd('${r.id}','quelle',this.value)"><option value="">—</option>${QUELLEN.map(x=>`<option ${x===r.quelle?'selected':''}>${esc(x)}</option>`).join('')}${(r.quelle&&!QUELLEN.includes(r.quelle))?`<option selected>${esc(r.quelle)}</option>`:''}</select></td>
       <td>${esc(r.angeboten_von)||'—'}</td>
       <td>${linkOut(r.portal_link, r.portal?esc(r.portal)+' ↗':'Inserat ↗')}</td>
       <td>${esc(r.verantwortlich)||'—'}</td>
       <td><span class="lnk" onclick="openOP('${r.id}')">${noteCount(r.id)?noteCount(r.id)+' 📝':'+ Notiz'}</span></td>
-      <td>${fmtD(r.eingang)}</td>
       <td><button class="abtn" onclick="del('${r.id}')">✕</button></td></tr>`;}).join('')
     +'</tbody></table></div>';
 }
@@ -275,6 +282,7 @@ function boardView(){
       return `<div class="kbcard" draggable="true" ondragstart="dragStart(event,'${r.id}')">
         <div class="kbt" onclick="openOP('${r.id}')"><span class="nrbadge">#${r.nummer}</span> ${esc(r.bezeichnung||'(ohne Bezeichnung)')}</div>
         <div class="kbm">${esc(r.ort)||'—'}${r.einheiten?' · '+r.einheiten+' Einh.':''}${r.wohnflaeche?' · '+num(r.wohnflaeche)+' m²':''}</div>
+        <div class="kbm">Eingang ${fmtD(r.eingang)}${r.quelle?' · '+esc(r.quelle):''}</div>
         <div class="kbv">${eur(r.kaufpreis)}</div>
         ${k.faktor?`<span class="kbtag ${k.faktor<=16?'good':(k.faktor>=22?'bad':'')}">Faktor ${num(k.faktor,1)}×</span>`:''}
         ${k.rendite?`<span class="kbtag">${pct(k.rendite)}</span>`:''}
@@ -317,7 +325,8 @@ async function upd(id,field,val){
 }
 async function save(){
   const row={bezeichnung:$('f_bez').value.trim()||null,strasse:$('f_str').value.trim()||null,plz:$('f_plz').value.trim()||null,
-    ort:$('f_ort').value.trim()||null,angeboten_von:$('f_von').value.trim()||null,quelle:$('f_quelle').value.trim()||null,
+    ort:$('f_ort').value.trim()||null,angeboten_von:$('f_von').value.trim()||null,
+    quelle:$('f_quelle').value||null,eingang:$('f_eingang').value||heute(),
     kaufpreis:n0($('f_kp').value),miete_ist:n0($('f_miete').value),einheiten:n0($('f_einh').value),
     wohnflaeche:n0($('f_wfl').value),baujahr:n0($('f_bj').value),verantwortlich:$('f_ver').value||null,
     portal:$('f_portal').value||null,portal_link:$('f_plink').value.trim()||null,stufe:STAGES[0]};
@@ -325,9 +334,16 @@ async function save(){
   const{data,error}=await sb.from('akquise_objekte').insert(row).select();
   if(error){$('msg').style.color='var(--red)';$('msg').textContent='Fehler: '+error.message;return;}
   if(data&&data[0])await sb.from('akquise_historie').insert({objekt_id:data[0].id,feld:'Objekt',alt:null,neu:'angelegt'});
-  ['f_bez','f_str','f_plz','f_ort','f_von','f_quelle','f_kp','f_miete','f_einh','f_wfl','f_bj','f_plink'].forEach(i=>$(i).value='');
+  ['f_bez','f_str','f_plz','f_ort','f_von','f_kp','f_miete','f_einh','f_wfl','f_bj','f_plink'].forEach(i=>$(i).value='');
+  $('f_eingang').value=heute();
   $('msg').style.color='var(--green)';$('msg').textContent='Objekt angelegt ✓';
   load();
+}
+async function addQuelle(){
+  const n=(prompt('Neue Leadquelle:')||'').trim();if(!n)return;
+  const{error}=await sb.from('akquise_quellen').insert({name:n,pos:99});
+  if(error){toast(error.message);return;}
+  await load();$('f_quelle').value=n;toast('Quelle angelegt ✓');
 }
 async function del(id){
   const r=ROWS.find(x=>x.id===id);
@@ -354,7 +370,7 @@ function renderOP(){
   $('opInfo').innerHTML=
     F('Bezeichnung',opTxt(r,'bezeichnung'))+F('Stufe',opSel(r,'stufe',STAGES,false))+
     F('Straße',opTxt(r,'strasse'))+F('PLZ / Ort',opTxt(r,'plz')+opTxt(r,'ort'))+
-    F('Angeboten von',opTxt(r,'angeboten_von'))+F('Quelle',opTxt(r,'quelle'))+
+    F('Angeboten von',opTxt(r,'angeboten_von'))+F('Quelle · wie kam der Lead?',opSel(r,'quelle',QUELLEN,true))+
     F('Eingang',opTxt(r,'eingang','date'))+F('Verantwortlich',opSel(r,'verantwortlich',PERS.filter(Boolean),true))+
     F('Kaufpreis (€)',opTxt(r,'kaufpreis','number','1000'))+F('Eigenes Angebot (€)',opTxt(r,'angebot_eigen','number','1000'))+
     F('Miete IST p. a. (€)',opTxt(r,'miete_ist','number','100'))+F('Miete Potenzial p. a. (€)',opTxt(r,'miete_potenzial','number','100'))+
@@ -470,7 +486,7 @@ function exportCSV(){
 }
 
 window.setView=setView;window.save=save;window.del=del;window.upd=upd;window.openOP=openOP;window.closeOP=closeOP;
-window.addNote=addNote;window.exportCSV=exportCSV;window.geocodeAlle=geocodeAlle;window.dragStart=dragStart;window.allowDrop=allowDrop;window.drop=drop;
+window.addNote=addNote;window.exportCSV=exportCSV;window.geocodeAlle=geocodeAlle;window.addQuelle=addQuelle;window.dragStart=dragStart;window.allowDrop=allowDrop;window.drop=drop;
 
 (async()=>{
   const{data:{session}}=await sb.auth.getSession();
