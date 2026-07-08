@@ -92,7 +92,7 @@ ol{margin:0 0 0 18px}ol li{margin-bottom:7px}
     </div>
     <div class="card-bd">
       <div class="chartwrap"><canvas id="chart"></canvas></div>
-      <p class="muted" style="margin-top:10px">Linie = Benchmark Ø Wochenlohn 84,07 € (Basis 2026). Werte werden je Kalenderwoche gespeichert und hier fortgeschrieben.</p>
+      <p class="muted" style="margin-top:10px">Achse ab KW 1 (1. Januar) bis zur laufenden Woche — Lücken zeigen nicht erfasste Wochen. Hellblaue Balken = Teilwochen. Linie = Benchmark Ø Wochenlohn 84,07 € (Basis 2026).</p>
     </div>
   </div>
 
@@ -200,25 +200,49 @@ async function del(jahr,kw){ if(!confirm(`KW ${kw}/${jahr} löschen?`))return; a
 let CHART=null, MODE='woche', DATA=[];
 function setMode(m){ MODE=m; document.getElementById('tgWoche').classList.toggle('off',m!=='woche'); document.getElementById('tgMonat').classList.toggle('off',m!=='monat'); draw(); }
 
+// Kalenderwochen eines Jahres (52 oder 53)
+function kwImJahr(y){ const d=new Date(Date.UTC(y,11,28)); return isoWeek(new Date(d.getUTCFullYear(),d.getUTCMonth(),d.getUTCDate())).kw; }
+// Lückenlose Wochenachse ab KW1 des ersten Datenjahres bis zur aktuellen Woche
+function wochenAchse(){
+  const jahre=DATA.map(r=>r.jahr);
+  const von=jahre.length?Math.min.apply(null,jahre):CW.jahr;
+  const out=[];
+  for(let y=von;y<=CW.jahr;y++){
+    const max=(y===CW.jahr)?CW.kw:kwImJahr(y);
+    for(let w=1;w<=max;w++) out.push({jahr:y,kw:w});
+  }
+  return out;
+}
 function draw(){
   const ctx=document.getElementById('chart');
   if(CHART){ CHART.destroy(); CHART=null; }
   if(!DATA.length){ return; }
   const asc=[...DATA].sort((a,b)=> a.jahr-b.jahr || a.kw-b.kw);
+  const byKw={}; asc.forEach(r=>{ byKw[r.jahr+'-'+r.kw]=r; });
   if(MODE==='woche'){
-    const labels=asc.map(r=>`KW${r.kw}/${String(r.jahr).slice(2)}`);
-    const vals=asc.map(r=>r.wochenverdienst==null?null:Number(r.wochenverdienst));
+    const achse=wochenAchse();
+    const labels=achse.map(a=>`KW${a.kw}/${String(a.jahr).slice(2)}`);
+    const vals=achse.map(a=>{ const r=byKw[a.jahr+'-'+a.kw]; return (r&&r.wochenverdienst!=null)?Number(r.wochenverdienst):null; });
+    const farben=achse.map(a=>{ const r=byKw[a.jahr+'-'+a.kw]; return (r&&r.teilwoche)?'#7aa4cc':'#185fa5'; });
     CHART=new Chart(ctx,{type:'bar',data:{labels,datasets:[
-      {label:'Wochenverdienst (€)',data:vals,backgroundColor:'#185fa5',borderRadius:4,order:2},
-      {label:'Benchmark 84,07 €',data:asc.map(()=>BENCH),type:'line',borderColor:'#c0392b',borderWidth:2,borderDash:[6,4],pointRadius:0,order:1}
+      {label:'Wochenverdienst (€)',data:vals,backgroundColor:farben,borderRadius:4,order:2},
+      {label:'Benchmark 84,07 €',data:achse.map(()=>BENCH),type:'line',borderColor:'#c0392b',borderWidth:2,borderDash:[6,4],pointRadius:0,order:1}
     ]},options:chartOpts('€ / Woche')});
   } else {
+    const jahre=DATA.map(r=>r.jahr); const von=Math.min.apply(null,jahre);
     const mmap={};
-    asc.forEach(r=>{ if(r.wochenverdienst==null)return; const mo=kwMonday(r.jahr,r.kw); const key=mo.getUTCFullYear()+'-'+mo.getUTCMonth(); mmap[key]=mmap[key]||{y:mo.getUTCFullYear(),m:mo.getUTCMonth(),sum:0}; mmap[key].sum+=Number(r.wochenverdienst); });
+    for(let y=von;y<=CW.jahr;y++){
+      const bis=(y===CW.jahr)?new Date().getMonth():11;
+      for(let m=0;m<=bis;m++) mmap[y+'-'+m]={y,m,sum:0,hit:false};
+    }
+    asc.forEach(r=>{ if(r.wochenverdienst==null)return; const mo=kwMonday(r.jahr,r.kw);
+      const key=mo.getUTCFullYear()+'-'+mo.getUTCMonth();
+      if(!mmap[key]) mmap[key]={y:mo.getUTCFullYear(),m:mo.getUTCMonth(),sum:0,hit:false};
+      mmap[key].sum+=Number(r.wochenverdienst); mmap[key].hit=true; });
     const arr=Object.values(mmap).sort((a,b)=> a.y-b.y || a.m-b.m);
     const labels=arr.map(o=>`${MN[o.m]} ${String(o.y).slice(2)}`);
     CHART=new Chart(ctx,{type:'bar',data:{labels,datasets:[
-      {label:'Monatsverdienst kumuliert (€)',data:arr.map(o=>Math.round(o.sum*100)/100),backgroundColor:'#1f7a4d',borderRadius:4}
+      {label:'Monatsverdienst kumuliert (€)',data:arr.map(o=>o.hit?Math.round(o.sum*100)/100:null),backgroundColor:'#1f7a4d',borderRadius:4}
     ]},options:chartOpts('€ / Monat')});
   }
 }
@@ -250,10 +274,16 @@ function kpis(){
   let monthSum=0,monthHit=false;
   asc.forEach(r=>{ if(r.wochenverdienst==null)return; const mo=kwMonday(r.jahr,r.kw); if(mo.getUTCMonth()===moNow&&mo.getUTCFullYear()===yNow){monthSum+=Number(r.wochenverdienst);monthHit=true;} });
   const devTxt= dev==null?'<span class="flat">–</span>':(dev>=0?`<span class="up">▲ ${dev.toFixed(1)} %</span>`:`<span class="down">▼ ${Math.abs(dev).toFixed(1)} %</span>`);
+  // Jahr seit 1.1.
+  const ytd=asc.filter(r=>r.jahr===CW.jahr&&r.wochenverdienst!=null);
+  const ytdSum=ytd.reduce((s,r)=>s+Number(r.wochenverdienst),0);
+  const ytdAvg=CW.kw?ytdSum/CW.kw:null;
   k.innerHTML=[
     ['Aktuelle Woche',`KW ${cur.kw}/${cur.jahr}`,eur(cur.wochenverdienst)],
     ['Δ zum Benchmark',devTxt,'Ø 84,07 € / Woche'],
     ['Ø letzte 4 Wochen',eur(avg4),`${last4.length} Wochen`],
+    [`Seit 1.1.${CW.jahr}`,eur(ytdSum),`${ytd.length} von ${CW.kw} Wochen erfasst`],
+    ['Ø pro Woche seit 1.1.',eur(ytdAvg),`über ${CW.kw} Kalenderwochen`],
     [`${MN[moNow]} ${yNow} kumuliert`,monthHit?eur(monthSum):'–','aktueller Monat'],
     ['Bestwoche',best?eur(best.wochenverdienst):'–',best?`KW ${best.kw}/${best.jahr}`:'']
   ].map(a=>`<div class="kpi"><div class="l">${a[0]}</div><div class="v" style="font-size:${String(a[1]).includes('span')||String(a[1]).startsWith('KW')?'18px':'22px'}">${a[1]}</div><div class="d">${a[2]}</div></div>`).join('');
