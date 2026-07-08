@@ -47,6 +47,8 @@ td input:focus,td select:focus{border-color:var(--accent);background:var(--surf)
 .num{text-align:right;font-variant-numeric:tabular-nums}
 .nrcell{color:var(--muted);font-weight:700;text-align:right;font-variant-numeric:tabular-nums}
 .lnk{color:var(--accent);font-weight:600;cursor:pointer}.lnk:hover{text-decoration:underline}
+.asana{display:inline-flex;align-items:center;gap:4px;font-size:11.5px;font-weight:600;color:#f06a6a;text-decoration:none}
+.asana:hover{text-decoration:underline}
 .abtn{font:inherit;font-size:12px;padding:3px 8px;border-radius:5px;border:1px solid var(--line);background:transparent;color:var(--muted);cursor:pointer}
 .abtn:hover{color:var(--red);border-color:var(--red)}
 .kb{display:flex;gap:12px;overflow-x:auto;padding-bottom:8px}
@@ -123,6 +125,7 @@ td input:focus,td select:focus{border-color:var(--accent);background:var(--surf)
         <div class="fld"><label>Verantwortlich</label><select id="f_ver"></select></div>
         <div class="fld"><label>Portal</label><select id="f_portal"></select></div>
         <div class="fld" style="grid-column:span 3"><label>Portal-Link (Exposé / Inserat)</label><input id="f_plink" type="url" placeholder="https://www.immobilienscout24.de/expose/…"></div>
+        <div class="fld" style="grid-column:span 4"><label>Asana-Link (Board oder Aufgabe zum Objekt)</label><input id="f_asana" type="url" placeholder="https://app.asana.com/…"></div>
       </div>
       <div class="foot-row">
         <button class="btn" onclick="save()">+ Objekt anlegen</button>
@@ -191,8 +194,9 @@ function fmtD(d){if(!d)return '—';const p=String(d).split('-');return p.length
 const STAGES=['1 · Objekt angeboten','2 · Erstprüfung','3 · Grobkalkulation','4 · Besichtigung','5 · Detailprüfung / Unterlagen','6 · Kaufpreisverhandlung','7 · Finanzierungsanfrage','8 · Finanzierungszusage','9 · Notartermin','10 · Kaufvertrag beurkundet','11 · Übergang Nutzen/Lasten','A · Wiedervorlage','X · Abgesagt'];
 const PERS=['','Eric','Jürgen','Stephan','Ramona','Extern'];
 const PORTALE=['','ImmobilienScout24','Immowelt','Immonet','eBay Kleinanzeigen','Makler-Exposé','Netzwerk / Direkt','Zwangsversteigerung','Sonstiges'];
+const asanaOut=u=>u?`<a href="${esc(u)}" target="_blank" rel="noopener" class="asana" onclick="event.stopPropagation()">● Asana ↗</a>`:'—';
 const linkOut=(u,t)=>u?`<a href="${esc(u)}" target="_blank" rel="noopener" class="lnk" onclick="event.stopPropagation()">${t||'Portal ↗'}</a>`:'—';
-const FLABEL={bezeichnung:'Bezeichnung',strasse:'Straße',plz:'PLZ',ort:'Ort',angeboten_von:'Angeboten von',quelle:'Quelle',eingang:'Eingang',stufe:'Stufe',einheiten:'Einheiten',wohnflaeche:'Wohnfläche',baujahr:'Baujahr',kaufpreis:'Kaufpreis',miete_ist:'Miete IST p. a.',miete_potenzial:'Miete Potenzial p. a.',grunderwerb_pct:'Grunderwerbsteuer %',notar_pct:'Notar & Grundbuch %',makler_pct:'Makler %',sanierung:'Sanierungskosten',angebot_eigen:'Eigenes Angebot',absage_grund:'Absagegrund',verantwortlich:'Verantwortlich',exposé_link:'Exposé-Link',portal:'Portal',portal_link:'Portal-Link',lat:'Breitengrad',lng:'Längengrad'};
+const FLABEL={bezeichnung:'Bezeichnung',strasse:'Straße',plz:'PLZ',ort:'Ort',angeboten_von:'Angeboten von',quelle:'Quelle',eingang:'Eingang',stufe:'Stufe',einheiten:'Einheiten',wohnflaeche:'Wohnfläche',baujahr:'Baujahr',kaufpreis:'Kaufpreis',miete_ist:'Miete IST p. a.',miete_potenzial:'Miete Potenzial p. a.',grunderwerb_pct:'Grunderwerbsteuer %',notar_pct:'Notar & Grundbuch %',makler_pct:'Makler %',sanierung:'Sanierungskosten',angebot_eigen:'Eigenes Angebot',absage_grund:'Absagegrund',verantwortlich:'Verantwortlich',exposé_link:'Exposé-Link',portal:'Portal',portal_link:'Portal-Link',lat:'Breitengrad',lng:'Längengrad',asana_url:'Asana-Link'};
 
 let ROWS=[], NOTES=[], HIST=[], QUELLEN=[], FSTAGE='', FQUELLE='', VIEW='liste', CUR=null, DRAG=null;
 const heute=()=>new Date().toISOString().slice(0,10);
@@ -254,7 +258,7 @@ function setView(v){VIEW=v;$('vListe').classList.toggle('on',v==='liste');$('vBo
 function tableView(list){
   return '<div class="tblwrap"><table><thead><tr><th>Nr</th><th>Bezeichnung</th><th>Ort</th><th>Stufe</th>'
     +'<th class="num">Kaufpreis</th><th class="num">Miete p.a.</th><th class="num">Faktor</th><th class="num">Rendite</th>'
-    +'<th class="num">Preis/m²</th><th class="num">Gesamtinvest</th><th>Eingang</th><th>Quelle</th><th>Angeboten von</th><th>Portal</th><th>Verantw.</th><th>Notizen</th><th></th></tr></thead><tbody>'
+    +'<th class="num">Preis/m²</th><th class="num">Gesamtinvest</th><th>Eingang</th><th>Quelle</th><th>Angeboten von</th><th>Portal</th><th>Asana</th><th>Verantw.</th><th>Notizen</th><th></th></tr></thead><tbody>'
     +list.map(r=>{const k=kz(r);return `<tr class="${rowCls(r)}">
       <td class="nrcell">${r.nummer}</td>
       <td><span class="lnk" onclick="openOP('${r.id}')">${esc(r.bezeichnung||'(ohne Bezeichnung)')}</span></td>
@@ -270,6 +274,7 @@ function tableView(list){
       <td><select onchange="upd('${r.id}','quelle',this.value)"><option value="">—</option>${QUELLEN.map(x=>`<option ${x===r.quelle?'selected':''}>${esc(x)}</option>`).join('')}${(r.quelle&&!QUELLEN.includes(r.quelle))?`<option selected>${esc(r.quelle)}</option>`:''}</select></td>
       <td>${esc(r.angeboten_von)||'—'}</td>
       <td>${linkOut(r.portal_link, r.portal?esc(r.portal)+' ↗':'Inserat ↗')}</td>
+      <td>${asanaOut(r.asana_url)}</td>
       <td>${esc(r.verantwortlich)||'—'}</td>
       <td><span class="lnk" onclick="openOP('${r.id}')">${noteCount(r.id)?noteCount(r.id)+' 📝':'+ Notiz'}</span></td>
       <td><button class="abtn" onclick="del('${r.id}')">✕</button></td></tr>`;}).join('')
@@ -288,6 +293,7 @@ function boardView(){
         ${k.rendite?`<span class="kbtag">${pct(k.rendite)}</span>`:''}
         ${r.portal_link?`<span class="kbtag">${linkOut(r.portal_link, r.portal?esc(r.portal)+' ↗':'Inserat ↗')}</span>`:''}
         ${noteCount(r.id)?`<span class="kbtag">${noteCount(r.id)} 📝</span>`:''}
+        ${r.asana_url?`<span class="kbtag">${asanaOut(r.asana_url)}</span>`:''}
       </div>`;}).join('');
     return `<div class="kbcol" ondragover="allowDrop(event,this)" ondragleave="this.classList.remove('over')" ondrop="drop(event,${JSON.stringify(s).replace(/"/g,'&quot;')},this)">
       <div class="kbcolhd"><span>${esc(s)}</span><span class="n">${list.length}</span></div>
@@ -330,12 +336,13 @@ async function save(){
     quelle:$('f_quelle').value||null,eingang:$('f_eingang').value||heute(),
     kaufpreis:n0($('f_kp').value),miete_ist:n0($('f_miete').value),einheiten:n0($('f_einh').value),
     wohnflaeche:n0($('f_wfl').value),baujahr:n0($('f_bj').value),verantwortlich:$('f_ver').value||null,
-    portal:$('f_portal').value||null,portal_link:$('f_plink').value.trim()||null,stufe:STAGES[0]};
+    portal:$('f_portal').value||null,portal_link:$('f_plink').value.trim()||null,
+    asana_url:$('f_asana').value.trim()||null,stufe:STAGES[0]};
   if(!row.bezeichnung&&!row.strasse){toast('Bitte Bezeichnung oder Straße angeben');return;}
   const{data,error}=await sb.from('akquise_objekte').insert(row).select();
   if(error){$('msg').style.color='var(--red)';$('msg').textContent='Fehler: '+error.message;return;}
   if(data&&data[0])await sb.from('akquise_historie').insert({objekt_id:data[0].id,feld:'Objekt',alt:null,neu:'angelegt'});
-  ['f_bez','f_str','f_plz','f_ort','f_von','f_kp','f_miete','f_einh','f_wfl','f_bj','f_plink'].forEach(i=>$(i).value='');
+  ['f_bez','f_str','f_plz','f_ort','f_von','f_kp','f_miete','f_einh','f_wfl','f_bj','f_plink','f_asana'].forEach(i=>$(i).value='');
   $('f_eingang').value=heute();
   $('msg').style.color='var(--green)';$('msg').textContent='Objekt angelegt ✓';
   load();
@@ -380,6 +387,7 @@ function renderOP(){
     F('Grunderwerbsteuer %',opTxt(r,'grunderwerb_pct','number','0.1'))+F('Notar &amp; Grundbuch %',opTxt(r,'notar_pct','number','0.1'))+
     F('Makler %',opTxt(r,'makler_pct','number','0.1'))+F('Portal',opSel(r,'portal',PORTALE.filter(Boolean),true))+
     F('Portal-Link '+(r.portal_link?'· '+linkOut(r.portal_link,'öffnen ↗'):''),opTxt(r,'portal_link','url'))+
+    F('Asana-Link '+(r.asana_url?'· '+asanaOut(r.asana_url):''),opTxt(r,'asana_url','url'))+
     F('Absagegrund',opTxt(r,'absage_grund'))+
     F('Breitengrad (lat)',opTxt(r,'lat','number','0.000001'))+F('Längengrad (lng)',opTxt(r,'lng','number','0.000001'));
   const items=[];
@@ -428,7 +436,7 @@ function renderMap(){
     m.bindPopup(`<div class="mpop"><b>#${r.nummer} ${esc(r.bezeichnung||'')}</b><br>${esc(adrOf(r))}<br>
       ${eur(r.kaufpreis)}${k.faktor?' · Faktor '+num(k.faktor,1)+'×':''}<br>
       <span style="color:#6b7280">${esc(r.stufe||'')}</span><br>
-      <a href="#" onclick="openOP('${r.id}');return false;">Objekt öffnen</a></div>`);
+      <a href="#" onclick="openOP('${r.id}');return false;">Objekt öffnen</a>${r.asana_url?' · '+asanaOut(r.asana_url):''}</div>`);
     pts.push([r.lat,r.lng]);
   });
   if(pts.length===1)MAP.setView(pts[0],14);
@@ -499,11 +507,11 @@ function exportCSV(){
   if(!list.length){toast('Keine Objekte zum Exportieren');return;}
   const header=['Nr','Bezeichnung','Strasse','PLZ','Ort','Stufe','Angeboten von','Quelle','Eingang','Einheiten','Wohnflaeche',
     'Baujahr','Kaufpreis','Miete IST p.a.','Miete Potenzial p.a.','Eigenes Angebot','Faktor','Bruttorendite %','Preis pro qm',
-    'Nebenkosten %','Nebenkosten EUR','Sanierung','Gesamtinvestition','Verantwortlich','Portal','Portal-Link','Absagegrund','Notizen'];
+    'Nebenkosten %','Nebenkosten EUR','Sanierung','Gesamtinvestition','Verantwortlich','Portal','Portal-Link','Asana-Link','Absagegrund','Notizen'];
   const zeilen=list.map(r=>{const k=kz(r);return [r.nummer,r.bezeichnung,r.strasse,r.plz,r.ort,r.stufe,r.angeboten_von,r.quelle,r.eingang,
     r.einheiten,r.wohnflaeche,r.baujahr,r.kaufpreis,r.miete_ist,r.miete_potenzial,r.angebot_eigen,
     k.faktor?k.faktor.toFixed(2):'',k.rendite?k.rendite.toFixed(2):'',k.preisM2?Math.round(k.preisM2):'',
-    k.nkPct,k.nk?Math.round(k.nk):'',r.sanierung,k.gesamt?Math.round(k.gesamt):'',r.verantwortlich,r.portal,r.portal_link,r.absage_grund,
+    k.nkPct,k.nk?Math.round(k.nk):'',r.sanierung,k.gesamt?Math.round(k.gesamt):'',r.verantwortlich,r.portal,r.portal_link,r.asana_url,r.absage_grund,
     NOTES.filter(n=>n.objekt_id===r.id).map(n=>fmtDT(n.created_at)+': '+n.text).join(' | ')];});
   csvDownload('akquise_export',header,zeilen);
   toast(list.length+' Objekt(e) exportiert ✓');
