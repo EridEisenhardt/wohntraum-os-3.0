@@ -83,7 +83,7 @@ select.inl.st{font-weight:700;color:var(--accent);border-color:var(--line);backg
       <button class="btn sec" onclick="addQuelle()">+ Leadquelle anlegen</button><span id="msg" style="font-size:12px;color:var(--green)"></span></div>
   </div>
 
-  <div class="viewtoggle"><button id="vListe" class="on" onclick="setView('liste')">Liste</button><button id="vBoard" onclick="setView('board')">Kanban-Board</button></div>
+  <div class="viewtoggle"><button id="vListe" class="on" onclick="setView('liste')">Liste</button><button id="vBoard" onclick="setView('board')">Kanban-Board</button><button onclick="exportCRM()" title="Gefilterte Leads als CSV für den CRM-Import herunterladen">⬇ CRM Export</button></div>
   <div class="chips" id="stageChips"></div>
   <div class="card"><div class="card-hd"><span>Leads</span><span class="crumb">Meilensteine: ✅ erledigt · ⏸️ warten · ❌ nicht erfolgt &nbsp;·&nbsp; <span id="cnt"></span></span></div>
     <div class="tablewrap" id="tbl"><div class="empty" id="loading">Lädt…</div></div></div>
@@ -199,6 +199,30 @@ function dragStart(ev,id){DRAG=id;ev.dataTransfer.effectAllowed='move';}
 function allowDrop(ev,el){ev.preventDefault();if(el)el.classList.add('over');}
 function dragLeave(el){if(el)el.classList.remove('over');}
 function drop(ev,stage,el){ev.preventDefault();if(el)el.classList.remove('over');if(DRAG){upd(DRAG,'status',stage);DRAG=null;}}
+
+// ——— CRM Export (CSV, Excel-kompatibel) ———
+function csvCell(v){const s=(v==null?'':String(v));return '"'+s.replace(/"/g,'""')+'"';}
+function csvDownload(dateiname,header,zeilen){
+  const txt=[header].concat(zeilen).map(r=>r.map(csvCell).join(';')).join('\r\n');
+  const blob=new Blob(['\ufeff'+txt],{type:'text/csv;charset=utf-8;'});
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(blob);
+  a.download=dateiname+'_'+new Date().toISOString().slice(0,10)+'.csv';
+  document.body.appendChild(a);a.click();a.remove();URL.revokeObjectURL(a.href);
+}
+function exportCRM(){
+  const list=FSTAGE?ROWS.filter(r=>r.status===FSTAGE):ROWS;
+  if(!list.length){toast('Keine Leads zum Exportieren');return;}
+  const header=['Name','Kontakt','Kategorien','Potenzial','Lead-Eingang','Leadquelle','Status','Personenanzahl',
+    'Einzug ab','Art der Mietzahlung','Ergebnis','Freigabe Schluesseluebergabe',
+    'Zusage Kostenuebernahme','Mietangebot erhalten','Mietvertrag unterschrieben','Schluesseluebergabe erfolgt','1. Mietzahlung','Notizen'];
+  const zeilen=list.map(r=>[r.name,r.kontakt,'Mieter-Vermittler','',r.eingang,r.quelle,r.status,r.personen,
+    r.einzug_ab,r.zahlungsart,r.ergebnis,r.freigabe_schluessel,
+    r.kostenuebernahme,r.mietangebot_erhalten,r.mietvertrag_unterschrieben,r.schluesseluebergabe_erfolgt,r.erste_mietzahlung,
+    NOTES.filter(n=>n.interessent_id===r.id).map(n=>fmtDT(n.created_at)+': '+(n.text||n.notiz||'')).join(' | ')]);
+  csvDownload('crm_export_mietinteressenten',header,zeilen);
+  toast(list.length+' Lead(s) exportiert ✓');
+}
 function boardView(){
   return '<div class="kb">'+STAGES.map(s=>{const list=ROWS.filter(r=>r.status===s);const se=esc(s).replace(/'/g,"\\'");
     const cards=list.map(r=>`<div class="kbcard" draggable="true" ondragstart="dragStart(event,'${r.id}')">
