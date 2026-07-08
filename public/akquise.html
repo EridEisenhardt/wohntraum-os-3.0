@@ -192,7 +192,7 @@ const STAGES=['1 · Objekt angeboten','2 · Erstprüfung','3 · Grobkalkulation'
 const PERS=['','Eric','Jürgen','Stephan','Ramona','Extern'];
 const PORTALE=['','ImmobilienScout24','Immowelt','Immonet','eBay Kleinanzeigen','Makler-Exposé','Netzwerk / Direkt','Zwangsversteigerung','Sonstiges'];
 const linkOut=(u,t)=>u?`<a href="${esc(u)}" target="_blank" rel="noopener" class="lnk" onclick="event.stopPropagation()">${t||'Portal ↗'}</a>`:'—';
-const FLABEL={bezeichnung:'Bezeichnung',strasse:'Straße',plz:'PLZ',ort:'Ort',angeboten_von:'Angeboten von',quelle:'Quelle',eingang:'Eingang',stufe:'Stufe',einheiten:'Einheiten',wohnflaeche:'Wohnfläche',baujahr:'Baujahr',kaufpreis:'Kaufpreis',miete_ist:'Miete IST p. a.',miete_potenzial:'Miete Potenzial p. a.',grunderwerb_pct:'Grunderwerbsteuer %',notar_pct:'Notar & Grundbuch %',makler_pct:'Makler %',sanierung:'Sanierungskosten',angebot_eigen:'Eigenes Angebot',absage_grund:'Absagegrund',verantwortlich:'Verantwortlich',exposé_link:'Exposé-Link',portal:'Portal',portal_link:'Portal-Link'};
+const FLABEL={bezeichnung:'Bezeichnung',strasse:'Straße',plz:'PLZ',ort:'Ort',angeboten_von:'Angeboten von',quelle:'Quelle',eingang:'Eingang',stufe:'Stufe',einheiten:'Einheiten',wohnflaeche:'Wohnfläche',baujahr:'Baujahr',kaufpreis:'Kaufpreis',miete_ist:'Miete IST p. a.',miete_potenzial:'Miete Potenzial p. a.',grunderwerb_pct:'Grunderwerbsteuer %',notar_pct:'Notar & Grundbuch %',makler_pct:'Makler %',sanierung:'Sanierungskosten',angebot_eigen:'Eigenes Angebot',absage_grund:'Absagegrund',verantwortlich:'Verantwortlich',exposé_link:'Exposé-Link',portal:'Portal',portal_link:'Portal-Link',lat:'Breitengrad',lng:'Längengrad'};
 
 let ROWS=[], NOTES=[], HIST=[], QUELLEN=[], FSTAGE='', FQUELLE='', VIEW='liste', CUR=null, DRAG=null;
 const heute=()=>new Date().toISOString().slice(0,10);
@@ -312,7 +312,8 @@ async function logHist(id,feld,alt,neu){
 }
 async function upd(id,field,val){
   const r=ROWS.find(x=>x.id===id);const alt=r?r[field]:null;
-  const nv=(val===''?null:val);
+  let nv=(val===''?null:val);
+  if((field==='lat'||field==='lng')&&nv!=null)nv=Number(String(nv).replace(',','.'));
   const{error}=await sb.from('akquise_objekte').update({[field]:nv,updated_at:new Date().toISOString()}).eq('id',id);
   if(error){toast('Fehler: '+error.message);return;}
   if(r)r[field]=nv;
@@ -379,7 +380,8 @@ function renderOP(){
     F('Grunderwerbsteuer %',opTxt(r,'grunderwerb_pct','number','0.1'))+F('Notar &amp; Grundbuch %',opTxt(r,'notar_pct','number','0.1'))+
     F('Makler %',opTxt(r,'makler_pct','number','0.1'))+F('Portal',opSel(r,'portal',PORTALE.filter(Boolean),true))+
     F('Portal-Link '+(r.portal_link?'· '+linkOut(r.portal_link,'öffnen ↗'):''),opTxt(r,'portal_link','url'))+
-    F('Absagegrund',opTxt(r,'absage_grund'));
+    F('Absagegrund',opTxt(r,'absage_grund'))+
+    F('Breitengrad (lat)',opTxt(r,'lat','number','0.000001'))+F('Längengrad (lng)',opTxt(r,'lng','number','0.000001'));
   const items=[];
   NOTES.filter(n=>n.objekt_id===CUR).forEach(n=>items.push({t:n.created_at,kind:'note',text:n.text}));
   HIST.filter(h=>h.objekt_id===CUR).forEach(h=>items.push({t:h.created_at,kind:'hist',feld:h.feld,alt:h.alt,neu:h.neu}));
@@ -416,7 +418,8 @@ function renderMap(){
   LAYER.clearLayers();
   const mit=ROWS.filter(r=>r.lat!=null&&r.lng!=null);
   const ohne=ROWS.filter(r=>r.lat==null&&adrOf(r));
-  $('mapCnt').textContent='· '+mit.length+' verortet'+(ohne.length?(' · '+ohne.length+' ohne Koordinaten'):'');
+  const keineAdr=ROWS.filter(r=>!adrOf(r)).length;
+  $('mapCnt').textContent='· '+mit.length+' verortet'+(ohne.length?(' · '+ohne.length+' ohne Koordinaten'):'')+(keineAdr?(' · '+keineAdr+' ohne Adresse'):'');
   $('geoBtn').style.display=ohne.length?'':'none';
   const pts=[];
   mit.forEach(r=>{
@@ -432,33 +435,54 @@ function renderMap(){
   else if(pts.length>1)MAP.fitBounds(L.latLngBounds(pts).pad(0.2));
   setTimeout(()=>MAP.invalidateSize(),80);
 }
-async function geocodeOne(adr){
-  const url='https://nominatim.openstreetmap.org/search?format=json&limit=1&countrycodes=de&q='+encodeURIComponent(adr);
+async function nominatim(q){
+  const url='https://nominatim.openstreetmap.org/search?format=json&limit=1&countrycodes=de&q='+encodeURIComponent(q);
   const res=await fetch(url,{headers:{'Accept':'application/json'}});
   if(!res.ok)return null;
   const j=await res.json();
   if(!j||!j.length)return null;
   return {lat:parseFloat(j[0].lat),lng:parseFloat(j[0].lon)};
 }
+// Fallback-Kaskade: viele Landadressen kennt OSM nicht mit Hausnummer.
+function geoKandidaten(r){
+  const str=(r.strasse||'').trim();
+  const strOhneNr=str.replace(/\s*\d+\s*[a-zA-Z]?$/,'').trim();
+  const ort=[(r.plz||'').trim(),(r.ort||'').trim()].filter(Boolean).join(' ');
+  const k=[];
+  if(str&&ort)k.push(str+', '+ort);
+  if(strOhneNr&&strOhneNr!==str&&ort)k.push(strOhneNr+', '+ort);
+  if(ort)k.push(ort);
+  if(r.ort)k.push(r.ort.trim());
+  return [...new Set(k.filter(Boolean))];
+}
+async function geocodeOne(r){
+  for(const q of geoKandidaten(r)){
+    try{
+      const c=await nominatim(q);
+      if(c)return c;
+    }catch(e){}
+    await new Promise(res=>setTimeout(res,1200));
+  }
+  return null;
+}
 async function geocodeAlle(){
   const ohne=ROWS.filter(r=>r.lat==null&&adrOf(r));
-  if(!ohne.length){toast('Alle Objekte sind verortet');return;}
+  if(!ohne.length){toast('Alle Objekte mit Adresse sind verortet');return;}
   $('geoBtn').disabled=true;
-  let ok=0,fail=0;
-  for(const r of ohne){
-    $('geoBtn').textContent='📍 Verorte … ('+(ok+fail+1)+'/'+ohne.length+')';
-    try{
-      const c=await geocodeOne(adrOf(r));
-      if(c){
-        await sb.from('akquise_objekte').update({lat:c.lat,lng:c.lng,geo_at:new Date().toISOString()}).eq('id',r.id);
-        r.lat=c.lat;r.lng=c.lng;ok++;
-      } else fail++;
-    }catch(e){fail++;}
-    await new Promise(res=>setTimeout(res,1200)); // Nominatim: max 1 Anfrage/Sekunde
+  let ok=0;const fails=[];
+  for(let i=0;i<ohne.length;i++){
+    const r=ohne[i];
+    $('geoBtn').textContent='📍 Verorte … ('+(i+1)+'/'+ohne.length+')';
+    const c=await geocodeOne(r);
+    if(c){
+      await sb.from('akquise_objekte').update({lat:c.lat,lng:c.lng,geo_at:new Date().toISOString()}).eq('id',r.id);
+      r.lat=c.lat;r.lng=c.lng;ok++;
+    } else fails.push('#'+r.nummer+' '+(r.bezeichnung||adrOf(r)));
   }
   $('geoBtn').disabled=false;$('geoBtn').textContent='📍 Fehlende Adressen verorten';
   renderMap();
-  toast(ok+' verortet'+(fail?(', '+fail+' ohne Treffer'):'')+' ✓');
+  if(fails.length)alert('Nicht gefunden:\n\n'+fails.join('\n')+'\n\nTipp: Adresse pruefen oder im Onepager Breiten-/Laengengrad manuell eintragen.');
+  toast(ok+' verortet'+(fails.length?(', '+fails.length+' ohne Treffer'):'')+' ✓');
 }
 
 // ——— CSV ———
