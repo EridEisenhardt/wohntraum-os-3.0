@@ -150,10 +150,21 @@ function renderDash(){
   const de1=x=>x.toLocaleString('de-DE',{minimumFractionDigits:1,maximumFractionDigits:1});
   const bRow=(lbl,n,col)=>`<div class="catrow"><span class="nm" style="color:${col};font-weight:700">${lbl}</span><span style="flex:1;font-size:12.5px"><b>${n}</b> Einträge · Ø <b>${de1(n/weeks)}</b>/Woche · Ø <b>${de1(n/weeks/5)}</b>/Werktag</span></div>`;
   const overall='<div class="card"><div class="card-hd">Benchmark — gesamter Zeitraum <span style="text-transform:none;font-weight:400;color:var(--muted)">'+esc(spanTxt)+'</span></div><div class="card-bd">'+bRow('Geld produzierend',gN,'#185fa5')+bRow('Systeme',sN,'#c8741f')+bRow('Gesamt',gN+sN,'#1c2024')+'</div></div>';
+  // Diese Woche vs. Benchmark
+  const curWk=isoWeekKey(new Date().toISOString().slice(0,10));
+  let cwG=0,cwS=0;ROWS.forEach(r=>{if(isoWeekKey(r.datum)===curWk){if(r.gruppe==='systeme')cwS++;else if(r.gruppe==='geld')cwG++;}});
+  const bmG=weeks?gN/weeks/5:0, bmS=weeks?sN/weeks/5:0, pdG=cwG/5, pdS=cwS/5;
+  const wkBlock=(lbl,cnt,pd,bm,col)=>{const diff=pd-bm,up=diff>=0;return `<div style="flex:1;min-width:200px;border:1px solid var(--line);border-radius:10px;padding:12px 14px">
+    <div style="font-weight:700;color:${col}">${lbl}</div>
+    <div style="font-size:22px;font-weight:700;margin:2px 0">${cnt}<span style="font-size:12px;color:var(--muted);font-weight:400"> Einträge · ${de1(pd)}/Werktag</span></div>
+    <div style="font-size:12px;color:var(--muted)">Benchmark Ø: ${de1(bm)}/Werktag</div>
+    <div style="font-size:14px;font-weight:700;color:${up?'#1f7a4d':'#c0392b'};margin-top:5px">${up?'▲ +':'▼ '}${de1(Math.abs(diff))}/Werktag ${up?'über':'unter'} Benchmark</div></div>`;};
+  const wkCard='<div class="card"><div class="card-hd">Diese Woche vs. Benchmark <span style="text-transform:none;font-weight:400;color:var(--muted)">'+esc(curWk)+'</span></div><div class="card-bd" style="display:flex;gap:12px;flex-wrap:wrap">'+wkBlock('Geld produzierend',cwG,pdG,bmG,'#185fa5')+wkBlock('Systeme',cwS,pdS,bmS,'#c8741f')+'</div></div>';
   // Recent
   const recent=ROWS.slice(0,8).map(r=>actRow(r,false)).join('')||'<div class="empty">Noch keine Einträge</div>';
   $('main').innerHTML=
     '<div class="kpis">'+kpi.map(k=>`<div class="kpi"><div class="l">${k[0]}</div><div class="v">${k[1]}</div><div class="s">${k[2]}</div></div>`).join('')+'</div>'
+   +wkCard
    +overall
    +'<div class="grid2"><div class="card"><div class="card-hd">Aktivitäten nach Kategorie</div><div class="card-bd">'+catHtml+'</div></div>'
    +'<div class="card"><div class="card-hd">Benchmark — Aktivitäten pro Werktag (Woche ÷ 5)</div><div class="card-bd"><div class="cwrap"><canvas id="benchCv"></canvas></div><div id="benchAvg" style="font-size:12px;color:var(--muted);margin-top:8px"></div></div></div></div>'
@@ -169,17 +180,21 @@ function renderBench(){
   const end=new Date();const endMon=new Date(end);endMon.setDate(endMon.getDate()-((endMon.getDay()+6)%7));
   const weeks=[];const cur=new Date(mon);let guard=0;
   while(cur<=endMon&&guard<520){weeks.push(isoWeekKey(cur.toISOString().slice(0,10)));cur.setDate(cur.getDate()+7);guard++;}
+  const curWk=isoWeekKey(new Date().toISOString().slice(0,10));
+  if(curWk&&weeks.indexOf(curWk)<0)weeks.push(curWk);
   const gW={},sW={};weeks.forEach(w=>{gW[w]=0;sW[w]=0;});
   ROWS.forEach(r=>{const w=isoWeekKey(r.datum);if(w==null)return;if(gW[w]==null)return;if(r.gruppe==='systeme')sW[w]++;else gW[w]++;});
   const gV=weeks.map(w=>+(gW[w]/5).toFixed(1)),sV=weeks.map(w=>+(sW[w]/5).toFixed(1));
   // mitlaufender Durchschnitt (Benchmark-Entwicklung)
   let cg=0,cs=0;const cumG=gV.map((v,i)=>{cg+=v;return +(cg/(i+1)).toFixed(2);});const cumS=sV.map((v,i)=>{cs+=v;return +(cs/(i+1)).toFixed(2);});
   const pcG=gV.map((v,i)=>v>=cumG[i]?'#1f7a4d':'#c0392b'), pcS=sV.map((v,i)=>v>=cumS[i]?'#1f7a4d':'#c0392b');
+  const curIdx=weeks.indexOf(curWk);
+  const radG=gV.map((_,i)=>i===curIdx?6:3), radS=sV.map((_,i)=>i===curIdx?6:3);
   if(chart)chart.destroy();
-  chart=new Chart(cv,{type:'line',data:{labels:weeks.map(w=>w.replace(/^\d{4}-/,'')),datasets:[
-    {label:'Geld produzierend',data:gV,borderColor:'#185fa5',backgroundColor:'#185fa522',fill:true,tension:.25,pointRadius:3,pointBackgroundColor:pcG,pointBorderColor:pcG},
+  chart=new Chart(cv,{type:'line',data:{labels:weeks.map(w=>w.replace(/^\d{4}-/,'')+(w===curWk?' (akt.)':'')),datasets:[
+    {label:'Geld produzierend',data:gV,borderColor:'#185fa5',backgroundColor:'#185fa522',fill:true,tension:.25,pointRadius:radG,pointBackgroundColor:pcG,pointBorderColor:pcG},
     {label:'Ø-Entwicklung Geld',data:cumG,borderColor:'#185fa5',borderDash:[6,4],borderWidth:1.5,pointRadius:0,fill:false,tension:.15},
-    {label:'Systeme',data:sV,borderColor:'#c8741f',backgroundColor:'#c8741f22',fill:true,tension:.25,pointRadius:3,pointBackgroundColor:pcS,pointBorderColor:pcS},
+    {label:'Systeme',data:sV,borderColor:'#c8741f',backgroundColor:'#c8741f22',fill:true,tension:.25,pointRadius:radS,pointBackgroundColor:pcS,pointBorderColor:pcS},
     {label:'Ø-Entwicklung Systeme',data:cumS,borderColor:'#c8741f',borderDash:[6,4],borderWidth:1.5,pointRadius:0,fill:false,tension:.15}]},
     options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{labels:{boxWidth:12,font:{size:10}}}},scales:{y:{beginAtZero:true,ticks:{font:{size:9}}},x:{ticks:{font:{size:9}}}}}});
   const avg=arr=>arr.length?(arr.slice(-4).reduce((a,b)=>a+b,0)/4).toFixed(1):'0';
