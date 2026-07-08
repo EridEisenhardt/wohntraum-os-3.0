@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html lang="de"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>GPM-Tracker – Macher OS</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
+<style>
+:root{--bg:#f6f7f9;--surf:#fff;--surf2:#f1f3f6;--line:#e6e8ec;--bord2:#eef0f3;--text:#1c2024;--muted:#6b7280;--dim:#4b5563;--accent:#185fa5;--green:#1f7a4d;--red:#c0392b;--warn:#b45309;--r:8px;--rl:12px;}
+*{box-sizing:border-box;margin:0;padding:0}body{background:var(--bg);color:var(--text);font-family:'Inter',system-ui,sans-serif;font-size:14px}
+.hdr{background:var(--surf);border-bottom:1px solid var(--line);padding:14px 24px;display:flex;align-items:center;gap:14px;position:sticky;top:0;z-index:10;flex-wrap:wrap}
+.logo{background:#1a1a2e;color:#fff;font-weight:700;font-size:11px;padding:5px 9px;border-radius:4px}.hdr-title{font-size:16px;font-weight:600}
+.nav{display:flex;gap:4px;flex-wrap:wrap}
+.nav button{font:inherit;font-size:12.5px;font-weight:600;padding:7px 13px;border:1px solid var(--line);border-radius:8px;background:var(--surf);color:var(--dim);cursor:pointer}.nav button.on{background:var(--accent);color:#fff;border-color:var(--accent)}
+.spacer{flex:1}
+.main{max-width:1240px;margin:0 auto;padding:20px 24px 60px}
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;margin-bottom:16px}
+.kpi{background:var(--surf);border:1px solid var(--line);border-radius:var(--rl);padding:13px 15px}.kpi .l{font-size:10px;text-transform:uppercase;color:var(--muted);font-weight:700;letter-spacing:.3px}.kpi .v{font-size:26px;font-weight:700;margin-top:2px}.kpi .s{font-size:11px;color:var(--muted)}
+.card{background:var(--surf);border:1px solid var(--line);border-radius:var(--rl);margin-bottom:16px;overflow:hidden}
+.card-hd{padding:11px 16px;border-bottom:1px solid var(--line);font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.3px;color:var(--muted);display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap}
+.card-bd{padding:14px 16px}
+.catrow{display:flex;align-items:center;gap:10px;margin:6px 0;font-size:13px}
+.catrow .nm{width:170px;font-weight:600}.catrow .bar{flex:1;height:10px;background:var(--surf2);border-radius:6px;overflow:hidden}.catrow .fill{height:100%;border-radius:6px}.catrow .n{width:44px;text-align:right;font-weight:700}
+.grid2{display:grid;grid-template-columns:1.4fr 1fr;gap:16px}@media(max-width:900px){.grid2{grid-template-columns:1fr}}
+.cwrap{position:relative;height:230px}
+.bar-controls{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px}
+.bar-controls select,.bar-controls input{font:inherit;font-size:13px;padding:7px 9px;border:1px solid var(--line);border-radius:8px;background:var(--surf)}
+.bar-controls input{min-width:200px}
+.btn{font-size:13px;font-weight:600;padding:8px 14px;border-radius:8px;border:1px solid var(--accent);background:var(--accent);color:#fff;cursor:pointer}.btn:hover{opacity:.92}.btn.sec{background:var(--surf2);color:var(--text);border-color:var(--line)}
+.act{display:flex;gap:12px;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--bord2)}
+.act-t{font-weight:600;font-size:13.5px}.act-sub{font-size:11px;color:var(--accent);font-weight:600;margin-top:1px}
+.act-meta{font-size:11.5px;color:var(--muted);margin-top:3px}.act-note{font-size:12px;color:var(--dim);margin-top:4px;white-space:pre-wrap}
+.act-side{text-align:right;white-space:nowrap;display:flex;flex-direction:column;align-items:flex-end;gap:4px}
+.badge{font-size:10.5px;font-weight:700;padding:2px 9px;border-radius:12px}
+.b-erfolgreich{background:#e8f6ee;color:var(--green)}.b-offen{background:#eef0f3;color:var(--dim)}.b-followup{background:#fef3e6;color:var(--warn)}.b-auftragerteilt{background:#e8f2fd;color:var(--accent)}.b-abgegeben{background:#f0eafd;color:#6b4fa0}.b-abgebrochen{background:#fdeeee;color:var(--red)}
+.fu{font-size:10px;color:var(--warn);font-weight:600}
+.act-actions button{font-size:12px;padding:2px 7px;border-radius:5px;border:1px solid var(--line);background:transparent;color:var(--muted);cursor:pointer}
+.steps{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:14px}
+.stepcat{border:1px solid var(--line);border-radius:10px;overflow:hidden}
+.stepcat-hd{padding:9px 13px;font-weight:700;font-size:13px;color:#fff}
+.stepcat .it{display:flex;gap:9px;padding:6px 13px;border-bottom:1px solid var(--bord2);font-size:12.5px}.stepcat .it .cd{font-weight:700;color:var(--muted);width:34px}
+.empty{text-align:center;padding:24px;color:var(--muted)}
+.ov{position:fixed;inset:0;background:rgba(20,25,35,.45);display:none;align-items:flex-start;justify-content:center;z-index:200;padding:34px 16px;overflow:auto}.ov.show{display:flex}
+.dlg{background:var(--surf);border-radius:12px;width:100%;max-width:560px;box-shadow:0 20px 60px rgba(0,0,0,.3)}
+.dlg-hd{padding:14px 18px;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;align-items:center;font-weight:700}
+.dlg-bd{padding:16px 18px;display:grid;gap:12px}
+.fld label{font-size:11px;color:var(--muted);font-weight:600;display:block;margin-bottom:4px}
+.fld input,.fld select,.fld textarea{width:100%;font:inherit;font-size:13px;padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:var(--surf);resize:vertical}
+.fld input:focus,.fld select:focus,.fld textarea:focus{outline:none;border-color:var(--accent)}
+.ergrow{display:flex;gap:6px;flex-wrap:wrap}.ergrow button{font:inherit;font-size:12px;font-weight:600;padding:6px 11px;border:1px solid var(--line);border-radius:16px;background:var(--surf);color:var(--dim);cursor:pointer}.ergrow button.on{background:var(--accent);color:#fff;border-color:var(--accent)}
+.dlg-ft{padding:12px 18px;border-top:1px solid var(--line);display:flex;gap:10px;justify-content:flex-end}
+.abtn{font-size:12px;padding:3px 8px;border-radius:5px;border:1px solid var(--line);background:transparent;color:var(--muted);cursor:pointer}
+.toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:var(--surf2);border:1px solid var(--line);border-radius:var(--r);padding:10px 20px;font-size:13px;opacity:0;transition:.3s;pointer-events:none;z-index:300}.toast.show{opacity:1}
+</style></head><body>
+<div class="hdr">
+  <div class="logo">MACHER OS</div><div class="hdr-title">GPM-Tracker</div>
+  <div class="nav" id="nav"></div>
+  <div class="spacer"></div>
+  <button class="btn" onclick="openNew()">+ Neuer Eintrag</button>
+  <button class="btn sec" onclick="exportCSV()">↓ CSV</button>
+</div>
+<div class="main" id="main"><div class="empty" id="loading">Lädt…</div></div>
+
+<div class="ov" id="ov" onclick="if(event.target===this)closeDlg()">
+  <div class="dlg">
+    <div class="dlg-hd"><span id="dlgTitle">Neuen Eintrag erfassen</span><span class="abtn" onclick="closeDlg()">✕</span></div>
+    <div class="dlg-bd">
+      <div class="fld"><label>Datum</label><input type="date" id="f_datum"></div>
+      <div class="fld"><label>GPM-Schritt wählen</label><select id="f_schritt"></select></div>
+      <div class="fld"><label>Gebäude / Tool (optional)</label><input id="f_geb" placeholder="z.B. Rh24 WE 7, K7…"></div>
+      <div class="fld"><label>Kontaktperson (optional)</label><input id="f_kontakt" placeholder="z.B. Gerd Hanauer…"></div>
+      <div class="fld"><label>Thema (optional)</label><input id="f_thema" placeholder="z.B. Finanzierung, Mieterhöhung…"></div>
+      <div class="fld"><label>Ergebnis</label><div class="ergrow" id="ergRow"></div></div>
+      <div class="fld"><label>Follow-up Datum (optional)</label><input type="date" id="f_fu"></div>
+      <div class="fld"><label>Notizen (optional)</label><textarea id="f_notiz" rows="3" placeholder="Gesprächspartner, nächste Schritte, Details…"></textarea></div>
+    </div>
+    <div class="dlg-ft"><button class="btn sec" onclick="closeDlg()">Abbrechen</button><button class="btn" onclick="saveEntry()">Speichern</button></div>
+  </div>
+</div>
+<div class="toast" id="toast"></div>
+<script>
+const sb=window.supabase.createClient('https://jqzxctfqvcwbctpjksvg.supabase.co','eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpxenhjdGZxdmN3YmN0cGprc3ZnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODIxMzA0MzIsImV4cCI6MjA5NzcwNjQzMn0.RKIbZxJdusKWWPjBJqlxZ8e1m8So02UslOg55YRsn3o');
+const $=id=>document.getElementById(id);const esc=s=>(s==null?'':String(s)).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;');
+function toast(m){const t=$('toast');t.textContent=m;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),1800);}
+const GELD=['Ankauf','Verkauf','Vermietung','Bestandsoptimierung','Kostensenkung','Liquidität','Bankenfinanzierung'];
+const SYS=['Prozessoptimierung','Umsetzung'];
+const CATG={};GELD.forEach(c=>CATG[c]='geld');SYS.forEach(c=>CATG[c]='systeme');
+const CATCOL={Ankauf:'#0d9488',Verkauf:'#e11d48',Vermietung:'#185fa5',Bestandsoptimierung:'#7c3aed',Kostensenkung:'#b45309',Liquidität:'#059669',Bankenfinanzierung:'#1a1a2e',Prozessoptimierung:'#c8741f',Umsetzung:'#6b7280'};
+const STEPS=[
+ ['000','Erstprüfung der Immobilie (Lead)','Ankauf'],['001','Kalkulation vom Objekt','Ankauf'],['002','Besichtigung','Ankauf'],['003','Kaufangebot','Ankauf'],['004','Notartermin','Ankauf'],['005','Makler - Austausch / Telefonat','Ankauf'],['006','Tippgeber - Ich suche Häuser','Ankauf'],['007','Asana ToDos - Voraussetzung um zu kaufen','Ankauf'],
+ ['100','Makler - Austausch / Telefonat','Verkauf'],['101','Besichtigung','Verkauf'],['102','Notartermin','Verkauf'],['103','Übergabe der Immobilie','Verkauf'],['104','Asana ToDos - Voraussetzung um zu verkaufen','Verkauf'],['105','Abwicklung vom Verkauf','Verkauf'],['106','Telefonat mit potenziellen Käufern','Verkauf'],
+ ['200','Kalkulation der Mietwohnung','Vermietung'],['201','Vermietungsunterlagen erstellen (OnePager)','Vermietung'],['202','Telefonat mit Mieter-Vermittler','Vermietung'],['203','Mietangebot erstellen','Vermietung'],['204','Besichtigung','Vermietung'],['205','Mietvertrag erstellen','Vermietung'],['206','Mietvertrag ist unterschrieben','Vermietung'],['207','Schlüsselübergabe und Wohnungsübergabe','Vermietung'],['208','Asana ToDos - Voraussetzung um zu vermieten','Vermietung'],['209','Telefonat mit Mietinteressenten','Vermietung'],['210','Wohnungsinserate bearbeiten / erstellen','Vermietung'],
+ ['300','Auswahl potenzielle Mieterhöhung','Bestandsoptimierung'],['301','Kalkulation der Mieterhöhung','Bestandsoptimierung'],['302','Erstellen von Mieterhöhungsschreiben','Bestandsoptimierung'],['303','Verschicken der Mieterhöhung an Mieter','Bestandsoptimierung'],['304','Sofagespräch','Bestandsoptimierung'],['305','Unterschrift für Mieterhöhung','Bestandsoptimierung'],['306','Weitere Einkommensquellen erschließen','Bestandsoptimierung'],['307','Asana ToDos - Bestandsoptimierung','Bestandsoptimierung'],
+ ['400','ABO beendet','Kostensenkung'],['401','Beitragskosten reduziert','Kostensenkung'],['402','Kosten von Eigentümer auf Mieter umgelegt','Kostensenkung'],['403','Rechnungen umschreiben','Kostensenkung'],
+ ['500','SOP in Notion geschrieben','Prozessoptimierung'],['501','Aufgabe von Eric abgegeben','Prozessoptimierung'],['502','Asana Prozessoptimierung','Prozessoptimierung'],['503','Prozesse im Allgemeinen verbessert','Prozessoptimierung'],['504','Aufbau Wissensdatenbank','Prozessoptimierung'],
+ ['600','OFFENE MIETE - Telefonat mit Mieter','Liquidität'],['601','OFFENE MIETE - Zahlungserinnerung / Mahnung','Liquidität'],['602','OFFENE MIETE - Forderung an Anwalt / Inkasso','Liquidität'],['603','RECHNUNG: Dienstleistung abrechnen','Liquidität'],['605','Ratenzahlungsvereinbarung','Liquidität'],['606','Todos für Rechnungen erstellen','Liquidität'],
+ ['700','Top Thema für Unternehmensentwicklung umgesetzt','Umsetzung'],
+ ['800','Bankenfinanzierungen','Bankenfinanzierung'],['801','Austausch / Telefonat mit Banker','Bankenfinanzierung'],['802','Unterlagen erstellt für die Bank','Bankenfinanzierung'],['803','Termin bei der Bank','Bankenfinanzierung'],['804','Todos für anstehende Finanzierungen','Bankenfinanzierung'],['805','Co-Investoren Austausch','Bankenfinanzierung']
+];
+function stepByCode(c){const s=STEPS.find(x=>x[0]===c);return s?{code:s[0],name:s[1],kat:s[2]}:null;}
+const ERG=[['erfolgreich','Erfolgreich','✓'],['offen','Offen','◷'],['follow-up','Follow-up','↻'],['auftrag-erteilt','Auftrag erteilt','★'],['abgegeben','Abgegeben','↑'],['abgebrochen','Abgebrochen','✕']];
+function ergLabel(v){const e=ERG.find(x=>x[0]===v);return e?e[2]+' '+e[1]:(v||'—');}
+function ergCls(v){return 'b-'+String(v||'').replace(/-/g,'');}
+const MON7=d=>String(d||'').slice(0,7);
+let ROWS=[], VIEW='dash', EDIT=null, F_ERG='erfolgreich';
+let filt={geld:{kat:'',erg:'',q:''},systeme:{kat:'',erg:'',q:''},alle:{kat:'',erg:'',q:'',sort:'desc'}};
+let chart=null;
+
+function initNav(){const tabs=[['dash','Dashboard'],['geld','Geld produzierend'],['systeme','Systeme'],['alle','Alle Aktivitäten'],['steps','GPM-Schritte']];
+  $('nav').innerHTML=tabs.map(t=>`<button class="${VIEW===t[0]?'on':''}" onclick="setView('${t[0]}')">${t[1]}</button>`).join('');}
+function setView(v){VIEW=v;initNav();render();}
+
+async function load(){
+  const{data,error}=await sb.from('gpm_aktivitaeten').select('*').order('datum',{ascending:false,nullsFirst:false}).order('created_at',{ascending:false});
+  if(error){$('main').innerHTML='<div class="empty">Fehler: '+esc(error.message)+'</div>';return;}
+  ROWS=data||[];render();
+}
+function isoWeekKey(dstr){const d=new Date(dstr+'T00:00:00');if(isNaN(d))return null;const dt=new Date(Date.UTC(d.getFullYear(),d.getMonth(),d.getDate()));const dn=(dt.getUTCDay()+6)%7;dt.setUTCDate(dt.getUTCDate()-dn+3);const ft=new Date(Date.UTC(dt.getUTCFullYear(),0,4));const kw=1+Math.round(((dt-ft)/86400000-3+((ft.getUTCDay()+6)%7))/7);return dt.getUTCFullYear()+'-W'+String(kw).padStart(2,'0');}
+
+function render(){
+  initNav();
+  if(VIEW==='dash')return renderDash();
+  if(VIEW==='steps')return renderSteps();
+  return renderListView(VIEW);
+}
+
+function renderDash(){
+  const total=ROWS.length;
+  const thisM=MON7(new Date().toISOString());
+  const monthN=ROWS.filter(r=>MON7(r.datum)===thisM).length;
+  const erf=ROWS.filter(r=>r.ergebnis==='erfolgreich').length;
+  const off=ROWS.filter(r=>r.ergebnis==='offen'||r.ergebnis==='follow-up').length;
+  const quote=total?Math.round(erf/total*100):0;
+  const kpi=[['Gesamt',total,'Aktivitäten'],['Dieser Monat',monthN,thisM],['Erfolgreich',erf,quote+'% Quote'],['Offen / Follow-up',off,'Ausstehend']];
+  // Kategorien
+  const catCnt={};ROWS.forEach(r=>{catCnt[r.kategorie]=(catCnt[r.kategorie]||0)+1;});
+  const cats=Object.keys(catCnt).sort((a,b)=>catCnt[b]-catCnt[a]);const maxc=Math.max(1,...cats.map(c=>catCnt[c]));
+  const catHtml=cats.map(c=>`<div class="catrow"><span class="nm">${esc(c)}</span><span class="bar"><span class="fill" style="width:${catCnt[c]/maxc*100}%;background:${CATCOL[c]||'#888'}"></span></span><span class="n">${catCnt[c]}</span></div>`).join('')||'<div class="empty">Keine Daten</div>';
+  // Recent
+  const recent=ROWS.slice(0,8).map(r=>actRow(r,false)).join('')||'<div class="empty">Noch keine Einträge</div>';
+  $('main').innerHTML=
+    '<div class="kpis">'+kpi.map(k=>`<div class="kpi"><div class="l">${k[0]}</div><div class="v">${k[1]}</div><div class="s">${k[2]}</div></div>`).join('')+'</div>'
+   +'<div class="grid2"><div class="card"><div class="card-hd">Aktivitäten nach Kategorie</div><div class="card-bd">'+catHtml+'</div></div>'
+   +'<div class="card"><div class="card-hd">Benchmark — Aktivitäten pro Werktag (Woche ÷ 5)</div><div class="card-bd"><div class="cwrap"><canvas id="benchCv"></canvas></div><div id="benchAvg" style="font-size:12px;color:var(--muted);margin-top:8px"></div></div></div></div>'
+   +'<div class="card"><div class="card-hd">Zuletzt hinzugefügt</div><div class="card-bd">'+recent+'</div></div>';
+  renderBench();
+}
+function renderBench(){
+  const cv=$('benchCv');if(!cv||!window.Chart)return;
+  const weeks=[];const now=new Date();
+  for(let i=7;i>=0;i--){const d=new Date(now);d.setDate(d.getDate()-i*7);weeks.push(isoWeekKey(d.toISOString().slice(0,10)));}
+  const gW={},sW={};weeks.forEach(w=>{gW[w]=0;sW[w]=0;});
+  ROWS.forEach(r=>{const w=isoWeekKey(r.datum);if(w==null)return;if(gW[w]==null)return;if(r.gruppe==='systeme')sW[w]++;else gW[w]++;});
+  const gV=weeks.map(w=>+(gW[w]/5).toFixed(1)),sV=weeks.map(w=>+(sW[w]/5).toFixed(1));
+  if(chart)chart.destroy();
+  chart=new Chart(cv,{type:'line',data:{labels:weeks.map(w=>w.replace(/^\d{4}-/,'')),datasets:[
+    {label:'Geld produzierend',data:gV,borderColor:'#185fa5',backgroundColor:'#185fa522',fill:true,tension:.25,pointRadius:2},
+    {label:'Systeme',data:sV,borderColor:'#c8741f',backgroundColor:'#c8741f22',fill:true,tension:.25,pointRadius:2}]},
+    options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{labels:{boxWidth:12,font:{size:11}}}},scales:{y:{beginAtZero:true,ticks:{font:{size:9}}},x:{ticks:{font:{size:9}}}}}});
+  const avg=arr=>arr.length?(arr.slice(-4).reduce((a,b)=>a+b,0)/4).toFixed(1):'0';
+  $('benchAvg').innerHTML='Ø 4 Wochen — Geld produzierend: <b>'+avg(gV)+'</b>/Werktag · Systeme: <b>'+avg(sV)+'</b>/Werktag';
+}
+
+function catOptions(mode){let cats;if(mode==='geld')cats=GELD;else if(mode==='systeme')cats=SYS;else cats=GELD.concat(SYS);
+  return '<option value="">Alle Kategorien</option>'+cats.map(c=>`<option ${filt[mode].kat===c?'selected':''}>${esc(c)}</option>`).join('');}
+function ergOptions(mode){return '<option value="">Alle Ergebnisse</option>'+ERG.map(e=>`<option value="${e[0]}" ${filt[mode].erg===e[0]?'selected':''}>${e[1]}</option>`).join('');}
+function fSet(mode,key,val){filt[mode][key]=val;render();}
+function renderListView(mode){
+  const f=filt[mode];
+  let list=ROWS.filter(r=> mode==='alle'? true : r.gruppe===mode);
+  if(f.kat)list=list.filter(r=>r.kategorie===f.kat);
+  if(f.erg)list=list.filter(r=>r.ergebnis===f.erg);
+  if(f.q){const q=f.q.toLowerCase();list=list.filter(r=>[r.schritt_name,r.kategorie,r.gebaeude_tool,r.kontaktperson,r.thema,r.notizen].filter(Boolean).some(x=>String(x).toLowerCase().includes(q)));}
+  if(mode==='alle'&&f.sort==='asc')list=[...list].reverse();
+  const title=mode==='geld'?'Geld produzierende Maßnahmen':mode==='systeme'?'Systeme aufbauen & verbessern':'Alle Aktivitäten';
+  const sortSel=mode==='alle'?`<select onchange="fSet('alle','sort',this.value)"><option value="desc" ${f.sort==='desc'?'selected':''}>Neueste zuerst</option><option value="asc" ${f.sort==='asc'?'selected':''}>Älteste zuerst</option></select>`:'';
+  $('main').innerHTML=`<div class="card"><div class="card-hd"><span style="font-size:14px;text-transform:none;color:var(--text)">${title} <span style="color:var(--muted);font-weight:400">· ${list.length}</span></span><button class="btn" onclick="openNew()">+ Neuer Eintrag</button></div>
+    <div class="card-bd">
+      <div class="bar-controls">
+        <select onchange="fSet('${mode}','kat',this.value)">${catOptions(mode)}</select>
+        <select onchange="fSet('${mode}','erg',this.value)">${ergOptions(mode)}</select>
+        ${sortSel}
+        <input placeholder="Suchen…" value="${esc(f.q)}" oninput="filt['${mode}'].q=this.value;clearTimeout(window._st);window._st=setTimeout(render,180)">
+      </div>
+      ${list.length?list.map(r=>actRow(r,true)).join(''):'<div class="empty">Keine Aktivitäten für diese Auswahl.</div>'}
+    </div></div>`;
+}
+function actRow(r,actions){
+  return `<div class="act">
+    <div class="act-main">
+      <div class="act-t">${esc(r.schritt_name)||'—'}</div>
+      <div class="act-sub">${esc(r.kategorie)||''} · ${esc(r.schritt_code)||''}</div>
+      <div class="act-meta">${esc(r.datum)||''}${r.gebaeude_tool?' · '+esc(r.gebaeude_tool):''}${r.thema?' · '+esc(r.thema):''}${r.kontaktperson?' · '+esc(r.kontaktperson):''}</div>
+      ${r.notizen?`<div class="act-note">${esc(r.notizen)}</div>`:''}
+    </div>
+    <div class="act-side">
+      <span class="badge ${ergCls(r.ergebnis)}">${ergLabel(r.ergebnis)}</span>
+      ${r.followup_datum?`<span class="fu">FU: ${esc(r.followup_datum)}</span>`:''}
+      ${actions?`<span class="act-actions"><button onclick="openEdit('${r.id}')">✎</button> <button onclick="delEntry('${r.id}')">✕</button></span>`:''}
+    </div></div>`;
+}
+function renderSteps(){
+  const cats=GELD.concat(SYS);
+  $('main').innerHTML='<div class="card"><div class="card-hd">GPM-Schritte Referenz</div><div class="card-bd"><div class="steps">'
+   +cats.map(c=>{const items=STEPS.filter(s=>s[2]===c);
+     return `<div class="stepcat"><div class="stepcat-hd" style="background:${CATCOL[c]||'#888'}">${esc(c)} <span style="opacity:.8;font-weight:400">· ${CATG[c]==='geld'?'Geld produzierend':'Systeme'}</span></div>${items.map(s=>`<div class="it"><span class="cd">${s[0]}</span><span>${esc(s[1])}</span></div>`).join('')}</div>`;}).join('')
+   +'</div></div></div>';
+}
+
+// ——— Dialog ———
+function fillSchrittSelect(sel){$('f_schritt').innerHTML='<option value="">— GPM-Schritt wählen —</option>'+GELD.concat(SYS).map(c=>{
+  const items=STEPS.filter(s=>s[2]===c);return `<optgroup label="${esc(c)}">`+items.map(s=>`<option value="${s[0]}" ${sel===s[0]?'selected':''}>${s[0]} · ${esc(s[1])}</option>`).join('')+'</optgroup>';}).join('');}
+function fillErg(){$('ergRow').innerHTML=ERG.map(e=>`<button class="${F_ERG===e[0]?'on':''}" onclick="F_ERG='${e[0]}';fillErg()">${e[2]} ${e[1]}</button>`).join('');}
+function openNew(){EDIT=null;$('dlgTitle').textContent='Neuen Eintrag erfassen';$('f_datum').value=new Date().toISOString().slice(0,10);fillSchrittSelect('');$('f_geb').value='';$('f_kontakt').value='';$('f_thema').value='';F_ERG='erfolgreich';fillErg();$('f_fu').value='';$('f_notiz').value='';$('ov').classList.add('show');}
+function openEdit(id){const r=ROWS.find(x=>x.id===id);if(!r)return;EDIT=id;$('dlgTitle').textContent='Eintrag bearbeiten';$('f_datum').value=r.datum||'';fillSchrittSelect(r.schritt_code);$('f_geb').value=r.gebaeude_tool||'';$('f_kontakt').value=r.kontaktperson||'';$('f_thema').value=r.thema||'';F_ERG=r.ergebnis||'erfolgreich';fillErg();$('f_fu').value=r.followup_datum||'';$('f_notiz').value=r.notizen||'';$('ov').classList.add('show');}
+function closeDlg(){$('ov').classList.remove('show');}
+async function saveEntry(){
+  const code=$('f_schritt').value;if(!code){toast('Bitte GPM-Schritt wählen');return;}
+  const st=stepByCode(code);
+  const row={datum:$('f_datum').value||null,schritt_code:code,schritt_name:st?st.name:null,kategorie:st?st.kat:null,gruppe:st?CATG[st.kat]:null,gebaeude_tool:$('f_geb').value.trim()||null,kontaktperson:$('f_kontakt').value.trim()||null,thema:$('f_thema').value.trim()||null,ergebnis:F_ERG,followup_datum:$('f_fu').value||null,notizen:$('f_notiz').value.trim()||null,updated_at:new Date().toISOString()};
+  let error;
+  if(EDIT){({error}=await sb.from('gpm_aktivitaeten').update(row).eq('id',EDIT));}
+  else{({error}=await sb.from('gpm_aktivitaeten').insert(row));}
+  if(error){toast('Fehler: '+error.message);return;}
+  closeDlg();toast(EDIT?'Aktualisiert ✓':'Gespeichert ✓');load();
+}
+async function delEntry(id){if(!confirm('Eintrag löschen?'))return;await sb.from('gpm_aktivitaeten').delete().eq('id',id);ROWS=ROWS.filter(r=>r.id!==id);render();}
+
+// ——— CSV ———
+function csvCell(v){v=(v==null?'':String(v));return /[",\n;]/.test(v)?'"'+v.replace(/"/g,'""')+'"':v;}
+function exportCSV(){
+  const cols=['datum','kategorie','gruppe','schritt_code','schritt_name','gebaeude_tool','kontaktperson','thema','ergebnis','followup_datum','notizen'];
+  const rows=[cols.join(';')].concat(ROWS.map(r=>cols.map(c=>csvCell(r[c])).join(';')));
+  const blob=new Blob([rows.join('\n')],{type:'text/csv;charset=utf-8'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='gpm-tracker.csv';a.click();
+}
+
+(async()=>{const{data:{session}}=await sb.auth.getSession();if(!session){$('main').innerHTML='<div class="empty" style="padding:60px">Bitte zuerst im OS einloggen.</div>';return;}initNav();load();})();
+</script></body></html>

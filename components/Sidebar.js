@@ -35,6 +35,7 @@ const NAV = [
     { href: '/produktivitaet/ideale-woche', icon: 'ti-calendar-heart', label: 'Ideale Woche' },
     { href: '/produktivitaet/statusbericht', icon: 'ti-clipboard-check', label: 'Statusbericht GF' },
     { href: '/produktivitaet/stundengehalt', icon: 'ti-clock-dollar', label: 'Stundengehalt' },
+    { href: '/produktivitaet/gpm-tracker', icon: 'ti-target-arrow', label: 'GPM-Tracker' },
   ] },
   { type: 'group', key: 'mastermind', icon: 'ti-bulb', label: 'Prozesse & Mastermind', items: [
     { href: '/prozesse-mastermind', icon: 'ti-users-group', label: 'Mastermind', exact: true },
