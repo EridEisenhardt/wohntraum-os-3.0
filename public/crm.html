@@ -285,7 +285,7 @@ function fieldHtml(typ,f,val){
   const [key,label,kind]=f;
   let inp;
   if(kind==='textarea')inp=`<textarea id="m_${key}" rows="3">${esc(val)}</textarea>`;
-  else if(kind==='firma')inp=`<select id="m_${key}"><option value="">—</option>${F.map(x=>`<option value="${x.id}" ${x.id===val?'selected':''}>${esc(x.name)}</option>`).join('')}</select>`;
+  else if(kind==='firma')inp=`<select id="m_${key}" data-prev="${val==null?'':esc(val)}" onchange="firmaSel(this)"><option value="">—</option>${F.map(x=>`<option value="${x.id}" ${x.id===val?'selected':''}>${esc(x.name)}</option>`).join('')}<option value="__new__">➕ Neue Firma anlegen …</option></select>`;
   else if(kind==='kontakt')inp=`<select id="m_${key}"><option value="">—</option>${K.map(x=>`<option value="${x.id}" ${x.id===val?'selected':''}>${esc(kName(x))}</option>`).join('')}</select>`;
   else if(kind==='stufe')inp=`<select id="m_${key}">${STUFEN.map(s=>`<option ${s===val?'selected':''}>${esc(s)}</option>`).join('')}</select>`;
   else if(kind==='kats'){
@@ -297,6 +297,21 @@ function fieldHtml(typ,f,val){
   }
   else inp=`<input id="m_${key}" type="${kind==='number'?'number':kind==='date'?'date':'text'}" value="${val==null?'':esc(val)}">`;
   return `<div class="fld ${kind==='textarea'||kind==='kats'?'wide':''}"><label>${label}</label>${inp}</div>`;
+}
+
+// ——— Firma im Dialog: bestehende wählen oder neue direkt anlegen ———
+async function firmaSel(el){
+  if(el.value!=='__new__'){el.dataset.prev=el.value;return;}
+  const prev=el.dataset.prev||'';
+  const name=prompt('Name der neuen Firma:');
+  if(!name||!name.trim()){el.value=prev;return;}
+  const{data,error}=await sb.from('crm_firmen').insert({name:name.trim(),kategorien:[]}).select();
+  if(error||!data||!data[0]){toast(error?error.message:'Anlegen fehlgeschlagen');el.value=prev;return;}
+  const neu=data[0];F.push(neu);F.sort((a,b)=>String(a.name).localeCompare(String(b.name),'de'));
+  await logTL('firma',neu.id,'erstellt',{text:'Firma angelegt (aus Kontakt)'});
+  el.innerHTML=`<option value="">—</option>${F.map(x=>`<option value="${x.id}">${esc(x.name)}</option>`).join('')}<option value="__new__">➕ Neue Firma anlegen …</option>`;
+  el.value=neu.id;el.dataset.prev=neu.id;
+  toast('Firma „'+neu.name+'" angelegt ✓');
 }
 
 // ——— Kategorie-Auswahl im Dialog (Dropdown + entfernbare Chips) ———
@@ -345,7 +360,7 @@ async function saveEntity(){
   if(!CUR)return;const {typ,id,rec}=CUR;const row={};
   SPEC[typ].forEach(f=>{
     if(f[2]==='kats'){row[f[0]]=readKats();return;}
-    const el=$('m_'+f[0]);if(!el)return;let v=el.value;if(v==='')v=null;
+    const el=$('m_'+f[0]);if(!el)return;let v=el.value;if(v===''||v==='__new__')v=null;
     if(f[2]==='number'&&v!=null)v=Number(v);row[f[0]]=v;});
   row.updated_at=new Date().toISOString();
   if(id){
