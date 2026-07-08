@@ -71,6 +71,23 @@ body{background:var(--bg);color:var(--text);font-family:'Inter',system-ui,-apple
 .slotlbl{font-weight:600;color:var(--dim);white-space:nowrap}
 /* Toolbar */
 .toolbar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:12px}
+.tov{position:fixed;inset:0;background:rgba(20,25,35,.45);display:none;align-items:flex-start;justify-content:center;z-index:400;padding:32px 16px;overflow:auto}
+.tov.show{display:flex}
+.tdlg{background:var(--surf);border-radius:12px;width:100%;max-width:720px;box-shadow:0 20px 60px rgba(0,0,0,.3)}
+.tdlg-hd{padding:14px 18px;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;align-items:center;font-weight:700}
+.tdlg-hd .tx{cursor:pointer;color:var(--muted)}
+.tdlg-bd{padding:8px 18px;max-height:60vh;overflow:auto}
+.tdlg-ft{padding:12px 18px;border-top:1px solid var(--line);display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.trw{display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid var(--line);font-size:13px}
+.trw:last-child{border-bottom:none}
+.trw input[type=checkbox]{width:16px;height:16px}
+.trw .nr{color:var(--muted);font-weight:700;font-size:12px}
+.trw .ti{flex:1;font-weight:600;min-width:140px}
+.trw .mt{font-size:11.5px;color:var(--muted)}
+.tprio{font-size:10px;font-weight:700;padding:2px 7px;border-radius:5px;background:#eef0f3;color:#4b5563}
+.tprio.P1{background:#fdecea;color:#c0392b}
+.tover{color:#c0392b;font-weight:700}
+.tas{font-size:11px;font-weight:600;color:#f06a6a;text-decoration:none}
 .fchip{display:inline-flex;align-items:center;gap:6px;padding:7px 12px;border-radius:20px;border:1px solid var(--line);background:var(--surf);font-size:12.5px;font-weight:600;color:var(--text);cursor:pointer}
 .fchip .cnt{background:var(--surf2);border-radius:20px;padding:0 7px;font-size:11px;color:var(--muted)}
 .fchip.on{background:var(--text);color:#fff;border-color:var(--text)}.fchip.on .cnt{background:rgba(255,255,255,.22);color:#fff}
@@ -202,6 +219,7 @@ select.cin.tagset{color:var(--accent);border-color:var(--accent);background:#eef
     <label class="chkbox"><input type="checkbox" id="hideDone" onchange="HIDE_DONE=this.checked;render()"> Erledigte ausblenden</label>
     <span class="seg"><button id="vList" class="on" onclick="setView('list')">Liste</button><button id="vBoard" onclick="setView('board')">Board</button></span>
     <button class="btn g" onclick="carryOver()" title="Nicht erledigte aus Vorwoche übernehmen">↪ Übernehmen</button>
+    <button class="btn g" onclick="openTickets()" title="Offene Tickets aus dem Ticketsystem in diese Woche übernehmen">🎫 Aus Tickets</button>
     <button class="btn" onclick="addTask()">+ Neue Aufgabe</button>
   </div>
 
@@ -210,6 +228,18 @@ select.cin.tagset{color:var(--accent);border-color:var(--accent);background:#eef
   <div id="work"></div>
 
   <div class="foot" id="foot"></div>
+</div>
+<div class="tov" id="tov" onclick="if(event.target===this)closeTickets()">
+  <div class="tdlg">
+    <div class="tdlg-hd"><span>Offene Tickets übernehmen</span><span class="tx" onclick="closeTickets()">✕</span></div>
+    <div class="tdlg-bd" id="tckBody"></div>
+    <div class="tdlg-ft">
+      <span id="tckSel" style="font-size:12px;color:var(--muted)"></span>
+      <span style="flex:1"></span>
+      <button class="btn g" onclick="closeTickets()">Abbrechen</button>
+      <button class="btn" onclick="importTickets()">In KW übernehmen</button>
+    </div>
+  </div>
 </div>
 <div class="toast" id="toast"></div>
 
@@ -248,7 +278,7 @@ async function load(){
   const now=new Date();
   $('heute').textContent='Heute ist '+TAGNAME[(now.getDay()+6)%7]+' · '+('0'+now.getDate()).slice(-2)+'. '+MON[now.getMonth()]+' '+now.getFullYear();
   $('kwlbl').textContent='KW '+CUR.kw+' · '+CUR.jahr; $('kwlbl').title=fmtRange(CUR.jahr,CUR.kw);
-  const { data, error } = await sb.from('wochenplanung').select('id,bereich,pos,aufgabe,kategorie,prioritaet,wochentag,uhrzeit,ziel,erledigt_tage,uebernommen,status,notizen')
+  const { data, error } = await sb.from('wochenplanung').select('id,bereich,pos,aufgabe,kategorie,prioritaet,wochentag,uhrzeit,ziel,erledigt_tage,uebernommen,status,notizen,ticket_id')
     .eq('jahr',CUR.jahr).eq('kw',CUR.kw).order('pos',{ascending:true}).order('created_at',{ascending:true});
   ROWS = error ? [] : (data||[]);
   if(error) toast('Fehler beim Laden: '+error.message);
@@ -347,6 +377,12 @@ async function updField(id, field, val){
   const { error } = await sb.from('wochenplanung').update({ [field]: (val===''?null:val) }).eq('id',id);
   if(error){ toast('Speichern fehlgeschlagen: '+error.message); return; }
   const r=ROWS.find(x=>x.id===id); if(r){ r[field]=val; render(); }
+  if(field==='status' && r && r.ticket_id){
+    const st = val==='erledigt' ? 'Erledigt' : val==='in_arbeit' ? 'In Bearbeitung' : val==='warten' ? 'Wartet' : 'Neu';
+    await sb.from('crm_tickets').update({ status:st, updated_at:new Date().toISOString(),
+      erledigt_at: st==='Erledigt'? new Date().toISOString() : null }).eq('id', r.ticket_id);
+    toast('Ticket im CRM auf „'+st+'" gesetzt');
+  }
 }
 async function delRow(id){
   const { error } = await sb.from('wochenplanung').delete().eq('id',id);
@@ -366,6 +402,54 @@ async function cycleDay(id,day){
   if(error){ toast('Speichern fehlgeschlagen: '+error.message); return; }
   r.wochentag=sched.join(','); r.erledigt_tage=kept.join(','); render();
 }
+// ——— Tickets aus dem Ticketsystem übernehmen ———
+let TCK=[];
+const TAGEV=['Mo','Di','Mi','Do','Fr','Sa','So'];
+const heuteISO=()=>new Date().toISOString().slice(0,10);
+function tagVonDatum(d){ if(!d) return null; const dt=new Date(d+'T12:00:00'); if(isNaN(dt)) return null; return TAGEV[(dt.getDay()+6)%7]; }
+function fmtDate(d){ if(!d) return ''; const p=String(d).split('-'); return p.length===3?p[2]+'.'+p[1]+'.':d; }
+
+async function openTickets(){
+  const { data, error } = await sb.from('crm_tickets').select('*').neq('status','Erledigt').order('faellig',{ascending:true,nullsFirst:false});
+  if(error){ toast('Tickets laden fehlgeschlagen: '+error.message); return; }
+  TCK=data||[];
+  const schon=new Set(ROWS.map(r=>r.ticket_id).filter(Boolean));
+  const frei=TCK.filter(t=>!schon.has(t.id));
+  $('tckBody').innerHTML = frei.length ? frei.map(t=>{
+    const ueber=t.faellig&&t.faellig<heuteISO();
+    return `<label class="trw">
+      <input type="checkbox" value="${t.id}" onchange="tckCount()">
+      <span class="nr">#${t.nummer}</span>
+      <span class="ti">${esc(t.titel)}</span>
+      <span class="tprio ${esc(t.prio||'P2')}">${esc(t.prio||'P2')}</span>
+      <span class="mt ${ueber?'tover':''}">${t.faellig?fmtDate(t.faellig):'ohne Termin'}</span>
+      ${t.asana_url?`<a class="tas" href="${esc(t.asana_url)}" target="_blank" rel="noopener" onclick="event.stopPropagation()">Asana ↗</a>`:''}
+    </label>`;}).join('')
+    : '<div style="padding:24px;text-align:center;color:var(--muted)">Keine offenen Tickets — oder alle sind schon in dieser Woche.</div>';
+  tckCount(); $('tov').classList.add('show');
+}
+function closeTickets(){ $('tov').classList.remove('show'); }
+function tckSelected(){ return [...document.querySelectorAll('#tckBody input[type=checkbox]:checked')].map(c=>c.value); }
+function tckCount(){ const n=tckSelected().length; $('tckSel').textContent = n? n+' ausgewählt' : 'Nichts ausgewählt'; }
+
+async function importTickets(){
+  const ids=tckSelected();
+  if(!ids.length){ toast('Bitte mindestens ein Ticket auswählen'); return; }
+  const u=(await sb.auth.getUser()).data.user;
+  let max=Math.max(0,...ROWS.filter(r=>r.bereich==='aufgabe').map(r=>r.pos||0));
+  const recs=ids.map(id=>{
+    const t=TCK.find(x=>x.id===id);
+    const prio=['P1','P2','P3','P4'].includes(t.prio)?t.prio:'P2';
+    const notiz=['Ticket #'+t.nummer, t.asana_url||'', t.beschreibung||''].filter(Boolean).join(' · ');
+    return { jahr:CUR.jahr, kw:CUR.kw, bereich:'aufgabe', pos:++max, aufgabe:t.titel,
+      prioritaet:prio, status:'offen', wochentag:tagVonDatum(t.faellig),
+      notizen:notiz, ticket_id:t.id, created_by:u?u.id:null };
+  });
+  const { error } = await sb.from('wochenplanung').insert(recs);
+  if(error){ toast('Übernahme fehlgeschlagen: '+error.message); return; }
+  closeTickets(); toast(recs.length+' Ticket(s) übernommen 🎫'); await load();
+}
+
 async function carryOver(){
   const mo=mondayOf(CUR.jahr,CUR.kw); mo.setUTCDate(mo.getUTCDate()-7);
   const prev=isoWeek(new Date(mo.getUTCFullYear(),mo.getUTCMonth(),mo.getUTCDate()));
