@@ -92,7 +92,7 @@ ol{margin:0 0 0 18px}ol li{margin-bottom:7px}
     </div>
     <div class="card-bd">
       <div class="chartwrap"><canvas id="chart"></canvas></div>
-      <p class="muted" style="margin-top:10px">Achse ab KW 1 (1. Januar) bis zur laufenden Woche — Lücken zeigen nicht erfasste Wochen. Hellblaue Balken = Teilwochen. Linie = Benchmark Ø Wochenlohn 84,07 € (Basis 2026).</p>
+      <p class="muted" style="margin-top:10px">Achse lückenlos vom ersten Datensatz bis zur laufenden Woche — Lücken zeigen nicht erfasste Wochen. Hellblaue Balken = Teilwochen. Linie = Benchmark Ø Wochenlohn 84,07 € (Basis 2026).</p>
     </div>
   </div>
 
@@ -202,14 +202,16 @@ function setMode(m){ MODE=m; document.getElementById('tgWoche').classList.toggle
 
 // Kalenderwochen eines Jahres (52 oder 53)
 function kwImJahr(y){ const d=new Date(Date.UTC(y,11,28)); return isoWeek(new Date(d.getUTCFullYear(),d.getUTCMonth(),d.getUTCDate())).kw; }
-// Lückenlose Wochenachse ab KW1 des ersten Datenjahres bis zur aktuellen Woche
+// Lückenlose Wochenachse ab dem ersten Datensatz bis zur aktuellen Woche
 function wochenAchse(){
-  const jahre=DATA.map(r=>r.jahr);
-  const von=jahre.length?Math.min.apply(null,jahre):CW.jahr;
+  if(!DATA.length) return [];
+  const asc=[...DATA].sort((a,b)=> a.jahr-b.jahr || a.kw-b.kw);
+  const start=asc[0];
   const out=[];
-  for(let y=von;y<=CW.jahr;y++){
-    const max=(y===CW.jahr)?CW.kw:kwImJahr(y);
-    for(let w=1;w<=max;w++) out.push({jahr:y,kw:w});
+  for(let y=start.jahr;y<=CW.jahr;y++){
+    const vonKw=(y===start.jahr)?start.kw:1;
+    const bisKw=(y===CW.jahr)?CW.kw:kwImJahr(y);
+    for(let w=vonKw;w<=bisKw;w++) out.push({jahr:y,kw:w});
   }
   return out;
 }
@@ -229,11 +231,12 @@ function draw(){
       {label:'Benchmark 84,07 €',data:achse.map(()=>BENCH),type:'line',borderColor:'#c0392b',borderWidth:2,borderDash:[6,4],pointRadius:0,order:1}
     ]},options:chartOpts('€ / Woche')});
   } else {
-    const jahre=DATA.map(r=>r.jahr); const von=Math.min.apply(null,jahre);
+    const first=kwMonday(asc[0].jahr,asc[0].kw);
     const mmap={};
-    for(let y=von;y<=CW.jahr;y++){
-      const bis=(y===CW.jahr)?new Date().getMonth():11;
-      for(let m=0;m<=bis;m++) mmap[y+'-'+m]={y,m,sum:0,hit:false};
+    for(let y=first.getUTCFullYear();y<=CW.jahr;y++){
+      const vonM=(y===first.getUTCFullYear())?first.getUTCMonth():0;
+      const bisM=(y===CW.jahr)?new Date().getMonth():11;
+      for(let m=vonM;m<=bisM;m++) mmap[y+'-'+m]={y,m,sum:0,hit:false};
     }
     asc.forEach(r=>{ if(r.wochenverdienst==null)return; const mo=kwMonday(r.jahr,r.kw);
       const key=mo.getUTCFullYear()+'-'+mo.getUTCMonth();
@@ -255,7 +258,7 @@ function chartOpts(yt){
     },
     scales:{
       y:{ beginAtZero:true, title:{display:true,text:yt,font:{size:11}}, ticks:{ callback:function(val){ return val+' €'; } } },
-      x:{ ticks:{ font:{size:10} } }
+      x:{ ticks:{ font:{size:9}, autoSkip:false, maxRotation:90, minRotation:90 } }
     }
   };
 }
@@ -381,6 +384,13 @@ function kwFromName(name){
   if(!m) return null;
   const d=new Date(Date.UTC(+m[3],+m[2]-1,+m[1])); return isoWeek(new Date(d.getUTCFullYear(),d.getUTCMonth(),d.getUTCDate()));
 }
+// Zeitraum "from_TT_MM_JJJJ_to_TT_MM_JJJJ" → Spanne in Tagen
+function spanneAusName(name){
+  const m=name && name.match(/from[_ ](\d{2})[_.](\d{2})[_.](\d{4}).*?to[_ ](\d{2})[_.](\d{2})[_.](\d{4})/i);
+  if(!m) return null;
+  const a=Date.UTC(+m[3],+m[2]-1,+m[1]), b=Date.UTC(+m[6],+m[5]-1,+m[4]);
+  return Math.round((b-a)/86400000)+1;
+}
 let LAST=null;
 const drop=document.getElementById('drop');
 ['dragenter','dragover'].forEach(e=>drop.addEventListener(e,ev=>{ev.preventDefault();drop.classList.add('over');}));
@@ -398,6 +408,14 @@ function onFile(file){
       kw=isoWeek(new Date(max.getUTCFullYear(),max.getUTCMonth(),max.getUTCDate()));
       tage=new Set(ds.map(isoStr)).size;
     } else {
+      const span=spanneAusName(file.name);
+      if(span && span>8){
+        alert('Diese Datei umfasst '+span+' Tage ('+file.name+') und enthält keine Datumsspalte.\n\n'
+          +'Ein Summary Report über mehrere Wochen lässt sich nicht auf Kalenderwochen aufteilen — er würde '
+          +'komplett in eine einzige Woche geschrieben.\n\nBitte exportiere den Zeitraum wochenweise, '
+          +'oder nutze den Toggl "Detailed Report" mit Datumsspalte.');
+        return;
+      }
       kw=kwFromName(file.name);
     }
     evalRows(res.data,kw,file.name,bis,tage);
