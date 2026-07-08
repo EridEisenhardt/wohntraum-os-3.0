@@ -60,10 +60,10 @@ tbody tr:hover td{background:#fafbfc}
 @media(max-width:760px){.fgrid{grid-template-columns:1fr}}
 .chips{display:flex;gap:4px;flex-wrap:wrap}
 .chip{display:inline-block;font-size:10px;font-weight:700;padding:2px 8px;border-radius:20px;color:#fff;white-space:nowrap}
-.katsel{display:flex;gap:6px;flex-wrap:wrap;padding:8px;border:1px solid var(--line);border-radius:8px;background:var(--surf2)}
-.katsel label{display:inline-flex;align-items:center;gap:5px;font-size:11.5px;font-weight:600;padding:4px 9px;border-radius:20px;border:1px solid var(--line);background:var(--surf);cursor:pointer;color:var(--dim)}
-.katsel label.on{color:#fff;border-color:transparent}
-.katsel input{margin:0}
+.katsel{display:flex;flex-direction:column;gap:8px;padding:8px;border:1px solid var(--line);border-radius:8px;background:var(--surf2)}
+.katsel select{width:100%}
+.chip .x{margin-left:6px;cursor:pointer;opacity:.75;font-weight:700}
+.chip .x:hover{opacity:1}
 </style></head><body>
 <div class="hdr">
   <div class="logo">MACHER OS</div><div class="hdr-title">CRM</div>
@@ -280,24 +280,38 @@ function fieldHtml(typ,f,val){
   else if(kind==='kontakt')inp=`<select id="m_${key}"><option value="">—</option>${K.map(x=>`<option value="${x.id}" ${x.id===val?'selected':''}>${esc(kName(x))}</option>`).join('')}</select>`;
   else if(kind==='stufe')inp=`<select id="m_${key}">${STUFEN.map(s=>`<option ${s===val?'selected':''}>${esc(s)}</option>`).join('')}</select>`;
   else if(kind==='kats'){
-    const sel=Array.isArray(val)?val:[];
-    inp=`<div class="katsel" id="m_${key}">${KAT.length?KAT.map(k=>{const on=sel.includes(k.name);
-      return `<label class="${on?'on':''}" style="${on?'background:'+esc(k.farbe):''}">
-        <input type="checkbox" value="${esc(k.name)}" ${on?'checked':''} onchange="this.parentNode.classList.toggle('on',this.checked);this.parentNode.style.background=this.checked?'${esc(k.farbe)}':''">
-        ${esc(k.name)}</label>`;}).join(''):'<span style="font-size:12px;color:var(--muted)">Noch keine Kategorien — Reiter „Kategorien".</span>'}</div>`;
+    CURKATS=Array.isArray(val)?val.slice():[];
+    inp=`<div class="katsel" id="m_${key}">
+      <div class="chips" id="katChips"></div>
+      <select id="katAdd" onchange="katPick(this.value)"></select>
+    </div>`;
   }
   else inp=`<input id="m_${key}" type="${kind==='number'?'number':kind==='date'?'date':'text'}" value="${val==null?'':esc(val)}">`;
   return `<div class="fld ${kind==='textarea'||kind==='kats'?'wide':''}"><label>${label}</label>${inp}</div>`;
 }
-function readKats(key){
-  const box=$('m_'+key);if(!box)return [];
-  return Array.prototype.slice.call(box.querySelectorAll('input[type=checkbox]')).filter(c=>c.checked).map(c=>c.value);
+
+// ——— Kategorie-Auswahl im Dialog (Dropdown + entfernbare Chips) ———
+let CURKATS=[];
+function katRender(){
+  const chips=$('katChips'),sel=$('katAdd');if(!chips||!sel)return;
+  chips.innerHTML=CURKATS.length?CURKATS.map(n=>`<span class="chip" style="background:${esc(katColor(n))}">${esc(n)}
+    <span class="x" title="entfernen" onclick="katRemove('${esc(n).replace(/'/g,"\\'")}')">✕</span></span>`).join('')
+    :'<span style="font-size:12px;color:var(--muted)">Keine Kategorie zugeordnet.</span>';
+  const rest=KAT.filter(k=>!CURKATS.includes(k.name));
+  sel.innerHTML=`<option value="">${KAT.length?(rest.length?'+ Kategorie wählen …':'Alle Kategorien zugeordnet'):'Noch keine Kategorien — Reiter „Kategorien"'}</option>`
+    +rest.map(k=>`<option value="${esc(k.name)}">${esc(k.name)}</option>`).join('');
+  sel.disabled=!rest.length;
 }
+function katPick(name){if(name&&!CURKATS.includes(name))CURKATS.push(name);katRender();}
+function katRemove(name){CURKATS=CURKATS.filter(n=>n!==name);katRender();}
+function readKats(){return CURKATS.slice();}
 function openEntity(typ,id){
   const rec=(typ==='kontakt'?K:typ==='firma'?F:D).find(x=>x.id===id);if(!rec)return;
   CUR={typ,id,rec:{...rec}};
   $('dlgTitle').textContent=LBL[typ]+' · '+(typ==='kontakt'?kName(rec):typ==='firma'?rec.name:(rec.titel||'Deal'));
+  CURKATS=[];
   $('dlgFields').innerHTML=SPEC[typ].map(f=>fieldHtml(typ,f,rec[f[0]])).join('');
+  katRender();
   $('noteInput').value='';renderTL();$('ov').classList.add('show');
 }
 function openNew(){
@@ -305,7 +319,9 @@ function openNew(){
   const typ=VIEW==='kontakte'?'kontakt':VIEW==='firmen'?'firma':'deal';
   CUR={typ,id:null,rec:{}};
   $('dlgTitle').textContent='Neuer '+LBL[typ];
+  CURKATS=[];
   $('dlgFields').innerHTML=SPEC[typ].map(f=>fieldHtml(typ,f,typ==='deal'&&f[0]==='stufe'?STUFEN[0]:'')).join('');
+  katRender();
   $('noteInput').value='';$('tlWrap').style.display='none';$('ov').classList.add('show');
 }
 async function openNewAkt(){
@@ -319,7 +335,7 @@ function closeDlg(){$('ov').classList.remove('show');CUR=null;}
 async function saveEntity(){
   if(!CUR)return;const {typ,id,rec}=CUR;const row={};
   SPEC[typ].forEach(f=>{
-    if(f[2]==='kats'){row[f[0]]=readKats(f[0]);return;}
+    if(f[2]==='kats'){row[f[0]]=readKats();return;}
     const el=$('m_'+f[0]);if(!el)return;let v=el.value;if(v==='')v=null;
     if(f[2]==='number'&&v!=null)v=Number(v);row[f[0]]=v;});
   row.updated_at=new Date().toISOString();
