@@ -36,6 +36,17 @@ select.inl.st{font-weight:700;color:var(--accent);border-color:var(--line);backg
 .abtn{font-size:12px;padding:3px 8px;border-radius:5px;border:1px solid var(--line);background:transparent;color:var(--muted);cursor:pointer}.abtn:hover{color:var(--red);border-color:var(--red)}
 .empty{text-align:center;padding:26px;color:var(--muted)}
 .toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:var(--surf2);border:1px solid var(--line);border-radius:var(--r);padding:10px 20px;font-size:13px;opacity:0;transition:.3s;pointer-events:none;z-index:99}.toast.show{opacity:1}
+.viewtoggle{display:inline-flex;border:1px solid var(--line);border-radius:8px;overflow:hidden;margin-bottom:12px}
+.viewtoggle button{font:inherit;font-size:12px;font-weight:600;padding:6px 14px;border:none;background:var(--surf);color:var(--dim);cursor:pointer}.viewtoggle button.on{background:var(--accent);color:#fff}
+.kb{display:flex;gap:12px;overflow-x:auto;padding-bottom:8px}
+.kbcol{flex:0 0 240px;background:var(--surf2);border:1px solid var(--line);border-radius:10px;display:flex;flex-direction:column;max-height:72vh}
+.kbcol.over{outline:2px dashed var(--accent);outline-offset:-2px}
+.kbcolhd{padding:9px 12px;font-size:11.5px;font-weight:700;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;gap:6px}.kbcolhd span.n{color:var(--muted)}
+.kbcolbd{padding:8px;overflow-y:auto;display:flex;flex-direction:column;gap:8px;min-height:40px}
+.kbcard{background:var(--surf);border:1px solid var(--line);border-radius:8px;padding:9px 10px;cursor:grab;box-shadow:0 1px 2px rgba(0,0,0,.04)}.kbcard:active{cursor:grabbing}.kbcard.frei{border-left:3px solid var(--green)}
+.kbt{font-weight:600;font-size:12.5px}.kbm{font-size:11px;color:var(--muted);margin-top:2px}
+.kbtag{display:inline-block;font-size:10px;font-weight:600;background:#eef3fb;color:var(--accent);border-radius:10px;padding:1px 7px;margin:5px 4px 0 0}
+.kbnil{color:var(--muted);font-size:11px;text-align:center;padding:8px}
 </style></head><body>
 <div class="hdr"><div class="logo">MACHER OS</div><div>
   <div class="crumb">Vermietung › Wohnungsvermietung</div>
@@ -51,6 +62,7 @@ select.inl.st{font-weight:700;color:var(--accent);border-color:var(--line);backg
       <div class="fld"><label>Einzugsdatum</label><input type="date" id="f_einzug"></div>
       <div class="fld"><label>Auszugsdatum (Vormieter)</label><input type="date" id="f_auszug"></div>
       <div class="fld"><label>Status</label><select id="f_status"></select></div>
+      <div class="fld"><label>Name des Vormieters</label><input id="f_vormieter" placeholder="Vormieter"></div>
     </div>
     <div class="foot-row">
       <button class="btn" onclick="save()">+ Einheit anlegen</button>
@@ -60,6 +72,7 @@ select.inl.st{font-weight:700;color:var(--accent);border-color:var(--line);backg
     </div>
   </div>
 
+  <div class="viewtoggle"><button id="vListe" class="on" onclick="setView('liste')">Karten</button><button id="vBoard" onclick="setView('board')">Kanban-Board</button></div>
   <div class="chips" id="stageChips"></div>
   <div id="grid"><div class="empty" id="loading">Lädt…</div></div>
 </div><div class="toast" id="toast"></div>
@@ -72,7 +85,7 @@ let ROWS=[],GEB=[],EINH=[],INT=[],VL=[],FSTAGE='';
 function optlist(arr,sel){return arr.map(o=>`<option ${o===sel?'selected':''}>${esc(o)}</option>`).join('');}
 function unitsOf(g){return EINH.filter(e=>e.gebaeude===g).map(e=>e.name);}
 function fillEinheit(){const g=$('f_geb').value;$('f_einheit').innerHTML='<option value="">—</option>'+unitsOf(g).map(u=>`<option>${esc(u)}</option>`).join('');}
-function clearForm(){['f_grund','f_ziel','f_einzug','f_auszug'].forEach(id=>$(id).value='');$('msg').textContent='';}
+function clearForm(){['f_grund','f_ziel','f_einzug','f_auszug','f_vormieter'].forEach(id=>$(id).value='');$('msg').textContent='';}
 async function loadRefs(){
   const[g,e,i,v]=await Promise.all([
     sb.from('gebaeude').select('name').order('pos').order('name'),
@@ -94,7 +107,7 @@ async function load(){
 async function addGebaeude(){const n=(prompt('Neues Gebäude / Immobilie:')||'').trim();if(!n)return;const{error}=await sb.from('gebaeude').insert({name:n,pos:99});if(error){toast(error.message);return;}await loadRefs();$('f_geb').value=n;fillEinheit();}
 async function addEinheit(){const g=$('f_geb').value;if(!g){toast('Erst Gebäude wählen');return;}const n=(prompt('Neue Wohnungseinheit für „'+g+'":')||'').trim();if(!n)return;const{error}=await sb.from('wohneinheiten').insert({gebaeude:g,name:n});if(error){toast(error.message);return;}await loadRefs();$('f_geb').value=g;fillEinheit();$('f_einheit').value=n;render();}
 async function save(){
-  const row={gebaeude:$('f_geb').value||null,einheit:$('f_einheit').value||null,grund:$('f_grund').value.trim()||null,zielgruppe:$('f_ziel').value.trim()||null,einzug:$('f_einzug').value||null,auszug:$('f_auszug').value||null,status:$('f_status').value,freigabe:false};
+  const row={gebaeude:$('f_geb').value||null,einheit:$('f_einheit').value||null,grund:$('f_grund').value.trim()||null,zielgruppe:$('f_ziel').value.trim()||null,einzug:$('f_einzug').value||null,auszug:$('f_auszug').value||null,status:$('f_status').value,vormieter:$('f_vormieter').value.trim()||null,freigabe:false};
   if(!row.gebaeude){toast('Bitte Gebäude wählen');return;}
   const{error}=await sb.from('wohnungsvermietung').insert(row);
   if(error){$('msg').style.color='var(--red)';$('msg').textContent='Fehler: '+error.message;return;}
@@ -111,8 +124,28 @@ function renderChips(){
   const chip=(val,lbl,n)=>`<span class="chip ${FSTAGE===val?'on':''}" onclick="FSTAGE='${esc(val).replace(/'/g,"\\'")}';render()">${lbl}<span class="c">${n}</span></span>`;
   $('stageChips').innerHTML=chip('','Alle',ROWS.length)+STAGES.map(s=>chip(s,esc(s),cnt[s])).join('');
 }
+let VIEW='liste', DRAG=null;
+function setView(v){VIEW=v;$('vListe').classList.toggle('on',v==='liste');$('vBoard').classList.toggle('on',v==='board');render();}
+function dragStart(ev,id){DRAG=id;ev.dataTransfer.effectAllowed='move';}
+function allowDrop(ev,el){ev.preventDefault();if(el)el.classList.add('over');}
+function dragLeave(el){if(el)el.classList.remove('over');}
+function drop(ev,stage,el){ev.preventDefault();if(el)el.classList.remove('over');if(DRAG){upd(DRAG,'status',stage);DRAG=null;}}
+function boardView(){
+  return '<div class="kb">'+STAGES.map(s=>{const list=ROWS.filter(r=>r.status===s);const se=esc(s).replace(/'/g,"\\'");
+    const cards=list.map(r=>{const linked=VL.filter(v=>v.vermietung_id===r.id).length;
+      return `<div class="kbcard ${r.freigabe?'frei':''}" draggable="true" ondragstart="dragStart(event,'${r.id}')">
+        <div class="kbt">🏠 ${esc(r.gebaeude||'—')}</div>
+        <div class="kbm">${esc(r.einheit||'—')}${r.vormieter?' · Vormieter: '+esc(r.vormieter):''}</div>
+        ${r.zielgruppe?`<span class="kbtag">${esc(r.zielgruppe)}</span>`:''}${r.freigabe?'<span class="kbtag" style="background:#e8f6ee;color:var(--green)">Freigabe ✓</span>':''}${linked?`<span class="kbtag">${linked} Interessent${linked>1?'en':''}</span>`:''}
+      </div>`;}).join('');
+    return `<div class="kbcol" ondragover="allowDrop(event,this)" ondragleave="dragLeave(this)" ondrop="drop(event,'${se}',this)">
+      <div class="kbcolhd"><span>${esc(s)}</span><span class="n">${list.length}</span></div>
+      <div class="kbcolbd">${cards||'<div class="kbnil">—</div>'}</div></div>`;}).join('')+'</div>';
+}
 function render(){
   renderChips();
+  $('stageChips').style.display=VIEW==='board'?'none':'flex';
+  if(VIEW==='board'){$('grid').innerHTML=ROWS.length?boardView():'<div class="empty">Noch keine Einheiten im Prozess — oben anlegen.</div>';return;}
   const list=FSTAGE?ROWS.filter(r=>r.status===FSTAGE):ROWS;
   if(!ROWS.length){$('grid').innerHTML='<div class="empty">Noch keine Einheiten im Prozess — oben anlegen.</div>';return;}
   if(!list.length){$('grid').innerHTML='<div class="empty">Keine Einheiten in dieser Stufe.</div>';return;}
@@ -128,6 +161,7 @@ function render(){
       </div>
       <div class="wc-row"><label>Einheit</label><select class="inl" onchange="upd('${r.id}','einheit',this.value)"><option value="">—</option>${units.map(u=>`<option ${u===r.einheit?'selected':''}>${esc(u)}</option>`).join('')}</select></div>
       <div class="wc-row"><label>Status</label><select class="inl st" onchange="upd('${r.id}','status',this.value)">${optlist(STAGES,r.status)}</select></div>
+      <div class="wc-row"><label>Vormieter</label><input class="inl" value="${esc(r.vormieter)}" placeholder="Name des Vormieters" onchange="upd('${r.id}','vormieter',this.value)"></div>
       <div class="wc-row"><label>Grund</label><input class="inl" value="${esc(r.grund)}" placeholder="Grund der Vermietung" onchange="upd('${r.id}','grund',this.value)"></div>
       <div class="wc-row"><label>Zielgruppe</label><input class="inl" value="${esc(r.zielgruppe)}" placeholder="Mieterzielgruppe" onchange="upd('${r.id}','zielgruppe',this.value)"></div>
       <div class="wc-row"><label>Einzug</label><input class="inl" type="date" value="${r.einzug||''}" onchange="upd('${r.id}','einzug',this.value)"></div>

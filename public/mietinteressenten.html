@@ -42,6 +42,18 @@ select.inl.st{font-weight:700;color:var(--accent);border-color:var(--line);backg
 .note .x{float:right;color:var(--muted);cursor:pointer;font-size:12px}.note .x:hover{color:var(--red)}
 .dlg-ft{padding:12px 18px;border-top:1px solid var(--line)}
 .dlg-ft textarea{width:100%;border:1px solid var(--line);border-radius:8px;padding:9px 11px;font:inherit;font-size:13px;resize:vertical}
+.viewtoggle{display:inline-flex;border:1px solid var(--line);border-radius:8px;overflow:hidden;margin-bottom:12px}
+.viewtoggle button{font:inherit;font-size:12px;font-weight:600;padding:6px 14px;border:none;background:var(--surf);color:var(--dim);cursor:pointer}.viewtoggle button.on{background:var(--accent);color:#fff}
+.kb{display:flex;gap:12px;overflow-x:auto;padding-bottom:8px}
+.kbcol{flex:0 0 236px;background:var(--surf2);border:1px solid var(--line);border-radius:10px;display:flex;flex-direction:column;max-height:72vh}
+.kbcol.over{outline:2px dashed var(--accent);outline-offset:-2px}
+.kbcolhd{padding:9px 12px;font-size:11.5px;font-weight:700;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;gap:6px}.kbcolhd span{color:var(--muted)}
+.kbcolbd{padding:8px;overflow-y:auto;display:flex;flex-direction:column;gap:8px;min-height:40px}
+.kbcard{background:var(--surf);border:1px solid var(--line);border-radius:8px;padding:9px 10px;cursor:grab;box-shadow:0 1px 2px rgba(0,0,0,.04)}.kbcard:active{cursor:grabbing}
+.kbt{font-weight:600;font-size:12.5px}.kbm{font-size:11px;color:var(--muted);margin-top:2px}
+.kbtag{display:inline-block;font-size:10px;font-weight:600;background:#eef3fb;color:var(--accent);border-radius:10px;padding:1px 7px;margin:5px 4px 0 0}.kbtag.warn{background:#fdeeee;color:var(--red)}
+.kbnote{margin-top:6px;font-size:11px;padding:2px 8px;border-radius:5px;border:1px solid var(--line);background:transparent;color:var(--muted);cursor:pointer}
+.kbnil{color:var(--muted);font-size:11px;text-align:center;padding:8px}
 </style></head><body>
 <div class="hdr"><div class="logo">MACHER OS</div><div>
   <div class="crumb">Vermietung › Mietinteressenten</div>
@@ -62,6 +74,7 @@ select.inl.st{font-weight:700;color:var(--accent);border-color:var(--line);backg
       <button class="btn sec" onclick="addQuelle()">+ Leadquelle anlegen</button><span id="msg" style="font-size:12px;color:var(--green)"></span></div>
   </div>
 
+  <div class="viewtoggle"><button id="vListe" class="on" onclick="setView('liste')">Liste</button><button id="vBoard" onclick="setView('board')">Kanban-Board</button></div>
   <div class="chips" id="stageChips"></div>
   <div class="card"><div class="card-hd"><span>Leads</span><span class="crumb" id="cnt"></span></div>
     <div class="tablewrap" id="tbl"><div class="empty" id="loading">Lädt…</div></div></div>
@@ -142,8 +155,28 @@ function renderChips(){
   const chip=(val,lbl,n)=>`<span class="chip ${FSTAGE===val?'on':''}" onclick="FSTAGE='${esc(val).replace(/'/g,"\\'")}';render()">${lbl}<span class="c">${n}</span></span>`;
   $('stageChips').innerHTML=chip('','Alle',ROWS.length)+STAGES.map(s=>chip(s,esc(s),cnt[s])).join('');
 }
+let VIEW='liste', DRAG=null;
+function setView(v){VIEW=v;$('vListe').classList.toggle('on',v==='liste');$('vBoard').classList.toggle('on',v==='board');render();}
+function dragStart(ev,id){DRAG=id;ev.dataTransfer.effectAllowed='move';}
+function allowDrop(ev,el){ev.preventDefault();if(el)el.classList.add('over');}
+function dragLeave(el){if(el)el.classList.remove('over');}
+function drop(ev,stage,el){ev.preventDefault();if(el)el.classList.remove('over');if(DRAG){upd(DRAG,'status',stage);DRAG=null;}}
+function boardView(){
+  return '<div class="kb">'+STAGES.map(s=>{const list=ROWS.filter(r=>r.status===s);const se=esc(s).replace(/'/g,"\\'");
+    const cards=list.map(r=>`<div class="kbcard" draggable="true" ondragstart="dragStart(event,'${r.id}')">
+      <div class="kbt">${esc(r.name||r.kontakt||'—')}</div>
+      <div class="kbm">${r.quelle?esc(r.quelle):'—'}${r.personen?' · '+r.personen+' P':''}${r.einzug_ab?' · Einzug '+esc(r.einzug_ab):''}</div>
+      ${r.zahlungsart?`<span class="kbtag">${esc(r.zahlungsart)}</span>`:''}${r.ergebnis?`<span class="kbtag warn">${esc(r.ergebnis)}</span>`:''}
+      <div><button class="kbnote" onclick="openNotes('${r.id}')">📝 ${noteCount(r.id)||'Notiz'}</button></div>
+    </div>`).join('');
+    return `<div class="kbcol" ondragover="allowDrop(event,this)" ondragleave="dragLeave(this)" ondrop="drop(event,'${se}',this)">
+      <div class="kbcolhd"><span style="color:var(--text)">${esc(s)}</span><span>${list.length}</span></div>
+      <div class="kbcolbd">${cards||'<div class="kbnil">—</div>'}</div></div>`;}).join('')+'</div>';
+}
 function render(){
   renderChips();
+  $('stageChips').style.display=VIEW==='board'?'none':'flex';
+  if(VIEW==='board'){$('cnt').textContent=ROWS.length+' Leads';$('tbl').innerHTML=ROWS.length?boardView():'<div class="empty">Noch keine Leads — oben erfassen.</div>';return;}
   const list=FSTAGE?ROWS.filter(r=>r.status===FSTAGE):ROWS;
   $('cnt').textContent=list.length+' von '+ROWS.length;
   if(!ROWS.length){$('tbl').innerHTML='<div class="empty">Noch keine Leads — oben erfassen.</div>';return;}
