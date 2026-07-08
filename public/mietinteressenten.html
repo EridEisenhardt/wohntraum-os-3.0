@@ -39,6 +39,8 @@ select.inl.st{font-weight:700;color:var(--accent);border-color:var(--line);backg
 .opf{border-bottom:1px solid var(--bord2);padding:6px 0}
 .opl{font-size:10px;text-transform:uppercase;color:var(--muted);font-weight:700}
 .opv{font-size:13px}
+.nrcell{color:var(--muted);font-weight:700;text-align:right;font-variant-numeric:tabular-nums}
+.nrbadge{display:inline-block;font-size:10.5px;font-weight:700;color:var(--muted);background:var(--surf2);border-radius:5px;padding:1px 5px;margin-right:2px}
 .opi{width:100%;font:inherit;font-size:13px;padding:4px 6px;border:1px solid transparent;border-radius:6px;background:transparent;color:inherit}
 .opi:hover{border-color:var(--line)}
 .opi:focus{border-color:var(--accent);background:var(--surf);outline:none}
@@ -135,10 +137,11 @@ async function opUpd(field,val){
   await upd(NT_CUR,field,val);
   renderLeadInfo();renderNotes();
   const r=ROWS.find(x=>x.id===NT_CUR);
-  $('ntTitle').textContent='Mietinteressent · '+((r&&(r.name||r.kontakt))||'Lead');
+  $('ntTitle').textContent=leadTitle(r);
   toast('Gespeichert ✓');
 }
-function openNotes(id){NT_CUR=id;const r=ROWS.find(x=>x.id===id);$('ntTitle').textContent='Mietinteressent · '+((r&&(r.name||r.kontakt))||'Lead');$('ntInput').value='';renderLeadInfo();renderNotes();$('ov').classList.add('show');setTimeout(()=>$('ntInput').focus(),50);}
+function leadTitle(r){return 'Mietinteressent #'+((r&&r.nummer!=null)?r.nummer:'?')+' · '+((r&&(r.name||r.kontakt))||'Lead');}
+function openNotes(id){NT_CUR=id;const r=ROWS.find(x=>x.id===id);$('ntTitle').textContent=leadTitle(r);$('ntInput').value='';renderLeadInfo();renderNotes();$('ov').classList.add('show');setTimeout(()=>$('ntInput').focus(),50);}
 function closeNotes(){$('ov').classList.remove('show');NT_CUR=null;}
 function renderNotes(){
   const items=[];
@@ -213,10 +216,10 @@ function csvDownload(dateiname,header,zeilen){
 function exportCRM(){
   const list=FSTAGE?ROWS.filter(r=>r.status===FSTAGE):ROWS;
   if(!list.length){toast('Keine Leads zum Exportieren');return;}
-  const header=['Name','Kontakt','Kategorien','Potenzial','Lead-Eingang','Leadquelle','Status','Personenanzahl',
+  const header=['Nr','Name','Kontakt','Kategorien','Potenzial','Lead-Eingang','Leadquelle','Status','Personenanzahl',
     'Einzug ab','Art der Mietzahlung','Ergebnis','Freigabe Schluesseluebergabe',
     'Zusage Kostenuebernahme','Mietangebot erhalten','Mietvertrag unterschrieben','Schluesseluebergabe erfolgt','1. Mietzahlung','Notizen'];
-  const zeilen=list.map(r=>[r.name,r.kontakt,'Mieter-Vermittler','',r.eingang,r.quelle,r.status,r.personen,
+  const zeilen=list.map(r=>[r.nummer,r.name,r.kontakt,'Mieter-Vermittler','',r.eingang,r.quelle,r.status,r.personen,
     r.einzug_ab,r.zahlungsart,r.ergebnis,r.freigabe_schluessel,
     r.kostenuebernahme,r.mietangebot_erhalten,r.mietvertrag_unterschrieben,r.schluesseluebergabe_erfolgt,r.erste_mietzahlung,
     NOTES.filter(n=>n.interessent_id===r.id).map(n=>fmtDT(n.created_at)+': '+(n.text||n.notiz||'')).join(' | ')]);
@@ -226,7 +229,7 @@ function exportCRM(){
 function boardView(){
   return '<div class="kb">'+STAGES.map(s=>{const list=ROWS.filter(r=>r.status===s);const se=esc(s).replace(/'/g,"\\'");
     const cards=list.map(r=>`<div class="kbcard" draggable="true" ondragstart="dragStart(event,'${r.id}')">
-      <div class="kbt opennm" onclick="openNotes('${r.id}')" title="Onepager öffnen">${esc(r.name||r.kontakt||'—')}</div>
+      <div class="kbt opennm" onclick="openNotes('${r.id}')" title="Onepager öffnen"><span class="nrbadge">#${r.nummer!=null?r.nummer:'?'}</span> ${esc(r.name||r.kontakt||'—')}</div>
       <div class="kbm">${r.quelle?esc(r.quelle):'—'}${r.personen?' · '+r.personen+' P':''}${r.einzug_ab?' · Einzug '+esc(r.einzug_ab):''}</div>
       ${r.zahlungsart?`<span class="kbtag">${esc(r.zahlungsart)}</span>`:''}${r.ergebnis?`<span class="kbtag warn">${esc(r.ergebnis)}</span>`:''}
       <div><button class="kbnote" onclick="openNotes('${r.id}')">📄 Öffnen${noteCount(r.id)?' · '+noteCount(r.id)+'📝':''}</button></div>
@@ -243,9 +246,10 @@ function render(){
   $('cnt').textContent=list.length+' von '+ROWS.length;
   if(!ROWS.length){$('tbl').innerHTML='<div class="empty">Noch keine Leads — oben erfassen.</div>';return;}
   const qOpts=(sel)=>'<option value="">—</option>'+QUELLEN.map(q=>`<option ${q===sel?'selected':''}>${esc(q)}</option>`).join('');
-  $('tbl').innerHTML='<table><thead><tr><th>Name</th><th>Kontakt</th><th>Eingang</th><th>Leadquelle</th><th>Pers.</th><th>Einzug ab</th><th>Mietzahlung</th><th>Ergebnis</th><th>Status</th><th>Freigabe Schlüssel&shy;übergabe</th><th>Zusage Kosten&shy;übernahme</th><th>Mietangebot erhalten</th><th>Mietvertrag unter&shy;schrieben</th><th>Schlüssel&shy;übergabe</th><th>1. Miet&shy;zahlung</th><th>Notizen</th><th></th></tr></thead><tbody>'
+  $('tbl').innerHTML='<table><thead><tr><th>Nr</th><th>Name</th><th>Kontakt</th><th>Eingang</th><th>Leadquelle</th><th>Pers.</th><th>Einzug ab</th><th>Mietzahlung</th><th>Ergebnis</th><th>Status</th><th>Freigabe Schlüssel&shy;übergabe</th><th>Zusage Kosten&shy;übernahme</th><th>Mietangebot erhalten</th><th>Mietvertrag unter&shy;schrieben</th><th>Schlüssel&shy;übergabe</th><th>1. Miet&shy;zahlung</th><th>Notizen</th><th></th></tr></thead><tbody>'
     +list.map(r=>{const cls=(r.ergebnis&&/Absage/.test(r.ergebnis))?'res-absage':((r.ergebnis==='Warteliste'||r.status==='A · Warteliste')?'res-warte':'');
       return `<tr class="${cls}">
+        <td class="nrcell">${r.nummer!=null?r.nummer:'—'}</td>
         <td><input class="inl" style="min-width:120px" value="${esc(r.name)}" placeholder="Name" onchange="upd('${r.id}','name',this.value)"></td>
         <td><input class="inl" style="min-width:130px" value="${esc(r.kontakt)}" placeholder="Kontakt" onchange="upd('${r.id}','kontakt',this.value)"></td>
         <td><input class="inl" type="date" value="${r.eingang||''}" onchange="upd('${r.id}','eingang',this.value)"></td>
