@@ -15,7 +15,7 @@ export const NAV = [
     { href: '/planung/baustandard', icon: 'ti-ruler-2', label: 'Baustandard' },
     { href: '/planung/materialliste', icon: 'ti-list-details', label: 'Materialliste' },
   ] },
-  { type: 'link', href: '/crm', icon: 'ti-address-book', label: 'CRM', area: 'vertrieb' },
+  { type: 'link', href: '/crm', icon: 'ti-address-book', label: 'CRM', area: 'common' },
   { type: 'link', href: '/aktivitaeten', icon: 'ti-checklist', label: 'Aktivitäten', area: 'hv' },
   { type: 'group', key: 'vermietung', icon: 'ti-home-search', label: 'Vermietung', area: 'vertrieb', items: [
     { href: '/vermietung/mietinteressenten', icon: 'ti-users-plus', label: 'Mietinteressenten' },
