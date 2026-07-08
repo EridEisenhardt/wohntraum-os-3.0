@@ -58,6 +58,12 @@ tbody tr:hover td{background:#fafbfc}
 .dlg-ft textarea{flex:1;min-width:220px;border:1px solid var(--line);border-radius:8px;padding:8px 10px;font:inherit;font-size:13px;resize:vertical}
 .toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:var(--surf2);border:1px solid var(--line);border-radius:var(--r);padding:10px 20px;font-size:13px;opacity:0;transition:.3s;pointer-events:none;z-index:300}.toast.show{opacity:1}
 @media(max-width:760px){.fgrid{grid-template-columns:1fr}}
+.chips{display:flex;gap:4px;flex-wrap:wrap}
+.chip{display:inline-block;font-size:10px;font-weight:700;padding:2px 8px;border-radius:20px;color:#fff;white-space:nowrap}
+.katsel{display:flex;gap:6px;flex-wrap:wrap;padding:8px;border:1px solid var(--line);border-radius:8px;background:var(--surf2)}
+.katsel label{display:inline-flex;align-items:center;gap:5px;font-size:11.5px;font-weight:600;padding:4px 9px;border-radius:20px;border:1px solid var(--line);background:var(--surf);cursor:pointer;color:var(--dim)}
+.katsel label.on{color:#fff;border-color:transparent}
+.katsel input{margin:0}
 </style></head><body>
 <div class="hdr">
   <div class="logo">MACHER OS</div><div class="hdr-title">CRM</div>
@@ -93,27 +99,60 @@ const AKTTYP=['Aufgabe','Anruf','Termin'];
 const TBL={kontakt:'crm_kontakte',firma:'crm_firmen',deal:'crm_deals'};
 const LBL={kontakt:'Kontakt',firma:'Firma',deal:'Deal'};
 const SPEC={
- kontakt:[['vorname','Vorname','text'],['name','Nachname','text'],['email','E-Mail','text'],['telefon','Telefon','text'],['position','Position','text'],['firma_id','Firma','firma'],['notizen','Notizen','textarea']],
- firma:[['name','Firmenname','text'],['branche','Branche','text'],['website','Website','text'],['telefon','Telefon','text'],['adresse','Adresse','text'],['notizen','Notizen','textarea']],
+ kontakt:[['vorname','Vorname','text'],['name','Nachname','text'],['email','E-Mail','text'],['telefon','Telefon','text'],['position','Position','text'],['firma_id','Firma','firma'],['kategorien','Kategorien','kats'],['notizen','Notizen','textarea']],
+ firma:[['name','Firmenname','text'],['branche','Branche','text'],['website','Website','text'],['telefon','Telefon','text'],['adresse','Adresse','text'],['kategorien','Kategorien','kats'],['notizen','Notizen','textarea']],
  deal:[['titel','Titel','text'],['firma_id','Firma','firma'],['kontakt_id','Kontakt','kontakt'],['wert','Wert (€)','number'],['stufe','Stufe','stufe'],['wahrscheinlichkeit','Wahrscheinlichkeit (%)','number'],['abschluss_datum','Abschlussdatum','date'],['notizen','Notizen','textarea']]
 };
-let VIEW='kontakte', K=[],F=[],D=[],A=[],TL=[],M=[], CUR=null, DRAG=null, q='', aFilt={typ:'',status:''};
+let VIEW='kontakte', K=[],F=[],D=[],A=[],TL=[],M=[],KAT=[], CUR=null, DRAG=null, q='', kFilt='', aFilt={typ:'',status:''};
 
-function initNav(){const t=[['kontakte','Kontakte'],['firmen','Firmen'],['deals','Deals'],['aktivitaeten','Aktivitäten']];
-  $('nav').innerHTML=t.map(x=>`<button class="${VIEW===x[0]?'on':''}" onclick="setView('${x[0]}')">${x[1]}</button>`).join('');}
-function setView(v){VIEW=v;q='';initNav();render();}
+const katColor=n=>{const x=KAT.find(k=>k.name===n);return x&&x.farbe?x.farbe:'#6b7280';};
+const katsOf=o=>Array.isArray(o.kategorien)?o.kategorien:[];
+function katChips(o){const a=katsOf(o);return a.length?`<div class="chips">${a.map(n=>`<span class="chip" style="background:${esc(katColor(n))}">${esc(n)}</span>`).join('')}</div>`:'—';}
+function katFilterSel(){return `<select onchange="kFilt=this.value;render()"><option value="">Alle Kategorien</option>${KAT.map(k=>`<option ${kFilt===k.name?'selected':''}>${esc(k.name)}</option>`).join('')}</select>`;}
+const katMatch=o=>!kFilt||katsOf(o).includes(kFilt);
+
+function initNav(){const t=[['kontakte','Kontakte'],['firmen','Firmen'],['deals','Deals'],['aktivitaeten','Aktivitäten'],['kategorien','Kategorien']];
+  $('nav').innerHTML=t.map(x=>`<button class="${VIEW===x[0]?'on':''}" onclick="setView('${x[0]}')">${x[1]}</button>`).join('');
+  $('newBtn').style.display=VIEW==='kategorien'?'none':'';}
+function setView(v){VIEW=v;q='';kFilt='';initNav();render();}
 
 async function load(){
-  const[k,f,d,a,tl,m]=await Promise.all([
+  const[k,f,d,a,tl,m,kt]=await Promise.all([
     sb.from('crm_kontakte').select('*').order('name'),
     sb.from('crm_firmen').select('*').order('name'),
     sb.from('crm_deals').select('*').order('created_at',{ascending:false}),
     sb.from('crm_aktivitaeten').select('*').order('faellig',{ascending:true,nullsFirst:false}),
     sb.from('crm_timeline').select('*').order('created_at',{ascending:false}),
-    sb.from('crm_mails').select('*').order('datum',{ascending:false}).limit(1000)
+    sb.from('crm_mails').select('*').order('datum',{ascending:false}).limit(1000),
+    sb.from('crm_kategorien').select('*').order('sort').order('name')
   ]);
-  K=k.data||[];F=f.data||[];D=d.data||[];A=a.data||[];TL=tl.data||[];M=m.data||[];
+  K=k.data||[];F=f.data||[];D=d.data||[];A=a.data||[];TL=tl.data||[];M=m.data||[];KAT=kt.data||[];
   initNav();render();
+}
+
+// ——— Kategorien verwalten ———
+async function addKat(){
+  const name=prompt('Name der neuen Kategorie:');if(!name||!name.trim())return;
+  const farbe=prompt('Farbe (Hex, z. B. #185fa5):','#185fa5')||'#185fa5';
+  const{error}=await sb.from('crm_kategorien').insert({name:name.trim(),farbe:farbe.trim(),sort:KAT.length+1});
+  if(error){toast(error.message);return;}
+  toast('Kategorie angelegt ✓');load();
+}
+async function delKat(name){
+  if(!confirm('Kategorie „'+name+'" löschen? Sie wird auch aus allen Kontakten und Firmen entfernt.'))return;
+  await sb.from('crm_kategorien').delete().eq('name',name);
+  for(const o of K.filter(x=>katsOf(x).includes(name))) await sb.from('crm_kontakte').update({kategorien:katsOf(o).filter(n=>n!==name)}).eq('id',o.id);
+  for(const o of F.filter(x=>katsOf(x).includes(name))) await sb.from('crm_firmen').update({kategorien:katsOf(o).filter(n=>n!==name)}).eq('id',o.id);
+  toast('Kategorie gelöscht ✓');load();
+}
+function katAdmin(){
+  const n=K.concat(F);
+  const rows=KAT.map(k=>{const cnt=n.filter(o=>katsOf(o).includes(k.name)).length;
+    return `<tr><td><span class="chip" style="background:${esc(k.farbe)}">${esc(k.name)}</span></td><td>${cnt}</td>
+      <td><button class="abtn" onclick="delKat('${esc(k.name).replace(/'/g,"\\'")}')">✕</button></td></tr>`;}).join('');
+  return `<div class="card"><div class="card-hd"><span>Kategorien <span style="color:var(--muted);font-weight:400">· ${KAT.length}</span></span>
+    <button class="btn sec" onclick="addKat()">+ Kategorie</button></div>
+    <div class="card-bd"><div class="tablewrap"><table><thead><tr><th>Kategorie</th><th>Zugeordnet</th><th></th></tr></thead><tbody>${rows}</tbody></table></div></div></div>`;
 }
 const firmaName=id=>{const x=F.find(f=>f.id===id);return x?x.name:'';};
 const kontaktName=id=>{const x=K.find(k=>k.id===id);return x?((x.vorname||'')+' '+(x.name||'')).trim():'';};
@@ -123,27 +162,32 @@ function render(){
   if(VIEW==='kontakte')return renderKontakte();
   if(VIEW==='firmen')return renderFirmen();
   if(VIEW==='deals')return renderDeals();
+  if(VIEW==='kategorien'){$('main').innerHTML=katAdmin();return;}
   return renderAkt();
 }
 function searchBar(ph){return `<div class="bar"><input placeholder="${ph}" value="${esc(q)}" oninput="q=this.value;clearTimeout(window._t);window._t=setTimeout(render,150)"></div>`;}
 function match(o,fields){if(!q)return true;const s=q.toLowerCase();return fields.map(f=>o[f]).filter(Boolean).some(v=>String(v).toLowerCase().includes(s));}
 
 function renderKontakte(){
-  const list=K.filter(k=>match(k,['vorname','name','email','telefon','position'])||firmaName(k.firma_id).toLowerCase().includes(q.toLowerCase()));
-  $('main').innerHTML=`<div class="card"><div class="card-hd"><span>Kontakte <span style="color:var(--muted);font-weight:400">· ${list.length}</span></span></div><div class="card-bd">${searchBar('Kontakt suchen …')}
-   ${list.length?`<div class="tablewrap"><table><thead><tr><th>Name</th><th>Firma</th><th>E-Mail</th><th>Telefon</th><th>Position</th><th>Mails</th><th></th></tr></thead><tbody>`+
+  const list=K.filter(k=>match(k,['vorname','name','email','telefon','position'])||firmaName(k.firma_id).toLowerCase().includes(q.toLowerCase())).filter(katMatch);
+  $('main').innerHTML=`<div class="card"><div class="card-hd"><span>Kontakte <span style="color:var(--muted);font-weight:400">· ${list.length}</span></span></div><div class="card-bd">
+   <div class="bar"><input placeholder="Kontakt suchen …" value="${esc(q)}" oninput="q=this.value;clearTimeout(window._t);window._t=setTimeout(render,150)">${katFilterSel()}</div>
+   ${list.length?`<div class="tablewrap"><table><thead><tr><th>Name</th><th>Kategorien</th><th>Firma</th><th>E-Mail</th><th>Telefon</th><th>Position</th><th>Mails</th><th></th></tr></thead><tbody>`+
    list.map(k=>{const mails=mailsFor(k).length;return `<tr>
      <td><span class="lnk" onclick="openEntity('kontakt','${k.id}')">${esc(kName(k))}</span></td>
+     <td>${katChips(k)}</td>
      <td>${esc(firmaName(k.firma_id))||'—'}</td><td>${esc(k.email)||'—'}</td><td>${esc(k.telefon)||'—'}</td><td>${esc(k.position)||'—'}</td>
      <td>${mails||'—'}</td><td><button class="abtn" onclick="delEntity('kontakt','${k.id}')">✕</button></td></tr>`;}).join('')+
    '</tbody></table></div>':'<div class="empty">Keine Kontakte — oben „+ Neu".</div>'}</div></div>`;
 }
 function renderFirmen(){
-  const list=F.filter(f=>match(f,['name','branche','website','telefon','adresse']));
-  $('main').innerHTML=`<div class="card"><div class="card-hd"><span>Firmen <span style="color:var(--muted);font-weight:400">· ${list.length}</span></span></div><div class="card-bd">${searchBar('Firma suchen …')}
-   ${list.length?`<div class="tablewrap"><table><thead><tr><th>Firma</th><th>Branche</th><th>Website</th><th>Telefon</th><th>Kontakte</th><th>Deals</th><th></th></tr></thead><tbody>`+
+  const list=F.filter(f=>match(f,['name','branche','website','telefon','adresse'])).filter(katMatch);
+  $('main').innerHTML=`<div class="card"><div class="card-hd"><span>Firmen <span style="color:var(--muted);font-weight:400">· ${list.length}</span></span></div><div class="card-bd">
+   <div class="bar"><input placeholder="Firma suchen …" value="${esc(q)}" oninput="q=this.value;clearTimeout(window._t);window._t=setTimeout(render,150)">${katFilterSel()}</div>
+   ${list.length?`<div class="tablewrap"><table><thead><tr><th>Firma</th><th>Kategorien</th><th>Branche</th><th>Website</th><th>Telefon</th><th>Kontakte</th><th>Deals</th><th></th></tr></thead><tbody>`+
    list.map(f=>`<tr>
      <td><span class="lnk" onclick="openEntity('firma','${f.id}')">${esc(f.name)}</span></td>
+     <td>${katChips(f)}</td>
      <td>${esc(f.branche)||'—'}</td><td>${f.website?`<a href="${esc(f.website)}" target="_blank" style="color:var(--accent)">${esc(f.website)}</a>`:'—'}</td>
      <td>${esc(f.telefon)||'—'}</td><td>${K.filter(k=>k.firma_id===f.id).length}</td><td>${D.filter(d=>d.firma_id===f.id).length}</td>
      <td><button class="abtn" onclick="delEntity('firma','${f.id}')">✕</button></td></tr>`).join('')+
@@ -235,8 +279,19 @@ function fieldHtml(typ,f,val){
   else if(kind==='firma')inp=`<select id="m_${key}"><option value="">—</option>${F.map(x=>`<option value="${x.id}" ${x.id===val?'selected':''}>${esc(x.name)}</option>`).join('')}</select>`;
   else if(kind==='kontakt')inp=`<select id="m_${key}"><option value="">—</option>${K.map(x=>`<option value="${x.id}" ${x.id===val?'selected':''}>${esc(kName(x))}</option>`).join('')}</select>`;
   else if(kind==='stufe')inp=`<select id="m_${key}">${STUFEN.map(s=>`<option ${s===val?'selected':''}>${esc(s)}</option>`).join('')}</select>`;
+  else if(kind==='kats'){
+    const sel=Array.isArray(val)?val:[];
+    inp=`<div class="katsel" id="m_${key}">${KAT.length?KAT.map(k=>{const on=sel.includes(k.name);
+      return `<label class="${on?'on':''}" style="${on?'background:'+esc(k.farbe):''}">
+        <input type="checkbox" value="${esc(k.name)}" ${on?'checked':''} onchange="this.parentNode.classList.toggle('on',this.checked);this.parentNode.style.background=this.checked?'${esc(k.farbe)}':''">
+        ${esc(k.name)}</label>`;}).join(''):'<span style="font-size:12px;color:var(--muted)">Noch keine Kategorien — Reiter „Kategorien".</span>'}</div>`;
+  }
   else inp=`<input id="m_${key}" type="${kind==='number'?'number':kind==='date'?'date':'text'}" value="${val==null?'':esc(val)}">`;
-  return `<div class="fld ${kind==='textarea'?'wide':''}"><label>${label}</label>${inp}</div>`;
+  return `<div class="fld ${kind==='textarea'||kind==='kats'?'wide':''}"><label>${label}</label>${inp}</div>`;
+}
+function readKats(key){
+  const box=$('m_'+key);if(!box)return [];
+  return Array.prototype.slice.call(box.querySelectorAll('input[type=checkbox]')).filter(c=>c.checked).map(c=>c.value);
 }
 function openEntity(typ,id){
   const rec=(typ==='kontakt'?K:typ==='firma'?F:D).find(x=>x.id===id);if(!rec)return;
@@ -263,15 +318,19 @@ async function openNewAkt(){
 function closeDlg(){$('ov').classList.remove('show');CUR=null;}
 async function saveEntity(){
   if(!CUR)return;const {typ,id,rec}=CUR;const row={};
-  SPEC[typ].forEach(f=>{const el=$('m_'+f[0]);if(!el)return;let v=el.value;if(v==='')v=null;
+  SPEC[typ].forEach(f=>{
+    if(f[2]==='kats'){row[f[0]]=readKats(f[0]);return;}
+    const el=$('m_'+f[0]);if(!el)return;let v=el.value;if(v==='')v=null;
     if(f[2]==='number'&&v!=null)v=Number(v);row[f[0]]=v;});
   row.updated_at=new Date().toISOString();
   if(id){
-    const changes=SPEC[typ].filter(f=>String(rec[f[0]]==null?'':rec[f[0]])!==String(row[f[0]]==null?'':row[f[0]]));
+    const norm=v=>Array.isArray(v)?v.slice().sort().join(', '):String(v==null?'':v);
+    const changes=SPEC[typ].filter(f=>norm(rec[f[0]])!==norm(row[f[0]]));
     const{error}=await sb.from(TBL[typ]).update(row).eq('id',id);if(error){toast(error.message);return;}
     for(const f of changes){let alt=rec[f[0]],neu=row[f[0]];
       if(f[2]==='firma'){alt=firmaName(alt);neu=firmaName(neu);}
       if(f[2]==='kontakt'){alt=kontaktName(alt);neu=kontaktName(neu);}
+      if(f[2]==='kats'){alt=(alt||[]).join(', ')||'—';neu=(neu||[]).join(', ')||'—';}
       await logTL(typ,id,'aenderung',{feld:f[1],alt,neu});}
     toast(changes.length?changes.length+' Änderung(en) gespeichert ✓':'Keine Änderungen');
   } else {
