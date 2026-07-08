@@ -71,6 +71,15 @@ tbody tr:hover td{background:#fafbfc}
 .mbody summary::before{content:"▸ ";}
 .mbody[open] summary::before{content:"▾ ";}
 .mtext{margin-top:5px;padding:9px 11px;background:var(--surf2);border:1px solid var(--line);border-radius:8px;font-size:12.5px;line-height:1.5;white-space:pre-wrap}
+.s-Neu{background:#e8f2fd;color:var(--accent)}.s-InBearbeitung{background:#fdf1e0;color:var(--warn)}.s-Wartet{background:#f1f3f6;color:var(--dim)}.s-Erledigt{background:#e8f6ee;color:var(--green)}
+.tli.ticket::before{background:#0e7490}
+.trow{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:7px 0;border-bottom:1px solid var(--bord2);font-size:12.5px}
+.trow:last-child{border-bottom:none}
+.trow .tt{font-weight:600;flex:1;min-width:150px}
+.trow select{font:inherit;font-size:11.5px;padding:3px 6px;border:1px solid var(--line);border-radius:6px;background:var(--surf)}
+.asana{display:inline-flex;align-items:center;gap:4px;font-size:11.5px;font-weight:600;color:#f06a6a;text-decoration:none}.asana:hover{text-decoration:underline}
+.tdue-over{color:var(--red);font-weight:700}
+.pot{display:inline-block;min-width:26px;text-align:center;font-size:11px;font-weight:700;padding:2px 7px;border-radius:6px;color:#fff}
 </style></head><body>
 <div class="hdr">
   <div class="logo">MACHER OS</div><div class="hdr-title">CRM</div>
@@ -85,6 +94,14 @@ tbody tr:hover td{background:#fafbfc}
     <div class="dlg-hd"><span id="dlgTitle">Datensatz</span><span class="abtn" onclick="closeDlg()">✕</span></div>
     <div class="dlg-bd">
       <div class="fgrid" id="dlgFields"></div>
+      <div id="tckWrap">
+        <div class="secttl" style="display:flex;justify-content:space-between;align-items:center">
+          <span>Tickets &amp; ToDos</span>
+          <span><button class="abtn" onclick="newTicket()">+ Ticket</button>
+          <a class="abtn" id="tckAll" href="/tickets" target="_blank" rel="noopener" style="text-decoration:none">Alle ↗</a></span>
+        </div>
+        <div id="tckList"></div>
+      </div>
       <div id="tlWrap"><div class="secttl">Zeitstrahl — Änderungen, Notizen, E-Mails &amp; Aktivitäten</div><div class="tl" id="tlList"></div></div>
     </div>
     <div class="dlg-ft">
@@ -126,11 +143,19 @@ const AKTTYP=['Aufgabe','Anruf','Termin'];
 const TBL={kontakt:'crm_kontakte',firma:'crm_firmen',deal:'crm_deals'};
 const LBL={kontakt:'Kontakt',firma:'Firma',deal:'Deal'};
 const SPEC={
- kontakt:[['vorname','Vorname','text'],['name','Nachname','text'],['email','E-Mail','text'],['telefon','Telefon','text'],['position','Position','text'],['firma_id','Firma','firma'],['strasse','Straße & Hausnummer','text'],['plz','PLZ','text'],['ort','Ort','text'],['land','Land','text'],['kategorien','Kategorien','kats'],['notizen','Notizen','textarea']],
- firma:[['name','Firmenname','text'],['branche','Branche','text'],['website','Website','text'],['telefon','Telefon','text'],['strasse','Straße & Hausnummer','text'],['plz','PLZ','text'],['ort','Ort','text'],['land','Land','text'],['kategorien','Kategorien','kats'],['notizen','Notizen','textarea']],
+ kontakt:[['vorname','Vorname','text'],['name','Nachname','text'],['email','E-Mail','text'],['telefon','Telefon','text'],['position','Position','text'],['firma_id','Firma','firma'],['strasse','Straße & Hausnummer','text'],['plz','PLZ','text'],['ort','Ort','text'],['land','Land','text'],['kategorien','Kategorien','kats'],['potenzial','Potenzial','pot'],['notizen','Notizen','textarea']],
+ firma:[['name','Firmenname','text'],['branche','Branche','text'],['website','Website','text'],['telefon','Telefon','text'],['strasse','Straße & Hausnummer','text'],['plz','PLZ','text'],['ort','Ort','text'],['land','Land','text'],['kategorien','Kategorien','kats'],['potenzial','Potenzial','pot'],['notizen','Notizen','textarea']],
  deal:[['titel','Titel','text'],['firma_id','Firma','firma'],['kontakt_id','Kontakt','kontakt'],['wert','Wert (€)','number'],['stufe','Stufe','stufe'],['wahrscheinlichkeit','Wahrscheinlichkeit (%)','number'],['abschluss_datum','Abschlussdatum','date'],['notizen','Notizen','textarea']]
 };
-let VIEW='kontakte', K=[],F=[],D=[],A=[],TL=[],M=[],KAT=[], CUR=null, DRAG=null, q='', kFilt='', aFilt={typ:'',status:''};
+let VIEW='kontakte', K=[],F=[],D=[],A=[],TL=[],M=[],KAT=[],TCK=[], CUR=null, DRAG=null, q='', kFilt='', pFilt='', aFilt={typ:'',status:''};
+const TSTATUS=['Neu','In Bearbeitung','Wartet','Erledigt'];
+const POT=['A','B+','B','C'];
+const POTC={'A':'#1f7a4d','B+':'#185fa5','B':'#b45309','C':'#6b7280'};
+const potBadge=v=>v?`<span class="pot" style="background:${POTC[v]||'#6b7280'}">${esc(v)}</span>`:'—';
+const tCls=s=>'s-'+String(s||'Neu').replace(/\s+/g,'');
+const heute=()=>new Date().toISOString().slice(0,10);
+function ticketsFor(typ,id){return TCK.filter(t=>typ==='kontakt'?t.kontakt_id===id:typ==='firma'?t.firma_id===id:t.deal_id===id);}
+const offeneTickets=(typ,id)=>ticketsFor(typ,id).filter(t=>t.status!=='Erledigt').length;
 
 const katColor=n=>{const x=KAT.find(k=>k.name===n);return x&&x.farbe?x.farbe:'#6b7280';};
 const katsOf=o=>Array.isArray(o.kategorien)?o.kategorien:[];
@@ -146,23 +171,26 @@ const chipStyle=n=>`background:${esc(katColor(n))};color:${katText(katColor(n))}
 function katChips(o){const a=katsOf(o);return a.length?`<div class="chips">${a.map(n=>`<span class="chip" style="${chipStyle(n)}">${esc(n)}</span>`).join('')}</div>`:'—';}
 function katFilterSel(){return `<select onchange="kFilt=this.value;render()"><option value="">Alle Kategorien</option>${KAT.map(k=>`<option ${kFilt===k.name?'selected':''}>${esc(k.name)}</option>`).join('')}</select>`;}
 const katMatch=o=>!kFilt||katsOf(o).includes(kFilt);
+const potMatch=o=>!pFilt||(o.potenzial||'')===pFilt;
+function potFilterSel(){return `<select onchange="pFilt=this.value;render()"><option value="">Alle Potenziale</option>${POT.map(p=>`<option ${pFilt===p?'selected':''}>${p}</option>`).join('')}</select>`;}
 
 function initNav(){const t=[['kontakte','Kontakte'],['firmen','Firmen'],['deals','Deals'],['aktivitaeten','Aktivitäten'],['kategorien','Kategorien']];
   $('nav').innerHTML=t.map(x=>`<button class="${VIEW===x[0]?'on':''}" onclick="setView('${x[0]}')">${x[1]}</button>`).join('');
   $('newBtn').style.display=VIEW==='kategorien'?'none':'';}
-function setView(v){VIEW=v;q='';kFilt='';initNav();render();}
+function setView(v){VIEW=v;q='';kFilt='';pFilt='';initNav();render();}
 
 async function load(){
-  const[k,f,d,a,tl,m,kt]=await Promise.all([
+  const[k,f,d,a,tl,m,kt,tc]=await Promise.all([
     sb.from('crm_kontakte').select('*').order('name'),
     sb.from('crm_firmen').select('*').order('name'),
     sb.from('crm_deals').select('*').order('created_at',{ascending:false}),
     sb.from('crm_aktivitaeten').select('*').order('faellig',{ascending:true,nullsFirst:false}),
     sb.from('crm_timeline').select('*').order('created_at',{ascending:false}),
     sb.from('crm_mails').select('*').order('datum',{ascending:false}).limit(1000),
-    sb.from('crm_kategorien').select('*').order('sort').order('name')
+    sb.from('crm_kategorien').select('*').order('sort').order('name'),
+    sb.from('crm_tickets').select('*').order('created_at',{ascending:false})
   ]);
-  K=k.data||[];F=f.data||[];D=d.data||[];A=a.data||[];TL=tl.data||[];M=m.data||[];KAT=kt.data||[];
+  K=k.data||[];F=f.data||[];D=d.data||[];A=a.data||[];TL=tl.data||[];M=m.data||[];KAT=kt.data||[];TCK=tc.data||[];
   initNav();render();
 }
 
@@ -205,24 +233,27 @@ function searchBar(ph){return `<div class="bar"><input placeholder="${ph}" value
 function match(o,fields){if(!q)return true;const s=q.toLowerCase();return fields.map(f=>o[f]).filter(Boolean).some(v=>String(v).toLowerCase().includes(s));}
 
 function renderKontakte(){
-  const list=K.filter(k=>match(k,['vorname','name','email','telefon','position','strasse','plz','ort','land'])||firmaName(k.firma_id).toLowerCase().includes(q.toLowerCase())).filter(katMatch);
+  const list=K.filter(k=>match(k,['vorname','name','email','telefon','position','strasse','plz','ort','land'])||firmaName(k.firma_id).toLowerCase().includes(q.toLowerCase())).filter(katMatch).filter(potMatch);
   $('main').innerHTML=`<div class="card"><div class="card-hd"><span>Kontakte <span style="color:var(--muted);font-weight:400">· ${list.length}</span></span></div><div class="card-bd">
-   <div class="bar"><input placeholder="Kontakt suchen …" value="${esc(q)}" oninput="q=this.value;clearTimeout(window._t);window._t=setTimeout(render,150)">${katFilterSel()}</div>
-   ${list.length?`<div class="tablewrap"><table><thead><tr><th>Name</th><th>Kategorien</th><th>Firma</th><th>E-Mail</th><th>Telefon</th><th>Anschrift</th><th>Position</th><th>Mails</th><th></th></tr></thead><tbody>`+
+   <div class="bar"><input placeholder="Kontakt suchen …" value="${esc(q)}" oninput="q=this.value;clearTimeout(window._t);window._t=setTimeout(render,150)">${katFilterSel()}${potFilterSel()}</div>
+   ${list.length?`<div class="tablewrap"><table><thead><tr><th>Name</th><th>Pot.</th><th>Kategorien</th><th>Firma</th><th>E-Mail</th><th>Telefon</th><th>Anschrift</th><th>Position</th><th>Tickets</th><th>Mails</th><th></th></tr></thead><tbody>`+
    list.map(k=>{const mails=mailsFor(k).length;return `<tr>
      <td><span class="lnk" onclick="openEntity('kontakt','${k.id}')">${esc(kName(k))}</span></td>
+     <td>${potBadge(k.potenzial)}</td>
      <td>${katChips(k)}</td>
      <td>${esc(firmaName(k.firma_id))||'—'}</td><td>${esc(k.email)||'—'}</td><td>${esc(k.telefon)||'—'}</td><td>${esc(anschrift(k))||'—'}</td><td>${esc(k.position)||'—'}</td>
+     <td>${offeneTickets('kontakt',k.id)?`<span class="pill s-Neu">${offeneTickets('kontakt',k.id)} offen</span>`:'—'}</td>
      <td>${mails||'—'}</td><td><button class="abtn" onclick="delEntity('kontakt','${k.id}')">✕</button></td></tr>`;}).join('')+
    '</tbody></table></div>':'<div class="empty">Keine Kontakte — oben „+ Neu".</div>'}</div></div>`;
 }
 function renderFirmen(){
-  const list=F.filter(f=>match(f,['name','branche','website','telefon','strasse','plz','ort','land'])).filter(katMatch);
+  const list=F.filter(f=>match(f,['name','branche','website','telefon','strasse','plz','ort','land'])).filter(katMatch).filter(potMatch);
   $('main').innerHTML=`<div class="card"><div class="card-hd"><span>Firmen <span style="color:var(--muted);font-weight:400">· ${list.length}</span></span></div><div class="card-bd">
-   <div class="bar"><input placeholder="Firma suchen …" value="${esc(q)}" oninput="q=this.value;clearTimeout(window._t);window._t=setTimeout(render,150)">${katFilterSel()}</div>
-   ${list.length?`<div class="tablewrap"><table><thead><tr><th>Firma</th><th>Kategorien</th><th>Branche</th><th>Anschrift</th><th>Website</th><th>Telefon</th><th>Kontakte</th><th>Deals</th><th></th></tr></thead><tbody>`+
+   <div class="bar"><input placeholder="Firma suchen …" value="${esc(q)}" oninput="q=this.value;clearTimeout(window._t);window._t=setTimeout(render,150)">${katFilterSel()}${potFilterSel()}</div>
+   ${list.length?`<div class="tablewrap"><table><thead><tr><th>Firma</th><th>Pot.</th><th>Kategorien</th><th>Branche</th><th>Anschrift</th><th>Website</th><th>Telefon</th><th>Kontakte</th><th>Deals</th><th></th></tr></thead><tbody>`+
    list.map(f=>`<tr>
      <td><span class="lnk" onclick="openEntity('firma','${f.id}')">${esc(f.name)}</span></td>
+     <td>${potBadge(f.potenzial)}</td>
      <td>${katChips(f)}</td>
      <td>${esc(f.branche)||'—'}</td><td>${esc(anschrift(f))||'—'}</td><td>${f.website?`<a href="${esc(f.website)}" target="_blank" style="color:var(--accent)">${esc(f.website)}</a>`:'—'}</td>
      <td>${esc(f.telefon)||'—'}</td><td>${K.filter(k=>k.firma_id===f.id).length}</td><td>${D.filter(d=>d.firma_id===f.id).length}</td>
@@ -297,9 +328,11 @@ function renderTL(){
   else if(CUR.typ==='firma'){K.filter(k=>k.firma_id===CUR.id).forEach(k=>{mails=mails.concat(mailsFor(k));});}
   else if(CUR.typ==='deal'){const d=D.find(x=>x.id===CUR.id);if(d&&d.kontakt_id){const k=K.find(x=>x.id===d.kontakt_id);mails=mailsFor(k);}}
   mails.forEach(m=>items.push({t:m.datum||m.created_at,art:'mail',raus:m.richtung==='aus',text:m.betreff||'(kein Betreff)',sub:(m.von||'')+' → '+(m.an||''),snippet:m.snippet,body:m.text,link:m.link}));
+  ticketsFor(CUR.typ,CUR.id).forEach(t=>items.push({t:t.created_at,art:'ticket',text:'Ticket #'+t.nummer+' · '+t.titel,sub:(t.status||'Neu')+(t.faellig?' · fällig '+fmtD(t.faellig):''),link:t.asana_url}));
   items.sort((a,b)=>new Date(b.t)-new Date(a.t));
   $('tlList').innerHTML=items.length?items.map(i=>{
     if(i.art==='mail')return `<div class="tli mail"><div class="ts">${i.raus?'📤 Mail gesendet':'✉ E-Mail'} · ${fmtDT(i.t)}</div><div class="tx"><b>${esc(i.text)}</b>${i.link?` <a href="${esc(i.link)}" target="_blank">↗</a>`:''}</div><div class="sub">${esc(i.sub)}</div>${i.body?`<details class="mbody"><summary>Volltext anzeigen</summary><div class="mtext">${esc(i.body)}</div></details>`:(i.snippet?`<div class="sub" style="color:var(--muted)">${esc(i.snippet)}</div>`:'')}</div>`;
+    if(i.art==='ticket')return `<div class="tli ticket"><div class="ts">🎫 Ticket · ${fmtDT(i.t)}</div><div class="tx"><b>${esc(i.text)}</b>${i.link?` <a href="${esc(i.link)}" target="_blank" rel="noopener">Asana ↗</a>`:''}</div><div class="sub">${esc(i.sub)}</div></div>`;
     if(i.art==='notiz')return `<div class="tli notiz"><div class="ts">📝 Notiz · ${fmtDT(i.t)}</div><div class="tx">${esc(i.text)}</div></div>`;
     if(i.art==='aktivitaet')return `<div class="tli aktivitaet"><div class="ts">📌 Aktivität · ${fmtDT(i.t)}</div><div class="tx">${esc(i.text)}</div></div>`;
     if(i.art==='erstellt')return `<div class="tli erstellt"><div class="ts">➕ ${fmtDT(i.t)}</div><div class="tx">${esc(i.text||'Datensatz angelegt')}</div></div>`;
@@ -315,6 +348,7 @@ function fieldHtml(typ,f,val){
   else if(kind==='firma')inp=`<select id="m_${key}" data-prev="${val==null?'':esc(val)}" onchange="firmaSel(this)"><option value="">—</option>${F.map(x=>`<option value="${x.id}" ${x.id===val?'selected':''}>${esc(x.name)}</option>`).join('')}<option value="__new__">➕ Neue Firma anlegen …</option></select>`;
   else if(kind==='kontakt')inp=`<select id="m_${key}"><option value="">—</option>${K.map(x=>`<option value="${x.id}" ${x.id===val?'selected':''}>${esc(kName(x))}</option>`).join('')}</select>`;
   else if(kind==='stufe')inp=`<select id="m_${key}">${STUFEN.map(s=>`<option ${s===val?'selected':''}>${esc(s)}</option>`).join('')}</select>`;
+  else if(kind==='pot')inp=`<select id="m_${key}"><option value="">—</option>${POT.map(x=>`<option ${x===val?'selected':''}>${esc(x)}</option>`).join('')}</select>`;
   else if(kind==='kats'){
     CURKATS=Array.isArray(val)?val.slice():[];
     inp=`<div class="katsel" id="m_${key}">
@@ -364,6 +398,8 @@ function openEntity(typ,id){
   $('dlgFields').innerHTML=SPEC[typ].map(f=>fieldHtml(typ,f,rec[f[0]])).join('');
   katRender();
   $('mailBtn').style.display=(typ==='kontakt'||typ==='deal')?'':'none';
+  $('tckWrap').style.display='';renderTickets();
+  $('tlWrap').style.display='';
   $('noteInput').value='';renderTL();$('ov').classList.add('show');
 }
 function openNew(){
@@ -375,6 +411,7 @@ function openNew(){
   $('dlgFields').innerHTML=SPEC[typ].map(f=>fieldHtml(typ,f,typ==='deal'&&f[0]==='stufe'?STUFEN[0]:'')).join('');
   katRender();
   $('mailBtn').style.display='none';
+  $('tckWrap').style.display='none';
   $('noteInput').value='';$('tlWrap').style.display='none';$('ov').classList.add('show');
 }
 async function openNewAkt(){
@@ -409,6 +446,41 @@ async function saveEntity(){
   }
   closeDlg();load();
 }
+// ——— Tickets im Datensatz ———
+function renderTickets(){
+  const box=$('tckList');if(!box||!CUR)return;
+  const list=ticketsFor(CUR.typ,CUR.id).sort((a,b)=>(a.status==='Erledigt')-(b.status==='Erledigt')||String(a.faellig||'9999').localeCompare(String(b.faellig||'9999')));
+  $('tckAll').href='/tickets'+(CUR.typ==='kontakt'?('?kontakt='+CUR.id):'');
+  box.innerHTML=list.length?list.map(t=>`<div class="trow">
+    <span style="color:var(--muted);font-weight:700">#${t.nummer}</span>
+    <span class="tt">${esc(t.titel)}</span>
+    ${t.faellig?`<span class="${(t.faellig<heute()&&t.status!=='Erledigt')?'tdue-over':''}">${fmtD(t.faellig)}</span>`:''}
+    <select onchange="tckStatus('${t.id}',this.value)">${TSTATUS.map(x=>`<option ${((t.status||'Neu')===x)?'selected':''}>${x}</option>`).join('')}</select>
+    <span class="pill ${tCls(t.status)}">${esc(t.status||'Neu')}</span>
+    ${t.asana_url?`<a class="asana" href="${esc(t.asana_url)}" target="_blank" rel="noopener">● Asana ↗</a>`:''}
+  </div>`).join(''):'<div class="empty" style="padding:10px">Keine Tickets zu diesem Datensatz.</div>';
+}
+async function tckStatus(id,status){
+  const patch={status,updated_at:new Date().toISOString(),erledigt_at:status==='Erledigt'?new Date().toISOString():null};
+  const{error}=await sb.from('crm_tickets').update(patch).eq('id',id);if(error){toast(error.message);return;}
+  const t=TCK.find(x=>x.id===id);if(t)Object.assign(t,patch);
+  if(t)await logTL(CUR.typ,CUR.id,'aenderung',{feld:'Ticket #'+t.nummer,alt:'',neu:status});
+  renderTickets();renderTL();toast('Status: '+status+' ✓');
+}
+async function newTicket(){
+  if(!CUR||!CUR.id){toast('Erst speichern, dann Ticket');return;}
+  const titel=prompt('Titel des Tickets:');if(!titel||!titel.trim())return;
+  const asana=prompt('Asana-Link (optional):','')||'';
+  const row={titel:titel.trim(),status:'Neu',prio:'P2',asana_url:asana.trim()||null};
+  row[CUR.typ+'_id']=CUR.id;
+  const{data,error}=await sb.from('crm_tickets').insert(row).select();
+  if(error){toast(error.message);return;}
+  if(data&&data[0]){TCK.unshift(data[0]);await logTL(CUR.typ,CUR.id,'notiz',{text:'🎫 Ticket #'+data[0].nummer+' angelegt: '+data[0].titel});}
+  renderTickets();
+  const{data:tl}=await sb.from('crm_timeline').select('*').order('created_at',{ascending:false});TL=tl||[];
+  renderTL();toast('Ticket angelegt ✓');
+}
+
 // ——— Mail schreiben (Mail-Client + Protokoll im Zeitstrahl) ———
 const ABSENDER='eric@wohntraumrheinhessen.site';
 function mailEmpfaenger(){
