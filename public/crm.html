@@ -80,6 +80,7 @@ tbody tr:hover td{background:#fafbfc}
 .asana{display:inline-flex;align-items:center;gap:4px;font-size:11.5px;font-weight:600;color:#f06a6a;text-decoration:none}.asana:hover{text-decoration:underline}
 .tdue-over{color:var(--red);font-weight:700}
 .pot{display:inline-block;min-width:26px;text-align:center;font-size:11px;font-weight:700;padding:2px 7px;border-radius:6px;color:#fff}
+.lc-warn{color:var(--warn);font-weight:600}.lc-alt{color:var(--red);font-weight:700}
 </style></head><body>
 <div class="hdr">
   <div class="logo">MACHER OS</div><div class="hdr-title">CRM</div>
@@ -143,8 +144,8 @@ const AKTTYP=['Aufgabe','Anruf','Termin'];
 const TBL={kontakt:'crm_kontakte',firma:'crm_firmen',deal:'crm_deals'};
 const LBL={kontakt:'Kontakt',firma:'Firma',deal:'Deal'};
 const SPEC={
- kontakt:[['vorname','Vorname','text'],['name','Nachname','text'],['email','E-Mail','text'],['telefon','Telefon','text'],['position','Position','text'],['firma_id','Firma','firma'],['strasse','Straße & Hausnummer','text'],['plz','PLZ','text'],['ort','Ort','text'],['land','Land','text'],['kategorien','Kategorien','kats'],['potenzial','Potenzial','pot'],['notizen','Notizen','textarea']],
- firma:[['name','Firmenname','text'],['branche','Branche','text'],['website','Website','text'],['telefon','Telefon','text'],['strasse','Straße & Hausnummer','text'],['plz','PLZ','text'],['ort','Ort','text'],['land','Land','text'],['kategorien','Kategorien','kats'],['potenzial','Potenzial','pot'],['notizen','Notizen','textarea']],
+ kontakt:[['vorname','Vorname','text'],['name','Nachname','text'],['email','E-Mail','text'],['telefon','Telefon','text'],['position','Position','text'],['firma_id','Firma','firma'],['strasse','Straße & Hausnummer','text'],['plz','PLZ','text'],['ort','Ort','text'],['land','Land','text'],['kategorien','Kategorien','kats'],['potenzial','Potenzial','pot'],['letzter_kontakt','Letzter Kontakt (manuell)','date'],['notizen','Notizen','textarea']],
+ firma:[['name','Firmenname','text'],['branche','Branche','text'],['website','Website','text'],['telefon','Telefon','text'],['strasse','Straße & Hausnummer','text'],['plz','PLZ','text'],['ort','Ort','text'],['land','Land','text'],['kategorien','Kategorien','kats'],['potenzial','Potenzial','pot'],['letzter_kontakt','Letzter Kontakt (manuell)','date'],['notizen','Notizen','textarea']],
  deal:[['titel','Titel','text'],['firma_id','Firma','firma'],['kontakt_id','Kontakt','kontakt'],['wert','Wert (€)','number'],['stufe','Stufe','stufe'],['wahrscheinlichkeit','Wahrscheinlichkeit (%)','number'],['abschluss_datum','Abschlussdatum','date'],['notizen','Notizen','textarea']]
 };
 let VIEW='kontakte', K=[],F=[],D=[],A=[],TL=[],M=[],KAT=[],TCK=[], CUR=null, DRAG=null, q='', kFilt='', pFilt='', aFilt={typ:'',status:''};
@@ -152,6 +153,29 @@ const TSTATUS=['Neu','In Bearbeitung','Wartet','Erledigt'];
 const POT=['A','B+','B','C'];
 const POTC={'A':'#1f7a4d','B+':'#185fa5','B':'#b45309','C':'#6b7280'};
 const potBadge=v=>v?`<span class="pot" style="background:${POTC[v]||'#6b7280'}">${esc(v)}</span>`:'—';
+// Letzter Kontakt: spaetestes Datum aus manuellem Feld, Mails, Notizen und Aktivitaeten
+function lastContact(typ,o){
+  const c=[];
+  if(o.letzter_kontakt)c.push(String(o.letzter_kontakt).slice(0,10));
+  let ml=[];
+  if(typ==='kontakt')ml=mailsFor(o);
+  else if(typ==='firma')K.filter(k=>k.firma_id===o.id).forEach(k=>{ml=ml.concat(mailsFor(k));});
+  ml.forEach(m=>{const d=m.datum||m.created_at;if(d)c.push(String(d).slice(0,10));});
+  TL.filter(t=>t.entity_typ===typ&&t.entity_id===o.id&&(t.art==='notiz'||t.art==='mail'))
+    .forEach(t=>{if(t.created_at)c.push(String(t.created_at).slice(0,10));});
+  A.filter(a=>(typ==='kontakt'&&a.kontakt_id===o.id)||(typ==='firma'&&a.firma_id===o.id))
+    .forEach(a=>{const d=a.created_at;if(d)c.push(String(d).slice(0,10));});
+  if(!c.length)return null;
+  return c.sort().pop();
+}
+function lastContactCell(typ,o){
+  const d=lastContact(typ,o);
+  if(!d)return '<span style="color:var(--muted)">nie</span>';
+  const tage=Math.round((Date.now()-new Date(d+'T12:00:00').getTime())/864e5);
+  const cls=tage>180?'lc-alt':(tage>90?'lc-warn':'');
+  const txt=tage<=0?'heute':(tage===1?'gestern':'vor '+tage+' Tagen');
+  return `<span class="${cls}">${fmtD(d)} <span style="color:var(--muted);font-weight:400">· ${txt}</span></span>`;
+}
 const tCls=s=>'s-'+String(s||'Neu').replace(/\s+/g,'');
 const heute=()=>new Date().toISOString().slice(0,10);
 function ticketsFor(typ,id){return TCK.filter(t=>typ==='kontakt'?t.kontakt_id===id:typ==='firma'?t.firma_id===id:t.deal_id===id);}
@@ -236,12 +260,13 @@ function renderKontakte(){
   const list=K.filter(k=>match(k,['vorname','name','email','telefon','position','strasse','plz','ort','land'])||firmaName(k.firma_id).toLowerCase().includes(q.toLowerCase())).filter(katMatch).filter(potMatch);
   $('main').innerHTML=`<div class="card"><div class="card-hd"><span>Kontakte <span style="color:var(--muted);font-weight:400">· ${list.length}</span></span></div><div class="card-bd">
    <div class="bar"><input placeholder="Kontakt suchen …" value="${esc(q)}" oninput="q=this.value;clearTimeout(window._t);window._t=setTimeout(render,150)">${katFilterSel()}${potFilterSel()}</div>
-   ${list.length?`<div class="tablewrap"><table><thead><tr><th>Name</th><th>Pot.</th><th>Kategorien</th><th>Firma</th><th>E-Mail</th><th>Telefon</th><th>Anschrift</th><th>Position</th><th>Tickets</th><th>Mails</th><th></th></tr></thead><tbody>`+
+   ${list.length?`<div class="tablewrap"><table><thead><tr><th>Name</th><th>Pot.</th><th>Kategorien</th><th>Firma</th><th>E-Mail</th><th>Telefon</th><th>Anschrift</th><th>Position</th><th>Letzter Kontakt</th><th>Tickets</th><th>Mails</th><th></th></tr></thead><tbody>`+
    list.map(k=>{const mails=mailsFor(k).length;return `<tr>
      <td><span class="lnk" onclick="openEntity('kontakt','${k.id}')">${esc(kName(k))}</span></td>
      <td>${potBadge(k.potenzial)}</td>
      <td>${katChips(k)}</td>
      <td>${esc(firmaName(k.firma_id))||'—'}</td><td>${esc(k.email)||'—'}</td><td>${esc(k.telefon)||'—'}</td><td>${esc(anschrift(k))||'—'}</td><td>${esc(k.position)||'—'}</td>
+     <td>${lastContactCell('kontakt',k)}</td>
      <td>${offeneTickets('kontakt',k.id)?`<span class="pill s-Neu">${offeneTickets('kontakt',k.id)} offen</span>`:'—'}</td>
      <td>${mails||'—'}</td><td><button class="abtn" onclick="delEntity('kontakt','${k.id}')">✕</button></td></tr>`;}).join('')+
    '</tbody></table></div>':'<div class="empty">Keine Kontakte — oben „+ Neu".</div>'}</div></div>`;
@@ -250,12 +275,12 @@ function renderFirmen(){
   const list=F.filter(f=>match(f,['name','branche','website','telefon','strasse','plz','ort','land'])).filter(katMatch).filter(potMatch);
   $('main').innerHTML=`<div class="card"><div class="card-hd"><span>Firmen <span style="color:var(--muted);font-weight:400">· ${list.length}</span></span></div><div class="card-bd">
    <div class="bar"><input placeholder="Firma suchen …" value="${esc(q)}" oninput="q=this.value;clearTimeout(window._t);window._t=setTimeout(render,150)">${katFilterSel()}${potFilterSel()}</div>
-   ${list.length?`<div class="tablewrap"><table><thead><tr><th>Firma</th><th>Pot.</th><th>Kategorien</th><th>Branche</th><th>Anschrift</th><th>Website</th><th>Telefon</th><th>Kontakte</th><th>Deals</th><th></th></tr></thead><tbody>`+
+   ${list.length?`<div class="tablewrap"><table><thead><tr><th>Firma</th><th>Pot.</th><th>Kategorien</th><th>Branche</th><th>Anschrift</th><th>Letzter Kontakt</th><th>Website</th><th>Telefon</th><th>Kontakte</th><th>Deals</th><th></th></tr></thead><tbody>`+
    list.map(f=>`<tr>
      <td><span class="lnk" onclick="openEntity('firma','${f.id}')">${esc(f.name)}</span></td>
      <td>${potBadge(f.potenzial)}</td>
      <td>${katChips(f)}</td>
-     <td>${esc(f.branche)||'—'}</td><td>${esc(anschrift(f))||'—'}</td><td>${f.website?`<a href="${esc(f.website)}" target="_blank" style="color:var(--accent)">${esc(f.website)}</a>`:'—'}</td>
+     <td>${esc(f.branche)||'—'}</td><td>${esc(anschrift(f))||'—'}</td><td>${lastContactCell('firma',f)}</td><td>${f.website?`<a href="${esc(f.website)}" target="_blank" style="color:var(--accent)">${esc(f.website)}</a>`:'—'}</td>
      <td>${esc(f.telefon)||'—'}</td><td>${K.filter(k=>k.firma_id===f.id).length}</td><td>${D.filter(d=>d.firma_id===f.id).length}</td>
      <td><button class="abtn" onclick="delEntity('firma','${f.id}')">✕</button></td></tr>`).join('')+
    '</tbody></table></div>':'<div class="empty">Keine Firmen — oben „+ Neu".</div>'}</div></div>`;
