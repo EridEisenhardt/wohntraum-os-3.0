@@ -76,7 +76,7 @@ select.inl.st{font-weight:700;color:var(--accent);border-color:var(--line);backg
 
   <div class="viewtoggle"><button id="vListe" class="on" onclick="setView('liste')">Liste</button><button id="vBoard" onclick="setView('board')">Kanban-Board</button></div>
   <div class="chips" id="stageChips"></div>
-  <div class="card"><div class="card-hd"><span>Leads</span><span class="crumb" id="cnt"></span></div>
+  <div class="card"><div class="card-hd"><span>Leads</span><span class="crumb">Meilensteine: ✅ erledigt · ⏸️ warten · ❌ nicht erfolgt &nbsp;·&nbsp; <span id="cnt"></span></span></div>
     <div class="tablewrap" id="tbl"><div class="empty" id="loading">Lädt…</div></div></div>
 </div>
 <div class="ov" id="ov" onclick="if(event.target===this)closeNotes()">
@@ -96,8 +96,11 @@ const STAGES=['0 · Leadeingang','1 · Qualifizierung','2 · Selbstauskunft','3 
 const ZAHLART=['Selbstzahler','Jobcenter','Sozialamt','Aufstockung der Miete','Selbstzahler mit Wohngeld'];
 const ERGEBNIS=['','Absage vom Interessenten','Absage vom Vermieter','Absage der Kostenzusage','Warteliste'];
 const FREIGABE=['','Ja','Nein','Warten'];
+const MILE=['','✅','⏸️','❌'];
+const MILEF=[['kostenuebernahme','Zusage Kostenübernahme'],['mietangebot_erhalten','Mietangebot erhalten'],['mietvertrag_unterschrieben','Mietvertrag unterschrieben'],['schluesseluebergabe_erfolgt','Schlüsselübergabe erfolgt'],['erste_mietzahlung','1. Mietzahlung']];
+function mileCell(r,field){return `<td style="text-align:center"><select class="inl" style="text-align:center" onchange="upd('${r.id}','${field}',this.value)">${MILE.map(o=>`<option value="${o}" ${o===(r[field]||'')?'selected':''}>${o===''?'—':o}</option>`).join('')}</select></td>`;}
 let ROWS=[], QUELLEN=[], FSTAGE='', NOTES=[], HIST=[], NT_CUR=null;
-const FLABEL={name:'Name',kontakt:'Kontakt',eingang:'Lead-Eingang',quelle:'Leadquelle',personen:'Personenanzahl',einzug_ab:'Einzug ab',zahlungsart:'Mietzahlung',ergebnis:'Ergebnis',status:'Status',freigabe_schluessel:'Freigabe Schlüsselübergabe'};
+const FLABEL={name:'Name',kontakt:'Kontakt',eingang:'Lead-Eingang',quelle:'Leadquelle',personen:'Personenanzahl',einzug_ab:'Einzug ab',zahlungsart:'Mietzahlung',ergebnis:'Ergebnis',status:'Status',freigabe_schluessel:'Freigabe Schlüsselübergabe',kostenuebernahme:'Zusage Kostenübernahme',mietangebot_erhalten:'Mietangebot erhalten',mietvertrag_unterschrieben:'Mietvertrag unterschrieben',schluesseluebergabe_erfolgt:'Schlüsselübergabe erfolgt',erste_mietzahlung:'1. Mietzahlung'};
 function fmtDT(ts){try{return new Date(ts).toLocaleString('de-DE',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'})+' Uhr';}catch(e){return ts;}}
 function noteCount(id){return NOTES.filter(n=>n.interessent_id===id).length;}
 function openNotes(id){NT_CUR=id;const r=ROWS.find(x=>x.id===id);$('ntTitle').textContent='Verlauf & Notizen · '+((r&&(r.name||r.kontakt))||'Lead');$('ntInput').value='';renderNotes();$('ov').classList.add('show');setTimeout(()=>$('ntInput').focus(),50);}
@@ -181,7 +184,7 @@ function render(){
   $('cnt').textContent=list.length+' von '+ROWS.length;
   if(!ROWS.length){$('tbl').innerHTML='<div class="empty">Noch keine Leads — oben erfassen.</div>';return;}
   const qOpts=(sel)=>'<option value="">—</option>'+QUELLEN.map(q=>`<option ${q===sel?'selected':''}>${esc(q)}</option>`).join('');
-  $('tbl').innerHTML='<table><thead><tr><th>Name</th><th>Kontakt</th><th>Eingang</th><th>Leadquelle</th><th>Pers.</th><th>Einzug ab</th><th>Mietzahlung</th><th>Ergebnis</th><th>Status</th><th>Freigabe Schlüssel&shy;übergabe</th><th>Notizen</th><th></th></tr></thead><tbody>'
+  $('tbl').innerHTML='<table><thead><tr><th>Name</th><th>Kontakt</th><th>Eingang</th><th>Leadquelle</th><th>Pers.</th><th>Einzug ab</th><th>Mietzahlung</th><th>Ergebnis</th><th>Status</th><th>Freigabe Schlüssel&shy;übergabe</th><th>Zusage Kosten&shy;übernahme</th><th>Mietangebot erhalten</th><th>Mietvertrag unter&shy;schrieben</th><th>Schlüssel&shy;übergabe</th><th>1. Miet&shy;zahlung</th><th>Notizen</th><th></th></tr></thead><tbody>'
     +list.map(r=>{const cls=(r.ergebnis&&/Absage/.test(r.ergebnis))?'res-absage':((r.ergebnis==='Warteliste'||r.status==='A · Warteliste')?'res-warte':'');
       return `<tr class="${cls}">
         <td><input class="inl" style="min-width:120px" value="${esc(r.name)}" placeholder="Name" onchange="upd('${r.id}','name',this.value)"></td>
@@ -194,6 +197,7 @@ function render(){
         <td><select class="inl" onchange="upd('${r.id}','ergebnis',this.value)">${ERGEBNIS.map(o=>`<option value="${esc(o)}" ${o===(r.ergebnis||'')?'selected':''}>${o===''?'—':esc(o)}</option>`).join('')}</select></td>
         <td><select class="inl st" onchange="upd('${r.id}','status',this.value)">${opts(STAGES,r.status)}</select></td>
         <td><select class="inl" onchange="upd('${r.id}','freigabe_schluessel',this.value)">${FREIGABE.map(o=>`<option value="${esc(o)}" ${o===(r.freigabe_schluessel||'')?'selected':''}>${o===''?'—':esc(o)}</option>`).join('')}</select></td>
+        ${mileCell(r,'kostenuebernahme')}${mileCell(r,'mietangebot_erhalten')}${mileCell(r,'mietvertrag_unterschrieben')}${mileCell(r,'schluesseluebergabe_erfolgt')}${mileCell(r,'erste_mietzahlung')}
         <td><button class="ntbtn" onclick="openNotes('${r.id}')">📝 ${noteCount(r.id)?'<span class="c">'+noteCount(r.id)+'</span>':'Notiz'}</button></td>
         <td><button class="abtn" onclick="del('${r.id}')">✕</button></td></tr>`;}).join('')
     +'</tbody></table>';
