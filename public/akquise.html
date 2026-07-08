@@ -1,0 +1,468 @@
+<!DOCTYPE html>
+<html lang="de"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Immobilien Akquise – Wohntraum OS</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<style>
+:root{--bg:#f6f7f9;--surf:#fff;--surf2:#f1f3f6;--line:#e6e8ec;--bord2:#eef0f3;--text:#1c2024;--muted:#6b7280;--dim:#4b5563;--accent:#185fa5;--green:#1f7a4d;--red:#c0392b;--warn:#b45309;--r:8px;--rl:12px;}
+*{box-sizing:border-box;margin:0;padding:0}body{background:var(--bg);color:var(--text);font-family:'Inter',system-ui,sans-serif;font-size:14px}
+.hdr{background:var(--surf);border-bottom:1px solid var(--line);padding:14px 24px;display:flex;align-items:center;gap:14px;position:sticky;top:0;z-index:10;flex-wrap:wrap}
+.logo{background:#1a1a2e;color:#fff;font-weight:700;font-size:11px;padding:5px 9px;border-radius:4px}.hdr-title{font-size:16px;font-weight:600}
+.spacer{flex:1}
+.main{max-width:1400px;margin:0 auto;padding:20px 24px 60px}
+.card{background:var(--surf);border:1px solid var(--line);border-radius:var(--rl);margin-bottom:16px;overflow:hidden}
+.card-hd{padding:12px 16px;border-bottom:1px solid var(--line);font-size:13px;font-weight:600;display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap}
+.card-bd{padding:14px 16px}
+.kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:16px}
+@media(max-width:760px){.kpis{grid-template-columns:1fr 1fr}}
+.kpi{background:var(--surf);border:1px solid var(--line);border-radius:var(--rl);padding:13px 15px}
+.kpi .n{font-size:21px;font-weight:700;line-height:1.2}
+.kpi .l{font-size:11px;color:var(--muted);font-weight:600;text-transform:uppercase;letter-spacing:.3px}
+.fgrid{display:grid;grid-template-columns:repeat(4,1fr);gap:10px 14px}
+@media(max-width:980px){.fgrid{grid-template-columns:1fr 1fr}}
+.fld label{font-size:10.5px;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.3px;display:block;margin-bottom:3px}
+.fld input,.fld select,.fld textarea{width:100%;font:inherit;font-size:13px;padding:7px 9px;border:1px solid var(--line);border-radius:7px;background:var(--surf);resize:vertical}
+.fld input:focus,.fld select:focus,.fld textarea:focus{outline:none;border-color:var(--accent)}
+.foot-row{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:12px}
+.btn{font:inherit;font-size:13px;font-weight:600;padding:8px 14px;border-radius:8px;border:1px solid var(--accent);background:var(--accent);color:#fff;cursor:pointer}.btn:hover{opacity:.92}
+.btn.sec{background:var(--surf2);color:var(--text);border-color:var(--line)}
+.viewtoggle{display:flex;gap:6px;margin-bottom:12px;flex-wrap:wrap}
+.viewtoggle button{font:inherit;font-size:12.5px;font-weight:600;padding:7px 13px;border:1px solid var(--line);border-radius:8px;background:var(--surf);color:var(--dim);cursor:pointer}
+.viewtoggle button.on{background:var(--accent);color:#fff;border-color:var(--accent)}
+.chips{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px}
+.chip{font-size:11.5px;font-weight:600;padding:5px 10px;border-radius:20px;border:1px solid var(--line);background:var(--surf);color:var(--dim);cursor:pointer}
+.chip.on{background:var(--accent);color:#fff;border-color:var(--accent)}
+.chip .c{margin-left:5px;opacity:.7;font-weight:700}
+.tblwrap{overflow-x:auto;background:var(--surf);border:1px solid var(--line);border-radius:12px}
+table{width:100%;border-collapse:collapse;font-size:12.5px;min-width:1250px}
+th,td{padding:7px 8px;text-align:left;border-bottom:1px solid var(--bord2);white-space:nowrap}
+th{font-size:10px;text-transform:uppercase;color:var(--muted);font-weight:700;background:var(--surf2)}
+tbody tr:hover td{background:#fafbfc}
+tr.abgesagt td{background:#fdf4f3;color:var(--dim)}
+tr.gekauft td{background:#f2fbf6}
+td input,td select{font:inherit;font-size:12.5px;padding:4px 6px;border:1px solid transparent;border-radius:6px;background:transparent;width:100%;color:inherit}
+td input:hover,td select:hover{border-color:var(--line)}
+td input:focus,td select:focus{border-color:var(--accent);background:var(--surf);outline:none}
+.num{text-align:right;font-variant-numeric:tabular-nums}
+.nrcell{color:var(--muted);font-weight:700;text-align:right;font-variant-numeric:tabular-nums}
+.lnk{color:var(--accent);font-weight:600;cursor:pointer}.lnk:hover{text-decoration:underline}
+.abtn{font:inherit;font-size:12px;padding:3px 8px;border-radius:5px;border:1px solid var(--line);background:transparent;color:var(--muted);cursor:pointer}
+.abtn:hover{color:var(--red);border-color:var(--red)}
+.kb{display:flex;gap:12px;overflow-x:auto;padding-bottom:8px}
+.kbcol{flex:0 0 250px;background:var(--surf2);border:1px solid var(--line);border-radius:10px;display:flex;flex-direction:column;max-height:70vh}
+.kbcol.over{outline:2px dashed var(--accent);outline-offset:-2px}
+.kbcolhd{padding:9px 12px;font-size:11.5px;font-weight:700;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;gap:6px}
+.kbcolhd .n{color:var(--muted)}
+.kbcolbd{padding:8px;overflow-y:auto;display:flex;flex-direction:column;gap:8px;min-height:40px}
+.kbcard{background:var(--surf);border:1px solid var(--line);border-radius:8px;padding:9px 10px;cursor:grab}.kbcard:active{cursor:grabbing}
+.kbt{font-weight:600;font-size:12.5px;color:var(--accent);cursor:pointer}
+.kbm{font-size:11px;color:var(--muted);margin-top:3px}
+.kbv{font-size:12.5px;font-weight:700;margin-top:3px}
+.kbtag{display:inline-block;font-size:10px;font-weight:700;padding:2px 7px;border-radius:12px;background:var(--surf2);color:var(--dim);margin:4px 4px 0 0}
+.kbtag.good{background:#e8f6ee;color:var(--green)}.kbtag.bad{background:#fdecea;color:var(--red)}
+.kbnil{text-align:center;color:var(--muted);font-size:11px;padding:8px}
+.nrbadge{display:inline-block;font-size:10.5px;font-weight:700;color:var(--muted);background:var(--surf2);border-radius:5px;padding:1px 5px;margin-right:2px}
+.empty{text-align:center;padding:26px;color:var(--muted)}
+.ov{position:fixed;inset:0;background:rgba(20,25,35,.45);display:none;align-items:flex-start;justify-content:center;z-index:200;padding:32px 16px;overflow:auto}.ov.show{display:flex}
+.dlg{background:var(--surf);border-radius:12px;width:100%;max-width:900px;box-shadow:0 20px 60px rgba(0,0,0,.3)}
+.dlg-hd{padding:14px 18px;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;align-items:center;font-weight:700}
+.dlg-bd{padding:16px 18px;max-height:66vh;overflow:auto}
+.dlg-ft{padding:12px 18px;border-top:1px solid var(--line)}
+.dlg-ft textarea{width:100%;border:1px solid var(--line);border-radius:8px;padding:8px 10px;font:inherit;font-size:13px;resize:vertical}
+.secttl{font-weight:700;font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.3px;margin:18px 0 8px;border-top:1px solid var(--line);padding-top:12px}
+.opgrid{display:grid;grid-template-columns:1fr 1fr;gap:2px 18px}
+.opf{border-bottom:1px solid var(--bord2);padding:6px 0}
+.opl{font-size:10px;text-transform:uppercase;color:var(--muted);font-weight:700}
+.opi{width:100%;font:inherit;font-size:13px;padding:4px 6px;border:1px solid transparent;border-radius:6px;background:transparent;color:inherit}
+.opi:hover{border-color:var(--line)}.opi:focus{border-color:var(--accent);background:var(--surf);outline:none}
+.kgrid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+@media(max-width:760px){.kgrid{grid-template-columns:1fr 1fr}.opgrid{grid-template-columns:1fr}}
+.kbox{background:var(--surf2);border:1px solid var(--line);border-radius:9px;padding:10px 12px}
+.kbox .l{font-size:10px;text-transform:uppercase;color:var(--muted);font-weight:700}
+.kbox .v{font-size:16px;font-weight:700;margin-top:2px;font-variant-numeric:tabular-nums}
+.kbox .s{font-size:10.5px;color:var(--muted)}
+.tl{border-left:2px solid var(--line);padding-left:14px;margin-top:4px}
+.tli{position:relative;margin:9px 0}
+.tli::before{content:"";position:absolute;left:-19px;top:6px;width:8px;height:8px;border-radius:50%;background:var(--accent)}
+.tli.note::before{background:var(--green)}
+.tli .ts{font-size:10.5px;color:var(--muted);font-weight:600}
+.tli .tx{font-size:12.5px;line-height:1.45;white-space:pre-wrap}
+#mapWrap{height:420px;border-radius:10px;overflow:hidden;border:1px solid var(--line)}
+.leaflet-container{font:inherit}
+.mlegend{display:flex;gap:12px;flex-wrap:wrap;font-size:11px;color:var(--muted);margin-top:10px}
+.msw{display:inline-block;width:11px;height:11px;border-radius:50%;margin-right:5px;vertical-align:-1px}
+.mpop b{font-size:13px}.mpop{font-size:12px;line-height:1.5}
+.toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:var(--surf2);border:1px solid var(--line);border-radius:var(--r);padding:10px 20px;font-size:13px;opacity:0;transition:.3s;pointer-events:none;z-index:300}.toast.show{opacity:1}
+</style></head><body>
+<div class="hdr">
+  <div class="logo">WOHNTRAUM OS</div><div class="hdr-title">Immobilien Akquise</div>
+  <div class="spacer"></div>
+  <span style="font-size:12px;color:var(--muted)" id="hdrCnt"></span>
+</div>
+
+<div class="main">
+  <div class="kpis" id="kpis"></div>
+
+  <div class="card">
+    <div class="card-hd">Neues Objekt erfassen</div>
+    <div class="card-bd">
+      <div class="fgrid">
+        <div class="fld"><label>Bezeichnung</label><input id="f_bez" placeholder="z. B. MFH Alzeyer Str. 12"></div>
+        <div class="fld"><label>Straße &amp; Nr.</label><input id="f_str"></div>
+        <div class="fld"><label>PLZ</label><input id="f_plz"></div>
+        <div class="fld"><label>Ort</label><input id="f_ort"></div>
+        <div class="fld"><label>Angeboten von</label><input id="f_von" placeholder="Makler / Eigentümer"></div>
+        <div class="fld"><label>Quelle</label><input id="f_quelle" placeholder="z. B. Immoscout, Netzwerk"></div>
+        <div class="fld"><label>Kaufpreis (€)</label><input id="f_kp" type="number" step="1000"></div>
+        <div class="fld"><label>Miete IST p. a. (€)</label><input id="f_miete" type="number" step="100"></div>
+        <div class="fld"><label>Einheiten</label><input id="f_einh" type="number" min="0" step="1"></div>
+        <div class="fld"><label>Wohnfläche (m²)</label><input id="f_wfl" type="number" step="1"></div>
+        <div class="fld"><label>Baujahr</label><input id="f_bj" type="number" step="1"></div>
+        <div class="fld"><label>Verantwortlich</label><select id="f_ver"></select></div>
+      </div>
+      <div class="foot-row">
+        <button class="btn" onclick="save()">+ Objekt anlegen</button>
+        <span id="msg" style="font-size:12px;color:var(--green)"></span>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-hd">
+      <span>Karte der geprüften Objekte <span style="color:var(--muted);font-weight:400" id="mapCnt"></span></span>
+      <span><button class="btn sec" onclick="geocodeAlle()" id="geoBtn">📍 Fehlende Adressen verorten</button></span>
+    </div>
+    <div class="card-bd">
+      <div id="mapWrap"></div>
+      <div class="mlegend">
+        <span><span class="msw" style="background:#185fa5"></span>In Prüfung / Verhandlung</span>
+        <span><span class="msw" style="background:#1f7a4d"></span>Beurkundet / übergegangen</span>
+        <span><span class="msw" style="background:#b45309"></span>Wiedervorlage</span>
+        <span><span class="msw" style="background:#c0392b"></span>Abgesagt</span>
+        <span>Klick auf eine Nadel öffnet das Objekt.</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="viewtoggle">
+    <button id="vListe" class="on" onclick="setView('liste')">Liste</button>
+    <button id="vBoard" onclick="setView('board')">Kanban-Board</button>
+    <button onclick="exportCSV()" title="Gefilterte Objekte als CSV herunterladen">⬇ Export</button>
+  </div>
+  <div class="chips" id="stageChips"></div>
+  <div id="grid"><div class="empty">Lädt…</div></div>
+</div>
+
+<div class="ov" id="ov" onclick="if(event.target===this)closeOP()">
+  <div class="dlg">
+    <div class="dlg-hd"><span id="opTitle">Objekt</span><span class="abtn" onclick="closeOP()">✕</span></div>
+    <div class="dlg-bd">
+      <div class="secttl" style="margin-top:0;border-top:none;padding-top:0">Kennzahlen</div>
+      <div class="kgrid" id="opKpi"></div>
+      <div class="secttl">Objektdaten</div>
+      <div class="opgrid" id="opInfo"></div>
+      <div class="secttl">Historie · Änderungen &amp; Notizen</div>
+      <div class="tl" id="opTl"></div>
+    </div>
+    <div class="dlg-ft">
+      <textarea id="noteInput" rows="2" placeholder="Notiz, Gespräch oder Absprache festhalten … (Datum &amp; Uhrzeit automatisch)"></textarea>
+      <div style="margin-top:8px"><button class="btn" onclick="addNote()">+ Notiz speichern</button></div>
+    </div>
+  </div>
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+const sb=window.supabase.createClient('https://jqzxctfqvcwbctpjksvg.supabase.co','eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpxenhjdGZxdmN3YmN0cGprc3ZnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODIxMzA0MzIsImV4cCI6MjA5NzcwNjQzMn0.RKIbZxJdusKWWPjBJqlxZ8e1m8So02UslOg55YRsn3o');
+const $=id=>document.getElementById(id);
+const esc=s=>(s==null?'':String(s)).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;');
+function toast(m){const t=$('toast');t.textContent=m;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),1900);}
+const eur=n=>(n==null||n===''||isNaN(n))?'—':new Intl.NumberFormat('de-DE',{style:'currency',currency:'EUR',maximumFractionDigits:0}).format(n);
+const num=(n,d)=>(n==null||n===''||isNaN(n))?'—':new Intl.NumberFormat('de-DE',{minimumFractionDigits:d||0,maximumFractionDigits:d||0}).format(n);
+const pct=n=>(n==null||isNaN(n))?'—':num(n,2)+' %';
+function fmtDT(ts){try{return new Date(ts).toLocaleString('de-DE',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'})+' Uhr';}catch(e){return ts;}}
+function fmtD(d){if(!d)return '—';const p=String(d).split('-');return p.length===3?p[2]+'.'+p[1]+'.'+p[0]:d;}
+
+const STAGES=['1 · Objekt angeboten','2 · Erstprüfung','3 · Grobkalkulation','4 · Besichtigung','5 · Detailprüfung / Unterlagen','6 · Kaufpreisverhandlung','7 · Finanzierungsanfrage','8 · Finanzierungszusage','9 · Notartermin','10 · Kaufvertrag beurkundet','11 · Übergang Nutzen/Lasten','A · Wiedervorlage','X · Abgesagt'];
+const PERS=['','Eric','Jürgen','Stephan','Ramona','Extern'];
+const FLABEL={bezeichnung:'Bezeichnung',strasse:'Straße',plz:'PLZ',ort:'Ort',angeboten_von:'Angeboten von',quelle:'Quelle',eingang:'Eingang',stufe:'Stufe',einheiten:'Einheiten',wohnflaeche:'Wohnfläche',baujahr:'Baujahr',kaufpreis:'Kaufpreis',miete_ist:'Miete IST p. a.',miete_potenzial:'Miete Potenzial p. a.',grunderwerb_pct:'Grunderwerbsteuer %',notar_pct:'Notar & Grundbuch %',makler_pct:'Makler %',sanierung:'Sanierungskosten',angebot_eigen:'Eigenes Angebot',absage_grund:'Absagegrund',verantwortlich:'Verantwortlich',exposé_link:'Exposé-Link'};
+
+let ROWS=[], NOTES=[], HIST=[], FSTAGE='', VIEW='liste', CUR=null, DRAG=null;
+
+const n0=v=>(v==null||v===''||isNaN(Number(v)))?null:Number(v);
+function kz(r){
+  const kp=n0(r.kaufpreis), m=n0(r.miete_ist), wf=n0(r.wohnflaeche);
+  const nkPct=(n0(r.grunderwerb_pct)||0)+(n0(r.notar_pct)||0)+(n0(r.makler_pct)||0);
+  const nk = kp!=null ? kp*nkPct/100 : null;
+  const san = n0(r.sanierung)||0;
+  const gesamt = kp!=null ? kp+(nk||0)+san : null;
+  return {
+    kp, m, wf, nkPct, nk, san, gesamt,
+    faktor:(kp!=null&&m)?kp/m:null,
+    rendite:(kp&&m!=null)?m/kp*100:null,
+    renditeGes:(gesamt&&m!=null)?m/gesamt*100:null,
+    preisM2:(kp!=null&&wf)?kp/wf:null,
+    mieteM2:(m!=null&&wf)?m/12/wf:null
+  };
+}
+const rowCls=r=>r.stufe==='X · Abgesagt'?'abgesagt':(/^(10|11)/.test(r.stufe||'')?'gekauft':'');
+
+async function load(){
+  const[o,n,h]=await Promise.all([
+    sb.from('akquise_objekte').select('*').order('nummer',{ascending:false}),
+    sb.from('akquise_notizen').select('*').order('created_at',{ascending:false}),
+    sb.from('akquise_historie').select('*').order('created_at',{ascending:false})
+  ]);
+  ROWS=o.data||[];NOTES=n.data||[];HIST=h.data||[];
+  $('f_ver').innerHTML=PERS.map(p=>`<option value="${esc(p)}">${p||'—'}</option>`).join('');
+  render();
+}
+
+function renderKpis(){
+  const aktiv=ROWS.filter(r=>r.stufe!=='X · Abgesagt'&&!/^11/.test(r.stufe||''));
+  const vol=aktiv.reduce((s,r)=>s+(n0(r.kaufpreis)||0),0);
+  const mitF=aktiv.map(r=>kz(r).faktor).filter(x=>x!=null);
+  const schnitt=mitF.length?mitF.reduce((a,b)=>a+b,0)/mitF.length:null;
+  const gekauft=ROWS.filter(r=>/^(10|11)/.test(r.stufe||'')).length;
+  $('kpis').innerHTML=`
+    <div class="kpi"><div class="n">${aktiv.length}</div><div class="l">Objekte in Prüfung</div></div>
+    <div class="kpi"><div class="n">${eur(vol)}</div><div class="l">Kaufpreisvolumen aktiv</div></div>
+    <div class="kpi"><div class="n">${schnitt?num(schnitt,1)+'×':'—'}</div><div class="l">Ø Kaufpreisfaktor</div></div>
+    <div class="kpi"><div class="n">${gekauft}</div><div class="l">Beurkundet / übergegangen</div></div>`;
+  $('hdrCnt').textContent=ROWS.length+' Objekte gesamt';
+}
+function renderChips(){
+  const cnt={};STAGES.forEach(s=>cnt[s]=0);ROWS.forEach(r=>{if(cnt[r.stufe]!=null)cnt[r.stufe]++;});
+  const chip=(val,lbl,n)=>`<span class="chip ${FSTAGE===val?'on':''}" onclick="FSTAGE=${JSON.stringify(val)};render()">${lbl}<span class="c">${n}</span></span>`;
+  $('stageChips').innerHTML=chip('','Alle',ROWS.length)+STAGES.map(s=>chip(s,esc(s),cnt[s])).join('');
+}
+function setView(v){VIEW=v;$('vListe').classList.toggle('on',v==='liste');$('vBoard').classList.toggle('on',v==='board');render();}
+
+function tableView(list){
+  return '<div class="tblwrap"><table><thead><tr><th>Nr</th><th>Bezeichnung</th><th>Ort</th><th>Stufe</th>'
+    +'<th class="num">Kaufpreis</th><th class="num">Miete p.a.</th><th class="num">Faktor</th><th class="num">Rendite</th>'
+    +'<th class="num">Preis/m²</th><th class="num">Gesamtinvest</th><th>Angeboten von</th><th>Verantw.</th><th>Eingang</th><th></th></tr></thead><tbody>'
+    +list.map(r=>{const k=kz(r);return `<tr class="${rowCls(r)}">
+      <td class="nrcell">${r.nummer}</td>
+      <td><span class="lnk" onclick="openOP('${r.id}')">${esc(r.bezeichnung||'(ohne Bezeichnung)')}</span></td>
+      <td>${esc(r.ort)||'—'}</td>
+      <td><select onchange="upd('${r.id}','stufe',this.value)">${STAGES.map(s=>`<option ${s===r.stufe?'selected':''}>${esc(s)}</option>`).join('')}</select></td>
+      <td><input class="num" type="number" step="1000" value="${r.kaufpreis??''}" onchange="upd('${r.id}','kaufpreis',this.value)"></td>
+      <td><input class="num" type="number" step="100" value="${r.miete_ist??''}" onchange="upd('${r.id}','miete_ist',this.value)"></td>
+      <td class="num">${k.faktor?num(k.faktor,1)+'×':'—'}</td>
+      <td class="num">${k.rendite?pct(k.rendite):'—'}</td>
+      <td class="num">${k.preisM2?eur(k.preisM2):'—'}</td>
+      <td class="num">${eur(k.gesamt)}</td>
+      <td>${esc(r.angeboten_von)||'—'}</td>
+      <td>${esc(r.verantwortlich)||'—'}</td>
+      <td>${fmtD(r.eingang)}</td>
+      <td><button class="abtn" onclick="del('${r.id}')">✕</button></td></tr>`;}).join('')
+    +'</tbody></table></div>';
+}
+function boardView(){
+  return '<div class="kb">'+STAGES.map(s=>{
+    const list=ROWS.filter(r=>r.stufe===s);
+    const cards=list.map(r=>{const k=kz(r);
+      return `<div class="kbcard" draggable="true" ondragstart="dragStart(event,'${r.id}')">
+        <div class="kbt" onclick="openOP('${r.id}')"><span class="nrbadge">#${r.nummer}</span> ${esc(r.bezeichnung||'(ohne Bezeichnung)')}</div>
+        <div class="kbm">${esc(r.ort)||'—'}${r.einheiten?' · '+r.einheiten+' Einh.':''}${r.wohnflaeche?' · '+num(r.wohnflaeche)+' m²':''}</div>
+        <div class="kbv">${eur(r.kaufpreis)}</div>
+        ${k.faktor?`<span class="kbtag ${k.faktor<=16?'good':(k.faktor>=22?'bad':'')}">Faktor ${num(k.faktor,1)}×</span>`:''}
+        ${k.rendite?`<span class="kbtag">${pct(k.rendite)}</span>`:''}
+      </div>`;}).join('');
+    return `<div class="kbcol" ondragover="allowDrop(event,this)" ondragleave="this.classList.remove('over')" ondrop="drop(event,${JSON.stringify(s).replace(/"/g,'&quot;')},this)">
+      <div class="kbcolhd"><span>${esc(s)}</span><span class="n">${list.length}</span></div>
+      <div class="kbcolbd">${cards||'<div class="kbnil">—</div>'}</div></div>`;}).join('')+'</div>';
+}
+function render(){
+  renderKpis();renderChips();renderMap();
+  $('stageChips').style.display=VIEW==='board'?'none':'flex';
+  if(!ROWS.length){$('grid').innerHTML='<div class="empty">Noch keine Objekte — oben erfassen.</div>';return;}
+  if(VIEW==='board'){$('grid').innerHTML=boardView();return;}
+  const list=FSTAGE?ROWS.filter(r=>r.stufe===FSTAGE):ROWS;
+  $('grid').innerHTML=list.length?tableView(list):'<div class="empty">Keine Objekte in dieser Stufe.</div>';
+}
+
+function dragStart(ev,id){DRAG=id;ev.dataTransfer.effectAllowed='move';}
+function allowDrop(ev,el){ev.preventDefault();if(el)el.classList.add('over');}
+function drop(ev,stufe,el){ev.preventDefault();if(el)el.classList.remove('over');if(DRAG){upd(DRAG,'stufe',stufe);DRAG=null;}}
+
+async function logHist(id,feld,alt,neu){
+  await sb.from('akquise_historie').insert({objekt_id:id,feld:FLABEL[feld]||feld,alt:alt==null?null:String(alt),neu:neu==null?null:String(neu)});
+  const{data}=await sb.from('akquise_historie').select('*').order('created_at',{ascending:false});HIST=data||[];
+}
+async function upd(id,field,val){
+  const r=ROWS.find(x=>x.id===id);const alt=r?r[field]:null;
+  const nv=(val===''?null:val);
+  const{error}=await sb.from('akquise_objekte').update({[field]:nv,updated_at:new Date().toISOString()}).eq('id',id);
+  if(error){toast('Fehler: '+error.message);return;}
+  if(r)r[field]=nv;
+  if(['strasse','plz','ort'].includes(field)&&r){
+    await sb.from('akquise_objekte').update({lat:null,lng:null,geo_at:null}).eq('id',id);
+    r.lat=null;r.lng=null;
+  }
+  if(String(alt==null?'':alt)!==String(nv==null?'':nv))await logHist(id,field,alt,nv);
+  render();if(CUR===id)renderOP();
+}
+async function save(){
+  const row={bezeichnung:$('f_bez').value.trim()||null,strasse:$('f_str').value.trim()||null,plz:$('f_plz').value.trim()||null,
+    ort:$('f_ort').value.trim()||null,angeboten_von:$('f_von').value.trim()||null,quelle:$('f_quelle').value.trim()||null,
+    kaufpreis:n0($('f_kp').value),miete_ist:n0($('f_miete').value),einheiten:n0($('f_einh').value),
+    wohnflaeche:n0($('f_wfl').value),baujahr:n0($('f_bj').value),verantwortlich:$('f_ver').value||null,stufe:STAGES[0]};
+  if(!row.bezeichnung&&!row.strasse){toast('Bitte Bezeichnung oder Straße angeben');return;}
+  const{data,error}=await sb.from('akquise_objekte').insert(row).select();
+  if(error){$('msg').style.color='var(--red)';$('msg').textContent='Fehler: '+error.message;return;}
+  if(data&&data[0])await sb.from('akquise_historie').insert({objekt_id:data[0].id,feld:'Objekt',alt:null,neu:'angelegt'});
+  ['f_bez','f_str','f_plz','f_ort','f_von','f_quelle','f_kp','f_miete','f_einh','f_wfl','f_bj'].forEach(i=>$(i).value='');
+  $('msg').style.color='var(--green)';$('msg').textContent='Objekt angelegt ✓';
+  load();
+}
+async function del(id){
+  const r=ROWS.find(x=>x.id===id);
+  if(!confirm('Objekt #'+(r?r.nummer:'')+' löschen? Notizen und Historie werden mit gelöscht.'))return;
+  await sb.from('akquise_objekte').delete().eq('id',id);load();
+}
+
+// ——— Onepager ———
+function opTxt(r,f,type,step){return `<input class="opi" type="${type||'text'}" ${step?`step="${step}"`:''} value="${r[f]==null?'':esc(r[f])}" onchange="upd('${r.id}','${f}',this.value)">`;}
+function opSel(r,f,arr,leer){return `<select class="opi" onchange="upd('${r.id}','${f}',this.value)">${(leer?['']:[]).concat(arr).map(o=>`<option value="${esc(o)}" ${String(o)===String(r[f]||'')?'selected':''}>${o===''?'—':esc(o)}</option>`).join('')}</select>`;}
+function renderOP(){
+  const r=ROWS.find(x=>x.id===CUR);if(!r)return;
+  const k=kz(r);
+  $('opTitle').textContent='Objekt #'+r.nummer+' · '+(r.bezeichnung||r.strasse||'ohne Bezeichnung');
+  const box=(l,v,s)=>`<div class="kbox"><div class="l">${l}</div><div class="v">${v}</div><div class="s">${s||'&nbsp;'}</div></div>`;
+  $('opKpi').innerHTML=
+    box('Kaufpreisfaktor',k.faktor?num(k.faktor,1)+'×':'—','Kaufpreis ÷ Jahresnettomiete')+
+    box('Bruttorendite',k.rendite?pct(k.rendite):'—','auf Kaufpreis')+
+    box('Rendite auf Gesamtinvest',k.renditeGes?pct(k.renditeGes):'—','inkl. Nebenkosten & Sanierung')+
+    box('Preis pro m²',k.preisM2?eur(k.preisM2):'—',k.mieteM2?('Miete '+eur(k.mieteM2)+'/m²/Monat'):'')+
+    box('Kaufnebenkosten',eur(k.nk),num(k.nkPct,1)+' % vom Kaufpreis')+
+    box('Gesamtinvestition',eur(k.gesamt),'Kaufpreis + NK + Sanierung');
+  const F=(l,inp)=>`<div class="opf"><div class="opl">${l}</div><div>${inp}</div></div>`;
+  $('opInfo').innerHTML=
+    F('Bezeichnung',opTxt(r,'bezeichnung'))+F('Stufe',opSel(r,'stufe',STAGES,false))+
+    F('Straße',opTxt(r,'strasse'))+F('PLZ / Ort',opTxt(r,'plz')+opTxt(r,'ort'))+
+    F('Angeboten von',opTxt(r,'angeboten_von'))+F('Quelle',opTxt(r,'quelle'))+
+    F('Eingang',opTxt(r,'eingang','date'))+F('Verantwortlich',opSel(r,'verantwortlich',PERS.filter(Boolean),true))+
+    F('Kaufpreis (€)',opTxt(r,'kaufpreis','number','1000'))+F('Eigenes Angebot (€)',opTxt(r,'angebot_eigen','number','1000'))+
+    F('Miete IST p. a. (€)',opTxt(r,'miete_ist','number','100'))+F('Miete Potenzial p. a. (€)',opTxt(r,'miete_potenzial','number','100'))+
+    F('Einheiten',opTxt(r,'einheiten','number','1'))+F('Wohnfläche (m²)',opTxt(r,'wohnflaeche','number','1'))+
+    F('Baujahr',opTxt(r,'baujahr','number','1'))+F('Sanierungskosten (€)',opTxt(r,'sanierung','number','1000'))+
+    F('Grunderwerbsteuer %',opTxt(r,'grunderwerb_pct','number','0.1'))+F('Notar &amp; Grundbuch %',opTxt(r,'notar_pct','number','0.1'))+
+    F('Makler %',opTxt(r,'makler_pct','number','0.1'))+F('Exposé-Link',opTxt(r,'exposé_link'))+
+    F('Absagegrund',opTxt(r,'absage_grund'));
+  const items=[];
+  NOTES.filter(n=>n.objekt_id===CUR).forEach(n=>items.push({t:n.created_at,kind:'note',text:n.text}));
+  HIST.filter(h=>h.objekt_id===CUR).forEach(h=>items.push({t:h.created_at,kind:'hist',feld:h.feld,alt:h.alt,neu:h.neu}));
+  items.sort((a,b)=>new Date(b.t)-new Date(a.t));
+  $('opTl').innerHTML=items.length?items.map(i=>i.kind==='note'
+    ? `<div class="tli note"><div class="ts">📝 Notiz · ${fmtDT(i.t)}</div><div class="tx">${esc(i.text)}</div></div>`
+    : `<div class="tli"><div class="ts">🔄 ${esc(i.feld)} · ${fmtDT(i.t)}</div><div class="tx">${esc(i.alt||'—')} → ${esc(i.neu||'—')}</div></div>`).join('')
+    :'<div class="empty" style="padding:10px">Noch keine Einträge.</div>';
+}
+function openOP(id){CUR=id;$('noteInput').value='';renderOP();$('ov').classList.add('show');}
+function closeOP(){$('ov').classList.remove('show');CUR=null;}
+async function addNote(){
+  if(!CUR)return;
+  const t=$('noteInput').value.trim();if(!t){toast('Bitte Text eingeben');return;}
+  const{data,error}=await sb.from('akquise_notizen').insert({objekt_id:CUR,text:t}).select();
+  if(error){toast(error.message);return;}
+  if(data&&data[0])NOTES.unshift(data[0]);
+  $('noteInput').value='';renderOP();toast('Notiz gespeichert ✓');
+}
+
+// ——— Karte ———
+let MAP=null, LAYER=null;
+const geoColor=r=>r.stufe==='X · Abgesagt'?'#c0392b':(/^(10|11)/.test(r.stufe||'')?'#1f7a4d':(r.stufe==='A · Wiedervorlage'?'#b45309':'#185fa5'));
+const adrOf=r=>[r.strasse,[r.plz,r.ort].filter(Boolean).join(' ')].filter(Boolean).join(', ');
+
+function initMap(){
+  if(MAP||!window.L)return;
+  MAP=L.map('mapWrap',{scrollWheelZoom:false}).setView([49.75,8.11],10);
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:18,attribution:'&copy; OpenStreetMap'}).addTo(MAP);
+  LAYER=L.layerGroup().addTo(MAP);
+}
+function renderMap(){
+  initMap();if(!MAP)return;
+  LAYER.clearLayers();
+  const mit=ROWS.filter(r=>r.lat!=null&&r.lng!=null);
+  const ohne=ROWS.filter(r=>r.lat==null&&adrOf(r));
+  $('mapCnt').textContent='· '+mit.length+' verortet'+(ohne.length?(' · '+ohne.length+' ohne Koordinaten'):'');
+  $('geoBtn').style.display=ohne.length?'':'none';
+  const pts=[];
+  mit.forEach(r=>{
+    const k=kz(r);
+    const m=L.circleMarker([r.lat,r.lng],{radius:8,color:'#fff',weight:2,fillColor:geoColor(r),fillOpacity:.95}).addTo(LAYER);
+    m.bindPopup(`<div class="mpop"><b>#${r.nummer} ${esc(r.bezeichnung||'')}</b><br>${esc(adrOf(r))}<br>
+      ${eur(r.kaufpreis)}${k.faktor?' · Faktor '+num(k.faktor,1)+'×':''}<br>
+      <span style="color:#6b7280">${esc(r.stufe||'')}</span><br>
+      <a href="#" onclick="openOP('${r.id}');return false;">Objekt öffnen</a></div>`);
+    pts.push([r.lat,r.lng]);
+  });
+  if(pts.length===1)MAP.setView(pts[0],14);
+  else if(pts.length>1)MAP.fitBounds(L.latLngBounds(pts).pad(0.2));
+  setTimeout(()=>MAP.invalidateSize(),80);
+}
+async function geocodeOne(adr){
+  const url='https://nominatim.openstreetmap.org/search?format=json&limit=1&countrycodes=de&q='+encodeURIComponent(adr);
+  const res=await fetch(url,{headers:{'Accept':'application/json'}});
+  if(!res.ok)return null;
+  const j=await res.json();
+  if(!j||!j.length)return null;
+  return {lat:parseFloat(j[0].lat),lng:parseFloat(j[0].lon)};
+}
+async function geocodeAlle(){
+  const ohne=ROWS.filter(r=>r.lat==null&&adrOf(r));
+  if(!ohne.length){toast('Alle Objekte sind verortet');return;}
+  $('geoBtn').disabled=true;
+  let ok=0,fail=0;
+  for(const r of ohne){
+    $('geoBtn').textContent='📍 Verorte … ('+(ok+fail+1)+'/'+ohne.length+')';
+    try{
+      const c=await geocodeOne(adrOf(r));
+      if(c){
+        await sb.from('akquise_objekte').update({lat:c.lat,lng:c.lng,geo_at:new Date().toISOString()}).eq('id',r.id);
+        r.lat=c.lat;r.lng=c.lng;ok++;
+      } else fail++;
+    }catch(e){fail++;}
+    await new Promise(res=>setTimeout(res,1200)); // Nominatim: max 1 Anfrage/Sekunde
+  }
+  $('geoBtn').disabled=false;$('geoBtn').textContent='📍 Fehlende Adressen verorten';
+  renderMap();
+  toast(ok+' verortet'+(fail?(', '+fail+' ohne Treffer'):'')+' ✓');
+}
+
+// ——— CSV ———
+function csvCell(v){const s=(v==null?'':String(v));return '"'+s.replace(/"/g,'""')+'"';}
+function csvDownload(name,header,zeilen){
+  const txt=[header].concat(zeilen).map(r=>r.map(csvCell).join(';')).join('\r\n');
+  const blob=new Blob(['﻿'+txt],{type:'text/csv;charset=utf-8;'});
+  const a=document.createElement('a');a.href=URL.createObjectURL(blob);
+  a.download=name+'_'+new Date().toISOString().slice(0,10)+'.csv';
+  document.body.appendChild(a);a.click();a.remove();URL.revokeObjectURL(a.href);
+}
+function exportCSV(){
+  const list=FSTAGE?ROWS.filter(r=>r.stufe===FSTAGE):ROWS;
+  if(!list.length){toast('Keine Objekte zum Exportieren');return;}
+  const header=['Nr','Bezeichnung','Strasse','PLZ','Ort','Stufe','Angeboten von','Quelle','Eingang','Einheiten','Wohnflaeche',
+    'Baujahr','Kaufpreis','Miete IST p.a.','Miete Potenzial p.a.','Eigenes Angebot','Faktor','Bruttorendite %','Preis pro qm',
+    'Nebenkosten %','Nebenkosten EUR','Sanierung','Gesamtinvestition','Verantwortlich','Absagegrund','Notizen'];
+  const zeilen=list.map(r=>{const k=kz(r);return [r.nummer,r.bezeichnung,r.strasse,r.plz,r.ort,r.stufe,r.angeboten_von,r.quelle,r.eingang,
+    r.einheiten,r.wohnflaeche,r.baujahr,r.kaufpreis,r.miete_ist,r.miete_potenzial,r.angebot_eigen,
+    k.faktor?k.faktor.toFixed(2):'',k.rendite?k.rendite.toFixed(2):'',k.preisM2?Math.round(k.preisM2):'',
+    k.nkPct,k.nk?Math.round(k.nk):'',r.sanierung,k.gesamt?Math.round(k.gesamt):'',r.verantwortlich,r.absage_grund,
+    NOTES.filter(n=>n.objekt_id===r.id).map(n=>fmtDT(n.created_at)+': '+n.text).join(' | ')];});
+  csvDownload('akquise_export',header,zeilen);
+  toast(list.length+' Objekt(e) exportiert ✓');
+}
+
+window.setView=setView;window.save=save;window.del=del;window.upd=upd;window.openOP=openOP;window.closeOP=closeOP;
+window.addNote=addNote;window.exportCSV=exportCSV;window.geocodeAlle=geocodeAlle;window.dragStart=dragStart;window.allowDrop=allowDrop;window.drop=drop;
+
+(async()=>{
+  const{data:{session}}=await sb.auth.getSession();
+  if(!session){$('grid').innerHTML='<div class="empty" style="padding:60px">Bitte zuerst im OS einloggen.</div>';return;}
+  load();
+})();
+</script></body></html>

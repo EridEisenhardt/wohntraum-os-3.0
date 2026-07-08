@@ -21,6 +21,9 @@ export const NAV = [
   ] },
   { type: 'link', href: '/prozesse', icon: 'ti-sitemap', label: 'Prozesse', area: 'common' },
   { type: 'link', href: '/aktivitaeten', icon: 'ti-checklist', label: 'Aktivitäten', area: 'hv' },
+  { type: 'group', key: 'ankauf', icon: 'ti-key', label: 'Ankauf', area: 'vertrieb', items: [
+    { href: '/ankauf/akquise', icon: 'ti-map-search', label: 'Immobilien Akquise' },
+  ] },
   { type: 'group', key: 'vermietung', icon: 'ti-home-search', label: 'Vermietung', area: 'vertrieb', items: [
     { href: '/vermietung/mietinteressenten', icon: 'ti-users-plus', label: 'Mietinteressenten' },
     { href: '/vermietung/wohnungsvermietung', icon: 'ti-home-cog', label: 'Wohnungsvermietung' },
