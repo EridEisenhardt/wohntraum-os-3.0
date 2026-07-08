@@ -38,10 +38,6 @@ export const NAV = [
     { href: '/produktivitaet/stundengehalt', icon: 'ti-clock-dollar', label: 'Stundengehalt' },
     { href: '/produktivitaet/gpm-tracker', icon: 'ti-target-arrow', label: 'GPM-Tracker' },
   ] },
-  { type: 'group', key: 'mastermind', icon: 'ti-bulb', label: 'Prozesse & Mastermind', area: 'common', items: [
-    { href: '/prozesse-mastermind', icon: 'ti-users-group', label: 'Mastermind', exact: true },
-    { href: '/prozesse-mastermind/rechenschaft', icon: 'ti-checkup-list', label: 'Rechenschaftsbericht' },
-  ] },
   { type: 'group', key: 'finance', icon: 'ti-cash', label: 'Finance', area: 'hv', items: [
     { href: '/finance/input', icon: 'ti-forms', label: 'Input' },
     { href: '/finance/darlehen', icon: 'ti-businessplan', label: 'Darlehen' },
