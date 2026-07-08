@@ -32,6 +32,16 @@ select.inl.st{font-weight:700;color:var(--accent);border-color:var(--line);backg
 .abtn{font-size:12px;padding:3px 8px;border-radius:5px;border:1px solid var(--line);background:transparent;color:var(--muted);cursor:pointer}.abtn:hover{color:var(--red);border-color:var(--red)}
 .empty{text-align:center;padding:26px;color:var(--muted)}
 .toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:var(--surf2);border:1px solid var(--line);border-radius:var(--r);padding:10px 20px;font-size:13px;opacity:0;transition:.3s;pointer-events:none;z-index:99}.toast.show{opacity:1}
+.ntbtn{font-size:12px;font-weight:600;padding:4px 9px;border-radius:6px;border:1px solid var(--line);background:var(--surf);color:var(--dim);cursor:pointer;white-space:nowrap}.ntbtn:hover{border-color:var(--accent);color:var(--accent)}.ntbtn .c{font-weight:700;color:var(--accent)}
+.ov{position:fixed;inset:0;background:rgba(20,25,35,.45);display:none;align-items:flex-start;justify-content:center;z-index:200;padding:40px 16px;overflow:auto}.ov.show{display:flex}
+.dlg{background:var(--surf);border-radius:12px;width:100%;max-width:640px;box-shadow:0 20px 60px rgba(0,0,0,.3)}
+.dlg-hd{padding:14px 18px;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;align-items:center;font-weight:700}
+.dlg-bd{padding:16px 18px;max-height:60vh;overflow:auto}
+.note{border:1px solid var(--bord2);border-left:3px solid var(--accent);border-radius:8px;padding:9px 12px;margin-bottom:10px;background:var(--surf2)}
+.note .ts{font-size:11px;color:var(--muted);font-weight:600;margin-bottom:3px}.note .tx{font-size:13px;white-space:pre-wrap;line-height:1.45}
+.note .x{float:right;color:var(--muted);cursor:pointer;font-size:12px}.note .x:hover{color:var(--red)}
+.dlg-ft{padding:12px 18px;border-top:1px solid var(--line)}
+.dlg-ft textarea{width:100%;border:1px solid var(--line);border-radius:8px;padding:9px 11px;font:inherit;font-size:13px;resize:vertical}
 </style></head><body>
 <div class="hdr"><div class="logo">MACHER OS</div><div>
   <div class="crumb">Vermietung › Mietinteressenten</div>
@@ -55,7 +65,16 @@ select.inl.st{font-weight:700;color:var(--accent);border-color:var(--line);backg
   <div class="chips" id="stageChips"></div>
   <div class="card"><div class="card-hd"><span>Leads</span><span class="crumb" id="cnt"></span></div>
     <div class="tablewrap" id="tbl"><div class="empty" id="loading">Lädt…</div></div></div>
-</div><div class="toast" id="toast"></div>
+</div>
+<div class="ov" id="ov" onclick="if(event.target===this)closeNotes()">
+  <div class="dlg">
+    <div class="dlg-hd"><span id="ntTitle">Notizen</span><span class="abtn" onclick="closeNotes()">✕</span></div>
+    <div class="dlg-bd" id="ntList"></div>
+    <div class="dlg-ft"><textarea id="ntInput" rows="3" placeholder="Notiz, Absprache oder Gespräch festhalten … (Datum & Uhrzeit werden automatisch gespeichert)"></textarea>
+      <div style="margin-top:8px"><button class="btn" onclick="addNote()">+ Notiz speichern</button></div></div>
+  </div>
+</div>
+<div class="toast" id="toast"></div>
 <script>
 const sb=window.supabase.createClient('https://jqzxctfqvcwbctpjksvg.supabase.co','eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpxenhjdGZxdmN3YmN0cGprc3ZnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODIxMzA0MzIsImV4cCI6MjA5NzcwNjQzMn0.RKIbZxJdusKWWPjBJqlxZ8e1m8So02UslOg55YRsn3o');
 const $=id=>document.getElementById(id);const esc=s=>(s==null?'':String(s)).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;');
@@ -64,7 +83,14 @@ const STAGES=['0 · Leadeingang','1 · Qualifizierung','2 · Selbstauskunft','3 
 const ZAHLART=['Selbstzahler','Jobcenter','Sozialamt','Aufstockung der Miete','Selbstzahler mit Wohngeld'];
 const ERGEBNIS=['','Absage vom Interessenten','Absage vom Vermieter','Absage der Kostenzusage','Warteliste'];
 const FREIGABE=['','Ja','Nein','Warten'];
-let ROWS=[], QUELLEN=[], FSTAGE='';
+let ROWS=[], QUELLEN=[], FSTAGE='', NOTES=[], NT_CUR=null;
+function fmtDT(ts){try{return new Date(ts).toLocaleString('de-DE',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'})+' Uhr';}catch(e){return ts;}}
+function noteCount(id){return NOTES.filter(n=>n.interessent_id===id).length;}
+function openNotes(id){NT_CUR=id;const r=ROWS.find(x=>x.id===id);$('ntTitle').textContent='Notizen · '+((r&&(r.name||r.kontakt))||'Lead');$('ntInput').value='';renderNotes();$('ov').classList.add('show');setTimeout(()=>$('ntInput').focus(),50);}
+function closeNotes(){$('ov').classList.remove('show');NT_CUR=null;}
+function renderNotes(){const list=NOTES.filter(n=>n.interessent_id===NT_CUR);$('ntList').innerHTML=list.length?list.map(n=>`<div class="note"><span class="x" onclick="delNote('${n.id}')">✕</span><div class="ts">${fmtDT(n.created_at)}</div><div class="tx">${esc(n.text)}</div></div>`).join(''):'<div class="empty" style="padding:14px">Noch keine Notizen.</div>';}
+async function addNote(){const t=$('ntInput').value.trim();if(!t){toast('Bitte Text eingeben');return;}const{data,error}=await sb.from('mietinteressent_notizen').insert({interessent_id:NT_CUR,text:t}).select();if(error){toast(error.message);return;}if(data&&data[0])NOTES.unshift(data[0]);$('ntInput').value='';renderNotes();render();}
+async function delNote(nid){if(!confirm('Notiz löschen?'))return;await sb.from('mietinteressent_notizen').delete().eq('id',nid);NOTES=NOTES.filter(n=>n.id!==nid);renderNotes();render();}
 function opts(arr,sel){return arr.map(o=>`<option ${o===sel?'selected':''}>${esc(o)}</option>`).join('');}
 function clearForm(){['f_name','f_kontakt','f_personen','f_einzug'].forEach(id=>$(id).value='');$('f_eingang').value=new Date().toISOString().slice(0,10);$('msg').textContent='';}
 async function loadQuellen(){
@@ -82,7 +108,10 @@ async function load(){
   await loadQuellen();
   const{data,error}=await sb.from('mietinteressenten').select('*').order('eingang',{ascending:false,nullsFirst:false}).order('created_at',{ascending:false});
   if(error){$('tbl').innerHTML='<div class="empty">Fehler: '+esc(error.message)+'</div>';return;}
-  ROWS=data||[];render();
+  ROWS=data||[];
+  const nd=await sb.from('mietinteressent_notizen').select('id,interessent_id,text,created_at').order('created_at',{ascending:false});
+  NOTES=nd.data||[];
+  render();
 }
 async function save(){
   const row={name:$('f_name').value.trim()||null,kontakt:$('f_kontakt').value.trim()||null,eingang:$('f_eingang').value||null,quelle:$('f_quelle').value||null,personen:$('f_personen').value?parseInt($('f_personen').value,10):null,einzug_ab:$('f_einzug').value.trim()||null,zahlungsart:$('f_zahlart').value||null,status:STAGES[0]};
@@ -104,7 +133,7 @@ function render(){
   $('cnt').textContent=list.length+' von '+ROWS.length;
   if(!ROWS.length){$('tbl').innerHTML='<div class="empty">Noch keine Leads — oben erfassen.</div>';return;}
   const qOpts=(sel)=>'<option value="">—</option>'+QUELLEN.map(q=>`<option ${q===sel?'selected':''}>${esc(q)}</option>`).join('');
-  $('tbl').innerHTML='<table><thead><tr><th>Name</th><th>Kontakt</th><th>Eingang</th><th>Leadquelle</th><th>Pers.</th><th>Einzug ab</th><th>Mietzahlung</th><th>Ergebnis</th><th>Status</th><th>Freigabe Schlüssel&shy;übergabe</th><th></th></tr></thead><tbody>'
+  $('tbl').innerHTML='<table><thead><tr><th>Name</th><th>Kontakt</th><th>Eingang</th><th>Leadquelle</th><th>Pers.</th><th>Einzug ab</th><th>Mietzahlung</th><th>Ergebnis</th><th>Status</th><th>Freigabe Schlüssel&shy;übergabe</th><th>Notizen</th><th></th></tr></thead><tbody>'
     +list.map(r=>{const cls=(r.ergebnis&&/Absage/.test(r.ergebnis))?'res-absage':((r.ergebnis==='Warteliste'||r.status==='A · Warteliste')?'res-warte':'');
       return `<tr class="${cls}">
         <td><input class="inl" style="min-width:120px" value="${esc(r.name)}" placeholder="Name" onchange="upd('${r.id}','name',this.value)"></td>
@@ -117,6 +146,7 @@ function render(){
         <td><select class="inl" onchange="upd('${r.id}','ergebnis',this.value)">${ERGEBNIS.map(o=>`<option value="${esc(o)}" ${o===(r.ergebnis||'')?'selected':''}>${o===''?'—':esc(o)}</option>`).join('')}</select></td>
         <td><select class="inl st" onchange="upd('${r.id}','status',this.value)">${opts(STAGES,r.status)}</select></td>
         <td><select class="inl" onchange="upd('${r.id}','freigabe_schluessel',this.value)">${FREIGABE.map(o=>`<option value="${esc(o)}" ${o===(r.freigabe_schluessel||'')?'selected':''}>${o===''?'—':esc(o)}</option>`).join('')}</select></td>
+        <td><button class="ntbtn" onclick="openNotes('${r.id}')">📝 ${noteCount(r.id)?'<span class="c">'+noteCount(r.id)+'</span>':'Notiz'}</button></td>
         <td><button class="abtn" onclick="del('${r.id}')">✕</button></td></tr>`;}).join('')
     +'</tbody></table>';
   if(!list.length)$('tbl').innerHTML='<div class="empty">Keine Leads in dieser Stufe.</div>';
