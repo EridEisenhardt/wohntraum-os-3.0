@@ -56,6 +56,8 @@
   <div class="spacer"></div>
   <button class="btn" onclick="openNew()">+ Neuer Eintrag</button>
   <button class="btn sec" onclick="exportCSV()">↓ CSV</button>
+  <button class="btn sec" onclick="document.getElementById('csvFile').click()">↑ CSV importieren</button>
+  <input type="file" id="csvFile" accept=".csv,text/csv" style="display:none" onchange="importCSV(this.files[0])">
 </div>
 <div class="main" id="main"><div class="empty" id="loading">Lädt…</div></div>
 
@@ -226,6 +228,41 @@ async function delEntry(id){if(!confirm('Eintrag löschen?'))return;await sb.fro
 
 // ——— CSV ———
 function csvCell(v){v=(v==null?'':String(v));return /[",\n;]/.test(v)?'"'+v.replace(/"/g,'""')+'"':v;}
+function parseCSV(text){
+  const rows=[];let f='',row=[],q=false;
+  text=text.replace(/^﻿/,'').replace(/\r\n/g,'\n').replace(/\r/g,'\n');
+  for(let i=0;i<text.length;i++){const c=text[i];
+    if(q){ if(c==='"'){ if(text[i+1]==='"'){f+='"';i++;} else q=false; } else f+=c; }
+    else { if(c==='"')q=true; else if(c===','||c===';'){row.push(f);f='';} else if(c==='\n'){row.push(f);rows.push(row);row=[];f='';} else f+=c; }
+  }
+  if(f!==''||row.length){row.push(f);rows.push(row);}
+  return rows.filter(r=>r.length>1||(r.length===1&&r[0].trim()!==''));
+}
+async function importCSV(file){
+  if(!file)return;
+  try{
+    const txt=await file.text();const rows=parseCSV(txt);if(rows.length<2){toast('CSV leer / nicht lesbar');return;}
+    const head=rows[0].map(h=>h.trim().toLowerCase());
+    const ix=n=>head.indexOf(n);
+    const iDate=ix('date')>=0?ix('date'):ix('datum'), iStep=ix('stepid')>=0?ix('stepid'):ix('schritt_code'),
+      iName=ix('stepname')>=0?ix('stepname'):ix('schritt_name'), iCat=ix('category')>=0?ix('category'):ix('kategorie'),
+      iProp=ix('property')>=0?ix('property'):ix('gebaeude_tool'), iCon=ix('contact')>=0?ix('contact'):ix('kontaktperson'),
+      iTop=ix('topic')>=0?ix('topic'):ix('thema'), iOut=ix('outcome')>=0?ix('outcome'):ix('ergebnis'),
+      iNote=ix('notes')>=0?ix('notes'):ix('notizen'), iFu=ix('followup')>=0?ix('followup'):ix('followup_datum');
+    const nn=v=>{v=(v==null?'':String(v)).trim();return v===''?null:v;};
+    const recs=[];
+    for(let r=1;r<rows.length;r++){const c=rows[r];if(!c||c.every(x=>(x||'').trim()===''))continue;
+      const kat=nn(iCat>=0?c[iCat]:null);
+      const grp=(kat==='Prozessoptimierung'||kat==='Umsetzung')?'systeme':'geld';
+      recs.push({datum:nn(iDate>=0?c[iDate]:null),schritt_code:nn(iStep>=0?c[iStep]:null),schritt_name:nn(iName>=0?c[iName]:null),kategorie:kat,gruppe:grp,gebaeude_tool:nn(iProp>=0?c[iProp]:null),kontaktperson:nn(iCon>=0?c[iCon]:null),thema:nn(iTop>=0?c[iTop]:null),ergebnis:nn(iOut>=0?c[iOut]:null),followup_datum:nn(iFu>=0?c[iFu]:null),notizen:nn(iNote>=0?c[iNote]:null)});
+    }
+    if(!recs.length){toast('Keine Datensätze gefunden');return;}
+    if(!confirm(recs.length+' Einträge importieren?'))return;
+    let done=0;const B=400;
+    for(let i=0;i<recs.length;i+=B){const chunk=recs.slice(i,i+B);const{error}=await sb.from('gpm_aktivitaeten').insert(chunk);if(error){toast('Fehler bei Import: '+error.message);break;}done+=chunk.length;toast('Importiere… '+done+'/'+recs.length);}
+    toast(done+' Einträge importiert ✓');document.getElementById('csvFile').value='';load();
+  }catch(e){toast('Fehler: '+(e&&e.message||e));}
+}
 function exportCSV(){
   const cols=['datum','kategorie','gruppe','schritt_code','schritt_name','gebaeude_tool','kontaktperson','thema','ergebnis','followup_datum','notizen'];
   const rows=[cols.join(';')].concat(ROWS.map(r=>cols.map(c=>csvCell(r[c])).join(';')));
