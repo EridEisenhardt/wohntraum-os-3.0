@@ -102,7 +102,7 @@ ol{margin:0 0 0 18px}ol li{margin-bottom:7px}
       <div class="drop" id="drop">
         <input type="file" id="csvfile" accept=".csv" style="display:none" onchange="onFile(this.files[0])">
         <div><b>CSV hierher ziehen</b> oder <button class="btn sec" onclick="document.getElementById('csvfile').click()">Datei wählen</button></div>
-        <div class="muted" style="margin-top:6px">Toggl „Summary report" (Spalten: Project, Description, Duration). Die ID wird aus dem Projekt-Text (#001 …) erkannt, KW aus dem Dateinamen.</div>
+        <div class="muted" style="margin-top:6px">Toggl „Summary report" (Spalten: Project, Description, Duration). Die ID wird aus dem Projekt-Text (#001 …) erkannt. Die Kalenderwoche und der Stichtag kommen aus der Datumsspalte der CSV (sonst aus dem Dateinamen). Lädst du unter der Woche hoch, wird der Wert bis zu diesem Tag als <b>Teilwoche</b> übernommen und beim nächsten Upload derselben KW überschrieben.</div>
       </div>
       <div id="importbox" style="display:none;margin-top:16px"></div>
     </div>
@@ -131,7 +131,7 @@ ol{margin:0 0 0 18px}ol li{margin-bottom:7px}
   </div>
 
   <div class="card">
-    <div class="card-hd"><span>Verlauf (gespeicherte Wochen)</span></div>
+    <div class="card-hd"><span>Verlauf (gespeicherte Wochen)</span><button class="btn sec" onclick="dedupe(true)">Doppelte prüfen &amp; löschen</button></div>
     <div id="tblwrap"><div class="empty" id="loading">Lädt…</div></div>
   </div>
 
@@ -185,6 +185,7 @@ async function save(){
     jahr:parseInt(document.getElementById('f_jahr').value,10),
     kw:parseInt(document.getElementById('f_kw').value,10),
     wochenverdienst:v('f_verd'), gesamtstunden:v('f_std'),
+    stand_bis:(LAST&&LAST.bis)||null, teilwoche:!!(LAST&&LAST.teil), tage:(LAST&&LAST.tage)||null,
     klasse_a:v('f_a'), klasse_b:v('f_b'), klasse_c:v('f_c'), klasse_d:v('f_d'),
     notiz:document.getElementById('f_notiz').value||null, updated_at:new Date().toISOString()
   };
@@ -267,7 +268,8 @@ function tbl(){
         const dev=vd==null?null:(vd-BENCH)/BENCH*100;
         const devc=dev==null?'<span class="flat">–</span>':(dev>=0?`<span class="up">▲ ${dev.toFixed(1)}%</span>`:`<span class="down">▼ ${Math.abs(dev).toFixed(1)}%</span>`);
         const eph=(vd!=null&&r.gesamtstunden)? eur(vd/Number(r.gesamtstunden)):'–';
-        return `<tr><td>KW ${r.kw}/${r.jahr}</td><td>${eur(vd)}</td><td>${devc}</td><td>${r.gesamtstunden?num(r.gesamtstunden)+' h':'–'}</td><td>${eph}</td><td style="text-align:left;color:var(--muted)">${r.notiz?r.notiz.replace(/</g,'&lt;'):''}</td><td class="delcol"><a onclick="del(${r.jahr},${r.kw})">löschen</a></td></tr>`;
+        const tw=r.teilwoche?` <span title="Teilwoche, Stand ${r.stand_bis||''}" style="font-size:10px;font-weight:700;padding:1px 6px;border-radius:10px;background:#fdf1e0;color:#b45309">Teilwoche</span>`:'';
+        return `<tr><td>KW ${r.kw}/${r.jahr}${tw}</td><td>${eur(vd)}</td><td>${devc}</td><td>${r.gesamtstunden?num(r.gesamtstunden)+' h':'–'}</td><td>${eph}</td><td style="text-align:left;color:var(--muted)">${r.notiz?r.notiz.replace(/</g,'&lt;'):''}</td><td class="delcol"><a onclick="del(${r.jahr},${r.kw})">löschen</a></td></tr>`;
       }).join('') + '</tbody></table>';
 }
 
@@ -327,6 +329,23 @@ const RATEBYID={}, NAMEBYID={};
 Object.values(RATES).flat().forEach(r=>{ const id=parseInt(r[0].replace('#',''),10); RATEBYID[id]=r[2]; NAMEBYID[id]=r[1]; });
 function klass(rate){ return rate>=8?'A':rate>=4?'B':rate>=1?'C':'D'; }
 function durToH(s){ const p=String(s).trim().split(':').map(Number); if(p.length===3) return p[0]+p[1]/60+p[2]/3600; if(p.length===2) return p[0]/60+p[1]/3600; return 0; }
+const DATEKEYS=['Start date','start date','Start Date','Datum','Date','date','Startdatum'];
+function parseDate(v){
+  if(!v)return null;
+  const s=String(v).trim();
+  let m=s.match(/^(\d{4})-(\d{2})-(\d{2})/);            // 2026-07-08
+  if(m)return new Date(Date.UTC(+m[1],+m[2]-1,+m[3]));
+  m=s.match(/^(\d{2})[.\/](\d{2})[.\/](\d{4})/);        // 08.07.2026
+  if(m)return new Date(Date.UTC(+m[3],+m[2]-1,+m[1]));
+  return null;
+}
+function datesFromRows(rows){
+  const key=DATEKEYS.find(k=>rows.length&&Object.prototype.hasOwnProperty.call(rows[0],k));
+  if(!key)return [];
+  return rows.map(r=>parseDate(r[key])).filter(Boolean);
+}
+const isoStr=d=>d.toISOString().slice(0,10);
+const TAGNAMEN=['Montag','Dienstag','Mittwoch','Donnerstag','Freitag','Samstag','Sonntag'];
 function kwFromName(name){
   const m=name && name.match(/from[_ ](\d{2})[_.](\d{2})[_.](\d{4})/i);
   if(!m) return null;
@@ -340,10 +359,21 @@ drop.addEventListener('drop',ev=>{ if(ev.dataTransfer.files[0]) onFile(ev.dataTr
 
 function onFile(file){
   if(!file) return;
-  const kw=kwFromName(file.name);
-  Papa.parse(file,{header:true,skipEmptyLines:true,complete:res=>evalRows(res.data,kw,file.name)});
+  Papa.parse(file,{header:true,skipEmptyLines:true,complete:res=>{
+    const ds=datesFromRows(res.data);
+    let kw=null, bis=null, tage=null;
+    if(ds.length){
+      const max=new Date(Math.max.apply(null,ds));
+      bis=isoStr(max);
+      kw=isoWeek(new Date(max.getUTCFullYear(),max.getUTCMonth(),max.getUTCDate()));
+      tage=new Set(ds.map(isoStr)).size;
+    } else {
+      kw=kwFromName(file.name);
+    }
+    evalRows(res.data,kw,file.name,bis,tage);
+  }});
 }
-function evalRows(rows,kw,fname){
+function evalRows(rows,kw,fname,bis,tage){
   const agg={}; let toth=0; const unmatched=[];
   rows.forEach(r=>{
     const proj=r.Project||r.project||''; const dur=r.Duration||r.duration||'';
@@ -360,7 +390,11 @@ function evalRows(rows,kw,fname){
     return {id,name:NAMEBYID[id]||'?',rate,h,earn};
   });
   const unmh=unmatched.reduce((s,u)=>s+u[2],0);
-  LAST={kw,total:Math.round(total*100)/100,toth:Math.round((toth+unmh)*100)/100,cls};
+  const bisD=bis?new Date(bis+'T12:00:00Z'):null;
+  const wochentag=bisD?((bisD.getUTCDay()+6)%7):null;      // 0=Mo … 6=So
+  const teil=wochentag!=null&&wochentag<6;                  // vor Sonntag = Teilwoche
+  LAST={kw,total:Math.round(total*100)/100,toth:Math.round((toth+unmh)*100)/100,cls,
+        bis:bis||null,tage:tage||null,teil:!!teil,wochentag};
   // Formular vorbefüllen
   if(kw){ document.getElementById('f_jahr').value=kw.jahr; document.getElementById('f_kw').value=kw.kw; }
   document.getElementById('f_verd').value=LAST.total.toFixed(2);
@@ -370,6 +404,40 @@ function evalRows(rows,kw,fname){
   document.getElementById('f_c').value=cls.C.toFixed(2);
   document.getElementById('f_d').value=cls.D.toFixed(2);
   renderImport(list,total,toth,cls,kw,unmatched,fname);
+  if(kw) autoUebernehmen();
+}
+
+// ——— Automatische Übernahme in die Statistik (auch für Teilwochen) ———
+async function autoUebernehmen(){
+  if(!LAST||!LAST.kw)return;
+  const geloescht=await dedupe(false);
+  const row={ jahr:LAST.kw.jahr, kw:LAST.kw.kw,
+    wochenverdienst:LAST.total, gesamtstunden:LAST.toth,
+    klasse_a:LAST.cls.A, klasse_b:LAST.cls.B, klasse_c:LAST.cls.C, klasse_d:LAST.cls.D,
+    stand_bis:LAST.bis, teilwoche:LAST.teil, tage:LAST.tage,
+    notiz:LAST.teil&&LAST.bis?('Teilwoche — Stand '+TAGNAMEN[LAST.wochentag]+', '+LAST.bis.split('-').reverse().join('.')):null,
+    updated_at:new Date().toISOString() };
+  const { error } = await sb.from('stundengehalt_wochen').upsert(row,{onConflict:'jahr,kw'});
+  const info=document.getElementById('autoinfo');
+  if(error){ if(info){info.style.color='var(--red)';info.textContent='Übernahme fehlgeschlagen: '+error.message;} return; }
+  if(info){ info.style.color='var(--green)';
+    info.textContent='✓ KW '+LAST.kw.kw+'/'+LAST.kw.jahr+(LAST.teil?' als Teilwoche':'')+' in die Statistik übernommen'
+      +(geloescht?(' · '+geloescht+' doppelte Einträge gelöscht'):'')+'. Werte unten weiterhin editierbar.'; }
+  await load();
+}
+
+// ——— Doppelte Einträge je (Jahr, KW) prüfen und entfernen ———
+async function dedupe(melden){
+  const { data, error } = await sb.from('stundengehalt_wochen').select('id,jahr,kw,updated_at').order('updated_at',{ascending:false});
+  if(error){ if(melden)alert('Prüfung fehlgeschlagen: '+error.message); return 0; }
+  const seen=new Set(), weg=[];
+  (data||[]).forEach(r=>{ const k=r.jahr+'-'+r.kw; if(seen.has(k)) weg.push(r.id); else seen.add(k); });
+  if(!weg.length){ if(melden)alert('Keine doppelten Einträge gefunden. '+(data||[]).length+' Wochen geprüft.'); return 0; }
+  if(melden && !confirm(weg.length+' doppelte Einträge gefunden. Jeweils den neuesten behalten und den Rest löschen?')) return 0;
+  const { error:e2 } = await sb.from('stundengehalt_wochen').delete().in('id',weg);
+  if(e2){ if(melden)alert('Löschen fehlgeschlagen: '+e2.message); return 0; }
+  if(melden){ alert(weg.length+' doppelte Einträge gelöscht.'); await load(); }
+  return weg.length;
 }
 function renderImport(list,total,toth,cls,kw,unmatched,fname){
   const box=document.getElementById('importbox'); box.style.display='block';
@@ -381,6 +449,7 @@ function renderImport(list,total,toth,cls,kw,unmatched,fname){
     <div class="imp-sum">
       <div class="b"><div class="l">Datei</div><div class="v" style="font-size:12px">${esc(fname||'')}</div></div>
       <div class="b"><div class="l">Woche</div><div class="v">${kw?('KW '+kw.kw+'/'+kw.jahr):'manuell'}</div></div>
+      <div class="b"><div class="l">Stand</div><div class="v" style="font-size:12px">${LAST&&LAST.bis?(TAGNAMEN[LAST.wochentag]+', '+LAST.bis.split('-').reverse().join('.')+(LAST.teil?' · Teilwoche':' · volle Woche')):'kein Datum in CSV'}</div></div>
       <div class="b"><div class="l">Wochenverdienst</div><div class="v">${eur(total)}</div></div>
       <div class="b"><div class="l">Stunden</div><div class="v">${num(toth)} h</div></div>
       <div class="b"><div class="l">Δ Benchmark</div><div class="v" style="color:${dev>=0?'var(--green)':'var(--red)'}">${dev>=0?'▲ ':'▼ '}${Math.abs(dev).toFixed(0)} %</div></div>
@@ -390,7 +459,9 @@ function renderImport(list,total,toth,cls,kw,unmatched,fname){
     + list.map(r=>`<tr><td style="text-align:left;font-family:ui-monospace,monospace;color:var(--muted)">#${String(r.id).padStart(3,'0')}</td><td style="text-align:left">${esc(r.name)}</td><td>${r.rate} €</td><td>${num(r.h)} h</td><td>${eur(r.earn)}</td></tr>`).join('')
     + `<tr style="font-weight:700;border-top:2px solid var(--text)"><td style="text-align:left">Σ</td><td style="text-align:left">Gesamt</td><td></td><td>${num(toth)} h</td><td>${eur(total)}</td></tr></tbody></table>`
     + (unmatched.length?`<div class="warn">${unmatched.length} Einträge ohne ID (z. B. „${esc(unmatched[0][0])}") = ${num(unmatched.reduce((s,u)=>s+u[2],0))} h, mit 0 € bewertet.</div>`:'')
-    + `<div class="form-foot"><button class="btn" onclick="save()">In Verlauf speichern (KW ${kw?kw.kw:'?'})</button><span class="muted">Werte sind unten im Formular vorausgefüllt und editierbar.</span></div>`;
+    + `<div class="form-foot"><button class="btn" onclick="save()">In Verlauf speichern (KW ${kw?kw.kw:'?'})</button>
+        <button class="btn sec" onclick="dedupe(true)">Doppelte prüfen &amp; löschen</button>
+        <span class="muted" id="autoinfo">Werte sind unten im Formular vorausgefüllt und editierbar.</span></div>`;
 }
 
 setCurrentWeek();
