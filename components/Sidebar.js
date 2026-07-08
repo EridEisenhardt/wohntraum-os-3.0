@@ -16,6 +16,7 @@ const NAV = [
   ] },
   { type: 'link', href: '/aktivitaeten', icon: 'ti-checklist', label: 'Aktivitäten' },
   { type: 'group', key: 'vermietung', icon: 'ti-home-search', label: 'Vermietung', items: [
+    { href: '/vermietung/mietinteressenten', icon: 'ti-users-plus', label: 'Mietinteressenten' },
     { href: '/vermietung/steckbrief', icon: 'ti-id-badge-2', label: 'Steckbrief Generator' },
     { href: '/vermietung/laufende-vermietungen', icon: 'ti-progress', label: 'Laufende Vermietungen' },
     { href: '/vermietung/zahlungsvereinbarung', icon: 'ti-file-dollar', label: 'Zahlungsvereinbarungsgenerator' },
