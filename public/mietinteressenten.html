@@ -39,6 +39,9 @@ select.inl.st{font-weight:700;color:var(--accent);border-color:var(--line);backg
 .opf{border-bottom:1px solid var(--bord2);padding:6px 0}
 .opl{font-size:10px;text-transform:uppercase;color:var(--muted);font-weight:700}
 .opv{font-size:13px}
+.opi{width:100%;font:inherit;font-size:13px;padding:4px 6px;border:1px solid transparent;border-radius:6px;background:transparent;color:inherit}
+.opi:hover{border-color:var(--line)}
+.opi:focus{border-color:var(--accent);background:var(--surf);outline:none}
 .secttl{font-weight:700;font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.3px;margin:16px 0 8px;border-top:1px solid var(--line);padding-top:12px}
 .opennm{color:var(--accent);cursor:pointer;font-weight:600;text-decoration:none}.opennm:hover{text-decoration:underline}
 .dlg-hd{padding:14px 18px;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;align-items:center;font-weight:700}
@@ -114,17 +117,26 @@ const FLABEL={name:'Name',kontakt:'Kontakt',eingang:'Lead-Eingang',quelle:'Leadq
 function fmtDT(ts){try{return new Date(ts).toLocaleString('de-DE',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'})+' Uhr';}catch(e){return ts;}}
 function noteCount(id){return NOTES.filter(n=>n.interessent_id===id).length;}
 function fmtDate(d){if(!d)return '';const p=String(d).split('-');return p.length===3?p[2]+'.'+p[1]+'.'+p[0]:d;}
+function opTxt(r,f,type){return `<input class="opi" type="${type||'text'}" value="${esc(r[f])}" onchange="opUpd('${f}',this.value)">`;}
+function opSel(r,f,arr,leer){return `<select class="opi" onchange="opUpd('${f}',this.value)">${(leer?['']:[]).concat(arr).map(o=>`<option value="${esc(o)}" ${String(o)===String(r[f]||'')?'selected':''}>${o===''?'—':esc(o)}</option>`).join('')}</select>`;}
 function renderLeadInfo(){const r=ROWS.find(x=>x.id===NT_CUR);if(!r){$('opInfo').innerHTML='';return;}
-  const F=(l,v)=>`<div class="opf"><div class="opl">${l}</div><div class="opv">${(v==null||v==='')?'—':esc(v)}</div></div>`;
+  const F=(l,inp)=>`<div class="opf"><div class="opl">${l}</div><div class="opv">${inp}</div></div>`;
+  const mile=f=>`<select class="opi" style="text-align:center" onchange="opUpd('${f}',this.value)">${MILE.map(o=>`<option value="${o}" ${o===(r[f]||'')?'selected':''}>${o===''?'—':o}</option>`).join('')}</select>`;
   $('opInfo').innerHTML=
-    F('Name',r.name)+F('Kontakt',r.kontakt)+
-    F('Lead-Eingang',fmtDate(r.eingang))+F('Leadquelle',r.quelle)+
-    F('Status',r.status)+F('Personenanzahl',r.personen)+
-    F('Einzug ab',r.einzug_ab)+F('Art der Mietzahlung',r.zahlungsart)+
-    F('Ergebnis',r.ergebnis)+F('Freigabe Schlüsselübergabe',r.freigabe_schluessel)+
-    F('Zusage Kostenübernahme',r.kostenuebernahme)+F('Mietangebot erhalten',r.mietangebot_erhalten)+
-    F('Mietvertrag unterschrieben',r.mietvertrag_unterschrieben)+F('Schlüsselübergabe erfolgt',r.schluesseluebergabe_erfolgt)+
-    F('1. Mietzahlung',r.erste_mietzahlung);
+    F('Name',opTxt(r,'name'))+F('Kontakt',opTxt(r,'kontakt'))+
+    F('Lead-Eingang',opTxt(r,'eingang','date'))+F('Leadquelle',opSel(r,'quelle',QUELLEN,true))+
+    F('Status',opSel(r,'status',STAGES,false))+F('Personenanzahl',opTxt(r,'personen','number'))+
+    F('Einzug ab',opTxt(r,'einzug_ab'))+F('Art der Mietzahlung',opSel(r,'zahlungsart',ZAHLART,true))+
+    F('Ergebnis',opSel(r,'ergebnis',ERGEBNIS.filter(Boolean),true))+F('Freigabe Schlüsselübergabe',opSel(r,'freigabe_schluessel',FREIGABE.filter(Boolean),true))+
+    MILEF.map(m=>F(m[1],mile(m[0]))).join('');
+}
+async function opUpd(field,val){
+  if(!NT_CUR)return;
+  await upd(NT_CUR,field,val);
+  renderLeadInfo();renderNotes();
+  const r=ROWS.find(x=>x.id===NT_CUR);
+  $('ntTitle').textContent='Mietinteressent · '+((r&&(r.name||r.kontakt))||'Lead');
+  toast('Gespeichert ✓');
 }
 function openNotes(id){NT_CUR=id;const r=ROWS.find(x=>x.id===id);$('ntTitle').textContent='Mietinteressent · '+((r&&(r.name||r.kontakt))||'Lead');$('ntInput').value='';renderLeadInfo();renderNotes();$('ov').classList.add('show');setTimeout(()=>$('ntInput').focus(),50);}
 function closeNotes(){$('ov').classList.remove('show');NT_CUR=null;}
