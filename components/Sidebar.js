@@ -19,7 +19,6 @@ export const NAV = [
     { href: '/crm', icon: 'ti-users', label: 'Kontakte & Deals' },
     { href: '/tickets', icon: 'ti-ticket', label: 'Ticketsystem' },
   ] },
-  { type: 'link', href: '/prozesse', icon: 'ti-sitemap', label: 'Prozesse', area: 'common' },
   { type: 'link', href: '/aktivitaeten', icon: 'ti-checklist', label: 'Aktivitäten', area: 'hv' },
   { type: 'group', key: 'ankauf', icon: 'ti-key', label: 'Ankauf', area: 'vertrieb', items: [
     { href: '/ankauf/akquise', icon: 'ti-map-search', label: 'Immobilien Akquise' },
