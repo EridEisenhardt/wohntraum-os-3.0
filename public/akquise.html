@@ -120,6 +120,8 @@ td input:focus,td select:focus{border-color:var(--accent);background:var(--surf)
         <div class="fld"><label>Wohnfläche (m²)</label><input id="f_wfl" type="number" step="1"></div>
         <div class="fld"><label>Baujahr</label><input id="f_bj" type="number" step="1"></div>
         <div class="fld"><label>Verantwortlich</label><select id="f_ver"></select></div>
+        <div class="fld"><label>Portal</label><select id="f_portal"></select></div>
+        <div class="fld" style="grid-column:span 3"><label>Portal-Link (Exposé / Inserat)</label><input id="f_plink" type="url" placeholder="https://www.immobilienscout24.de/expose/…"></div>
       </div>
       <div class="foot-row">
         <button class="btn" onclick="save()">+ Objekt anlegen</button>
@@ -186,7 +188,9 @@ function fmtD(d){if(!d)return '—';const p=String(d).split('-');return p.length
 
 const STAGES=['1 · Objekt angeboten','2 · Erstprüfung','3 · Grobkalkulation','4 · Besichtigung','5 · Detailprüfung / Unterlagen','6 · Kaufpreisverhandlung','7 · Finanzierungsanfrage','8 · Finanzierungszusage','9 · Notartermin','10 · Kaufvertrag beurkundet','11 · Übergang Nutzen/Lasten','A · Wiedervorlage','X · Abgesagt'];
 const PERS=['','Eric','Jürgen','Stephan','Ramona','Extern'];
-const FLABEL={bezeichnung:'Bezeichnung',strasse:'Straße',plz:'PLZ',ort:'Ort',angeboten_von:'Angeboten von',quelle:'Quelle',eingang:'Eingang',stufe:'Stufe',einheiten:'Einheiten',wohnflaeche:'Wohnfläche',baujahr:'Baujahr',kaufpreis:'Kaufpreis',miete_ist:'Miete IST p. a.',miete_potenzial:'Miete Potenzial p. a.',grunderwerb_pct:'Grunderwerbsteuer %',notar_pct:'Notar & Grundbuch %',makler_pct:'Makler %',sanierung:'Sanierungskosten',angebot_eigen:'Eigenes Angebot',absage_grund:'Absagegrund',verantwortlich:'Verantwortlich',exposé_link:'Exposé-Link'};
+const PORTALE=['','ImmobilienScout24','Immowelt','Immonet','eBay Kleinanzeigen','Makler-Exposé','Netzwerk / Direkt','Zwangsversteigerung','Sonstiges'];
+const linkOut=(u,t)=>u?`<a href="${esc(u)}" target="_blank" rel="noopener" class="lnk" onclick="event.stopPropagation()">${t||'Portal ↗'}</a>`:'—';
+const FLABEL={bezeichnung:'Bezeichnung',strasse:'Straße',plz:'PLZ',ort:'Ort',angeboten_von:'Angeboten von',quelle:'Quelle',eingang:'Eingang',stufe:'Stufe',einheiten:'Einheiten',wohnflaeche:'Wohnfläche',baujahr:'Baujahr',kaufpreis:'Kaufpreis',miete_ist:'Miete IST p. a.',miete_potenzial:'Miete Potenzial p. a.',grunderwerb_pct:'Grunderwerbsteuer %',notar_pct:'Notar & Grundbuch %',makler_pct:'Makler %',sanierung:'Sanierungskosten',angebot_eigen:'Eigenes Angebot',absage_grund:'Absagegrund',verantwortlich:'Verantwortlich',exposé_link:'Exposé-Link',portal:'Portal',portal_link:'Portal-Link'};
 
 let ROWS=[], NOTES=[], HIST=[], FSTAGE='', VIEW='liste', CUR=null, DRAG=null;
 
@@ -206,6 +210,7 @@ function kz(r){
     mieteM2:(m!=null&&wf)?m/12/wf:null
   };
 }
+const noteCount=id=>NOTES.filter(n=>n.objekt_id===id).length;
 const rowCls=r=>r.stufe==='X · Abgesagt'?'abgesagt':(/^(10|11)/.test(r.stufe||'')?'gekauft':'');
 
 async function load(){
@@ -216,6 +221,7 @@ async function load(){
   ]);
   ROWS=o.data||[];NOTES=n.data||[];HIST=h.data||[];
   $('f_ver').innerHTML=PERS.map(p=>`<option value="${esc(p)}">${p||'—'}</option>`).join('');
+  $('f_portal').innerHTML=PORTALE.map(p=>`<option value="${esc(p)}">${p||'—'}</option>`).join('');
   render();
 }
 
@@ -242,7 +248,7 @@ function setView(v){VIEW=v;$('vListe').classList.toggle('on',v==='liste');$('vBo
 function tableView(list){
   return '<div class="tblwrap"><table><thead><tr><th>Nr</th><th>Bezeichnung</th><th>Ort</th><th>Stufe</th>'
     +'<th class="num">Kaufpreis</th><th class="num">Miete p.a.</th><th class="num">Faktor</th><th class="num">Rendite</th>'
-    +'<th class="num">Preis/m²</th><th class="num">Gesamtinvest</th><th>Angeboten von</th><th>Verantw.</th><th>Eingang</th><th></th></tr></thead><tbody>'
+    +'<th class="num">Preis/m²</th><th class="num">Gesamtinvest</th><th>Angeboten von</th><th>Portal</th><th>Verantw.</th><th>Notizen</th><th>Eingang</th><th></th></tr></thead><tbody>'
     +list.map(r=>{const k=kz(r);return `<tr class="${rowCls(r)}">
       <td class="nrcell">${r.nummer}</td>
       <td><span class="lnk" onclick="openOP('${r.id}')">${esc(r.bezeichnung||'(ohne Bezeichnung)')}</span></td>
@@ -255,7 +261,9 @@ function tableView(list){
       <td class="num">${k.preisM2?eur(k.preisM2):'—'}</td>
       <td class="num">${eur(k.gesamt)}</td>
       <td>${esc(r.angeboten_von)||'—'}</td>
+      <td>${linkOut(r.portal_link, r.portal?esc(r.portal)+' ↗':'Inserat ↗')}</td>
       <td>${esc(r.verantwortlich)||'—'}</td>
+      <td><span class="lnk" onclick="openOP('${r.id}')">${noteCount(r.id)?noteCount(r.id)+' 📝':'+ Notiz'}</span></td>
       <td>${fmtD(r.eingang)}</td>
       <td><button class="abtn" onclick="del('${r.id}')">✕</button></td></tr>`;}).join('')
     +'</tbody></table></div>';
@@ -270,6 +278,8 @@ function boardView(){
         <div class="kbv">${eur(r.kaufpreis)}</div>
         ${k.faktor?`<span class="kbtag ${k.faktor<=16?'good':(k.faktor>=22?'bad':'')}">Faktor ${num(k.faktor,1)}×</span>`:''}
         ${k.rendite?`<span class="kbtag">${pct(k.rendite)}</span>`:''}
+        ${r.portal_link?`<span class="kbtag">${linkOut(r.portal_link, r.portal?esc(r.portal)+' ↗':'Inserat ↗')}</span>`:''}
+        ${noteCount(r.id)?`<span class="kbtag">${noteCount(r.id)} 📝</span>`:''}
       </div>`;}).join('');
     return `<div class="kbcol" ondragover="allowDrop(event,this)" ondragleave="this.classList.remove('over')" ondrop="drop(event,${JSON.stringify(s).replace(/"/g,'&quot;')},this)">
       <div class="kbcolhd"><span>${esc(s)}</span><span class="n">${list.length}</span></div>
@@ -309,12 +319,13 @@ async function save(){
   const row={bezeichnung:$('f_bez').value.trim()||null,strasse:$('f_str').value.trim()||null,plz:$('f_plz').value.trim()||null,
     ort:$('f_ort').value.trim()||null,angeboten_von:$('f_von').value.trim()||null,quelle:$('f_quelle').value.trim()||null,
     kaufpreis:n0($('f_kp').value),miete_ist:n0($('f_miete').value),einheiten:n0($('f_einh').value),
-    wohnflaeche:n0($('f_wfl').value),baujahr:n0($('f_bj').value),verantwortlich:$('f_ver').value||null,stufe:STAGES[0]};
+    wohnflaeche:n0($('f_wfl').value),baujahr:n0($('f_bj').value),verantwortlich:$('f_ver').value||null,
+    portal:$('f_portal').value||null,portal_link:$('f_plink').value.trim()||null,stufe:STAGES[0]};
   if(!row.bezeichnung&&!row.strasse){toast('Bitte Bezeichnung oder Straße angeben');return;}
   const{data,error}=await sb.from('akquise_objekte').insert(row).select();
   if(error){$('msg').style.color='var(--red)';$('msg').textContent='Fehler: '+error.message;return;}
   if(data&&data[0])await sb.from('akquise_historie').insert({objekt_id:data[0].id,feld:'Objekt',alt:null,neu:'angelegt'});
-  ['f_bez','f_str','f_plz','f_ort','f_von','f_quelle','f_kp','f_miete','f_einh','f_wfl','f_bj'].forEach(i=>$(i).value='');
+  ['f_bez','f_str','f_plz','f_ort','f_von','f_quelle','f_kp','f_miete','f_einh','f_wfl','f_bj','f_plink'].forEach(i=>$(i).value='');
   $('msg').style.color='var(--green)';$('msg').textContent='Objekt angelegt ✓';
   load();
 }
@@ -350,7 +361,8 @@ function renderOP(){
     F('Einheiten',opTxt(r,'einheiten','number','1'))+F('Wohnfläche (m²)',opTxt(r,'wohnflaeche','number','1'))+
     F('Baujahr',opTxt(r,'baujahr','number','1'))+F('Sanierungskosten (€)',opTxt(r,'sanierung','number','1000'))+
     F('Grunderwerbsteuer %',opTxt(r,'grunderwerb_pct','number','0.1'))+F('Notar &amp; Grundbuch %',opTxt(r,'notar_pct','number','0.1'))+
-    F('Makler %',opTxt(r,'makler_pct','number','0.1'))+F('Exposé-Link',opTxt(r,'exposé_link'))+
+    F('Makler %',opTxt(r,'makler_pct','number','0.1'))+F('Portal',opSel(r,'portal',PORTALE.filter(Boolean),true))+
+    F('Portal-Link '+(r.portal_link?'· '+linkOut(r.portal_link,'öffnen ↗'):''),opTxt(r,'portal_link','url'))+
     F('Absagegrund',opTxt(r,'absage_grund'));
   const items=[];
   NOTES.filter(n=>n.objekt_id===CUR).forEach(n=>items.push({t:n.created_at,kind:'note',text:n.text}));
@@ -447,11 +459,11 @@ function exportCSV(){
   if(!list.length){toast('Keine Objekte zum Exportieren');return;}
   const header=['Nr','Bezeichnung','Strasse','PLZ','Ort','Stufe','Angeboten von','Quelle','Eingang','Einheiten','Wohnflaeche',
     'Baujahr','Kaufpreis','Miete IST p.a.','Miete Potenzial p.a.','Eigenes Angebot','Faktor','Bruttorendite %','Preis pro qm',
-    'Nebenkosten %','Nebenkosten EUR','Sanierung','Gesamtinvestition','Verantwortlich','Absagegrund','Notizen'];
+    'Nebenkosten %','Nebenkosten EUR','Sanierung','Gesamtinvestition','Verantwortlich','Portal','Portal-Link','Absagegrund','Notizen'];
   const zeilen=list.map(r=>{const k=kz(r);return [r.nummer,r.bezeichnung,r.strasse,r.plz,r.ort,r.stufe,r.angeboten_von,r.quelle,r.eingang,
     r.einheiten,r.wohnflaeche,r.baujahr,r.kaufpreis,r.miete_ist,r.miete_potenzial,r.angebot_eigen,
     k.faktor?k.faktor.toFixed(2):'',k.rendite?k.rendite.toFixed(2):'',k.preisM2?Math.round(k.preisM2):'',
-    k.nkPct,k.nk?Math.round(k.nk):'',r.sanierung,k.gesamt?Math.round(k.gesamt):'',r.verantwortlich,r.absage_grund,
+    k.nkPct,k.nk?Math.round(k.nk):'',r.sanierung,k.gesamt?Math.round(k.gesamt):'',r.verantwortlich,r.portal,r.portal_link,r.absage_grund,
     NOTES.filter(n=>n.objekt_id===r.id).map(n=>fmtDT(n.created_at)+': '+n.text).join(' | ')];});
   csvDownload('akquise_export',header,zeilen);
   toast(list.length+' Objekt(e) exportiert ✓');
