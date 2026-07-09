@@ -41,6 +41,7 @@ select.inl.st{font-weight:700;color:var(--accent);border-color:var(--line);backg
 .opv{font-size:13px}
 .nrcell{color:var(--muted);font-weight:700;text-align:right;font-variant-numeric:tabular-nums}
 .nrbadge{display:inline-block;font-size:10.5px;font-weight:700;color:var(--muted);background:var(--surf2);border-radius:5px;padding:1px 5px;margin-right:2px}
+.umzugbadge{display:inline-block;font-size:9.5px;font-weight:700;color:#155e75;background:#e0f2f7;border-radius:5px;padding:1px 5px;margin-left:5px;white-space:nowrap}
 .opi{width:100%;font:inherit;font-size:13px;padding:4px 6px;border:1px solid transparent;border-radius:6px;background:transparent;color:inherit}
 .opi:hover{border-color:var(--line)}
 .opi:focus{border-color:var(--accent);background:var(--surf);outline:none}
@@ -73,6 +74,7 @@ select.inl.st{font-weight:700;color:var(--accent);border-color:var(--line);backg
   <div class="card">
     <div class="card-hd">Neuen Lead erfassen</div>
     <div class="form">
+      <div class="fld"><label>Art des Interessenten</label><select id="f_typ" onchange="typToggle()"><option value="neu">Neu-Interessent</option><option value="umzug">Bestandsmieter · Umzugswunsch</option></select></div>
       <div class="fld"><label>Name / Interessent</label><input id="f_name" placeholder="Name"></div>
       <div class="fld"><label>Kontakt (Tel./E-Mail)</label><input id="f_kontakt" placeholder="Kontakt"></div>
       <div class="fld"><label>Lead-Eingang</label><input type="date" id="f_eingang"></div>
@@ -80,11 +82,18 @@ select.inl.st{font-weight:700;color:var(--accent);border-color:var(--line);backg
       <div class="fld"><label>Personenanzahl</label><input type="number" id="f_personen" min="0" step="1" placeholder="z. B. 2"></div>
       <div class="fld"><label>Einzug ab</label><input id="f_einzug" placeholder="z. B. 01.09.2026 / sofort"></div>
       <div class="fld"><label>Art der Mietzahlung</label><select id="f_zahlart"></select></div>
+      <div class="fld umzugfld" style="display:none"><label>Aktuelles Objekt / Wohnung</label><input id="f_aktobj" placeholder="z. B. Haus Alzeyer Str. 4, WE 2"></div>
+      <div class="fld umzugfld" style="display:none"><label>Grund des Umzugswunsches</label><input id="f_ugrund" placeholder="z. B. zu klein, Nachwuchs, barrierefrei"></div>
     </div>
     <div class="foot-row"><button class="btn" onclick="save()">+ Lead speichern</button><button class="btn sec" onclick="clearForm()">Leeren</button>
       <button class="btn sec" onclick="addQuelle()">+ Leadquelle anlegen</button><span id="msg" style="font-size:12px;color:var(--green)"></span></div>
   </div>
 
+  <div class="viewtoggle" style="margin-bottom:8px">
+    <button id="tAlle" class="on" onclick="setTyp('')">Alle</button>
+    <button id="tNeu" onclick="setTyp('neu')">Neu-Interessenten</button>
+    <button id="tUmzug" onclick="setTyp('umzug')">Umzugswünsche Bestand</button>
+  </div>
   <div class="viewtoggle"><button id="vListe" class="on" onclick="setView('liste')">Liste</button><button id="vBoard" onclick="setView('board')">Kanban-Board</button><button onclick="exportCRM()" title="Gefilterte Leads als CSV für den CRM-Import herunterladen">⬇ CRM Export</button></div>
   <div class="chips" id="stageChips"></div>
   <div class="card"><div class="card-hd"><span>Leads</span><span class="crumb">Meilensteine: ✅ erledigt · ⏸️ warten · ❌ nicht erfolgt &nbsp;·&nbsp; <span id="cnt"></span></span></div>
@@ -114,8 +123,9 @@ const FREIGABE=['','Ja','Nein','Warten'];
 const MILE=['','✅','⏸️','❌'];
 const MILEF=[['kostenuebernahme','Zusage Kostenübernahme'],['mietangebot_erhalten','Mietangebot erhalten'],['mietvertrag_unterschrieben','Mietvertrag unterschrieben'],['schluesseluebergabe_erfolgt','Schlüsselübergabe erfolgt'],['erste_mietzahlung','1. Mietzahlung']];
 function mileCell(r,field){return `<td style="text-align:center"><select class="inl" style="text-align:center" onchange="upd('${r.id}','${field}',this.value)">${MILE.map(o=>`<option value="${o}" ${o===(r[field]||'')?'selected':''}>${o===''?'—':o}</option>`).join('')}</select></td>`;}
-let ROWS=[], QUELLEN=[], FSTAGE='', NOTES=[], HIST=[], NT_CUR=null;
-const FLABEL={name:'Name',kontakt:'Kontakt',eingang:'Lead-Eingang',quelle:'Leadquelle',personen:'Personenanzahl',einzug_ab:'Einzug ab',zahlungsart:'Mietzahlung',ergebnis:'Ergebnis',status:'Status',freigabe_schluessel:'Freigabe Schlüsselübergabe',kostenuebernahme:'Zusage Kostenübernahme',mietangebot_erhalten:'Mietangebot erhalten',mietvertrag_unterschrieben:'Mietvertrag unterschrieben',schluesseluebergabe_erfolgt:'Schlüsselübergabe erfolgt',erste_mietzahlung:'1. Mietzahlung'};
+let ROWS=[], QUELLEN=[], FSTAGE='', FTYP='', NOTES=[], HIST=[], NT_CUR=null;
+const typLabel=t=>t==='umzug'?'Umzugswunsch':'Neu';
+const FLABEL={name:'Name',kontakt:'Kontakt',eingang:'Lead-Eingang',quelle:'Leadquelle',personen:'Personenanzahl',einzug_ab:'Einzug ab',zahlungsart:'Mietzahlung',ergebnis:'Ergebnis',status:'Status',freigabe_schluessel:'Freigabe Schlüsselübergabe',typ:'Art',aktuelles_objekt:'Aktuelles Objekt',umzug_grund:'Umzugsgrund',kostenuebernahme:'Zusage Kostenübernahme',mietangebot_erhalten:'Mietangebot erhalten',mietvertrag_unterschrieben:'Mietvertrag unterschrieben',schluesseluebergabe_erfolgt:'Schlüsselübergabe erfolgt',erste_mietzahlung:'1. Mietzahlung'};
 function fmtDT(ts){try{return new Date(ts).toLocaleString('de-DE',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'})+' Uhr';}catch(e){return ts;}}
 function noteCount(id){return NOTES.filter(n=>n.interessent_id===id).length;}
 function fmtDate(d){if(!d)return '';const p=String(d).split('-');return p.length===3?p[2]+'.'+p[1]+'.'+p[0]:d;}
@@ -130,6 +140,8 @@ function renderLeadInfo(){const r=ROWS.find(x=>x.id===NT_CUR);if(!r){$('opInfo')
     F('Status',opSel(r,'status',STAGES,false))+F('Personenanzahl',opTxt(r,'personen','number'))+
     F('Einzug ab',opTxt(r,'einzug_ab'))+F('Art der Mietzahlung',opSel(r,'zahlungsart',ZAHLART,true))+
     F('Ergebnis',opSel(r,'ergebnis',ERGEBNIS.filter(Boolean),true))+F('Freigabe Schlüsselübergabe',opSel(r,'freigabe_schluessel',FREIGABE.filter(Boolean),true))+
+    F('Art des Interessenten',opSel(r,'typ',['neu','umzug'],false))+
+    (r.typ==='umzug'?F('Aktuelles Objekt',opTxt(r,'aktuelles_objekt'))+F('Grund des Umzugswunsches',opTxt(r,'umzug_grund')):'')+
     MILEF.map(m=>F(m[1],mile(m[0]))).join('');
 }
 async function opUpd(field,val){
@@ -158,7 +170,7 @@ async function addNote(){const t=$('ntInput').value.trim();if(!t){toast('Bitte T
 async function delNote(nid){if(!confirm('Notiz löschen?'))return;await sb.from('mietinteressent_notizen').delete().eq('id',nid);NOTES=NOTES.filter(n=>n.id!==nid);renderNotes();render();}
 async function logHist(id,field,alt,neu){const rec={interessent_id:id,feld:(FLABEL[field]||field),alt:(alt==null||alt===''?null:String(alt)),neu:(neu==null||neu===''?null:String(neu)),aktion:'geändert'};const{data}=await sb.from('mietinteressent_historie').insert(rec).select();if(data&&data[0])HIST.unshift(data[0]);if(NT_CUR===id)renderNotes();}
 function opts(arr,sel){return arr.map(o=>`<option ${o===sel?'selected':''}>${esc(o)}</option>`).join('');}
-function clearForm(){['f_name','f_kontakt','f_personen','f_einzug'].forEach(id=>$(id).value='');$('f_eingang').value=new Date().toISOString().slice(0,10);$('msg').textContent='';}
+function clearForm(){['f_name','f_kontakt','f_personen','f_einzug','f_aktobj','f_ugrund'].forEach(id=>$(id).value='');$('f_eingang').value=new Date().toISOString().slice(0,10);if($('f_typ')){$('f_typ').value=FTYP==='umzug'?'umzug':'neu';typToggle();}$('msg').textContent='';}
 async function loadQuellen(){
   const{data}=await sb.from('mietlead_quellen').select('name').order('pos',{ascending:true}).order('name',{ascending:true});
   QUELLEN=(data||[]).map(r=>r.name);
@@ -182,7 +194,7 @@ async function load(){
   render();
 }
 async function save(){
-  const row={name:$('f_name').value.trim()||null,kontakt:$('f_kontakt').value.trim()||null,eingang:$('f_eingang').value||null,quelle:$('f_quelle').value||null,personen:$('f_personen').value?parseInt($('f_personen').value,10):null,einzug_ab:$('f_einzug').value.trim()||null,zahlungsart:$('f_zahlart').value||null,status:STAGES[0]};
+  const row={name:$('f_name').value.trim()||null,kontakt:$('f_kontakt').value.trim()||null,eingang:$('f_eingang').value||null,quelle:$('f_quelle').value||null,personen:$('f_personen').value?parseInt($('f_personen').value,10):null,einzug_ab:$('f_einzug').value.trim()||null,zahlungsart:$('f_zahlart').value||null,typ:$('f_typ').value||'neu',aktuelles_objekt:$('f_aktobj').value.trim()||null,umzug_grund:$('f_ugrund').value.trim()||null,status:STAGES[0]};
   if(!row.name&&!row.kontakt){toast('Bitte Name oder Kontakt angeben');return;}
   const{data,error}=await sb.from('mietinteressenten').insert(row).select();
   if(error){$('msg').style.color='var(--red)';$('msg').textContent='Fehler: '+error.message;return;}
@@ -192,11 +204,15 @@ async function save(){
 async function upd(id,field,val){const r=ROWS.find(x=>x.id===id);const oldv=r?r[field]:null;const nv=(val===''?null:val);const{error}=await sb.from('mietinteressenten').update({[field]:nv,updated_at:new Date().toISOString()}).eq('id',id);if(error){toast('Fehler: '+error.message);return;}if(r)r[field]=nv;if(String(oldv==null?'':oldv)!==String(nv==null?'':nv))logHist(id,field,oldv,nv);if(field==='status'||field==='ergebnis')render();}
 async function del(id){if(!confirm('Lead löschen?'))return;await sb.from('mietinteressenten').delete().eq('id',id);ROWS=ROWS.filter(r=>r.id!==id);render();}
 function renderChips(){
-  const cnt={};STAGES.forEach(s=>cnt[s]=0);ROWS.forEach(r=>{if(cnt[r.status]!=null)cnt[r.status]++;});
+  const BR=baseRows();
+  const cnt={};STAGES.forEach(s=>cnt[s]=0);BR.forEach(r=>{if(cnt[r.status]!=null)cnt[r.status]++;});
   const chip=(val,lbl,n)=>`<span class="chip ${FSTAGE===val?'on':''}" onclick="FSTAGE='${esc(val).replace(/'/g,"\\'")}';render()">${lbl}<span class="c">${n}</span></span>`;
-  $('stageChips').innerHTML=chip('','Alle',ROWS.length)+STAGES.map(s=>chip(s,esc(s),cnt[s])).join('');
+  $('stageChips').innerHTML=chip('','Alle',BR.length)+STAGES.map(s=>chip(s,esc(s),cnt[s])).join('');
 }
 let VIEW='liste', DRAG=null;
+function typToggle(){const on=$('f_typ').value==='umzug';document.querySelectorAll('.umzugfld').forEach(e=>e.style.display=on?'':'none');}
+function setTyp(t){FTYP=t;$('tAlle').classList.toggle('on',t==='');$('tNeu').classList.toggle('on',t==='neu');$('tUmzug').classList.toggle('on',t==='umzug');FSTAGE='';render();}
+function baseRows(){return FTYP?ROWS.filter(r=>(r.typ||'neu')===FTYP):ROWS;}
 function setView(v){VIEW=v;$('vListe').classList.toggle('on',v==='liste');$('vBoard').classList.toggle('on',v==='board');render();}
 function dragStart(ev,id){DRAG=id;ev.dataTransfer.effectAllowed='move';}
 function allowDrop(ev,el){ev.preventDefault();if(el)el.classList.add('over');}
@@ -214,12 +230,12 @@ function csvDownload(dateiname,header,zeilen){
   document.body.appendChild(a);a.click();a.remove();URL.revokeObjectURL(a.href);
 }
 function exportCRM(){
-  const list=FSTAGE?ROWS.filter(r=>r.status===FSTAGE):ROWS;
+  const list=FSTAGE?baseRows().filter(r=>r.status===FSTAGE):baseRows();
   if(!list.length){toast('Keine Leads zum Exportieren');return;}
-  const header=['Nr','Name','Kontakt','Kategorien','Potenzial','Lead-Eingang','Leadquelle','Status','Personenanzahl',
+  const header=['Nr','Art','Aktuelles Objekt','Umzugsgrund','Name','Kontakt','Kategorien','Potenzial','Lead-Eingang','Leadquelle','Status','Personenanzahl',
     'Einzug ab','Art der Mietzahlung','Ergebnis','Freigabe Schluesseluebergabe',
     'Zusage Kostenuebernahme','Mietangebot erhalten','Mietvertrag unterschrieben','Schluesseluebergabe erfolgt','1. Mietzahlung','Notizen'];
-  const zeilen=list.map(r=>[r.nummer,r.name,r.kontakt,'Mieter-Vermittler','',r.eingang,r.quelle,r.status,r.personen,
+  const zeilen=list.map(r=>[r.nummer,(r.typ==='umzug'?'Umzugswunsch Bestand':'Neu-Interessent'),r.aktuelles_objekt,r.umzug_grund,r.name,r.kontakt,'Mieter-Vermittler','',r.eingang,r.quelle,r.status,r.personen,
     r.einzug_ab,r.zahlungsart,r.ergebnis,r.freigabe_schluessel,
     r.kostenuebernahme,r.mietangebot_erhalten,r.mietvertrag_unterschrieben,r.schluesseluebergabe_erfolgt,r.erste_mietzahlung,
     NOTES.filter(n=>n.interessent_id===r.id).map(n=>fmtDT(n.created_at)+': '+(n.text||n.notiz||'')).join(' | ')]);
@@ -227,7 +243,8 @@ function exportCRM(){
   toast(list.length+' Lead(s) exportiert ✓');
 }
 function boardView(){
-  return '<div class="kb">'+STAGES.map(s=>{const list=ROWS.filter(r=>r.status===s);const se=esc(s).replace(/'/g,"\\'");
+  const BR=baseRows();
+  return '<div class="kb">'+STAGES.map(s=>{const list=BR.filter(r=>r.status===s);const se=esc(s).replace(/'/g,"\\'");
     const cards=list.map(r=>`<div class="kbcard" draggable="true" ondragstart="dragStart(event,'${r.id}')">
       <div class="kbt opennm" onclick="openNotes('${r.id}')" title="Onepager öffnen"><span class="nrbadge">#${r.nummer!=null?r.nummer:'?'}</span> ${esc(r.name||r.kontakt||'—')}</div>
       <div class="kbm">${r.quelle?esc(r.quelle):'—'}${r.personen?' · '+r.personen+' P':''}${r.einzug_ab?' · Einzug '+esc(r.einzug_ab):''}</div>
@@ -241,16 +258,17 @@ function boardView(){
 function render(){
   renderChips();
   $('stageChips').style.display=VIEW==='board'?'none':'flex';
-  if(VIEW==='board'){$('cnt').textContent=ROWS.length+' Leads';$('tbl').innerHTML=ROWS.length?boardView():'<div class="empty">Noch keine Leads — oben erfassen.</div>';return;}
-  const list=FSTAGE?ROWS.filter(r=>r.status===FSTAGE):ROWS;
-  $('cnt').textContent=list.length+' von '+ROWS.length;
-  if(!ROWS.length){$('tbl').innerHTML='<div class="empty">Noch keine Leads — oben erfassen.</div>';return;}
+  const BR=baseRows();
+  if(VIEW==='board'){$('cnt').textContent=BR.length+' Leads';$('tbl').innerHTML=BR.length?boardView():'<div class="empty">Keine Einträge in dieser Ansicht.</div>';return;}
+  const list=FSTAGE?BR.filter(r=>r.status===FSTAGE):BR;
+  $('cnt').textContent=list.length+' von '+BR.length+(FTYP?(' · '+(FTYP==='umzug'?'Umzugswünsche':'Neu-Interessenten')):'');
+  if(!BR.length){$('tbl').innerHTML='<div class="empty">Keine Einträge in dieser Ansicht — oben erfassen.</div>';return;}
   const qOpts=(sel)=>'<option value="">—</option>'+QUELLEN.map(q=>`<option ${q===sel?'selected':''}>${esc(q)}</option>`).join('');
   $('tbl').innerHTML='<table><thead><tr><th>Nr</th><th>Name</th><th>Kontakt</th><th>Eingang</th><th>Leadquelle</th><th>Pers.</th><th>Einzug ab</th><th>Mietzahlung</th><th>Ergebnis</th><th>Status</th><th>Freigabe Schlüssel&shy;übergabe</th><th>Zusage Kosten&shy;übernahme</th><th>Mietangebot erhalten</th><th>Mietvertrag unter&shy;schrieben</th><th>Schlüssel&shy;übergabe</th><th>1. Miet&shy;zahlung</th><th>Notizen</th><th></th></tr></thead><tbody>'
     +list.map(r=>{const cls=(r.ergebnis&&/Absage/.test(r.ergebnis))?'res-absage':((r.ergebnis==='Warteliste'||r.status==='A · Warteliste')?'res-warte':'');
       return `<tr class="${cls}">
         <td class="nrcell">${r.nummer!=null?r.nummer:'—'}</td>
-        <td><input class="inl" style="min-width:120px" value="${esc(r.name)}" placeholder="Name" onchange="upd('${r.id}','name',this.value)"></td>
+        <td><input class="inl" style="min-width:120px" value="${esc(r.name)}" placeholder="Name" onchange="upd('${r.id}','name',this.value)">${r.typ==='umzug'?'<span class="umzugbadge" title="'+esc(r.aktuelles_objekt||'Bestandsmieter mit Umzugswunsch')+'">↔ Umzug</span>':''}</td>
         <td><input class="inl" style="min-width:130px" value="${esc(r.kontakt)}" placeholder="Kontakt" onchange="upd('${r.id}','kontakt',this.value)"></td>
         <td><input class="inl" type="date" value="${r.eingang||''}" onchange="upd('${r.id}','eingang',this.value)"></td>
         <td><select class="inl" onchange="upd('${r.id}','quelle',this.value)">${qOpts(r.quelle)}</select></td>
