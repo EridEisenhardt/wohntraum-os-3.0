@@ -100,9 +100,15 @@ tr.sum td{border-top:2px solid var(--text);font-weight:700;background:#fafbfd}
           <option value="coinvest">🤝 Co-Investor-Darlehen</option>
         </select>
       </div>
-      <div class="fg">
-        <label>Bezeichnung / Zweck *</label>
-        <input id="bez" type="text" placeholder="z. B. Gesellschafterdarlehen Projekt Rh24" oninput="calc()">
+      <div class="frow">
+        <div class="fg">
+          <label>Bezeichnung / Zweck *</label>
+          <input id="bez" type="text" placeholder="z. B. Gesellschafterdarlehen Projekt Rh24" oninput="calc()">
+        </div>
+        <div class="fg">
+          <label>Interne Darlehensnr. (reserviert)</label>
+          <input id="dnr" type="text" placeholder="wird vergeben …" oninput="renderContract()" style="font-weight:700;color:var(--intern)">
+        </div>
       </div>
       <div class="frow">
         <div class="fg">
@@ -134,6 +140,7 @@ tr.sum td{border-top:2px solid var(--text);font-weight:700;background:#fafbfd}
           <option value="annuitaet">Annuitätendarlehen (konstante Rate)</option>
           <option value="tilgung">Tilgungsdarlehen (konstante Tilgung)</option>
           <option value="endfaellig">Endfälliges Darlehen (nur Zinsen, Tilgung am Ende)</option>
+          <option value="zinsfrei">Zins- und tilgungsfrei (Rückzahlung in einer Summe am Ende)</option>
         </select>
       </div>
       <div class="frow">
@@ -193,6 +200,19 @@ $('aus').value=new Date().toISOString().slice(0,10);
 
 let MODEL=null;
 
+// ——— Nächste interne Darlehensnummer aus dem Register reservieren ———
+async function reserveNextDnr(){
+  let from=0, max=0, done=false;
+  while(!done){
+    const {data}=await sb.from('loans').select('dnr_intern').range(from,from+999);
+    (data||[]).forEach(r=>{ const n=parseInt(String(r.dnr_intern||'').replace(/\D/g,''),10); if(!isNaN(n)&&n>max)max=n; });
+    if(!data||data.length<1000)done=true; else from+=1000;
+  }
+  const next=String(max+1).padStart(3,'0');
+  const el=$('dnr'); if(el && !el.value){ el.value=next; renderContract(); }
+  return next;
+}
+
 function params(){
   return {
     typ:$('typ').value, bez:$('bez').value.trim(), geber:$('geber').value.trim(), nehmer:$('nehmer').value.trim(),
@@ -200,6 +220,7 @@ function params(){
     art:$('art').value, tilg:parseFloat($('tilg').value)||0,
     laufzeit:parseInt($('laufzeit').value)||0, aus:$('aus').value,
     perJahr:parseInt($('zahlweise').value)||12, sicher:$('sicher').value.trim(),
+    dnr:$('dnr').value.trim(),
   };
 }
 
@@ -213,13 +234,14 @@ function computeSchedule(p){
   else if(p.art==='tilgung'){ principalFixed=p.betrag/((p.laufzeit||1)*per); }
   const periods=[];
   let n=0;
-  while(n<maxPer && (p.art==='endfaellig' ? n<(p.laufzeit*per) : bal>0.005)){
-    const interest=bal*i;
+  const nurEnde = (p.art==='endfaellig' || p.art==='zinsfrei');
+  while(n<maxPer && (nurEnde ? n<(p.laufzeit*per) : bal>0.005)){
+    const interest=(p.art==='zinsfrei')?0:bal*i;
     let principal;
     if(p.art==='annuitaet'){ principal=pay-interest; if(principal>bal)principal=bal; if(principal<0)principal=0; }
     else if(p.art==='tilgung'){ principal=Math.min(principalFixed,bal); }
     else { principal=0; }
-    const payment=(p.art==='endfaellig')?interest:(interest+principal);
+    const payment=(p.art==='endfaellig')?interest:(p.art==='zinsfrei'?0:(interest+principal));
     bal-=principal;
     periods.push({interest,principal,payment,bal:Math.max(bal,0)});
     n++;
@@ -235,7 +257,7 @@ function computeSchedule(p){
     years.push({jahr:y+1, startBal:start, zins, tilg, rate, endBal:slice[slice.length-1].bal});
   }
   const totalInterest=periods.reduce((a,r)=>a+r.interest,0);
-  const endBalance = p.art==='endfaellig' ? p.betrag : (periods.length?periods[periods.length-1].bal:p.betrag);
+  const endBalance = (p.art==='endfaellig'||p.art==='zinsfrei') ? p.betrag : (periods.length?periods[periods.length-1].bal:p.betrag);
   const ratePeriod = p.art==='annuitaet' ? pay : (periods.length?periods[0].payment:0);
   const paidOff = endBalance<=0.01;
   return {years,totalInterest,endBalance,ratePeriod,periods:periods.length,per,paidOff};
@@ -258,10 +280,10 @@ function renderKpis(p,m){
   const perLbl={12:'/Monat',4:'/Quartal',1:'/Jahr'}[p.perJahr];
   const laufLbl = m.paidOff ? (m.periods/p.perJahr).toFixed(1).replace('.',',')+' Jahre' : (p.laufzeit+' Jahre (Plan)');
   $('kpis').innerHTML=[
-   ['Rate '+perLbl, eur2(m.ratePeriod), p.art==='tilgung'?'1. Periode (fallend)':(p.art==='endfaellig'?'nur Zinsen':'konstant')],
+   ['Rate '+perLbl, eur2(m.ratePeriod), p.art==='tilgung'?'1. Periode (fallend)':(p.art==='endfaellig'?'nur Zinsen':(p.art==='zinsfrei'?'keine laufende Rate':'konstant'))],
    ['Zinsen p.a. (Jahr 1)', eur(m.years.length?m.years[0].zins:0), 'erstes Jahr'],
    ['Gesamtzins (Laufzeit)', eur(m.totalInterest), m.paidOff?'bis Volltilgung':p.laufzeit+' Jahre'],
-   ['Restschuld am Ende', eur(m.endBalance), p.art==='endfaellig'?'Tilgung endfällig':(m.paidOff?'getilgt':'nach '+p.laufzeit+' J.')],
+   ['Restschuld am Ende', eur(m.endBalance), (p.art==='endfaellig'||p.art==='zinsfrei')?'Rückzahlung am Ende':(m.paidOff?'getilgt':'nach '+p.laufzeit+' J.')],
    ['Volltilgung nach', m.paidOff?(m.periods/p.perJahr).toFixed(1).replace('.',',')+' J.':'> '+p.laufzeit+' J.', m.paidOff?'rechnerisch':'innerhalb Laufzeit nicht erreicht'],
   ].map(k=>`<div class="kpi"><div class="l">${k[0]}</div><div class="v">${k[1]}</div><div class="s">${k[2]}</div></div>`).join('');
 }
@@ -275,7 +297,7 @@ function renderPlan(p,m){
   h+=`<tr class="sum"><td>Summe</td><td></td><td>${eur(tZ)}</td><td>${eur(tT)}</td><td>${eur(tR)}</td><td>${eur(m.endBalance)}</td></tr>`;
   h+='</tbody>';
   $('planTbl').innerHTML=h;
-  const artLbl={annuitaet:'Annuitätendarlehen',tilgung:'Tilgungsdarlehen',endfaellig:'Endfälliges Darlehen'}[p.art];
+  const artLbl={annuitaet:'Annuitätendarlehen',tilgung:'Tilgungsdarlehen',endfaellig:'Endfälliges Darlehen',zinsfrei:'Zins- und tilgungsfreies Darlehen'}[p.art];
   $('planNote').textContent=`${artLbl} · ${p.zins.toLocaleString('de-DE',{minimumFractionDigits:2})} % p.a. · ${({12:'monatliche',4:'vierteljährliche',1:'jährliche'})[p.perJahr]} Zahlung · Auszahlung ${fmtD(p.aus)}. Werte gerundet.`;
 }
 
@@ -288,12 +310,14 @@ function renderContract(){
   let rueck;
   if(p.art==='annuitaet') rueck=`Das Darlehen wird in ${perWort}en, gleichbleibenden Raten von ${eur2(m.ratePeriod)} (Annuität, enthält Zins und Tilgung) zurückgeführt. Die anfängliche Tilgung beträgt ${numD(p.tilg)} % p.a.`;
   else if(p.art==='tilgung') rueck=`Das Darlehen wird in gleichbleibenden Tilgungsraten zuzüglich der jeweils fälligen Zinsen ${perWort} zurückgeführt (fallende Gesamtrate, anfänglich ${eur2(m.ratePeriod)}).`;
+  else if(p.art==='zinsfrei') rueck=`Während der Laufzeit sind weder Zins- noch Tilgungsleistungen zu erbringen. Die Rückzahlung des gesamten Darlehensbetrags in Höhe von ${eur(p.betrag)} erfolgt in einer Summe spätestens am Ende der Laufzeit. Vorzeitige Teil- oder Vollrückzahlungen sind jederzeit möglich.`;
   else rueck=`Während der Laufzeit sind ausschließlich die Zinsen ${perWort} zu zahlen (${eur2(m.ratePeriod)}). Die Rückzahlung des gesamten Darlehensbetrags erfolgt in einer Summe am Ende der Laufzeit.`;
+  const dnrTxt = p.dnr ? `<span class="pill" style="background:rgba(124,58,237,.1);color:var(--intern)">Interne Darlehensnr. ${p.dnr}</span>` : '';
   const sicher = p.sicher ? p.sicher : (p.typ==='coinvest' ? 'Nachrangdarlehen mit qualifiziertem Rangrücktritt; im Übrigen keine gesonderten Sicherheiten.' : 'Keine gesonderten Sicherheiten vereinbart.');
 
   $('contract').innerHTML=`
     <h1>Darlehensvertrag</h1>
-    <div class="ct-sub">${typLbl} ${pill} &nbsp;·&nbsp; ${p.bez||'—'}</div>
+    <div class="ct-sub">${typLbl} ${pill} ${dnrTxt} &nbsp;·&nbsp; ${p.bez||'—'}</div>
     <div class="parties">
       <div><b>Darlehensgeber</b><br>${p.geber||'________________'}</div>
       <div><b>Darlehensnehmer</b><br>${p.nehmer||'________________'}</div>
@@ -307,7 +331,7 @@ function renderContract(){
     <p>Die Auszahlung des Darlehensbetrags erfolgt am <b>${fmtD(p.aus)}</b> auf ein vom Darlehensnehmer benanntes Konto.</p>
 
     <h3>§ 3 Verzinsung</h3>
-    <p>Das Darlehen wird mit <b>${numD(p.zins)} % p.a.</b> verzinst. Die Zinsberechnung erfolgt ${perWort} auf den jeweils valutierenden Darlehensbetrag (act/360 bzw. nach Vereinbarung).</p>
+    <p>${p.art==='zinsfrei' ? 'Das Darlehen ist <b>zinsfrei</b>. Während der gesamten Laufzeit werden keine Zinsen berechnet.' : `Das Darlehen wird mit <b>${numD(p.zins)} % p.a.</b> verzinst. Die Zinsberechnung erfolgt ${perWort} auf den jeweils valutierenden Darlehensbetrag (act/360 bzw. nach Vereinbarung).`}</p>
 
     <h3>§ 4 Rückzahlung / Tilgung</h3>
     <p>${rueck} Die erste Rate ist einen Zahlungszeitraum nach Auszahlung fällig.</p>
@@ -369,22 +393,25 @@ async function saveLoan(){
   const kd = p.art==='endfaellig' ? m.ratePeriod*(p.perJahr/12) : m.ratePeriod*(p.perJahr/12); // auf Monat normiert
   const rec={
     typ:p.typ, bez:p.bez, geber:p.geber, nehmer:p.nehmer,
-    betrag:p.betrag, aktuell:p.betrag, zins:p.zins,
+    dnr_intern: p.dnr||null,
+    betrag:p.betrag, aktuell:p.betrag, zins: p.art==='zinsfrei'?0:p.zins,
     tilg: p.art==='annuitaet'?p.tilg:0,
     kapitaldienst: Math.round(kd*100)/100,
     aus: p.aus||null,
     laufzeit: p.aus?addYears(p.aus,p.laufzeit||0):null,
     zinsbind: p.aus?addYears(p.aus,p.laufzeit||0):null,
     status:'Aktiv',
-    notizen:`Darlehensgenerator · ${({annuitaet:'Annuitätendarlehen',tilgung:'Tilgungsdarlehen',endfaellig:'Endfälliges Darlehen'})[p.art]}`+(p.sicher?` · ${p.sicher}`:''),
+    notizen:`Darlehensgenerator · ${({annuitaet:'Annuitätendarlehen',tilgung:'Tilgungsdarlehen',endfaellig:'Endfälliges Darlehen',zinsfrei:'Zins- und tilgungsfrei'})[p.art]}`+(p.sicher?` · ${p.sicher}`:''),
   };
   const u=(await sb.auth.getUser()).data.user;
   const {error}=await sb.from('loans').insert({...rec, created_by:u?u.id:null});
   if(error){ toast('Speichern fehlgeschlagen: '+error.message); return; }
-  toast('Darlehen im Register gespeichert ✓ (Finance → Darlehen)');
+  toast('Darlehen Nr. '+(p.dnr||'—')+' ins Register übernommen ✓ (Finance → Darlehen)');
+  $('dnr').value=''; await reserveNextDnr();
 }
 
 calc();
+reserveNextDnr();
 </script>
 </body>
 </html>
