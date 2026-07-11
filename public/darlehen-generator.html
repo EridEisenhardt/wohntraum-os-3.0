@@ -145,7 +145,12 @@ tr.sum td{border-top:2px solid var(--text);font-weight:700;background:#fafbfd}
       </div>
       <div class="frow">
         <div class="fg" id="tilgWrap"><label>Anfängliche Tilgung % p.a.</label><input id="tilg" type="number" min="0" step="0.01" value="2.00" oninput="calc()"></div>
-        <div class="fg"><label>Laufzeit (Jahre)</label><input id="laufzeit" type="number" min="1" step="1" value="10" oninput="calc()"></div>
+        <div class="fg"><label>Laufzeit</label>
+          <div style="display:flex;gap:6px">
+            <input id="laufzeit" type="number" min="1" step="1" value="10" oninput="calc()" style="flex:1">
+            <select id="lzEinheit" onchange="calc()" style="flex:0 0 auto"><option value="j">Jahre</option><option value="m">Monate</option></select>
+          </div>
+        </div>
       </div>
       <div class="frow">
         <div class="fg"><label>Auszahlungsdatum</label><input id="aus" type="date" oninput="calc()"></div>
@@ -194,6 +199,7 @@ const fmtD=d=>{if(!d)return '—';const p=d.split('-');return p[2]+'.'+p[1]+'.'+
 const numD=n=>n.toLocaleString('de-DE',{minimumFractionDigits:2,maximumFractionDigits:2});
 function toast(m){const t=$('toast');t.textContent=m;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),2400);}
 function addYears(iso,y){const d=new Date(iso);d.setFullYear(d.getFullYear()+y);return d.toISOString().slice(0,10);}
+function addMonths(iso,mo){const d=new Date(iso);d.setMonth(d.getMonth()+mo);return d.toISOString().slice(0,10);}
 
 // Default Auszahlungsdatum heute
 $('aus').value=new Date().toISOString().slice(0,10);
@@ -218,7 +224,9 @@ function params(){
     typ:$('typ').value, bez:$('bez').value.trim(), geber:$('geber').value.trim(), nehmer:$('nehmer').value.trim(),
     betrag:parseFloat($('betrag').value)||0, zins:parseFloat($('zins').value)||0,
     art:$('art').value, tilg:parseFloat($('tilg').value)||0,
-    laufzeit:parseInt($('laufzeit').value)||0, aus:$('aus').value,
+    laufzeitMon: (($('lzEinheit').value==='m') ? (parseInt($('laufzeit').value)||0) : (parseInt($('laufzeit').value)||0)*12),
+    lzEinheit: $('lzEinheit').value,
+    aus:$('aus').value,
     perJahr:parseInt($('zahlweise').value)||12, sicher:$('sicher').value.trim(),
     dnr:$('dnr').value.trim(),
   };
@@ -228,14 +236,15 @@ function params(){
 function computeSchedule(p){
   const per=p.perJahr, i=p.zins/100/per;
   let bal=p.betrag;
-  const maxPer=Math.min((p.laufzeit||40)*per, 50*per);
+  const totalPer=Math.max(1, Math.round((p.laufzeitMon||480)*per/12));
+  const maxPer=Math.min(totalPer, 50*per);
   let pay=null, principalFixed=null;
   if(p.art==='annuitaet'){ pay=p.betrag*(p.zins+p.tilg)/100/per; }
-  else if(p.art==='tilgung'){ principalFixed=p.betrag/((p.laufzeit||1)*per); }
+  else if(p.art==='tilgung'){ principalFixed=p.betrag/totalPer; }
   const periods=[];
   let n=0;
   const nurEnde = (p.art==='endfaellig' || p.art==='zinsfrei');
-  while(n<maxPer && (nurEnde ? n<(p.laufzeit*per) : bal>0.005)){
+  while(n<maxPer && (nurEnde ? n<totalPer : bal>0.005)){
     const interest=(p.art==='zinsfrei')?0:bal*i;
     let principal;
     if(p.art==='annuitaet'){ principal=pay-interest; if(principal>bal)principal=bal; if(principal<0)principal=0; }
@@ -276,15 +285,21 @@ function calc(){
     : 'Hinweis: Co-Investor-Darlehen – ggf. Nachrangabrede und qualifizierter Rangrücktritt prüfen.';
 }
 
+function lzText(p){
+  const mo=p.laufzeitMon||0; const j=mo/12;
+  if(mo%12===0) return j+(j===1?' Jahr':' Jahre');
+  if(mo<24) return mo+' Monate';
+  return mo+' Monate ('+j.toFixed(1).replace('.',',')+' J.)';
+}
 function renderKpis(p,m){
   const perLbl={12:'/Monat',4:'/Quartal',1:'/Jahr'}[p.perJahr];
-  const laufLbl = m.paidOff ? (m.periods/p.perJahr).toFixed(1).replace('.',',')+' Jahre' : (p.laufzeit+' Jahre (Plan)');
+  const laufLbl = m.paidOff ? (m.periods/p.perJahr).toFixed(1).replace('.',',')+' Jahre' : (lzText(p)+' (Plan)');
   $('kpis').innerHTML=[
    ['Rate '+perLbl, eur2(m.ratePeriod), p.art==='tilgung'?'1. Periode (fallend)':(p.art==='endfaellig'?'nur Zinsen':(p.art==='zinsfrei'?'keine laufende Rate':'konstant'))],
    ['Zinsen p.a. (Jahr 1)', eur(m.years.length?m.years[0].zins:0), 'erstes Jahr'],
-   ['Gesamtzins (Laufzeit)', eur(m.totalInterest), m.paidOff?'bis Volltilgung':p.laufzeit+' Jahre'],
-   ['Restschuld am Ende', eur(m.endBalance), (p.art==='endfaellig'||p.art==='zinsfrei')?'Rückzahlung am Ende':(m.paidOff?'getilgt':'nach '+p.laufzeit+' J.')],
-   ['Volltilgung nach', m.paidOff?(m.periods/p.perJahr).toFixed(1).replace('.',',')+' J.':'> '+p.laufzeit+' J.', m.paidOff?'rechnerisch':'innerhalb Laufzeit nicht erreicht'],
+   ['Gesamtzins (Laufzeit)', eur(m.totalInterest), m.paidOff?'bis Volltilgung':lzText(p)],
+   ['Restschuld am Ende', eur(m.endBalance), (p.art==='endfaellig'||p.art==='zinsfrei')?'Rückzahlung am Ende':(m.paidOff?'getilgt':'nach '+lzText(p))],
+   ['Volltilgung nach', m.paidOff?(m.periods/p.perJahr).toFixed(1).replace('.',',')+' J.':'> '+lzText(p), m.paidOff?'rechnerisch':'innerhalb Laufzeit nicht erreicht'],
   ].map(k=>`<div class="kpi"><div class="l">${k[0]}</div><div class="v">${k[1]}</div><div class="s">${k[2]}</div></div>`).join('');
 }
 
@@ -304,7 +319,7 @@ function renderPlan(p,m){
 function renderContract(){
   const p=params(), m=MODEL||computeSchedule(p);
   const perWort={12:'monatlich',4:'vierteljährlich',1:'jährlich'}[p.perJahr];
-  const endIso = p.aus ? addYears(p.aus, p.laufzeit||0) : '';
+  const endIso = p.aus ? addMonths(p.aus, p.laufzeitMon||0) : '';
   const typLbl = p.typ==='intern' ? 'Gesellschafter-/Konzerndarlehen' : 'Co-Investor-Darlehen';
   const pill = p.typ==='intern' ? '<span class="pill p-intern">Intern</span>' : '<span class="pill p-co">Co-Investor</span>';
   let rueck;
@@ -337,7 +352,7 @@ function renderContract(){
     <p>${rueck} Die erste Rate ist einen Zahlungszeitraum nach Auszahlung fällig.</p>
 
     <h3>§ 5 Laufzeit</h3>
-    <p>Die Laufzeit beträgt <b>${p.laufzeit||'—'} Jahre</b> und endet am <b>${fmtD(endIso)}</b>${m.paidOff && p.art!=='endfaellig' ? ` (rechnerische Volltilgung nach ca. ${(m.periods/p.perJahr).toFixed(1).replace('.',',')} Jahren)` : ''}. Sondertilgungen sind jederzeit ohne Vorfälligkeitsentschädigung zulässig.</p>
+    <p>Die Laufzeit beträgt <b>${lzText(p)}</b> und endet am <b>${fmtD(endIso)}</b>${m.paidOff && p.art!=='endfaellig' ? ` (rechnerische Volltilgung nach ca. ${(m.periods/p.perJahr).toFixed(1).replace('.',',')} Jahren)` : ''}. Sondertilgungen sind jederzeit ohne Vorfälligkeitsentschädigung zulässig.</p>
 
     <h3>§ 6 Sicherheiten</h3>
     <p>${sicher}</p>
@@ -398,8 +413,8 @@ async function saveLoan(){
     tilg: p.art==='annuitaet'?p.tilg:0,
     kapitaldienst: Math.round(kd*100)/100,
     aus: p.aus||null,
-    laufzeit: p.aus?addYears(p.aus,p.laufzeit||0):null,
-    zinsbind: p.aus?addYears(p.aus,p.laufzeit||0):null,
+    laufzeit: p.aus?addMonths(p.aus,p.laufzeitMon||0):null,
+    zinsbind: p.aus?addMonths(p.aus,p.laufzeitMon||0):null,
     status:'Aktiv',
     notizen:`Darlehensgenerator · ${({annuitaet:'Annuitätendarlehen',tilgung:'Tilgungsdarlehen',endfaellig:'Endfälliges Darlehen',zinsfrei:'Zins- und tilgungsfrei'})[p.art]}`+(p.sicher?` · ${p.sicher}`:''),
   };
