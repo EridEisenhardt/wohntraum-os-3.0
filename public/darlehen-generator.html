@@ -420,9 +420,22 @@ async function saveLoan(){
     notizen:`Darlehensgenerator · ${({annuitaet:'Annuitätendarlehen',tilgung:'Tilgungsdarlehen',endfaellig:'Endfälliges Darlehen',zinsfrei:'Zins- und tilgungsfrei'})[p.art]}`+(p.sicher?` · ${p.sicher}`:''),
   };
   const u=(await sb.auth.getUser()).data.user;
-  const {error}=await sb.from('loans').insert({...rec, created_by:u?u.id:null});
+  const {data:ins,error}=await sb.from('loans').insert({...rec, created_by:u?u.id:null}).select('id').single();
   if(error){ toast('Speichern fehlgeschlagen: '+error.message); return; }
-  toast('Darlehen Nr. '+(p.dnr||'—')+' ins Register übernommen ✓ (Finance → Darlehen)');
+  // Vertrag & Zins-/Tilgungsplan als Anlage speichern
+  renderContract(); renderPlan(p,m);
+  const vertragHtml=$('contract').innerHTML;
+  const planHtml='<h2>Zins- und Tilgungsplan</h2>'
+    +'<p>'+($('planNote').textContent||'')+'</p>'
+    +'<table class="plan">'+$('planTbl').innerHTML+'</table>';
+  const meta={dnr:p.dnr||null,bez:p.bez,geber:p.geber,nehmer:p.nehmer,betrag:p.betrag,zins:rec.zins,art:p.art,laufzeitMon:p.laufzeitMon,aus:p.aus};
+  if(ins&&ins.id){
+    const {error:e2}=await sb.from('loan_dokumente').insert({loan_id:ins.id,vertrag_html:vertragHtml,plan_html:planHtml,meta});
+    if(e2){ toast('Darlehen gespeichert, Anlage fehlgeschlagen: '+e2.message); }
+    else { toast('Darlehen Nr. '+(p.dnr||'—')+' inkl. Vertrag & Tilgungsplan im Register ✓'); }
+  } else {
+    toast('Darlehen Nr. '+(p.dnr||'—')+' ins Register übernommen ✓');
+  }
   $('dnr').value=''; await reserveNextDnr();
 }
 

@@ -25,6 +25,7 @@ tbody tr:hover td{background:#fafbfc}
 .empty{text-align:center;padding:30px;color:var(--muted)}
 .foot{font-size:11px;color:var(--muted);margin-top:12px}
 .toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:var(--surf2);border:1px solid var(--line);border-radius:var(--r);padding:10px 20px;font-size:13px;opacity:0;transition:.3s;pointer-events:none;z-index:99}.toast.show{opacity:1}
+.lnk{color:var(--accent,#185fa5);font-weight:600;cursor:pointer}.lnk:hover{text-decoration:underline}
 </style></head><body>
 <div class="hdr"><div class="logo">MACHER OS</div><div>
   <div class="crumb">Darlehens-Management › Darlehensregister</div>
@@ -44,11 +45,13 @@ function toast(m){const t=$('toast');t.textContent=m;t.classList.add('show');set
 function fmtD(d){if(!d)return '—';const p=String(d).split('-');return p.length===3?p[2]+'.'+p[1]+'.'+p[0]:d;}
 const STATUS_DONE='Beendet & vollständig zurückgeführt';
 function isDone(s){s=(s||'').toLowerCase();return s.startsWith('beendet')||s.startsWith('abgeschl')||s.includes('zurückgef');}
-let ROWS=[],filt='';
+let ROWS=[],DOK={},filt='';
 const TABS=[['','Alle'],['aktiv','Aktiv'],['done','Beendet']];
 function sortKey(r){const n=parseInt(String(r.dnr_intern||'').replace(/\D/g,''),10);return isNaN(n)?9e9:n;}
 async function load(){
   const{data,error}=await sb.from('loans').select('id,dnr_intern,dnr_bank,bez,geber,nehmer,betrag,aktuell,zins,aus,laufzeit,obj,status');
+  const{data:dk}=await sb.from('loan_dokumente').select('id,loan_id,created_at').order('created_at',{ascending:false});
+  DOK={};(dk||[]).forEach(d=>{ if(!DOK[d.loan_id])DOK[d.loan_id]=d.id; });
   if(error){$('reg').innerHTML='<div class="empty">Fehler: '+esc(error.message)+'</div>';return;}
   ROWS=(data||[]).sort((a,b)=>sortKey(a)-sortKey(b));
   renderTabs();render();
@@ -69,7 +72,7 @@ function render(){
   let list=ROWS;if(filt==='aktiv')list=aktiv;else if(filt==='done')list=done;
   $('cnt').textContent=list.length+' Einträge';
   if(!list.length){$('reg').innerHTML='<div class="empty">Keine Darlehen in dieser Ansicht.</div>';return;}
-  $('reg').innerHTML='<table><thead><tr><th>Interne Nr.</th><th>Bank-Nr.</th><th>Bezeichnung</th><th>Darlehensgeber</th><th>Darlehensnehmer</th><th>Auszahlung</th><th class="eur">Betrag</th><th class="eur">Aktueller Saldo</th><th class="eur">Zins</th><th>Status</th></tr></thead><tbody>'
+  $('reg').innerHTML='<table><thead><tr><th>Interne Nr.</th><th>Bank-Nr.</th><th>Bezeichnung</th><th>Darlehensgeber</th><th>Darlehensnehmer</th><th>Auszahlung</th><th class="eur">Betrag</th><th class="eur">Aktueller Saldo</th><th class="eur">Zins</th><th>Anlage</th><th>Status</th></tr></thead><tbody>'
    +list.map(r=>`<tr class="${isDone(r.status)?'done':''}">
      <td class="dnr">${esc(r.dnr_intern||'—')}</td>
      <td>${esc(r.dnr_bank||'—')}</td>
@@ -80,8 +83,42 @@ function render(){
      <td class="eur">${r.betrag!=null?eur(r.betrag):'—'}</td>
      <td class="eur">${r.aktuell!=null?eur(r.aktuell):'—'}</td>
      <td class="eur">${r.zins!=null?(Number(r.zins).toLocaleString('de-DE',{minimumFractionDigits:2,maximumFractionDigits:2})+' %'):'—'}</td>
+     <td>${DOK[r.id]?`<span class="lnk" onclick="openDok('${r.id}')" title="Vertrag &amp; Zins-/Tilgungsplan öffnen">📄 Vertrag</span>`:'<span style="color:var(--muted)">—</span>'}</td>
      <td><span class="pill ${isDone(r.status)?'p-done':'p-aktiv'}" title="Status umschalten (Aktiv / Beendet & vollständig zurückgeführt)" onclick="toggleStatus('${r.id}')">${isDone(r.status)?'Beendet &amp; vollständig zurückgeführt':'Aktiv'}</span></td>
    </tr>`).join('')+'</tbody></table>';
+}
+async function openDok(loanId){
+  const{data,error}=await sb.from('loan_dokumente').select('vertrag_html,plan_html,meta,created_at').eq('loan_id',loanId).order('created_at',{ascending:false}).limit(1).maybeSingle();
+  if(error||!data){toast('Keine Anlage gefunden');return;}
+  const r=ROWS.find(x=>x.id===loanId)||{};
+  const win=window.open('','_blank');
+  if(!win){toast('Bitte Pop-ups erlauben');return;}
+  const stamp=data.created_at?new Date(data.created_at).toLocaleString('de-DE'):'';
+  win.document.write(`<!DOCTYPE html><html lang="de"><head><meta charset="UTF-8">
+    <title>Darlehen ${esc(r.dnr_intern||'')} · Vertrag &amp; Tilgungsplan</title>
+    <style>
+      body{font-family:Georgia,serif;color:#222;max-width:820px;margin:24px auto;padding:0 20px;line-height:1.7}
+      h1{font-size:19px;text-align:center;margin-bottom:4px}h2{font-size:16px;margin:26px 0 8px}h3{font-size:14px;margin:16px 0 4px}
+      p{margin:6px 0}.meta{text-align:center;color:#666;font-size:12px;font-family:Arial,sans-serif;margin-bottom:8px}
+      table{width:100%;border-collapse:collapse;font-size:12.5px;font-family:Arial,sans-serif;margin-top:6px}
+      th,td{padding:6px 8px;border-bottom:1px solid #ddd;text-align:right}th:first-child,td:first-child{text-align:left}
+      th{background:#f1f3f6;text-transform:uppercase;font-size:10px;color:#555}
+      tr.sum td{border-top:2px solid #333;font-weight:700}
+      .parties{display:grid;grid-template-columns:1fr 1fr;gap:18px;margin:14px 0}
+      .sign{display:grid;grid-template-columns:1fr 1fr;gap:40px;margin-top:46px}
+      .sign .box{border-top:1px solid #333;padding-top:5px;font-size:11px;color:#666;font-family:Arial,sans-serif}
+      .pagebreak{page-break-before:always}
+      .toolbar{text-align:center;margin:0 0 18px;font-family:Arial,sans-serif}
+      .toolbar button{font-size:13px;padding:8px 16px;border:1px solid #185fa5;background:#185fa5;color:#fff;border-radius:8px;cursor:pointer}
+      @media print{.toolbar{display:none}}
+    </style></head><body>
+    <div class="toolbar"><button onclick="window.print()">🖨 Drucken / als PDF speichern</button></div>
+    <div class="meta">Anlage zum Darlehensregister · Interne Nr. ${esc(r.dnr_intern||'—')} · gespeichert ${esc(stamp)}</div>
+    ${data.vertrag_html||'<p>Kein Vertrag hinterlegt.</p>'}
+    <div class="pagebreak"></div>
+    ${data.plan_html||'<p>Kein Tilgungsplan hinterlegt.</p>'}
+  </body></html>`);
+  win.document.close();
 }
 (async()=>{const{data:{session}}=await sb.auth.getSession();if(!session){$('main').innerHTML='<div class="empty" style="padding:60px">Bitte zuerst im OS einloggen.</div>';return;}load();})();
 </script></body></html>
