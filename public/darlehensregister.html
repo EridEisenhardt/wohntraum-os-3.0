@@ -50,8 +50,8 @@ const TABS=[['','Alle'],['aktiv','Aktiv'],['done','Beendet']];
 function sortKey(r){const n=parseInt(String(r.dnr_intern||'').replace(/\D/g,''),10);return isNaN(n)?9e9:n;}
 async function load(){
   const{data,error}=await sb.from('loans').select('id,dnr_intern,dnr_bank,bez,geber,nehmer,betrag,aktuell,zins,aus,laufzeit,obj,status');
-  const{data:dk}=await sb.from('loan_dokumente').select('id,loan_id,created_at').order('created_at',{ascending:false});
-  DOK={};(dk||[]).forEach(d=>{ if(!DOK[d.loan_id])DOK[d.loan_id]=d.id; });
+  const{data:dk}=await sb.from('loan_dokumente').select('id,loan_id,vertrag_html,plan_html,vertrag_pdf,plan_pdf,created_at').order('created_at',{ascending:false});
+  DOK={};(dk||[]).forEach(d=>{ if(!DOK[d.loan_id])DOK[d.loan_id]=d; });
   if(error){$('reg').innerHTML='<div class="empty">Fehler: '+esc(error.message)+'</div>';return;}
   ROWS=(data||[]).sort((a,b)=>sortKey(a)-sortKey(b));
   renderTabs();render();
@@ -83,9 +83,43 @@ function render(){
      <td class="eur">${r.betrag!=null?eur(r.betrag):'—'}</td>
      <td class="eur">${r.aktuell!=null?eur(r.aktuell):'—'}</td>
      <td class="eur">${r.zins!=null?(Number(r.zins).toLocaleString('de-DE',{minimumFractionDigits:2,maximumFractionDigits:2})+' %'):'—'}</td>
-     <td>${DOK[r.id]?`<span class="lnk" onclick="openDok('${r.id}')" title="Vertrag &amp; Zins-/Tilgungsplan öffnen">📄 Vertrag</span>`:'<span style="color:var(--muted)">—</span>'}</td>
+     <td>${anlageCell(r)}</td>
      <td><span class="pill ${isDone(r.status)?'p-done':'p-aktiv'}" title="Status umschalten (Aktiv / Beendet & vollständig zurückgeführt)" onclick="toggleStatus('${r.id}')">${isDone(r.status)?'Beendet &amp; vollständig zurückgeführt':'Aktiv'}</span></td>
    </tr>`).join('')+'</tbody></table>';
+}
+const PUB='https://jqzxctfqvcwbctpjksvg.supabase.co/storage/v1/object/public/darlehen/';
+function anlageCell(r){
+  const d=DOK[r.id]; const parts=[];
+  if(d&&(d.vertrag_html||d.plan_html)) parts.push(`<span class="lnk" onclick="openDok('${r.id}')" title="Generierte Anlage öffnen">📄 Vertrag</span>`);
+  if(d&&d.vertrag_pdf) parts.push(`<a class="lnk" href="${PUB}${esc(d.vertrag_pdf)}" target="_blank" rel="noopener">📎 Vertrag-PDF</a>`);
+  if(d&&d.plan_pdf) parts.push(`<a class="lnk" href="${PUB}${esc(d.plan_pdf)}" target="_blank" rel="noopener">📎 Plan-PDF</a>`);
+  parts.push(`<span class="lnk" style="color:var(--muted)" onclick="uploadPdf('${r.id}')" title="Vertrag oder Tilgungsplan als PDF hochladen">⬆ PDF</span>`);
+  return parts.join(' · ');
+}
+let UP_CTX=null;
+function uploadPdf(loanId){
+  UP_CTX=loanId;
+  let inp=document.getElementById('pdfInput');
+  if(!inp){ inp=document.createElement('input'); inp.type='file'; inp.accept='application/pdf'; inp.id='pdfInput'; inp.style.display='none';
+    inp.addEventListener('change',onPdfChosen); document.body.appendChild(inp); }
+  inp.value=''; inp.click();
+}
+async function onPdfChosen(ev){
+  const file=ev.target.files[0]; if(!file||!UP_CTX)return;
+  const loanId=UP_CTX;
+  const r=ROWS.find(x=>x.id===loanId)||{};
+  const welche=confirm('PDF als VERTRAG ablegen?\n\nOK = Vertrag   ·   Abbrechen = Zins-/Tilgungsplan')?'vertrag':'plan';
+  const safe=(r.dnr_intern||loanId).replace(/[^\w-]/g,'');
+  const path=`${loanId}/${welche}_${safe}_${Date.now()}.pdf`;
+  toast('Lädt hoch …');
+  const {error}=await sb.storage.from('darlehen').upload(path,file,{contentType:'application/pdf',upsert:true});
+  if(error){ toast('Upload fehlgeschlagen: '+error.message); return; }
+  const col = welche==='vertrag'?'vertrag_pdf':'plan_pdf';
+  const d=DOK[loanId];
+  if(d&&d.id){ await sb.from('loan_dokumente').update({[col]:path}).eq('id',d.id); }
+  else { await sb.from('loan_dokumente').insert({loan_id:loanId,[col]:path}); }
+  toast((welche==='vertrag'?'Vertrag':'Tilgungsplan')+'-PDF gespeichert ✓');
+  await load();
 }
 async function openDok(loanId){
   const{data,error}=await sb.from('loan_dokumente').select('vertrag_html,plan_html,meta,created_at').eq('loan_id',loanId).order('created_at',{ascending:false}).limit(1).maybeSingle();
