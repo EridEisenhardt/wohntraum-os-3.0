@@ -60,7 +60,15 @@ export const NAV = [
     { href: '/stammdaten/kontakte', icon: 'ti-users', label: 'Kontakte' },
     { href: '/stammdaten/firmen', icon: 'ti-building', label: 'Firmen' },
   ] },
-  { type: 'group', key: 'personal', icon: 'ti-users-group', label: 'Personal', area: 'hv', items: [
+  { type: 'group', key: 'bo-ratenzahlung', icon: 'ti-file-dollar', label: 'Ratenzahlung', area: 'backoffice', items: [
+    { href: '/vermietung/zahlungsvereinbarung', icon: 'ti-file-dollar', label: 'Zahlungsvereinbarungsgenerator' },
+  ] },
+  { type: 'group', key: 'bo-rechnungen', icon: 'ti-receipt', label: 'Rechnungen', area: 'backoffice', items: [
+    { href: '/controlling/nahaus-fixkosten', icon: 'ti-file-invoice', label: 'Fixkosten Objekte' },
+    { href: '/controlling/nahaus-rechnungen', icon: 'ti-receipt', label: 'Rechnungen Unternehmen' },
+    { href: '/controlling/gruppe-fixkosten', icon: 'ti-building-bank', label: 'Fixkosten der Gruppe' },
+  ] },
+  { type: 'group', key: 'personal', icon: 'ti-users-group', label: 'Personal', area: ['hv', 'backoffice'], items: [
     { href: '/personal/akte', icon: 'ti-id', label: 'Personalakte' },
     { href: '/personal/urlaub', icon: 'ti-beach', label: 'Urlaub' },
     { href: '/personal/krankheit', icon: 'ti-vaccine', label: 'Krankheit' },
@@ -113,10 +121,11 @@ export default function Sidebar({ user, demo, onLogout }) {
           <option value="">🗂 Alle Bereiche</option>
           <option value="vertrieb">📣 Vertrieb</option>
           <option value="hv">🏠 Hausverwaltung &amp; Backoffice</option>
+          <option value="backoffice">🧾 Backoffice &amp; Buchhaltung</option>
         </select>
       </div>
 
-      {NAV.filter((n) => area === '' || n.area === 'common' || n.area === area).map((n) => {
+      {NAV.filter((n) => { const a = Array.isArray(n.area) ? n.area : [n.area]; return area === '' || a.includes('common') || a.includes(area) }).map((n) => {
         if (n.type === 'link') {
           return (
             <Link key={n.href} href={n.href} className={cls(isActive(n))}>
