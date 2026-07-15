@@ -77,6 +77,10 @@ tbody tr:hover td{background:#fafbfc}
 .cfin::placeholder{color:var(--muted);font-weight:400}
 .cfx{font:inherit;font-size:12px;line-height:1;padding:4px 7px;border:1px solid var(--line);border-radius:6px;background:var(--surf2);color:var(--muted);cursor:pointer}
 .cfx:hover{color:var(--red);border-color:var(--red)}
+.sorth{cursor:pointer;user-select:none;white-space:nowrap}
+.sorth:hover{color:var(--accent)}
+.sar{color:var(--muted);font-size:9px;margin-left:2px}
+.sorth:hover .sar{color:var(--accent)}
 .s-Neu{background:#e8f2fd;color:var(--accent)}.s-InBearbeitung{background:#fdf1e0;color:var(--warn)}.s-Wartet{background:#f1f3f6;color:var(--dim)}.s-Erledigt{background:#e8f6ee;color:var(--green)}
 .tli.ticket::before{background:#0e7490}
 .trow{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:7px 0;border-bottom:1px solid var(--bord2);font-size:12.5px}
@@ -264,21 +268,37 @@ function render(){
 function searchBar(ph){return `<div class="bar"><input placeholder="${ph}" value="${esc(q)}" oninput="q=this.value;clearTimeout(window._t);window._t=setTimeout(render,150)"></div>`;}
 function match(o,fields){if(!q)return true;const s=q.toLowerCase();return fields.map(f=>o[f]).filter(Boolean).some(v=>String(v).toLowerCase().includes(s));}
 
-// ——— Excel-artige Spaltenfilter ———
+// ——— Excel-artige Spaltenfilter + Sortierung ———
 const COLF={kontakt:{},firma:{}};
+const SORTF={kontakt:{key:'name',dir:1},firma:{key:'name',dir:1}};
 function setColF(view,key,val){COLF[view][key]=val;clearTimeout(window._cf);window._cf=setTimeout(()=>{FOCUSF=view+'::'+key;render();},180);}
 let FOCUSF=null;
+function sortBy(view,key){ if(!key)return; const s=SORTF[view]; if(s.key===key){s.dir=-s.dir;} else {s.key=key;s.dir=1;} render(); }
+function applySort(view,cols,rows){
+  const s=SORTF[view]; if(!s.key)return rows; const c=cols.find(x=>x.key===s.key); if(!c)return rows;
+  const num=k=>{const n=parseFloat(String(k).replace(/[^\d.,-]/g,'').replace('.','').replace(',','.'));return isNaN(n)?null:n;};
+  return rows.slice().sort((a,b)=>{
+    const ta=c.text(a),tb=c.text(b); const na=num(ta),nb=num(tb);
+    let r; if(na!==null&&nb!==null)r=na-nb; else r=String(ta||'').localeCompare(String(tb||''),'de',{sensitivity:'base',numeric:true});
+    return r*s.dir;
+  });
+}
 function colMatch(view,cols,o){
   return cols.every(c=>{ if(!c.key)return true; const fv=(COLF[view][c.key]||'').trim().toLowerCase(); if(!fv)return true;
     return String(c.text(o)||'').toLowerCase().includes(fv); });
 }
 function anyColF(view){return Object.values(COLF[view]).some(v=>(v||'').trim());}
-function renderColTable(view,cols,rows,empty){
-  const head='<tr>'+cols.map(c=>`<th>${c.label||''}</th>`).join('')+'</tr>';
+function renderColTable(view,cols,rows){
+  const s=SORTF[view];
+  const head='<tr>'+cols.map(c=>{ if(!c.key)return '<th></th>';
+    const arr=s.key===c.key?(s.dir>0?' ▲':' ▼'):' ↕';
+    return `<th class="sorth" title="A–Z / Z–A sortieren" onclick="sortBy('${view}','${c.key}')">${c.label||''}<span class="sar">${arr}</span></th>`;
+  }).join('')+'</tr>';
   const filterRow='<tr class="cfrow">'+cols.map(c=>c.key
     ?`<th><input class="cfin" id="cf_${view}_${c.key}" value="${esc(COLF[view][c.key]||'')}" placeholder="Filter…" oninput="setColF('${view}','${c.key}',this.value)"></th>`
     :`<th>${anyColF(view)?`<button class="cfx" title="Filter zurücksetzen" onclick="clearColF('${view}')">✕</button>`:''}</th>`).join('')+'</tr>';
-  const body=rows.length?rows.map(o=>'<tr>'+cols.map(c=>`<td>${c.cell(o)}</td>`).join('')+'</tr>').join('')
+  const sorted=applySort(view,cols,rows);
+  const body=sorted.length?sorted.map(o=>'<tr>'+cols.map(c=>`<td>${c.cell(o)}</td>`).join('')+'</tr>').join('')
     :`<tr><td colspan="${cols.length}" class="empty">Keine Treffer für die aktiven Filter.</td></tr>`;
   return `<div class="tablewrap"><table><thead>${head}${filterRow}</thead><tbody>${body}</tbody></table></div>`;
 }
