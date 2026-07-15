@@ -71,6 +71,12 @@ tbody tr:hover td{background:#fafbfc}
 .mbody summary::before{content:"▸ ";}
 .mbody[open] summary::before{content:"▾ ";}
 .mtext{margin-top:5px;padding:9px 11px;background:var(--surf2);border:1px solid var(--line);border-radius:8px;font-size:12.5px;line-height:1.5;white-space:pre-wrap}
+.cfrow th{background:#fff;padding:4px 6px;position:sticky;top:0}
+.cfin{width:100%;min-width:70px;font:inherit;font-size:11.5px;font-weight:400;text-transform:none;letter-spacing:0;padding:4px 6px;border:1px solid var(--line);border-radius:6px;background:var(--surf);color:var(--text)}
+.cfin:focus{outline:none;border-color:var(--accent)}
+.cfin::placeholder{color:var(--muted);font-weight:400}
+.cfx{font:inherit;font-size:12px;line-height:1;padding:4px 7px;border:1px solid var(--line);border-radius:6px;background:var(--surf2);color:var(--muted);cursor:pointer}
+.cfx:hover{color:var(--red);border-color:var(--red)}
 .s-Neu{background:#e8f2fd;color:var(--accent)}.s-InBearbeitung{background:#fdf1e0;color:var(--warn)}.s-Wartet{background:#f1f3f6;color:var(--dim)}.s-Erledigt{background:#e8f6ee;color:var(--green)}
 .tli.ticket::before{background:#0e7490}
 .trow{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:7px 0;border-bottom:1px solid var(--bord2);font-size:12.5px}
@@ -258,35 +264,71 @@ function render(){
 function searchBar(ph){return `<div class="bar"><input placeholder="${ph}" value="${esc(q)}" oninput="q=this.value;clearTimeout(window._t);window._t=setTimeout(render,150)"></div>`;}
 function match(o,fields){if(!q)return true;const s=q.toLowerCase();return fields.map(f=>o[f]).filter(Boolean).some(v=>String(v).toLowerCase().includes(s));}
 
+// ——— Excel-artige Spaltenfilter ———
+const COLF={kontakt:{},firma:{}};
+function setColF(view,key,val){COLF[view][key]=val;clearTimeout(window._cf);window._cf=setTimeout(()=>{FOCUSF=view+'::'+key;render();},180);}
+let FOCUSF=null;
+function colMatch(view,cols,o){
+  return cols.every(c=>{ if(!c.key)return true; const fv=(COLF[view][c.key]||'').trim().toLowerCase(); if(!fv)return true;
+    return String(c.text(o)||'').toLowerCase().includes(fv); });
+}
+function anyColF(view){return Object.values(COLF[view]).some(v=>(v||'').trim());}
+function renderColTable(view,cols,rows,empty){
+  const head='<tr>'+cols.map(c=>`<th>${c.label||''}</th>`).join('')+'</tr>';
+  const filterRow='<tr class="cfrow">'+cols.map(c=>c.key
+    ?`<th><input class="cfin" id="cf_${view}_${c.key}" value="${esc(COLF[view][c.key]||'')}" placeholder="Filter…" oninput="setColF('${view}','${c.key}',this.value)"></th>`
+    :`<th>${anyColF(view)?`<button class="cfx" title="Filter zurücksetzen" onclick="clearColF('${view}')">✕</button>`:''}</th>`).join('')+'</tr>';
+  const body=rows.length?rows.map(o=>'<tr>'+cols.map(c=>`<td>${c.cell(o)}</td>`).join('')+'</tr>').join('')
+    :`<tr><td colspan="${cols.length}" class="empty">Keine Treffer für die aktiven Filter.</td></tr>`;
+  return `<div class="tablewrap"><table><thead>${head}${filterRow}</thead><tbody>${body}</tbody></table></div>`;
+}
+function clearColF(view){COLF[view]={};render();}
+function restoreFocusF(){ if(!FOCUSF)return; const [v,k]=FOCUSF.split('::'); const el=document.getElementById('cf_'+v+'_'+k);
+  if(el){el.focus();const n=el.value.length;try{el.setSelectionRange(n,n);}catch(e){}} FOCUSF=null; }
+
 function renderKontakte(){
-  const list=K.filter(k=>match(k,['vorname','name','email','telefon','position','strasse','plz','ort','land'])||firmaName(k.firma_id).toLowerCase().includes(q.toLowerCase())).filter(katMatch).filter(potMatch)
+  const base=K.filter(k=>match(k,['vorname','name','email','telefon','position','strasse','plz','ort','land'])||firmaName(k.firma_id).toLowerCase().includes(q.toLowerCase())).filter(katMatch).filter(potMatch)
     .sort((a,b)=>kName(a).localeCompare(kName(b),'de',{sensitivity:'base'}));
-  $('main').innerHTML=`<div class="card"><div class="card-hd"><span>Kontakte <span style="color:var(--muted);font-weight:400">· ${list.length}</span></span></div><div class="card-bd">
+  const cols=[
+    {key:'name',label:'Name',text:k=>kName(k),cell:k=>`<span class="lnk" onclick="openEntity('kontakt','${k.id}')">${esc(kName(k))}</span>`},
+    {key:'pot',label:'Pot.',text:k=>k.potenzial,cell:k=>potBadge(k.potenzial)},
+    {key:'kat',label:'Kategorien',text:k=>katsOf(k).join(', '),cell:k=>katChips(k)},
+    {key:'firma',label:'Firma',text:k=>firmaName(k.firma_id),cell:k=>esc(firmaName(k.firma_id))||'—'},
+    {key:'email',label:'E-Mail',text:k=>k.email,cell:k=>esc(k.email)||'—'},
+    {key:'telefon',label:'Telefon',text:k=>k.telefon,cell:k=>esc(k.telefon)||'—'},
+    {key:'anschrift',label:'Anschrift',text:k=>anschrift(k),cell:k=>esc(anschrift(k))||'—'},
+    {key:'position',label:'Position',text:k=>k.position,cell:k=>esc(k.position)||'—'},
+    {key:'lk',label:'Letzter Kontakt',text:k=>{const d=lastContact('kontakt',k);return d?fmtD(d):'';},cell:k=>lastContactCell('kontakt',k)},
+    {key:'tickets',label:'Tickets',text:k=>offeneTickets('kontakt',k.id)||'',cell:k=>offeneTickets('kontakt',k.id)?`<span class="pill s-Neu">${offeneTickets('kontakt',k.id)} offen</span>`:'—'},
+    {key:'mails',label:'Mails',text:k=>mailsFor(k).length||'',cell:k=>mailsFor(k).length||'—'},
+    {key:'',label:'',text:()=>'',cell:k=>`<button class="abtn" onclick="delEntity('kontakt','${k.id}')">✕</button>`}
+  ];
+  const list=base.filter(k=>colMatch('kontakt',cols,k));
+  $('main').innerHTML=`<div class="card"><div class="card-hd"><span>Kontakte <span style="color:var(--muted);font-weight:400">· ${list.length}${list.length!==K.length?(' von '+K.length):''}</span></span></div><div class="card-bd">
    <div class="bar"><input placeholder="Kontakt suchen …" value="${esc(q)}" oninput="q=this.value;clearTimeout(window._t);window._t=setTimeout(render,150)">${katFilterSel()}${potFilterSel()}</div>
-   ${list.length?`<div class="tablewrap"><table><thead><tr><th>Name</th><th>Pot.</th><th>Kategorien</th><th>Firma</th><th>E-Mail</th><th>Telefon</th><th>Anschrift</th><th>Position</th><th>Letzter Kontakt</th><th>Tickets</th><th>Mails</th><th></th></tr></thead><tbody>`+
-   list.map(k=>{const mails=mailsFor(k).length;return `<tr>
-     <td><span class="lnk" onclick="openEntity('kontakt','${k.id}')">${esc(kName(k))}</span></td>
-     <td>${potBadge(k.potenzial)}</td>
-     <td>${katChips(k)}</td>
-     <td>${esc(firmaName(k.firma_id))||'—'}</td><td>${esc(k.email)||'—'}</td><td>${esc(k.telefon)||'—'}</td><td>${esc(anschrift(k))||'—'}</td><td>${esc(k.position)||'—'}</td>
-     <td>${lastContactCell('kontakt',k)}</td>
-     <td>${offeneTickets('kontakt',k.id)?`<span class="pill s-Neu">${offeneTickets('kontakt',k.id)} offen</span>`:'—'}</td>
-     <td>${mails||'—'}</td><td><button class="abtn" onclick="delEntity('kontakt','${k.id}')">✕</button></td></tr>`;}).join('')+
-   '</tbody></table></div>':'<div class="empty">Keine Kontakte — oben „+ Neu".</div>'}</div></div>`;
+   ${K.length?renderColTable('kontakt',cols,list):'<div class="empty">Keine Kontakte — oben „+ Neu".</div>'}</div></div>`;
+  restoreFocusF();
 }
 function renderFirmen(){
-  const list=F.filter(f=>match(f,['name','branche','website','telefon','strasse','plz','ort','land'])).filter(katMatch).filter(potMatch);
-  $('main').innerHTML=`<div class="card"><div class="card-hd"><span>Firmen <span style="color:var(--muted);font-weight:400">· ${list.length}</span></span></div><div class="card-bd">
+  const base=F.filter(f=>match(f,['name','branche','website','telefon','strasse','plz','ort','land'])).filter(katMatch).filter(potMatch);
+  const cols=[
+    {key:'name',label:'Firma',text:f=>f.name,cell:f=>`<span class="lnk" onclick="openEntity('firma','${f.id}')">${esc(f.name)}</span>`},
+    {key:'pot',label:'Pot.',text:f=>f.potenzial,cell:f=>potBadge(f.potenzial)},
+    {key:'kat',label:'Kategorien',text:f=>katsOf(f).join(', '),cell:f=>katChips(f)},
+    {key:'branche',label:'Branche',text:f=>f.branche,cell:f=>esc(f.branche)||'—'},
+    {key:'anschrift',label:'Anschrift',text:f=>anschrift(f),cell:f=>esc(anschrift(f))||'—'},
+    {key:'lk',label:'Letzter Kontakt',text:f=>{const d=lastContact('firma',f);return d?fmtD(d):'';},cell:f=>lastContactCell('firma',f)},
+    {key:'website',label:'Website',text:f=>f.website,cell:f=>f.website?`<a href="${esc(f.website)}" target="_blank" style="color:var(--accent)">${esc(f.website)}</a>`:'—'},
+    {key:'telefon',label:'Telefon',text:f=>f.telefon,cell:f=>esc(f.telefon)||'—'},
+    {key:'kontakte',label:'Kontakte',text:f=>K.filter(k=>k.firma_id===f.id).length||'',cell:f=>K.filter(k=>k.firma_id===f.id).length},
+    {key:'deals',label:'Deals',text:f=>D.filter(d=>d.firma_id===f.id).length||'',cell:f=>D.filter(d=>d.firma_id===f.id).length},
+    {key:'',label:'',text:()=>'',cell:f=>`<button class="abtn" onclick="delEntity('firma','${f.id}')">✕</button>`}
+  ];
+  const list=base.filter(f=>colMatch('firma',cols,f));
+  $('main').innerHTML=`<div class="card"><div class="card-hd"><span>Firmen <span style="color:var(--muted);font-weight:400">· ${list.length}${list.length!==F.length?(' von '+F.length):''}</span></span></div><div class="card-bd">
    <div class="bar"><input placeholder="Firma suchen …" value="${esc(q)}" oninput="q=this.value;clearTimeout(window._t);window._t=setTimeout(render,150)">${katFilterSel()}${potFilterSel()}</div>
-   ${list.length?`<div class="tablewrap"><table><thead><tr><th>Firma</th><th>Pot.</th><th>Kategorien</th><th>Branche</th><th>Anschrift</th><th>Letzter Kontakt</th><th>Website</th><th>Telefon</th><th>Kontakte</th><th>Deals</th><th></th></tr></thead><tbody>`+
-   list.map(f=>`<tr>
-     <td><span class="lnk" onclick="openEntity('firma','${f.id}')">${esc(f.name)}</span></td>
-     <td>${potBadge(f.potenzial)}</td>
-     <td>${katChips(f)}</td>
-     <td>${esc(f.branche)||'—'}</td><td>${esc(anschrift(f))||'—'}</td><td>${lastContactCell('firma',f)}</td><td>${f.website?`<a href="${esc(f.website)}" target="_blank" style="color:var(--accent)">${esc(f.website)}</a>`:'—'}</td>
-     <td>${esc(f.telefon)||'—'}</td><td>${K.filter(k=>k.firma_id===f.id).length}</td><td>${D.filter(d=>d.firma_id===f.id).length}</td>
-     <td><button class="abtn" onclick="delEntity('firma','${f.id}')">✕</button></td></tr>`).join('')+
-   '</tbody></table></div>':'<div class="empty">Keine Firmen — oben „+ Neu".</div>'}</div></div>`;
+   ${F.length?renderColTable('firma',cols,list):'<div class="empty">Keine Firmen — oben „+ Neu".</div>'}</div></div>`;
+  restoreFocusF();
 }
 function renderDeals(){
   const sum=D.reduce((s,d)=>s+(Number(d.wert)||0),0);
