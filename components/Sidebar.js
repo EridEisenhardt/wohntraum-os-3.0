@@ -15,7 +15,7 @@ export const NAV = [
     { href: '/planung/baustandard', icon: 'ti-ruler-2', label: 'Baustandard' },
     { href: '/planung/materialliste', icon: 'ti-list-details', label: 'Materialliste' },
   ] },
-  { type: 'group', key: 'crm', icon: 'ti-address-book', label: 'CRM', area: 'common', items: [
+  { type: 'group', key: 'crm', icon: 'ti-address-book', label: 'CRM', area: ['vertrieb', 'hv'], items: [
     { href: '/crm', icon: 'ti-users', label: 'Kontakte & Deals' },
     { href: '/tickets', icon: 'ti-ticket', label: 'Ticketsystem' },
   ] },
@@ -75,7 +75,7 @@ export const NAV = [
     { href: '/personal/arbeitsstunden', icon: 'ti-clock-hour-4', label: 'Arbeitsstunden' },
     { href: '/personal/lohnkosten', icon: 'ti-coin-euro', label: 'Lohnkosten' },
   ] },
-  { type: 'group', key: 'eric-privat', icon: 'ti-user-heart', label: 'Eric Privat', area: 'common', items: [
+  { type: 'group', key: 'eric-privat', icon: 'ti-user-heart', label: 'Eric Privat', area: ['vertrieb', 'hv'], items: [
     { href: '/eric-privat/budgetplan', icon: 'ti-wallet', label: 'Budgetplan' },
   ] },
   { type: 'link', href: '/nutzer', icon: 'ti-shield-lock', label: 'Nutzerverwaltung', area: 'common' },
