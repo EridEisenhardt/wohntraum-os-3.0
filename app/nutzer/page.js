@@ -1,7 +1,7 @@
 'use client'
 import { useEffect, useState, useCallback } from 'react'
 import { supabase, supabaseConfigured } from '@/lib/supabaseClient'
-import { appRoleLabel, appRoleDesc, APP_ROLES } from '@/lib/roles'
+import { appRoleLabel, appRoleDesc, APP_ROLES, APP_MODULES, PERM_LEVELS } from '@/lib/roles'
 
 export default function NutzerPage() {
   const [rows, setRows] = useState([])
@@ -9,6 +9,10 @@ export default function NutzerPage() {
   const [isAdmin, setIsAdmin] = useState(false)
   const [loading, setLoading] = useState(true)
   const [msg, setMsg] = useState(null)
+
+  const [selRole, setSelRole] = useState('backoffice')
+  const [permMap, setPermMap] = useState({})
+  const [permBusy, setPermBusy] = useState(false)
 
   const load = useCallback(async () => {
     if (!supabaseConfigured) { setLoading(false); return }
@@ -25,7 +29,16 @@ export default function NutzerPage() {
     setLoading(false)
   }, [])
 
+  const loadPerms = useCallback(async (role) => {
+    if (!supabaseConfigured) return
+    const { data } = await supabase.from('app_permissions').select('*').eq('role', role)
+    const m = {}
+    ;(data || []).forEach((p) => { m[p.modul] = p })
+    setPermMap(m)
+  }, [])
+
   useEffect(() => { load() }, [load])
+  useEffect(() => { loadPerms(selRole) }, [selRole, loadPerms])
 
   async function changeRole(p, role) {
     if (role === p.role) return
@@ -44,6 +57,24 @@ export default function NutzerPage() {
     load()
   }
 
+  async function togglePerm(modul, level) {
+    if (!isAdmin || selRole === 'admin') return
+    const cur = permMap[modul] || { role: selRole, modul, sehen: false, lesen: false, schreiben: false, bearbeiten: false, loeschen: false }
+    const next = { ...cur, [level]: !cur[level] }
+    // Abhängigkeiten: höhere Rechte setzen Sehen/Lesen voraus
+    if (next[level]) {
+      if (level !== 'sehen') next.sehen = true
+      if (['schreiben', 'bearbeiten', 'loeschen'].includes(level)) next.lesen = true
+    }
+    if (level === 'sehen' && !next.sehen) { next.lesen = next.schreiben = next.bearbeiten = next.loeschen = false }
+    if (level === 'lesen' && !next.lesen) { next.schreiben = next.bearbeiten = next.loeschen = false }
+    setPermMap((m) => ({ ...m, [modul]: next }))
+    setPermBusy(true)
+    const { error } = await supabase.from('app_permissions').upsert(next, { onConflict: 'role,modul' })
+    setPermBusy(false)
+    if (error) { setMsg('Fehler beim Speichern: ' + error.message); loadPerms(selRole) }
+  }
+
   if (!supabaseConfigured) return <p className="sub">Bitte Supabase verbinden und einloggen.</p>
   if (loading) return <p className="sub">Lädt…</p>
 
@@ -59,7 +90,7 @@ export default function NutzerPage() {
         </div>
       </div>
 
-      {!isAdmin && <p className="sub" style={{ marginBottom: 12 }}>Nur Admins können Rollen und Status ändern.</p>}
+      {!isAdmin && <p className="sub" style={{ marginBottom: 12 }}>Nur Admins können Rollen, Status und Rechte ändern.</p>}
       {msg && <p className="sub" style={{ color: 'var(--brand)' }}>{msg}</p>}
 
       <table className="tbl">
@@ -73,7 +104,7 @@ export default function NutzerPage() {
               <td>{p.email}</td>
               <td>
                 {isAdmin ? (
-                  <select value={p.role} onChange={(e) => changeRole(p, e.target.value)} style={{ maxWidth: 170 }}
+                  <select value={p.role} onChange={(e) => changeRole(p, e.target.value)} style={{ maxWidth: 220 }}
                     title={appRoleDesc[p.role]}>
                     {APP_ROLES.map((r) => <option key={r} value={r}>{appRoleLabel[r]}</option>)}
                   </select>
@@ -94,6 +125,52 @@ export default function NutzerPage() {
           ))}
         </tbody>
       </table>
+
+      <div className="card" style={{ marginTop: 18 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', marginBottom: 10 }}>
+          <h2 style={{ margin: 0 }}>Rechte je Rolle</h2>
+          <select value={selRole} onChange={(e) => setSelRole(e.target.value)} style={{ maxWidth: 240 }}>
+            {APP_ROLES.map((r) => <option key={r} value={r}>{appRoleLabel[r]}</option>)}
+          </select>
+          {permBusy && <span className="sub">speichert…</span>}
+        </div>
+        <p className="sub" style={{ marginTop: 0 }}>{appRoleDesc[selRole]}</p>
+
+        {selRole === 'admin' ? (
+          <p className="sub">Die Geschäftsführung (Admin) hat immer Vollzugriff auf alle Module. Diese Rolle ist nicht einschränkbar.</p>
+        ) : (
+          <div style={{ overflowX: 'auto' }}>
+            <table className="tbl" style={{ minWidth: 620 }}>
+              <thead>
+                <tr>
+                  <th>Modul</th>
+                  {PERM_LEVELS.map((l) => <th key={l.key} style={{ textAlign: 'center' }}>{l.label}</th>)}
+                </tr>
+              </thead>
+              <tbody>
+                {APP_MODULES.map((m) => {
+                  const p = permMap[m.key] || {}
+                  return (
+                    <tr key={m.key}>
+                      <td><b>{m.label}</b><div className="sub" style={{ fontSize: 11 }}>{m.hint}</div></td>
+                      {PERM_LEVELS.map((l) => (
+                        <td key={l.key} style={{ textAlign: 'center' }}>
+                          <input type="checkbox" checked={!!p[l.key]} disabled={!isAdmin}
+                            onChange={() => togglePerm(m.key, l.key)}
+                            style={{ width: 17, height: 17, cursor: isAdmin ? 'pointer' : 'default' }} />
+                        </td>
+                      ))}
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+        <p className="sub" style={{ fontSize: 11.5, marginBottom: 0 }}>
+          Höhere Rechte setzen niedrigere voraus (Bearbeiten/Löschen erfordert Lesen; alles erfordert Sehen). „Sehen" steuert, ob das Modul in der Seitenleiste erscheint.
+        </p>
+      </div>
 
       <div className="card" style={{ marginTop: 18 }}>
         <h2>Neue Nutzer hinzufügen</h2>

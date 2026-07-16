@@ -6,38 +6,38 @@ import { useState, useEffect } from 'react'
 export const NAV = [
   { type: 'link', href: '/', icon: 'ti-layout-dashboard', label: 'Cockpit', exact: true, area: 'common' },
   { type: 'link', href: '/tools', icon: 'ti-layout-grid', label: 'Alle Tools', area: 'common' },
-  { type: 'link', href: '/gf-dashboard', icon: 'ti-chart-pie', label: 'GF-Dashboard', area: ['vertrieb', 'hv'] },
-  { type: 'link', href: '/portfolio', icon: 'ti-building-community', label: 'Portfolio', area: ['vertrieb', 'hv'] },
-  { type: 'group', key: 'strategie', icon: 'ti-chess', label: 'Strategie', area: 'vertrieb', items: [
+  { type: 'link', href: '/gf-dashboard', icon: 'ti-chart-pie', label: 'GF-Dashboard', area: ['vertrieb', 'hv'], mod: 'dashboards' },
+  { type: 'link', href: '/portfolio', icon: 'ti-building-community', label: 'Portfolio', area: ['vertrieb', 'hv'], mod: 'dashboards' },
+  { type: 'group', key: 'strategie', icon: 'ti-chess', label: 'Strategie', area: 'vertrieb', mod: 'dashboards', items: [
     { href: '/strategie/veraenderungen', icon: 'ti-arrows-shuffle', label: 'Veränderungen in der Organisation' },
   ] },
-  { type: 'group', key: 'baustandard', icon: 'ti-ruler-2', label: 'Baustandard', area: 'vertrieb', items: [
+  { type: 'group', key: 'baustandard', icon: 'ti-ruler-2', label: 'Baustandard', area: 'vertrieb', mod: 'dashboards', items: [
     { href: '/planung/baustandard', icon: 'ti-ruler-2', label: 'Baustandard' },
     { href: '/planung/materialliste', icon: 'ti-list-details', label: 'Materialliste' },
   ] },
-  { type: 'group', key: 'crm', icon: 'ti-address-book', label: 'CRM', area: ['vertrieb', 'hv'], items: [
+  { type: 'group', key: 'crm', icon: 'ti-address-book', label: 'CRM', area: ['vertrieb', 'hv'], mod: 'crm', items: [
     { href: '/crm', icon: 'ti-users', label: 'Kontakte & Deals' },
     { href: '/tickets', icon: 'ti-ticket', label: 'Ticketsystem' },
   ] },
-  { type: 'link', href: '/aktivitaeten', icon: 'ti-checklist', label: 'Aktivitäten', area: 'hv' },
-  { type: 'group', key: 'ankauf', icon: 'ti-key', label: 'Ankauf', area: 'vertrieb', items: [
+  { type: 'link', href: '/aktivitaeten', icon: 'ti-checklist', label: 'Aktivitäten', area: 'hv', mod: 'aktivitaeten' },
+  { type: 'group', key: 'ankauf', icon: 'ti-key', label: 'Ankauf', area: 'vertrieb', mod: 'ankauf', items: [
     { href: '/ankauf/akquise', icon: 'ti-map-search', label: 'Immobilien Akquise' },
   ] },
-  { type: 'group', key: 'vermietung', icon: 'ti-home-search', label: 'Vermietung', area: 'vertrieb', items: [
+  { type: 'group', key: 'vermietung', icon: 'ti-home-search', label: 'Vermietung', area: 'vertrieb', mod: 'vermietung', items: [
     { href: '/vermietung/mietinteressenten', icon: 'ti-users-plus', label: 'Mietinteressenten' },
     { href: '/vermietung/wohnungsvermietung', icon: 'ti-home-cog', label: 'Wohnungsvermietung' },
     { href: '/vermietung/steckbrief', icon: 'ti-id-badge-2', label: 'Steckbrief Generator' },
     { href: '/vermietung/laufende-vermietungen', icon: 'ti-progress', label: 'Laufende Vermietungen' },
     { href: '/vermietung/zahlungsvereinbarung', icon: 'ti-file-dollar', label: 'Zahlungsvereinbarungsgenerator' },
   ] },
-  { type: 'group', key: 'controlling', icon: 'ti-chart-histogram', label: 'Controlling', area: 'hv', items: [
+  { type: 'group', key: 'controlling', icon: 'ti-chart-histogram', label: 'Controlling', area: 'hv', mod: 'controlling', items: [
     { href: '/controlling/statistik', icon: 'ti-chart-bar', label: 'Statistik' },
     { href: '/controlling/monatswechsel', icon: 'ti-calendar-dollar', label: 'Monatswechsel' },
     { href: '/controlling/nahaus-fixkosten', icon: 'ti-file-invoice', label: 'Fixkosten Objekte' },
     { href: '/controlling/nahaus-rechnungen', icon: 'ti-receipt', label: 'Rechnungen Unternehmen' },
     { href: '/controlling/gruppe-fixkosten', icon: 'ti-building-bank', label: 'Fixkosten der Gruppe' },
   ] },
-  { type: 'group', key: 'produktivitaet', icon: 'ti-rocket', label: 'Produktivität', area: 'hv', items: [
+  { type: 'group', key: 'produktivitaet', icon: 'ti-rocket', label: 'Produktivität', area: 'hv', mod: 'produktivitaet', items: [
     { href: '/produktivitaet/tracking', icon: 'ti-chart-line', label: 'Tracking' },
     { href: '/produktivitaet/planung', icon: 'ti-calendar-event', label: 'Wochenplanung' },
     { href: '/produktivitaet/ideale-woche', icon: 'ti-calendar-heart', label: 'Ideale Woche' },
@@ -45,7 +45,7 @@ export const NAV = [
     { href: '/produktivitaet/stundengehalt', icon: 'ti-clock-dollar', label: 'Stundengehalt' },
     { href: '/produktivitaet/gpm-tracker', icon: 'ti-target-arrow', label: 'GPM-Tracker' },
   ] },
-  { type: 'group', key: 'finance', icon: 'ti-cash', label: 'Finance', area: 'hv', items: [
+  { type: 'group', key: 'finance', icon: 'ti-cash', label: 'Finance', area: 'hv', mod: 'finance', items: [
     { href: '/finance/input', icon: 'ti-forms', label: 'Input' },
     { href: '/finance/darlehen', icon: 'ti-businessplan', label: 'Darlehen' },
     { href: '/finance/darlehensregister', icon: 'ti-list-numbers', label: 'Darlehensregister' },
@@ -55,36 +55,46 @@ export const NAV = [
     { href: '/finance/steuer-bilanz', icon: 'ti-receipt-tax', label: 'Steuer und Bilanzunterlagen' },
     { href: '/finance/liquiditaetsplanung', icon: 'ti-wallet', label: 'Liquiditätsplanung' },
   ] },
-  { type: 'link', href: '/dokumente', icon: 'ti-files', label: 'Dokumente', area: 'common' },
-  { type: 'group', key: 'stammdaten', icon: 'ti-database', label: 'Stammdaten', area: 'hv', items: [
+  { type: 'link', href: '/dokumente', icon: 'ti-files', label: 'Dokumente', area: 'common', mod: 'dokumente' },
+  { type: 'group', key: 'stammdaten', icon: 'ti-database', label: 'Stammdaten', area: 'hv', mod: 'dokumente', items: [
     { href: '/stammdaten/kontakte', icon: 'ti-users', label: 'Kontakte' },
     { href: '/stammdaten/firmen', icon: 'ti-building', label: 'Firmen' },
   ] },
-  { type: 'group', key: 'bo-ratenzahlung', icon: 'ti-file-dollar', label: 'Ratenzahlung', area: 'backoffice', items: [
+  { type: 'group', key: 'bo-ratenzahlung', icon: 'ti-file-dollar', label: 'Ratenzahlung', area: 'backoffice', mod: 'ratenzahlung', items: [
     { href: '/vermietung/zahlungsvereinbarung', icon: 'ti-file-dollar', label: 'Zahlungsvereinbarungsgenerator' },
   ] },
-  { type: 'group', key: 'bo-rechnungen', icon: 'ti-receipt', label: 'Rechnungen', area: 'backoffice', items: [
+  { type: 'group', key: 'bo-rechnungen', icon: 'ti-receipt', label: 'Rechnungen', area: 'backoffice', mod: 'controlling', items: [
     { href: '/controlling/nahaus-fixkosten', icon: 'ti-file-invoice', label: 'Fixkosten Objekte' },
     { href: '/controlling/nahaus-rechnungen', icon: 'ti-receipt', label: 'Rechnungen Unternehmen' },
     { href: '/controlling/gruppe-fixkosten', icon: 'ti-building-bank', label: 'Fixkosten der Gruppe' },
   ] },
-  { type: 'group', key: 'personal', icon: 'ti-users-group', label: 'Personal', area: ['hv', 'backoffice'], items: [
+  { type: 'group', key: 'personal', icon: 'ti-users-group', label: 'Personal', area: ['hv', 'backoffice'], mod: 'personal', items: [
     { href: '/personal/akte', icon: 'ti-id', label: 'Personalakte' },
     { href: '/personal/urlaub', icon: 'ti-beach', label: 'Urlaub' },
     { href: '/personal/krankheit', icon: 'ti-vaccine', label: 'Krankheit' },
     { href: '/personal/arbeitsstunden', icon: 'ti-clock-hour-4', label: 'Arbeitsstunden' },
     { href: '/personal/lohnkosten', icon: 'ti-coin-euro', label: 'Lohnkosten' },
   ] },
-  { type: 'group', key: 'eric-privat', icon: 'ti-user-heart', label: 'Eric Privat', area: ['vertrieb', 'hv'], items: [
+  { type: 'group', key: 'eric-privat', icon: 'ti-user-heart', label: 'Eric Privat', area: ['vertrieb', 'hv'], mod: 'privat', items: [
     { href: '/eric-privat/budgetplan', icon: 'ti-wallet', label: 'Budgetplan' },
   ] },
-  { type: 'link', href: '/nutzer', icon: 'ti-shield-lock', label: 'Nutzerverwaltung', area: 'common' },
+  { type: 'link', href: '/nutzer', icon: 'ti-shield-lock', label: 'Nutzerverwaltung', area: 'common', mod: 'nutzer' },
 ]
 
-export default function Sidebar({ user, demo, onLogout }) {
+export default function Sidebar({ user, demo, onLogout, role, perms }) {
   const path = usePathname()
   const [collapsed, setCollapsed] = useState({})
   const [area, setArea] = useState('')
+  const isAdmin = role === 'admin'
+  // Sichtbarkeit je Modul: Admin sieht alles; ohne geladene Rechte (Demo) alles; sonst nur wenn "sehen" aktiv ist.
+  const canSee = (n) => {
+    if (demo || isAdmin) return true
+    if (!n.mod) return true // Cockpit, Alle Tools – Grundnavigation
+    if (n.mod === 'nutzer' || n.mod === 'privat') return isAdmin
+    if (!perms) return true
+    const p = perms[n.mod]
+    return !!(p && p.sehen)
+  }
 
   useEffect(() => {
     try { const s = localStorage.getItem('sidebar_collapsed'); if (s) setCollapsed(JSON.parse(s)) } catch (e) {}
@@ -125,7 +135,7 @@ export default function Sidebar({ user, demo, onLogout }) {
         </select>
       </div>
 
-      {NAV.filter((n) => { const a = Array.isArray(n.area) ? n.area : [n.area]; return area === '' || a.includes('common') || a.includes(area) }).map((n) => {
+      {NAV.filter((n) => { const a = Array.isArray(n.area) ? n.area : [n.area]; return (area === '' || a.includes('common') || a.includes(area)) && canSee(n) }).map((n) => {
         if (n.type === 'link') {
           return (
             <Link key={n.href} href={n.href} className={cls(isActive(n))}>

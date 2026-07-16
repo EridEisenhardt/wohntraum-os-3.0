@@ -6,6 +6,8 @@ import Sidebar from './Sidebar'
 export default function AppShell({ children }) {
   const [session, setSession] = useState(null)
   const [ready, setReady] = useState(false)
+  const [role, setRole] = useState(null)
+  const [perms, setPerms] = useState(null)
 
   useEffect(() => {
     if (!supabaseConfigured) { setReady(true); return }
@@ -14,6 +16,24 @@ export default function AppShell({ children }) {
     return () => sub.subscription.unsubscribe()
   }, [])
 
+  useEffect(() => {
+    if (!supabaseConfigured || !session) { setRole(null); setPerms(null); return }
+    let cancelled = false
+    ;(async () => {
+      const { data: prof } = await supabase.from('profiles').select('role').eq('id', session.user.id).maybeSingle()
+      const r = prof ? prof.role : null
+      if (cancelled) return
+      setRole(r)
+      if (r === 'admin' || !r) { setPerms(null); return }
+      const { data: pr } = await supabase.from('app_permissions').select('*').eq('role', r)
+      if (cancelled) return
+      const map = {}
+      ;(pr || []).forEach((p) => { map[p.modul] = p })
+      setPerms(map)
+    })()
+    return () => { cancelled = true }
+  }, [session])
+
   if (!ready) return <div className="loading-wrap">Lädt…</div>
 
   if (supabaseConfigured && !session) return <LoginScreen />
@@ -21,7 +41,7 @@ export default function AppShell({ children }) {
   const user = session ? session.user : null
   return (
     <div className="app">
-      <Sidebar user={user} demo={!supabaseConfigured} onLogout={() => supabase.auth.signOut()} />
+      <Sidebar user={user} demo={!supabaseConfigured} onLogout={() => supabase.auth.signOut()} role={role} perms={perms} />
       <main className="main">{children}</main>
     </div>
   )
