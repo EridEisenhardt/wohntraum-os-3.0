@@ -78,6 +78,7 @@ export const NAV = [
   { type: 'group', key: 'eric-privat', icon: 'ti-user-heart', label: 'Eric Privat', area: ['vertrieb', 'hv'], mod: 'privat', items: [
     { href: '/eric-privat/budgetplan', icon: 'ti-wallet', label: 'Budgetplan' },
   ] },
+  { type: 'link', href: '/konto', icon: 'ti-user-cog', label: 'Mein Konto', area: 'common' },
   { type: 'link', href: '/nutzer', icon: 'ti-shield-lock', label: 'Nutzerverwaltung', area: 'common', mod: 'nutzer' },
 ]
 
@@ -161,7 +162,7 @@ export default function Sidebar({ user, demo, onLogout, role, perms }) {
         )
       })}
 
-      <Link href="/" className="nav-item"><i className="ti ti-settings" /> Einstellungen</Link>
+      <Link href="/konto" className="nav-item"><i className="ti ti-settings" /> Einstellungen &amp; Passwort</Link>
 
       <div className="me">
         <div className="av">{initials}</div>
