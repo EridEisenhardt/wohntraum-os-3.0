@@ -78,6 +78,7 @@ export const NAV = [
   { type: 'group', key: 'eric-privat', icon: 'ti-user-heart', label: 'Eric Privat', area: ['vertrieb', 'hv'], mod: 'privat', items: [
     { href: '/eric-privat/budgetplan', icon: 'ti-wallet', label: 'Budgetplan' },
   ] },
+  { type: 'link', href: '/mahnprozess', icon: 'ti-gavel', label: 'Mahnprozess', area: 'common', mod: 'mahnprozess' },
   { type: 'link', href: '/konto', icon: 'ti-user-cog', label: 'Mein Konto', area: 'common' },
   { type: 'link', href: '/nutzer', icon: 'ti-shield-lock', label: 'Nutzerverwaltung', area: 'common', mod: 'nutzer' },
 ]
@@ -91,7 +92,7 @@ export default function Sidebar({ user, demo, onLogout, role, perms }) {
   const canSee = (n) => {
     if (demo || isAdmin) return true
     if (!n.mod) return true // Cockpit, Alle Tools – Grundnavigation
-    if (n.mod === 'nutzer' || n.mod === 'privat') return isAdmin
+    if (n.mod === 'nutzer' || n.mod === 'privat' || n.mod === 'mahnprozess') return isAdmin
     if (!perms) return true
     const p = perms[n.mod]
     return !!(p && p.sehen)
