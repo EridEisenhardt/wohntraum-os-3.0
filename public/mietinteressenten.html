@@ -87,7 +87,7 @@ select.inl.st{font-weight:700;color:var(--accent);border-color:var(--line);backg
       <div class="fld umzugfld" style="display:none"><label>Grund des Umzugswunsches</label><input id="f_ugrund" placeholder="z. B. zu klein, Nachwuchs, barrierefrei"></div>
     </div>
     <div class="foot-row"><button class="btn" onclick="save()">+ Lead speichern</button><button class="btn sec" onclick="clearForm()">Leeren</button>
-      <button class="btn sec" onclick="addQuelle()">+ Leadquelle anlegen</button><span id="msg" style="font-size:12px;color:var(--green)"></span></div>
+      <button class="btn sec" onclick="openQuellenMgr()">⚙ Leadquellen verwalten</button><span id="msg" style="font-size:12px;color:var(--green)"></span></div>
   </div>
 
   <div class="viewtoggle" style="margin-bottom:8px">
@@ -112,6 +112,16 @@ select.inl.st{font-weight:700;color:var(--accent);border-color:var(--line);backg
       <div style="margin-top:8px"><button class="btn" onclick="addNote()">+ Notiz speichern</button></div></div>
   </div>
 </div>
+<div id="qMgr" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:100;align-items:center;justify-content:center" onclick="if(event.target===this)closeQuellenMgr()">
+  <div style="background:var(--surf);border-radius:12px;width:min(440px,92vw);max-height:80vh;display:flex;flex-direction:column;box-shadow:0 10px 40px rgba(0,0,0,.25)">
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:14px 16px;border-bottom:1px solid var(--line)"><b>Leadquellen verwalten</b><span style="cursor:pointer;font-size:18px;color:var(--muted)" onclick="closeQuellenMgr()">✕</span></div>
+    <div style="padding:12px 16px;overflow:auto"><div id="qList"></div></div>
+    <div style="display:flex;gap:8px;padding:12px 16px;border-top:1px solid var(--line)">
+      <input id="qNew" placeholder="Neue Leadquelle / Kontakt …" style="flex:1;padding:8px 10px;border:1px solid var(--line);border-radius:8px;font:inherit;font-size:13px" onkeydown="if(event.key==='Enter')addQuelleInline()">
+      <button class="btn" onclick="addQuelleInline()">+ Hinzufügen</button>
+    </div>
+  </div>
+</div>
 <div class="toast" id="toast"></div>
 <script>
 const sb=window.supabase.createClient('https://jqzxctfqvcwbctpjksvg.supabase.co','eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpxenhjdGZxdmN3YmN0cGprc3ZnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODIxMzA0MzIsImV4cCI6MjA5NzcwNjQzMn0.RKIbZxJdusKWWPjBJqlxZ8e1m8So02UslOg55YRsn3o');
@@ -125,7 +135,7 @@ const SELBST=['','Ja','Warten auf Auskunft','Nein'];
 const MILE=['','✅','⏸️','❌'];
 const MILEF=[['kostenuebernahme','Zusage Kostenübernahme'],['mietangebot_erhalten','Mietangebot erhalten'],['mietvertrag_unterschrieben','Mietvertrag unterschrieben'],['schluesseluebergabe_erfolgt','Schlüsselübergabe erfolgt'],['erste_mietzahlung','1. Mietzahlung']];
 function mileCell(r,field){return `<td style="text-align:center"><select class="inl" style="text-align:center" onchange="upd('${r.id}','${field}',this.value)">${MILE.map(o=>`<option value="${o}" ${o===(r[field]||'')?'selected':''}>${o===''?'—':o}</option>`).join('')}</select></td>`;}
-let ROWS=[], QUELLEN=[], FSTAGE='', FTYP='', NOTES=[], HIST=[], NT_CUR=null;
+let ROWS=[], QUELLEN=[], QROWS=[], FSTAGE='', FTYP='', NOTES=[], HIST=[], NT_CUR=null;
 const typLabel=t=>t==='umzug'?'Umzugswunsch':'Neu';
 const FLABEL={name:'Name',vorname:'Vorname',kontakt:'Kontakt',eingang:'Lead-Eingang',quelle:'Leadquelle',personen:'Personenanzahl',einzug_ab:'Einzug ab',zahlungsart:'Mietzahlung',ergebnis:'Ergebnis',status:'Status',selbstauskunft_vorhanden:'Selbstauskunft vorhanden',freigabe_schluessel:'Freigabe Schlüsselübergabe',typ:'Art',aktuelles_objekt:'Aktuelles Objekt',umzug_grund:'Umzugsgrund',kostenuebernahme:'Zusage Kostenübernahme',mietangebot_erhalten:'Mietangebot erhalten',mietvertrag_unterschrieben:'Mietvertrag unterschrieben',schluesseluebergabe_erfolgt:'Schlüsselübergabe erfolgt',erste_mietzahlung:'1. Mietzahlung'};
 function fmtDT(ts){try{return new Date(ts).toLocaleString('de-DE',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'})+' Uhr';}catch(e){return ts;}}
@@ -174,15 +184,33 @@ async function logHist(id,field,alt,neu){const rec={interessent_id:id,feld:(FLAB
 function opts(arr,sel){return arr.map(o=>`<option ${o===sel?'selected':''}>${esc(o)}</option>`).join('');}
 function clearForm(){['f_name','f_vorname','f_kontakt','f_personen','f_einzug','f_aktobj','f_ugrund'].forEach(id=>$(id).value='');$('f_eingang').value=new Date().toISOString().slice(0,10);if($('f_typ')){$('f_typ').value=FTYP==='umzug'?'umzug':'neu';typToggle();}$('msg').textContent='';}
 async function loadQuellen(){
-  const{data}=await sb.from('mietlead_quellen').select('name').order('pos',{ascending:true}).order('name',{ascending:true});
-  QUELLEN=(data||[]).map(r=>r.name);
+  const{data}=await sb.from('mietlead_quellen').select('id,name').order('pos',{ascending:true}).order('name',{ascending:true});
+  QROWS=data||[]; QUELLEN=QROWS.map(r=>r.name);
   $('f_quelle').innerHTML='<option value="">—</option>'+QUELLEN.map(q=>`<option>${esc(q)}</option>`).join('');
   $('f_zahlart').innerHTML='<option value="">—</option>'+ZAHLART.map(z=>`<option>${esc(z)}</option>`).join('');
+  if($('qMgr')&&$('qMgr').style.display==='flex')renderQuellenList();
 }
 async function addQuelle(){
   const n=(prompt('Neue Leadquelle:')||'').trim(); if(!n)return;
   const{error}=await sb.from('mietlead_quellen').insert({name:n,pos:8}); if(error){toast(error.message);return;}
   await loadQuellen(); $('f_quelle').value=n; render();
+}
+function openQuellenMgr(){$('qMgr').style.display='flex';renderQuellenList();setTimeout(()=>{if($('qNew'))$('qNew').focus();},50);}
+function closeQuellenMgr(){$('qMgr').style.display='none';}
+function renderQuellenList(){
+  $('qList').innerHTML=QROWS.length?QROWS.map(q=>`<div style="display:flex;align-items:center;gap:8px;padding:6px 2px;border-bottom:1px solid var(--line)"><span style="flex:1;font-size:13px">${esc(q.name)}</span><button class="btn sec" style="font-size:12px;padding:3px 8px" onclick="delQuelle('${q.id}')">löschen</button></div>`).join(''):'<div style="color:var(--muted);font-size:12px;padding:8px 2px">Noch keine Leadquellen.</div>';
+}
+async function addQuelleInline(){
+  const inp=$('qNew');const n=(inp.value||'').trim();if(!n)return;
+  if(QUELLEN.some(q=>q.toLowerCase()===n.toLowerCase())){toast('Gibt es schon');inp.value='';return;}
+  const{error}=await sb.from('mietlead_quellen').insert({name:n,pos:8});if(error){toast(error.message);return;}
+  inp.value='';await loadQuellen();render();toast('Leadquelle hinzugefügt ✓');
+}
+async function delQuelle(id){
+  const q=QROWS.find(x=>x.id===id);if(!q)return;
+  if(!confirm('Leadquelle „'+q.name+'" löschen? Bestehende Leads behalten den Eintrag als Text.'))return;
+  const{error}=await sb.from('mietlead_quellen').delete().eq('id',id);if(error){toast(error.message);return;}
+  await loadQuellen();render();
 }
 async function load(){
   await loadQuellen();
