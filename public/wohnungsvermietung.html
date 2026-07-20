@@ -84,7 +84,7 @@ select.inl.st{font-weight:700;color:var(--accent);border-color:var(--line);backg
     </div>
   </div>
 
-  <div class="viewtoggle"><button id="vListe" class="on" onclick="setView('liste')">Karten</button><button id="vTab" onclick="setView('tabelle')">Liste</button><button id="vBoard" onclick="setView('board')">Kanban-Board</button><button onclick="exportCRM()" title="Gefilterte Einheiten als CSV für den CRM-Import herunterladen">⬇ CRM Export</button></div>
+  <div class="viewtoggle"><button id="vListe" class="on" onclick="setView('liste')">Karten</button><button id="vTab" onclick="setView('tabelle')">Liste</button><button id="vBoard" onclick="setView('board')">Kanban-Board</button><button onclick="exportCRM()" title="Gefilterte Einheiten als CSV für den CRM-Import herunterladen">⬇ CRM Export</button><label style="display:inline-flex;align-items:center;gap:6px;margin-left:auto;font-size:13px;cursor:pointer;color:var(--dim)"><input type="checkbox" id="hideDone" onchange="HIDE_DONE=this.checked;render()"> Erledigte ausblenden</label></div>
   <div class="chips" id="stageChips"></div>
   <div id="grid"><div class="empty" id="loading">Lädt…</div></div>
 </div><div class="toast" id="toast"></div>
@@ -93,7 +93,9 @@ const sb=window.supabase.createClient('https://jqzxctfqvcwbctpjksvg.supabase.co'
 const $=id=>document.getElementById(id);const esc=s=>(s==null?'':String(s)).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;');
 function toast(m){const t=$('toast');t.textContent=m;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),1800);}
 const STAGES=['1 · Eingang der Kündigung','2 · Kalkulation der neuen Wohnung','3 · Einheit in Vermietung','4 · Mietvertrag erstellen & unterschreiben','5 · Schlüsselübergabe','6 · 1. Mietzahlung','7 · Nacharbeit Backoffice / HV','8 · Erledigt','A · Warteliste','B · Renovierung / Sanierung','C · Leerstand'];
-let ROWS=[],GEB=[],EINH=[],INT=[],VL=[],FSTAGE='';
+let ROWS=[],GEB=[],EINH=[],INT=[],VL=[],FSTAGE='',HIDE_DONE=false;
+const DONE='8 · Erledigt';
+function baseList(){let a=FSTAGE?ROWS.filter(r=>r.status===FSTAGE):ROWS;if(HIDE_DONE&&FSTAGE!==DONE)a=a.filter(r=>r.status!==DONE);return a;}
 function optlist(arr,sel){return arr.map(o=>`<option ${o===sel?'selected':''}>${esc(o)}</option>`).join('');}
 function unitsOf(g){return EINH.filter(e=>e.gebaeude===g).map(e=>e.name);}
 function fillEinheit(){const g=$('f_geb').value;$('f_einheit').innerHTML='<option value="">—</option>'+unitsOf(g).map(u=>`<option>${esc(u)}</option>`).join('');}
@@ -154,7 +156,7 @@ function csvDownload(dateiname,header,zeilen){
   document.body.appendChild(a);a.click();a.remove();URL.revokeObjectURL(a.href);
 }
 function exportCRM(){
-  const list=FSTAGE?ROWS.filter(r=>r.status===FSTAGE):ROWS;
+  const list=baseList();
   if(!list.length){toast('Keine Einheiten zum Exportieren');return;}
   const header=['Gebaeude','Einheit','Status','Vormieter','Grund der Vermietung','Mieterzielgruppe',
     'Auszug Vormieter','Einzugsdatum','Interessenten','Freigabe','Angelegt am'];
@@ -165,7 +167,7 @@ function exportCRM(){
   toast(list.length+' Einheit(en) exportiert ✓');
 }
 function boardView(){
-  return '<div class="kb">'+STAGES.map(s=>{const list=ROWS.filter(r=>r.status===s);const se=esc(s).replace(/'/g,"\\'");
+  return '<div class="kb">'+STAGES.map(s=>{const list=(HIDE_DONE&&s===DONE)?[]:ROWS.filter(r=>r.status===s);const se=esc(s).replace(/'/g,"\\'");
     const cards=list.map(r=>{const linked=VL.filter(v=>v.vermietung_id===r.id).length;
       return `<div class="kbcard ${r.freigabe?'frei':''}" draggable="true" ondragstart="dragStart(event,'${r.id}')">
         <div class="kbt">🏠 ${esc(r.gebaeude||'—')}</div>
@@ -202,7 +204,7 @@ function render(){
   renderChips();
   $('stageChips').style.display=VIEW==='board'?'none':'flex';
   if(VIEW==='board'){$('grid').innerHTML=ROWS.length?boardView():'<div class="empty">Noch keine Einheiten im Prozess — oben anlegen.</div>';return;}
-  const list=FSTAGE?ROWS.filter(r=>r.status===FSTAGE):ROWS;
+  const list=baseList();
   if(!ROWS.length){$('grid').innerHTML='<div class="empty">Noch keine Einheiten im Prozess — oben anlegen.</div>';return;}
   if(!list.length){$('grid').innerHTML='<div class="empty">Keine Einheiten in dieser Stufe.</div>';return;}
   if(VIEW==='tabelle'){$('grid').innerHTML=tableView(list);return;}
