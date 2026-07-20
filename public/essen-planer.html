@@ -20,6 +20,7 @@ select,input{font:inherit;font-size:13px;padding:7px 9px;border:1px solid var(--
 .btn.big{padding:10px 18px;font-size:14px}
 .abtn{background:none;border:none;color:#c0392b;cursor:pointer;font-size:15px}
 .badge{font-size:10.5px;font-weight:700;padding:2px 8px;border-radius:10px;background:var(--surf2);color:var(--dim)}
+.badge.ort{background:#eef6ff;color:#1d4ed8}
 .plan{overflow-x:auto}
 .ptable{width:100%;border-collapse:collapse;min-width:760px}
 .ptable th,.ptable td{border:1px solid var(--line);padding:6px;vertical-align:top}
@@ -33,11 +34,12 @@ select,input{font:inherit;font-size:13px;padding:7px 9px;border:1px solid var(--
 .meal-nm{font-weight:700;flex:1}
 details{margin-top:8px}
 details>summary{cursor:pointer;font-size:12.5px;color:var(--muted);font-weight:600}
-.zut{display:flex;align-items:center;gap:8px;font-size:12.5px;padding:4px 0;border-bottom:1px solid var(--bord2)}
-.zut .zn{flex:1}
+.zut{display:flex;align-items:center;gap:8px;font-size:12.5px;padding:5px 0;border-bottom:1px solid var(--bord2);flex-wrap:wrap}
+.zut .zn{flex:1;min-width:90px}
+.zut .zi-ort{width:120px;padding:4px 6px}
 .zrow{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}
 .zrow input{padding:5px 7px}
-.zrow .zi-nm{width:130px}.zrow .zi-mg{width:60px}.zrow .zi-eh{width:70px}
+.zrow .zi-nm{width:120px}.zrow .zi-mg{width:55px}.zrow .zi-eh{width:60px}.zrow .zi-ort{width:110px}
 .shop-cat{margin-top:12px}
 .shop-cat h3{font-size:11.5px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);margin-bottom:4px}
 .item{display:flex;align-items:center;gap:9px;padding:6px 2px;border-bottom:1px solid var(--bord2);font-size:13.5px}
@@ -50,6 +52,7 @@ details>summary{cursor:pointer;font-size:12.5px;color:var(--muted);font-weight:6
 .toast.show{opacity:1}
 </style></head><body>
 <div class="hdr"><div class="hdr-title">Essen-Planer</div><div class="hdr-sub">Eric Privat &middot; StandardWoche &amp; freie Woche &rarr; Einkaufsliste</div></div>
+<datalist id="geschDL"></datalist>
 <div class="wrap">
 
   <div class="card"><h2>Wochen-Essensplan &middot; 21 Mahlzeiten <span class="tag">StandardWoche</span></h2>
@@ -98,22 +101,26 @@ const MKAT=['Frühstück','Mittagessen','Abendessen','Snack','Sonstiges'];
 const LKAT=['Obst & Gemüse','Molkerei & Eier','Fleisch & Fisch','Backwaren','Trockenwaren & Konserven','Getränke','Tiefkühl','Sonstiges'];
 const TAGE=['Montag','Dienstag','Mittwoch','Donnerstag','Freitag','Samstag','Sonntag'];
 const SLOTS=[['fruehstueck','Frühstück'],['mittag','Mittagessen'],['abend','Abendessen']];
-let MEALS=[],ZUT={},GEK={},STD={},FREE={},curWeek='';
+let MEALS=[],ZUT={},GEK={},STD={},FREE={},GESCH=[],curWeek='';
 function mealById(id){return MEALS.find(m=>m.id===id);}
 function num(v){var x=parseFloat(String(v==null?'':v).replace(',','.'));return isNaN(x)?null:x;}
 function fmtNum(n){return (Math.round(n*100)/100).toString().replace('.',',');}
 function isoWeek(d){var t=new Date(Date.UTC(d.getFullYear(),d.getMonth(),d.getDate()));var dn=(t.getUTCDay()+6)%7;t.setUTCDate(t.getUTCDate()-dn+3);var f=new Date(Date.UTC(t.getUTCFullYear(),0,4));var w=1+Math.round(((t-f)/86400000-3+((f.getUTCDay()+6)%7))/7);return t.getUTCFullYear()+'-W'+('0'+w).slice(-2);}
+function renderDatalist(){$('geschDL').innerHTML=GESCH.map(g=>'<option value="'+esc(g)+'">').join('');}
+async function ensureShop(name){var n=(name||'').trim();if(!n)return;if(GESCH.some(g=>g.toLowerCase()===n.toLowerCase()))return;GESCH.push(n);GESCH.sort((a,b)=>a.localeCompare(b));renderDatalist();await sb.from('essen_geschaefte').upsert({name:n},{onConflict:'name'});}
 
 async function load(){
-  const [a,b,c,d]=await Promise.all([
+  const [a,b,c,d,e]=await Promise.all([
     sb.from('essen_mahlzeiten').select('*').order('kategorie').order('name'),
     sb.from('essen_zutaten').select('*').order('sort'),
     sb.from('essen_gekauft').select('*'),
-    sb.from('essen_wochenplan').select('*')
+    sb.from('essen_wochenplan').select('*'),
+    sb.from('essen_geschaefte').select('*').order('name')
   ]);
   MEALS=a.data||[]; ZUT={}; (b.data||[]).forEach(z=>{(ZUT[z.mahlzeit_id]=ZUT[z.mahlzeit_id]||[]).push(z);});
   GEK={}; (c.data||[]).forEach(g=>{GEK[g.key]=!!g.gekauft;});
   STD={}; (d.data||[]).forEach(p=>{STD[p.tag+'|'+p.slot]=p.mahlzeit_id;});
+  GESCH=(e.data||[]).map(g=>g.name); renderDatalist();
   $('mKat').innerHTML=MKAT.map(k=>'<option>'+esc(k)+'</option>').join('');
   if(!$('freeWeek').value)$('freeWeek').value=isoWeek(new Date());
   curWeek=$('freeWeek').value;
@@ -185,13 +192,20 @@ function renderMeals(){
   if(!MEALS.length){$('mealList').innerHTML='<div class="empty">Noch keine Mahlzeiten – oben anlegen.</div>';return;}
   $('mealList').innerHTML=MEALS.map(function(m){
     var zs=ZUT[m.id]||[];
-    var zlist=zs.map(function(z){return '<div class="zut"><span class="zn">'+esc(z.name)+'</span><span style="color:var(--muted)">'+esc(z.menge||'')+' '+esc(z.einheit||'')+'</span><span class="badge">'+esc(z.kategorie||'')+'</span><button class="abtn" onclick="delZutat(\''+z.id+'\')">&times;</button></div>';}).join('')||'<div class="empty" style="padding:4px 2px">Noch keine Zutaten.</div>';
+    var zlist=zs.map(function(z){return '<div class="zut"><span class="zn">'+esc(z.name)+'</span><span style="color:var(--muted)">'+esc(z.menge||'')+' '+esc(z.einheit||'')+'</span><span class="badge">'+esc(z.kategorie||'')+'</span><input class="zi-ort" list="geschDL" value="'+esc(z.einkaufsort)+'" placeholder="Einkaufsort" onchange="updOrt(\''+z.id+'\',this.value)"><button class="abtn" onclick="delZutat(\''+z.id+'\')">&times;</button></div>';}).join('')||'<div class="empty" style="padding:4px 2px">Noch keine Zutaten.</div>';
     return '<div class="meal"><div class="meal-hd"><span class="meal-nm">'+esc(m.name)+'</span><span class="badge">'+esc(m.kategorie)+'</span><span class="badge">'+(m.portionen||1)+' P</span>'
       +'<button class="abtn" onclick="delMeal(\''+m.id+'\')">&times;</button></div>'
       +'<details><summary>Zutaten ('+zs.length+')</summary>'+zlist
       +'<div class="zrow"><input class="zi-nm" type="text" placeholder="Zutat"><input class="zi-mg" type="text" placeholder="Menge"><input class="zi-eh" type="text" placeholder="Einheit">'+katSelHtml()
+      +'<input class="zi-ort" list="geschDL" placeholder="Einkaufsort">'
       +'<button class="btn" style="padding:5px 10px" onclick="addZutat(\''+m.id+'\',this)">+</button></div></details></div>';
   }).join('');
+}
+async function updOrt(id,val){
+  var v=(val||'').trim()||null; await ensureShop(v);
+  await sb.from('essen_zutaten').update({einkaufsort:v}).eq('id',id);
+  Object.keys(ZUT).forEach(k=>{ZUT[k].forEach(z=>{if(z.id===id)z.einkaufsort=v;});});
+  renderShop();
 }
 async function addMeal(){
   var n=$('mName').value.trim(); if(!n){toast('Name eingeben');return;}
@@ -214,7 +228,8 @@ async function delMeal(id){
 async function addZutat(mid,btn){
   var row=btn.parentElement;
   var nm=row.querySelector('.zi-nm').value.trim(); if(!nm){toast('Zutat eingeben');return;}
-  var rec={mahlzeit_id:mid,name:nm,menge:row.querySelector('.zi-mg').value.trim()||null,einheit:row.querySelector('.zi-eh').value.trim()||null,kategorie:row.querySelector('.zi-kat').value,sort:(ZUT[mid]||[]).length+1};
+  var ort=row.querySelector('.zi-ort').value.trim()||null; await ensureShop(ort);
+  var rec={mahlzeit_id:mid,name:nm,menge:row.querySelector('.zi-mg').value.trim()||null,einheit:row.querySelector('.zi-eh').value.trim()||null,kategorie:row.querySelector('.zi-kat').value,einkaufsort:ort,sort:(ZUT[mid]||[]).length+1};
   var res=await sb.from('essen_zutaten').insert(rec).select();
   if(res.error){toast('Fehler: '+res.error.message);return;}
   if(res.data&&res.data[0])(ZUT[mid]=ZUT[mid]||[]).push(res.data[0]);
@@ -232,7 +247,8 @@ function aggregate(planObj){
     (ZUT[mid]||[]).forEach(function(z){
       var eh=(z.einheit||'').trim();
       var key=(z.name||'').trim().toLowerCase()+'|'+eh.toLowerCase();
-      var a=agg[key]||(agg[key]={key:key,name:z.name,einheit:eh,kategorie:z.kategorie||'Sonstiges',num:0,hasNum:false,raw:[],count:0});
+      var a=agg[key]||(agg[key]={key:key,name:z.name,einheit:eh,kategorie:z.kategorie||'Sonstiges',ort:'',num:0,hasNum:false,raw:[],count:0});
+      if(!a.ort&&z.einkaufsort)a.ort=z.einkaufsort;
       a.count++;
       var mg=num(z.menge), port=m.portionen||1;
       if(mg!=null){a.num+=mg*port;a.hasNum=true;} else if(z.menge){a.raw.push(String(z.menge));}
@@ -256,7 +272,8 @@ function renderShop(){
   $('shopList').innerHTML=LKAT.filter(c=>byCat[c]).map(function(c){
     var items=byCat[c].sort((x,y)=>x.name.localeCompare(y.name)).map(function(a){
       var done=!!GEK[a.key];
-      return '<div class="item '+(done?'done':'')+'"><input type="checkbox" '+(done?'checked':'')+' onchange="toggleGekauft(\''+esc(a.key).replace(/'/g,"\\'")+'\',this.checked)"><span class="in" style="flex:1">'+esc(a.name)+'</span><span class="mg">'+esc(mengeTxt(a))+'</span></div>';
+      var ort=a.ort?'<span class="badge ort">'+esc(a.ort)+'</span>':'';
+      return '<div class="item '+(done?'done':'')+'"><input type="checkbox" '+(done?'checked':'')+' onchange="toggleGekauft(\''+esc(a.key).replace(/'/g,"\\'")+'\',this.checked)"><span class="in" style="flex:1">'+esc(a.name)+'</span>'+ort+'<span class="mg">'+esc(mengeTxt(a))+'</span></div>';
     }).join('');
     return '<div class="shop-cat"><h3>'+esc(c)+'</h3>'+items+'</div>';
   }).join('');
@@ -274,7 +291,7 @@ async function resetGekauft(){
 function copyList(){
   var agg=aggregate(FREE); var keys=Object.keys(agg); if(!keys.length){toast('Liste ist leer');return;}
   var byCat={}; keys.forEach(k=>{var a=agg[k];(byCat[a.kategorie]=byCat[a.kategorie]||[]).push(a);});
-  var txt='Einkaufsliste '+curWeek+'\n'; LKAT.filter(c=>byCat[c]).forEach(function(c){txt+='\n'+c+':\n';byCat[c].forEach(function(a){txt+='- '+a.name+(mengeTxt(a)?' ('+mengeTxt(a)+')':'')+'\n';});});
+  var txt='Einkaufsliste '+curWeek+'\n'; LKAT.filter(c=>byCat[c]).forEach(function(c){txt+='\n'+c+':\n';byCat[c].forEach(function(a){txt+='- '+a.name+(mengeTxt(a)?' ('+mengeTxt(a)+')':'')+(a.ort?' @ '+a.ort:'')+'\n';});});
   if(navigator.clipboard){navigator.clipboard.writeText(txt).then(()=>toast('In Zwischenablage kopiert ✓'),()=>toast('Kopieren nicht möglich'));}
   else toast('Kopieren nicht möglich');
 }
