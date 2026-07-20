@@ -1,28 +1,237 @@
 <!DOCTYPE html>
-<html lang="de">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<html lang="de"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Essen-Planer · Eric Privat</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
-:root{--bg:#f6f7f9;--surf:#fff;--line:#e6e8ec;--text:#1c2024;--muted:#6b7280;--accent:#0f9d6b}
+:root{--bg:#f6f7f9;--surf:#fff;--surf2:#f1f3f6;--line:#e6e8ec;--bord2:#eef0f3;--text:#1c2024;--muted:#6b7280;--dim:#4b5563;--accent:#0f9d6b}
 *{box-sizing:border-box;margin:0;padding:0}
 body{background:var(--bg);color:var(--text);font-family:'Inter',system-ui,-apple-system,'Segoe UI',sans-serif;font-size:14px;line-height:1.5;min-height:100vh}
-.hdr{background:var(--surf);border-bottom:1px solid var(--line);padding:16px 24px}
-.hdr-title{font-size:18px;font-weight:700}
-.hdr-sub{font-size:12px;color:var(--muted);margin-top:2px}
-.wrap{max-width:900px;margin:60px auto;padding:0 24px;text-align:center}
-.card{background:var(--surf);border:1px dashed var(--line);border-radius:14px;padding:56px 28px;color:var(--muted)}
-.card .ic{font-size:40px}
-.card h2{color:var(--text);font-size:18px;margin:12px 0 6px}
-</style>
-</head>
-<body>
-<div class="hdr"><div class="hdr-title">Essen-Planer</div><div class="hdr-sub">Eric Privat</div></div>
-<div class="wrap"><div class="card">
-  <div class="ic">🍽️</div>
-  <h2>Essen-Planer</h2>
-  <p>Diese Seite ist angelegt und wird noch befüllt.</p>
-</div></div>
-</body>
-</html>
+.hdr{background:var(--surf);border-bottom:1px solid var(--line);padding:16px 24px;position:sticky;top:0;z-index:10}
+.hdr-title{font-size:18px;font-weight:700}.hdr-sub{font-size:12px;color:var(--muted);margin-top:2px}
+.wrap{max-width:1150px;margin:20px auto;padding:0 20px}
+.card{background:var(--surf);border:1px solid var(--line);border-radius:14px;padding:16px 18px;margin-bottom:18px}
+.card h2{font-size:14px;margin-bottom:12px}
+.cols{display:grid;grid-template-columns:1.3fr 1fr;gap:18px}
+@media(max-width:860px){.cols{grid-template-columns:1fr}}
+select,input{font:inherit;font-size:13px;padding:7px 9px;border:1px solid var(--line);border-radius:8px;background:var(--surf)}
+.btn{background:var(--accent);color:#fff;border:none;border-radius:8px;padding:8px 13px;font:inherit;font-weight:600;font-size:13px;cursor:pointer}
+.btn.sec{background:var(--surf2);color:var(--text)}
+.abtn{background:none;border:none;color:#c0392b;cursor:pointer;font-size:15px}
+.badge{font-size:10.5px;font-weight:700;padding:2px 8px;border-radius:10px;background:var(--surf2);color:var(--dim)}
+/* Wochenplan */
+.plan{overflow-x:auto}
+.ptable{width:100%;border-collapse:collapse;min-width:760px}
+.ptable th,.ptable td{border:1px solid var(--line);padding:6px;vertical-align:top}
+.ptable th{background:var(--surf2);font-size:11px;text-transform:uppercase;color:var(--muted);font-weight:700}
+.ptable td:first-child,.ptable th:first-child{position:sticky;left:0;background:var(--surf2);font-weight:700;font-size:12px;white-space:nowrap;text-align:left}
+.ptable select{width:100%;min-width:150px;font-size:12px;padding:5px 6px}
+/* Sammlung */
+.addmeal{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px}
+.addmeal input[type=text]{flex:1;min-width:140px}
+.meal{border:1px solid var(--line);border-radius:12px;padding:10px 12px;margin-bottom:10px}
+.meal-hd{display:flex;align-items:center;gap:10px}
+.meal-nm{font-weight:700;flex:1}
+details{margin-top:8px}
+details>summary{cursor:pointer;font-size:12.5px;color:var(--muted);font-weight:600}
+.zut{display:flex;align-items:center;gap:8px;font-size:12.5px;padding:4px 0;border-bottom:1px solid var(--bord2)}
+.zut .zn{flex:1}
+.zrow{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}
+.zrow input{padding:5px 7px}
+.zrow .zi-nm{width:130px}.zrow .zi-mg{width:60px}.zrow .zi-eh{width:70px}
+/* Einkaufsliste */
+.shop-cat{margin-top:12px}
+.shop-cat h3{font-size:11.5px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);margin-bottom:4px}
+.item{display:flex;align-items:center;gap:9px;padding:6px 2px;border-bottom:1px solid var(--bord2);font-size:13.5px}
+.item input[type=checkbox]{width:17px;height:17px;cursor:pointer}
+.item.done .in{text-decoration:line-through;color:var(--muted)}
+.item .mg{color:var(--muted);font-size:12px;white-space:nowrap}
+.empty{color:var(--muted);font-size:13px;padding:10px 2px}
+.bar{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:6px}
+.toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:#1c2024;color:#fff;padding:10px 16px;border-radius:8px;font-size:13px;opacity:0;pointer-events:none;transition:.2s;z-index:50}
+.toast.show{opacity:1}
+</style></head><body>
+<div class="hdr"><div class="hdr-title">Essen-Planer</div><div class="hdr-sub">Eric Privat &middot; Wochenplan &rarr; Einkaufsliste</div></div>
+<div class="wrap">
+
+  <div class="card"><h2>Wochen-Essensplan &middot; 21 Mahlzeiten</h2>
+    <div class="plan"><table class="ptable" id="planTbl"></table></div>
+    <div class="bar" style="margin-top:10px"><button class="btn sec" onclick="clearPlan()">Wochenplan leeren</button></div>
+  </div>
+
+  <div class="cols">
+    <div class="card"><h2>Mahlzeiten-Sammlung</h2>
+      <div class="addmeal">
+        <input type="text" id="mName" placeholder="Neue Mahlzeit, z. B. Chili con Carne">
+        <select id="mKat"></select>
+        <input type="number" id="mPort" value="1" min="1" style="width:70px" title="Portionen">
+        <button class="btn" onclick="addMeal()">+ Anlegen</button>
+      </div>
+      <div id="mealList"></div>
+    </div>
+    <div class="card"><h2>Einkaufsliste <span id="shopCount" style="color:var(--muted);font-weight:400"></span></h2>
+      <div class="bar">
+        <button class="btn sec" onclick="resetGekauft()">Haken zur&uuml;cksetzen</button>
+        <button class="btn sec" onclick="copyList()">Als Text kopieren</button>
+      </div>
+      <div id="shopList"></div>
+    </div>
+  </div>
+
+</div>
+<div class="toast" id="toast"></div>
+<script>
+const sb=window.supabase.createClient('https://jqzxctfqvcwbctpjksvg.supabase.co','eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpxenhjdGZxdmN3YmN0cGprc3ZnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODIxMzA0MzIsImV4cCI6MjA5NzcwNjQzMn0.RKIbZxJdusKWWPjBJqlxZ8e1m8So02UslOg55YRsn3o');
+const $=id=>document.getElementById(id);
+const esc=s=>(s==null?'':String(s)).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+function toast(m){const t=$('toast');t.textContent=m;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),1900);}
+const MKAT=['Frühstück','Mittagessen','Abendessen','Snack','Sonstiges'];
+const LKAT=['Obst & Gemüse','Molkerei & Eier','Fleisch & Fisch','Backwaren','Trockenwaren & Konserven','Getränke','Tiefkühl','Sonstiges'];
+const TAGE=['Montag','Dienstag','Mittwoch','Donnerstag','Freitag','Samstag','Sonntag'];
+const SLOTS=[['fruehstueck','Frühstück'],['mittag','Mittagessen'],['abend','Abendessen']];
+let MEALS=[],ZUT={},GEK={},PLAN={};
+function mealById(id){return MEALS.find(m=>m.id===id);}
+function num(v){var x=parseFloat(String(v==null?'':v).replace(',','.'));return isNaN(x)?null:x;}
+function fmtNum(n){return (Math.round(n*100)/100).toString().replace('.',',');}
+
+async function load(){
+  const [a,b,c,d]=await Promise.all([
+    sb.from('essen_mahlzeiten').select('*').order('kategorie').order('name'),
+    sb.from('essen_zutaten').select('*').order('sort'),
+    sb.from('essen_gekauft').select('*'),
+    sb.from('essen_wochenplan').select('*')
+  ]);
+  MEALS=a.data||[]; ZUT={}; (b.data||[]).forEach(z=>{(ZUT[z.mahlzeit_id]=ZUT[z.mahlzeit_id]||[]).push(z);});
+  GEK={}; (c.data||[]).forEach(g=>{GEK[g.key]=!!g.gekauft;});
+  PLAN={}; (d.data||[]).forEach(p=>{PLAN[p.tag+'|'+p.slot]=p.mahlzeit_id;});
+  $('mKat').innerHTML=MKAT.map(k=>'<option>'+esc(k)+'</option>').join('');
+  renderPlan(); renderMeals(); renderShop();
+}
+function mealOptions(sel,slotLabel){
+  var pref=MEALS.filter(m=>m.kategorie===slotLabel);
+  var rest=MEALS.filter(m=>m.kategorie!==slotLabel);
+  function opt(m){return '<option value="'+m.id+'" '+(m.id===sel?'selected':'')+'>'+esc(m.name)+'</option>';}
+  var h='<option value="">– leer –</option>';
+  if(pref.length)h+='<optgroup label="'+esc(slotLabel)+'">'+pref.map(opt).join('')+'</optgroup>';
+  if(rest.length)h+='<optgroup label="Weitere">'+rest.map(opt).join('')+'</optgroup>';
+  return h;
+}
+function renderPlan(){
+  var head='<tr><th>Tag</th>'+SLOTS.map(s=>'<th>'+esc(s[1])+'</th>').join('')+'</tr>';
+  var body=TAGE.map(function(tg,ti){
+    return '<tr><td>'+esc(tg)+'</td>'+SLOTS.map(function(s){
+      var sel=PLAN[ti+'|'+s[0]]||'';
+      return '<td><select onchange="setPlan('+ti+',\''+s[0]+'\',this.value)">'+mealOptions(sel,s[1])+'</select></td>';
+    }).join('')+'</tr>';
+  }).join('');
+  $('planTbl').innerHTML=head+body;
+}
+async function setPlan(tag,slot,mealId){
+  PLAN[tag+'|'+slot]=mealId||null;
+  var res=await sb.from('essen_wochenplan').upsert({tag:tag,slot:slot,mahlzeit_id:mealId||null},{onConflict:'tag,slot'});
+  if(res.error)toast('Fehler: '+res.error.message);
+  renderShop();
+}
+async function clearPlan(){
+  await sb.from('essen_wochenplan').delete().gte('tag',0);
+  PLAN={}; renderPlan(); renderShop(); toast('Wochenplan geleert');
+}
+function katSelHtml(){return '<select class="zi-kat">'+LKAT.map(k=>'<option>'+esc(k)+'</option>').join('')+'</select>';}
+function renderMeals(){
+  if(!MEALS.length){$('mealList').innerHTML='<div class="empty">Noch keine Mahlzeiten – oben anlegen.</div>';return;}
+  $('mealList').innerHTML=MEALS.map(function(m){
+    var zs=ZUT[m.id]||[];
+    var zlist=zs.map(function(z){return '<div class="zut"><span class="zn">'+esc(z.name)+'</span><span style="color:var(--muted)">'+esc(z.menge||'')+' '+esc(z.einheit||'')+'</span><span class="badge">'+esc(z.kategorie||'')+'</span><button class="abtn" onclick="delZutat(\''+z.id+'\')">&times;</button></div>';}).join('')||'<div class="empty" style="padding:4px 2px">Noch keine Zutaten.</div>';
+    return '<div class="meal"><div class="meal-hd"><span class="meal-nm">'+esc(m.name)+'</span><span class="badge">'+esc(m.kategorie)+'</span><span class="badge">'+(m.portionen||1)+' P</span>'
+      +'<button class="abtn" onclick="delMeal(\''+m.id+'\')">&times;</button></div>'
+      +'<details><summary>Zutaten ('+zs.length+')</summary>'+zlist
+      +'<div class="zrow"><input class="zi-nm" type="text" placeholder="Zutat"><input class="zi-mg" type="text" placeholder="Menge"><input class="zi-eh" type="text" placeholder="Einheit">'+katSelHtml()
+      +'<button class="btn" style="padding:5px 10px" onclick="addZutat(\''+m.id+'\',this)">+</button></div></details></div>';
+  }).join('');
+}
+async function addMeal(){
+  var n=$('mName').value.trim(); if(!n){toast('Name eingeben');return;}
+  var rec={name:n,kategorie:$('mKat').value,portionen:parseInt($('mPort').value,10)||1};
+  var res=await sb.from('essen_mahlzeiten').insert(rec).select();
+  if(res.error){toast('Fehler: '+res.error.message);return;}
+  if(res.data&&res.data[0])MEALS.push(res.data[0]);
+  $('mName').value=''; $('mPort').value='1';
+  MEALS.sort((a,b)=>(a.kategorie||'').localeCompare(b.kategorie||'')||(a.name||'').localeCompare(b.name||''));
+  renderMeals(); renderPlan();
+}
+async function delMeal(id){
+  if(!confirm('Mahlzeit inkl. Zutaten löschen?'))return;
+  await sb.from('essen_mahlzeiten').delete().eq('id',id);
+  MEALS=MEALS.filter(m=>m.id!==id); delete ZUT[id];
+  Object.keys(PLAN).forEach(k=>{if(PLAN[k]===id)PLAN[k]=null;});
+  renderMeals(); renderPlan(); renderShop();
+}
+async function addZutat(mid,btn){
+  var row=btn.parentElement;
+  var nm=row.querySelector('.zi-nm').value.trim(); if(!nm){toast('Zutat eingeben');return;}
+  var rec={mahlzeit_id:mid,name:nm,menge:row.querySelector('.zi-mg').value.trim()||null,einheit:row.querySelector('.zi-eh').value.trim()||null,kategorie:row.querySelector('.zi-kat').value,sort:(ZUT[mid]||[]).length+1};
+  var res=await sb.from('essen_zutaten').insert(rec).select();
+  if(res.error){toast('Fehler: '+res.error.message);return;}
+  if(res.data&&res.data[0])(ZUT[mid]=ZUT[mid]||[]).push(res.data[0]);
+  renderMeals(); renderShop();
+}
+async function delZutat(id){
+  await sb.from('essen_zutaten').delete().eq('id',id);
+  Object.keys(ZUT).forEach(k=>{ZUT[k]=ZUT[k].filter(z=>z.id!==id);});
+  renderMeals(); renderShop();
+}
+function aggregate(){
+  var agg={};
+  Object.keys(PLAN).forEach(function(k){
+    var mid=PLAN[k]; if(!mid)return; var m=mealById(mid); if(!m)return;
+    (ZUT[mid]||[]).forEach(function(z){
+      var eh=(z.einheit||'').trim();
+      var key=(z.name||'').trim().toLowerCase()+'|'+eh.toLowerCase();
+      var a=agg[key]||(agg[key]={key:key,name:z.name,einheit:eh,kategorie:z.kategorie||'Sonstiges',num:0,hasNum:false,raw:[],count:0});
+      a.count++;
+      var mg=num(z.menge), port=m.portionen||1;
+      if(mg!=null){a.num+=mg*port;a.hasNum=true;} else if(z.menge){a.raw.push(String(z.menge));}
+    });
+  });
+  return agg;
+}
+function mengeTxt(a){
+  var parts=[];
+  if(a.hasNum) parts.push(fmtNum(a.num)+(a.einheit?' '+a.einheit:''));
+  if(a.raw.length) parts.push(a.raw.join(' + ')+(a.einheit&&!a.hasNum?' '+a.einheit:''));
+  if(!parts.length&&a.count) parts.push('×'+a.count);
+  return parts.join(' + ');
+}
+function renderShop(){
+  var agg=aggregate(); var keys=Object.keys(agg);
+  var slots=Object.keys(PLAN).filter(k=>PLAN[k]).length;
+  $('shopCount').textContent=keys.length?('· '+keys.length+' Positionen aus '+slots+' geplanten Mahlzeiten'):'';
+  if(!keys.length){$('shopList').innerHTML='<div class="empty">Oben im Wochenplan Menüs auswählen – die Zutaten erscheinen hier automatisch.</div>';return;}
+  var byCat={}; keys.forEach(function(k){var a=agg[k];(byCat[a.kategorie]=byCat[a.kategorie]||[]).push(a);});
+  $('shopList').innerHTML=LKAT.filter(c=>byCat[c]).map(function(c){
+    var items=byCat[c].sort((x,y)=>x.name.localeCompare(y.name)).map(function(a){
+      var done=!!GEK[a.key];
+      return '<div class="item '+(done?'done':'')+'"><input type="checkbox" '+(done?'checked':'')+' onchange="toggleGekauft(\''+esc(a.key).replace(/'/g,"\\'")+'\',this.checked)"><span class="in" style="flex:1">'+esc(a.name)+'</span><span class="mg">'+esc(mengeTxt(a))+'</span></div>';
+    }).join('');
+    return '<div class="shop-cat"><h3>'+esc(c)+'</h3>'+items+'</div>';
+  }).join('');
+}
+async function toggleGekauft(key,checked){
+  GEK[key]=checked;
+  var res=await sb.from('essen_gekauft').upsert({key:key,gekauft:checked},{onConflict:'key'});
+  if(res.error)toast('Fehler: '+res.error.message);
+  renderShop();
+}
+async function resetGekauft(){
+  await sb.from('essen_gekauft').delete().gt('key','');
+  GEK={}; renderShop(); toast('Haken zurückgesetzt');
+}
+function copyList(){
+  var agg=aggregate(); var keys=Object.keys(agg); if(!keys.length){toast('Liste ist leer');return;}
+  var byCat={}; keys.forEach(k=>{var a=agg[k];(byCat[a.kategorie]=byCat[a.kategorie]||[]).push(a);});
+  var txt='Einkaufsliste\n'; LKAT.filter(c=>byCat[c]).forEach(function(c){txt+='\n'+c+':\n';byCat[c].forEach(function(a){txt+='- '+a.name+(mengeTxt(a)?' ('+mengeTxt(a)+')':'')+'\n';});});
+  if(navigator.clipboard){navigator.clipboard.writeText(txt).then(()=>toast('In Zwischenablage kopiert ✓'),()=>toast('Kopieren nicht möglich'));}
+  else toast('Kopieren nicht möglich');
+}
+(async()=>{const{data:{session}}=await sb.auth.getSession();load();})();
+</script>
+</body></html>
