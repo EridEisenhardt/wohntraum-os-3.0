@@ -324,24 +324,27 @@ const VOR_TASKS=[
 ];
 const EXTRA_START={jahr:2026,kw:28};
 function extraActive(){ return CUR.jahr>EXTRA_START.jahr || (CUR.jahr===EXTRA_START.jahr && CUR.kw>=EXTRA_START.kw); }
-let CHECKS={};
+let CHECKS={}, NOTES={};
 async function loadExtra(){
   const on=extraActive();
   $('secRueck').style.display=on?'':'none'; $('secVoraus').style.display=on?'':'none';
-  if(!on){ CHECKS={}; return; }
-  const { data } = await sb.from('wochen_extra').select('checks').eq('jahr',CUR.jahr).eq('kw',CUR.kw).maybeSingle();
-  CHECKS=(data&&data.checks)||{}; renderExtra();
+  if(!on){ CHECKS={}; NOTES={}; return; }
+  const { data } = await sb.from('wochen_extra').select('checks,notizen').eq('jahr',CUR.jahr).eq('kw',CUR.kw).maybeSingle();
+  CHECKS=(data&&data.checks)||{}; NOTES=(data&&data.notizen)||{}; renderExtra();
 }
-function ckHtml(prefix,tasks){
+function ckHtml(prefix,tasks,withNote){
   return tasks.map(t=>{const key=prefix+t[0];const done=!!CHECKS[key];
-    return `<label style="display:flex;gap:10px;align-items:flex-start;padding:7px 2px;border-bottom:1px solid var(--bord2);font-size:13px;cursor:pointer">
-      <input type="checkbox" ${done?'checked':''} style="margin-top:2px" onchange="toggleCheck('${key}',this.checked)">
-      <span style="flex:1;${done?'text-decoration:line-through;color:var(--muted)':''}">${esc(t[1])}</span>
-      <a href="${ASANA}${t[0]}" target="_blank" rel="noopener" style="color:var(--accent);text-decoration:none;font-weight:700" title="in Asana öffnen">↗</a></label>`;}).join('');
+    const note=withNote?`<textarea rows="1" placeholder="Aufgabenbeschreibung …" onchange="saveNote('${key}',this.value)" oninput="this.style.height='auto';this.style.height=this.scrollHeight+'px'" style="width:100%;margin:4px 0 2px 26px;max-width:calc(100% - 26px);border:1px solid var(--line);border-radius:8px;padding:6px 9px;font:inherit;font-size:12.5px;resize:vertical;background:var(--surf2)">${esc(NOTES[key]||'')}</textarea>`:'';
+    return `<div style="border-bottom:1px solid var(--bord2);padding:7px 2px">
+      <label style="display:flex;gap:10px;align-items:flex-start;font-size:13px;cursor:pointer">
+        <input type="checkbox" ${done?'checked':''} style="margin-top:2px" onchange="toggleCheck('${key}',this.checked)">
+        <span style="flex:1;${done?'text-decoration:line-through;color:var(--muted)':''}">${esc(t[1])}</span>
+        <a href="${ASANA}${t[0]}" target="_blank" rel="noopener" style="color:var(--accent);text-decoration:none;font-weight:700" title="in Asana öffnen">↗</a></label>
+      ${note}</div>`;}).join('');
 }
 function renderExtra(){
   if(!extraActive())return;
-  $('listRueck').innerHTML=ckHtml('r_',RUE_TASKS); $('listVoraus').innerHTML=ckHtml('v_',VOR_TASKS);
+  $('listRueck').innerHTML=ckHtml('r_',RUE_TASKS,true); $('listVoraus').innerHTML=ckHtml('v_',VOR_TASKS,false);
   const rd=RUE_TASKS.filter(t=>CHECKS['r_'+t[0]]).length, vd=VOR_TASKS.filter(t=>CHECKS['v_'+t[0]]).length;
   $('rueckCnt').textContent=RUE_TASKS.length+' Aufgaben'; $('vorausCnt').textContent=VOR_TASKS.length+' Aufgaben';
   $('rueckProg').textContent=rd+'/'+RUE_TASKS.length+' erledigt'; $('vorausProg').textContent=vd+'/'+VOR_TASKS.length+' erledigt';
@@ -351,6 +354,11 @@ async function toggleCheck(key,val){
   renderExtra();
   const { error } = await sb.from('wochen_extra').upsert({ jahr:CUR.jahr, kw:CUR.kw, checks:CHECKS, updated_at:new Date().toISOString() }, { onConflict:'jahr,kw' });
   if(error) toast('Speichern fehlgeschlagen: '+error.message);
+}
+async function saveNote(key,val){
+  const v=(val||'').trim(); if(v)NOTES[key]=v; else delete NOTES[key];
+  const { error } = await sb.from('wochen_extra').upsert({ jahr:CUR.jahr, kw:CUR.kw, checks:CHECKS, notizen:NOTES, updated_at:new Date().toISOString() }, { onConflict:'jahr,kw' });
+  if(error) toast('Speichern fehlgeschlagen: '+error.message); else toast('Beschreibung gespeichert ✓');
 }
 async function insertRow(rec){
   const u=(await sb.auth.getUser()).data.user; rec.jahr=CUR.jahr; rec.kw=CUR.kw; rec.created_by=u?u.id:null;
