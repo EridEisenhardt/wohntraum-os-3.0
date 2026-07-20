@@ -9,6 +9,8 @@ export const NAV = [
   { type: 'link', href: '/gf-dashboard', icon: 'ti-chart-pie', label: 'GF-Dashboard', area: ['vertrieb', 'hv'], mod: 'dashboards' },
   { type: 'link', href: '/portfolio', icon: 'ti-building-community', label: 'Portfolio', area: ['vertrieb', 'hv'], mod: 'dashboards' },
   { type: 'group', key: 'assetmanagement', icon: 'ti-building-estate', label: 'Assetmanagement', area: ['vertrieb', 'hv'], mod: 'dashboards', items: [
+    { href: '/assetmanagement/steueroptimierung', icon: 'ti-receipt-tax', label: 'Steueroptimierung' },
+    { href: '/assetmanagement/mietoptimierung', icon: 'ti-home-dollar', label: 'Mietoptimierung' },
   ] },
   { type: 'group', key: 'strategie', icon: 'ti-chess', label: 'Strategie', area: 'vertrieb', mod: 'dashboards', items: [
     { href: '/strategie/veraenderungen', icon: 'ti-arrows-shuffle', label: 'Veränderungen in der Organisation' },
