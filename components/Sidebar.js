@@ -94,6 +94,7 @@ export default function Sidebar({ user, demo, onLogout, role, perms }) {
   const path = usePathname()
   const [collapsed, setCollapsed] = useState({})
   const [area, setArea] = useState('')
+  const [favs, setFavs] = useState([])
   const isAdmin = role === 'admin'
   // Sichtbarkeit je Modul: Admin sieht alles; ohne geladene Rechte (Demo) alles; sonst nur wenn "sehen" aktiv ist.
   const canSee = (n) => {
@@ -108,9 +109,19 @@ export default function Sidebar({ user, demo, onLogout, role, perms }) {
   useEffect(() => {
     try { const s = localStorage.getItem('sidebar_collapsed'); if (s) setCollapsed(JSON.parse(s)) } catch (e) {}
     try { const a = localStorage.getItem('sidebar_area'); if (a) setArea(a) } catch (e) {}
+    try { const f = localStorage.getItem('sidebar_favs'); if (f) setFavs(JSON.parse(f)) } catch (e) {}
   }, [])
 
   const chooseArea = (a) => { setArea(a); try { localStorage.setItem('sidebar_area', a) } catch (e) {} }
+  const isFav = (href) => favs.includes(href)
+  const toggleFav = (href, e) => {
+    if (e) { e.preventDefault(); e.stopPropagation() }
+    setFavs((prev) => {
+      const next = prev.includes(href) ? prev.filter((h) => h !== href) : [...prev, href]
+      try { localStorage.setItem('sidebar_favs', JSON.stringify(next)) } catch (er) {}
+      return next
+    })
+  }
 
   const toggle = (key) => setCollapsed((prev) => {
     const next = { ...prev, [key]: !prev[key] }
@@ -121,6 +132,19 @@ export default function Sidebar({ user, demo, onLogout, role, perms }) {
   const isActive = (item) => item.exact ? path === item.href : (path === item.href || path.startsWith(item.href + '/'))
   const cls = (active) => 'nav-item' + (active ? ' active' : '')
   const subCls = (active) => 'nav-sub' + (active ? ' active' : '')
+  const renderSub = (it) => (
+    <div key={it.href} style={{ display: 'flex', alignItems: 'center' }}>
+      <Link href={it.href} className={subCls(isActive(it))} style={{ flex: 1, minWidth: 0 }}>
+        <i className={'ti ' + it.icon} /> {it.label}
+      </Link>
+      <span onClick={(e) => toggleFav(it.href, e)} title={isFav(it.href) ? 'Aus Favoriten entfernen' : 'Zu Favoriten hinzufügen'}
+        style={{ cursor: 'pointer', padding: '0 9px', fontSize: 15, lineHeight: 1, color: isFav(it.href) ? '#f5c518' : 'rgba(128,128,128,.45)' }}>
+        {isFav(it.href) ? '★' : '☆'}
+      </span>
+    </div>
+  )
+  const allSubItems = NAV.filter((n) => n.type === 'group').flatMap((g) => g.items.map((it) => ({ item: it, group: g })))
+  const favItems = favs.map((h) => allSubItems.find((x) => x.item.href === h)).filter((x) => x && canSee(x.group)).map((x) => x.item)
   const email = user && user.email ? user.email : null
   const initials = email ? email.slice(0, 2).toUpperCase() : 'EE'
 
@@ -144,6 +168,22 @@ export default function Sidebar({ user, demo, onLogout, role, perms }) {
         </select>
       </div>
 
+      {(() => {
+        const isOpen = !collapsed['favoriten']
+        return (
+          <div>
+            <div className="nav-group" onClick={() => toggle('favoriten')} style={{ cursor: 'pointer', userSelect: 'none' }} title={isOpen ? 'Einklappen' : 'Ausklappen'}>
+              <i className="ti ti-star lead" style={{ color: '#f5c518' }} />
+              <span>Favoriten</span>
+              <i className="ti ti-chevron-down chev" style={{ transform: isOpen ? 'none' : 'rotate(-90deg)', transition: 'transform .15s' }} />
+            </div>
+            {isOpen && (favItems.length
+              ? favItems.map(renderSub)
+              : <div className="nav-sub" style={{ color: 'var(--muted, #6b7280)', fontStyle: 'italic', cursor: 'default' }}>Noch keine – Stern ☆ antippen</div>)}
+          </div>
+        )
+      })()}
+
       {NAV.filter((n) => { const a = Array.isArray(n.area) ? n.area : [n.area]; return (area === '' || a.includes('common') || a.includes(area)) && canSee(n) }).map((n) => {
         if (n.type === 'link') {
           return (
@@ -161,11 +201,7 @@ export default function Sidebar({ user, demo, onLogout, role, perms }) {
               <span style={{ fontWeight: groupActive && !isOpen ? 700 : undefined }}>{n.label}</span>
               <i className="ti ti-chevron-down chev" style={{ transform: isOpen ? 'none' : 'rotate(-90deg)', transition: 'transform .15s' }} />
             </div>
-            {isOpen && n.items.map((it) => (
-              <Link key={it.href} href={it.href} className={subCls(isActive(it))}>
-                <i className={'ti ' + it.icon} /> {it.label}
-              </Link>
-            ))}
+            {isOpen && n.items.map(renderSub)}
           </div>
         )
       })}
