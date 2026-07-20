@@ -81,6 +81,7 @@ export const NAV = [
   ] },
   { type: 'group', key: 'eric-privat', icon: 'ti-user-heart', label: 'Eric Privat', area: ['vertrieb', 'hv'], mod: 'privat', items: [
     { href: '/eric-privat/budgetplan', icon: 'ti-wallet', label: 'Budgetplan' },
+    { href: '/eric-privat/idealer-tag', icon: 'ti-sun', label: 'Idealer Tag' },
   ] },
   { type: 'link', href: '/mahnprozess', icon: 'ti-gavel', label: 'Mahnprozess', area: 'common', mod: 'mahnprozess' },
   { type: 'link', href: '/konto', icon: 'ti-user-cog', label: 'Mein Konto', area: 'common' },
