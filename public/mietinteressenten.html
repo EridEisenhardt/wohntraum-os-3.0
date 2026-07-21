@@ -105,11 +105,16 @@ select.inl.st{font-weight:700;color:var(--accent);border-color:var(--line);backg
     <div class="dlg-hd"><span id="ntTitle">Mietinteressent</span><span class="abtn" onclick="closeNotes()">✕</span></div>
     <div class="dlg-bd">
       <div id="opInfo" class="opgrid"></div>
+      <div class="secttl">Dateien &amp; Anhänge (PDF / Bilder)</div>
+      <div id="ntFiles"></div>
       <div class="secttl">Historie · Verlauf &amp; Notizen</div>
       <div id="ntList"></div>
     </div>
     <div class="dlg-ft"><textarea id="ntInput" rows="3" placeholder="Notiz, Absprache oder Gespräch festhalten … (Datum & Uhrzeit werden automatisch gespeichert)"></textarea>
-      <div style="margin-top:8px"><button class="btn" onclick="addNote()">+ Notiz speichern</button></div></div>
+      <div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap;align-items:center"><button class="btn" onclick="addNote()">+ Notiz speichern</button>
+        <input type="file" id="ntFileInput" accept="application/pdf,image/*" multiple style="display:none" onchange="uploadFiles(this)">
+        <button class="btn sec" onclick="document.getElementById('ntFileInput').click()">📎 PDF / Bild hochladen</button>
+        <span id="ntUpMsg" style="font-size:12px;color:var(--muted)"></span></div></div>
   </div>
 </div>
 <div id="qMgr" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:100;align-items:center;justify-content:center" onclick="if(event.target===this)closeQuellenMgr()">
@@ -136,7 +141,42 @@ const MILE=['','✅','⏳','⏸️','❌'];
 const MILE_TITLE={'✅':'erledigt','⏳':'in Arbeit','⏸️':'wartet','❌':'nein'};
 const MILEF=[['kostenuebernahme','Zusage Kostenübernahme'],['mietangebot_erhalten','Mietangebot erhalten'],['mietvertrag_unterschrieben','Mietvertrag unterschrieben'],['schluesseluebergabe_erfolgt','Schlüsselübergabe erfolgt'],['erste_mietzahlung','1. Mietzahlung']];
 function mileCell(r,field){const lbl=(field==='erste_mietzahlung'&&(r[field]||'')==='⏳')?'<span style="font-size:11px;color:var(--muted);margin-left:5px;white-space:nowrap">Auszahlung in Arbeit</span>':'';return `<td style="text-align:center;white-space:nowrap"><select class="inl" style="text-align:center" onchange="upd('${r.id}','${field}',this.value)">${MILE.map(o=>`<option value="${o}" ${o===(r[field]||'')?'selected':''}>${o===''?'—':o}</option>`).join('')}</select>${lbl}</td>`;}
-let ROWS=[], QUELLEN=[], QROWS=[], FSTAGE='', FTYP='', NOTES=[], HIST=[], NT_CUR=null;
+let ROWS=[], QUELLEN=[], QROWS=[], FSTAGE='', FTYP='', NOTES=[], HIST=[], FILES=[], NT_CUR=null;
+const DBUCKET='mietinteressent-dateien';
+async function uploadFiles(inp){
+  if(!NT_CUR||!inp.files||!inp.files.length)return;
+  $('ntUpMsg').textContent='Lädt hoch …';
+  for(const f of inp.files){
+    const safe=f.name.replace(/[^\w.\-]+/g,'_');
+    const path=NT_CUR+'/'+Date.now()+'_'+safe;
+    const up=await sb.storage.from(DBUCKET).upload(path,f,{contentType:f.type,upsert:false});
+    if(up.error){toast('Upload-Fehler: '+up.error.message);continue;}
+    const url=sb.storage.from(DBUCKET).getPublicUrl(path).data.publicUrl;
+    const{data,error}=await sb.from('mietinteressent_dateien').insert({interessent_id:NT_CUR,name:f.name,pfad:path,url:url,typ:f.type,groesse:f.size}).select();
+    if(error){toast(error.message);continue;}
+    if(data&&data[0])FILES.unshift(data[0]);
+  }
+  inp.value=''; $('ntUpMsg').textContent=''; renderFiles(); render();
+}
+async function delFile(id,path){
+  if(!confirm('Datei löschen?'))return;
+  await sb.storage.from(DBUCKET).remove([path]);
+  await sb.from('mietinteressent_dateien').delete().eq('id',id);
+  FILES=FILES.filter(f=>f.id!==id); renderFiles(); render();
+}
+function fileCount(id){return FILES.filter(f=>f.interessent_id===id).length;}
+function renderFiles(){
+  if(!$('ntFiles'))return;
+  const list=FILES.filter(f=>f.interessent_id===NT_CUR);
+  if(!list.length){$('ntFiles').innerHTML='<div style="color:var(--muted);font-size:12.5px;padding:4px 2px">Noch keine Dateien – unten „PDF / Bild hochladen“.</div>';return;}
+  $('ntFiles').innerHTML='<div style="display:flex;flex-wrap:wrap;gap:10px;padding:4px 0 8px">'+list.map(function(f){
+    const isImg=(f.typ||'').indexOf('image')===0;
+    const thumb=isImg?'<img src="'+esc(f.url)+'" style="width:64px;height:64px;object-fit:cover;border-radius:8px;border:1px solid var(--line)">':'<div style="width:64px;height:64px;border-radius:8px;border:1px solid var(--line);display:flex;align-items:center;justify-content:center;font-size:26px;background:var(--surf2)">📄</div>';
+    return '<div style="width:120px;text-align:center"><a href="'+esc(f.url)+'" target="_blank" rel="noopener" title="Öffnen">'+thumb+'</a>'
+      +'<div style="font-size:10.5px;color:var(--dim);margin-top:3px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="'+esc(f.name)+'">'+esc(f.name)+'</div>'
+      +'<button class="abtn" style="font-size:12px" onclick="delFile(\''+f.id+'\',\''+esc(f.pfad).replace(/'/g,"\\'")+'\')">löschen</button></div>';
+  }).join('')+'</div>';
+}
 const typLabel=t=>t==='umzug'?'Umzugswunsch':'Neu';
 const FLABEL={name:'Name',vorname:'Vorname',kontakt:'Kontakt',eingang:'Lead-Eingang',quelle:'Leadquelle',personen:'Personenanzahl',einzug_ab:'Einzug ab',zahlungsart:'Mietzahlung',ergebnis:'Ergebnis',status:'Status',selbstauskunft_vorhanden:'Selbstauskunft vorhanden',freigabe_schluessel:'Freigabe Schlüsselübergabe',typ:'Art',aktuelles_objekt:'Aktuelles Objekt',umzug_grund:'Umzugsgrund',kostenuebernahme:'Zusage Kostenübernahme',mietangebot_erhalten:'Mietangebot erhalten',mietvertrag_unterschrieben:'Mietvertrag unterschrieben',schluesseluebergabe_erfolgt:'Schlüsselübergabe erfolgt',erste_mietzahlung:'1. Mietzahlung'};
 function fmtDT(ts){try{return new Date(ts).toLocaleString('de-DE',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'})+' Uhr';}catch(e){return ts;}}
@@ -166,7 +206,7 @@ async function opUpd(field,val){
   toast('Gespeichert ✓');
 }
 function leadTitle(r){return 'Mietinteressent #'+((r&&r.nummer!=null)?r.nummer:'?')+' · '+((r&&(r.name||r.kontakt))||'Lead');}
-function openNotes(id){NT_CUR=id;const r=ROWS.find(x=>x.id===id);$('ntTitle').textContent=leadTitle(r);$('ntInput').value='';renderLeadInfo();renderNotes();$('ov').classList.add('show');setTimeout(()=>$('ntInput').focus(),50);}
+function openNotes(id){NT_CUR=id;const r=ROWS.find(x=>x.id===id);$('ntTitle').textContent=leadTitle(r);$('ntInput').value='';renderLeadInfo();renderNotes();renderFiles();$('ov').classList.add('show');setTimeout(()=>$('ntInput').focus(),50);}
 function closeNotes(){$('ov').classList.remove('show');NT_CUR=null;}
 function renderNotes(){
   const items=[];
@@ -220,6 +260,8 @@ async function load(){
   ROWS=data||[];
   const nd=await sb.from('mietinteressent_notizen').select('id,interessent_id,text,created_at').order('created_at',{ascending:false});
   NOTES=nd.data||[];
+  const fd=await sb.from('mietinteressent_dateien').select('*').order('created_at',{ascending:false});
+  FILES=fd.data||[];
   const hd=await sb.from('mietinteressent_historie').select('id,interessent_id,feld,alt,neu,aktion,created_at').order('created_at',{ascending:false});
   HIST=hd.data||[];
   render();
