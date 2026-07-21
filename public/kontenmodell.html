@@ -1,0 +1,333 @@
+<!DOCTYPE html>
+<html lang="de"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>6 Kontenmodell · Eric Privat</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
+<style>
+:root{--bg:#f6f7f9;--surf:#fff;--surf2:#f1f3f6;--line:#e6e8ec;--bord2:#eef0f3;--text:#1c2024;--muted:#6b7280;--dim:#4b5563;--accent:#0f9d6b}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--text);font-family:'Inter',system-ui,-apple-system,'Segoe UI',sans-serif;font-size:14px;line-height:1.5;min-height:100vh}
+.hdr{background:var(--surf);border-bottom:1px solid var(--line);padding:16px 24px;position:sticky;top:0;z-index:20}
+.hdr-title{font-size:18px;font-weight:700}.hdr-sub{font-size:12px;color:var(--muted);margin-top:2px}
+.wrap{max-width:1200px;margin:20px auto;padding:0 20px}
+.card{background:var(--surf);border:1px solid var(--line);border-radius:14px;padding:16px 18px;margin-bottom:18px}
+.card h2{font-size:14px;margin-bottom:12px}
+.bar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:12px}
+select,input{font:inherit;font-size:13px;padding:7px 9px;border:1px solid var(--line);border-radius:8px;background:var(--surf)}
+.btn{background:var(--accent);color:#fff;border:none;border-radius:8px;padding:8px 13px;font:inherit;font-weight:600;font-size:13px;cursor:pointer}
+.btn.sec{background:var(--surf2);color:var(--text)}
+.abtn{background:none;border:none;color:#c0392b;cursor:pointer;font-size:15px}
+table{width:100%;border-collapse:collapse;font-size:12.5px}
+th,td{padding:7px 9px;border-bottom:1px solid var(--line);text-align:left;vertical-align:middle}
+th{background:var(--surf2);font-size:10px;text-transform:uppercase;color:var(--muted);font-weight:700}
+td.num,th.num{text-align:right;white-space:nowrap}
+tr.total td{background:#e2f2ea;font-weight:800;color:#0b7a52}
+.dot{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:7px;vertical-align:middle}
+.tbl-in{border:1px solid transparent;background:transparent;width:100%;padding:3px 5px}
+.tbl-in:hover{border-color:var(--line)}.tbl-in:focus{border-color:var(--accent);background:var(--surf);outline:none}
+.num input{text-align:right}
+.scroll{max-height:460px;overflow:auto;border:1px solid var(--line);border-radius:10px}
+.cwrap{position:relative;height:300px}
+.empty{color:var(--muted);font-size:13px;padding:12px 2px}
+.pill{font-size:10.5px;font-weight:700;padding:2px 8px;border-radius:10px}
+.ok{background:#ecfdf5;color:#047857}.warn{background:#fff7ed;color:#b45309}.bad{background:#fef2f2;color:#c0392b}
+.toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:#1c2024;color:#fff;padding:10px 16px;border-radius:8px;font-size:13px;opacity:0;pointer-events:none;transition:.2s;z-index:50}
+.toast.show{opacity:1}
+.cols{display:grid;grid-template-columns:1.1fr 1fr;gap:18px}
+@media(max-width:900px){.cols{grid-template-columns:1fr}}
+</style></head><body>
+<div class="hdr"><div class="hdr-title">6 Kontenmodell</div><div class="hdr-sub">Eric Privat &middot; Soll-Aufteilung nach Harv Eker &amp; Ist-Auswertung (N26)</div></div>
+<div class="wrap">
+
+  <div class="card"><h2>Soll-Aufteilung</h2>
+    <div class="bar">
+      <label style="font-size:12px;color:var(--dim);font-weight:600">Monatliches Nettoeinkommen</label>
+      <input id="netto" type="text" inputmode="decimal" style="width:130px;text-align:right" onchange="saveNetto(this.value)"> €
+      <span id="pctWarn"></span>
+      <span style="flex:1"></span>
+      <button class="btn sec" onclick="addKonto()">+ Konto</button>
+    </div>
+    <table id="sollTbl"><thead></thead><tbody></tbody></table>
+  </div>
+
+  <div class="card"><h2>N26-Umsätze importieren</h2>
+    <div class="bar">
+      <input type="file" id="csvFile" accept=".csv,text/csv" onchange="importCsv(this)">
+      <button class="btn sec" onclick="applyRules()">🔁 Regeln erneut anwenden</button>
+      <span id="impMsg" style="font-size:12px;color:var(--muted)"></span>
+    </div>
+    <div style="font-size:11.5px;color:var(--muted)">CSV aus N26 exportieren (Konto → Umsätze → CSV). Datum, Betrag, Empfänger und Verwendungszweck werden automatisch erkannt; Duplikate werden übersprungen.</div>
+  </div>
+
+  <div class="cols">
+    <div class="card"><h2>Ist-Auswertung <span id="periodLbl" style="color:var(--muted);font-weight:400"></span></h2>
+      <div class="bar">
+        <label style="font-size:12px;color:var(--dim);font-weight:600">Monat</label>
+        <select id="fMonat" onchange="render()"></select>
+      </div>
+      <table id="istTbl"><thead></thead><tbody></tbody></table>
+    </div>
+    <div class="card"><h2>Soll vs. Ist</h2>
+      <div class="cwrap"><canvas id="cv"></canvas></div>
+    </div>
+  </div>
+
+  <div class="card"><h2>Verlauf je Konto (letzte 12 Monate)</h2>
+    <div class="cwrap"><canvas id="cvTrend"></canvas></div>
+  </div>
+
+  <div class="card"><h2>Zuordnungs-Regeln <span style="color:var(--muted);font-weight:400">· Stichwort im Empfänger/Zweck → Konto</span></h2>
+    <div class="bar">
+      <input id="rMuster" type="text" placeholder="Stichwort, z. B. REWE" style="min-width:180px">
+      <select id="rKonto"></select>
+      <button class="btn" onclick="addRegel()">+ Regel</button>
+    </div>
+    <div id="regelList"></div>
+  </div>
+
+  <div class="card"><h2>Buchungen <span id="buCount" style="color:var(--muted);font-weight:400"></span></h2>
+    <div class="bar">
+      <input id="qSearch" type="text" placeholder="Suchen …" oninput="render()" style="min-width:200px">
+      <select id="fKonto" onchange="render()"></select>
+      <span style="flex:1"></span>
+      <button class="btn sec" onclick="delAlleBuchungen()">Alle Buchungen löschen</button>
+    </div>
+    <div class="scroll"><table id="buTbl"><thead></thead><tbody></tbody></table></div>
+  </div>
+
+</div>
+<div class="toast" id="toast"></div>
+<script>
+const sb=window.supabase.createClient('https://jqzxctfqvcwbctpjksvg.supabase.co','eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpxenhjdGZxdmN3YmN0cGprc3ZnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODIxMzA0MzIsImV4cCI6MjA5NzcwNjQzMn0.RKIbZxJdusKWWPjBJqlxZ8e1m8So02UslOg55YRsn3o');
+const $=id=>document.getElementById(id);
+const esc=s=>(s==null?'':String(s)).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+function toast(m){const t=$('toast');t.textContent=m;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),2200);}
+function n(v){if(v==null)return null;var s=String(v).trim();if(!s)return null;
+  if(/,\d{1,2}$/.test(s))s=s.replace(/\./g,'').replace(',','.'); else s=s.replace(/,/g,'');
+  var x=parseFloat(s);return isNaN(x)?null:x;}
+function eur(v){return v==null?'–':v.toLocaleString('de-DE',{minimumFractionDigits:2,maximumFractionDigits:2})+' €';}
+function eur0(v){return v==null?'–':v.toLocaleString('de-DE',{maximumFractionDigits:0})+' €';}
+function pct(v){return v==null?'–':v.toLocaleString('de-DE',{maximumFractionDigits:1})+' %';}
+function fd(d){if(!d)return '';var p=String(d).split('-');return p.length===3?p[2]+'.'+p[1]+'.'+p[0]:d;}
+const MONN=['Januar','Februar','März','April','Mai','Juni','Juli','August','September','Oktober','November','Dezember'];
+let KONTEN=[],BU=[],REG=[],NETTO=0,chart=null,chartT=null;
+function kontoById(id){return KONTEN.find(k=>k.id===id);}
+function monatOf(d){return d?String(d).slice(0,7):'';}
+
+async function load(){
+  const [a,b,c,d]=await Promise.all([
+    sb.from('konten_modell').select('*').order('sort'),
+    sb.from('konten_buchungen').select('*').order('datum',{ascending:false}),
+    sb.from('konten_regeln').select('*').order('sort'),
+    sb.from('konten_setting').select('*').eq('id',1).maybeSingle()
+  ]);
+  KONTEN=a.data||[]; BU=b.data||[]; REG=c.data||[]; NETTO=(d.data&&d.data.netto)||0;
+  $('netto').value=NETTO?String(NETTO).replace('.',','):'';
+  var kopt='<option value="">— Konto wählen —</option>'+KONTEN.map(k=>'<option value="'+k.id+'">'+esc(k.name)+'</option>').join('');
+  $('rKonto').innerHTML=kopt;
+  $('fKonto').innerHTML='<option value="">Alle Konten</option><option value="__none">Nicht zugeordnet</option>'+KONTEN.map(k=>'<option value="'+k.id+'">'+esc(k.name)+'</option>').join('');
+  var monate=[...new Set(BU.map(x=>monatOf(x.datum)).filter(Boolean))].sort().reverse();
+  $('fMonat').innerHTML='<option value="">Alle Monate</option>'+monate.map(m=>'<option value="'+m+'">'+MONN[parseInt(m.slice(5,7),10)-1]+' '+m.slice(0,4)+'</option>').join('');
+  if(monate.length)$('fMonat').value=monate[0];
+  render();
+}
+async function saveNetto(v){NETTO=n(v)||0;await sb.from('konten_setting').upsert({id:1,netto:NETTO,updated_at:new Date().toISOString()},{onConflict:'id'});render();}
+
+/* ---------- Soll ---------- */
+function renderSoll(){
+  var sum=KONTEN.reduce((a,k)=>a+(n(k.prozent)||0),0);
+  $('pctWarn').innerHTML=KONTEN.length?('<span class="pill '+(Math.abs(sum-100)<0.01?'ok':'bad')+'">Summe '+pct(sum)+'</span>'):'';
+  $('sollTbl').querySelector('thead').innerHTML='<tr><th>Konto</th><th>Beschreibung</th><th class="num">Anteil %</th><th class="num">€ / Monat</th><th class="num">€ / Jahr</th><th></th></tr>';
+  $('sollTbl').querySelector('tbody').innerHTML=KONTEN.map(function(k){
+    var p=n(k.prozent)||0, m=NETTO*p/100;
+    return '<tr><td><span class="dot" style="background:'+esc(k.farbe||'#888')+'"></span><input class="tbl-in" value="'+esc(k.name)+'" onchange="updK(\''+k.id+'\',\'name\',this.value)" style="width:200px"></td>'
+      +'<td><input class="tbl-in" value="'+esc(k.beschreibung||'')+'" onchange="updK(\''+k.id+'\',\'beschreibung\',this.value)"></td>'
+      +'<td class="num"><input class="tbl-in" style="width:70px;text-align:right" value="'+esc(k.prozent==null?'':k.prozent)+'" onchange="updK(\''+k.id+'\',\'prozent\',this.value)"></td>'
+      +'<td class="num">'+eur(m)+'</td><td class="num">'+eur0(m*12)+'</td>'
+      +'<td><button class="abtn" onclick="delKonto(\''+k.id+'\')">&times;</button></td></tr>';
+  }).join('')+'<tr class="total"><td colspan="2">Gesamt</td><td class="num">'+pct(sum)+'</td><td class="num">'+eur(NETTO*sum/100)+'</td><td class="num">'+eur0(NETTO*sum/100*12)+'</td><td></td></tr>';
+}
+async function updK(id,field,val){
+  var v=(field==='prozent')?(n(val)||0):(val===''?null:val);
+  var o={};o[field]=v;
+  await sb.from('konten_modell').update(o).eq('id',id);
+  var k=kontoById(id); if(k)k[field]=v; render();
+}
+async function addKonto(){
+  var res=await sb.from('konten_modell').insert({name:'Neues Konto',prozent:0,farbe:'#6b7280',sort:KONTEN.length+1}).select();
+  if(res.data&&res.data[0])KONTEN.push(res.data[0]); load();
+}
+async function delKonto(id){if(!confirm('Konto löschen? Buchungen bleiben erhalten (ohne Zuordnung).'))return;await sb.from('konten_modell').delete().eq('id',id);load();}
+
+/* ---------- CSV Import ---------- */
+function splitCsvLine(line,sep){
+  var out=[],cur='',q=false;
+  for(var i=0;i<line.length;i++){var ch=line[i];
+    if(q){ if(ch==='"'){ if(line[i+1]==='"'){cur+='"';i++;} else q=false; } else cur+=ch; }
+    else { if(ch==='"')q=true; else if(ch===sep){out.push(cur);cur='';} else cur+=ch; }
+  }
+  out.push(cur);return out.map(s=>s.trim());
+}
+function normDate(s){
+  s=String(s||'').trim(); if(!s)return null;
+  var m=s.match(/^(\d{4})-(\d{2})-(\d{2})/); if(m)return m[1]+'-'+m[2]+'-'+m[3];
+  m=s.match(/^(\d{1,2})[.\/](\d{1,2})[.\/](\d{4})/); if(m)return m[3]+'-'+('0'+m[2]).slice(-2)+'-'+('0'+m[1]).slice(-2);
+  return null;
+}
+function findCol(headers,cands){
+  for(var i=0;i<headers.length;i++){var h=headers[i].toLowerCase();
+    for(var j=0;j<cands.length;j++){ if(h.indexOf(cands[j])>=0) return i; } }
+  return -1;
+}
+async function importCsv(inp){
+  if(!inp.files||!inp.files[0])return;
+  var f=inp.files[0]; $('impMsg').textContent='Lese Datei …';
+  var text=await f.text();
+  text=text.replace(/^﻿/,'');
+  var lines=text.split(/\r?\n/).filter(l=>l.trim().length);
+  if(!lines.length){toast('Datei leer');return;}
+  var sep=(lines[0].split(';').length>lines[0].split(',').length)?';':',';
+  var headers=splitCsvLine(lines[0],sep);
+  var iDate=findCol(headers,['booking date','buchungsdatum','datum','date','wertstellung']);
+  var iAmt=findCol(headers,['amount (eur)','betrag (eur)','betrag','amount']);
+  var iPay=findCol(headers,['partner name','empfänger','empfaenger','payee','name']);
+  var iRef=findCol(headers,['payment reference','verwendungszweck','reference','referenz','beschreibung']);
+  if(iDate<0||iAmt<0){toast('Datum/Betrag-Spalte nicht erkannt');$('impMsg').textContent='';return;}
+  var recs=[],skipped=0;
+  for(var i=1;i<lines.length;i++){
+    var c=splitCsvLine(lines[i],sep);
+    var dt=normDate(c[iDate]); var bt=n(c[iAmt]);
+    if(!dt||bt==null){skipped++;continue;}
+    var emp=iPay>=0?(c[iPay]||''):''; var zw=iRef>=0?(c[iRef]||''):'';
+    recs.push({datum:dt,betrag:bt,empfaenger:emp,zweck:zw,quelle:'N26',hash:dt+'|'+bt+'|'+emp.slice(0,40)+'|'+zw.slice(0,40)});
+  }
+  if(!recs.length){toast('Keine gültigen Zeilen gefunden');$('impMsg').textContent='';return;}
+  recs.forEach(function(r){r.konto_id=matchRegel(r);});
+  $('impMsg').textContent='Importiere '+recs.length+' Buchungen …';
+  var ok=0;
+  for(var s=0;s<recs.length;s+=200){
+    var chunk=recs.slice(s,s+200);
+    var res=await sb.from('konten_buchungen').upsert(chunk,{onConflict:'hash',ignoreDuplicates:true});
+    if(res.error){toast('Fehler: '+res.error.message);break;}
+    ok+=chunk.length;
+  }
+  inp.value=''; $('impMsg').textContent='';
+  toast(ok+' Zeilen verarbeitet'+(skipped?' · '+skipped+' übersprungen':''));
+  load();
+}
+function matchRegel(b){
+  var hay=((b.empfaenger||'')+' '+(b.zweck||'')).toLowerCase();
+  for(var i=0;i<REG.length;i++){ var m=(REG[i].muster||'').toLowerCase().trim(); if(m&&hay.indexOf(m)>=0)return REG[i].konto_id; }
+  return null;
+}
+async function applyRules(){
+  var upd=BU.filter(b=>!b.konto_id).map(function(b){var k=matchRegel(b);return k?{id:b.id,konto_id:k}:null;}).filter(Boolean);
+  if(!upd.length){toast('Keine neuen Zuordnungen gefunden');return;}
+  for(var i=0;i<upd.length;i++){await sb.from('konten_buchungen').update({konto_id:upd[i].konto_id}).eq('id',upd[i].id);}
+  toast(upd.length+' Buchungen zugeordnet'); load();
+}
+
+/* ---------- Regeln ---------- */
+function renderRegeln(){
+  $('regelList').innerHTML=REG.length?REG.map(function(r){
+    var k=kontoById(r.konto_id);
+    return '<div style="display:flex;align-items:center;gap:10px;padding:6px 2px;border-bottom:1px solid var(--bord2);font-size:13px"><b style="min-width:160px">'+esc(r.muster)+'</b><span style="flex:1"><span class="dot" style="background:'+esc(k&&k.farbe||'#888')+'"></span>'+esc(k?k.name:'—')+'</span><button class="abtn" onclick="delRegel(\''+r.id+'\')">&times;</button></div>';
+  }).join(''):'<div class="empty">Noch keine Regeln – z. B. „REWE“ → Notwendigkeiten.</div>';
+}
+async function addRegel(){
+  var m=$('rMuster').value.trim(), k=$('rKonto').value;
+  if(!m||!k){toast('Stichwort und Konto wählen');return;}
+  await sb.from('konten_regeln').insert({muster:m,konto_id:k,sort:REG.length+1});
+  $('rMuster').value=''; await load(); applyRules();
+}
+async function delRegel(id){await sb.from('konten_regeln').delete().eq('id',id);load();}
+
+/* ---------- Buchungen ---------- */
+function buFiltered(){
+  var q=($('qSearch').value||'').toLowerCase(), fk=$('fKonto').value, fm=$('fMonat').value;
+  return BU.filter(function(b){
+    if(fm&&monatOf(b.datum)!==fm)return false;
+    if(fk==='__none'&&b.konto_id)return false;
+    if(fk&&fk!=='__none'&&b.konto_id!==fk)return false;
+    if(q&&((b.empfaenger||'')+' '+(b.zweck||'')).toLowerCase().indexOf(q)<0)return false;
+    return true;
+  });
+}
+function renderBu(){
+  var list=buFiltered();
+  $('buCount').textContent='· '+list.length+' von '+BU.length;
+  $('buTbl').querySelector('thead').innerHTML='<tr><th>Datum</th><th>Empfänger</th><th>Verwendungszweck</th><th class="num">Betrag</th><th>Konto</th><th></th></tr>';
+  $('buTbl').querySelector('tbody').innerHTML=list.length?list.slice(0,400).map(function(b){
+    var opts='<option value="">— nicht zugeordnet —</option>'+KONTEN.map(k=>'<option value="'+k.id+'" '+(k.id===b.konto_id?'selected':'')+'>'+esc(k.name)+'</option>').join('');
+    return '<tr><td>'+fd(b.datum)+'</td><td>'+esc(b.empfaenger||'')+'</td><td style="max-width:280px;overflow:hidden;text-overflow:ellipsis">'+esc(b.zweck||'')+'</td>'
+      +'<td class="num" style="color:'+((b.betrag||0)<0?'#c0392b':'#0f9d6b')+'">'+eur(n(b.betrag))+'</td>'
+      +'<td><select class="tbl-in" onchange="updBu(\''+b.id+'\',this.value)">'+opts+'</select></td>'
+      +'<td><button class="abtn" onclick="delBu(\''+b.id+'\')">&times;</button></td></tr>';
+  }).join(''):'<tr><td colspan="6" class="empty">Keine Buchungen – oben CSV importieren.</td></tr>';
+}
+async function updBu(id,kid){
+  await sb.from('konten_buchungen').update({konto_id:kid||null}).eq('id',id);
+  var b=BU.find(x=>x.id===id); if(b)b.konto_id=kid||null; render();
+}
+async function delBu(id){await sb.from('konten_buchungen').delete().eq('id',id);BU=BU.filter(b=>b.id!==id);render();}
+async function delAlleBuchungen(){
+  if(!confirm('Wirklich ALLE importierten Buchungen löschen?'))return;
+  await sb.from('konten_buchungen').delete().gte('created_at','1900-01-01');
+  BU=[]; render(); toast('Buchungen gelöscht');
+}
+
+/* ---------- Ist-Auswertung ---------- */
+function istData(monat){
+  var list=BU.filter(function(b){return (!monat||monatOf(b.datum)===monat)&&(n(b.betrag)||0)<0;});
+  var per={},gesamt=0;
+  list.forEach(function(b){var v=Math.abs(n(b.betrag)||0);gesamt+=v;var k=b.konto_id||'__none';per[k]=(per[k]||0)+v;});
+  return {per:per,gesamt:gesamt,anzahl:list.length};
+}
+function renderIst(){
+  var m=$('fMonat').value;
+  $('periodLbl').textContent=m?('· '+MONN[parseInt(m.slice(5,7),10)-1]+' '+m.slice(0,4)):'· alle Monate';
+  var d=istData(m);
+  var basis=NETTO||d.gesamt;
+  $('istTbl').querySelector('thead').innerHTML='<tr><th>Konto</th><th class="num">Soll %</th><th class="num">Soll €</th><th class="num">Ist €</th><th class="num">Ist %</th><th class="num">Abweichung</th></tr>';
+  var rows=KONTEN.map(function(k){
+    var soll=(n(k.prozent)||0), sollE=basis*soll/100, ist=d.per[k.id]||0;
+    var istP=d.gesamt?ist/d.gesamt*100:0, diff=ist-sollE;
+    var cls=Math.abs(diff)<=sollE*0.1?'ok':(diff>0?'bad':'warn');
+    return '<tr><td><span class="dot" style="background:'+esc(k.farbe||'#888')+'"></span>'+esc(k.name)+'</td>'
+      +'<td class="num">'+pct(soll)+'</td><td class="num">'+eur(sollE)+'</td>'
+      +'<td class="num">'+eur(ist)+'</td><td class="num">'+pct(istP)+'</td>'
+      +'<td class="num"><span class="pill '+cls+'">'+(diff>0?'+':'')+eur(diff)+'</span></td></tr>';
+  }).join('');
+  var nz=d.per['__none']||0;
+  if(nz)rows+='<tr><td colspan="3" style="color:var(--muted)">Nicht zugeordnet</td><td class="num">'+eur(nz)+'</td><td class="num">'+pct(d.gesamt?nz/d.gesamt*100:0)+'</td><td></td></tr>';
+  rows+='<tr class="total"><td>Gesamtausgaben ('+d.anzahl+' Buchungen)</td><td class="num"></td><td class="num">'+eur(basis)+'</td><td class="num">'+eur(d.gesamt)+'</td><td class="num">100 %</td><td></td></tr>';
+  $('istTbl').querySelector('tbody').innerHTML=rows;
+  drawChart(d,basis);
+}
+function drawChart(d,basis){
+  if(!window.Chart||!$('cv'))return;
+  var labels=KONTEN.map(k=>k.name);
+  var soll=KONTEN.map(k=>+(basis*(n(k.prozent)||0)/100).toFixed(2));
+  var ist=KONTEN.map(k=>+(d.per[k.id]||0).toFixed(2));
+  if(chart)chart.destroy();
+  chart=new Chart($('cv'),{type:'bar',data:{labels:labels,datasets:[
+    {label:'Soll €',data:soll,backgroundColor:'#9bb4c4'},
+    {label:'Ist €',data:ist,backgroundColor:KONTEN.map(k=>k.farbe||'#0f9d6b')}
+  ]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{labels:{boxWidth:12,font:{size:11}}}},scales:{y:{beginAtZero:true,ticks:{font:{size:10}}},x:{ticks:{font:{size:10},maxRotation:35,minRotation:0}}}}});
+}
+function drawTrend(){
+  if(!window.Chart||!$('cvTrend'))return;
+  var monate=[...new Set(BU.map(b=>monatOf(b.datum)).filter(Boolean))].sort().slice(-12);
+  var ds=KONTEN.map(function(k){
+    return {label:k.name,data:monate.map(function(m){
+      return +BU.filter(b=>monatOf(b.datum)===m&&b.konto_id===k.id&&(n(b.betrag)||0)<0).reduce(function(a,b){return a+Math.abs(n(b.betrag)||0);},0).toFixed(2);
+    }),backgroundColor:k.farbe||'#888'};
+  });
+  if(chartT)chartT.destroy();
+  chartT=new Chart($('cvTrend'),{type:'bar',data:{labels:monate.map(m=>MONN[parseInt(m.slice(5,7),10)-1].slice(0,3)+' '+m.slice(2,4)),datasets:ds},
+    options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{labels:{boxWidth:12,font:{size:10}}}},scales:{x:{stacked:true,ticks:{font:{size:10}}},y:{stacked:true,beginAtZero:true,ticks:{font:{size:10}}}}}});
+}
+function render(){renderSoll();renderRegeln();renderBu();renderIst();drawTrend();}
+(async()=>{const{data:{session}}=await sb.auth.getSession();load();})();
+</script>
+</body></html>

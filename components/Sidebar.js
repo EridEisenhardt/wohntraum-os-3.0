@@ -86,6 +86,7 @@ export const NAV = [
     { href: '/eric-privat/budgetplan', icon: 'ti-wallet', label: 'Budgetplan' },
     { href: '/eric-privat/idealer-tag', icon: 'ti-sun', label: 'Idealer Tag' },
     { href: '/eric-privat/essen-planer', icon: 'ti-tools-kitchen-2', label: 'Essen-Planer' },
+    { href: '/eric-privat/kontenmodell', icon: 'ti-wallet', label: '6 Kontenmodell' },
   ] },
   { type: 'link', href: '/mahnprozess', icon: 'ti-gavel', label: 'Mahnprozess', area: 'common', mod: 'mahnprozess' },
   { type: 'link', href: '/konto', icon: 'ti-user-cog', label: 'Mein Konto', area: 'common' },
