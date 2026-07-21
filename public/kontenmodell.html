@@ -41,8 +41,10 @@ tr.total td{background:#e2f2ea;font-weight:800;color:#0b7a52}
 
   <div class="card"><h2>Soll-Aufteilung</h2>
     <div class="bar">
-      <label style="font-size:12px;color:var(--dim);font-weight:600">Monatliches Nettoeinkommen</label>
-      <input id="netto" type="text" inputmode="decimal" style="width:130px;text-align:right" onchange="saveNetto(this.value)"> €
+      <label style="font-size:12px;color:var(--dim);font-weight:600">Monatliches Nettoeinkommen <span style="color:var(--muted);font-weight:400">(aus Selbstauskunft 2.7)</span></label>
+      <input id="netto" type="text" inputmode="decimal" style="width:130px;text-align:right;background:var(--surf2)" readonly title="Kommt automatisch aus der Selbstauskunft (Abschnitt 2 · Einkommensverhältnisse)"> €
+      <button class="btn sec" onclick="refreshNetto()" title="Aktuellen Wert aus der Selbstauskunft übernehmen">↻ aus Selbstauskunft</button>
+      <label class="lblman" style="font-size:11px;color:var(--muted);display:flex;align-items:center;gap:4px"><input type="checkbox" id="nettoMan" onchange="toggleMan()"> manuell</label>
       <span id="pctWarn"></span>
       <span style="flex:1"></span>
       <button class="btn sec" onclick="addKonto()">+ Konto</button>
@@ -139,7 +141,8 @@ async function load(){
     sb.from('konten_setting').select('*').eq('id',1).maybeSingle()
   ]);
   KONTEN=a.data||[]; BU=b.data||[]; REG=c.data||[]; NETTO=(d.data&&d.data.netto)||0;
-  $('netto').value=NETTO?String(NETTO).replace('.',','):'';
+  $('netto').value=NETTO?NETTO.toLocaleString('de-DE',{maximumFractionDigits:0}):'';
+  applySelbst();
   var kopt='<option value="">— Konto wählen —</option>'+KONTEN.map(k=>'<option value="'+k.id+'">'+esc(k.name)+'</option>').join('');
   $('rKonto').innerHTML=kopt;
   $('fKonto').innerHTML='<option value="">Alle Konten</option><option value="__none">Nicht zugeordnet</option>'+KONTEN.map(k=>'<option value="'+k.id+'">'+esc(k.name)+'</option>').join('');
@@ -149,6 +152,33 @@ async function load(){
   render();
 }
 async function saveNetto(v){NETTO=n(v)||0;await sb.from('konten_setting').upsert({id:1,netto:NETTO,updated_at:new Date().toISOString()},{onConflict:'id'});render();}
+function selbstEinnahmen(){
+  var d={}; try{ d=JSON.parse(localStorage.getItem('macherOS_selbst_einkommen_v1'))||{}; }catch(e){}
+  function p(s){var x=parseFloat(String(s==null?'':s).replace(/\./g,'').replace(',','.'));return isNaN(x)?0:x;}
+  var se=('se' in d)?d.se:'600', sonst=('sonst' in d)?d.sonst:'138';
+  var sum=p(se)+p(d.nse)+p(sonst)+p(d.rente)+p(d.kg);
+  ['A14','E14','S16','R6'].forEach(function(o){sum+=p(d['vv_'+o]);});
+  return sum;
+}
+function applySelbst(){
+  if($('nettoMan')&&$('nettoMan').checked)return; // manuell aktiv -> nicht überschreiben
+  var si=selbstEinnahmen();
+  if(si>0){NETTO=si;$('netto').value=NETTO.toLocaleString('de-DE',{maximumFractionDigits:0});}
+}
+async function refreshNetto(){
+  var si=selbstEinnahmen();
+  if(!si){toast('Keine Einnahmen in der Selbstauskunft gefunden – dort Abschnitt 2 pflegen.');return;}
+  NETTO=si; $('netto').value=NETTO.toLocaleString('de-DE',{maximumFractionDigits:0});
+  await sb.from('konten_setting').upsert({id:1,netto:NETTO,updated_at:new Date().toISOString()},{onConflict:'id'});
+  render(); toast('Einnahmen aus Selbstauskunft übernommen: '+eur0(NETTO));
+}
+function toggleMan(){
+  var man=$('nettoMan').checked;
+  $('netto').readOnly=!man;
+  $('netto').style.background=man?'var(--surf)':'var(--surf2)';
+  $('netto').onchange=man?function(){saveNetto(this.value);}:null;
+  if(!man)applySelbst(),render();
+}
 
 /* ---------- Soll ---------- */
 function renderSoll(){
