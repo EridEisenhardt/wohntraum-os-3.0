@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="de"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>KPI Sanierungen · Baustandard</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+:root{--bg:#f6f7f9;--surf:#fff;--surf2:#f1f3f6;--line:#e6e8ec;--bord2:#eef0f3;--text:#1c2024;--muted:#6b7280;--dim:#4b5563;--accent:#0f9d6b;--blue:#185fa5}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--text);font-family:'Inter',system-ui,-apple-system,'Segoe UI',sans-serif;font-size:14px;line-height:1.5;min-height:100vh}
+.hdr{background:var(--surf);border-bottom:1px solid var(--line);padding:16px 24px;position:sticky;top:0;z-index:20}
+.hdr-title{font-size:18px;font-weight:700}.hdr-sub{font-size:12px;color:var(--muted);margin-top:2px}
+.wrap{max-width:1500px;margin:20px auto;padding:0 20px}
+.card{background:var(--surf);border:1px solid var(--line);border-radius:14px;padding:16px 18px;margin-bottom:18px}
+.card h2{font-size:14px;margin-bottom:12px}
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px}
+.kpi{background:var(--surf2);border-radius:10px;padding:12px 14px}
+.kpi .l{font-size:11px;color:var(--muted);font-weight:600}
+.kpi .v{font-size:20px;font-weight:700;margin-top:2px}
+.kpi .s{font-size:11px;color:var(--muted)}
+.bar{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px;align-items:center}
+.btn{background:var(--accent);color:#fff;border:none;border-radius:8px;padding:8px 13px;font:inherit;font-weight:600;font-size:13px;cursor:pointer}
+.btn.sec{background:var(--surf2);color:var(--text)}
+.abtn{background:none;border:none;color:#c0392b;cursor:pointer;font-size:15px}
+.tablewrap{overflow-x:auto;border:1px solid var(--line);border-radius:12px}
+table{border-collapse:collapse;font-size:12.5px;min-width:1900px;width:100%}
+th,td{padding:6px 8px;border-bottom:1px solid var(--line);border-right:1px solid var(--bord2);text-align:right;white-space:nowrap}
+th{background:var(--surf2);font-size:10px;text-transform:uppercase;color:var(--muted);font-weight:700;position:sticky;top:0;z-index:1}
+th.grp{background:#e9eef3;color:var(--dim);text-align:center}
+td:first-child,th:first-child{text-align:left;position:sticky;left:0;background:var(--surf);z-index:2}
+th:first-child{z-index:3;background:var(--surf2)}
+td.calc{background:#f4faf7;font-weight:600}
+th.calc{background:#e2f2ea;color:#0b7a52}
+input{font:inherit;font-size:12.5px;padding:4px 5px;border:1px solid transparent;border-radius:6px;background:transparent;width:100%;color:inherit;text-align:right}
+td:first-child input{text-align:left}
+input:hover{border-color:var(--line)}input:focus{border-color:var(--accent);background:var(--surf);outline:none}
+input[type=date]{min-width:120px}
+.inm{min-width:130px}.inn{min-width:70px}
+.empty{color:var(--muted);font-size:13px;padding:16px}
+.toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:#1c2024;color:#fff;padding:10px 16px;border-radius:8px;font-size:13px;opacity:0;pointer-events:none;transition:.2s;z-index:50}
+.toast.show{opacity:1}
+</style></head><body>
+<div class="hdr"><div class="hdr-title">KPI Sanierungen</div><div class="hdr-sub">Baustandard &middot; Auswertung umgesetzter Sanierungen</div></div>
+<datalist id="teamDL"></datalist>
+<div class="wrap">
+  <div class="card"><h2>Kennzahlen &middot; Durchschnitt aller Projekte</h2>
+    <div class="kpis" id="kpis"></div>
+  </div>
+  <div class="card">
+    <div class="bar"><h2 style="margin:0;flex:1">Board &middot; umgesetzte Sanierungen (<span id="cnt">0</span>)</h2>
+      <button class="btn" onclick="addRow()">+ Neue Sanierung</button></div>
+    <div class="tablewrap"><table id="tbl"><thead></thead><tbody></tbody></table></div>
+    <div class="empty" id="emptyHint" style="display:none">Noch keine Sanierungen &ndash; oben &bdquo;+ Neue Sanierung&ldquo; klicken.</div>
+  </div>
+</div>
+<div class="toast" id="toast"></div>
+<script>
+const sb=window.supabase.createClient('https://jqzxctfqvcwbctpjksvg.supabase.co','eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpxenhjdGZxdmN3YmN0cGprc3ZnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODIxMzA0MzIsImV4cCI6MjA5NzcwNjQzMn0.RKIbZxJdusKWWPjBJqlxZ8e1m8So02UslOg55YRsn3o');
+const $=id=>document.getElementById(id);
+const esc=s=>(s==null?'':String(s)).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+function toast(m){const t=$('toast');t.textContent=m;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),1900);}
+function n(v){var x=parseFloat(String(v==null?'':v).replace(',','.'));return isNaN(x)?null:x;}
+function eur(v){return v==null?'–':v.toLocaleString('de-DE',{maximumFractionDigits:0})+' €';}
+function eur2(v){return v==null?'–':v.toLocaleString('de-DE',{minimumFractionDigits:2,maximumFractionDigits:2})+' €';}
+function pct(v){return v==null?'–':(v.toLocaleString('de-DE',{maximumFractionDigits:1}))+' %';}
+function d1(v){return v==null?'–':v.toLocaleString('de-DE',{maximumFractionDigits:1});}
+let ROWS=[];
+function gesamt(r){return (n(r.kosten_material)||0)+(n(r.kosten_handwerker)||0)+(n(r.kosten_entsorgung)||0)+(n(r.kosten_planung)||0);}
+function calc(r){
+  var g=gesamt(r);
+  var eN=n(r.einheiten_nachher);
+  var wf=n(r.wohnflaeche);
+  var mv=n(r.miete_vorher), mn=n(r.miete_nachher);
+  var steig=(mv!=null&&mn!=null)?(mn-mv):null;
+  var steigP=(steig!=null&&mv)?steig/mv*100:null;
+  var roi=(steig!=null&&steig>0)?g/steig:null;
+  var proE=(eN&&eN>0)?g/eN:null;
+  var proM2=(wf&&wf>0)?g/wf:null;
+  var durchlauf=(r.datum_beginn&&r.datum_ende)?Math.round((Date.parse(r.datum_ende)-Date.parse(r.datum_beginn))/86400000):null;
+  var bisVerm=(r.datum_beginn&&r.datum_vermietung)?Math.round((Date.parse(r.datum_vermietung)-Date.parse(r.datum_beginn))/86400000):null;
+  return {g,steig,steigP,roi,proE,proM2,durchlauf,bisVerm};
+}
+const COLS=[
+  ['objekt','Objekt','text','inm'],['team','Team','team','inm'],
+  ['wohnflaeche','Wohnfläche m²','num','inn'],
+  ['einheiten_vorher','Einh. vorher','int','inn'],['einheiten_nachher','Einh. nachher','int','inn'],
+  ['miete_vorher','Miete vorher €','num','inn'],['miete_nachher','Miete nachher €','num','inn'],
+  ['kosten_material','Material €','num','inn'],['kosten_handwerker','Handwerker €','num','inn'],['kosten_entsorgung','Entsorgung €','num','inn'],['kosten_planung','Bauleitung & Planung €','num','inn'],
+  ['datum_beginn','Beginn','date','ind'],['datum_ende','Ende','date','ind'],['datum_vermietung','Vermietung','date','ind']
+];
+function head(){
+  var h='<tr>'+COLS.map(c=>'<th'+(c[1]==='Objekt'?'':'')+'>'+esc(c[1])+'</th>').join('')
+    +'<th class="calc">Kosten gesamt</th><th class="calc">€ / Einheit</th><th class="calc">€ / m²</th>'
+    +'<th class="calc">Mietsteig. €</th><th class="calc">Mietsteig. %</th><th class="calc">ROI (Monate)</th>'
+    +'<th class="calc">Durchlaufzeit (Tage)</th><th class="calc">Beginn→Vermietung (Tage)</th><th></th></tr>';
+  return h;
+}
+function inputCell(r,c){
+  var key=c[0],type=c[2],cls=c[3]||'';
+  var val=r[key]==null?'':r[key];
+  if(type==='team'){return '<td><input class="'+cls+'" list="teamDL" value="'+esc(val)+'" onchange="upd(\''+r.id+'\',\''+key+'\',this.value)"></td>';}
+  if(type==='date'){return '<td><input class="'+cls+'" type="date" value="'+esc(val)+'" onchange="upd(\''+r.id+'\',\''+key+'\',this.value)"></td>';}
+  if(type==='text'){return '<td><input class="'+cls+'" type="text" value="'+esc(val)+'" onchange="upd(\''+r.id+'\',\''+key+'\',this.value)"></td>';}
+  return '<td><input class="'+cls+'" type="text" inputmode="decimal" value="'+esc(val)+'" onchange="upd(\''+r.id+'\',\''+key+'\',this.value)"></td>';
+}
+function render(){
+  $('cnt').textContent=ROWS.length;
+  $('emptyHint').style.display=ROWS.length?'none':'block';
+  $('tbl').querySelector('thead').innerHTML=head();
+  $('tbl').querySelector('tbody').innerHTML=ROWS.map(function(r){
+    var k=calc(r);
+    return '<tr>'+COLS.map(c=>inputCell(r,c)).join('')
+      +'<td class="calc">'+eur(k.g)+'</td>'
+      +'<td class="calc">'+eur(k.proE)+'</td>'
+      +'<td class="calc">'+eur2(k.proM2)+'</td>'
+      +'<td class="calc">'+eur(k.steig)+'</td>'
+      +'<td class="calc">'+pct(k.steigP)+'</td>'
+      +'<td class="calc">'+d1(k.roi)+'</td>'
+      +'<td class="calc">'+(k.durchlauf==null?'–':k.durchlauf)+'</td>'
+      +'<td class="calc">'+(k.bisVerm==null?'–':k.bisVerm)+'</td>'
+      +'<td><button class="abtn" onclick="delRow(\''+r.id+'\')">&times;</button></td></tr>';
+  }).join('');
+  renderKpis();
+  var teams=[...new Set(ROWS.map(r=>r.team).filter(Boolean))];
+  $('teamDL').innerHTML=teams.map(t=>'<option value="'+esc(t)+'">').join('');
+}
+function avg(arr){var v=arr.filter(x=>x!=null&&!isNaN(x));return v.length?v.reduce((a,b)=>a+b,0)/v.length:null;}
+function sum(arr){return arr.filter(x=>x!=null&&!isNaN(x)).reduce((a,b)=>a+b,0);}
+function renderKpis(){
+  var ks=ROWS.map(calc);
+  var cards=[
+    ['Projekte',ROWS.length,''],
+    ['Ø Kosten / Einheit',eur(avg(ks.map(k=>k.proE))),''],
+    ['Ø Kosten / m²',eur2(avg(ks.map(k=>k.proM2))),''],
+    ['Ø ROI (Monate)',d1(avg(ks.map(k=>k.roi))),'bis Amortisation'],
+    ['Ø Mietsteigerung €',eur(avg(ks.map(k=>k.steig))),'pro Einheit/Objekt'],
+    ['Ø Mietsteigerung %',pct(avg(ks.map(k=>k.steigP))),''],
+    ['Ø Durchlaufzeit',(avg(ks.map(k=>k.durchlauf))==null?'–':Math.round(avg(ks.map(k=>k.durchlauf)))+' Tage'),''],
+    ['Σ Investitionen',eur(sum(ks.map(k=>k.g))),'']
+  ];
+  $('kpis').innerHTML=cards.map(c=>'<div class="kpi"><div class="l">'+c[0]+'</div><div class="v">'+c[1]+'</div><div class="s">'+c[2]+'</div></div>').join('');
+}
+async function load(){
+  var res=await sb.from('sanierungen').select('*').order('created_at',{ascending:false});
+  if(res.error){toast('Fehler: '+res.error.message);return;}
+  ROWS=res.data||[]; render();
+}
+async function addRow(){
+  var res=await sb.from('sanierungen').insert({objekt:'Neue Sanierung'}).select();
+  if(res.error){toast('Fehler: '+res.error.message);return;}
+  if(res.data&&res.data[0])ROWS.unshift(res.data[0]);
+  render();
+}
+async function upd(id,field,val){
+  var intF=['einheiten_vorher','einheiten_nachher'];
+  var numF=['miete_vorher','miete_nachher','wohnflaeche','kosten_material','kosten_handwerker','kosten_entsorgung','kosten_planung'];
+  var v=val;
+  if(intF.indexOf(field)>=0){v=val===''?null:parseInt(String(val).replace(',','.'),10);if(isNaN(v))v=null;}
+  else if(numF.indexOf(field)>=0){v=n(val);}
+  else {v=(val===''?null:val);}
+  var o={};o[field]=v;
+  var res=await sb.from('sanierungen').update(o).eq('id',id);
+  if(res.error){toast('Fehler: '+res.error.message);return;}
+  var r=ROWS.find(x=>x.id===id); if(r)r[field]=v;
+  render();
+}
+async function delRow(id){
+  if(!confirm('Diese Sanierung löschen?'))return;
+  await sb.from('sanierungen').delete().eq('id',id);
+  ROWS=ROWS.filter(r=>r.id!==id); render();
+}
+(async()=>{const{data:{session}}=await sb.auth.getSession();load();})();
+</script>
+</body></html>
