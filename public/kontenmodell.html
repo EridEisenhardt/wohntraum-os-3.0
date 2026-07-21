@@ -50,7 +50,19 @@ tr.total td{background:#e2f2ea;font-weight:800;color:#0b7a52}
     <table id="sollTbl"><thead></thead><tbody></tbody></table>
   </div>
 
-  <div class="card"><h2>N26-Umsätze importieren</h2>
+  <div class="card"><h2>N26 direkt verbinden <span style="color:var(--muted);font-weight:400">· PSD2 über GoCardless Bank Account Data</span></h2>
+    <div class="bar">
+      <select id="instSel" style="min-width:260px"><option value="">— Bank laden —</option></select>
+      <button class="btn sec" onclick="loadInstitutions()">Banken laden</button>
+      <button class="btn" onclick="startLink()">🔗 Verbindung starten</button>
+      <button class="btn sec" onclick="checkStatus()">Status prüfen</button>
+      <button class="btn" onclick="syncBank()">⬇ Umsätze synchronisieren</button>
+    </div>
+    <div id="bankStatus" style="font-size:12.5px;color:var(--dim)"></div>
+    <div style="font-size:11.5px;color:var(--muted);margin-top:8px">Einmalige Einrichtung nötig: GoCardless-Zugangsdaten müssen als Supabase-Secrets <b>GC_SECRET_ID</b> und <b>GC_SECRET_KEY</b> hinterlegt sein. Die Freigabe erfolgt direkt bei N26 – Zugangsdaten werden hier weder eingegeben noch gespeichert.</div>
+  </div>
+
+  <div class="card"><h2>N26-Umsätze importieren (CSV)</h2>
     <div class="bar">
       <input type="file" id="csvFile" accept=".csv,text/csv" onchange="importCsv(this)">
       <button class="btn sec" onclick="applyRules()">🔁 Regeln erneut anwenden</button>
@@ -158,6 +170,58 @@ async function addKonto(){
   if(res.data&&res.data[0])KONTEN.push(res.data[0]); load();
 }
 async function delKonto(id){if(!confirm('Konto löschen? Buchungen bleiben erhalten (ohne Zuordnung).'))return;await sb.from('konten_modell').delete().eq('id',id);load();}
+
+/* ---------- Bankverbindung (PSD2) ---------- */
+async function gcCall(payload){
+  var res=await sb.functions.invoke('gocardless',{body:payload});
+  if(res.error){throw new Error(res.error.message||'Funktionsfehler');}
+  if(res.data&&res.data.error){throw new Error(res.data.error);}
+  return res.data;
+}
+async function loadInstitutions(){
+  $('bankStatus').textContent='Lade Banken …';
+  try{
+    var d=await gcCall({action:'institutions',country:'de'});
+    var list=(d.institutions||[]).sort((a,b)=>a.name.localeCompare(b.name));
+    var n26=list.filter(i=>/n26/i.test(i.name));
+    var rest=list.filter(i=>!/n26/i.test(i.name));
+    $('instSel').innerHTML='<option value="">— Bank wählen —</option>'
+      +(n26.length?'<optgroup label="N26">'+n26.map(i=>'<option value="'+esc(i.id)+'">'+esc(i.name)+'</option>').join('')+'</optgroup>':'')
+      +'<optgroup label="Alle Banken">'+rest.map(i=>'<option value="'+esc(i.id)+'">'+esc(i.name)+'</option>').join('')+'</optgroup>';
+    if(n26.length)$('instSel').value=n26[0].id;
+    $('bankStatus').textContent=list.length+' Banken geladen'+(n26.length?' · N26 vorausgewählt':'');
+  }catch(e){$('bankStatus').innerHTML='<span style="color:#c0392b">'+esc(e.message)+'</span>';}
+}
+async function startLink(){
+  var inst=$('instSel').value;
+  if(!inst){toast('Bitte Bank wählen');return;}
+  $('bankStatus').textContent='Erstelle Freigabe-Link …';
+  try{
+    var redirect=(window.top&&window.top.location&&window.top.location.origin?window.top.location.origin:window.location.origin)+'/eric-privat/kontenmodell';
+    var d=await gcCall({action:'link',institution_id:inst,redirect:redirect});
+    $('bankStatus').innerHTML='Freigabe-Link erstellt. <a href="'+esc(d.link)+'" target="_blank" rel="noopener" style="color:var(--accent);font-weight:700">→ Jetzt bei der Bank freigeben</a> · danach „Status prüfen“.';
+    window.open(d.link,'_blank','noopener');
+  }catch(e){$('bankStatus').innerHTML='<span style="color:#c0392b">'+esc(e.message)+'</span>';}
+}
+async function checkStatus(){
+  $('bankStatus').textContent='Prüfe Status …';
+  try{
+    var d=await gcCall({action:'status'});
+    var v=d.verbindung;
+    if(!v){$('bankStatus').textContent='Noch keine Bankverbindung angelegt.';return;}
+    $('bankStatus').innerHTML='Bank: <b>'+esc(v.institution_name||'—')+'</b> · Status: <b>'+esc(v.status||'—')+'</b> · Konten: <b>'+((v.account_ids||[]).length)+'</b>'
+      +(v.letzter_sync?' · letzter Sync: '+new Date(v.letzter_sync).toLocaleString('de-DE'):'');
+  }catch(e){$('bankStatus').innerHTML='<span style="color:#c0392b">'+esc(e.message)+'</span>';}
+}
+async function syncBank(){
+  $('bankStatus').textContent='Synchronisiere Umsätze …';
+  try{
+    var d=await gcCall({action:'sync'});
+    $('bankStatus').innerHTML='Sync fertig: <b>'+d.transaktionen+'</b> Transaktionen aus <b>'+d.konten+'</b> Konto(en) verarbeitet.';
+    toast('Umsätze synchronisiert');
+    await load(); applyRules();
+  }catch(e){$('bankStatus').innerHTML='<span style="color:#c0392b">'+esc(e.message)+'</span>';}
+}
 
 /* ---------- CSV Import ---------- */
 function splitCsvLine(line,sep){
