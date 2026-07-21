@@ -20,6 +20,7 @@ export const NAV = [
     { href: '/planung/baustandard', icon: 'ti-ruler-2', label: 'Baustandard' },
     { href: '/planung/materialliste', icon: 'ti-list-details', label: 'Materialliste' },
     { href: '/planung/kpi-sanierungen', icon: 'ti-chart-dots', label: 'KPI Sanierungen' },
+    { href: '/planung/renovierungsliste', icon: 'ti-file-report', label: 'Renovierungs- und Sanierungsliste' },
   ] },
   { type: 'group', key: 'crm', icon: 'ti-address-book', label: 'CRM', area: ['vertrieb', 'hv'], mod: 'crm', items: [
     { href: '/crm', icon: 'ti-users', label: 'Kontakte & Deals' },

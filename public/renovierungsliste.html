@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="de"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Renovierungs- und Sanierungsliste · Baustandard</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+:root{--bg:#f6f7f9;--surf:#fff;--surf2:#f1f3f6;--line:#e6e8ec;--bord2:#eef0f3;--text:#1c2024;--muted:#6b7280;--dim:#4b5563;--accent:#0f9d6b}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--text);font-family:'Inter',system-ui,-apple-system,'Segoe UI',sans-serif;font-size:14px;line-height:1.5;min-height:100vh}
+.hdr{background:var(--surf);border-bottom:1px solid var(--line);padding:16px 24px;position:sticky;top:0;z-index:10}
+.hdr-title{font-size:18px;font-weight:700}.hdr-sub{font-size:12px;color:var(--muted);margin-top:2px}
+.wrap{max-width:1200px;margin:20px auto;padding:0 20px}
+.card{background:var(--surf);border:1px solid var(--line);border-radius:14px;padding:16px 18px;margin-bottom:18px}
+.card h2{font-size:14px;margin-bottom:12px}
+.bar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:12px}
+select,input{font:inherit;font-size:13px;padding:7px 9px;border:1px solid var(--line);border-radius:8px;background:var(--surf)}
+.btn{background:var(--accent);color:#fff;border:none;border-radius:8px;padding:8px 13px;font:inherit;font-weight:600;font-size:13px;cursor:pointer}
+.btn.sec{background:var(--surf2);color:var(--text)}
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;margin-bottom:4px}
+.kpi{background:var(--surf2);border-radius:10px;padding:12px 14px}
+.kpi .l{font-size:11px;color:var(--muted);font-weight:600}
+.kpi .v{font-size:20px;font-weight:700}
+table{width:100%;border-collapse:collapse;font-size:12.5px}
+th,td{padding:7px 9px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}
+th{background:var(--surf2);font-size:10px;text-transform:uppercase;color:var(--muted);font-weight:700}
+td.num,th.num{text-align:right;white-space:nowrap}
+tr.objhd td{background:#eef3f7;font-weight:700;font-size:12.5px}
+tr.subt td{background:#f7fafc;font-weight:700}
+tr.total td{background:#e2f2ea;font-weight:800;font-size:13.5px;color:#0b7a52}
+.empty{color:var(--muted);padding:14px 2px;font-size:13px}
+.note{font-size:11.5px;color:var(--muted);margin-top:10px}
+@media print{
+  body{background:#fff}
+  .hdr{position:static;border:none;padding:0 0 10px}
+  .wrap{max-width:none;margin:0;padding:0}
+  .card{border:none;padding:0;margin:0 0 10px;border-radius:0}
+  .noprint{display:none!important}
+  table{font-size:10.5px}
+  th{background:#eee!important;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+  tr.objhd td,tr.subt td,tr.total td{-webkit-print-color-adjust:exact;print-color-adjust:exact}
+}
+</style></head><body>
+<div class="hdr"><div class="hdr-title">Renovierungs- und Sanierungsliste</div><div class="hdr-sub">Wohntraum Rheinhessen &middot; Nachweis der investierten Ma&szlig;nahmen</div></div>
+<div class="wrap">
+  <div class="card noprint"><h2>Filter</h2>
+    <div class="bar">
+      <label style="font-size:12px;color:var(--dim);font-weight:600">Jahr</label><select id="fJahr" onchange="render()"></select>
+      <label style="font-size:12px;color:var(--dim);font-weight:600">Objekt</label><select id="fObjekt" onchange="render()"></select>
+      <label style="font-size:12px;color:var(--dim);font-weight:600">Kategorie</label><select id="fTyp" onchange="render()"><option value="">Alle</option><option>Sanierungen</option><option>Umbauarbeiten</option></select>
+      <span style="flex:1"></span>
+      <button class="btn sec" onclick="exportCsv()">⬇ CSV</button>
+      <button class="btn" onclick="window.print()">🖨 Drucken / PDF</button>
+    </div>
+  </div>
+  <div class="card"><div class="kpis" id="kpis"></div></div>
+  <div class="card">
+    <h2>Ma&szlig;nahmen nach Objekt</h2>
+    <div style="overflow-x:auto"><table id="tbl"><thead></thead><tbody></tbody></table></div>
+    <div id="emptyHint" class="empty" style="display:none">Keine Ma&szlig;nahmen f&uuml;r die gew&auml;hlten Filter.</div>
+    <div class="note">Investitionssumme = Summe der erfassten Rechnungen; sind keine Rechnungen hinterlegt, gelten die im KPI-Board eingetragenen Kosten (Material, Handwerker, Entsorgung, Bauleitung &amp; Planung). Quelle: KPI Sanierungen.</div>
+  </div>
+</div>
+<script>
+const sb=window.supabase.createClient('https://jqzxctfqvcwbctpjksvg.supabase.co','eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpxenhjdGZxdmN3YmN0cGprc3ZnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODIxMzA0MzIsImV4cCI6MjA5NzcwNjQzMn0.RKIbZxJdusKWWPjBJqlxZ8e1m8So02UslOg55YRsn3o');
+const $=id=>document.getElementById(id);
+const esc=s=>(s==null?'':String(s)).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+function n(v){var x=parseFloat(String(v==null?'':v).replace(',','.'));return isNaN(x)?null:x;}
+function eur(v){return v==null?'–':v.toLocaleString('de-DE',{maximumFractionDigits:0})+' €';}
+function fd(d){if(!d)return '';var p=String(d).split('-');return p.length===3?p[2]+'.'+p[1]+'.'+p[0]:d;}
+let ROWS=[],RECH=[];
+function rechOf(id){return RECH.filter(x=>x.sanierung_id===id);}
+function invest(r){
+  var rs=rechOf(r.id);
+  if(rs.length)return rs.reduce(function(a,b){return a+(n(b.betrag)||0);},0);
+  return (n(r.kosten_material)||0)+(n(r.kosten_handwerker)||0)+(n(r.kosten_entsorgung)||0)+(n(r.kosten_planung)||0);
+}
+function jahrOf(r){var d=r.datum_ende||r.datum_beginn||r.datum_vermietung;return d?String(d).slice(0,4):'';}
+async function load(){
+  var a=await sb.from('sanierungen').select('*');
+  var b=await sb.from('sanierung_rechnungen').select('*');
+  ROWS=a.data||[]; RECH=b.data||[];
+  var jahre=[...new Set(ROWS.map(jahrOf).filter(Boolean))].sort().reverse();
+  $('fJahr').innerHTML='<option value="">Alle Jahre</option>'+jahre.map(j=>'<option>'+j+'</option>').join('');
+  var objs=[...new Set(ROWS.map(r=>r.objekt).filter(Boolean))].sort();
+  $('fObjekt').innerHTML='<option value="">Alle Objekte</option>'+objs.map(o=>'<option>'+esc(o)+'</option>').join('');
+  render();
+}
+function filtered(){
+  var j=$('fJahr').value,o=$('fObjekt').value,t=$('fTyp').value;
+  return ROWS.filter(function(r){
+    if(j&&jahrOf(r)!==j)return false;
+    if(o&&(r.objekt||'')!==o)return false;
+    if(t&&(r.typ||'Sanierungen')!==t)return false;
+    return true;
+  }).sort(function(x,y){
+    return String(x.objekt||'').localeCompare(String(y.objekt||''))||String(x.datum_beginn||'').localeCompare(String(y.datum_beginn||''));
+  });
+}
+function render(){
+  var list=filtered();
+  $('emptyHint').style.display=list.length?'none':'block';
+  $('tbl').querySelector('thead').innerHTML='<tr><th>Projekt-Nr</th><th>Objekt / Wohnung</th><th>Art der Ma&szlig;nahme</th><th>Kategorie</th><th>Zeitraum</th><th>Ausf&uuml;hrung</th><th class="num">Investition</th></tr>';
+  var byObj={};list.forEach(function(r){var k=r.objekt||'(ohne Objekt)';(byObj[k]=byObj[k]||[]).push(r);});
+  var html='',total=0;
+  Object.keys(byObj).sort().forEach(function(o){
+    var rs=byObj[o],sub=0;
+    html+='<tr class="objhd"><td colspan="7">'+esc(o)+'</td></tr>';
+    rs.forEach(function(r){
+      var inv=invest(r);sub+=inv;
+      var zeit=(r.datum_beginn||r.datum_ende)?(fd(r.datum_beginn)+' – '+fd(r.datum_ende)):'';
+      html+='<tr><td>'+esc(r.projektnummer||'')+'</td><td>'+esc(r.objekt_wohnung||r.objekt||'')+'</td><td>'+esc(r.art||'')+'</td><td>'+esc(r.typ||'Sanierungen')+'</td><td>'+esc(zeit)+'</td><td>'+esc(r.team||'')+'</td><td class="num">'+eur(inv)+'</td></tr>';
+    });
+    total+=sub;
+    html+='<tr class="subt"><td colspan="6">Zwischensumme '+esc(o)+' ('+rs.length+' Ma&szlig;nahmen)</td><td class="num">'+eur(sub)+'</td></tr>';
+  });
+  if(list.length)html+='<tr class="total"><td colspan="6">Gesamtinvestition</td><td class="num">'+eur(total)+'</td></tr>';
+  $('tbl').querySelector('tbody').innerHTML=html;
+  var flaeche=list.reduce(function(a,r){return a+(n(r.wohnflaeche)||0);},0);
+  var einh=list.reduce(function(a,r){return a+(parseInt(r.einheiten_nachher,10)||0);},0);
+  $('kpis').innerHTML=[
+    ['Ma&szlig;nahmen',list.length],
+    ['Objekte',Object.keys(byObj).length],
+    ['Gesamtinvestition',eur(total)],
+    ['Sanierte Wohnfl&auml;che',flaeche?flaeche.toLocaleString('de-DE',{maximumFractionDigits:0})+' m²':'–'],
+    ['Fertige Einheiten',einh||'–'],
+    ['Ø je Ma&szlig;nahme',list.length?eur(total/list.length):'–']
+  ].map(c=>'<div class="kpi"><div class="l">'+c[0]+'</div><div class="v">'+c[1]+'</div></div>').join('');
+}
+function exportCsv(){
+  var list=filtered();
+  if(!list.length){alert('Keine Daten');return;}
+  var head=['Projekt-Nr','Objekt','Objekt/Wohnung','Art der Massnahme','Kategorie','Beginn','Ende','Vermietung','Ausfuehrung','Wohnflaeche m2','Einheiten nachher','Investition EUR'];
+  var lines=[head.join(';')];
+  list.forEach(function(r){
+    lines.push([r.projektnummer||'',r.objekt||'',r.objekt_wohnung||'',r.art||'',r.typ||'Sanierungen',r.datum_beginn||'',r.datum_ende||'',r.datum_vermietung||'',r.team||'',r.wohnflaeche==null?'':r.wohnflaeche,r.einheiten_nachher==null?'':r.einheiten_nachher,String(invest(r)).replace('.',',')]
+      .map(function(v){v=String(v==null?'':v);return /[;"\n]/.test(v)?'"'+v.replace(/"/g,'""')+'"':v;}).join(';'));
+  });
+  var total=list.reduce(function(a,r){return a+invest(r);},0);
+  lines.push(['','','','','','','','','','','Gesamt',String(total).replace('.',',')].join(';'));
+  var blob=new Blob(['﻿'+lines.join('\r\n')],{type:'text/csv;charset=utf-8;'});
+  var a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='Renovierungs-und-Sanierungsliste.csv';a.click();
+}
+(async()=>{const{data:{session}}=await sb.auth.getSession();load();})();
+</script>
+</body></html>
