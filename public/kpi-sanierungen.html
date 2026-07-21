@@ -44,11 +44,28 @@ input[type=date]{min-width:120px}
   <div class="card"><h2>Kennzahlen &middot; Durchschnitt aller Projekte</h2>
     <div class="kpis" id="kpis"></div>
   </div>
+  <div class="card"><h2>Liste &middot; Umbauarbeiten &amp; Sanierungen</h2>
+    <div id="liste" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:18px"></div>
+  </div>
   <div class="card">
     <div class="bar"><h2 style="margin:0;flex:1">Board &middot; umgesetzte Sanierungen (<span id="cnt">0</span>)</h2>
       <button class="btn" onclick="addRow()">+ Neue Sanierung</button></div>
     <div class="tablewrap"><table id="tbl"><thead></thead><tbody></tbody></table></div>
     <div class="empty" id="emptyHint" style="display:none">Noch keine Sanierungen &ndash; oben &bdquo;+ Neue Sanierung&ldquo; klicken.</div>
+  </div>
+</div>
+<div id="rDlg" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:60;align-items:center;justify-content:center" onclick="if(event.target===this)closeRech()">
+  <div style="background:var(--surf);border-radius:14px;width:min(980px,95vw);max-height:88vh;display:flex;flex-direction:column;box-shadow:0 10px 40px rgba(0,0,0,.25)">
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:14px 18px;border-bottom:1px solid var(--line)">
+      <b id="rTitle">Rechnungen</b><span style="cursor:pointer;font-size:18px;color:var(--muted)" onclick="closeRech()">✕</span></div>
+    <div style="padding:12px 18px;overflow:auto">
+      <div class="bar"><button class="btn" onclick="addRech()">+ Rechnung erfassen</button></div>
+      <div class="tablewrap" style="overflow-x:auto"><table id="rTbl" style="min-width:820px"><thead></thead><tbody></tbody></table></div>
+    </div>
+    <div style="padding:12px 18px;border-top:1px solid var(--line);display:flex;gap:14px;flex-wrap:wrap;align-items:center">
+      <div id="rSums" style="font-size:12.5px;color:var(--dim);flex:1"></div>
+      <div style="font-size:15px;font-weight:700">Gesamt: <span id="rTotal">–</span></div>
+    </div>
   </div>
 </div>
 <div class="toast" id="toast"></div>
@@ -62,8 +79,15 @@ function eur(v){return v==null?'–':v.toLocaleString('de-DE',{maximumFractionDi
 function eur2(v){return v==null?'–':v.toLocaleString('de-DE',{minimumFractionDigits:2,maximumFractionDigits:2})+' €';}
 function pct(v){return v==null?'–':(v.toLocaleString('de-DE',{maximumFractionDigits:1}))+' %';}
 function d1(v){return v==null?'–':v.toLocaleString('de-DE',{maximumFractionDigits:1});}
-let ROWS=[];
-function gesamt(r){return (n(r.kosten_material)||0)+(n(r.kosten_handwerker)||0)+(n(r.kosten_entsorgung)||0)+(n(r.kosten_planung)||0);}
+let ROWS=[],RECH=[],R_CUR=null;
+const RKAT=['Material','Handwerker','Entsorgung','Bauleitung & Planung','Sonstiges'];
+function rechOf(id){return RECH.filter(x=>x.sanierung_id===id);}
+function rechSum(id){return rechOf(id).reduce(function(a,b){return a+(n(b.betrag)||0);},0);}
+function gesamt(r){
+  var rs=rechOf(r.id);
+  if(rs.length) return rechSum(r.id);
+  return (n(r.kosten_material)||0)+(n(r.kosten_handwerker)||0)+(n(r.kosten_entsorgung)||0)+(n(r.kosten_planung)||0);
+}
 function calc(r){
   var g=gesamt(r);
   var eN=n(r.einheiten_nachher);
@@ -78,9 +102,12 @@ function calc(r){
   var bisVerm=(r.datum_beginn&&r.datum_vermietung)?Math.round((Date.parse(r.datum_vermietung)-Date.parse(r.datum_beginn))/86400000):null;
   return {g,steig,steigP,roi,proE,proM2,durchlauf,bisVerm};
 }
+const TYPEN=['Sanierungen','Umbauarbeiten'];
 const COLS=[
   ['projektnummer','Projekt-Nr','text','inn'],
-  ['objekt','Objekt','text','inm'],['objekt_wohnung','Objekt / Wohnung','text','inm'],['team','Team','team','inm'],
+  ['typ','Kategorie','typ','inn'],
+  ['objekt','Objekt','text','inm'],['objekt_wohnung','Objekt / Wohnung','text','inm'],
+  ['art','Art der Sanierung','text','inm'],['team','Team','team','inm'],
   ['wohnflaeche','Wohnfläche m²','num','inn'],
   ['einheiten_vorher','Einh. vorher','int','inn'],['einheiten_nachher','Einh. nachher','int','inn'],
   ['miete_vorher','Miete vorher €','num','inn'],['miete_nachher','Miete nachher €','num','inn'],
@@ -89,6 +116,7 @@ const COLS=[
 ];
 function head(){
   var h='<tr>'+COLS.map(c=>'<th'+(c[1]==='Objekt'?'':'')+'>'+esc(c[1])+'</th>').join('')
+    +'<th>Rechnungen</th>'
     +'<th class="calc">Kosten gesamt</th><th class="calc">€ / Einheit</th><th class="calc">€ / m²</th>'
     +'<th class="calc">Mietsteig. €</th><th class="calc">Mietsteig. %</th><th class="calc">ROI (Monate)</th>'
     +'<th class="calc">Durchlaufzeit (Tage)</th><th class="calc">Beginn→Vermietung (Tage)</th><th></th></tr>';
@@ -97,6 +125,7 @@ function head(){
 function inputCell(r,c){
   var key=c[0],type=c[2],cls=c[3]||'';
   var val=r[key]==null?'':r[key];
+  if(type==='typ'){return '<td><select style="min-width:120px" onchange="upd(\''+r.id+'\',\''+key+'\',this.value)">'+TYPEN.map(t=>'<option '+(t===val?'selected':'')+'>'+esc(t)+'</option>').join('')+'</select></td>';}
   if(type==='team'){return '<td><input class="'+cls+'" list="teamDL" value="'+esc(val)+'" onchange="upd(\''+r.id+'\',\''+key+'\',this.value)"></td>';}
   if(type==='date'){return '<td><input class="'+cls+'" type="date" value="'+esc(val)+'" onchange="upd(\''+r.id+'\',\''+key+'\',this.value)"></td>';}
   if(type==='text'){return '<td><input class="'+cls+'" type="text" value="'+esc(val)+'" onchange="upd(\''+r.id+'\',\''+key+'\',this.value)"></td>';}
@@ -108,7 +137,9 @@ function render(){
   $('tbl').querySelector('thead').innerHTML=head();
   $('tbl').querySelector('tbody').innerHTML=ROWS.map(function(r){
     var k=calc(r);
+    var rn=rechOf(r.id).length;
     return '<tr>'+COLS.map(c=>inputCell(r,c)).join('')
+      +'<td><button class="btn sec" style="padding:4px 9px;font-size:12px;white-space:nowrap" onclick="openRech(\''+r.id+'\')">🧾 '+(rn?rn+' · '+eur(rechSum(r.id)):'erfassen')+'</button></td>'
       +'<td class="calc">'+eur(k.g)+'</td>'
       +'<td class="calc">'+eur(k.proE)+'</td>'
       +'<td class="calc">'+eur2(k.proM2)+'</td>'
@@ -119,9 +150,22 @@ function render(){
       +'<td class="calc">'+(k.bisVerm==null?'–':k.bisVerm)+'</td>'
       +'<td><button class="abtn" onclick="delRow(\''+r.id+'\')">&times;</button></td></tr>';
   }).join('');
-  renderKpis();
+  renderKpis(); renderListe();
   var teams=[...new Set(ROWS.map(r=>r.team).filter(Boolean))];
   $('teamDL').innerHTML=teams.map(t=>'<option value="'+esc(t)+'">').join('');
+}
+function renderListe(){
+  if(!$('liste'))return;
+  $('liste').innerHTML=TYPEN.map(function(t){
+    var list=ROWS.filter(function(r){return (r.typ||'Sanierungen')===t;});
+    var rows=list.length?list.map(function(r){
+      return '<tr><td style="text-align:left;position:static;background:transparent">'+esc(r.projektnummer||'–')+'</td>'
+        +'<td style="text-align:left">'+esc(r.objekt_wohnung||r.objekt||'–')+'</td>'
+        +'<td style="text-align:left">'+esc(r.art||'–')+'</td></tr>';
+    }).join(''):'<tr><td colspan="3" style="text-align:left;color:var(--muted)">Noch keine Einträge.</td></tr>';
+    return '<div><div style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--dim);margin-bottom:6px">'+esc(t)+' <span style="color:var(--muted);font-weight:400">· '+list.length+'</span></div>'
+      +'<div class="tablewrap"><table style="min-width:0;width:100%"><thead><tr><th style="text-align:left">Projekt-Nr</th><th style="text-align:left">Objekt / Wohnung</th><th style="text-align:left">Art der Sanierung</th></tr></thead><tbody>'+rows+'</tbody></table></div></div>';
+  }).join('');
 }
 function avg(arr){var v=arr.filter(x=>x!=null&&!isNaN(x));return v.length?v.reduce((a,b)=>a+b,0)/v.length:null;}
 function sum(arr){return arr.filter(x=>x!=null&&!isNaN(x)).reduce((a,b)=>a+b,0);}
@@ -142,7 +186,51 @@ function renderKpis(){
 async function load(){
   var res=await sb.from('sanierungen').select('*').order('created_at',{ascending:false});
   if(res.error){toast('Fehler: '+res.error.message);return;}
-  ROWS=res.data||[]; render();
+  ROWS=res.data||[];
+  var rr=await sb.from('sanierung_rechnungen').select('*').order('datum',{ascending:false});
+  RECH=rr.data||[];
+  render();
+}
+function openRech(id){R_CUR=id;var r=ROWS.find(x=>x.id===id);
+  $('rTitle').textContent='Rechnungen · '+((r&&(r.projektnummer?r.projektnummer+' — ':'')+(r&&(r.objekt_wohnung||r.objekt)||'Sanierung'))||'Sanierung');
+  $('rDlg').style.display='flex';renderRech();}
+function closeRech(){$('rDlg').style.display='none';R_CUR=null;render();}
+function renderRech(){
+  var list=rechOf(R_CUR).slice().sort(function(a,b){return String(b.datum||'').localeCompare(String(a.datum||''));});
+  $('rTbl').querySelector('thead').innerHTML='<tr><th>Datum</th><th>Lieferant / Firma</th><th>Rechnungs-Nr</th><th>Kategorie</th><th>Betrag €</th><th>Notiz</th><th></th></tr>';
+  $('rTbl').querySelector('tbody').innerHTML=list.length?list.map(function(x){
+    return '<tr>'
+      +'<td><input type="date" value="'+esc(x.datum||'')+'" onchange="updRech(\''+x.id+'\',\'datum\',this.value)"></td>'
+      +'<td><input type="text" style="min-width:150px" value="'+esc(x.lieferant||'')+'" onchange="updRech(\''+x.id+'\',\'lieferant\',this.value)"></td>'
+      +'<td><input type="text" style="min-width:100px" value="'+esc(x.rechnungsnummer||'')+'" onchange="updRech(\''+x.id+'\',\'rechnungsnummer\',this.value)"></td>'
+      +'<td><select onchange="updRech(\''+x.id+'\',\'kategorie\',this.value)">'+RKAT.map(k=>'<option '+(k===x.kategorie?'selected':'')+'>'+esc(k)+'</option>').join('')+'</select></td>'
+      +'<td><input type="text" inputmode="decimal" value="'+esc(x.betrag==null?'':x.betrag)+'" onchange="updRech(\''+x.id+'\',\'betrag\',this.value)"></td>'
+      +'<td><input type="text" style="min-width:140px" value="'+esc(x.notiz||'')+'" onchange="updRech(\''+x.id+'\',\'notiz\',this.value)"></td>'
+      +'<td><button class="abtn" onclick="delRech(\''+x.id+'\')">&times;</button></td></tr>';
+  }).join(''):'<tr><td colspan="7" class="empty">Noch keine Rechnungen – oben „+ Rechnung erfassen“.</td></tr>';
+  var sums=RKAT.map(function(k){var s=list.filter(x=>x.kategorie===k).reduce(function(a,b){return a+(n(b.betrag)||0);},0);return s?esc(k)+': <b>'+eur(s)+'</b>':null;}).filter(Boolean);
+  $('rSums').innerHTML=sums.join(' &nbsp;·&nbsp; ')||'';
+  $('rTotal').textContent=eur(list.reduce(function(a,b){return a+(n(b.betrag)||0);},0));
+}
+async function addRech(){
+  if(!R_CUR)return;
+  var res=await sb.from('sanierung_rechnungen').insert({sanierung_id:R_CUR,datum:new Date().toISOString().slice(0,10),kategorie:'Material'}).select();
+  if(res.error){toast('Fehler: '+res.error.message);return;}
+  if(res.data&&res.data[0])RECH.unshift(res.data[0]);
+  renderRech();
+}
+async function updRech(id,field,val){
+  var v=(field==='betrag')?n(val):(val===''?null:val);
+  var o={};o[field]=v;
+  var res=await sb.from('sanierung_rechnungen').update(o).eq('id',id);
+  if(res.error){toast('Fehler: '+res.error.message);return;}
+  var x=RECH.find(y=>y.id===id); if(x)x[field]=v;
+  renderRech();
+}
+async function delRech(id){
+  if(!confirm('Rechnung löschen?'))return;
+  await sb.from('sanierung_rechnungen').delete().eq('id',id);
+  RECH=RECH.filter(x=>x.id!==id); renderRech();
 }
 async function addRow(){
   var res=await sb.from('sanierungen').insert({objekt:'Neue Sanierung'}).select();
