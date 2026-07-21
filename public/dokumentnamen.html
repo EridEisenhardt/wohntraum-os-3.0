@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="de"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Dokumentennamen-Generator · Produktivität</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+:root{--bg:#f6f7f9;--surf:#fff;--surf2:#f1f3f6;--line:#e6e8ec;--bord2:#eef0f3;--text:#1c2024;--muted:#6b7280;--dim:#4b5563;--accent:#0f9d6b}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--text);font-family:'Inter',system-ui,-apple-system,'Segoe UI',sans-serif;font-size:14px;line-height:1.5;min-height:100vh}
+.hdr{background:var(--surf);border-bottom:1px solid var(--line);padding:16px 24px;position:sticky;top:0;z-index:10}
+.hdr-title{font-size:18px;font-weight:700}.hdr-sub{font-size:12px;color:var(--muted);margin-top:2px}
+.wrap{max-width:920px;margin:20px auto;padding:0 20px}
+.card{background:var(--surf);border:1px solid var(--line);border-radius:14px;padding:18px 20px;margin-bottom:18px}
+.card h2{font-size:14px;margin-bottom:12px}
+label{font-size:12px;font-weight:600;color:var(--dim);display:block;margin-bottom:4px}
+select,input{width:100%;font:inherit;font-size:13px;padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:var(--surf)}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px}
+.fld{margin-bottom:2px}
+.btn{background:var(--accent);color:#fff;border:none;border-radius:8px;padding:9px 15px;font:inherit;font-weight:600;font-size:13px;cursor:pointer}
+.btn.sec{background:var(--surf2);color:var(--text)}
+.tmpl{font-size:12px;color:var(--muted);margin-top:6px}
+.result{background:#0b1220;color:#e6f0ea;border-radius:10px;padding:14px 16px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:14px;word-break:break-all;margin:12px 0}
+.bar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:8px}
+.hint{font-size:11.5px;color:var(--muted);margin-top:8px}
+.tag{display:inline-block;background:var(--surf2);color:var(--dim);font-size:10.5px;font-weight:700;padding:2px 8px;border-radius:10px;margin-left:6px}
+.toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:#1c2024;color:#fff;padding:10px 16px;border-radius:8px;font-size:13px;opacity:0;pointer-events:none;transition:.2s;z-index:50}
+.toast.show{opacity:1}
+</style></head><body>
+<div class="hdr"><div class="hdr-title">Dokumentennamen-Generator</div><div class="hdr-sub">Produktivität · benennt Dateien nach der Notion-Systematik „Dokumentennamen"</div></div>
+<div class="wrap">
+  <div class="card">
+    <div class="fld"><label>Thema / Dokumententyp</label>
+      <select id="typSel" onchange="onTyp()"></select></div>
+    <div class="tmpl" id="tmplHint"></div>
+    <div class="grid" id="fields" style="margin-top:14px"></div>
+    <div class="result" id="result">—</div>
+    <div class="bar">
+      <button class="btn" onclick="copyName()">📋 Namen kopieren</button>
+      <label style="display:inline-flex;align-items:center;gap:8px;font-weight:400;margin:0">
+        <span style="font-size:12px;color:var(--dim)">Datei umbenennen &amp; herunterladen:</span>
+        <input type="file" id="file" style="width:auto;padding:4px" onchange="renderName()">
+      </label>
+      <button class="btn sec" onclick="downloadRenamed()">⬇ Herunterladen</button>
+    </div>
+    <div class="hint">Leere Platzhalter werden im Namen weggelassen. Datum-Standard: JJJJ-MM-TT. Betrag-Beispiele: „480k", „1.234,56". Systematik-Quelle: Notion „Vorgabe Dokumentennamen".</div>
+  </div>
+</div>
+<div class="toast" id="toast"></div>
+<script>
+const sb=window.supabase.createClient('https://jqzxctfqvcwbctpjksvg.supabase.co','eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpxenhjdGZxdmN3YmN0cGprc3ZnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODIxMzA0MzIsImV4cCI6MjA5NzcwNjQzMn0.RKIbZxJdusKWWPjBJqlxZ8e1m8So02UslOg55YRsn3o');
+const $=id=>document.getElementById(id);
+const esc=s=>(s==null?'':String(s)).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+function toast(m){const t=$('toast');t.textContent=m;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),1900);}
+const TOK={
+  'KOST':{l:'Objektkürzel (KOST)',t:'text',ph:'z. B. Rh24'},
+  'OBJEKT':{l:'Objekt',t:'text',ph:'z. B. Rh24'},
+  'YYYY-MM-DD':{l:'Datum',t:'date'},
+  'JAHR':{l:'Jahr',t:'text',ph:'JJJJ'},
+  'BANK':{l:'Bank',t:'text',ph:'z. B. Mainzer Volksbank'},
+  'DLNR':{l:'Darlehensnummer',t:'text',ph:'z. B. 005'},
+  'BETRAG':{l:'Betrag',t:'text',ph:'z. B. 480k oder 1.234,56'},
+  'NACHNAME':{l:'Nachname',t:'text'},
+  'VORNAME':{l:'Vorname',t:'text'},
+  'WE':{l:'Wohneinheit',t:'text',ph:'z. B. WE1'},
+  'LIEFERANT':{l:'Lieferant / Firma',t:'text'},
+  'RENR':{l:'Rechnungs-Nr',t:'text'},
+  'PROJEKTNR':{l:'Projektnummer',t:'text'},
+  'BEHOERDE':{l:'Behörde / Absender',t:'text',ph:'z. B. Gemeinde, FA'},
+  'DOKUMENT':{l:'Bezeichnung',t:'text',ph:'freie Bezeichnung'}
+};
+let VOR=[],VALS={};
+function tokensOf(tpl){var out=[],re=/\{([A-Z0-9\-]+)\}/g,m;while((m=re.exec(tpl))){if(out.indexOf(m[1])<0)out.push(m[1]);}return out;}
+async function load(){
+  var res=await sb.from('dokument_vorlagen').select('*').eq('aktiv',true).order('sort');
+  VOR=res.data||[];
+  var cats=[...new Set(VOR.map(v=>v.kategorie))];
+  $('typSel').innerHTML=cats.map(c=>'<optgroup label="'+esc(c)+'">'+VOR.filter(v=>v.kategorie===c).map(v=>'<option value="'+v.id+'">'+esc(v.dokument)+'</option>').join('')+'</optgroup>').join('');
+  onTyp();
+}
+function curVor(){return VOR.find(v=>v.id===$('typSel').value);}
+function onTyp(){
+  var v=curVor(); if(!v)return;
+  $('tmplHint').innerHTML='Vorlage: <code>'+esc(v.template)+'</code>'+(v.hinweis?'<span class="tag">'+esc(v.hinweis)+'</span>':'');
+  var toks=tokensOf(v.template);
+  var today=new Date().toISOString().slice(0,10);
+  $('fields').innerHTML=toks.map(function(k){
+    var m=TOK[k]||{l:k,t:'text'};
+    var val=VALS[k]!=null?VALS[k]:(m.t==='date'?today:'');
+    return '<div class="fld"><label>'+esc(m.l)+'</label><input id="f_'+k+'" type="'+(m.t||'text')+'" value="'+esc(val)+'" placeholder="'+esc(m.ph||'')+'" oninput="renderName()"></div>';
+  }).join('');
+  renderName();
+}
+function renderName(){
+  var v=curVor(); if(!v)return;
+  var toks=tokensOf(v.template);
+  var name=v.template;
+  toks.forEach(function(k){
+    var el=$('f_'+k); var raw=el?el.value.trim():''; VALS[k]=raw;
+    name=name.split('{'+k+'}').join(raw);
+  });
+  // Aufräumen: doppelte/überzählige Trenner durch leere Platzhalter
+  name=name.replace(/_{2,}/g,'_').replace(/\s{2,}/g,' ').replace(/,\s*,/g,',');
+  name=name.replace(/^[_\s,]+/,'').replace(/[_\s,]+$/,'').replace(/_\s*€/,'€').replace(/,\s*_/g,'_');
+  $('result').textContent=name||'—';
+  return name;
+}
+function copyName(){
+  var n=renderName(); if(!n||n==='—'){toast('Noch kein Name');return;}
+  if(navigator.clipboard){navigator.clipboard.writeText(n).then(()=>toast('Name kopiert ✓'),()=>toast('Kopieren nicht möglich'));}
+}
+function downloadRenamed(){
+  var f=$('file').files&&$('file').files[0];
+  var n=renderName();
+  if(!f){toast('Bitte zuerst eine Datei wählen');return;}
+  if(!n||n==='—'){toast('Kein Name generiert');return;}
+  var dot=f.name.lastIndexOf('.'); var ext=dot>=0?f.name.slice(dot):'';
+  var a=document.createElement('a'); a.href=URL.createObjectURL(f); a.download=n+ext; document.body.appendChild(a); a.click(); a.remove();
+  toast('Heruntergeladen als '+n+ext);
+}
+(async()=>{const{data:{session}}=await sb.auth.getSession();load();})();
+</script>
+</body></html>
