@@ -50,16 +50,20 @@ tr.total td{background:#e2f2ea;font-weight:800;color:#0b7a52}
     <table id="sollTbl"><thead></thead><tbody></tbody></table>
   </div>
 
-  <div class="card"><h2>N26 direkt verbinden <span style="color:var(--muted);font-weight:400">· PSD2 über GoCardless Bank Account Data</span></h2>
+  <div class="card"><h2>N26 direkt verbinden <span style="color:var(--muted);font-weight:400">· PSD2 über Enable Banking</span></h2>
     <div class="bar">
-      <select id="instSel" style="min-width:260px"><option value="">— Bank laden —</option></select>
+      <select id="instSel" style="min-width:280px"><option value="">— Banken laden —</option></select>
       <button class="btn sec" onclick="loadInstitutions()">Banken laden</button>
       <button class="btn" onclick="startLink()">🔗 Verbindung starten</button>
       <button class="btn sec" onclick="checkStatus()">Status prüfen</button>
       <button class="btn" onclick="syncBank()">⬇ Umsätze synchronisieren</button>
     </div>
+    <div class="bar">
+      <input id="ebCode" type="text" placeholder="Freigabe-Code (falls nicht automatisch übernommen)" style="min-width:320px">
+      <button class="btn sec" onclick="finishSession()">Freigabe abschließen</button>
+    </div>
     <div id="bankStatus" style="font-size:12.5px;color:var(--dim)"></div>
-    <div style="font-size:11.5px;color:var(--muted);margin-top:8px">Einmalige Einrichtung nötig: GoCardless-Zugangsdaten müssen als Supabase-Secrets <b>GC_SECRET_ID</b> und <b>GC_SECRET_KEY</b> hinterlegt sein. Die Freigabe erfolgt direkt bei N26 – Zugangsdaten werden hier weder eingegeben noch gespeichert.</div>
+    <div style="font-size:11.5px;color:var(--muted);margin-top:8px">Einmalige Einrichtung: Enable-Banking-App registrieren und die Secrets <b>EB_APP_ID</b> und <b>EB_PRIVATE_KEY</b> in Supabase hinterlegen. Die Freigabe erfolgt direkt bei N26 – Zugangsdaten werden hier weder eingegeben noch gespeichert. PSD2-Freigabe gilt 90 Tage.</div>
   </div>
 
   <div class="card"><h2>N26-Umsätze importieren (CSV)</h2>
@@ -172,51 +176,74 @@ async function addKonto(){
 async function delKonto(id){if(!confirm('Konto löschen? Buchungen bleiben erhalten (ohne Zuordnung).'))return;await sb.from('konten_modell').delete().eq('id',id);load();}
 
 /* ---------- Bankverbindung (PSD2) ---------- */
-async function gcCall(payload){
-  var res=await sb.functions.invoke('gocardless',{body:payload});
-  if(res.error){throw new Error(res.error.message||'Funktionsfehler');}
+async function ebCall(payload){
+  var res=await sb.functions.invoke('enablebanking',{body:payload});
+  if(res.error){
+    var msg=res.error.message||'Funktionsfehler';
+    try{var ctx=await res.error.context.json();if(ctx&&ctx.error)msg=ctx.error;}catch(e){}
+    throw new Error(msg);
+  }
   if(res.data&&res.data.error){throw new Error(res.data.error);}
   return res.data;
 }
 async function loadInstitutions(){
   $('bankStatus').textContent='Lade Banken …';
   try{
-    var d=await gcCall({action:'institutions',country:'de'});
-    var list=(d.institutions||[]).sort((a,b)=>a.name.localeCompare(b.name));
+    var d=await ebCall({action:'aspsps',country:'DE'});
+    var list=(d.aspsps||[]).sort((a,b)=>a.name.localeCompare(b.name));
     var n26=list.filter(i=>/n26/i.test(i.name));
     var rest=list.filter(i=>!/n26/i.test(i.name));
+    function opt(i){return '<option value="'+esc(i.name)+'" data-c="'+esc(i.country||'DE')+'">'+esc(i.name)+'</option>';}
     $('instSel').innerHTML='<option value="">— Bank wählen —</option>'
-      +(n26.length?'<optgroup label="N26">'+n26.map(i=>'<option value="'+esc(i.id)+'">'+esc(i.name)+'</option>').join('')+'</optgroup>':'')
-      +'<optgroup label="Alle Banken">'+rest.map(i=>'<option value="'+esc(i.id)+'">'+esc(i.name)+'</option>').join('')+'</optgroup>';
-    if(n26.length)$('instSel').value=n26[0].id;
+      +(n26.length?'<optgroup label="N26">'+n26.map(opt).join('')+'</optgroup>':'')
+      +'<optgroup label="Alle Banken">'+rest.map(opt).join('')+'</optgroup>';
+    if(n26.length)$('instSel').value=n26[0].name;
     $('bankStatus').textContent=list.length+' Banken geladen'+(n26.length?' · N26 vorausgewählt':'');
   }catch(e){$('bankStatus').innerHTML='<span style="color:#c0392b">'+esc(e.message)+'</span>';}
 }
+function appOrigin(){try{if(window.top&&window.top.location&&window.top.location.origin)return window.top.location.origin;}catch(e){}return window.location.origin;}
 async function startLink(){
-  var inst=$('instSel').value;
-  if(!inst){toast('Bitte Bank wählen');return;}
+  var sel=$('instSel'); var name=sel.value;
+  if(!name){toast('Bitte Bank wählen');return;}
+  var country=(sel.options[sel.selectedIndex]&&sel.options[sel.selectedIndex].getAttribute('data-c'))||'DE';
   $('bankStatus').textContent='Erstelle Freigabe-Link …';
   try{
-    var redirect=(window.top&&window.top.location&&window.top.location.origin?window.top.location.origin:window.location.origin)+'/eric-privat/kontenmodell';
-    var d=await gcCall({action:'link',institution_id:inst,redirect:redirect});
-    $('bankStatus').innerHTML='Freigabe-Link erstellt. <a href="'+esc(d.link)+'" target="_blank" rel="noopener" style="color:var(--accent);font-weight:700">→ Jetzt bei der Bank freigeben</a> · danach „Status prüfen“.';
-    window.open(d.link,'_blank','noopener');
+    var d=await ebCall({action:'link',aspsp_name:name,aspsp_country:country,redirect:appOrigin()+'/eric-privat/kontenmodell'});
+    $('bankStatus').innerHTML='Freigabe-Link erstellt. <a href="'+esc(d.url)+'" target="_blank" rel="noopener" style="color:var(--accent);font-weight:700">→ Jetzt bei N26 freigeben</a> · danach kommst du zurück und die Freigabe wird automatisch abgeschlossen.';
+    window.open(d.url,'_blank','noopener');
+  }catch(e){$('bankStatus').innerHTML='<span style="color:#c0392b">'+esc(e.message)+'</span>';}
+}
+function urlCode(){
+  try{ if(window.top&&window.top.location&&window.top.location.search){
+    var p=new URLSearchParams(window.top.location.search); if(p.get('code'))return p.get('code'); } }catch(e){}
+  var p2=new URLSearchParams(window.location.search); return p2.get('code')||'';
+}
+async function finishSession(){
+  var code=($('ebCode').value||'').trim()||urlCode();
+  if(!code){toast('Kein Freigabe-Code gefunden');return;}
+  $('bankStatus').textContent='Schließe Freigabe ab …';
+  try{
+    var d=await ebCall({action:'session',code:code});
+    $('ebCode').value='';
+    $('bankStatus').innerHTML='Verbunden ✓ · <b>'+d.konten+'</b> Konto(en) freigegeben. Jetzt „Umsätze synchronisieren“.';
+    toast('Bank verbunden');
   }catch(e){$('bankStatus').innerHTML='<span style="color:#c0392b">'+esc(e.message)+'</span>';}
 }
 async function checkStatus(){
   $('bankStatus').textContent='Prüfe Status …';
   try{
-    var d=await gcCall({action:'status'});
+    var d=await ebCall({action:'status'});
     var v=d.verbindung;
     if(!v){$('bankStatus').textContent='Noch keine Bankverbindung angelegt.';return;}
-    $('bankStatus').innerHTML='Bank: <b>'+esc(v.institution_name||'—')+'</b> · Status: <b>'+esc(v.status||'—')+'</b> · Konten: <b>'+((v.account_ids||[]).length)+'</b>'
+    $('bankStatus').innerHTML='Bank: <b>'+esc(v.institution_name||v.aspsp_name||'—')+'</b> · Status: <b>'+esc(v.status||'—')+'</b> · Konten: <b>'+((v.account_ids||[]).length)+'</b>'
+      +(v.gueltig_bis?' · Freigabe bis: '+new Date(v.gueltig_bis).toLocaleDateString('de-DE'):'')
       +(v.letzter_sync?' · letzter Sync: '+new Date(v.letzter_sync).toLocaleString('de-DE'):'');
   }catch(e){$('bankStatus').innerHTML='<span style="color:#c0392b">'+esc(e.message)+'</span>';}
 }
 async function syncBank(){
   $('bankStatus').textContent='Synchronisiere Umsätze …';
   try{
-    var d=await gcCall({action:'sync'});
+    var d=await ebCall({action:'sync',tage:365});
     $('bankStatus').innerHTML='Sync fertig: <b>'+d.transaktionen+'</b> Transaktionen aus <b>'+d.konten+'</b> Konto(en) verarbeitet.';
     toast('Umsätze synchronisiert');
     await load(); applyRules();
@@ -392,6 +419,9 @@ function drawTrend(){
     options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{labels:{boxWidth:12,font:{size:10}}}},scales:{x:{stacked:true,ticks:{font:{size:10}}},y:{stacked:true,beginAtZero:true,ticks:{font:{size:10}}}}}});
 }
 function render(){renderSoll();renderRegeln();renderBu();renderIst();drawTrend();}
-(async()=>{const{data:{session}}=await sb.auth.getSession();load();})();
+(async()=>{const{data:{session}}=await sb.auth.getSession();await load();
+  var c=urlCode();
+  if(c){ $('ebCode').value=c; await finishSession(); await syncBank(); }
+})();
 </script>
 </body></html>
