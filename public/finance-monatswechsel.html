@@ -143,9 +143,9 @@ tr.done .done-dot{background:var(--accent);border-color:var(--accent);color:#fff
     <div class="desc">Fällige wiederkehrende Zahlungen des Monats werden automatisch aus „Wiederkehrende Zahlungen" übernommen (je Objekt/Rubrik). Zusätzliche Fixkosten kannst du manuell ergänzen · <a class="link" href="/buchhaltung/wiederkehrende-zahlungen" target="_top">→ Wiederkehrende Zahlungen</a></div>
     <div style="overflow-x:auto">
       <table id="tFix"><thead><tr>
-        <th class="st" title="Ausgeführt">✓</th><th>Bezeichnung</th><th>Gesellschaft</th><th>Empfänger</th><th class="num">Betrag</th><th>Zahlungsart</th><th>Von-Konto</th><th>IBAN (Ziel)</th><th></th>
+        <th class="st" title="Ausgeführt">✓</th><th>Objekt</th><th class="num">Summe (Monat)</th><th>IBAN (abgebendes Konto)</th><th></th>
       </tr></thead><tbody id="fixBody"></tbody>
-      <tfoot><tr><td colspan="4">Summe Fixkosten</td><td class="num" id="fixFoot">–</td><td colspan="4"></td></tr></tfoot>
+      <tfoot><tr><td colspan="2">Summe Fixkosten</td><td class="num" id="fixFoot">–</td><td colspan="2"></td></tr></tfoot>
       </table>
     </div>
     <div style="margin-top:10px"><button class="btn mini" onclick="addFix()">＋ Fixkosten hinzufügen</button></div>
@@ -197,7 +197,7 @@ async function copyPrev(){
   ]);
   const strip=(r)=>{var o=Object.assign({},r);delete o.id;delete o.created_at;o.periode=PER;o.ausgefuehrt=false;return o;};
   var ins=[];
-  var fman=(f.data||[]).filter(function(r){return !r.quell_zid;}); // nur manuelle Fixkosten übernehmen
+  var fman=(f.data||[]).filter(function(r){return !r.quell_zid && !r.quell_objekt;}); // nur manuelle Fixkosten übernehmen
   if(fman.length) ins.push(sb.from('monatswechsel_fixkosten').insert(fman.map(strip)));
   if((k.data||[]).length) ins.push(sb.from('monatswechsel_konten').insert((k.data||[]).map(function(r){var o=Object.assign({},r);delete o.id;delete o.created_at;o.periode=PER;return o;})));
   var rs=await Promise.all(ins);
@@ -257,22 +257,29 @@ function fixDue(turnus,m){
   if(t==='einmalig') return false;
   return true; // monatlich, zweimonatlich, mehrmals u.a. = jeden Monat
 }
+// Pro Objekt EINE Fixkosten-Zeile: Summe der im Monat fälligen wiederkehrenden Zahlungen + abgebendes Konto (IBAN).
 async function ensureFixFromRecurring(existing){
   var m=+((PER||'').split('-')[1]);
-  var wres=await sb.from('wiederkehrende_zahlungen').select('id,objekt,empfaenger,betrag,turnus,iban,quell_konto').eq('aktiv',true);
-  var due=(wres.data||[]).filter(function(z){return (Number(z.betrag)||0)!==0 && fixDue(z.turnus,m);});
-  var byZid={}; (existing||[]).forEach(function(r){ if(r.quell_zid) byZid[r.quell_zid]=r; });
-  var wantZ={}, ops=[];
-  due.forEach(function(z,i){
-    wantZ[z.id]=1; var ex=byZid[z.id];
-    var bez=(z.objekt||'')+' · '+(z.empfaenger||'');
+  var wres=await sb.from('wiederkehrende_zahlungen').select('objekt,betrag,turnus,quell_konto').eq('aktiv',true);
+  var agg={}; // objekt -> {sum, konto}
+  (wres.data||[]).forEach(function(z){
+    if((Number(z.betrag)||0)===0 || !fixDue(z.turnus,m)) return;
+    var o=z.objekt||'—'; if(!agg[o]) agg[o]={sum:0,konto:''};
+    agg[o].sum+=Number(z.betrag)||0;
+    if(!agg[o].konto && z.quell_konto) agg[o].konto=z.quell_konto;
+  });
+  var byObj={}; (existing||[]).forEach(function(r){ if(r.quell_objekt) byObj[r.quell_objekt]=r; });
+  var want={}, ops=[], objs=Object.keys(agg).sort();
+  objs.forEach(function(o,i){
+    want[o]=1; var ex=byObj[o]; var sum=Math.round(agg[o].sum*100)/100;
     if(!ex){
-      ops.push(sb.from('monatswechsel_fixkosten').insert({periode:PER,quell_zid:z.id,bezeichnung:bez,empfaenger:z.empfaenger,betrag:z.betrag,iban:z.iban||null,quell_konto:z.quell_konto||null,zahlungsart:'Lastschrift',aktiv:true,pos:500+i}));
-    } else if(Number(ex.betrag||0)!==Number(z.betrag||0)){
-      ops.push(sb.from('monatswechsel_fixkosten').update({betrag:z.betrag}).eq('id',ex.id));
+      ops.push(sb.from('monatswechsel_fixkosten').insert({periode:PER,quell_objekt:o,bezeichnung:o,betrag:sum,quell_konto:agg[o].konto||null,zahlungsart:'Lastschrift',aktiv:true,pos:500+i}));
+    } else if(Number(ex.betrag||0)!==sum){
+      ops.push(sb.from('monatswechsel_fixkosten').update({betrag:sum}).eq('id',ex.id));
     }
   });
-  (existing||[]).forEach(function(r){ if(r.quell_zid && !wantZ[r.quell_zid]) ops.push(sb.from('monatswechsel_fixkosten').update({aktiv:false}).eq('id',r.id)); });
+  // veraltete Auto-Objektzeilen (inkl. alter quell_zid-Zeilen) deaktivieren
+  (existing||[]).forEach(function(r){ if((r.quell_objekt && !want[r.quell_objekt]) || r.quell_zid) ops.push(sb.from('monatswechsel_fixkosten').update({aktiv:false}).eq('id',r.id)); });
   if(ops.length) await Promise.all(ops);
   var fin=await sb.from('monatswechsel_fixkosten').select('*').eq('aktiv',true).eq('periode',PER).order('pos').order('created_at');
   return fin.data||[];
@@ -367,22 +374,21 @@ function renderDar(){
 function renderFix(){
   $('fixBody').innerHTML=FIX.map(function(r){
     var done=!!r.ausgefuehrt;
+    var auto=!!r.quell_objekt;
+    var objCell = auto
+      ? '<td><b>'+esc(r.bezeichnung||r.quell_objekt||'—')+'</b></td>'
+      : '<td><input value="'+esc(r.bezeichnung||'')+'" placeholder="Objekt / Bezeichnung" onchange="updF(\''+r.id+'\',\'bezeichnung\',this.value)"></td>';
+    var betCell = auto
+      ? '<td class="num">'+eur(Number(r.betrag)||0)+'</td>'
+      : '<td class="num"><input class="amt" type="text" inputmode="decimal" value="'+(r.betrag!=null?r.betrag:'')+'" placeholder="0,00" onchange="updFNum(\''+r.id+'\',\'betrag\',this.value)"></td>';
     return '<tr class="pay'+(done?' done':'')+'" onclick="rowToggle(event,\'fix\',\''+r.id+'\')">'
     +'<td class="st"><span class="done-dot" title="Als ausgeführt markieren">✓</span></td>'
-    +'<td><input value="'+esc(r.bezeichnung||'')+'" placeholder="z. B. Büromiete" onchange="updF(\''+r.id+'\',\'bezeichnung\',this.value)"></td>'
-    +'<td><select style="min-width:96px" onchange="updF(\''+r.id+'\',\'unternehmen\',this.value)">'
-      +'<option value=""'+(!r.unternehmen?' selected':'')+'>—</option>'
-      +GES.map(function(G){return '<option value="'+G.k+'"'+(r.unternehmen===G.k?' selected':'')+'>'+esc(G.k)+'</option>';}).join('')
-      +'</select></td>'
-    +'<td><input value="'+esc(r.empfaenger||'')+'" placeholder="Empfänger" onchange="updF(\''+r.id+'\',\'empfaenger\',this.value)"></td>'
-    +'<td class="num"><input class="amt" type="text" inputmode="decimal" value="'+(r.betrag!=null?r.betrag:'')+'" placeholder="0,00" onchange="updFNum(\''+r.id+'\',\'betrag\',this.value)"></td>'
-    +'<td><select onchange="updF(\''+r.id+'\',\'zahlungsart\',this.value)">'
-      +['Lastschrift','Überweisung','Dauerauftrag'].map(function(o){return '<option'+(r.zahlungsart===o?' selected':'')+'>'+o+'</option>';}).join('')+'</select></td>'
-    +'<td><input value="'+esc(r.quell_konto||'')+'" placeholder="von…" onchange="updF(\''+r.id+'\',\'quell_konto\',this.value)"></td>'
-    +'<td><input class="iban" value="'+esc(r.iban||'')+'" placeholder="DE.. .... .... .... .... .." onchange="updF(\''+r.id+'\',\'iban\',this.value)"></td>'
-    +'<td><button class="icobtn" title="Entfernen" onclick="delFix(\''+r.id+'\')">✕</button></td>'
+    +objCell
+    +betCell
+    +'<td><input class="iban" value="'+esc(r.quell_konto||'')+'" placeholder="DE.. .... .... .... .... .." onchange="updF(\''+r.id+'\',\'quell_konto\',this.value)"></td>'
+    +'<td>'+(auto?'':'<button class="icobtn" title="Entfernen" onclick="delFix(\''+r.id+'\')">✕</button>')+'</td>'
     +'</tr>';
-  }).join('')||'<tr><td colspan="9" class="muted">Noch keine Fixkosten.</td></tr>';
+  }).join('')||'<tr><td colspan="5" class="muted">Keine fälligen wiederkehrenden Zahlungen für '+esc(perLabel(PER))+'.</td></tr>';
   var s=FIX.reduce(function(a,r){return a+(Number(r.betrag)||0);},0);
   $('fixFoot').textContent=eur(s);
 }
