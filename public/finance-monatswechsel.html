@@ -88,7 +88,7 @@ tr.done .done-dot{background:var(--accent);border-color:var(--accent);color:#fff
 
   <div class="card">
     <h2>💶 Gehälter</h2>
-    <div class="desc">Zahlungen an das Team beim Monatswechsel. Beträge &amp; Bankdaten bitte eintragen. Vorbefüllt mit aktiven Mitarbeitern.</div>
+    <div class="desc">Basis sind die Soll-Gehälter aus „Fixkosten der Gruppe" (WT · EE · Kibo) für den gewählten Monat. Bankdaten &amp; Von-Konto bitte ergänzen · <a class="link" href="/controlling/gruppe-fixkosten" target="_top">→ Gruppe-Fixkosten</a></div>
     <div style="overflow-x:auto">
       <table id="tGeh"><thead><tr>
         <th class="st" title="Ausgeführt">✓</th><th>Empfänger</th><th>Unternehmen</th><th class="num">Betrag</th><th>Zahlungsart</th><th>Von-Konto</th><th>IBAN (Ziel)</th><th></th>
@@ -96,7 +96,10 @@ tr.done .done-dot{background:var(--accent);border-color:var(--accent);color:#fff
       <tfoot><tr><td colspan="3">Summe Gehälter</td><td class="num" id="gehFoot">–</td><td colspan="4"></td></tr></tfoot>
       </table>
     </div>
-    <div style="margin-top:10px"><button class="btn mini" onclick="addGeh()">＋ Gehalt/Zahlung hinzufügen</button></div>
+    <div style="margin-top:10px;display:flex;gap:10px;flex-wrap:wrap">
+      <button class="btn mini" onclick="addGeh()">＋ Gehalt/Zahlung hinzufügen</button>
+      <button class="btn sec mini" onclick="seedGehaltFromSoll(true)" title="Gehälter für diesen Monat aus der Soll-Matrix von Fixkosten der Gruppe neu übernehmen">↻ Aus Gruppe-Fixkosten (Soll)</button>
+    </div>
   </div>
 
   <div class="card">
@@ -167,7 +170,8 @@ async function addMonth(){
   var res=await sb.from('monatswechsel_perioden').insert({periode:np});
   if(res.error){toast('Fehler: '+res.error.message);return;}
   PER=np; await loadPerioden(); await load();
-  toast(perLabel(np)+' angelegt – ggf. „Werte aus Vormonat" übernehmen');
+  await seedGehaltFromSoll(false); // Gehälter-Basis automatisch aus Gruppe-Fixkosten (Soll)
+  toast(perLabel(np)+' angelegt – Gehälter aus Soll übernommen; Fixkosten/Konten ggf. „Werte aus Vormonat"');
 }
 async function copyPrev(){
   var pv=prevPer(PER);
@@ -187,6 +191,27 @@ async function copyPrev(){
   var err=rs.find(x=>x&&x.error);
   if(err){toast('Fehler: '+err.error.message);return;}
   await load(); toast('Werte aus '+perLabel(pv)+' übernommen ✓');
+}
+
+// Gehälter-Basis aus Gruppe-Fixkosten Soll-Matrix (personal_matrix, Spalte m{Monat}).
+// Nur Mitarbeiter-Positionen (keine Sachbezug/Knappschaft/Lohnsteuer/Firmus/KK/BKK-Zeilen).
+var NICHT_GEHALT=/sachbezug|knappschaft|lohnsteuer|firmus|bkk|bahn|kk-?beitrag|beitrag|sozial|\bsv\b|krankenkasse/i;
+async function seedGehaltFromSoll(replace){
+  var parts=(PER||'').split('-'); var jahr=+parts[0], monat=+parts[1];
+  var res=await sb.from('personal_matrix').select('unternehmen,label,sort,m'+monat).eq('jahr',jahr).order('unternehmen').order('sort');
+  if(res.error){toast('Fehler: '+res.error.message);return;}
+  var rows=(res.data||[]).filter(function(r){
+    var lbl=(r.label||'').trim();
+    if(!lbl||NICHT_GEHALT.test(lbl)) return false;
+    var v=Number(r['m'+monat]); return v>0;
+  });
+  if(!rows.length){toast('Keine Soll-Gehälter für '+perLabel(PER)+' gefunden');return;}
+  if(replace && GEH.length){ if(!confirm('Gehälter für '+perLabel(PER)+' durch die Soll-Werte aus Fixkosten der Gruppe ersetzen? (manuelle Zeilen dieses Monats werden entfernt)'))return; }
+  if(replace && GEH.length){ await sb.from('monatswechsel_gehalt').update({aktiv:false}).eq('periode',PER); }
+  var payload=rows.map(function(r,i){return {periode:PER,empfaenger:(r.label||'').trim(),unternehmen:r.unternehmen,betrag:Number(r['m'+monat]),zahlungsart:'Überweisung',aktiv:true,pos:i+1};});
+  var ins=await sb.from('monatswechsel_gehalt').insert(payload);
+  if(ins.error){toast('Fehler: '+ins.error.message);return;}
+  await load(); toast(rows.length+' Soll-Gehälter aus '+perLabel(PER)+' übernommen ✓');
 }
 
 async function load(){
