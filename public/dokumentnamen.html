@@ -44,6 +44,7 @@ select,input{width:100%;font:inherit;font-size:13px;padding:8px 10px;border:1px 
     <div class="hint">Leere Platzhalter werden im Namen weggelassen. Datum-Standard: JJJJ-MM-TT. Betrag-Beispiele: „480k", „1.234,56". Systematik-Quelle: Notion „Vorgabe Dokumentennamen".</div>
   </div>
 </div>
+<datalist id="projDL"></datalist>
 <div class="toast" id="toast"></div>
 <script>
 const sb=window.supabase.createClient('https://jqzxctfqvcwbctpjksvg.supabase.co','eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpxenhjdGZxdmN3YmN0cGprc3ZnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODIxMzA0MzIsImV4cCI6MjA5NzcwNjQzMn0.RKIbZxJdusKWWPjBJqlxZ8e1m8So02UslOg55YRsn3o');
@@ -68,13 +69,33 @@ const TOK={
   'THEMA':{l:'Thema',t:'text',ph:'z. B. Strom, Gas, Wasser, Hausmeister'},
   'DOKUMENT':{l:'Bezeichnung',t:'text',ph:'freie Bezeichnung'}
 };
-let VOR=[],VALS={};
+let VOR=[],VALS={},PROJ=[];
 function tokensOf(tpl){var out=[],re=/\{([A-Z0-9\-]+)\}/g,m;while((m=re.exec(tpl))){if(out.indexOf(m[1])<0)out.push(m[1]);}return out;}
+async function loadProj(){
+  var res=await sb.from('sanierungen').select('projektnummer,objekt,objekt_wohnung,art').not('projektnummer','is',null).order('projektnummer');
+  var seen={}; PROJ=[];
+  (res.data||[]).forEach(function(r){var p=(r.projektnummer||'').trim();if(p&&!seen[p]){seen[p]=1;PROJ.push({nr:p,objekt:r.objekt,ow:r.objekt_wohnung,art:r.art});}});
+  renderProjDL();
+}
+function renderProjDL(){
+  $('projDL').innerHTML=PROJ.map(function(p){var lbl=p.nr+(p.objekt?' · '+p.objekt:'')+(p.art?' · '+p.art:'');return '<option value="'+esc(p.nr)+'">'+esc(lbl)+'</option>';}).join('');
+}
+async function projHinterlegen(){
+  var el=$('f_PROJEKTNR'); if(!el)return;
+  var nr=(el.value||'').trim(); if(!nr){toast('Projektnummer eingeben');return;}
+  if(PROJ.some(function(p){return p.nr.toLowerCase()===nr.toLowerCase();})){toast('Projektnummer existiert bereits in KPI Sanierungen');return;}
+  var objekt=($('f_OBJEKT')&&$('f_OBJEKT').value.trim())||null;
+  var res=await sb.from('sanierungen').insert({projektnummer:nr,objekt:objekt,typ:'Umbauarbeiten',art:'Umbau',notiz:'aus Dokumentennamen-Generator angelegt'}).select();
+  if(res.error){toast('Fehler: '+res.error.message);return;}
+  PROJ.push({nr:nr,objekt:objekt,art:'Umbau'}); renderProjDL();
+  toast('In KPI Sanierungen hinterlegt ✓');
+}
 async function load(){
   var res=await sb.from('dokument_vorlagen').select('*').eq('aktiv',true).order('sort');
   VOR=res.data||[];
   var cats=[...new Set(VOR.map(v=>v.kategorie))];
   $('typSel').innerHTML=cats.map(c=>'<optgroup label="'+esc(c)+'">'+VOR.filter(v=>v.kategorie===c).map(v=>'<option value="'+v.id+'">'+esc(v.dokument)+'</option>').join('')+'</optgroup>').join('');
+  await loadProj();
   onTyp();
 }
 function curVor(){return VOR.find(v=>v.id===$('typSel').value);}
@@ -86,6 +107,11 @@ function onTyp(){
   $('fields').innerHTML=toks.map(function(k){
     var m=TOK[k]||{l:k,t:'text'};
     var val=VALS[k]!=null?VALS[k]:(m.t==='date'?today:'');
+    if(k==='PROJEKTNR'){
+      return '<div class="fld"><label>Projektnummer <span style="font-weight:400;color:var(--muted)">(aus KPI Sanierungen)</span></label>'
+        +'<div style="display:flex;gap:6px"><input id="f_PROJEKTNR" list="projDL" value="'+esc(val)+'" placeholder="wählen oder neu eingeben" oninput="renderName()" style="flex:1">'
+        +'<button type="button" class="btn sec" style="padding:6px 10px;white-space:nowrap" onclick="projHinterlegen()">＋ hinterlegen</button></div></div>';
+    }
     return '<div class="fld"><label>'+esc(m.l)+'</label><input id="f_'+k+'" type="'+(m.t||'text')+'" value="'+esc(val)+'" placeholder="'+esc(m.ph||'')+'" oninput="renderName()"></div>';
   }).join('');
   renderName();
