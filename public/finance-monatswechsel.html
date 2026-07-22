@@ -128,7 +128,7 @@ tr.done .done-dot{background:var(--accent);border-color:var(--accent);color:#fff
     <div class="desc">Alle Positionen 1:1 aus der Jahres-Matrix Personalkosten (WT · EE · Kibo) für den gewählten Monat. IBAN = Konto, wohin gezahlt wird. Zeile anklicken = erledigt (fällt aus „noch zu zahlen") · <a class="link" href="/controlling/gruppe-fixkosten" target="_top">→ Gruppe-Fixkosten</a></div>
     <div style="overflow-x:auto">
       <table id="tGeh"><thead><tr>
-        <th class="st" title="Ausgeführt">✓</th><th>Position</th><th class="num">Betrag</th><th>IBAN (Ziel)</th><th>Verwendungszweck</th>
+        <th class="st" title="Ausgeführt">✓</th><th>Position</th><th class="num">Betrag</th><th>Von-Konto (Bankkonto Gesellschaft)</th><th>Verwendungszweck</th>
       </tr></thead><tbody id="gehBody"></tbody>
       <tfoot><tr><td colspan="2">Summe Personalkosten</td><td class="num" id="gehFoot">–</td><td colspan="2"></td></tr></tfoot>
       </table>
@@ -349,7 +349,7 @@ function kontoLabel(iban){
 function renderKonAuto(){
   var agg={};
   function add(iban,feld,val){var k=iban||'';if(!agg[k])agg[k]={geh:0,dar:0,fix:0};agg[k][feld]+=(Number(val)||0);}
-  GEH.forEach(function(r){add(r.quell_konto,'geh',r.betrag);});
+  GEH.forEach(function(r){add(r.iban||r.quell_konto,'geh',r.betrag);});
   DAR.forEach(function(r){add(r.quell_konto,'dar',r.kapitaldienst);});
   FIX.forEach(function(r){add(r.quell_konto,'fix',r.betrag);});
   var keys=Object.keys(agg).sort(function(a,b){return a===''?1:(b===''?-1:a.localeCompare(b));});
@@ -372,7 +372,9 @@ function renderGeh(){
     var rows=GEH.filter(function(r){return gesOf(r.unternehmen)===G.k;});
     if(!rows.length) return;
     var sub=rows.reduce(function(a,r){return a+(Number(r.betrag)||0);},0);
-    html+='<tr class="grp"><td class="st"></td><td><b>'+esc(G.name)+'</b></td><td class="num"><b>'+eur(sub)+'</b></td><td colspan="2"></td></tr>';
+    var konto=(rows.find(function(r){return r.iban;})||{}).iban||'';
+    html+='<tr class="grp"><td class="st"></td><td><b>'+esc(G.name)+'</b></td><td class="num"><b>'+eur(sub)+'</b></td>'
+      +'<td colspan="2"><input class="iban" value="'+esc(konto)+'" placeholder="Bankkonto (Von) – für alle Positionen" onchange="setGesKonto(\''+G.k+'\',this.value)" title="Von-Konto der Gesellschaft; wird für alle Positionen übernommen"></td></tr>';
     rows.forEach(function(r){
       var done=!!r.ausgefuehrt;
       html+='<tr class="pay'+(done?' done':'')+'" onclick="rowToggle(event,\'geh\',\''+r.id+'\')">'
@@ -387,6 +389,14 @@ function renderGeh(){
   $('gehBody').innerHTML=html||'<tr><td colspan="5" class="muted">Keine Positionen in der Personalkosten-Matrix für '+esc(perLabel(PER))+'.</td></tr>';
   var s=GEH.reduce(function(a,r){return a+(Number(r.betrag)||0);},0);
   $('gehFoot').textContent=eur(s);
+}
+async function setGesKonto(gk,iban){
+  var v=(iban||'').trim()||null;
+  var G=GES.find(function(x){return x.k===gk;}); if(!G)return;
+  GEH.forEach(function(r){ if(gesOf(r.unternehmen)===gk) r.iban=v; });
+  renderGeh(); renderKonAuto();
+  var res=await sb.from('monatswechsel_gehalt').update({iban:v}).eq('periode',PER).eq('unternehmen',G.name);
+  if(res.error) toast('Fehler: '+res.error.message); else toast('Von-Konto für '+G.k+' gesetzt');
 }
 
 function renderDar(){
@@ -456,6 +466,7 @@ function renderStats(){
 async function upd(id,field,val){
   var v=val===''?null:val;
   var row=GEH.find(function(r){return r.id===id;}); if(row)row[field]=v;
+  if(field==='iban') renderKonAuto(); // Liquiditäts-Konto-Summe aktualisieren
   var res=await sb.from('monatswechsel_gehalt').update({[field]:v}).eq('id',id);
   if(res.error){toast('Fehler: '+res.error.message);}
 }
