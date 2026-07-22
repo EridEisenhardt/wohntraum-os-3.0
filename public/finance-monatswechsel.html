@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="de"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Monatswechsel · Finance</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+:root{--bg:#f6f7f9;--surf:#fff;--surf2:#f1f3f6;--line:#e6e8ec;--text:#1c2024;--muted:#6b7280;--dim:#4b5563;--accent:#0f9d6b;--red:#dc2626;--amber:#b45309}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--text);font-family:'Inter',system-ui,-apple-system,'Segoe UI',sans-serif;font-size:14px;line-height:1.5;min-height:100vh}
+.hdr{background:var(--surf);border-bottom:1px solid var(--line);padding:16px 24px;position:sticky;top:0;z-index:10;display:flex;justify-content:space-between;align-items:flex-end;flex-wrap:wrap;gap:10px}
+.hdr-title{font-size:18px;font-weight:700}.hdr-sub{font-size:12px;color:var(--muted);margin-top:2px}
+.wrap{max-width:1180px;margin:20px auto;padding:0 20px}
+.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:14px;margin-bottom:18px}
+.stat{background:var(--surf);border:1px solid var(--line);border-radius:14px;padding:16px 18px}
+.stat .l{font-size:12px;color:var(--muted);font-weight:600}
+.stat .v{font-size:24px;font-weight:800;margin-top:4px;letter-spacing:-.5px}
+.stat.total .v{color:var(--accent)}
+.card{background:var(--surf);border:1px solid var(--line);border-radius:14px;padding:18px 20px;margin-bottom:18px}
+.card h2{font-size:15px;margin-bottom:4px;display:flex;align-items:center;gap:8px}
+.card .desc{font-size:12px;color:var(--muted);margin-bottom:12px}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th,td{text-align:left;padding:7px 9px;border-bottom:1px solid var(--line);vertical-align:middle}
+th{font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:var(--muted);font-weight:700}
+td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
+tfoot td{font-weight:800;border-top:2px solid var(--line);border-bottom:none}
+input,select{font:inherit;font-size:13px;padding:5px 7px;border:1px solid var(--line);border-radius:7px;background:var(--surf);width:100%}
+input.amt{text-align:right;font-variant-numeric:tabular-nums}
+.btn{background:var(--accent);color:#fff;border:none;border-radius:8px;padding:8px 14px;font:inherit;font-weight:600;font-size:13px;cursor:pointer}
+.btn.sec{background:var(--surf2);color:var(--text)}
+.btn.mini{padding:4px 8px;font-size:12px}
+.icobtn{background:none;border:none;color:var(--muted);cursor:pointer;font-size:15px;padding:2px 5px;border-radius:6px}
+.icobtn:hover{background:var(--surf2);color:var(--red)}
+.pill{display:inline-block;font-size:10.5px;font-weight:700;padding:2px 8px;border-radius:10px;background:var(--surf2);color:var(--dim)}
+.pill.ls{background:#fef3c7;color:var(--amber)}.pill.ue{background:#dcfce7;color:var(--accent)}
+.link{color:var(--accent);text-decoration:none;font-weight:600;font-size:12px}
+.toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:#1c2024;color:#fff;padding:10px 16px;border-radius:8px;font-size:13px;opacity:0;pointer-events:none;transition:.2s;z-index:50}
+.toast.show{opacity:1}
+.tag{font-size:10.5px;color:var(--muted);font-weight:600}
+.muted{color:var(--muted)}
+</style></head><body>
+<div class="hdr">
+  <div><div class="hdr-title">Monatswechsel</div><div class="hdr-sub">Finance · alle Zahlungen für den Monatswechsel — Gehälter &amp; monatswechsel-relevante Darlehen</div></div>
+  <div><button class="btn sec mini" onclick="window.print()">🖨 Drucken</button></div>
+</div>
+<div class="wrap">
+  <div class="cards">
+    <div class="stat"><div class="l">Gehälter</div><div class="v" id="sumGeh">–</div></div>
+    <div class="stat"><div class="l">Darlehen (mtl.)</div><div class="v" id="sumDar">–</div></div>
+    <div class="stat total"><div class="l">Gesamt Monatswechsel</div><div class="v" id="sumTot">–</div></div>
+  </div>
+
+  <div class="card">
+    <h2>💶 Gehälter</h2>
+    <div class="desc">Zahlungen an das Team beim Monatswechsel. Beträge &amp; Bankdaten bitte eintragen. Vorbefüllt mit aktiven Mitarbeitern.</div>
+    <div style="overflow-x:auto">
+      <table id="tGeh"><thead><tr>
+        <th>Empfänger</th><th>Unternehmen</th><th class="num">Betrag</th><th>Zahlungsart</th><th>Von-Konto</th><th>IBAN (Ziel)</th><th>BIC</th><th></th>
+      </tr></thead><tbody id="gehBody"></tbody>
+      <tfoot><tr><td colspan="2">Summe Gehälter</td><td class="num" id="gehFoot">–</td><td colspan="5"></td></tr></tfoot>
+      </table>
+    </div>
+    <div style="margin-top:10px"><button class="btn mini" onclick="addGeh()">＋ Gehalt/Zahlung hinzufügen</button></div>
+  </div>
+
+  <div class="card">
+    <h2>🏦 Darlehen · Relevant für Monatswechsel</h2>
+    <div class="desc">Automatisch aus dem Darlehens-Management (Feld „Relevant für Monatswechsel = Ja"). Änderungen bitte dort vornehmen · <a class="link" href="/finance/darlehen" target="_top">→ Darlehen öffnen</a></div>
+    <div style="overflow-x:auto">
+      <table id="tDar"><thead><tr>
+        <th>Darlehen</th><th>Bank / Geber</th><th class="num">Rate (mtl.)</th><th>Bankzahlung</th><th>Von-Konto</th><th>Ziel-Bankverbindung</th>
+      </tr></thead><tbody id="darBody"></tbody>
+      <tfoot><tr><td colspan="2">Summe Darlehen</td><td class="num" id="darFoot">–</td><td colspan="3"></td></tr></tfoot>
+      </table>
+    </div>
+  </div>
+</div>
+<div class="toast" id="toast"></div>
+<script>
+const sb=window.supabase.createClient('https://jqzxctfqvcwbctpjksvg.supabase.co','eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpxenhjdGZxdmN3YmN0cGprc3ZnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODIxMzA0MzIsImV4cCI6MjA5NzcwNjQzMn0.RKIbZxJdusKWWPjBJqlxZ8e1m8So02UslOg55YRsn3o');
+const $=id=>document.getElementById(id);
+const esc=s=>(s==null?'':String(s)).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+function toast(m){const t=$('toast');t.textContent=m;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),1900);}
+const eur=n=>(n==null||isNaN(n))?'–':new Intl.NumberFormat('de-DE',{style:'currency',currency:'EUR'}).format(n);
+let GEH=[],DAR=[];
+
+async function load(){
+  const [g,d]=await Promise.all([
+    sb.from('monatswechsel_gehalt').select('*').eq('aktiv',true).order('pos').order('created_at'),
+    sb.from('loans').select('id,bez,geber,kapitaldienst,bankzahlung,quell_konto,ziel_bank').eq('monatswechsel_relevant',true).order('geber')
+  ]);
+  GEH=g.data||[]; DAR=d.data||[];
+  renderGeh(); renderDar(); renderStats();
+}
+
+function renderGeh(){
+  $('gehBody').innerHTML=GEH.map(function(r){
+    return '<tr>'
+    +'<td><input value="'+esc(r.empfaenger||'')+'" onchange="upd(\''+r.id+'\',\'empfaenger\',this.value)"></td>'
+    +'<td><input value="'+esc(r.unternehmen||'')+'" onchange="upd(\''+r.id+'\',\'unternehmen\',this.value)"></td>'
+    +'<td class="num"><input class="amt" type="text" inputmode="decimal" value="'+(r.betrag!=null?r.betrag:'')+'" placeholder="0,00" onchange="updNum(\''+r.id+'\',\'betrag\',this.value)"></td>'
+    +'<td><select onchange="upd(\''+r.id+'\',\'zahlungsart\',this.value)">'
+      +['Überweisung','Lastschrift','Dauerauftrag'].map(function(o){return '<option'+(r.zahlungsart===o?' selected':'')+'>'+o+'</option>';}).join('')+'</select></td>'
+    +'<td><input value="'+esc(r.quell_konto||'')+'" placeholder="von…" onchange="upd(\''+r.id+'\',\'quell_konto\',this.value)"></td>'
+    +'<td><input value="'+esc(r.iban||'')+'" placeholder="IBAN" onchange="upd(\''+r.id+'\',\'iban\',this.value)"></td>'
+    +'<td><input value="'+esc(r.bic||'')+'" placeholder="BIC" onchange="upd(\''+r.id+'\',\'bic\',this.value)"></td>'
+    +'<td><button class="icobtn" title="Entfernen" onclick="delGeh(\''+r.id+'\')">✕</button></td>'
+    +'</tr>';
+  }).join('')||'<tr><td colspan="8" class="muted">Noch keine Einträge.</td></tr>';
+  var s=GEH.reduce(function(a,r){return a+(Number(r.betrag)||0);},0);
+  $('gehFoot').textContent=eur(s);
+}
+
+function renderDar(){
+  $('darBody').innerHTML=DAR.map(function(r){
+    var bz=r.bankzahlung||'Lastschrift';
+    var cls=bz==='Lastschrift'?'ls':'ue';
+    return '<tr>'
+    +'<td><b>'+esc(r.bez||'—')+'</b></td>'
+    +'<td>'+esc(r.geber||'—')+'</td>'
+    +'<td class="num">'+eur(Number(r.kapitaldienst)||0)+'</td>'
+    +'<td><span class="pill '+cls+'">'+esc(bz)+'</span></td>'
+    +'<td>'+esc(r.quell_konto||'<span class="muted">–</span>')+'</td>'
+    +'<td>'+esc(r.ziel_bank||'<span class="muted">–</span>')+'</td>'
+    +'</tr>';
+  }).join('')||'<tr><td colspan="6" class="muted">Keine Darlehen als monatswechsel-relevant markiert. Im Darlehens-Management „Relevant für Monatswechsel = Ja" setzen.</td></tr>';
+  var s=DAR.reduce(function(a,r){return a+(Number(r.kapitaldienst)||0);},0);
+  $('darFoot').textContent=eur(s);
+}
+
+function renderStats(){
+  var g=GEH.reduce(function(a,r){return a+(Number(r.betrag)||0);},0);
+  var d=DAR.reduce(function(a,r){return a+(Number(r.kapitaldienst)||0);},0);
+  $('sumGeh').textContent=eur(g);
+  $('sumDar').textContent=eur(d);
+  $('sumTot').textContent=eur(g+d);
+}
+
+async function upd(id,field,val){
+  var v=val===''?null:val;
+  var row=GEH.find(function(r){return r.id===id;}); if(row)row[field]=v;
+  var res=await sb.from('monatswechsel_gehalt').update({[field]:v}).eq('id',id);
+  if(res.error){toast('Fehler: '+res.error.message);}
+}
+async function updNum(id,field,val){
+  var raw=(val||'').trim().replace(/\./g,'').replace(',','.');
+  var num=raw===''?null:Number(raw);
+  if(num!=null&&isNaN(num)){toast('Ungültiger Betrag');return;}
+  var row=GEH.find(function(r){return r.id===id;}); if(row)row[field]=num;
+  var res=await sb.from('monatswechsel_gehalt').update({[field]:num}).eq('id',id);
+  if(res.error){toast('Fehler: '+res.error.message);return;}
+  renderGeh(); renderStats();
+}
+async function addGeh(){
+  var res=await sb.from('monatswechsel_gehalt').insert({empfaenger:'',zahlungsart:'Überweisung',aktiv:true,pos:GEH.length+1}).select();
+  if(res.error){toast('Fehler: '+res.error.message);return;}
+  GEH.push(res.data[0]); renderGeh();
+}
+async function delGeh(id){
+  if(!confirm('Diese Zahlung entfernen?'))return;
+  var res=await sb.from('monatswechsel_gehalt').update({aktiv:false}).eq('id',id);
+  if(res.error){toast('Fehler: '+res.error.message);return;}
+  GEH=GEH.filter(function(r){return r.id!==id;}); renderGeh(); renderStats(); toast('Entfernt');
+}
+
+(async()=>{await sb.auth.getSession();load();})();
+</script>
+</body></html>

@@ -62,6 +62,7 @@ export const NAV = [
     { href: '/finance/reporting', icon: 'ti-report-analytics', label: 'Reporting für die Bank' },
     { href: '/finance/steuer-bilanz', icon: 'ti-receipt-tax', label: 'Steuer und Bilanzunterlagen' },
     { href: '/finance/liquiditaetsplanung', icon: 'ti-wallet', label: 'Liquiditätsplanung' },
+    { href: '/finance/monatswechsel', icon: 'ti-calendar-dollar', label: 'Monatswechsel' },
   ] },
   { type: 'link', href: '/dokumente', icon: 'ti-files', label: 'Dokumente', area: 'common', mod: 'dokumente' },
   { type: 'group', key: 'stammdaten', icon: 'ti-database', label: 'Stammdaten', area: 'hv', mod: 'dokumente', items: [
@@ -94,21 +95,42 @@ export const NAV = [
   { type: 'link', href: '/nutzer', icon: 'ti-shield-lock', label: 'Nutzerverwaltung', area: 'common', mod: 'nutzer' },
 ]
 
+// Rechte-Knoten aus der Navigation: jede Kategorie (Gruppe) + jede Unterkategorie (Eintrag) einzeln.
+const NODE_ADMIN_ONLY = (mod) => mod === 'nutzer' || mod === 'mahnprozess' || mod === 'privat'
+export function permNodes() {
+  const nodes = []
+  NAV.forEach((n) => {
+    if (n.type === 'group') {
+      const adminOnly = n.key === 'eric-privat'
+      nodes.push({ key: 'cat:' + n.key, label: n.label, level: 0, adminOnly })
+      ;(n.items || []).forEach((it) => nodes.push({ key: 'sub:' + it.href, label: it.label, level: 1, adminOnly, parent: 'cat:' + n.key }))
+    } else if (n.type === 'link' && n.mod) {
+      nodes.push({ key: 'lnk:' + n.href, label: n.label, level: 0, adminOnly: NODE_ADMIN_ONLY(n.mod) })
+    }
+  })
+  return nodes
+}
+
 export default function Sidebar({ user, demo, onLogout, role, perms }) {
   const path = usePathname()
   const [collapsed, setCollapsed] = useState({})
   const [area, setArea] = useState('')
   const [favs, setFavs] = useState([])
   const isAdmin = role === 'admin'
-  // Sichtbarkeit je Modul: Admin sieht alles; ohne geladene Rechte (Demo) alles; sonst nur wenn "sehen" aktiv ist.
-  const canSee = (n) => {
+  // Sichtbarkeit je Kategorie/Unterkategorie (Rechte-Knoten). Admin sieht alles; ohne geladene Rechte alles; sonst nur wenn "sehen".
+  const seeKey = (key, adminOnly) => {
     if (demo || isAdmin) return true
-    if (!n.mod) return true // Cockpit, Alle Tools – Grundnavigation
-    if (n.mod === 'nutzer' || n.mod === 'privat' || n.mod === 'mahnprozess') return isAdmin
+    if (adminOnly) return isAdmin
     if (!perms) return true
-    const p = perms[n.mod]
+    const p = perms[key]
     return !!(p && p.sehen)
   }
+  const canSee = (n) => {
+    if (n.type === 'group') return seeKey('cat:' + n.key, n.key === 'eric-privat')
+    if (!n.mod) return true // Cockpit, Alle Tools, Konto – Grundnavigation
+    return seeKey('lnk:' + n.href, NODE_ADMIN_ONLY(n.mod))
+  }
+  const canSeeItem = (n, it) => seeKey('sub:' + it.href, n.key === 'eric-privat')
 
   useEffect(() => {
     try { const s = localStorage.getItem('sidebar_collapsed'); if (s) setCollapsed(JSON.parse(s)) } catch (e) {}
@@ -148,7 +170,7 @@ export default function Sidebar({ user, demo, onLogout, role, perms }) {
     </div>
   )
   const allSubItems = NAV.filter((n) => n.type === 'group').flatMap((g) => g.items.map((it) => ({ item: it, group: g })))
-  const favItems = favs.map((h) => allSubItems.find((x) => x.item.href === h)).filter((x) => x && canSee(x.group)).map((x) => x.item)
+  const favItems = favs.map((h) => allSubItems.find((x) => x.item.href === h)).filter((x) => x && canSee(x.group) && canSeeItem(x.group, x.item)).map((x) => x.item)
   const email = user && user.email ? user.email : null
   const initials = email ? email.slice(0, 2).toUpperCase() : 'EE'
 
@@ -205,7 +227,7 @@ export default function Sidebar({ user, demo, onLogout, role, perms }) {
               <span style={{ fontWeight: groupActive && !isOpen ? 700 : undefined }}>{n.label}</span>
               <i className="ti ti-chevron-down chev" style={{ transform: isOpen ? 'none' : 'rotate(-90deg)', transition: 'transform .15s' }} />
             </div>
-            {isOpen && n.items.map(renderSub)}
+            {isOpen && n.items.filter((it) => canSeeItem(n, it)).map(renderSub)}
           </div>
         )
       })}

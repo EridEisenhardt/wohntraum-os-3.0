@@ -1,7 +1,8 @@
 'use client'
 import { useEffect, useState, useCallback } from 'react'
 import { supabase, supabaseConfigured } from '@/lib/supabaseClient'
-import { appRoleLabel, appRoleDesc, APP_ROLES, APP_MODULES, PERM_LEVELS } from '@/lib/roles'
+import { appRoleLabel, appRoleDesc, APP_ROLES, PERM_LEVELS } from '@/lib/roles'
+import { permNodes } from '@/components/Sidebar'
 
 export default function NutzerPage() {
   const [rows, setRows] = useState([])
@@ -143,21 +144,26 @@ export default function NutzerPage() {
             <table className="tbl" style={{ minWidth: 620 }}>
               <thead>
                 <tr>
-                  <th>Modul</th>
+                  <th>Kategorie / Unterkategorie</th>
                   {PERM_LEVELS.map((l) => <th key={l.key} style={{ textAlign: 'center' }}>{l.label}</th>)}
                 </tr>
               </thead>
               <tbody>
-                {APP_MODULES.map((m) => {
+                {permNodes().map((m) => {
                   const p = permMap[m.key] || {}
+                  const isSub = m.level === 1
                   return (
                     <tr key={m.key}>
-                      <td><b>{m.label}</b><div className="sub" style={{ fontSize: 11 }}>{m.hint}</div></td>
+                      <td style={{ paddingLeft: isSub ? 26 : undefined }}>
+                        {isSub ? <span style={{ color: 'var(--muted)', marginRight: 6 }}>↳</span> : null}
+                        <b style={{ fontWeight: isSub ? 500 : 700 }}>{m.label}</b>
+                        {m.adminOnly ? <span className="badge" style={{ marginLeft: 6 }}>nur Admin</span> : null}
+                      </td>
                       {PERM_LEVELS.map((l) => (
                         <td key={l.key} style={{ textAlign: 'center' }}>
-                          <input type="checkbox" checked={!!p[l.key]} disabled={!isAdmin}
+                          <input type="checkbox" checked={!!p[l.key]} disabled={!isAdmin || m.adminOnly}
                             onChange={() => togglePerm(m.key, l.key)}
-                            style={{ width: 17, height: 17, cursor: isAdmin ? 'pointer' : 'default' }} />
+                            style={{ width: 17, height: 17, cursor: (isAdmin && !m.adminOnly) ? 'pointer' : 'default', opacity: m.adminOnly ? 0.4 : 1 }} />
                         </td>
                       ))}
                     </tr>
