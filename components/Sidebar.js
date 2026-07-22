@@ -80,6 +80,12 @@ export const NAV = [
     { href: '/controlling/nahaus-rechnungen', icon: 'ti-receipt', label: 'Rechnungen Unternehmen' },
     { href: '/controlling/gruppe-fixkosten', icon: 'ti-building-bank', label: 'Fixkosten der Gruppe' },
   ] },
+  { type: 'group', key: 'buchhaltung', icon: 'ti-calculator', label: 'Buchhaltung', area: ['hv', 'backoffice'], mod: 'controlling', items: [
+    { href: '/vermietung/zahlungsvereinbarung', icon: 'ti-file-dollar', label: 'Zahlungsvereinbarungsgenerator' },
+    { href: '/controlling/nahaus-fixkosten', icon: 'ti-file-invoice', label: 'Fixkosten Objekte' },
+    { href: '/controlling/nahaus-rechnungen', icon: 'ti-receipt', label: 'Rechnungen Unternehmen' },
+    { href: '/controlling/gruppe-fixkosten', icon: 'ti-building-bank', label: 'Fixkosten der Gruppe' },
+  ] },
   { type: 'group', key: 'personal', icon: 'ti-users-group', label: 'Personal', area: ['hv', 'backoffice'], mod: 'personal', items: [
     { href: '/personal/akte', icon: 'ti-id', label: 'Personalakte' },
     { href: '/personal/urlaub', icon: 'ti-beach', label: 'Urlaub' },
