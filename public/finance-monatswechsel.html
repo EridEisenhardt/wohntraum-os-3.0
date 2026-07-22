@@ -50,6 +50,22 @@ input.amt{text-align:right;font-variant-numeric:tabular-nums}
   </div>
 
   <div class="card">
+    <h2>💧 Liquidität &amp; Belastung</h2>
+    <div class="desc">Übersicht der Konten mit dem Mindestbetrag, der zum Monatswechsel bereitstehen muss, um alle Zahlungen auszuführen (manuell eingetragen).</div>
+    <div style="overflow-x:auto">
+      <table id="tKon"><thead><tr>
+        <th>Kontokürzel (Bank · Konto-Endung)</th><th class="num">Mindestbetrag (nötig)</th><th></th>
+      </tr></thead><tbody id="konBody"></tbody>
+      <tfoot><tr><td>Summe benötigte Liquidität</td><td class="num" id="konFoot">–</td><td></td></tr></tfoot>
+      </table>
+    </div>
+    <div style="margin-top:10px;display:flex;gap:14px;align-items:center;flex-wrap:wrap">
+      <button class="btn mini" onclick="addKon()">＋ Konto hinzufügen</button>
+      <span class="tag">Gesamt-Belastung Monatswechsel: <b id="belastung">–</b></span>
+    </div>
+  </div>
+
+  <div class="card">
     <h2>💶 Gehälter</h2>
     <div class="desc">Zahlungen an das Team beim Monatswechsel. Beträge &amp; Bankdaten bitte eintragen. Vorbefüllt mit aktiven Mitarbeitern.</div>
     <div style="overflow-x:auto">
@@ -94,16 +110,33 @@ const $=id=>document.getElementById(id);
 const esc=s=>(s==null?'':String(s)).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 function toast(m){const t=$('toast');t.textContent=m;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),1900);}
 const eur=n=>(n==null||isNaN(n))?'–':new Intl.NumberFormat('de-DE',{style:'currency',currency:'EUR'}).format(n);
-let GEH=[],DAR=[],FIX=[];
+let GEH=[],DAR=[],FIX=[],KON=[];
 
 async function load(){
-  const [g,d,f]=await Promise.all([
+  const [g,d,f,k]=await Promise.all([
     sb.from('monatswechsel_gehalt').select('*').eq('aktiv',true).order('pos').order('created_at'),
     sb.from('loans').select('id,bez,geber,kapitaldienst,bankzahlung,quell_konto,ziel_bank').eq('monatswechsel_relevant',true).order('geber'),
-    sb.from('monatswechsel_fixkosten').select('*').eq('aktiv',true).order('pos').order('created_at')
+    sb.from('monatswechsel_fixkosten').select('*').eq('aktiv',true).order('pos').order('created_at'),
+    sb.from('monatswechsel_konten').select('*').eq('aktiv',true).order('pos').order('created_at')
   ]);
-  GEH=g.data||[]; DAR=d.data||[]; FIX=f.data||[];
-  renderGeh(); renderDar(); renderFix(); renderStats();
+  GEH=g.data||[]; DAR=d.data||[]; FIX=f.data||[]; KON=k.data||[];
+  renderKon(); renderGeh(); renderDar(); renderFix(); renderStats();
+}
+
+function renderKon(){
+  $('konBody').innerHTML=KON.map(function(r){
+    return '<tr>'
+    +'<td><div style="display:flex;gap:6px;align-items:center">'
+      +'<input value="'+esc(r.bank||'')+'" placeholder="Bank" onchange="updK(\''+r.id+'\',\'bank\',this.value)" style="flex:1">'
+      +'<span class="muted">·</span>'
+      +'<input value="'+esc(r.konto_endung||'')+'" placeholder="00" maxlength="4" onchange="updK(\''+r.id+'\',\'konto_endung\',this.value)" style="width:64px;text-align:center">'
+      +'</div></td>'
+    +'<td class="num"><input class="amt" type="text" inputmode="decimal" value="'+(r.mindestbetrag!=null?r.mindestbetrag:'')+'" placeholder="0,00" onchange="updKNum(\''+r.id+'\',\'mindestbetrag\',this.value)"></td>'
+    +'<td><button class="icobtn" title="Entfernen" onclick="delKon(\''+r.id+'\')">✕</button></td>'
+    +'</tr>';
+  }).join('')||'<tr><td colspan="3" class="muted">Noch keine Konten. „＋ Konto hinzufügen".</td></tr>';
+  var s=KON.reduce(function(a,r){return a+(Number(r.mindestbetrag)||0);},0);
+  $('konFoot').textContent=eur(s);
 }
 
 function renderGeh(){
@@ -167,6 +200,7 @@ function renderStats(){
   $('sumDar').textContent=eur(d);
   $('sumFix').textContent=eur(f);
   $('sumTot').textContent=eur(g+d+f);
+  var bel=$('belastung'); if(bel) bel.textContent=eur(g+d+f);
 }
 
 async function upd(id,field,val){
@@ -194,6 +228,33 @@ async function delGeh(id){
   var res=await sb.from('monatswechsel_gehalt').update({aktiv:false}).eq('id',id);
   if(res.error){toast('Fehler: '+res.error.message);return;}
   GEH=GEH.filter(function(r){return r.id!==id;}); renderGeh(); renderStats(); toast('Entfernt');
+}
+
+async function updK(id,field,val){
+  var v=val===''?null:val;
+  var row=KON.find(function(r){return r.id===id;}); if(row)row[field]=v;
+  var res=await sb.from('monatswechsel_konten').update({[field]:v}).eq('id',id);
+  if(res.error){toast('Fehler: '+res.error.message);}
+}
+async function updKNum(id,field,val){
+  var raw=(val||'').trim().replace(/\./g,'').replace(',','.');
+  var num=raw===''?null:Number(raw);
+  if(num!=null&&isNaN(num)){toast('Ungültiger Betrag');return;}
+  var row=KON.find(function(r){return r.id===id;}); if(row)row[field]=num;
+  var res=await sb.from('monatswechsel_konten').update({[field]:num}).eq('id',id);
+  if(res.error){toast('Fehler: '+res.error.message);return;}
+  renderKon();
+}
+async function addKon(){
+  var res=await sb.from('monatswechsel_konten').insert({bank:'',aktiv:true,pos:KON.length+1}).select();
+  if(res.error){toast('Fehler: '+res.error.message);return;}
+  KON.push(res.data[0]); renderKon();
+}
+async function delKon(id){
+  if(!confirm('Dieses Konto entfernen?'))return;
+  var res=await sb.from('monatswechsel_konten').update({aktiv:false}).eq('id',id);
+  if(res.error){toast('Fehler: '+res.error.message);return;}
+  KON=KON.filter(function(r){return r.id!==id;}); renderKon(); toast('Entfernt');
 }
 
 async function updF(id,field,val){
