@@ -412,7 +412,10 @@ let idCounter = 10;
 const SB_URL = 'https://jqzxctfqvcwbctpjksvg.supabase.co';
 const SB_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpxenhjdGZxdmN3YmN0cGprc3ZnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODIxMzA0MzIsImV4cCI6MjA5NzcwNjQzMn0.RKIbZxJdusKWWPjBJqlxZ8e1m8So02UslOg55YRsn3o';
 const sb = window.supabase.createClient(SB_URL, SB_KEY);
-const LOAN_COLS = 'id,ref,typ,bez,geber,nehmer,company_id,betrag,aktuell,zins,tilg,aus,zinsbind,laufzeit,obj,status,konto,notizen,kapitaldienst,dnr_intern,dnr_bank,in_selbstauskunft,monatswechsel_relevant';
+const LOAN_COLS = 'id,ref,typ,bez,geber,nehmer,company_id,betrag,aktuell,zins,tilg,aus,zinsbind,laufzeit,obj,status,konto,notizen,kapitaldienst,dnr_intern,dnr_bank,in_selbstauskunft,monatswechsel_relevant,bankzahlung,quell_konto,ziel_bank';
+async function setBZ(id,val){const{error}=await sb.from('loans').update({bankzahlung:val}).eq('id',id);if(error){toast('Fehler: '+error.message);return;}const d=DB.find(x=>x.id===id);if(d)d.bankzahlung=val;}
+async function setLoanField(id,field,val){const v=(val===''?null:val);const{error}=await sb.from('loans').update({[field]:v}).eq('id',id);if(error){toast('Fehler: '+error.message);return;}const d=DB.find(x=>x.id===id);if(d)d[field]=v;}
+function escAttr(s){return (s==null?'':String(s)).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;');}
 async function setSA(id,val){const b=val==='ja';const{error}=await sb.from('loans').update({in_selbstauskunft:b}).eq('id',id);if(error){toast('Fehler: '+error.message);return;}const d=DB.find(x=>x.id===id);if(d)d.in_selbstauskunft=b;render();}
 async function setMW(id,val){const b=val==='ja';const{error}=await sb.from('loans').update({monatswechsel_relevant:b}).eq('id',id);if(error){toast('Fehler: '+error.message);return;}const d=DB.find(x=>x.id===id);if(d)d.monatswechsel_relevant=b;render();}
 async function loadDB(){
@@ -601,6 +604,9 @@ function renderTable(){
         <button class="abtn del" style="margin-left:4px" onclick="del('${d.id}')">✕</button>
       </td>
       <td class="tc"><select class="kd-inline" style="width:74px" onclick="event.stopPropagation()" title="Relevant für den Monatswechsel?" onchange="setMW('${d.id}',this.value)"><option value="nein" ${d.monatswechsel_relevant?'':'selected'}>Nein</option><option value="ja" ${d.monatswechsel_relevant?'selected':''}>Ja</option></select></td>
+      <td class="tc"><select class="kd-inline" style="width:110px" onclick="event.stopPropagation()" title="Zahlungsweg zur Bank" onchange="setBZ('${d.id}',this.value)"><option ${(d.bankzahlung||'Lastschrift')==='Lastschrift'?'selected':''}>Lastschrift</option><option ${d.bankzahlung==='Überweisung'?'selected':''}>Überweisung</option></select></td>
+      <td><input class="kd-inline" style="width:150px" onclick="event.stopPropagation()" placeholder="Von-Konto (Abbuchung)" value="${escAttr(d.quell_konto)}" onchange="setLoanField('${d.id}','quell_konto',this.value)"></td>
+      <td><input class="kd-inline" style="width:170px" onclick="event.stopPropagation()" placeholder="Ziel-Bankverbindung (Bank/IBAN)" value="${escAttr(d.ziel_bank)}" onchange="setLoanField('${d.id}','ziel_bank',this.value)"></td>
     </tr>`;
   }).join('');
   return `<div class="twrap"><table>
@@ -610,7 +616,7 @@ function renderTable(){
       <th>Darlehensnr.<br><span style="font-weight:400;text-transform:none;letter-spacing:0;font-size:9px">der Bank</span></th>
       <th class="tr">Summe lt. Vertrag</th><th class="tr">Aktuelle Summe<br><span style="font-weight:400;text-transform:none;letter-spacing:0;font-size:9px">manuell</span></th>
       <th class="tc">Zins p.a.</th><th class="tr">Tilgung % p.a.<br><span style="font-weight:400;text-transform:none;letter-spacing:0;font-size:9px">berechnet</span></th><th class="tr">Kapitaldienst /Mo</th>
-      <th style="min-width:110px">LTV</th><th>Zinsbindung</th><th class="tr">Restschuld<br><span style="font-weight:400;text-transform:none;letter-spacing:0;font-size:9px">b. Zinsbindung</span></th><th>Status</th><th class="tc">Selbstauskunft<br><span style="font-weight:400;text-transform:none;letter-spacing:0;font-size:9px">übernehmen</span></th><th></th><th class="tc">Relevant für<br><span style="font-weight:400;text-transform:none;letter-spacing:0;font-size:9px">Monatswechsel</span></th>
+      <th style="min-width:110px">LTV</th><th>Zinsbindung</th><th class="tr">Restschuld<br><span style="font-weight:400;text-transform:none;letter-spacing:0;font-size:9px">b. Zinsbindung</span></th><th>Status</th><th class="tc">Selbstauskunft<br><span style="font-weight:400;text-transform:none;letter-spacing:0;font-size:9px">übernehmen</span></th><th></th><th class="tc">Relevant für<br><span style="font-weight:400;text-transform:none;letter-spacing:0;font-size:9px">Monatswechsel</span></th><th class="tc">Bankzahlung</th><th>Von-Konto<br><span style="font-weight:400;text-transform:none;letter-spacing:0;font-size:9px">Abbuchung</span></th><th>Ziel-Bankverbindung<br><span style="font-weight:400;text-transform:none;letter-spacing:0;font-size:9px">wohin</span></th>
     </tr></thead>
     <tbody>${rows}</tbody>
   </table></div>`;
