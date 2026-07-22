@@ -64,6 +64,9 @@ export const NAV = [
     { href: '/finance/liquiditaetsplanung', icon: 'ti-wallet', label: 'Liquiditätsplanung' },
     { href: '/finance/monatswechsel', icon: 'ti-calendar-dollar', label: 'Monatswechsel' },
   ] },
+  { type: 'group', key: 'prozesse', icon: 'ti-sitemap', label: 'Prozesse', area: ['vertrieb', 'hv'], mod: 'produktivitaet', items: [
+    { href: '/prozesse/bpmn', icon: 'ti-hierarchy-2', label: 'BPMN-Modellierung' },
+  ] },
   { type: 'link', href: '/dokumente', icon: 'ti-files', label: 'Dokumente', area: 'common', mod: 'dokumente' },
   { type: 'group', key: 'stammdaten', icon: 'ti-database', label: 'Stammdaten', area: 'hv', mod: 'dokumente', items: [
     { href: '/stammdaten/kontakte', icon: 'ti-users', label: 'Kontakte' },
