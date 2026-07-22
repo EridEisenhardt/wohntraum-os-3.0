@@ -38,6 +38,7 @@ th.st,td.st{width:34px;text-align:center;padding-left:6px;padding-right:6px}
 .toast.show{opacity:1}
 .tag{font-size:10.5px;color:var(--muted);font-weight:600}
 .muted{color:var(--muted)}
+tr.grp td{background:#eef2f7;font-weight:700;color:var(--dim);border-bottom:1px solid var(--line)}
 tr.pay{cursor:pointer}
 tr.pay:hover{background:#f9fafb}
 tr.done{background:#f0fdf4}
@@ -91,18 +92,14 @@ tr.done .done-dot{background:var(--accent);border-color:var(--accent);color:#fff
   </div>
 
   <div class="card">
-    <h2>💶 Gehälter</h2>
-    <div class="desc">Basis sind die Soll-Gehälter aus „Fixkosten der Gruppe" (WT · EE · Kibo) für den gewählten Monat. Bankdaten &amp; Von-Konto bitte ergänzen · <a class="link" href="/controlling/gruppe-fixkosten" target="_top">→ Gruppe-Fixkosten</a></div>
+    <h2>💶 Gehälter · Personalkosten je Gesellschaft</h2>
+    <div class="desc">Alle Positionen 1:1 aus der Jahres-Matrix Personalkosten (WT · EE · Kibo) für den gewählten Monat. IBAN = Konto, wohin gezahlt wird. Zeile anklicken = erledigt (fällt aus „noch zu zahlen") · <a class="link" href="/controlling/gruppe-fixkosten" target="_top">→ Gruppe-Fixkosten</a></div>
     <div style="overflow-x:auto">
       <table id="tGeh"><thead><tr>
-        <th class="st" title="Ausgeführt">✓</th><th>Empfänger</th><th>Unternehmen</th><th class="num">Betrag</th><th>Zahlungsart</th><th>Von-Konto</th><th>IBAN (Ziel)</th><th>Verwendungszweck</th><th></th>
+        <th class="st" title="Ausgeführt">✓</th><th>Position</th><th class="num">Betrag</th><th>IBAN (Ziel)</th><th>Verwendungszweck</th>
       </tr></thead><tbody id="gehBody"></tbody>
-      <tfoot><tr><td colspan="3">Summe Gehälter</td><td class="num" id="gehFoot">–</td><td colspan="5"></td></tr></tfoot>
+      <tfoot><tr><td colspan="2">Summe Personalkosten</td><td class="num" id="gehFoot">–</td><td colspan="2"></td></tr></tfoot>
       </table>
-    </div>
-    <div style="margin-top:10px;display:flex;gap:10px;flex-wrap:wrap">
-      <button class="btn mini" onclick="addGeh()">＋ Gehalt/Zahlung hinzufügen</button>
-      <button class="btn sec mini" onclick="seedGehaltFromSoll(true)" title="Gehälter für diesen Monat aus der Soll-Matrix von Fixkosten der Gruppe neu übernehmen">↻ Aus Gruppe-Fixkosten (Soll)</button>
     </div>
   </div>
 
@@ -164,22 +161,19 @@ async function addMonth(){
   var np=nextPer(PERIODEN[PERIODEN.length-1]);
   var res=await sb.from('monatswechsel_perioden').insert({periode:np});
   if(res.error){toast('Fehler: '+res.error.message);return;}
-  PER=np; await loadPerioden(); await load();
-  await seedGehaltFromSoll(false); // Gehälter-Basis automatisch aus Gruppe-Fixkosten (Soll)
-  toast(perLabel(np)+' angelegt – Gehälter aus Soll übernommen; Fixkosten/Konten ggf. „Werte aus Vormonat"');
+  PER=np; await loadPerioden(); await load(); // Personalkosten je Gesellschaft werden in load automatisch berechnet
+  toast(perLabel(np)+' angelegt – Personalkosten automatisch; Fixkosten/Konten ggf. „Werte aus Vormonat"');
 }
 async function copyPrev(){
   var pv=prevPer(PER);
   if(PERIODEN.indexOf(pv)<0){toast('Kein Vormonat ('+perLabel(pv)+') vorhanden');return;}
-  if(KON.length||GEH.length||FIX.length){ if(!confirm('Werte aus '+perLabel(pv)+' übernehmen? Bestehende Einträge dieses Monats werden ergänzt.'))return; }
-  const [g,f,k]=await Promise.all([
-    sb.from('monatswechsel_gehalt').select('*').eq('aktiv',true).eq('periode',pv),
+  if(KON.length||FIX.length){ if(!confirm('Konten & Fixkosten aus '+perLabel(pv)+' übernehmen? Bestehende Einträge dieses Monats werden ergänzt. (Personalkosten kommen automatisch aus der Matrix.)'))return; }
+  const [f,k]=await Promise.all([
     sb.from('monatswechsel_fixkosten').select('*').eq('aktiv',true).eq('periode',pv),
     sb.from('monatswechsel_konten').select('*').eq('aktiv',true).eq('periode',pv)
   ]);
   const strip=(r)=>{var o=Object.assign({},r);delete o.id;delete o.created_at;o.periode=PER;o.ausgefuehrt=false;return o;};
   var ins=[];
-  if((g.data||[]).length) ins.push(sb.from('monatswechsel_gehalt').insert((g.data||[]).map(strip)));
   if((f.data||[]).length) ins.push(sb.from('monatswechsel_fixkosten').insert((f.data||[]).map(strip)));
   if((k.data||[]).length) ins.push(sb.from('monatswechsel_konten').insert((k.data||[]).map(function(r){var o=Object.assign({},r);delete o.id;delete o.created_at;o.periode=PER;return o;})));
   var rs=await Promise.all(ins);
@@ -188,25 +182,44 @@ async function copyPrev(){
   await load(); toast('Werte aus '+perLabel(pv)+' übernommen ✓');
 }
 
-// Gehälter-Basis aus Gruppe-Fixkosten Soll-Matrix (personal_matrix, Spalte m{Monat}).
-// Nur Mitarbeiter-Positionen (keine Sachbezug/Knappschaft/Lohnsteuer/Firmus/KK/BKK-Zeilen).
-var NICHT_GEHALT=/sachbezug|knappschaft|lohnsteuer|firmus|bkk|bahn|kk-?beitrag|beitrag|sozial|\bsv\b|krankenkasse/i;
-async function seedGehaltFromSoll(replace){
+// Die 3 Gesellschaften. Summe der Personalkosten je Gesellschaft kommt aus der Jahres-Matrix (personal_matrix, Spalte m{Monat}).
+var GES=[{k:'WT',name:'Wohn(T)raum Rheinhessen GmbH'},{k:'EE',name:'Eric Eisenhardt'},{k:'Kibo',name:'Wohntraum Kibo GmbH'}];
+function gesOf(u){u=(u||'').toLowerCase();if(u.indexOf('kibo')>=0)return 'Kibo';if(u.indexOf('rheinhessen')>=0||u.indexOf('wohn(t)raum')>=0||u.indexOf('wohntraum')>=0)return 'WT';if(u.indexOf('eisenhardt')>=0||u.indexOf('macher')>=0||u==='ee')return 'EE';return '';}
+var gord={WT:0,EE:1,Kibo:2};
+function gkey(unt,label){return (unt||'')+'§'+(label||'');}
+// Alle Positionen 1:1 aus der Jahres-Matrix Personalkosten (m{Monat}, Wert>0) in die Gehälter-Zeilen des Monats spiegeln.
+// IBAN/Verwendungszweck/ausgeführt bleiben erhalten (Matching über Firma+Position); aus Vormonat übernommen wenn neu.
+async function ensureGehaltRows(existing){
   var parts=(PER||'').split('-'); var jahr=+parts[0], monat=+parts[1];
-  var res=await sb.from('personal_matrix').select('unternehmen,label,sort,m'+monat).eq('jahr',jahr).order('unternehmen').order('sort');
-  if(res.error){toast('Fehler: '+res.error.message);return;}
-  var rows=(res.data||[]).filter(function(r){
-    var lbl=(r.label||'').trim();
-    if(!lbl||NICHT_GEHALT.test(lbl)) return false;
-    var v=Number(r['m'+monat]); return v>0;
+  var mres=await sb.from('personal_matrix').select('unternehmen,label,sort,m'+monat).eq('jahr',jahr);
+  var mrows=(mres.data||[]).map(function(r){return {unternehmen:r.unternehmen,label:(r.label||'').trim(),sort:r.sort||0,betrag:Number(r['m'+monat])||0};})
+    .filter(function(r){return r.label && gesOf(r.unternehmen) && r.betrag>0;});
+  var exMap={}; (existing||[]).forEach(function(r){exMap[gkey(r.unternehmen,r.empfaenger)]=r;});
+  // Vormonat für IBAN/Zweck-Übernahme
+  var prevMap={};
+  var pv=prevPer(PER);
+  var pr=await sb.from('monatswechsel_gehalt').select('unternehmen,empfaenger,iban,verwendungszweck,quell_konto').eq('aktiv',true).eq('periode',pv);
+  (pr.data||[]).forEach(function(r){prevMap[gkey(r.unternehmen,r.empfaenger)]=r;});
+
+  var wanted={}, ops=[];
+  mrows.forEach(function(m){
+    var key=gkey(m.unternehmen,m.label); wanted[key]=1;
+    var ex=exMap[key];
+    if(!ex){
+      var seed=prevMap[key]||{};
+      ops.push(sb.from('monatswechsel_gehalt').insert({periode:PER,unternehmen:m.unternehmen,empfaenger:m.label,betrag:m.betrag,iban:seed.iban||null,verwendungszweck:seed.verwendungszweck||null,quell_konto:seed.quell_konto||null,zahlungsart:'Überweisung',aktiv:true,pos:(gord[gesOf(m.unternehmen)]||0)*100+m.sort}));
+    } else if(Number(ex.betrag||0)!==m.betrag){
+      ops.push(sb.from('monatswechsel_gehalt').update({betrag:m.betrag,pos:(gord[gesOf(m.unternehmen)]||0)*100+m.sort}).eq('id',ex.id));
+    }
   });
-  if(!rows.length){toast('Keine Soll-Gehälter für '+perLabel(PER)+' gefunden');return;}
-  if(replace && GEH.length){ if(!confirm('Gehälter für '+perLabel(PER)+' durch die Soll-Werte aus Fixkosten der Gruppe ersetzen? (manuelle Zeilen dieses Monats werden entfernt)'))return; }
-  if(replace && GEH.length){ await sb.from('monatswechsel_gehalt').update({aktiv:false}).eq('periode',PER); }
-  var payload=rows.map(function(r,i){return {periode:PER,empfaenger:(r.label||'').trim(),unternehmen:r.unternehmen,betrag:Number(r['m'+monat]),zahlungsart:'Überweisung',aktiv:true,pos:i+1};});
-  var ins=await sb.from('monatswechsel_gehalt').insert(payload);
-  if(ins.error){toast('Fehler: '+ins.error.message);return;}
-  await load(); toast(rows.length+' Soll-Gehälter aus '+perLabel(PER)+' übernommen ✓');
+  // Positionen, die nicht mehr in der Matrix stehen, deaktivieren
+  (existing||[]).forEach(function(r){ if(!wanted[gkey(r.unternehmen,r.empfaenger)]) ops.push(sb.from('monatswechsel_gehalt').update({aktiv:false}).eq('id',r.id)); });
+  if(ops.length){ await Promise.all(ops); }
+  // frisch laden, damit IDs/Beträge stimmen
+  var fin=await sb.from('monatswechsel_gehalt').select('*').eq('aktiv',true).eq('periode',PER);
+  var rows=(fin.data||[]).filter(function(r){return wanted[gkey(r.unternehmen,r.empfaenger)];});
+  rows.sort(function(a,b){return (a.pos||0)-(b.pos||0);});
+  return rows;
 }
 
 async function load(){
@@ -217,7 +230,8 @@ async function load(){
     sb.from('monatswechsel_konten').select('*').eq('aktiv',true).eq('periode',PER).order('pos').order('created_at'),
     sb.from('monatswechsel_darlehen_status').select('loan_id,ausgefuehrt').eq('periode',PER)
   ]);
-  GEH=g.data||[]; DAR=d.data||[]; FIX=f.data||[]; KON=k.data||[];
+  DAR=d.data||[]; FIX=f.data||[]; KON=k.data||[];
+  GEH=await ensureGehaltRows(g.data||[]);
   var smap={}; (st.data||[]).forEach(function(r){smap[r.loan_id]=r.ausgefuehrt;});
   DAR.forEach(function(r){r._done=!!smap[r.id];});
   renderKon(); renderGeh(); renderDar(); renderFix(); renderStats();
@@ -252,21 +266,24 @@ function renderKon(){
 }
 
 function renderGeh(){
-  $('gehBody').innerHTML=GEH.map(function(r){
-    var done=!!r.ausgefuehrt;
-    return '<tr class="pay'+(done?' done':'')+'" onclick="rowToggle(event,\'geh\',\''+r.id+'\')">'
-    +'<td class="st"><span class="done-dot" title="Als ausgeführt markieren">✓</span></td>'
-    +'<td><input value="'+esc(r.empfaenger||'')+'" onchange="upd(\''+r.id+'\',\'empfaenger\',this.value)"></td>'
-    +'<td><input value="'+esc(r.unternehmen||'')+'" onchange="upd(\''+r.id+'\',\'unternehmen\',this.value)"></td>'
-    +'<td class="num"><input class="amt" type="text" inputmode="decimal" value="'+(r.betrag!=null?r.betrag:'')+'" placeholder="0,00" onchange="updNum(\''+r.id+'\',\'betrag\',this.value)"></td>'
-    +'<td><select onchange="upd(\''+r.id+'\',\'zahlungsart\',this.value)">'
-      +['Überweisung','Lastschrift','Dauerauftrag'].map(function(o){return '<option'+(r.zahlungsart===o?' selected':'')+'>'+o+'</option>';}).join('')+'</select></td>'
-    +'<td><input value="'+esc(r.quell_konto||'')+'" placeholder="von…" onchange="upd(\''+r.id+'\',\'quell_konto\',this.value)"></td>'
-    +'<td><input class="iban" value="'+esc(r.iban||'')+'" placeholder="DE.. .... .... .... .... .." onchange="upd(\''+r.id+'\',\'iban\',this.value)"></td>'
-    +'<td><input value="'+esc(r.verwendungszweck||'')+'" placeholder="z. B. Gehalt Juli" onchange="upd(\''+r.id+'\',\'verwendungszweck\',this.value)" style="min-width:150px"></td>'
-    +'<td><button class="icobtn" title="Entfernen" onclick="delGeh(\''+r.id+'\')">✕</button></td>'
-    +'</tr>';
-  }).join('')||'<tr><td colspan="9" class="muted">Noch keine Einträge.</td></tr>';
+  var html='';
+  GES.forEach(function(G){
+    var rows=GEH.filter(function(r){return gesOf(r.unternehmen)===G.k;});
+    if(!rows.length) return;
+    var sub=rows.reduce(function(a,r){return a+(Number(r.betrag)||0);},0);
+    html+='<tr class="grp"><td class="st"></td><td><b>'+esc(G.name)+'</b></td><td class="num"><b>'+eur(sub)+'</b></td><td colspan="2"></td></tr>';
+    rows.forEach(function(r){
+      var done=!!r.ausgefuehrt;
+      html+='<tr class="pay'+(done?' done':'')+'" onclick="rowToggle(event,\'geh\',\''+r.id+'\')">'
+      +'<td class="st"><span class="done-dot" title="Als ausgeführt markieren">✓</span></td>'
+      +'<td style="padding-left:20px">'+esc(r.empfaenger||'—')+'</td>'
+      +'<td class="num">'+eur(Number(r.betrag)||0)+'</td>'
+      +'<td><input class="iban" value="'+esc(r.iban||'')+'" placeholder="DE.. .... .... .... .... .." onchange="upd(\''+r.id+'\',\'iban\',this.value)"></td>'
+      +'<td><input value="'+esc(r.verwendungszweck||'')+'" placeholder="z. B. Gehalt Juli" onchange="upd(\''+r.id+'\',\'verwendungszweck\',this.value)" style="min-width:170px"></td>'
+      +'</tr>';
+    });
+  });
+  $('gehBody').innerHTML=html||'<tr><td colspan="5" class="muted">Keine Positionen in der Personalkosten-Matrix für '+esc(perLabel(PER))+'.</td></tr>';
   var s=GEH.reduce(function(a,r){return a+(Number(r.betrag)||0);},0);
   $('gehFoot').textContent=eur(s);
 }
