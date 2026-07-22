@@ -39,7 +39,7 @@ export const NAV = [
   ] },
   { type: 'group', key: 'controlling', icon: 'ti-chart-histogram', label: 'Controlling', area: 'hv', mod: 'controlling', items: [
     { href: '/controlling/statistik', icon: 'ti-chart-bar', label: 'Statistik' },
-    { href: '/controlling/monatswechsel', icon: 'ti-calendar-dollar', label: 'Monatswechsel' },
+    { href: '/controlling/monatswechsel', icon: 'ti-calendar-dollar', label: 'Monatswechsel (Controlling)' },
     { href: '/controlling/nahaus-fixkosten', icon: 'ti-file-invoice', label: 'Fixkosten Objekte' },
     { href: '/controlling/nahaus-rechnungen', icon: 'ti-receipt', label: 'Rechnungen Unternehmen' },
     { href: '/controlling/gruppe-fixkosten', icon: 'ti-building-bank', label: 'Fixkosten der Gruppe' },
@@ -62,7 +62,7 @@ export const NAV = [
     { href: '/finance/reporting', icon: 'ti-report-analytics', label: 'Reporting für die Bank' },
     { href: '/finance/steuer-bilanz', icon: 'ti-receipt-tax', label: 'Steuer und Bilanzunterlagen' },
     { href: '/finance/liquiditaetsplanung', icon: 'ti-wallet', label: 'Liquiditätsplanung' },
-    { href: '/finance/monatswechsel', icon: 'ti-calendar-dollar', label: 'Monatswechsel' },
+    { href: '/finance/monatswechsel', icon: 'ti-calendar-dollar', label: 'Monatswechsel (Finance)' },
   ] },
   { type: 'group', key: 'prozesse', icon: 'ti-sitemap', label: 'Prozesse', area: ['vertrieb', 'hv'], mod: 'produktivitaet', items: [
     { href: '/prozesse/bpmn', icon: 'ti-hierarchy-2', label: 'BPMN-Modellierung' },
