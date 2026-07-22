@@ -72,14 +72,6 @@ export const NAV = [
     { href: '/stammdaten/kontakte', icon: 'ti-users', label: 'Kontakte' },
     { href: '/stammdaten/firmen', icon: 'ti-building', label: 'Firmen' },
   ] },
-  { type: 'group', key: 'bo-ratenzahlung', icon: 'ti-file-dollar', label: 'Ratenzahlung', area: 'backoffice', mod: 'ratenzahlung', items: [
-    { href: '/vermietung/zahlungsvereinbarung', icon: 'ti-file-dollar', label: 'Zahlungsvereinbarungsgenerator' },
-  ] },
-  { type: 'group', key: 'bo-rechnungen', icon: 'ti-receipt', label: 'Rechnungen', area: 'backoffice', mod: 'controlling', items: [
-    { href: '/controlling/nahaus-fixkosten', icon: 'ti-file-invoice', label: 'Fixkosten Objekte' },
-    { href: '/controlling/nahaus-rechnungen', icon: 'ti-receipt', label: 'Rechnungen Unternehmen' },
-    { href: '/controlling/gruppe-fixkosten', icon: 'ti-building-bank', label: 'Fixkosten der Gruppe' },
-  ] },
   { type: 'group', key: 'buchhaltung', icon: 'ti-calculator', label: 'Buchhaltung', area: ['hv', 'backoffice'], mod: 'controlling', items: [
     { href: '/vermietung/zahlungsvereinbarung', icon: 'ti-file-dollar', label: 'Zahlungsvereinbarungsgenerator' },
     { href: '/controlling/nahaus-fixkosten', icon: 'ti-file-invoice', label: 'Fixkosten Objekte' },
