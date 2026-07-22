@@ -118,20 +118,35 @@ export default function Sidebar({ user, demo, onLogout, role, perms }) {
   const [area, setArea] = useState('')
   const [favs, setFavs] = useState([])
   const isAdmin = role === 'admin'
-  // Sichtbarkeit je Kategorie/Unterkategorie (Rechte-Knoten). Admin sieht alles; ohne geladene Rechte alles; sonst nur wenn "sehen".
-  const seeKey = (key, adminOnly) => {
+  // Sichtbarkeit je Kategorie/Unterkategorie. Neue Schlüssel (cat:/sub:/lnk:) haben Vorrang;
+  // ist für ein Element kein neuer Schlüssel gesetzt, greift das alte Modulrecht (n.mod) als Fallback.
+  const has = (key) => !!(perms && Object.prototype.hasOwnProperty.call(perms, key))
+  const on = (key) => { const p = perms && perms[key]; return !!(p && p.sehen) }
+  // Unterkategorie sichtbar?
+  const canSeeItem = (n, it) => {
     if (demo || isAdmin) return true
-    if (adminOnly) return isAdmin
+    if (n.key === 'eric-privat') return isAdmin
     if (!perms) return true
-    const p = perms[key]
-    return !!(p && p.sehen)
+    const key = 'sub:' + it.href
+    return has(key) ? on(key) : on(n.mod)
   }
   const canSee = (n) => {
-    if (n.type === 'group') return seeKey('cat:' + n.key, n.key === 'eric-privat')
+    if (n.type === 'group') {
+      if (demo || isAdmin) return true
+      if (n.key === 'eric-privat') return isAdmin
+      if (!perms) return true
+      const catKey = 'cat:' + n.key
+      const base = has(catKey) ? on(catKey) : on(n.mod)
+      // Kategorie erscheint auch, wenn mindestens eine Unterkategorie freigeschaltet ist
+      return base || (n.items || []).some((it) => canSeeItem(n, it))
+    }
     if (!n.mod) return true // Cockpit, Alle Tools, Konto – Grundnavigation
-    return seeKey('lnk:' + n.href, NODE_ADMIN_ONLY(n.mod))
+    if (demo || isAdmin) return true
+    if (NODE_ADMIN_ONLY(n.mod)) return isAdmin
+    if (!perms) return true
+    const lnkKey = 'lnk:' + n.href
+    return has(lnkKey) ? on(lnkKey) : on(n.mod)
   }
-  const canSeeItem = (n, it) => seeKey('sub:' + it.href, n.key === 'eric-privat')
 
   useEffect(() => {
     try { const s = localStorage.getItem('sidebar_collapsed'); if (s) setCollapsed(JSON.parse(s)) } catch (e) {}
