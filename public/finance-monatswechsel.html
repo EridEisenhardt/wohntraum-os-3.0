@@ -112,6 +112,15 @@ tr.done .done-dot{background:var(--accent);border-color:var(--accent);color:#fff
       <button class="btn mini" onclick="addKon()">＋ Konto hinzufügen</button>
       <span class="tag">Gesamt-Belastung Monatswechsel: <b id="belastung">–</b></span>
     </div>
+
+    <div class="desc" style="margin-top:18px;margin-bottom:6px;font-weight:700;color:var(--text)">Benötigt je Konto (automatisch aus allen Zahlungen)</div>
+    <div style="overflow-x:auto">
+      <table id="tKonAuto"><thead><tr>
+        <th>Konto (Abgang)</th><th class="num">Gehälter</th><th class="num">Darlehen</th><th class="num">Fixkosten</th><th class="num">Benötigt gesamt</th>
+      </tr></thead><tbody id="konAutoBody"></tbody>
+      <tfoot><tr><td>Summe</td><td class="num" id="kaGeh">–</td><td class="num" id="kaDar">–</td><td class="num" id="kaFix">–</td><td class="num" id="kaTot">–</td></tr></tfoot>
+      </table>
+    </div>
   </div>
 
   <div class="card">
@@ -298,7 +307,7 @@ async function load(){
   FIX=await ensureFixFromRecurring(f.data||[]);
   var smap={}; (st.data||[]).forEach(function(r){smap[r.loan_id]=r.ausgefuehrt;});
   DAR.forEach(function(r){r._done=!!smap[r.id];});
-  renderKon(); renderGeh(); renderDar(); renderFix(); renderStats();
+  renderKon(); renderGeh(); renderDar(); renderFix(); renderKonAuto(); renderStats();
 }
 
 // Zeile als ausgeführt umschalten (Klick auf Zeile, außer auf Eingabefelder/Buttons)
@@ -327,6 +336,34 @@ function renderKon(){
   }).join('')||'<tr><td colspan="3" class="muted">Noch keine Konten. „＋ Konto hinzufügen".</td></tr>';
   var s=KON.reduce(function(a,r){return a+(Number(r.mindestbetrag)||0);},0);
   $('konFoot').textContent=eur(s);
+}
+
+function kontoLabel(iban){
+  if(!iban) return '(kein Konto hinterlegt)';
+  var s=String(iban).replace(/\s/g,'');
+  // passende manuelle Konto-Bezeichnung suchen (über Endziffern)
+  var mk=KON.find(function(k){var e=(k.konto_endung||'').replace(/\s/g,'');return e && s.slice(-e.length)===e;});
+  var suf='…'+s.slice(-4);
+  return mk&&mk.bank ? (esc(mk.bank)+' · '+suf) : suf;
+}
+function renderKonAuto(){
+  var agg={};
+  function add(iban,feld,val){var k=iban||'';if(!agg[k])agg[k]={geh:0,dar:0,fix:0};agg[k][feld]+=(Number(val)||0);}
+  GEH.forEach(function(r){add(r.quell_konto,'geh',r.betrag);});
+  DAR.forEach(function(r){add(r.quell_konto,'dar',r.kapitaldienst);});
+  FIX.forEach(function(r){add(r.quell_konto,'fix',r.betrag);});
+  var keys=Object.keys(agg).sort(function(a,b){return a===''?1:(b===''?-1:a.localeCompare(b));});
+  var tg=0,td=0,tf=0;
+  $('konAutoBody').innerHTML=keys.map(function(k){
+    var a=agg[k],tot=a.geh+a.dar+a.fix;tg+=a.geh;td+=a.dar;tf+=a.fix;
+    return '<tr><td>'+kontoLabel(k)+'</td>'
+      +'<td class="num">'+(a.geh?eur(a.geh):'–')+'</td>'
+      +'<td class="num">'+(a.dar?eur(a.dar):'–')+'</td>'
+      +'<td class="num">'+(a.fix?eur(a.fix):'–')+'</td>'
+      +'<td class="num"><b>'+eur(tot)+'</b></td></tr>';
+  }).join('')||'<tr><td colspan="5" class="muted">Keine Zahlungen.</td></tr>';
+  $('kaGeh').textContent=eur(tg);$('kaDar').textContent=eur(td);$('kaFix').textContent=eur(tf);
+  $('kaTot').textContent=eur(tg+td+tf);
 }
 
 function renderGeh(){
@@ -474,6 +511,7 @@ async function updF(id,field,val){
   var v=val===''?null:val;
   var row=FIX.find(function(r){return r.id===id;}); if(row)row[field]=v;
   if(field==='unternehmen') renderStats(); // Gesellschaft-Boxen sofort aktualisieren
+  if(field==='quell_konto') renderKonAuto(); // Konto-Übersicht aktualisieren
   var res=await sb.from('monatswechsel_fixkosten').update({[field]:v}).eq('id',id);
   if(res.error){toast('Fehler: '+res.error.message);}
 }
