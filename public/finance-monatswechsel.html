@@ -140,7 +140,7 @@ tr.done .done-dot{background:var(--accent);border-color:var(--accent);color:#fff
 
   <div class="card">
     <h2>🧾 Fixkosten</h2>
-    <div class="desc">Laufende Fixkosten für den Monatswechsel (Miete, Versicherungen, Abos, Leasing …). Zahlungen werden anfänglich alle manuell eingetragen.</div>
+    <div class="desc">Fällige wiederkehrende Zahlungen des Monats werden automatisch aus „Wiederkehrende Zahlungen" übernommen (je Objekt/Rubrik). Zusätzliche Fixkosten kannst du manuell ergänzen · <a class="link" href="/buchhaltung/wiederkehrende-zahlungen" target="_top">→ Wiederkehrende Zahlungen</a></div>
     <div style="overflow-x:auto">
       <table id="tFix"><thead><tr>
         <th class="st" title="Ausgeführt">✓</th><th>Bezeichnung</th><th>Gesellschaft</th><th>Empfänger</th><th class="num">Betrag</th><th>Zahlungsart</th><th>Von-Konto</th><th>IBAN (Ziel)</th><th></th>
@@ -197,7 +197,8 @@ async function copyPrev(){
   ]);
   const strip=(r)=>{var o=Object.assign({},r);delete o.id;delete o.created_at;o.periode=PER;o.ausgefuehrt=false;return o;};
   var ins=[];
-  if((f.data||[]).length) ins.push(sb.from('monatswechsel_fixkosten').insert((f.data||[]).map(strip)));
+  var fman=(f.data||[]).filter(function(r){return !r.quell_zid;}); // nur manuelle Fixkosten übernehmen
+  if(fman.length) ins.push(sb.from('monatswechsel_fixkosten').insert(fman.map(strip)));
   if((k.data||[]).length) ins.push(sb.from('monatswechsel_konten').insert((k.data||[]).map(function(r){var o=Object.assign({},r);delete o.id;delete o.created_at;o.periode=PER;return o;})));
   var rs=await Promise.all(ins);
   var err=rs.find(x=>x&&x.error);
@@ -247,6 +248,36 @@ async function ensureGehaltRows(existing){
   return rows;
 }
 
+// Fällige wiederkehrende Zahlungen des Monats in die Fixkosten spiegeln.
+function fixDue(turnus,m){
+  var t=(turnus||'').toLowerCase();
+  if(t==='vierteljaehrlich') return [1,4,7,10].indexOf(m)>=0;
+  if(t==='halbjaehrlich') return m===1||m===7;
+  if(t==='jaehrlich') return m===1;
+  if(t==='einmalig') return false;
+  return true; // monatlich, zweimonatlich, mehrmals u.a. = jeden Monat
+}
+async function ensureFixFromRecurring(existing){
+  var m=+((PER||'').split('-')[1]);
+  var wres=await sb.from('wiederkehrende_zahlungen').select('id,objekt,empfaenger,betrag,turnus,iban,quell_konto').eq('aktiv',true);
+  var due=(wres.data||[]).filter(function(z){return (Number(z.betrag)||0)!==0 && fixDue(z.turnus,m);});
+  var byZid={}; (existing||[]).forEach(function(r){ if(r.quell_zid) byZid[r.quell_zid]=r; });
+  var wantZ={}, ops=[];
+  due.forEach(function(z,i){
+    wantZ[z.id]=1; var ex=byZid[z.id];
+    var bez=(z.objekt||'')+' · '+(z.empfaenger||'');
+    if(!ex){
+      ops.push(sb.from('monatswechsel_fixkosten').insert({periode:PER,quell_zid:z.id,bezeichnung:bez,empfaenger:z.empfaenger,betrag:z.betrag,iban:z.iban||null,quell_konto:z.quell_konto||null,zahlungsart:'Lastschrift',aktiv:true,pos:500+i}));
+    } else if(Number(ex.betrag||0)!==Number(z.betrag||0)){
+      ops.push(sb.from('monatswechsel_fixkosten').update({betrag:z.betrag}).eq('id',ex.id));
+    }
+  });
+  (existing||[]).forEach(function(r){ if(r.quell_zid && !wantZ[r.quell_zid]) ops.push(sb.from('monatswechsel_fixkosten').update({aktiv:false}).eq('id',r.id)); });
+  if(ops.length) await Promise.all(ops);
+  var fin=await sb.from('monatswechsel_fixkosten').select('*').eq('aktiv',true).eq('periode',PER).order('pos').order('created_at');
+  return fin.data||[];
+}
+
 async function load(){
   const [g,d,f,k,st]=await Promise.all([
     sb.from('monatswechsel_gehalt').select('*').eq('aktiv',true).eq('periode',PER).order('pos').order('created_at'),
@@ -255,8 +286,9 @@ async function load(){
     sb.from('monatswechsel_konten').select('*').eq('aktiv',true).eq('periode',PER).order('pos').order('created_at'),
     sb.from('monatswechsel_darlehen_status').select('loan_id,ausgefuehrt').eq('periode',PER)
   ]);
-  DAR=d.data||[]; FIX=f.data||[]; KON=k.data||[];
+  DAR=d.data||[]; KON=k.data||[];
   GEH=await ensureGehaltRows(g.data||[]);
+  FIX=await ensureFixFromRecurring(f.data||[]);
   var smap={}; (st.data||[]).forEach(function(r){smap[r.loan_id]=r.ausgefuehrt;});
   DAR.forEach(function(r){r._done=!!smap[r.id];});
   renderKon(); renderGeh(); renderDar(); renderFix(); renderStats();
