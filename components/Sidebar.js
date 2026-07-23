@@ -88,8 +88,10 @@ export const NAV = [
     { href: '/eric-privat/essen-planer', icon: 'ti-tools-kitchen-2', label: 'Essen-Planer' },
     { href: '/eric-privat/kontenmodell', icon: 'ti-wallet', label: '6 Kontenmodell' },
   ] },
-  { type: 'link', href: '/mahnprozess', icon: 'ti-gavel', label: 'Mahnprozess', area: 'common', mod: 'mahnprozess' },
-  { type: 'link', href: '/mahnprozess/generator', icon: 'ti-file-invoice', label: 'Mahnungen & Register', area: 'common', mod: 'mahnprozess' },
+  { type: 'group', key: 'hausverwaltung', icon: 'ti-home-cog', label: 'Hausverwaltung', area: 'common', mod: 'mahnprozess', items: [
+    { href: '/mahnprozess', icon: 'ti-gavel', label: 'Mahnprozess' },
+    { href: '/mahnprozess/generator', icon: 'ti-file-invoice', label: 'Mahnungen & Register' },
+  ] },
   { type: 'link', href: '/konto', icon: 'ti-user-cog', label: 'Mein Konto', area: 'common' },
   { type: 'link', href: '/nutzer', icon: 'ti-shield-lock', label: 'Nutzerverwaltung', area: 'common', mod: 'nutzer' },
 ]
