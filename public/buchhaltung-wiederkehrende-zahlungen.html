@@ -2,6 +2,7 @@
 <html lang="de"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Wiederkehrende Zahlungen · Buchhaltung</title>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <style>
 :root{--bg:#f6f7f9;--surf:#fff;--surf2:#f1f3f6;--line:#e6e8ec;--text:#1c2024;--muted:#6b7280;--dim:#4b5563;--accent:#0f9d6b;--red:#dc2626;--amber:#b45309}
 *{box-sizing:border-box;margin:0;padding:0}
@@ -54,7 +55,7 @@ input.amt{text-align:right;font-variant-numeric:tabular-nums}
 </style></head><body>
 <div class="hdr">
   <div><div class="hdr-title">Wiederkehrende Zahlungen</div><div class="hdr-sub">Buchhaltung · laufende Ausgaben je Objekt + Jahresmatrix (was wurde wann bezahlt)</div></div>
-  <div><button class="btn sec mini" onclick="window.print()">🖨 Drucken</button></div>
+  <div style="display:flex;gap:8px"><button class="btn sec mini" onclick="exportXlsx()">⬇ Excel</button><button class="btn sec mini" onclick="window.print()">🖨 Drucken</button></div>
 </div>
 <div class="wrap">
   <div class="reg" id="reg"></div>
@@ -261,6 +262,20 @@ async function delRow(id){
   var res=await sb.from('wiederkehrende_zahlungen').delete().eq('id',id);
   if(res.error){toast('Fehler: '+res.error.message);return;}
   ROWS=ROWS.filter(function(r){return r.id!==id;});renderList();renderMatrix();renderStats();toast('Entfernt');
+}
+
+function exportXlsx(){
+  if(typeof XLSX==='undefined'){toast('Excel-Bibliothek lädt noch, bitte gleich erneut');return;}
+  var wb=XLSX.utils.book_new();
+  var aoa=[['Empfänger','Zweck / Vertrag','Vertrag-Nr','Fälligkeit','Betrag','Turnus','Monatsäquivalent','Kategorie','IBAN','Von-Konto']];
+  ROWS.forEach(function(r){
+    var b=Number(r.betrag)||0;
+    aoa.push([ r.empfaenger||'', r.zweck||'', r.vertrag_nr||'', r.faelligkeit||'', b, TLABEL[r.turnus]||r.turnus||'', Math.round(b*tFactor(r.turnus)*100)/100, r.kategorie||'', r.iban||'', r.quell_konto||'' ]);
+  });
+  var sum=ROWS.reduce(function(a,r){return a+(Number(r.betrag)||0)*tFactor(r.turnus);},0);
+  aoa.push([]); aoa.push(['','','','','','','Summe Monatsäquiv.:',Math.round(sum*100)/100]);
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(aoa), (OBJ||'Objekt').slice(0,28));
+  XLSX.writeFile(wb, 'Wiederkehrende_Zahlungen_'+(OBJ||'Objekt')+'.xlsx');
 }
 
 (async()=>{await loadObjekte();await load();})();

@@ -2,6 +2,7 @@
 <html lang="de"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Monatswechsel · Finance</title>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <style>
 :root{--bg:#f6f7f9;--surf:#fff;--surf2:#f1f3f6;--line:#e6e8ec;--text:#1c2024;--muted:#6b7280;--dim:#4b5563;--accent:#0f9d6b;--red:#dc2626;--amber:#b45309}
 *{box-sizing:border-box;margin:0;padding:0}
@@ -70,7 +71,7 @@ tr.done .done-dot{background:var(--accent);border-color:var(--accent);color:#fff
 </style></head><body>
 <div class="hdr">
   <div><div class="hdr-title">Monatswechsel</div><div class="hdr-sub">Finance · alle Zahlungen für den Monatswechsel — Gehälter &amp; monatswechsel-relevante Darlehen</div></div>
-  <div><button class="btn sec mini" onclick="window.print()">🖨 Drucken</button></div>
+  <div style="display:flex;gap:8px"><button class="btn sec mini" onclick="exportXlsx()">⬇ Excel</button><button class="btn sec mini" onclick="window.print()">🖨 Drucken</button></div>
 </div>
 <div class="wrap">
   <div class="reg" id="reg"></div>
@@ -545,6 +546,33 @@ async function delFix(id){
   var res=await sb.from('monatswechsel_fixkosten').update({aktiv:false}).eq('id',id);
   if(res.error){toast('Fehler: '+res.error.message);return;}
   FIX=FIX.filter(function(r){return r.id!==id;}); renderFix(); renderStats(); toast('Entfernt');
+}
+
+function exportXlsx(){
+  if(typeof XLSX==='undefined'){toast('Excel-Bibliothek lädt noch, bitte gleich erneut');return;}
+  var wb=XLSX.utils.book_new();
+  // Gehälter
+  var geh=[['Gesellschaft','Position','Betrag','Von-Konto','Verwendungszweck','Ausgeführt']];
+  GEH.forEach(function(r){geh.push([ (GES.find(function(G){return G.k===gesOf(r.unternehmen);})||{}).name||r.unternehmen||'', r.empfaenger||'', Number(r.betrag)||0, r.iban||'', r.verwendungszweck||'', r.ausgefuehrt?'ja':'' ]);});
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(geh), 'Gehälter');
+  // Darlehen
+  var dar=[['Darlehen','Bank/Geber','Rate (mtl.)','Bankzahlung','Von-Konto','Ziel-Bankverbindung','Ausgeführt']];
+  DAR.forEach(function(r){dar.push([ r.bez||'', r.geber||'', Number(r.kapitaldienst)||0, r.bankzahlung||'Lastschrift', r.quell_konto||'', r.ziel_bank||'', r._done?'ja':'' ]);});
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(dar), 'Darlehen');
+  // Fixkosten
+  var fix=[['Objekt','Summe (Monat)','IBAN (abgebendes Konto)','Ausgeführt']];
+  FIX.forEach(function(r){fix.push([ r.bezeichnung||r.quell_objekt||'', Number(r.betrag)||0, r.quell_konto||'', r.ausgefuehrt?'ja':'' ]);});
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(fix), 'Fixkosten');
+  // Liquidität je Konto
+  var agg={};
+  function add(iban,f,v){var k=iban||'(kein Konto)';if(!agg[k])agg[k]={geh:0,dar:0,fix:0};agg[k][f]+=(Number(v)||0);}
+  GEH.forEach(function(r){add(r.iban||r.quell_konto,'geh',r.betrag);});
+  DAR.forEach(function(r){add(r.quell_konto,'dar',r.kapitaldienst);});
+  FIX.forEach(function(r){add(r.quell_konto,'fix',r.betrag);});
+  var liq=[['Konto (Abgang)','Gehälter','Darlehen','Fixkosten','Benötigt gesamt']];
+  Object.keys(agg).sort().forEach(function(k){var a=agg[k];liq.push([k,a.geh,a.dar,a.fix,a.geh+a.dar+a.fix]);});
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(liq), 'Liquidität');
+  XLSX.writeFile(wb, 'Monatswechsel_'+PER+'.xlsx');
 }
 
 (async()=>{await sb.auth.getSession();await loadPerioden();await load();})();

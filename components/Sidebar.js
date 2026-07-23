@@ -114,6 +114,7 @@ export default function Sidebar({ user, demo, onLogout, role, perms }) {
   const [collapsed, setCollapsed] = useState({})
   const [area, setArea] = useState('')
   const [favs, setFavs] = useState([])
+  const [q, setQ] = useState('')
   const isAdmin = role === 'admin'
   // Sichtbarkeit je Kategorie/Unterkategorie. Neue Schlüssel (cat:/sub:/lnk:) haben Vorrang;
   // ist für ein Element kein neuer Schlüssel gesetzt, greift das alte Modulrecht (n.mod) als Fallback.
@@ -186,6 +187,14 @@ export default function Sidebar({ user, demo, onLogout, role, perms }) {
   const favItems = favs.map((h) => allSubItems.find((x) => x.item.href === h)).filter((x) => x && canSee(x.group) && canSeeItem(x.group, x.item)).map((x) => x.item)
   const email = user && user.email ? user.email : null
   const initials = email ? email.slice(0, 2).toUpperCase() : 'EE'
+  // Themen-Suche über alle sichtbaren Seiten
+  const flatSearch = []
+  NAV.forEach((n) => {
+    if (n.type === 'link') { if (canSee(n)) flatSearch.push({ href: n.href, label: n.label, icon: n.icon, group: '' }) }
+    else if (n.type === 'group' && canSee(n)) { n.items.forEach((it) => { if (canSeeItem(n, it)) flatSearch.push({ href: it.href, label: it.label, icon: it.icon, group: n.label }) }) }
+  })
+  const ql = q.trim().toLowerCase()
+  const results = ql ? flatSearch.filter((x) => (x.label + ' ' + x.group).toLowerCase().includes(ql)) : []
 
   return (
     <aside className="sidebar">
@@ -197,6 +206,12 @@ export default function Sidebar({ user, demo, onLogout, role, perms }) {
         </div>
       </Link>
 
+      <div style={{ padding: '2px 0 6px', position: 'relative' }}>
+        <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="🔍 Thema suchen…"
+          style={{ width: '100%', font: 'inherit', fontSize: 12.5, padding: '8px 26px 8px 10px', borderRadius: 8, border: '1px solid rgba(128,128,128,.35)', background: 'transparent', color: 'inherit' }} />
+        {q && <span onClick={() => setQ('')} title="Leeren" style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', cursor: 'pointer', color: 'rgba(128,128,128,.7)', fontSize: 14 }}>✕</span>}
+      </div>
+
       <div style={{ padding: '2px 0 8px' }}>
         <select value={area} onChange={(e) => chooseArea(e.target.value)} title="Hauptbereich wählen"
           style={{ width: '100%', font: 'inherit', fontSize: 12.5, fontWeight: 700, padding: '8px 10px', borderRadius: 8, border: '1px solid rgba(128,128,128,.35)', background: 'transparent', color: 'inherit', cursor: 'pointer' }}>
@@ -207,7 +222,18 @@ export default function Sidebar({ user, demo, onLogout, role, perms }) {
         </select>
       </div>
 
-      {(() => {
+      {ql && (
+        <div>
+          {results.length ? results.map((x) => (
+            <Link key={x.href} href={x.href} className={cls(isActive(x))} onClick={() => setQ('')}>
+              <i className={'ti ' + x.icon} /> {x.label}
+              {x.group && <span style={{ marginLeft: 'auto', fontSize: 10.5, color: 'rgba(128,128,128,.7)' }}>{x.group}</span>}
+            </Link>
+          )) : <div className="nav-sub" style={{ color: 'var(--muted, #6b7280)', fontStyle: 'italic', cursor: 'default' }}>Kein Treffer für „{q}"</div>}
+        </div>
+      )}
+
+      {!ql && (() => {
         const isOpen = !collapsed['favoriten']
         return (
           <div>
@@ -223,7 +249,7 @@ export default function Sidebar({ user, demo, onLogout, role, perms }) {
         )
       })()}
 
-      {NAV.filter((n) => { const a = Array.isArray(n.area) ? n.area : [n.area]; return (area === '' || a.includes('common') || a.includes(area)) && canSee(n) }).map((n) => {
+      {!ql && NAV.filter((n) => { const a = Array.isArray(n.area) ? n.area : [n.area]; return (area === '' || a.includes('common') || a.includes(area)) && canSee(n) }).map((n) => {
         if (n.type === 'link') {
           return (
             <Link key={n.href} href={n.href} className={cls(isActive(n))}>
