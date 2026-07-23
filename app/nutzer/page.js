@@ -15,6 +15,23 @@ export default function NutzerPage() {
   const [permMap, setPermMap] = useState({})
   const [permBusy, setPermBusy] = useState(false)
 
+  const [nu, setNu] = useState({ full_name: '', email: '', role: 'backoffice', password: '' })
+  const [nuBusy, setNuBusy] = useState(false)
+  const [nuInfo, setNuInfo] = useState(null)
+
+  async function createUser() {
+    if (!nu.email.trim()) { setMsg('Bitte E-Mail angeben.'); return }
+    setNuBusy(true); setNuInfo(null); setMsg(null)
+    const { data, error } = await supabase.functions.invoke('create-user', { body: nu })
+    setNuBusy(false)
+    if (error || (data && data.error)) { setMsg('Fehler: ' + ((data && data.error) || error.message)); return }
+    setNuInfo(data && data.tempPassword
+      ? 'Nutzer angelegt. Temporäres Passwort: ' + data.tempPassword + ' (bitte sicher weitergeben).'
+      : 'Nutzer angelegt.')
+    setNu({ full_name: '', email: '', role: 'backoffice', password: '' })
+    load()
+  }
+
   const load = useCallback(async () => {
     if (!supabaseConfigured) { setLoading(false); return }
     const { data: { user } } = await supabase.auth.getUser()
@@ -179,12 +196,42 @@ export default function NutzerPage() {
       </div>
 
       <div className="card" style={{ marginTop: 18 }}>
-        <h2>Neue Nutzer hinzufügen</h2>
-        <p className="sub" style={{ margin: 0 }}>
-          Neue Teammitglieder registrieren sich über den Login-Bildschirm („Registrieren").
-          Sobald sie erscheinen, kannst du ihnen hier eine Rolle zuweisen.
-          Alternativ in Supabase unter Authentication → Users anlegen (mit „Auto Confirm").
-        </p>
+        <h2>Neuen Nutzer anlegen</h2>
+        {isAdmin ? (
+          <>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 12, marginTop: 8 }}>
+              <div>
+                <label className="sub" style={{ display: 'block', marginBottom: 4 }}>Name</label>
+                <input value={nu.full_name} onChange={(e) => setNu({ ...nu, full_name: e.target.value })} placeholder="Vor- und Nachname" style={{ width: '100%' }} />
+              </div>
+              <div>
+                <label className="sub" style={{ display: 'block', marginBottom: 4 }}>E-Mail</label>
+                <input type="email" value={nu.email} onChange={(e) => setNu({ ...nu, email: e.target.value })} placeholder="name@wohntraumrheinhessen.site" style={{ width: '100%' }} />
+              </div>
+              <div>
+                <label className="sub" style={{ display: 'block', marginBottom: 4 }}>Rolle</label>
+                <select value={nu.role} onChange={(e) => setNu({ ...nu, role: e.target.value })} style={{ width: '100%' }}>
+                  {APP_ROLES.map((r) => <option key={r} value={r}>{appRoleLabel[r]}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="sub" style={{ display: 'block', marginBottom: 4 }}>Passwort (optional)</label>
+                <input value={nu.password} onChange={(e) => setNu({ ...nu, password: e.target.value })} placeholder="leer = automatisch generiert" style={{ width: '100%' }} />
+              </div>
+            </div>
+            <div style={{ marginTop: 12, display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+              <button className="btn" onClick={createUser} disabled={nuBusy}>
+                <i className="ti ti-user-plus" /> {nuBusy ? 'Legt an…' : 'Nutzer anlegen'}
+              </button>
+              {nuInfo && <span className="sub" style={{ color: 'var(--brand)' }}>{nuInfo}</span>}
+            </div>
+            <p className="sub" style={{ fontSize: 11.5, marginTop: 10, marginBottom: 0 }}>
+              Der Nutzer wird direkt aktiviert (E-Mail bestätigt). Wird kein Passwort gesetzt, erzeugt das System ein temporäres – gib es dem Nutzer sicher weiter, er kann es unter „Mein Konto" ändern.
+            </p>
+          </>
+        ) : (
+          <p className="sub" style={{ margin: 0 }}>Nur Admins können neue Nutzer anlegen.</p>
+        )}
       </div>
     </>
   )
