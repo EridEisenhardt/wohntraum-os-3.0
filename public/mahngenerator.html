@@ -65,6 +65,24 @@ td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
         <div class="fld"><label>Offener Betrag (€)</label><input id="betrag" inputmode="decimal" oninput="preview()" placeholder="z. B. 842,00"></div>
         <div class="fld"><label>Zahlungsfrist bis</label><input id="frist" type="date" oninput="preview()"></div>
       </div>
+      <div class="fld"><label>Empfänger-IBAN (erscheint in der Mahnung)</label>
+        <div style="display:flex;gap:6px">
+          <select id="ibanSel" onchange="onIbanSel()" style="flex:1"></select>
+          <button class="btn sec mini" type="button" onclick="toggleIbanMgr()" title="IBAN hinzufügen / bearbeiten">＋ / ✎</button>
+        </div>
+        <div id="ibanMgr" style="display:none;margin-top:8px;border:1px solid var(--line);border-radius:8px;padding:10px;background:var(--surf2)">
+          <div class="row">
+            <div class="fld" style="margin-bottom:8px"><label>Objektkennzeichnung</label><input id="ibKenn" placeholder="z. B. Rh24"></div>
+            <div class="fld" style="margin-bottom:8px"><label>IBAN</label><input id="ibIban" placeholder="DE.. .... .... .... .... .."></div>
+          </div>
+          <div class="fld" style="margin-bottom:8px"><label>Kontoinhaber (optional)</label><input id="ibInh" placeholder="Wohn(T)raum Rheinhessen GmbH"></div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap">
+            <button class="btn mini" type="button" onclick="saveIban()">💾 Speichern</button>
+            <button class="btn sec mini" type="button" onclick="newIban()">＋ Neu</button>
+            <button class="btn sec mini" type="button" style="color:var(--red)" onclick="delIban()">🗑 Löschen</button>
+          </div>
+        </div>
+      </div>
       <div class="row">
         <div class="fld"><label>Datum</label><input id="datum" type="date" oninput="preview()"></div>
         <div class="fld"><label>Betreff</label><input id="betreff" oninput="preview()" placeholder="Betreff"></div>
@@ -103,14 +121,51 @@ function deDate(iso){if(!iso)return '';var p=iso.split('-');return p.length===3?
 const SENDER='Wohn(T)raum Rheinhessen GmbH · Gaustraße 1 · 55232 Alzey';
 const STATUS=['Erstellt','Versandt','In Klärung','Bezahlt','Storniert','Erledigt'];
 const STATUSCLS={'Erstellt':'s-Erstellt','Versandt':'s-Versandt','In Klärung':'s-InKlärung','Bezahlt':'s-Bezahlt','Storniert':'s-Storniert','Erledigt':'s-Erledigt'};
-let REG=[];
+let REG=[],IBANS=[],SELIB='',ibEditId='';
+
+async function loadIbans(){
+  var {data}=await sb.from('mahn_ibans').select('*').order('kennzeichen');
+  IBANS=data||[]; renderIbanSel();
+}
+function renderIbanSel(){
+  $('ibanSel').innerHTML='<option value="">— IBAN wählen —</option>'
+    +IBANS.map(function(r){return '<option value="'+r.id+'"'+(r.id===SELIB?' selected':'')+'>'+esc((r.kennzeichen||'')+' · '+(r.iban||''))+'</option>';}).join('');
+}
+function onIbanSel(){ SELIB=$('ibanSel').value; applyTemplate(); preview(); }
+function toggleIbanMgr(){
+  var m=$('ibanMgr'); var open=m.style.display==='none';
+  m.style.display=open?'block':'none';
+  if(open){ var r=IBANS.find(function(x){return x.id===SELIB;});
+    if(r){ ibEditId=r.id; $('ibKenn').value=r.kennzeichen||''; $('ibIban').value=r.iban||''; $('ibInh').value=r.inhaber||''; }
+    else { newIban(); } }
+}
+function newIban(){ ibEditId=''; $('ibKenn').value=''; $('ibIban').value=''; $('ibInh').value=''; $('ibKenn').focus(); }
+async function saveIban(){
+  var kenn=($('ibKenn').value||'').trim(), iban=($('ibIban').value||'').trim(), inh=($('ibInh').value||'').trim()||null;
+  if(!iban){toast('Bitte IBAN eingeben');return;}
+  var row={kennzeichen:kenn,iban:iban,inhaber:inh};
+  var res = ibEditId ? await sb.from('mahn_ibans').update(row).eq('id',ibEditId).select()
+                     : await sb.from('mahn_ibans').insert(row).select();
+  if(res.error){toast('Fehler: '+res.error.message);return;}
+  SELIB=res.data[0].id; ibEditId=res.data[0].id;
+  await loadIbans(); renderIbanSel(); applyTemplate(); preview(); toast('IBAN gespeichert ✓');
+}
+async function delIban(){
+  if(!ibEditId){toast('Kein Eintrag gewählt');return;}
+  if(!confirm('Diese IBAN löschen?'))return;
+  var res=await sb.from('mahn_ibans').delete().eq('id',ibEditId);
+  if(res.error){toast('Fehler: '+res.error.message);return;}
+  if(SELIB===ibEditId)SELIB=''; ibEditId='';
+  await loadIbans(); newIban(); applyTemplate(); preview(); toast('Gelöscht');
+}
 
 function tpl(stufe){
   var pb=parseNum($('betrag').value); var b=(pb!=null?eur(pb):'[Betrag] €');
   var f=deDate($('frist').value)||'[neue Frist]';
   var name=($('emp').value||'').trim()||'[Anrede Name]';
-  var inhaber='Wohn(T)raum Rheinhessen GmbH';
-  var iban='[IBAN]';
+  var selib=IBANS.find(function(x){return x.id===SELIB;});
+  var inhaber=(selib&&selib.inhaber)?selib.inhaber:'Wohn(T)raum Rheinhessen GmbH';
+  var iban=(selib&&selib.iban)?selib.iban:'[IBAN]';
   var vzweck=(($('objekt').value||'').trim()?($('objekt').value.trim()+' – '):'')+'Nebenkosten Nachzahlung';
   var konto='Kontoinhaber: '+inhaber+'\nIBAN: '+iban+'\nVerwendungszweck: '+vzweck;
   var raten='Sollte Ihnen eine Zahlung des vollen Betrags derzeit nicht möglich sein, kommen wir Ihnen gerne mit einer Ratenzahlung entgegen.';
@@ -247,6 +302,7 @@ async function delReg(id){
 (async()=>{
   await sb.auth.getSession();
   $('datum').value=new Date().toISOString().slice(0,10);
+  await loadIbans();
   applyTemplate(); preview(); await loadReg();
 })();
 </script>
