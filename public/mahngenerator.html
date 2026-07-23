@@ -1,0 +1,222 @@
+<!DOCTYPE html>
+<html lang="de"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Mahnungs-Generator &amp; Register</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<style>
+:root{--bg:#f6f7f9;--surf:#fff;--surf2:#f1f3f6;--line:#e6e8ec;--text:#1c2024;--muted:#6b7280;--dim:#4b5563;--accent:#0f9d6b;--red:#dc2626;--amber:#b45309;--blue:#2563eb}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--text);font-family:'Inter',system-ui,-apple-system,'Segoe UI',sans-serif;font-size:14px;line-height:1.5;min-height:100vh}
+.hdr{background:var(--surf);border-bottom:1px solid var(--line);padding:16px 24px;position:sticky;top:0;z-index:10}
+.hdr-title{font-size:18px;font-weight:700}.hdr-sub{font-size:12px;color:var(--muted);margin-top:2px}
+.wrap{max-width:1180px;margin:20px auto;padding:0 20px}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:18px}
+@media(max-width:900px){.grid2{grid-template-columns:1fr}}
+.card{background:var(--surf);border:1px solid var(--line);border-radius:14px;padding:18px 20px;margin-bottom:18px}
+.card h2{font-size:15px;margin-bottom:12px}
+label{font-size:12px;font-weight:600;color:var(--dim);display:block;margin-bottom:4px}
+input,select,textarea{width:100%;font:inherit;font-size:13px;padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:var(--surf)}
+textarea{min-height:160px;resize:vertical;font-family:inherit;line-height:1.5}
+.row{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.fld{margin-bottom:10px}
+.btn{background:var(--accent);color:#fff;border:none;border-radius:8px;padding:9px 15px;font:inherit;font-weight:600;font-size:13px;cursor:pointer}
+.btn.sec{background:var(--surf2);color:var(--text)}
+.btn.mini{padding:5px 10px;font-size:12px}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th,td{text-align:left;padding:7px 9px;border-bottom:1px solid var(--line);vertical-align:middle}
+th{font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:var(--muted);font-weight:700}
+td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
+.nr{font-weight:800;font-variant-numeric:tabular-nums;white-space:nowrap}
+.pill{display:inline-block;font-size:10.5px;font-weight:700;padding:2px 8px;border-radius:10px}
+.s-Erstellt{background:#eef2f7;color:var(--dim)}.s-Versandt{background:#dbeafe;color:var(--blue)}
+.s-InKlärung{background:#fef3c7;color:var(--amber)}.s-Bezahlt{background:#dcfce7;color:var(--accent)}
+.s-Storniert{background:#fee2e2;color:var(--red)}.s-Erledigt{background:#e5e7eb;color:#374151}
+.prev{background:#fff;border:1px solid var(--line);border-radius:10px;padding:22px 26px;font-size:12.5px;min-height:340px;box-shadow:0 1px 2px rgba(0,0,0,.04)}
+.prev .snd{font-size:10.5px;color:var(--muted);border-bottom:1px solid var(--line);padding-bottom:4px;margin-bottom:18px}
+.prev .rcp{margin-bottom:22px;white-space:pre-line}
+.prev .meta{text-align:right;font-size:11px;color:var(--dim);margin-bottom:14px}
+.prev .subj{font-weight:700;margin-bottom:12px}
+.prev .body{white-space:pre-line}
+.link{color:var(--accent);text-decoration:none;font-weight:600}
+.icobtn{background:none;border:none;color:var(--muted);cursor:pointer;font-size:15px;padding:2px 5px;border-radius:6px}.icobtn:hover{background:var(--surf2);color:var(--red)}
+.toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:#1c2024;color:#fff;padding:10px 16px;border-radius:8px;font-size:13px;opacity:0;pointer-events:none;transition:.2s;z-index:50}
+.toast.show{opacity:1}
+.muted{color:var(--muted)}
+</style></head><body>
+<div class="hdr"><div class="hdr-title">Mahnungs-Generator &amp; Register</div><div class="hdr-sub">Mahnprozess · Schreiben erstellen, fortlaufend nummerieren, als PDF ablegen und Status verfolgen</div></div>
+<div class="wrap">
+  <div class="grid2">
+    <div class="card">
+      <h2>✍️ Mahnung erstellen</h2>
+      <div class="fld"><label>Mahnstufe</label>
+        <select id="stufe" onchange="applyTemplate();preview()">
+          <option>Zahlungserinnerung</option>
+          <option>1. Mahnung</option>
+          <option>2. Mahnung</option>
+          <option>Letzte Mahnung</option>
+        </select></div>
+      <div class="fld"><label>Empfänger (Name)</label><input id="emp" oninput="preview()" placeholder="z. B. Herr Max Mustermann"></div>
+      <div class="fld"><label>Anschrift (mehrzeilig)</label><textarea id="anschrift" style="min-height:64px" oninput="preview()" placeholder="Straße Nr.&#10;PLZ Ort"></textarea></div>
+      <div class="row">
+        <div class="fld"><label>Objekt</label><input id="objekt" oninput="preview()" placeholder="z. B. Rh24"></div>
+        <div class="fld"><label>Wohneinheit</label><input id="we" oninput="preview()" placeholder="z. B. WE1"></div>
+      </div>
+      <div class="row">
+        <div class="fld"><label>Offener Betrag (€)</label><input id="betrag" inputmode="decimal" oninput="preview()" placeholder="z. B. 842,00"></div>
+        <div class="fld"><label>Zahlungsfrist bis</label><input id="frist" type="date" oninput="preview()"></div>
+      </div>
+      <div class="row">
+        <div class="fld"><label>Datum</label><input id="datum" type="date" oninput="preview()"></div>
+        <div class="fld"><label>Betreff</label><input id="betreff" oninput="preview()" placeholder="Betreff"></div>
+      </div>
+      <div class="fld"><label>Text</label><textarea id="text" oninput="preview()"></textarea></div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:4px">
+        <button class="btn" onclick="save()">✓ Erstellen &amp; ins Register</button>
+        <button class="btn sec" onclick="dlPdf()">⬇ Nur PDF</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>👁 Vorschau</h2>
+      <div class="prev" id="prev"></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>📒 Mahnregister</h2>
+    <div style="overflow-x:auto">
+      <table id="tReg"><thead><tr>
+        <th>Nr.</th><th>Datum</th><th>Empfänger</th><th>Objekt/WE</th><th class="num">Betrag</th><th>Mahnstufe</th><th>Status</th><th>Datei</th><th></th>
+      </tr></thead><tbody id="regBody"></tbody></table>
+    </div>
+  </div>
+</div>
+<div class="toast" id="toast"></div>
+<script>
+const sb=window.supabase.createClient('https://jqzxctfqvcwbctpjksvg.supabase.co','eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpxenhjdGZxdmN3YmN0cGprc3ZnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODIxMzA0MzIsImV4cCI6MjA5NzcwNjQzMn0.RKIbZxJdusKWWPjBJqlxZ8e1m8So02UslOg55YRsn3o');
+const $=id=>document.getElementById(id);
+const esc=s=>(s==null?'':String(s)).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+function toast(m){const t=$('toast');t.textContent=m;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),2200);}
+const eur=n=>(n==null||isNaN(n))?'–':new Intl.NumberFormat('de-DE',{style:'currency',currency:'EUR'}).format(n);
+function parseNum(v){var raw=(v||'').trim().replace(/\./g,'').replace(',','.');if(raw==='')return null;var n=Number(raw);return isNaN(n)?null:n;}
+function deDate(iso){if(!iso)return '';var p=iso.split('-');return p.length===3?p[2]+'.'+p[1]+'.'+p[0]:iso;}
+const SENDER='Wohn(T)raum Rheinhessen GmbH · Gaustraße 1 · 55232 Alzey';
+const STATUS=['Erstellt','Versandt','In Klärung','Bezahlt','Storniert','Erledigt'];
+const STATUSCLS={'Erstellt':'s-Erstellt','Versandt':'s-Versandt','In Klärung':'s-InKlärung','Bezahlt':'s-Bezahlt','Storniert':'s-Storniert','Erledigt':'s-Erledigt'};
+let REG=[];
+
+function tpl(stufe,betrag,frist){
+  var b=eur(parseNum($('betrag').value)); var f=deDate($('frist').value)||'____';
+  var anrede='Sehr geehrte Damen und Herren,';
+  if(stufe==='Zahlungserinnerung') return anrede+'\n\nsicher ist es Ihrer Aufmerksamkeit entgangen: Auf Ihrem Mietkonto ist derzeit ein Betrag von '+b+' offen. Wir bitten Sie, den Betrag bis zum '+f+' auf unser Konto zu überweisen.\n\nSollten Sie die Zahlung bereits veranlasst haben, betrachten Sie dieses Schreiben als gegenstandslos.\n\nMit freundlichen Grüßen\nWohn(T)raum Rheinhessen GmbH';
+  if(stufe==='1. Mahnung') return anrede+'\n\ntrotz unserer Zahlungserinnerung ist der offene Betrag von '+b+' bislang nicht bei uns eingegangen. Wir fordern Sie hiermit auf, den Betrag bis zum '+f+' auszugleichen.\n\nMit freundlichen Grüßen\nWohn(T)raum Rheinhessen GmbH';
+  if(stufe==='2. Mahnung') return anrede+'\n\nleider mussten wir feststellen, dass der offene Betrag von '+b+' weiterhin aussteht. Wir setzen Ihnen eine letzte Frist bis zum '+f+'. Nach fruchtlosem Ablauf behalten wir uns weitere Schritte sowie die Berechnung von Mahn- und Verzugskosten vor.\n\nMit freundlichen Grüßen\nWohn(T)raum Rheinhessen GmbH';
+  return anrede+'\n\ntrotz mehrfacher Aufforderung ist der offene Betrag von '+b+' nicht ausgeglichen worden. Dies ist unsere letzte Mahnung. Sollte die Zahlung nicht bis zum '+f+' eingehen, werden wir ohne weitere Ankündigung ein gerichtliches Mahnverfahren einleiten und ggf. die fristlose Kündigung des Mietverhältnisses prüfen.\n\nMit freundlichen Grüßen\nWohn(T)raum Rheinhessen GmbH';
+}
+function applyTemplate(){
+  var s=$('stufe').value;
+  $('betreff').value=s+(($('objekt').value)?' · '+$('objekt').value:'')+(($('we').value)?' '+$('we').value:'');
+  $('text').value=tpl(s);
+}
+function preview(){
+  var d=deDate($('datum').value)||deDate(new Date().toISOString().slice(0,10));
+  $('prev').innerHTML='<div class="snd">'+esc(SENDER)+'</div>'
+    +'<div class="rcp">'+esc($('emp').value||'—')+'\n'+esc($('anschrift').value||'')+'</div>'
+    +'<div class="meta">Alzey, '+esc(d)+'</div>'
+    +'<div class="subj">'+esc($('betreff').value||$('stufe').value)+'</div>'
+    +'<div class="body">'+esc($('text').value||'')+'</div>';
+}
+
+function buildPdf(nummerLabel){
+  var jsPDF=window.jspdf.jsPDF; var doc=new jsPDF({unit:'mm',format:'a4'});
+  var L=25, R=185, y=22;
+  doc.setFontSize(8); doc.setTextColor(120); doc.text(SENDER, L, y); y+=12;
+  doc.setTextColor(20); doc.setFontSize(11);
+  doc.text(($('emp').value||''), L, y); y+=5;
+  ($('anschrift').value||'').split('\n').forEach(function(line){doc.text(line,L,y);y+=5;});
+  y+=8; doc.setFontSize(9); doc.setTextColor(90);
+  doc.text('Alzey, '+(deDate($('datum').value)||deDate(new Date().toISOString().slice(0,10))), R, y, {align:'right'});
+  if(nummerLabel){doc.text('Mahnung Nr. '+nummerLabel, R, y+4, {align:'right'});}
+  y+=14; doc.setTextColor(20); doc.setFontSize(12); doc.setFont(undefined,'bold');
+  doc.text(($('betreff').value||$('stufe').value), L, y); doc.setFont(undefined,'normal'); y+=9;
+  doc.setFontSize(10.5);
+  var lines=doc.splitTextToSize(($('text').value||''), R-L);
+  lines.forEach(function(ln){ if(y>275){doc.addPage();y=22;} doc.text(ln,L,y); y+=5.4; });
+  return doc;
+}
+function fileName(nummerLabel){
+  var o=($('objekt').value||'').replace(/[^\w]+/g,''); var nm=($('emp').value||'').replace(/[^\w]+/g,'_');
+  return 'Mahnung_'+nummerLabel+'_'+(o||'Objekt')+'_'+nm+'.pdf';
+}
+function dlPdf(){
+  if(!window.jspdf){toast('PDF-Bibliothek lädt noch');return;}
+  var doc=buildPdf(''); doc.save(fileName('Entwurf'));
+}
+
+async function nextNummer(){
+  var {data}=await sb.from('mahn_register').select('nummer').order('nummer',{ascending:false}).limit(1);
+  return ((data&&data[0]&&data[0].nummer)||0)+1;
+}
+function nrLabel(n){return 'MA-'+String(n).padStart(4,'0');}
+
+async function save(){
+  if(!$('emp').value.trim()){toast('Bitte Empfänger angeben');return;}
+  if(!window.jspdf){toast('PDF-Bibliothek lädt noch, gleich erneut');return;}
+  var n=await nextNummer(); var label=nrLabel(n);
+  var doc=buildPdf(label); var blob=doc.output('blob'); var fn=fileName(label);
+  var path=Date.now()+'_'+fn;
+  var up=await sb.storage.from('mahnungen').upload(path,blob,{contentType:'application/pdf',upsert:true});
+  var pdfUrl=null;
+  if(up.error){toast('PDF-Upload fehlgeschlagen: '+up.error.message);}
+  else{ pdfUrl=sb.storage.from('mahnungen').getPublicUrl(path).data.publicUrl; }
+  var row={nummer:n,datum:$('datum').value||new Date().toISOString().slice(0,10),empfaenger:$('emp').value,anschrift:$('anschrift').value,
+    objekt:$('objekt').value,we:$('we').value,betrag:parseNum($('betrag').value),mahnstufe:$('stufe').value,
+    betreff:$('betreff').value,text:$('text').value,frist:$('frist').value||null,status:'Erstellt',pdf_url:pdfUrl,pdf_name:fn};
+  var res=await sb.from('mahn_register').insert(row).select();
+  if(res.error){toast('Fehler: '+res.error.message);return;}
+  doc.save(fn); // lokale Kopie
+  toast('Mahnung '+label+' erstellt & abgelegt ✓');
+  await loadReg();
+}
+
+async function loadReg(){
+  var {data}=await sb.from('mahn_register').select('*').order('nummer',{ascending:false});
+  REG=data||[]; renderReg();
+}
+function renderReg(){
+  $('regBody').innerHTML=REG.map(function(r){
+    var st=r.status||'Erstellt';
+    return '<tr>'
+    +'<td class="nr">'+nrLabel(r.nummer)+'</td>'
+    +'<td>'+esc(deDate(r.datum))+'</td>'
+    +'<td>'+esc(r.empfaenger||'—')+'</td>'
+    +'<td>'+esc((r.objekt||'')+(r.we?' · '+r.we:''))+'</td>'
+    +'<td class="num">'+eur(Number(r.betrag))+'</td>'
+    +'<td>'+esc(r.mahnstufe||'')+'</td>'
+    +'<td><select onchange="setStatus(\''+r.id+'\',this.value)" style="width:auto;padding:4px 8px">'
+      +STATUS.map(function(s){return '<option'+(st===s?' selected':'')+'>'+s+'</option>';}).join('')+'</select> '
+      +'<span class="pill '+(STATUSCLS[st]||'s-Erstellt')+'">'+esc(st)+'</span></td>'
+    +'<td>'+(r.pdf_url?'<a class="link" href="'+esc(r.pdf_url)+'" target="_blank">⬇ PDF</a>':'<span class="muted">–</span>')+'</td>'
+    +'<td><button class="icobtn" title="Aus Register entfernen" onclick="delReg(\''+r.id+'\')">✕</button></td>'
+    +'</tr>';
+  }).join('')||'<tr><td colspan="9" class="muted">Noch keine Mahnungen im Register.</td></tr>';
+}
+async function setStatus(id,val){
+  var res=await sb.from('mahn_register').update({status:val}).eq('id',id);
+  if(res.error){toast('Fehler: '+res.error.message);return;}
+  var r=REG.find(x=>x.id===id); if(r)r.status=val; renderReg();
+}
+async function delReg(id){
+  if(!confirm('Diesen Registereintrag entfernen? (Die PDF-Datei bleibt im Speicher erhalten.)'))return;
+  var res=await sb.from('mahn_register').delete().eq('id',id);
+  if(res.error){toast('Fehler: '+res.error.message);return;}
+  REG=REG.filter(x=>x.id!==id); renderReg(); toast('Entfernt');
+}
+
+(async()=>{
+  await sb.auth.getSession();
+  $('datum').value=new Date().toISOString().slice(0,10);
+  applyTemplate(); preview(); await loadReg();
+})();
+</script>
+</body></html>

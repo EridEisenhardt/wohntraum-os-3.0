@@ -89,6 +89,7 @@ export const NAV = [
     { href: '/eric-privat/kontenmodell', icon: 'ti-wallet', label: '6 Kontenmodell' },
   ] },
   { type: 'link', href: '/mahnprozess', icon: 'ti-gavel', label: 'Mahnprozess', area: 'common', mod: 'mahnprozess' },
+  { type: 'link', href: '/mahnprozess/generator', icon: 'ti-file-invoice', label: 'Mahnungen & Register', area: 'common', mod: 'mahnprozess' },
   { type: 'link', href: '/konto', icon: 'ti-user-cog', label: 'Mein Konto', area: 'common' },
   { type: 'link', href: '/nutzer', icon: 'ti-shield-lock', label: 'Nutzerverwaltung', area: 'common', mod: 'nutzer' },
 ]
