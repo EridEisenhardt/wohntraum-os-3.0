@@ -135,10 +135,11 @@ function vhRender(){
         var items=VHE.filter(function(e){return e.monat===mo&&e.kategorie===rw[0];});
         var chips=items.map(function(e){
           var st=VHSTYLE[e.status]||VHSTYLE.grau;
-          return '<span title="Klick = Status ändern" onclick="vhCycle(\''+e.id+'\')" style="'+st+';display:inline-flex;align-items:center;gap:4px;font-size:11px;font-weight:600;padding:2px 7px;border-radius:12px;margin:2px 3px 0 0;cursor:pointer">'+esc(e.einheit||'—')
-            +'<b onclick="event.stopPropagation();vhDel(\''+e.id+'\')" style="cursor:pointer;opacity:.6">×</b></span>';
+          return '<span draggable="true" ondragstart="vhDrag(event,\''+e.id+'\')" title="Ziehen zum Verschieben · Klick = Status" onclick="vhCycle(\''+e.id+'\')" style="'+st+';display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:600;padding:2px 7px;border-radius:12px;margin:2px 3px 0 0;cursor:grab">'+esc(e.einheit||'—')
+            +'<b onclick="event.stopPropagation();vhRen(\''+e.id+'\')" title="Umbenennen" style="cursor:pointer;opacity:.6">✎</b>'
+            +'<b onclick="event.stopPropagation();vhDel(\''+e.id+'\')" title="Löschen" style="cursor:pointer;opacity:.6">×</b></span>';
         }).join('');
-        return '<td style="padding:4px;border-bottom:1px solid var(--line);vertical-align:top">'+chips
+        return '<td ondragover="event.preventDefault()" ondrop="vhDrop(event,'+mo+',\''+rw[0]+'\')" style="padding:4px;border-bottom:1px solid var(--line);vertical-align:top">'+chips
           +'<div><button class="chip" style="padding:2px 8px;font-size:11px;margin-top:3px" onclick="vhAdd('+mo+',\''+rw[0]+'\')">＋</button></div></td>';
       }).join('')+'</tr>';
   }).join('');
@@ -156,9 +157,28 @@ async function vhCycle(id){
   if(res.error)toast('Fehler: '+res.error.message);
 }
 async function vhDel(id){
+  if(!confirm('Diese Einheit entfernen?'))return;
   var res=await sb.from('vermietungshorizont_einheiten').delete().eq('id',id);
   if(res.error){toast('Fehler: '+res.error.message);return;}
   VHE=VHE.filter(function(x){return x.id!==id;}); vhRender();
+}
+async function vhRen(id){
+  var e=VHE.find(function(x){return x.id===id;}); if(!e)return;
+  var n=(prompt('Einheit umbenennen:',e.einheit||'')||'').trim(); if(!n||n===e.einheit)return;
+  e.einheit=n; vhRender();
+  var res=await sb.from('vermietungshorizont_einheiten').update({einheit:n}).eq('id',id);
+  if(res.error)toast('Fehler: '+res.error.message);
+}
+let VHDRAG=null;
+function vhDrag(ev,id){VHDRAG=id;if(ev.dataTransfer){ev.dataTransfer.effectAllowed='move';try{ev.dataTransfer.setData('text/plain',id);}catch(e){}}}
+async function vhDrop(ev,monat,kat){
+  ev.preventDefault();
+  var id=VHDRAG||(ev.dataTransfer&&ev.dataTransfer.getData('text/plain')); VHDRAG=null; if(!id)return;
+  var e=VHE.find(function(x){return x.id===id;}); if(!e)return;
+  if(e.monat===monat&&e.kategorie===kat)return;
+  e.monat=monat; e.kategorie=kat; vhRender();
+  var res=await sb.from('vermietungshorizont_einheiten').update({monat:monat,kategorie:kat}).eq('id',id);
+  if(res.error)toast('Fehler: '+res.error.message);
 }
 
 const STAGES=['1 · Eingang der Kündigung','2 · Kalkulation der neuen Wohnung','3 · Einheit in Vermietung','4 · Mietvertrag erstellen & unterschreiben','5 · Schlüsselübergabe','6 · 1. Mietzahlung','7 · Nacharbeit Backoffice / HV','8 · Erledigt','A · Warteliste','B · Renovierung / Sanierung','C · Leerstand'];
