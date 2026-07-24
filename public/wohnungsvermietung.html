@@ -199,7 +199,8 @@ function notizBlock(vid){const list=NOTIZ.filter(n=>n.vermietung_id===vid);
     <button class="btn sec" style="margin-top:4px;font-size:12px" onclick="var t=this.previousElementSibling;addNotiz('${vid}',t)">+ Notiz speichern</button>
   </div></div>`;}
 const DONE='8 · Erledigt';
-function baseList(){let a=FSTAGE?ROWS.filter(r=>r.status===FSTAGE):ROWS;if(HIDE_DONE&&FSTAGE!==DONE)a=a.filter(r=>r.status!==DONE);return a;}
+function activeRows(){return ROWS.filter(r=>!r.vermietet);}
+function baseList(){let a=FSTAGE?activeRows().filter(r=>r.status===FSTAGE):activeRows();if(HIDE_DONE&&FSTAGE!==DONE)a=a.filter(r=>r.status!==DONE);return a;}
 function optlist(arr,sel){return arr.map(o=>`<option ${o===sel?'selected':''}>${esc(o)}</option>`).join('');}
 function unitsOf(g){return EINH.filter(e=>e.gebaeude===g).map(e=>e.name);}
 function fillEinheit(){/* Einheit wird jetzt manuell eingetragen */}
@@ -278,7 +279,7 @@ function exportCRM(){
   toast(list.length+' Einheit(en) exportiert ✓');
 }
 function boardView(){
-  return '<div class="kb">'+STAGES.map(s=>{const list=(HIDE_DONE&&s===DONE)?[]:ROWS.filter(r=>r.status===s);const se=esc(s).replace(/'/g,"\\'");
+  return '<div class="kb">'+STAGES.map(s=>{const list=(HIDE_DONE&&s===DONE)?[]:activeRows().filter(r=>r.status===s);const se=esc(s).replace(/'/g,"\\'");
     const cards=list.map(r=>{const linked=VL.filter(v=>v.vermietung_id===r.id).length;
       return `<div class="kbcard ${r.freigabe?'frei':''}" draggable="true" ondragstart="dragStart(event,'${r.id}')">
         <div class="kbt">🏠 ${kenn(r.gebaeude)}${esc(r.gebaeude||'—')}</div>
@@ -317,7 +318,7 @@ function fmtEur(n){return (n==null||isNaN(n))?'':new Intl.NumberFormat('de-DE',{
 function tageDiff(a,b){if(!a||!b)return null;var d1=new Date(a),d2=new Date(b);if(isNaN(d1)||isNaN(d2))return null;return Math.round((d2-d1)/86400000);}
 function renderRegister(){
   var el=$('vmReg'); if(!el)return;
-  var list=ROWS.slice().sort(function(a,b){return (a.nummer||0)-(b.nummer||0);});
+  var list=ROWS.filter(function(r){return r.vermietet;}).sort(function(a,b){return (a.nummer||0)-(b.nummer||0);});
   function mieter(id){var i=INT.find(function(x){return x.id===id;});return i?((i.name||'')+' '+(i.vorname||'')).trim():'';}
   var sumGF=0;
   var rows=list.map(function(r){
@@ -326,7 +327,8 @@ function renderRegister(){
     var wm=(r.warmmiete!=null?Number(r.warmmiete):null);
     var gf=(dauer!=null&&wm!=null)?Math.round(dauer*(wm/30)*100)/100:null; // Leerstandstage × Tagesmiete
     if(gf!=null)sumGF+=gf;
-    return '<tr><td style="font-weight:800;white-space:nowrap">#'+(r.nummer!=null?r.nummer:'?')+'</td>'
+    return '<tr><td style="text-align:center"><button class="abtn" title="Zurück in aktive Liste" onclick="toggleVermietet(\''+r.id+'\',false)" style="color:var(--accent)">↩︎</button></td>'
+      +'<td style="font-weight:800;white-space:nowrap">#'+(r.nummer!=null?r.nummer:'?')+'</td>'
       +'<td>'+esc(kenn(r.gebaeude)+(r.gebaeude||'—'))+'</td><td>'+esc(r.einheit||'—')+'</td>'
       +'<td>'+esc(r.status||'')+'</td><td>'+esc(r.vormieter||'')+'</td><td>'+esc(fm)+'</td>'
       +'<td style="white-space:nowrap">'+(r.auszug?esc(r.auszug):'—')+'</td>'
@@ -334,10 +336,10 @@ function renderRegister(){
       +'<td style="text-align:right">'+(dauer!=null?dauer+' T':'—')+'</td>'
       +'<td style="text-align:right"><input class="inl" style="width:92px;text-align:right" inputmode="decimal" value="'+(wm!=null?String(wm).replace(".",","):'')+'" placeholder="0,00" onchange="setWarm(\''+r.id+'\',this.value)"></td>'
       +'<td style="text-align:right;font-weight:700;color:var(--red)">'+(gf!=null?fmtEur(gf):'—')+'</td></tr>';
-  }).join('')||'<tr><td colspan="11" style="text-align:center;color:var(--muted);padding:16px">Noch keine Vermietungen.</td></tr>';
-  el.innerHTML='<div class="card" style="margin-top:16px"><div class="card-hd"><span>📇 Register der Vermietungen</span><span class="crumb">'+list.length+' Einträge · fortlaufende #ID · Geldfresser = Leerstandstage × (Warmmiete/30)</span></div>'
-    +'<div style="overflow-x:auto;padding:0 4px 4px"><table class="vtbl" style="width:100%;border-collapse:collapse;font-size:12.5px"><thead><tr><th>#ID</th><th>Gebäude</th><th>Einheit</th><th>Status</th><th>Vormieter</th><th>Neuer Mieter</th><th>Auszug</th><th>Einzug</th><th>Dauer</th><th>Neue Warmmiete</th><th>Geldfresser</th></tr></thead><tbody>'+rows+'</tbody>'
-    +'<tfoot><tr><td colspan="10" style="text-align:right;font-weight:700;border-top:2px solid var(--line)">Summe Geldfresser (Leerstand)</td><td style="text-align:right;font-weight:800;color:var(--red);border-top:2px solid var(--line)">'+fmtEur(sumGF)+'</td></tr></tfoot>'
+  }).join('')||'<tr><td colspan="12" style="text-align:center;color:var(--muted);padding:16px">Noch keine vermieteten Einheiten.</td></tr>';
+  el.innerHTML='<div class="card" style="margin-top:16px"><div class="card-hd"><span>📇 Vermietungsregister (vermietet)</span><span class="crumb">'+list.length+' vermietet · fortlaufende #ID · Geldfresser = Leerstandstage × (Warmmiete/30)</span></div>'
+    +'<div style="overflow-x:auto;padding:0 4px 4px"><table class="vtbl" style="width:100%;border-collapse:collapse;font-size:12.5px"><thead><tr><th title="Zurück in aktiv">↩︎</th><th>#ID</th><th>Gebäude</th><th>Einheit</th><th>Status</th><th>Vormieter</th><th>Neuer Mieter</th><th>Auszug</th><th>Einzug</th><th>Dauer</th><th>Neue Warmmiete</th><th>Geldfresser</th></tr></thead><tbody>'+rows+'</tbody>'
+    +'<tfoot><tr><td colspan="11" style="text-align:right;font-weight:700;border-top:2px solid var(--line)">Summe Geldfresser (Leerstand)</td><td style="text-align:right;font-weight:800;color:var(--red);border-top:2px solid var(--line)">'+fmtEur(sumGF)+'</td></tr></tfoot>'
     +'</table></div></div>';
 }
 async function setWarm(id,val){
