@@ -55,6 +55,7 @@
   <div class="nav" id="nav"></div>
   <div class="spacer"></div>
   <button class="btn" onclick="openNew()">+ Neuer Eintrag</button>
+  <button class="btn sec" onclick="urlaubDialog()" title="Ganze Kalenderwoche als Urlaub aus der Wertung nehmen">🏖 Urlaubswoche</button>
   <button class="btn sec" onclick="exportCSV()">↓ CSV</button>
   <button class="btn sec" onclick="document.getElementById('csvFile').click()">↑ CSV importieren</button>
   <input type="file" id="csvFile" accept=".csv,text/csv" style="display:none" onchange="importCSV(this.files[0])">
@@ -123,7 +124,17 @@ async function load(){
     if(!data||data.length<page)break;
     from+=page;
   }
-  ROWS=all;render();
+  ROWS=all;await loadUrlaub();render();
+}
+let URLAUB=new Set();
+async function loadUrlaub(){const{data}=await sb.from('gpm_urlaub').select('woche');URLAUB=new Set((data||[]).map(r=>r.woche));}
+async function urlaubDialog(){
+  const cur=Array.from(URLAUB).sort();
+  const v=(prompt('Urlaubswochen (aus der Wertung genommen):\n'+(cur.length?cur.join(', '):'—')+'\n\nDatum (JJJJ-MM-TT) einer Woche eingeben zum Hinzufügen bzw. Entfernen:',new Date().toISOString().slice(0,10))||'').trim();
+  if(!v)return;const w=isoWeekKey(v);if(!w){toast('Ungültiges Datum');return;}
+  if(URLAUB.has(w)){const r=await sb.from('gpm_urlaub').delete().eq('woche',w);if(r.error){toast('Fehler: '+r.error.message);return;}URLAUB.delete(w);toast(w+' wieder in der Wertung');}
+  else{const r=await sb.from('gpm_urlaub').insert({woche:w});if(r.error){toast('Fehler: '+r.error.message);return;}URLAUB.add(w);toast(w+' als Urlaub aus der Wertung genommen');}
+  render();
 }
 function isoWeekKey(dstr){const d=new Date(dstr+'T00:00:00');if(isNaN(d))return null;const dt=new Date(Date.UTC(d.getFullYear(),d.getMonth(),d.getDate()));const dn=(dt.getUTCDay()+6)%7;dt.setUTCDate(dt.getUTCDate()-dn+3);const ft=new Date(Date.UTC(dt.getUTCFullYear(),0,4));const kw=1+Math.round(((dt-ft)/86400000-3+((ft.getUTCDay()+6)%7))/7);return dt.getUTCFullYear()+'-W'+String(kw).padStart(2,'0');}
 
@@ -148,9 +159,12 @@ function renderDash(){
   const catHtml=cats.map(c=>`<div class="catrow"><span class="nm">${esc(c)}</span><span class="bar"><span class="fill" style="width:${catCnt[c]/maxc*100}%;background:${CATCOL[c]||'#888'}"></span></span><span class="n">${catCnt[c]}</span></div>`).join('')||'<div class="empty">Keine Daten</div>';
   // Gesamt-Benchmark über den ganzen Zeitraum
   const ds=ROWS.map(r=>r.datum).filter(Boolean).sort();
+  const ROWSW=ROWS.filter(r=>!(r.datum&&URLAUB.has(isoWeekKey(r.datum)))); // Urlaubswochen aus der Wertung
   let weeks=1, spanTxt='';
-  if(ds.length){const d1=new Date(ds[0]+'T00:00:00'),d2=new Date(ds[ds.length-1]+'T00:00:00');weeks=Math.max(1,Math.floor((d2-d1)/6048e5)+1);spanTxt=ds[0]+' – '+ds[ds.length-1]+' · '+weeks+' Wochen';}
-  const gN=ROWS.filter(r=>r.gruppe==='geld').length, sN=ROWS.filter(r=>r.gruppe==='systeme').length;
+  if(ds.length){const d1=new Date(ds[0]+'T00:00:00'),d2=new Date(ds[ds.length-1]+'T00:00:00');const totalW=Math.max(1,Math.floor((d2-d1)/6048e5)+1);
+    const k1=isoWeekKey(ds[0]),k2=isoWeekKey(ds[ds.length-1]);let urlIn=0;URLAUB.forEach(w=>{if(w>=k1&&w<=k2)urlIn++;});
+    weeks=Math.max(1,totalW-urlIn);spanTxt=ds[0]+' – '+ds[ds.length-1]+' · '+weeks+' Wochen'+(urlIn?' (−'+urlIn+' Urlaub)':'');}
+  const gN=ROWSW.filter(r=>r.gruppe==='geld').length, sN=ROWSW.filter(r=>r.gruppe==='systeme').length;
   const de1=x=>x.toLocaleString('de-DE',{minimumFractionDigits:1,maximumFractionDigits:1});
   const bRow=(lbl,n,col)=>`<div class="catrow"><span class="nm" style="color:${col};font-weight:700">${lbl}</span><span style="flex:1;font-size:12.5px"><b>${n}</b> Einträge · Ø <b>${de1(n/weeks)}</b>/Woche · Ø <b>${de1(n/weeks/5)}</b>/Werktag</span></div>`;
   const overall='<div class="card"><div class="card-hd">Benchmark — gesamter Zeitraum <span style="text-transform:none;font-weight:400;color:var(--muted)">'+esc(spanTxt)+'</span></div><div class="card-bd">'+bRow('Geld produzierend',gN,'#185fa5')+bRow('Systeme',sN,'#c8741f')+bRow('Gesamt',gN+sN,'#1c2024')+'</div></div>';
@@ -182,10 +196,11 @@ function renderBench(){
   // Wochen ab dem ersten Eintrag bis heute
   const start=new Date(ds[0]+'T00:00:00');const mon=new Date(start);mon.setDate(mon.getDate()-((mon.getDay()+6)%7));
   const end=new Date();const endMon=new Date(end);endMon.setDate(endMon.getDate()-((endMon.getDay()+6)%7));
-  const weeks=[];const cur=new Date(mon);let guard=0;
+  let weeks=[];const cur=new Date(mon);let guard=0;
   while(cur<=endMon&&guard<520){weeks.push(isoWeekKey(cur.toISOString().slice(0,10)));cur.setDate(cur.getDate()+7);guard++;}
   const curWk=isoWeekKey(new Date().toISOString().slice(0,10));
   if(curWk&&weeks.indexOf(curWk)<0)weeks.push(curWk);
+  weeks=weeks.filter(w=>!URLAUB.has(w)); // Urlaubswochen aus dem Chart nehmen
   const gW={},sW={};weeks.forEach(w=>{gW[w]=0;sW[w]=0;});
   ROWS.forEach(r=>{const w=isoWeekKey(r.datum);if(w==null)return;if(gW[w]==null)return;if(r.gruppe==='systeme')sW[w]++;else gW[w]++;});
   const gV=weeks.map(w=>+(gW[w]/5).toFixed(1)),sV=weeks.map(w=>+(sW[w]/5).toFixed(1));
