@@ -72,7 +72,12 @@ select.inl.st{font-weight:700;color:var(--accent);border-color:var(--line);backg
         <b id="vhYear">2026</b>
         <button class="chip" onclick="vhYear(1)" style="padding:3px 9px">›</button>
       </span></span>
-      <span class="crumb">pro Monat: Rückläufer · Neuvermietung · Rückkehr aus Sanierung</span>
+      <span class="crumb" style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">Klick auf Einheit ändert Status:
+        <span style="background:#e5e7eb;color:#374151;padding:1px 7px;border-radius:10px;font-weight:600">noch nichts</span>
+        <span style="background:#fde68a;color:#92400e;padding:1px 7px;border-radius:10px;font-weight:600">in Arbeit</span>
+        <span style="background:#bbf7d0;color:#166534;padding:1px 7px;border-radius:10px;font-weight:600">vorbereitet</span>
+        <span style="background:#bfdbfe;color:#1e40af;padding:1px 7px;border-radius:10px;font-weight:600">umgesetzt</span>
+      </span>
     </div>
     <div style="overflow-x:auto">
       <table class="vtbl" id="vhTbl" style="width:100%;border-collapse:collapse;font-size:12.5px">
@@ -109,31 +114,51 @@ select.inl.st{font-weight:700;color:var(--accent);border-color:var(--line);backg
 const sb=window.supabase.createClient('https://jqzxctfqvcwbctpjksvg.supabase.co','eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpxenhjdGZxdmN3YmN0cGprc3ZnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODIxMzA0MzIsImV4cCI6MjA5NzcwNjQzMn0.RKIbZxJdusKWWPjBJqlxZ8e1m8So02UslOg55YRsn3o');
 const $=id=>document.getElementById(id);const esc=s=>(s==null?'':String(s)).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;');
 function toast(m){const t=$('toast');t.textContent=m;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),1800);}
-/* ---------- Vermietungshorizont ---------- */
+/* ---------- Vermietungshorizont (einzelne Einheiten mit Status-Klick) ---------- */
 const VHMON=['Jan','Feb','Mär','Apr','Mai','Jun','Jul','Aug','Sep','Okt','Nov','Dez'];
 const VHROWS=[['rueck','↩︎ Rückläufer (Einheiten zurück)'],['vermietet','🔑 Neuvermietung'],['sanierung','🏗 Rückkehr aus Sanierung']];
-let VHY=new Date().getFullYear(), VHDATA={};
+const VHSTAT=['grau','gelb','gruen','blau'];
+const VHSTYLE={grau:'background:#e5e7eb;color:#374151',gelb:'background:#fde68a;color:#92400e',gruen:'background:#bbf7d0;color:#166534',blau:'background:#bfdbfe;color:#1e40af'};
+const VHNEXT={grau:'gelb',gelb:'gruen',gruen:'blau',blau:'grau'};
+let VHY=new Date().getFullYear(), VHE=[];
 function vhYear(d){VHY+=d;vhLoad();}
 async function vhLoad(){
   $('vhYear').textContent=VHY;
-  const {data}=await sb.from('vermietungshorizont').select('*').eq('jahr',VHY);
-  VHDATA={}; (data||[]).forEach(r=>{VHDATA[r.monat]=r;}); vhRender();
+  const {data}=await sb.from('vermietungshorizont_einheiten').select('*').eq('jahr',VHY).order('pos').order('created_at');
+  VHE=data||[]; vhRender();
 }
 function vhRender(){
-  $('vhHead').innerHTML='<th style="text-align:left;padding:6px 8px;min-width:150px"></th>'+VHMON.map(m=>'<th style="padding:6px 6px;text-align:center;border-bottom:1px solid var(--line);color:var(--muted);font-weight:700">'+m+'</th>').join('');
+  $('vhHead').innerHTML='<th style="text-align:left;padding:6px 8px;min-width:150px"></th>'+VHMON.map(m=>'<th style="padding:6px 6px;text-align:center;border-bottom:1px solid var(--line);color:var(--muted);font-weight:700;min-width:96px">'+m+'</th>').join('');
   $('vhBody').innerHTML=VHROWS.map(function(rw){
-    return '<tr><td style="font-weight:600;padding:6px 8px;border-bottom:1px solid var(--line)">'+rw[1]+'</td>'
-      +VHMON.map(function(m,i){var mo=i+1;var val=(VHDATA[mo]&&VHDATA[mo][rw[0]])||'';
-        return '<td style="padding:2px;border-bottom:1px solid var(--line)"><textarea rows="2" style="width:100%;min-width:72px;font:inherit;font-size:11.5px;border:1px solid var(--line);border-radius:6px;padding:4px;resize:vertical" placeholder="–" onchange="vhSet('+mo+',\''+rw[0]+'\',this.value)">'+esc(val)+'</textarea></td>';
+    return '<tr><td style="font-weight:600;padding:6px 8px;border-bottom:1px solid var(--line);vertical-align:top">'+rw[1]+'</td>'
+      +VHMON.map(function(m,i){var mo=i+1;
+        var items=VHE.filter(function(e){return e.monat===mo&&e.kategorie===rw[0];});
+        var chips=items.map(function(e){
+          var st=VHSTYLE[e.status]||VHSTYLE.grau;
+          return '<span title="Klick = Status ändern" onclick="vhCycle(\''+e.id+'\')" style="'+st+';display:inline-flex;align-items:center;gap:4px;font-size:11px;font-weight:600;padding:2px 7px;border-radius:12px;margin:2px 3px 0 0;cursor:pointer">'+esc(e.einheit||'—')
+            +'<b onclick="event.stopPropagation();vhDel(\''+e.id+'\')" style="cursor:pointer;opacity:.6">×</b></span>';
+        }).join('');
+        return '<td style="padding:4px;border-bottom:1px solid var(--line);vertical-align:top">'+chips
+          +'<div><button class="chip" style="padding:2px 8px;font-size:11px;margin-top:3px" onclick="vhAdd('+mo+',\''+rw[0]+'\')">＋</button></div></td>';
       }).join('')+'</tr>';
   }).join('');
 }
-async function vhSet(monat,field,val){
-  var v=(val||'').trim()||null;
-  var row=VHDATA[monat]||{jahr:VHY,monat:monat}; row[field]=v; VHDATA[monat]=row;
-  var payload={jahr:VHY,monat:monat,updated_at:new Date().toISOString()}; payload[field]=v;
-  var res=await sb.from('vermietungshorizont').upsert(payload,{onConflict:'jahr,monat'});
+async function vhAdd(monat,kat){
+  var name=(prompt('Einheit (z. B. Rh24 WE1):')||'').trim(); if(!name)return;
+  var res=await sb.from('vermietungshorizont_einheiten').insert({jahr:VHY,monat:monat,kategorie:kat,einheit:name,status:'grau',pos:VHE.length+1}).select();
+  if(res.error){toast('Fehler: '+res.error.message);return;}
+  VHE.push(res.data[0]); vhRender();
+}
+async function vhCycle(id){
+  var e=VHE.find(function(x){return x.id===id;}); if(!e)return;
+  e.status=VHNEXT[e.status]||'grau'; vhRender();
+  var res=await sb.from('vermietungshorizont_einheiten').update({status:e.status}).eq('id',id);
   if(res.error)toast('Fehler: '+res.error.message);
+}
+async function vhDel(id){
+  var res=await sb.from('vermietungshorizont_einheiten').delete().eq('id',id);
+  if(res.error){toast('Fehler: '+res.error.message);return;}
+  VHE=VHE.filter(function(x){return x.id!==id;}); vhRender();
 }
 
 const STAGES=['1 · Eingang der Kündigung','2 · Kalkulation der neuen Wohnung','3 · Einheit in Vermietung','4 · Mietvertrag erstellen & unterschreiben','5 · Schlüsselübergabe','6 · 1. Mietzahlung','7 · Nacharbeit Backoffice / HV','8 · Erledigt','A · Warteliste','B · Renovierung / Sanierung','C · Leerstand'];
