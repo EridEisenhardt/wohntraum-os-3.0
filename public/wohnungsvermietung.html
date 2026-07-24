@@ -26,7 +26,9 @@
 .wc-hd{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:8px}
 .wc-title{font-weight:700;flex:1;min-width:140px;font-size:13.5px}
 .wc.reserviert{background:#fef9c3;border-color:#fde047;position:relative}
+.wc.vermietet{background:#dcfce7;border-color:#86efac;position:relative}
 .resband{background:#f59e0b;color:#fff;font-weight:800;letter-spacing:2px;text-align:center;font-size:18px;padding:6px 0;border-radius:8px;margin-bottom:8px;text-shadow:0 1px 1px rgba(0,0,0,.15)}
+.resband.vm{background:#16a34a}
 .wc-row{display:grid;grid-template-columns:110px 1fr;gap:8px;align-items:center;margin:5px 0;font-size:12.5px}
 .wc-row label{color:var(--muted);font-size:11px;font-weight:600}
 .inl{width:100%;border:1px solid transparent;background:transparent;font:inherit;font-size:12.5px;border-radius:5px;padding:4px 6px}
@@ -184,7 +186,8 @@ async function vhDrop(ev,monat,kat){
 }
 
 const STAGES=['1 · Eingang der Kündigung','2 · Kalkulation der neuen Wohnung','3 · Einheit in Vermietung','4 · Mietvertrag erstellen & unterschreiben','5 · Schlüsselübergabe','6 · 1. Mietzahlung','7 · Nacharbeit Backoffice / HV','8 · Erledigt','A · Warteliste','B · Renovierung / Sanierung','C · Leerstand'];
-let ROWS=[],GEB=[],EINH=[],INT=[],VL=[],NOTIZ=[],FSTAGE='',HIDE_DONE=false;
+let ROWS=[],GEB=[],KENN={},EINH=[],INT=[],VL=[],NOTIZ=[],FSTAGE='',HIDE_DONE=false;
+function kenn(name){var k=KENN[name];return k?k+' · ':'';}
 function fmtDT(ts){try{return new Date(ts).toLocaleString('de-DE',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'})+' Uhr';}catch(e){return ts;}}
 async function addNotiz(vid,el){const t=(el.value||'').trim();if(!t)return;const{data,error}=await sb.from('vermietung_notizen').insert({vermietung_id:vid,text:t}).select();if(error){toast('Fehler: '+error.message);return;}if(data&&data[0])NOTIZ.unshift(data[0]);el.value='';render();}
 async function delNotiz(id){if(!confirm('Notiz löschen?'))return;await sb.from('vermietung_notizen').delete().eq('id',id);NOTIZ=NOTIZ.filter(n=>n.id!==id);render();}
@@ -203,14 +206,14 @@ function fillEinheit(){/* Einheit wird jetzt manuell eingetragen */}
 function clearForm(){['f_grund','f_ziel','f_einzug','f_auszug','f_vormieter'].forEach(id=>$(id).value='');$('msg').textContent='';}
 async function loadRefs(){
   const[g,e,i,v,nz]=await Promise.all([
-    sb.from('gebaeude').select('name').order('pos').order('name'),
+    sb.from('gebaeude').select('name,kennung').order('pos').order('name'),
     sb.from('wohneinheiten').select('gebaeude,name').order('name'),
     sb.from('mietinteressenten').select('id,name,status').order('created_at',{ascending:false}),
     sb.from('vermietung_leads').select('id,vermietung_id,interessent_id'),
     sb.from('vermietung_notizen').select('*').order('created_at',{ascending:false})
   ]);
-  GEB=(g.data||[]).map(r=>r.name);EINH=e.data||[];INT=i.data||[];VL=v.data||[];NOTIZ=nz.data||[];
-  $('f_geb').innerHTML='<option value="">—</option>'+GEB.map(x=>`<option>${esc(x)}</option>`).join('');
+  GEB=(g.data||[]).map(r=>r.name);KENN={};(g.data||[]).forEach(r=>{KENN[r.name]=r.kennung||'';});EINH=e.data||[];INT=i.data||[];VL=v.data||[];NOTIZ=nz.data||[];
+  $('f_geb').innerHTML='<option value="">—</option>'+GEB.map(x=>`<option value="${esc(x)}">${KENN[x]?esc(KENN[x])+' · ':''}${esc(x)}</option>`).join('');
   $('f_status').innerHTML=optlist(STAGES,STAGES[0]);
   fillEinheit();
 }
@@ -232,7 +235,8 @@ async function save(){
   $('msg').style.color='var(--green)';$('msg').textContent='Einheit angelegt ✓';clearForm();load();
 }
 async function upd(id,field,val){const{error}=await sb.from('wohnungsvermietung').update({[field]:(val===''?null:val),updated_at:new Date().toISOString()}).eq('id',id);if(error){toast('Fehler: '+error.message);return;}const r=ROWS.find(x=>x.id===id);if(r){r[field]=(val===''?null:val);if(field==='status'||field==='gebaeude')render();}}
-async function toggleReserviert(id,val){await sb.from('wohnungsvermietung').update({reserviert:val,updated_at:new Date().toISOString()}).eq('id',id);const r=ROWS.find(x=>x.id===id);if(r)r.reserviert=val;render();toast(val?'Als reserviert markiert':'Reservierung aufgehoben');}
+async function toggleReserviert(id,val){var patch={reserviert:val,updated_at:new Date().toISOString()};if(val)patch.vermietet=false;await sb.from('wohnungsvermietung').update(patch).eq('id',id);const r=ROWS.find(x=>x.id===id);if(r){r.reserviert=val;if(val)r.vermietet=false;}render();toast(val?'Als reserviert markiert':'Reservierung aufgehoben');}
+async function toggleVermietet(id,val){var patch={vermietet:val,updated_at:new Date().toISOString()};if(val)patch.reserviert=false;await sb.from('wohnungsvermietung').update(patch).eq('id',id);const r=ROWS.find(x=>x.id===id);if(r){r.vermietet=val;if(val)r.reserviert=false;}render();toast(val?'Als vermietet markiert':'Vermietung zurückgenommen');}
 async function toggleFreigabe(id,val){await sb.from('wohnungsvermietung').update({freigabe:val,updated_at:new Date().toISOString()}).eq('id',id);const r=ROWS.find(x=>x.id===id);if(r)r.freigabe=val;render();}
 async function del(id){if(!confirm('Einheit aus dem Prozess löschen?'))return;await sb.from('wohnungsvermietung').delete().eq('id',id);ROWS=ROWS.filter(r=>r.id!==id);VL=VL.filter(v=>v.vermietung_id!==id);render();}
 async function addLead(vid,iid){if(!iid)return;const{data,error}=await sb.from('vermietung_leads').insert({vermietung_id:vid,interessent_id:iid}).select();if(error){toast(error.message);return;}if(data&&data[0])VL.push(data[0]);render();}
@@ -277,7 +281,7 @@ function boardView(){
   return '<div class="kb">'+STAGES.map(s=>{const list=(HIDE_DONE&&s===DONE)?[]:ROWS.filter(r=>r.status===s);const se=esc(s).replace(/'/g,"\\'");
     const cards=list.map(r=>{const linked=VL.filter(v=>v.vermietung_id===r.id).length;
       return `<div class="kbcard ${r.freigabe?'frei':''}" draggable="true" ondragstart="dragStart(event,'${r.id}')">
-        <div class="kbt">🏠 ${esc(r.gebaeude||'—')}</div>
+        <div class="kbt">🏠 ${kenn(r.gebaeude)}${esc(r.gebaeude||'—')}</div>
         <div class="kbm">${esc(r.einheit||'—')}${r.vormieter?' · Vormieter: '+esc(r.vormieter):''}</div>
         ${r.zielgruppe?`<span class="kbtag">${esc(r.zielgruppe)}</span>`:''}${r.freigabe?'<span class="kbtag" style="background:#e8f6ee;color:var(--green)">Freigabe ✓</span>':''}${linked?`<span class="kbtag">${linked} Interessent${linked>1?'en':''}</span>`:''}
       </div>`;}).join('');
@@ -323,7 +327,7 @@ function renderRegister(){
     var gf=(dauer!=null&&wm!=null)?Math.round(dauer*(wm/30)*100)/100:null; // Leerstandstage × Tagesmiete
     if(gf!=null)sumGF+=gf;
     return '<tr><td style="font-weight:800;white-space:nowrap">#'+(r.nummer!=null?r.nummer:'?')+'</td>'
-      +'<td>'+esc(r.gebaeude||'—')+'</td><td>'+esc(r.einheit||'—')+'</td>'
+      +'<td>'+esc(kenn(r.gebaeude)+(r.gebaeude||'—'))+'</td><td>'+esc(r.einheit||'—')+'</td>'
       +'<td>'+esc(r.status||'')+'</td><td>'+esc(r.vormieter||'')+'</td><td>'+esc(fm)+'</td>'
       +'<td style="white-space:nowrap">'+(r.auszug?esc(r.auszug):'—')+'</td>'
       +'<td style="white-space:nowrap">'+(r.einzug?esc(r.einzug):'—')+'</td>'
@@ -358,11 +362,12 @@ function render(){
     const linked=VL.filter(v=>v.vermietung_id===r.id);
     const linkedIds=new Set(linked.map(v=>v.interessent_id));
     const addable=INT.filter(i=>!linkedIds.has(i.id));
-    return `<div class="wc ${r.freigabe?'frei':''} ${r.reserviert?'reserviert':''}">
-      ${r.reserviert?'<div class="resband">RESERVIERT</div>':''}
+    return `<div class="wc ${r.freigabe?'frei':''} ${r.vermietet?'vermietet':(r.reserviert?'reserviert':'')}">
+      ${r.vermietet?'<div class="resband vm">VERMIETET</div>':(r.reserviert?'<div class="resband">RESERVIERT</div>':'')}
       <div class="wc-hd">
-        <span class="wc-title">#${r.nummer!=null?r.nummer:'?'} · 🏠 ${esc(r.gebaeude||'—')}</span>
+        <span class="wc-title">#${r.nummer!=null?r.nummer:'?'} · 🏠 ${kenn(r.gebaeude)}${esc(r.gebaeude||'—')}</span>
         <button class="abtn" title="${r.reserviert?'Reservierung aufheben':'Als reserviert markieren'}" onclick="toggleReserviert('${r.id}',${r.reserviert?'false':'true'})">${r.reserviert?'🔓 frei':'🔖 reservieren'}</button>
+        <button class="abtn" title="${r.vermietet?'Vermietung zurücknehmen':'Als vermietet markieren'}" onclick="toggleVermietet('${r.id}',${r.vermietet?'false':'true'})" style="color:#16a34a">${r.vermietet?'↩︎ frei':'🟢 vermietet'}</button>
         <button class="abtn" onclick="del('${r.id}')">✕</button>
       </div>
       <div class="wc-row"><label>Einheit</label><input class="inl" value="${esc(r.einheit||'')}" placeholder="z. B. WE 3" onchange="upd('${r.id}','einheit',this.value)"></div>
