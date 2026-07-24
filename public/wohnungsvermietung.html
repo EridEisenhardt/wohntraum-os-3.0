@@ -65,6 +65,22 @@ select.inl.st{font-weight:700;color:var(--accent);border-color:var(--line);backg
   <div class="crumb">Vermietung › Wohnungsvermietung</div>
   <div class="hdr-title">Wohnungsvermietung – Prozess</div></div></div>
 <div class="main">
+  <div class="card" style="margin-bottom:16px">
+    <div class="card-hd"><span>📆 Vermietungshorizont
+      <span style="display:inline-flex;align-items:center;gap:6px;margin-left:8px">
+        <button class="chip" onclick="vhYear(-1)" style="padding:3px 9px">‹</button>
+        <b id="vhYear">2026</b>
+        <button class="chip" onclick="vhYear(1)" style="padding:3px 9px">›</button>
+      </span></span>
+      <span class="crumb">pro Monat: Rückläufer · Neuvermietung · Rückkehr aus Sanierung</span>
+    </div>
+    <div style="overflow-x:auto">
+      <table class="vtbl" id="vhTbl" style="width:100%;border-collapse:collapse;font-size:12.5px">
+        <thead><tr id="vhHead"></tr></thead>
+        <tbody id="vhBody"></tbody>
+      </table>
+    </div>
+  </div>
   <div class="card">
     <div class="card-hd">Neue Einheit in den Vermietungsprozess</div>
     <div class="form">
@@ -93,6 +109,33 @@ select.inl.st{font-weight:700;color:var(--accent);border-color:var(--line);backg
 const sb=window.supabase.createClient('https://jqzxctfqvcwbctpjksvg.supabase.co','eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpxenhjdGZxdmN3YmN0cGprc3ZnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODIxMzA0MzIsImV4cCI6MjA5NzcwNjQzMn0.RKIbZxJdusKWWPjBJqlxZ8e1m8So02UslOg55YRsn3o');
 const $=id=>document.getElementById(id);const esc=s=>(s==null?'':String(s)).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;');
 function toast(m){const t=$('toast');t.textContent=m;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),1800);}
+/* ---------- Vermietungshorizont ---------- */
+const VHMON=['Jan','Feb','Mär','Apr','Mai','Jun','Jul','Aug','Sep','Okt','Nov','Dez'];
+const VHROWS=[['rueck','↩︎ Rückläufer (Einheiten zurück)'],['vermietet','🔑 Neuvermietung'],['sanierung','🏗 Rückkehr aus Sanierung']];
+let VHY=new Date().getFullYear(), VHDATA={};
+function vhYear(d){VHY+=d;vhLoad();}
+async function vhLoad(){
+  $('vhYear').textContent=VHY;
+  const {data}=await sb.from('vermietungshorizont').select('*').eq('jahr',VHY);
+  VHDATA={}; (data||[]).forEach(r=>{VHDATA[r.monat]=r;}); vhRender();
+}
+function vhRender(){
+  $('vhHead').innerHTML='<th style="text-align:left;padding:6px 8px;min-width:150px"></th>'+VHMON.map(m=>'<th style="padding:6px 6px;text-align:center;border-bottom:1px solid var(--line);color:var(--muted);font-weight:700">'+m+'</th>').join('');
+  $('vhBody').innerHTML=VHROWS.map(function(rw){
+    return '<tr><td style="font-weight:600;padding:6px 8px;border-bottom:1px solid var(--line)">'+rw[1]+'</td>'
+      +VHMON.map(function(m,i){var mo=i+1;var val=(VHDATA[mo]&&VHDATA[mo][rw[0]])||'';
+        return '<td style="padding:2px;border-bottom:1px solid var(--line)"><textarea rows="2" style="width:100%;min-width:72px;font:inherit;font-size:11.5px;border:1px solid var(--line);border-radius:6px;padding:4px;resize:vertical" placeholder="–" onchange="vhSet('+mo+',\''+rw[0]+'\',this.value)">'+esc(val)+'</textarea></td>';
+      }).join('')+'</tr>';
+  }).join('');
+}
+async function vhSet(monat,field,val){
+  var v=(val||'').trim()||null;
+  var row=VHDATA[monat]||{jahr:VHY,monat:monat}; row[field]=v; VHDATA[monat]=row;
+  var payload={jahr:VHY,monat:monat,updated_at:new Date().toISOString()}; payload[field]=v;
+  var res=await sb.from('vermietungshorizont').upsert(payload,{onConflict:'jahr,monat'});
+  if(res.error)toast('Fehler: '+res.error.message);
+}
+
 const STAGES=['1 · Eingang der Kündigung','2 · Kalkulation der neuen Wohnung','3 · Einheit in Vermietung','4 · Mietvertrag erstellen & unterschreiben','5 · Schlüsselübergabe','6 · 1. Mietzahlung','7 · Nacharbeit Backoffice / HV','8 · Erledigt','A · Warteliste','B · Renovierung / Sanierung','C · Leerstand'];
 let ROWS=[],GEB=[],EINH=[],INT=[],VL=[],NOTIZ=[],FSTAGE='',HIDE_DONE=false;
 function fmtDT(ts){try{return new Date(ts).toLocaleString('de-DE',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'})+' Uhr';}catch(e){return ts;}}
@@ -251,5 +294,5 @@ function render(){
       ${notizBlock(r.id)}
     </div>`;}).join('')+'</div>';
 }
-(async()=>{const{data:{session}}=await sb.auth.getSession();if(!session){$('main').innerHTML='<div class="empty" style="padding:60px">Bitte zuerst im OS einloggen.</div>';return;}clearForm();$('f_einzug').value='';load();})();
+(async()=>{const{data:{session}}=await sb.auth.getSession();if(!session){$('main').innerHTML='<div class="empty" style="padding:60px">Bitte zuerst im OS einloggen.</div>';return;}clearForm();$('f_einzug').value='';load();vhLoad();})();
 </script></body></html>
