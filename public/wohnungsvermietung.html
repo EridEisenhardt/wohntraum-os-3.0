@@ -135,11 +135,17 @@ function vhRender(){
   $('vhHead').innerHTML='<th style="text-align:left;padding:6px 8px;min-width:150px"></th>'+VHMON.map(m=>'<th style="padding:6px 6px;text-align:center;border-bottom:1px solid var(--line);color:var(--muted);font-weight:700;min-width:96px">'+m+'</th>').join('');
   $('vhBody').innerHTML=VHROWS.map(function(rw){
     return '<tr><td style="font-weight:600;padding:6px 8px;border-bottom:1px solid var(--line);vertical-align:top">'+rw[1]+'</td>'
-      +VHMON.map(function(m,i){var mo=i+1;
-        var items=VHE.filter(function(e){return e.monat===mo&&e.kategorie===rw[0];});
+      +VHMON.map(function(m,i){var mo=i+1;var isSan=rw[0]==='sanierung';
+        var items=VHE.filter(function(e){
+          if(e.kategorie!==rw[0])return false;
+          if(isSan){var bis=e.bis_monat||e.monat;return e.monat<=mo&&bis>=mo;}
+          return e.monat===mo;
+        });
         var chips=items.map(function(e){
           var st=VHSTYLE[e.status]||VHSTYLE.grau;
-          return '<span draggable="true" ondragstart="vhDrag(event,\''+e.id+'\')" title="Ziehen zum Verschieben · Klick = Status" onclick="vhCycle(\''+e.id+'\')" style="'+st+';display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:600;padding:2px 7px;border-radius:12px;margin:2px 3px 0 0;cursor:grab">'+esc(e.einheit||'—')
+          var bis=e.bis_monat||e.monat;var isStart=(e.monat===mo);var spanTag=(isSan&&bis>e.monat)?('<b style="opacity:.7">'+(e.monat)+'–'+bis+'</b>'):'';
+          return '<span draggable="true" ondragstart="vhDrag(event,\''+e.id+'\')" title="Ziehen zum Verschieben · Klick = Status" onclick="vhCycle(\''+e.id+'\')" style="'+st+';display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:600;padding:2px 7px;border-radius:12px;margin:2px 3px 0 0;cursor:grab">'+esc(e.einheit||'—')+(spanTag?' '+spanTag:'')
+            +(isSan&&isStart?'<b onclick="event.stopPropagation();vhSetBis(\''+e.id+'\')" title="Laufzeit bis Monat" style="cursor:pointer;opacity:.6">⇥</b>':'')
             +'<b onclick="event.stopPropagation();vhRen(\''+e.id+'\')" title="Umbenennen" style="cursor:pointer;opacity:.6">✎</b>'
             +'<b onclick="event.stopPropagation();vhDel(\''+e.id+'\')" title="Löschen" style="cursor:pointer;opacity:.6">×</b></span>';
         }).join('');
@@ -166,6 +172,16 @@ async function vhDel(id){
   if(res.error){toast('Fehler: '+res.error.message);return;}
   VHE=VHE.filter(function(x){return x.id!==id;}); vhRender();
 }
+async function vhSetBis(id){
+  var e=VHE.find(function(x){return x.id===id;}); if(!e)return;
+  var cur=e.bis_monat||e.monat;
+  var v=(prompt('Sanierung läuft bis Monat (1–12):',String(cur))||'').trim(); if(!v)return;
+  var m=parseInt(v,10); if(isNaN(m)||m<1||m>12){toast('Monat 1–12');return;}
+  if(m<e.monat){toast('Bis-Monat darf nicht vor Start liegen');return;}
+  e.bis_monat=m; vhRender();
+  var res=await sb.from('vermietungshorizont_einheiten').update({bis_monat:m}).eq('id',id);
+  if(res.error)toast('Fehler: '+res.error.message);
+}
 async function vhRen(id){
   var e=VHE.find(function(x){return x.id===id;}); if(!e)return;
   var n=(prompt('Einheit umbenennen:',e.einheit||'')||'').trim(); if(!n||n===e.einheit)return;
@@ -180,8 +196,10 @@ async function vhDrop(ev,monat,kat){
   var id=VHDRAG||(ev.dataTransfer&&ev.dataTransfer.getData('text/plain')); VHDRAG=null; if(!id)return;
   var e=VHE.find(function(x){return x.id===id;}); if(!e)return;
   if(e.monat===monat&&e.kategorie===kat)return;
+  var patch={monat:monat,kategorie:kat};
+  if(e.bis_monat){var span=e.bis_monat-e.monat;patch.bis_monat=Math.min(12,monat+span);e.bis_monat=patch.bis_monat;}
   e.monat=monat; e.kategorie=kat; vhRender();
-  var res=await sb.from('vermietungshorizont_einheiten').update({monat:monat,kategorie:kat}).eq('id',id);
+  var res=await sb.from('vermietungshorizont_einheiten').update(patch).eq('id',id);
   if(res.error)toast('Fehler: '+res.error.message);
 }
 
