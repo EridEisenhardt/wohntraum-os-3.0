@@ -25,6 +25,8 @@
 .wc.frei{border-left:4px solid var(--green)}
 .wc-hd{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:8px}
 .wc-title{font-weight:700;flex:1;min-width:140px;font-size:13.5px}
+.wc.reserviert{background:#fef9c3;border-color:#fde047;position:relative}
+.resband{background:#f59e0b;color:#fff;font-weight:800;letter-spacing:2px;text-align:center;font-size:18px;padding:6px 0;border-radius:8px;margin-bottom:8px;text-shadow:0 1px 1px rgba(0,0,0,.15)}
 .wc-row{display:grid;grid-template-columns:110px 1fr;gap:8px;align-items:center;margin:5px 0;font-size:12.5px}
 .wc-row label{color:var(--muted);font-size:11px;font-weight:600}
 .inl{width:100%;border:1px solid transparent;background:transparent;font:inherit;font-size:12.5px;border-radius:5px;padding:4px 6px}
@@ -230,6 +232,7 @@ async function save(){
   $('msg').style.color='var(--green)';$('msg').textContent='Einheit angelegt ✓';clearForm();load();
 }
 async function upd(id,field,val){const{error}=await sb.from('wohnungsvermietung').update({[field]:(val===''?null:val),updated_at:new Date().toISOString()}).eq('id',id);if(error){toast('Fehler: '+error.message);return;}const r=ROWS.find(x=>x.id===id);if(r){r[field]=(val===''?null:val);if(field==='status'||field==='gebaeude')render();}}
+async function toggleReserviert(id,val){await sb.from('wohnungsvermietung').update({reserviert:val,updated_at:new Date().toISOString()}).eq('id',id);const r=ROWS.find(x=>x.id===id);if(r)r.reserviert=val;render();toast(val?'Als reserviert markiert':'Reservierung aufgehoben');}
 async function toggleFreigabe(id,val){await sb.from('wohnungsvermietung').update({freigabe:val,updated_at:new Date().toISOString()}).eq('id',id);const r=ROWS.find(x=>x.id===id);if(r)r.freigabe=val;render();}
 async function del(id){if(!confirm('Einheit aus dem Prozess löschen?'))return;await sb.from('wohnungsvermietung').delete().eq('id',id);ROWS=ROWS.filter(r=>r.id!==id);VL=VL.filter(v=>v.vermietung_id!==id);render();}
 async function addLead(vid,iid){if(!iid)return;const{data,error}=await sb.from('vermietung_leads').insert({vermietung_id:vid,interessent_id:iid}).select();if(error){toast(error.message);return;}if(data&&data[0])VL.push(data[0]);render();}
@@ -355,9 +358,11 @@ function render(){
     const linked=VL.filter(v=>v.vermietung_id===r.id);
     const linkedIds=new Set(linked.map(v=>v.interessent_id));
     const addable=INT.filter(i=>!linkedIds.has(i.id));
-    return `<div class="wc ${r.freigabe?'frei':''}">
+    return `<div class="wc ${r.freigabe?'frei':''} ${r.reserviert?'reserviert':''}">
+      ${r.reserviert?'<div class="resband">RESERVIERT</div>':''}
       <div class="wc-hd">
         <span class="wc-title">#${r.nummer!=null?r.nummer:'?'} · 🏠 ${esc(r.gebaeude||'—')}</span>
+        <button class="abtn" title="${r.reserviert?'Reservierung aufheben':'Als reserviert markieren'}" onclick="toggleReserviert('${r.id}',${r.reserviert?'false':'true'})">${r.reserviert?'🔓 frei':'🔖 reservieren'}</button>
         <button class="abtn" onclick="del('${r.id}')">✕</button>
       </div>
       <div class="wc-row"><label>Einheit</label><input class="inl" value="${esc(r.einheit||'')}" placeholder="z. B. WE 3" onchange="upd('${r.id}','einheit',this.value)"></div>
