@@ -111,7 +111,7 @@ select.inl.st{font-weight:700;color:var(--accent);border-color:var(--line);backg
     </div>
   </div>
 
-  <div class="viewtoggle"><button id="vListe" class="on" onclick="setView('liste')">Karten</button><button id="vTab" onclick="setView('tabelle')">Liste</button><button id="vBoard" onclick="setView('board')">Kanban-Board</button><button onclick="exportCRM()" title="Gefilterte Einheiten als CSV für den CRM-Import herunterladen">⬇ CRM Export</button><label style="display:inline-flex;align-items:center;gap:6px;margin-left:auto;font-size:13px;cursor:pointer;color:var(--dim)"><input type="checkbox" id="hideDone" onchange="HIDE_DONE=this.checked;render()"> Erledigte ausblenden</label></div>
+  <div class="viewtoggle"><button id="vListe" class="on" onclick="setView('liste')">Karten</button><button id="vTab" onclick="setView('tabelle')">Liste</button><button id="vBoard" onclick="setView('board')">Kanban-Board</button><select id="fObj" onchange="FOBJ=this.value;render()" title="Nach Objekt filtern" style="font-size:13px;padding:6px 9px;border:1px solid var(--line);border-radius:8px;margin-left:6px"><option value="">Alle Objekte</option></select><button onclick="exportCRM()" title="Gefilterte Einheiten als CSV für den CRM-Import herunterladen">⬇ CRM Export</button><label style="display:inline-flex;align-items:center;gap:6px;margin-left:auto;font-size:13px;cursor:pointer;color:var(--dim)"><input type="checkbox" id="hideDone" onchange="HIDE_DONE=this.checked;render()"> Erledigte ausblenden</label></div>
   <div class="chips" id="stageChips"></div>
   <div id="grid"><div class="empty" id="loading">Lädt…</div></div>
   <div id="vmReg"></div>
@@ -219,7 +219,8 @@ function notizBlock(vid){const list=NOTIZ.filter(n=>n.vermietung_id===vid);
     <button class="btn sec" style="margin-top:4px;font-size:12px" onclick="var t=this.previousElementSibling;addNotiz('${vid}',t)">+ Notiz speichern</button>
   </div></div>`;}
 const DONE='8 · Erledigt';
-function activeRows(){return ROWS.filter(r=>!r.vermietet);}
+let FOBJ='';
+function activeRows(){return ROWS.filter(r=>!r.vermietet&&(!FOBJ||r.gebaeude===FOBJ));}
 function baseList(){let a=FSTAGE?activeRows().filter(r=>r.status===FSTAGE):activeRows();if(HIDE_DONE&&FSTAGE!==DONE)a=a.filter(r=>r.status!==DONE);return a;}
 function optlist(arr,sel){return arr.map(o=>`<option ${o===sel?'selected':''}>${esc(o)}</option>`).join('');}
 function unitsOf(g){return EINH.filter(e=>e.gebaeude===g).map(e=>e.name);}
@@ -235,6 +236,7 @@ async function loadRefs(){
   ]);
   GEB=(g.data||[]).map(r=>r.name);KENN={};(g.data||[]).forEach(r=>{KENN[r.name]=r.kennung||'';});EINH=e.data||[];INT=i.data||[];VL=v.data||[];NOTIZ=nz.data||[];
   $('f_geb').innerHTML='<option value="">—</option>'+GEB.map(x=>`<option value="${esc(x)}">${KENN[x]?esc(KENN[x])+' · ':''}${esc(x)}</option>`).join('');
+  if($('fObj'))$('fObj').innerHTML='<option value="">Alle Objekte</option>'+GEB.map(x=>`<option value="${esc(x)}"${x===FOBJ?' selected':''}>${KENN[x]?esc(KENN[x])+' · ':''}${esc(x)}</option>`).join('');
   $('f_status').innerHTML=optlist(STAGES,STAGES[0]);
   fillEinheit();
 }
@@ -314,14 +316,14 @@ function boardView(){
 function fmtD(d){if(!d)return '—';const p=String(d).split('-');return p.length===3?p[2]+'.'+p[1]+'.'+p[0]:d;}
 function tableView(list){
   return '<div class="tblwrap"><table class="vtbl"><thead><tr>'
-    +'<th>Gebäude</th><th>Einheit</th><th>Status</th><th>Vormieter</th><th>Grund</th><th>Zielgruppe</th>'
+    +'<th>Kennz.</th><th>Gebäude</th><th>Einheit</th><th>Status</th><th>Vormieter</th><th>Grund</th><th>Zielgruppe</th>'
     +'<th>Auszug</th><th>Einzug</th><th>Interessenten</th><th>Reserviert</th><th>Mietvertrag &amp; Einzug</th><th>Freigabe</th><th></th></tr></thead><tbody>'
     +list.map(r=>{
-      const units=unitsOf(r.gebaeude);
       const linked=VL.filter(v=>v.vermietung_id===r.id);
       return `<tr class="${r.freigabe?'frei':''}">
+        <td style="font-weight:800;white-space:nowrap">${esc((KENN[r.gebaeude]||'—'))}</td>
         <td><select style="min-width:240px" onchange="upd('${r.id}','gebaeude',this.value)"><option value="">—</option>${GEB.map(g=>`<option ${g===r.gebaeude?'selected':''}>${esc(g)}</option>`).join('')}</select></td>
-        <td><select style="min-width:150px" onchange="upd('${r.id}','einheit',this.value)"><option value="">—</option>${units.map(u=>`<option ${u===r.einheit?'selected':''}>${esc(u)}</option>`).join('')}</select></td>
+        <td><input style="min-width:150px" value="${esc(r.einheit||'')}" placeholder="z. B. WE 3" onchange="upd('${r.id}','einheit',this.value)"></td>
         <td><select onchange="upd('${r.id}','status',this.value)">${optlist(STAGES,r.status)}</select></td>
         <td><input value="${esc(r.vormieter)}" onchange="upd('${r.id}','vormieter',this.value)"></td>
         <td><input value="${esc(r.grund)}" onchange="upd('${r.id}','grund',this.value)"></td>
@@ -350,17 +352,17 @@ function renderRegister(){
     if(gf!=null)sumGF+=gf;
     return '<tr><td style="text-align:center"><button class="abtn" title="Zurück in aktive Liste" onclick="toggleVermietet(\''+r.id+'\',false)" style="color:var(--accent)">↩︎</button></td>'
       +'<td style="font-weight:800;white-space:nowrap">#'+(r.nummer!=null?r.nummer:'?')+'</td>'
-      +'<td>'+esc(kenn(r.gebaeude)+(r.gebaeude||'—'))+'</td><td>'+esc(r.einheit||'—')+'</td>'
+      +'<td style="font-weight:800;white-space:nowrap">'+esc(KENN[r.gebaeude]||'—')+'</td><td>'+esc(r.gebaeude||'—')+'</td><td>'+esc(r.einheit||'—')+'</td>'
       +'<td>'+esc(r.status||'')+'</td><td>'+esc(r.vormieter||'')+'</td><td>'+esc(fm)+'</td>'
       +'<td style="white-space:nowrap">'+(r.auszug?esc(r.auszug):'—')+'</td>'
       +'<td style="white-space:nowrap">'+(r.einzug?esc(r.einzug):'—')+'</td>'
       +'<td style="text-align:right">'+(dauer!=null?dauer+' T':'—')+'</td>'
       +'<td style="text-align:right"><input class="inl" style="width:92px;text-align:right" inputmode="decimal" value="'+(wm!=null?String(wm).replace(".",","):'')+'" placeholder="0,00" onchange="setWarm(\''+r.id+'\',this.value)"></td>'
       +'<td style="text-align:right;font-weight:700;color:var(--red)">'+(gf!=null?fmtEur(gf):'—')+'</td></tr>';
-  }).join('')||'<tr><td colspan="12" style="text-align:center;color:var(--muted);padding:16px">Noch keine vermieteten Einheiten.</td></tr>';
+  }).join('')||'<tr><td colspan="13" style="text-align:center;color:var(--muted);padding:16px">Noch keine vermieteten Einheiten.</td></tr>';
   el.innerHTML='<div class="card" style="margin-top:16px"><div class="card-hd"><span>📇 Vermietungsregister (vermietet)</span><span class="crumb">'+list.length+' vermietet · fortlaufende #ID · Geldfresser = Leerstandstage × (Warmmiete/30)</span></div>'
-    +'<div style="overflow-x:auto;padding:0 4px 4px"><table class="vtbl" style="width:100%;border-collapse:collapse;font-size:12.5px"><thead><tr><th title="Zurück in aktiv">↩︎</th><th>#ID</th><th>Gebäude</th><th>Einheit</th><th>Status</th><th>Vormieter</th><th>Neuer Mieter</th><th>Auszug</th><th>Einzug</th><th>Dauer</th><th>Neue Warmmiete</th><th>Geldfresser</th></tr></thead><tbody>'+rows+'</tbody>'
-    +'<tfoot><tr><td colspan="11" style="text-align:right;font-weight:700;border-top:2px solid var(--line)">Summe Geldfresser (Leerstand)</td><td style="text-align:right;font-weight:800;color:var(--red);border-top:2px solid var(--line)">'+fmtEur(sumGF)+'</td></tr></tfoot>'
+    +'<div style="overflow-x:auto;padding:0 4px 4px"><table class="vtbl" style="width:100%;border-collapse:collapse;font-size:12.5px"><thead><tr><th title="Zurück in aktiv">↩︎</th><th>#ID</th><th>Kennz.</th><th>Gebäude</th><th>Einheit</th><th>Status</th><th>Vormieter</th><th>Neuer Mieter</th><th>Auszug</th><th>Einzug</th><th>Dauer</th><th>Neue Warmmiete</th><th>Geldfresser</th></tr></thead><tbody>'+rows+'</tbody>'
+    +'<tfoot><tr><td colspan="12" style="text-align:right;font-weight:700;border-top:2px solid var(--line)">Summe Geldfresser (Leerstand)</td><td style="text-align:right;font-weight:800;color:var(--red);border-top:2px solid var(--line)">'+fmtEur(sumGF)+'</td></tr></tfoot>'
     +'</table></div></div>';
 }
 async function setWarm(id,val){
