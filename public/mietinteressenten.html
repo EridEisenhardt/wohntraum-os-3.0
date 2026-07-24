@@ -371,17 +371,50 @@ function renderArchive(){
       <td><button class="ntbtn" onclick="event.stopPropagation();openNotes('${r.id}')">📄 Öffnen</button></td></tr>`).join('')
     +'</tbody></table>';
 }
+let LSORT={field:'nummer',dir:'asc'}, LFILT={};
+const LCOLS=[
+ {l:'',f:null},{l:'Nr',f:'nummer',num:true},{l:'Name',f:'name'},{l:'Vorname',f:'vorname'},
+ {l:'Status',f:'status'},{l:'Mietzahlung',f:'zahlungsart'},{l:'Kontakt',f:'kontakt'},
+ {l:'Eingang',f:'eingang'},{l:'Leadquelle',f:'quelle'},{l:'Pers.',f:'personen',num:true},
+ {l:'Einzug ab',f:'einzug_ab'},{l:'Ergebnis',f:'ergebnis'},{l:'Selbst&shy;auskunft',f:'selbstauskunft_vorhanden'},
+ {l:'Freigabe Schlüssel',f:'freigabe_schluessel'},{l:'Zusage Kosten&shy;übernahme',f:'kostenuebernahme'},
+ {l:'Mietangebot erhalten',f:'mietangebot_erhalten'},{l:'Mietvertrag unter&shy;schrieben',f:'mietvertrag_unterschrieben'},
+ {l:'Schlüssel&shy;übergabe',f:'schluesseluebergabe_erfolgt'},{l:'1. Miet&shy;zahlung',f:'erste_mietzahlung'},
+ {l:'Notizen',f:null},{l:'',f:null}
+];
+function lSort(f){if(LSORT.field===f)LSORT.dir=(LSORT.dir==='asc'?'desc':'asc');else{LSORT.field=f;LSORT.dir='asc';}render();}
+function lFilt(f,v){v=(v||'').trim().toLowerCase();if(v)LFILT[f]=v;else delete LFILT[f];render();}
+function lApply(list){
+  var keys=Object.keys(LFILT);
+  var out=list.filter(function(r){return keys.every(function(f){return String(r[f]==null?'':r[f]).toLowerCase().indexOf(LFILT[f])>=0;});});
+  var f=LSORT.field, dir=LSORT.dir==='desc'?-1:1, col=LCOLS.find(function(c){return c.f===f;});
+  out.sort(function(a,b){var av=a[f],bv=b[f];
+    if(col&&col.num){av=Number(av);bv=Number(bv);if(isNaN(av))av=-Infinity;if(isNaN(bv))bv=-Infinity;return (av-bv)*dir;}
+    return String(av==null?'':av).localeCompare(String(bv==null?'':bv),'de',{sensitivity:'base'})*dir;
+  });
+  return out;
+}
+function lHead(){
+  var r1=LCOLS.map(function(c){if(!c.f)return '<th>'+c.l+'</th>';
+    var ind=LSORT.field===c.f?(LSORT.dir==='asc'?' ▲':' ▼'):'';
+    return '<th style="cursor:pointer;white-space:nowrap" onclick="lSort(\''+c.f+'\')" title="A–Z / Z–A sortieren">'+c.l+ind+'</th>';
+  }).join('');
+  var r2=LCOLS.map(function(c){if(!c.f)return '<th></th>';
+    return '<th style="padding:2px 4px"><input value="'+esc(LFILT[c.f]||'')+'" onchange="lFilt(\''+c.f+'\',this.value)" onkeydown="if(event.key===\'Enter\')this.blur()" placeholder="filter" style="width:100%;min-width:56px;font:inherit;font-size:11px;padding:3px 5px;border:1px solid var(--line);border-radius:5px"></th>';
+  }).join('');
+  return '<thead><tr>'+r1+'</tr><tr>'+r2+'</tr></thead>';
+}
 function render(){
   renderChips();
   renderArchive();
   $('stageChips').style.display=VIEW==='board'?'none':'flex';
   const BR=baseRows();
   if(VIEW==='board'){$('cnt').textContent=BR.length+' Leads';$('tbl').innerHTML=BR.length?boardView():'<div class="empty">Keine Einträge in dieser Ansicht.</div>';return;}
-  const list=FSTAGE?BR.filter(r=>r.status===FSTAGE):BR;
+  const list=lApply(FSTAGE?BR.filter(r=>r.status===FSTAGE):BR);
   $('cnt').textContent=list.length+' von '+BR.length+(FTYP?(' · '+(FTYP==='umzug'?'Umzugswünsche':'Neu-Interessenten')):'');
   if(!BR.length){$('tbl').innerHTML='<div class="empty">Keine Einträge in dieser Ansicht — oben erfassen.</div>';return;}
   const qOpts=(sel)=>'<option value="">—</option>'+QUELLEN.map(q=>`<option ${q===sel?'selected':''}>${esc(q)}</option>`).join('');
-  $('tbl').innerHTML='<table><thead><tr><th title="Erledigt / ins Archiv">✓</th><th>Nr</th><th>Name</th><th>Vorname</th><th>Status</th><th>Mietzahlung</th><th>Kontakt</th><th>Eingang</th><th>Leadquelle</th><th>Pers.</th><th>Einzug ab</th><th>Ergebnis</th><th>Selbst&shy;auskunft vorhanden</th><th>Freigabe Schlüssel&shy;übergabe</th><th>Zusage Kosten&shy;übernahme</th><th>Mietangebot erhalten</th><th>Mietvertrag unter&shy;schrieben</th><th>Schlüssel&shy;übergabe</th><th>1. Miet&shy;zahlung</th><th>Notizen</th><th></th></tr></thead><tbody>'
+  $('tbl').innerHTML='<table>'+lHead()+'<tbody>'
     +list.map(r=>{const cls=(r.ergebnis&&/Absage/.test(r.ergebnis))?'res-absage':((r.ergebnis==='Warteliste'||r.status==='A · Warteliste')?'res-warte':'');
       return `<tr class="${cls}" style="cursor:pointer" onclick="rowOpen(event,'${r.id}')">
         <td style="text-align:center"><button class="abtn" title="Als erledigt ins Lead-Register" onclick="event.stopPropagation();archiv('${r.id}',true)" style="font-size:15px;color:var(--green,#1f7a4d)">✓</button></td>
