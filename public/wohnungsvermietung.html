@@ -109,6 +109,7 @@ select.inl.st{font-weight:700;color:var(--accent);border-color:var(--line);backg
   <div class="viewtoggle"><button id="vListe" class="on" onclick="setView('liste')">Karten</button><button id="vTab" onclick="setView('tabelle')">Liste</button><button id="vBoard" onclick="setView('board')">Kanban-Board</button><button onclick="exportCRM()" title="Gefilterte Einheiten als CSV für den CRM-Import herunterladen">⬇ CRM Export</button><label style="display:inline-flex;align-items:center;gap:6px;margin-left:auto;font-size:13px;cursor:pointer;color:var(--dim)"><input type="checkbox" id="hideDone" onchange="HIDE_DONE=this.checked;render()"> Erledigte ausblenden</label></div>
   <div class="chips" id="stageChips"></div>
   <div id="grid"><div class="empty" id="loading">Lädt…</div></div>
+  <div id="vmReg"></div>
 </div><div class="toast" id="toast"></div>
 <script>
 const sb=window.supabase.createClient('https://jqzxctfqvcwbctpjksvg.supabase.co','eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpxenhjdGZxdmN3YmN0cGprc3ZnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODIxMzA0MzIsImV4cCI6MjA5NzcwNjQzMn0.RKIbZxJdusKWWPjBJqlxZ8e1m8So02UslOg55YRsn3o');
@@ -223,6 +224,8 @@ async function addEinheit(){const g=$('f_geb').value;if(!g){toast('Erst Gebäude
 async function save(){
   const row={gebaeude:$('f_geb').value||null,einheit:$('f_einheit').value||null,grund:$('f_grund').value.trim()||null,zielgruppe:$('f_ziel').value.trim()||null,einzug:$('f_einzug').value||null,auszug:$('f_auszug').value||null,status:$('f_status').value,vormieter:$('f_vormieter').value.trim()||null,freigabe:false};
   if(!row.gebaeude){toast('Bitte Gebäude wählen');return;}
+  const mx=await sb.from('wohnungsvermietung').select('nummer').order('nummer',{ascending:false}).limit(1);
+  row.nummer=(((mx.data&&mx.data[0]&&mx.data[0].nummer)||0)+1);
   const{error}=await sb.from('wohnungsvermietung').insert(row);
   if(error){$('msg').style.color='var(--red)';$('msg').textContent='Fehler: '+error.message;return;}
   $('msg').style.color='var(--green)';$('msg').textContent='Einheit angelegt ✓';clearForm();load();
@@ -304,7 +307,22 @@ function tableView(list){
         <td><button class="abtn" onclick="del('${r.id}')">✕</button></td></tr>`;}).join('')
     +'</tbody></table></div>';
 }
+function renderRegister(){
+  var el=$('vmReg'); if(!el)return;
+  var list=ROWS.slice().sort(function(a,b){return (a.nummer||0)-(b.nummer||0);});
+  function mieter(id){var i=INT.find(function(x){return x.id===id;});return i?((i.name||'')+' '+(i.vorname||'')).trim():'';}
+  var rows=list.map(function(r){
+    var fm=r.finaler_mieter_id?mieter(r.finaler_mieter_id):'';
+    return '<tr><td style="font-weight:800;white-space:nowrap">#'+(r.nummer!=null?r.nummer:'?')+'</td>'
+      +'<td>'+esc(r.gebaeude||'—')+'</td><td>'+esc(r.einheit||'—')+'</td>'
+      +'<td>'+esc(r.status||'')+'</td><td>'+esc(r.vormieter||'')+'</td>'
+      +'<td>'+esc(fm)+'</td><td>'+(r.einzug?esc(r.einzug):'')+'</td></tr>';
+  }).join('')||'<tr><td colspan="7" style="text-align:center;color:var(--muted);padding:16px">Noch keine Vermietungen.</td></tr>';
+  el.innerHTML='<div class="card" style="margin-top:16px"><div class="card-hd"><span>📇 Register der Vermietungen</span><span class="crumb">'+list.length+' Einträge · fortlaufende #ID</span></div>'
+    +'<div style="overflow-x:auto;padding:0 4px 4px"><table class="vtbl" style="width:100%;border-collapse:collapse;font-size:12.5px"><thead><tr><th>#ID</th><th>Gebäude</th><th>Einheit</th><th>Status</th><th>Vormieter</th><th>Neuer Mieter</th><th>Einzug</th></tr></thead><tbody>'+rows+'</tbody></table></div></div>';
+}
 function render(){
+  renderRegister();
   renderChips();
   $('stageChips').style.display=VIEW==='board'?'none':'flex';
   if(VIEW==='board'){$('grid').innerHTML=ROWS.length?boardView():'<div class="empty">Noch keine Einheiten im Prozess — oben anlegen.</div>';return;}
@@ -319,7 +337,7 @@ function render(){
     const addable=INT.filter(i=>!linkedIds.has(i.id));
     return `<div class="wc ${r.freigabe?'frei':''}">
       <div class="wc-hd">
-        <span class="wc-title">🏠 ${esc(r.gebaeude||'—')}</span>
+        <span class="wc-title">#${r.nummer!=null?r.nummer:'?'} · 🏠 ${esc(r.gebaeude||'—')}</span>
         <button class="abtn" onclick="del('${r.id}')">✕</button>
       </div>
       <div class="wc-row"><label>Einheit</label><select class="inl" onchange="upd('${r.id}','einheit',this.value)"><option value="">—</option>${units.map(u=>`<option ${u===r.einheit?'selected':''}>${esc(u)}</option>`).join('')}</select></div>
