@@ -99,6 +99,8 @@ select.inl.st{font-weight:700;color:var(--accent);border-color:var(--line);backg
   <div class="chips" id="stageChips"></div>
   <div class="card"><div class="card-hd"><span>Leads</span><span class="crumb">Meilensteine: ✅ erledigt · ⏸️ warten · ❌ nicht erfolgt &nbsp;·&nbsp; <span id="cnt"></span></span></div>
     <div class="tablewrap" id="tbl"><div class="empty" id="loading">Lädt…</div></div></div>
+  <div class="card"><div class="card-hd"><span>🗄 Lead-Register (Archiv)</span><span class="crumb">erledigte Leads · zum Reaktivieren „↩︎" klicken · <span id="archCnt"></span></span></div>
+    <div class="tablewrap" id="archReg"></div></div>
 </div>
 <div class="ov" id="ov" onclick="if(event.target===this)closeNotes()">
   <div class="dlg">
@@ -304,7 +306,7 @@ function renderChips(){
 let VIEW='liste', DRAG=null;
 function typToggle(){const on=$('f_typ').value==='umzug';document.querySelectorAll('.umzugfld').forEach(e=>e.style.display=on?'':'none');}
 function setTyp(t){FTYP=t;$('tAlle').classList.toggle('on',t==='');$('tNeu').classList.toggle('on',t==='neu');$('tUmzug').classList.toggle('on',t==='umzug');FSTAGE='';render();}
-function baseRows(){return FTYP?ROWS.filter(r=>(r.typ||'neu')===FTYP):ROWS;}
+function baseRows(){var a=ROWS.filter(r=>!r.archiviert);return FTYP?a.filter(r=>(r.typ||'neu')===FTYP):a;}
 function setView(v){VIEW=v;$('vListe').classList.toggle('on',v==='liste');$('vBoard').classList.toggle('on',v==='board');render();}
 function dragStart(ev,id){DRAG=id;ev.dataTransfer.effectAllowed='move';}
 function allowDrop(ev,el){ev.preventDefault();if(el)el.classList.add('over');}
@@ -347,8 +349,31 @@ function boardView(){
       <div class="kbcolhd"><span style="color:var(--text)">${esc(s)}</span><span>${list.length}</span></div>
       <div class="kbcolbd">${cards||'<div class="kbnil">—</div>'}</div></div>`;}).join('')+'</div>';
 }
+async function archiv(id,val){
+  var r=ROWS.find(x=>x.id===id); if(r)r.archiviert=val;
+  render();
+  var res=await sb.from('mietinteressenten').update({archiviert:val}).eq('id',id);
+  if(res.error){toast('Fehler: '+res.error.message);return;}
+  toast(val?'Ins Lead-Register verschoben':'Lead reaktiviert');
+}
+function renderArchive(){
+  var el=$('archReg'); if(!el)return;
+  var arch=ROWS.filter(r=>r.archiviert).sort((a,b)=>(b.nummer||0)-(a.nummer||0));
+  if($('archCnt'))$('archCnt').textContent=arch.length+' archiviert';
+  if(!arch.length){el.innerHTML='<div class="empty" style="padding:14px">Noch keine erledigten Leads im Archiv.</div>';return;}
+  el.innerHTML='<table><thead><tr><th title="Reaktivieren">↩︎</th><th>Nr</th><th>Name</th><th>Vorname</th><th>Status</th><th>Mietzahlung</th><th>Kontakt</th><th>Leadquelle</th><th>Ergebnis</th><th>Notizen</th></tr></thead><tbody>'
+    +arch.map(r=>`<tr style="cursor:pointer;opacity:.85" onclick="rowOpen(event,'${r.id}')">
+      <td style="text-align:center"><button class="abtn" title="Lead wieder aktivieren" onclick="event.stopPropagation();archiv('${r.id}',false)" style="font-size:15px;color:var(--accent)">↩︎</button></td>
+      <td class="nrcell">${r.nummer!=null?r.nummer:'—'}</td>
+      <td>${esc(r.name||'')}</td><td>${esc(r.vorname||'')}</td>
+      <td>${esc(r.status||'')}</td><td>${esc(r.zahlungsart||'')}</td>
+      <td>${esc(r.kontakt||'')}</td><td>${esc(r.quelle||'')}</td><td>${esc(r.ergebnis||'')}</td>
+      <td><button class="ntbtn" onclick="event.stopPropagation();openNotes('${r.id}')">📄 Öffnen</button></td></tr>`).join('')
+    +'</tbody></table>';
+}
 function render(){
   renderChips();
+  renderArchive();
   $('stageChips').style.display=VIEW==='board'?'none':'flex';
   const BR=baseRows();
   if(VIEW==='board'){$('cnt').textContent=BR.length+' Leads';$('tbl').innerHTML=BR.length?boardView():'<div class="empty">Keine Einträge in dieser Ansicht.</div>';return;}
@@ -356,9 +381,10 @@ function render(){
   $('cnt').textContent=list.length+' von '+BR.length+(FTYP?(' · '+(FTYP==='umzug'?'Umzugswünsche':'Neu-Interessenten')):'');
   if(!BR.length){$('tbl').innerHTML='<div class="empty">Keine Einträge in dieser Ansicht — oben erfassen.</div>';return;}
   const qOpts=(sel)=>'<option value="">—</option>'+QUELLEN.map(q=>`<option ${q===sel?'selected':''}>${esc(q)}</option>`).join('');
-  $('tbl').innerHTML='<table><thead><tr><th>Nr</th><th>Name</th><th>Vorname</th><th>Status</th><th>Mietzahlung</th><th>Kontakt</th><th>Eingang</th><th>Leadquelle</th><th>Pers.</th><th>Einzug ab</th><th>Ergebnis</th><th>Selbst&shy;auskunft vorhanden</th><th>Freigabe Schlüssel&shy;übergabe</th><th>Zusage Kosten&shy;übernahme</th><th>Mietangebot erhalten</th><th>Mietvertrag unter&shy;schrieben</th><th>Schlüssel&shy;übergabe</th><th>1. Miet&shy;zahlung</th><th>Notizen</th><th></th></tr></thead><tbody>'
+  $('tbl').innerHTML='<table><thead><tr><th title="Erledigt / ins Archiv">✓</th><th>Nr</th><th>Name</th><th>Vorname</th><th>Status</th><th>Mietzahlung</th><th>Kontakt</th><th>Eingang</th><th>Leadquelle</th><th>Pers.</th><th>Einzug ab</th><th>Ergebnis</th><th>Selbst&shy;auskunft vorhanden</th><th>Freigabe Schlüssel&shy;übergabe</th><th>Zusage Kosten&shy;übernahme</th><th>Mietangebot erhalten</th><th>Mietvertrag unter&shy;schrieben</th><th>Schlüssel&shy;übergabe</th><th>1. Miet&shy;zahlung</th><th>Notizen</th><th></th></tr></thead><tbody>'
     +list.map(r=>{const cls=(r.ergebnis&&/Absage/.test(r.ergebnis))?'res-absage':((r.ergebnis==='Warteliste'||r.status==='A · Warteliste')?'res-warte':'');
       return `<tr class="${cls}" style="cursor:pointer" onclick="rowOpen(event,'${r.id}')">
+        <td style="text-align:center"><button class="abtn" title="Als erledigt ins Lead-Register" onclick="event.stopPropagation();archiv('${r.id}',true)" style="font-size:15px;color:var(--green,#1f7a4d)">✓</button></td>
         <td class="nrcell">${r.nummer!=null?r.nummer:'—'}</td>
         <td><input class="inl" style="min-width:120px" value="${esc(r.name)}" placeholder="Nachname" onchange="upd('${r.id}','name',this.value)">${r.typ==='umzug'?'<span class="umzugbadge" title="'+esc(r.aktuelles_objekt||'Bestandsmieter mit Umzugswunsch')+'">↔ Umzug</span>':''}</td>
         <td><input class="inl" style="min-width:110px" value="${esc(r.vorname)}" placeholder="Vorname" onchange="upd('${r.id}','vorname',this.value)"></td>
