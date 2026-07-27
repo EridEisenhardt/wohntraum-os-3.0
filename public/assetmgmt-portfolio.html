@@ -2,6 +2,7 @@
 <html lang="de"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Portfolio · Assetmanagement</title>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <style>
 :root{--bg:#f6f7f9;--surf:#fff;--surf2:#f1f3f6;--line:#e6e8ec;--text:#1c2024;--muted:#6b7280;--dim:#4b5563;--accent:#0f9d6b;--red:#dc2626;--amber:#b45309;--blue:#2563eb;--purple:#7c3aed}
 *{box-sizing:border-box;margin:0;padding:0}
@@ -30,13 +31,17 @@ td input:focus,td select:focus{border-color:var(--line);background:var(--surf)}
 </style></head><body>
 <div class="hdr">
   <div><div class="hdr-title">Portfolio · Unsere Immobilien</div><div class="hdr-sub">Assetmanagement · Datenbestand aus Notion „Unsere Immobilien"</div></div>
-  <div style="display:flex;gap:8px"><button class="btn mini" onclick="addRow()">＋ Immobilie</button></div>
+  <div style="display:flex;gap:8px"><button class="btn mini" onclick="exportXlsx()">⬇ Excel</button><button class="btn mini" onclick="addRow()">＋ Immobilie</button></div>
 </div>
 <div class="wrap">
   <div class="cards" id="stats"></div>
   <div class="bar">
-    <input id="q" placeholder="🔍 Suche (Kennung, Adresse, Eigentümer …)" style="min-width:260px" oninput="render()">
+    <input id="q" placeholder="🔍 Suche (Kennung, Adresse, Eigentümer …)" style="min-width:240px" oninput="render()">
     <select id="fStatus" onchange="render()"><option value="">Alle Status</option></select>
+    <select id="fEig" onchange="render()"><option value="">Alle Eigentümer</option></select>
+    <select id="fHV" onchange="render()"><option value="">Alle Hausverwaltungen</option></select>
+    <select id="fBank" onchange="render()"><option value="">Alle Banken</option></select>
+    <button class="btn mini" style="background:var(--surf2);color:var(--text)" onclick="clearFilters()">Filter zurücksetzen</button>
     <span id="cnt" style="font-size:12px;color:var(--muted)"></span>
   </div>
   <div class="tblwrap">
@@ -60,12 +65,23 @@ async function load(){
   ROWS=data||[];
   var sset=[];ROWS.forEach(r=>{(r.status||'').split(',').forEach(s=>{s=s.trim();if(s&&sset.indexOf(s)<0)sset.push(s);});});
   $('fStatus').innerHTML='<option value="">Alle Status</option>'+sset.sort().map(s=>'<option>'+esc(s)+'</option>').join('');
+  fillFilter('fEig','eigentuemer','Alle Eigentümer');
+  fillFilter('fHV','hausverwaltung','Alle Hausverwaltungen');
+  fillFilter('fBank','bank','Alle Banken');
   render();
 }
+function fillFilter(id,field,allLbl){
+  var cur=$(id).value; var set=[];ROWS.forEach(r=>{var v=(r[field]||'').trim();if(v&&set.indexOf(v)<0)set.push(v);});
+  $(id).innerHTML='<option value="">'+allLbl+'</option>'+set.sort().map(v=>'<option'+(v===cur?' selected':'')+'>'+esc(v)+'</option>').join('');
+}
+function clearFilters(){$('q').value='';$('fStatus').value='';$('fEig').value='';$('fHV').value='';$('fBank').value='';render();}
 function render(){
-  var q=($('q').value||'').toLowerCase(), fs=$('fStatus').value;
+  var q=($('q').value||'').toLowerCase(), fs=$('fStatus').value, fe=$('fEig').value, fh=$('fHV').value, fb=$('fBank').value;
   var list=ROWS.filter(function(r){
     if(fs&&(r.status||'').indexOf(fs)<0)return false;
+    if(fe&&(r.eigentuemer||'')!==fe)return false;
+    if(fh&&(r.hausverwaltung||'')!==fh)return false;
+    if(fb&&(r.bank||'')!==fb)return false;
     if(q){var hay=[r.kennung,r.adresse,r.eigentuemer,r.status,r.hausverwaltung,r.bank,r.mietkonto,r.ansprechpartner].filter(Boolean).join(' ').toLowerCase();if(hay.indexOf(q)<0)return false;}
     return true;
   });
@@ -109,6 +125,22 @@ async function del(id){
   var res=await sb.from('portfolio_immobilien').delete().eq('id',id);
   if(res.error){toast('Fehler: '+res.error.message);return;}
   ROWS=ROWS.filter(x=>x.id!==id);render();toast('Gelöscht');
+}
+function exportXlsx(){
+  if(typeof XLSX==='undefined'){toast('Excel-Bibliothek lädt noch');return;}
+  var q=($('q').value||'').toLowerCase(), fs=$('fStatus').value, fe=$('fEig').value, fh=$('fHV').value, fb=$('fBank').value;
+  var list=ROWS.filter(function(r){
+    if(fs&&(r.status||'').indexOf(fs)<0)return false;
+    if(fe&&(r.eigentuemer||'')!==fe)return false;
+    if(fh&&(r.hausverwaltung||'')!==fh)return false;
+    if(fb&&(r.bank||'')!==fb)return false;
+    if(q){var hay=[r.kennung,r.adresse,r.eigentuemer,r.status,r.hausverwaltung,r.bank,r.mietkonto,r.ansprechpartner].filter(Boolean).join(' ').toLowerCase();if(hay.indexOf(q)<0)return false;}
+    return true;
+  });
+  var aoa=[['Kennung','Adresse','Eigentümer','Status','Hausverwaltung','Finanzierende Bank','Mietkonto','Seit Besitz','Ansprechpartner']];
+  list.forEach(function(r){aoa.push([r.kennung||'',r.adresse||'',r.eigentuemer||'',r.status||'',r.hausverwaltung||'',r.bank||'',r.mietkonto||'',r.seit_besitz||'',r.ansprechpartner||'']);});
+  var wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(aoa),'Portfolio');
+  XLSX.writeFile(wb,'Portfolio_Immobilien.xlsx');
 }
 (async()=>{await sb.auth.getSession();load();})();
 </script>
