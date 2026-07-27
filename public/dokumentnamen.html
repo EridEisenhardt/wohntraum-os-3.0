@@ -28,6 +28,15 @@ select,input{width:100%;font:inherit;font-size:13px;padding:8px 10px;border:1px 
 <div class="hdr"><div class="hdr-title">Dokumentennamen-Generator</div><div class="hdr-sub">Produktivität · benennt Dateien nach der Notion-Systematik „Dokumentennamen"</div></div>
 <div class="wrap">
   <div class="card">
+    <div class="fld"><label>Ablage-Struktur</label>
+      <div style="display:flex;gap:6px;flex-wrap:wrap">
+        <button type="button" id="mEigene" class="btn sec" onclick="setMode('eigene')">📁 Eigene Unterlagen</button>
+        <button type="button" id="mBank" class="btn sec" onclick="setMode('bank')">🏦 Bankenstruktur</button>
+      </div>
+      <div class="hint" style="margin-top:6px">Eigene Unterlagen = Benennung für die eigene Cloud. Bankenstruktur = Benennung für die Bank mit führender Sortier-Nummer.</div>
+    </div>
+    <div class="fld" id="bankNrFld" style="display:none"><label>Sortier-Nr. (Bank – steht vorne)</label>
+      <input id="bankNr" oninput="renderName()" placeholder="z. B. 50" style="max-width:160px"></div>
     <div class="fld"><label>Thema / Dokumententyp</label>
       <select id="typSel" onchange="onTyp()"></select></div>
     <div class="tmpl" id="tmplHint"></div>
@@ -69,7 +78,14 @@ const TOK={
   'THEMA':{l:'Thema',t:'text',ph:'z. B. Strom, Gas, Wasser, Hausmeister'},
   'DOKUMENT':{l:'Bezeichnung',t:'text',ph:'freie Bezeichnung'}
 };
-let VOR=[],VALS={},PROJ=[];
+let VOR=[],VALS={},PROJ=[],MODE='eigene';
+function setMode(m){MODE=m;
+  var a=$('mEigene'),b=$('mBank');
+  a.style.background=m==='eigene'?'var(--accent)':'var(--surf2)';a.style.color=m==='eigene'?'#fff':'var(--text)';
+  b.style.background=m==='bank'?'var(--accent)':'var(--surf2)';b.style.color=m==='bank'?'#fff':'var(--text)';
+  $('bankNrFld').style.display=m==='bank'?'':'none';
+  renderName();
+}
 function tokensOf(tpl){var out=[],re=/\{([A-Z0-9\-]+)\}/g,m;while((m=re.exec(tpl))){if(out.indexOf(m[1])<0)out.push(m[1]);}return out;}
 async function loadProj(){
   var res=await sb.from('sanierungen').select('projektnummer,objekt,objekt_wohnung,art').not('projektnummer','is',null).order('projektnummer');
@@ -114,6 +130,7 @@ function onTyp(){
     }
     return '<div class="fld"><label>'+esc(m.l)+'</label><input id="f_'+k+'" type="'+(m.t||'text')+'" value="'+esc(val)+'" placeholder="'+esc(m.ph||'')+'" oninput="renderName()"></div>';
   }).join('');
+  if($('bankNr')){$('bankNr').value=(v.bank_nr||'');}
   renderName();
 }
 function renderName(){
@@ -127,6 +144,7 @@ function renderName(){
   // Aufräumen: doppelte/überzählige Trenner durch leere Platzhalter
   name=name.replace(/_{2,}/g,'_').replace(/\s{2,}/g,' ').replace(/,\s*,/g,',');
   name=name.replace(/^[_\s,]+/,'').replace(/[_\s,]+$/,'').replace(/_\s*€/,'€').replace(/,\s*_/g,'_');
+  if(MODE==='bank'){var nr=($('bankNr')&&$('bankNr').value||'').trim();if(nr)name=nr+'_'+name;}
   $('result').textContent=name||'—';
   return name;
 }
@@ -143,6 +161,6 @@ function downloadRenamed(){
   var a=document.createElement('a'); a.href=URL.createObjectURL(f); a.download=n+ext; document.body.appendChild(a); a.click(); a.remove();
   toast('Heruntergeladen als '+n+ext);
 }
-(async()=>{const{data:{session}}=await sb.auth.getSession();load();})();
+(async()=>{const{data:{session}}=await sb.auth.getSession();await load();setMode('eigene');})();
 </script>
 </body></html>
