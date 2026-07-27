@@ -72,21 +72,30 @@ function render(){
   let list=ROWS;if(filt==='aktiv')list=aktiv;else if(filt==='done')list=done;
   $('cnt').textContent=list.length+' Einträge';
   if(!list.length){$('reg').innerHTML='<div class="empty">Keine Darlehen in dieser Ansicht.</div>';return;}
-  $('reg').innerHTML='<table><thead><tr><th>Interne Nr.</th><th>Bank-Nr.</th><th>Bezeichnung</th><th>Darlehensgeber</th><th>Darlehensnehmer</th><th>Auszahlung</th><th class="eur">Betrag</th><th class="eur">Aktueller Saldo</th><th class="eur">Zins</th><th>Anlage</th><th>Status</th></tr></thead><tbody>'
+  const syst='<div style="background:var(--surf,#fff);border:1px solid var(--line,#e6e8ec);border-radius:12px;padding:12px 14px;margin-bottom:14px;font-size:12.5px;line-height:1.5">'
+    +'<b>📐 Systematik (in der Datenbank hinterlegt – nicht mehr Notion)</b><br>'
+    +'Interne Darlehensnr.: fortlaufende 3-stellige Nummer (001, 002, …). Die nächste freie Nummer vergibt der Darlehensgenerator automatisch (höchste vorhandene + 1) – nächste frei: <b>'+String((ROWS.reduce((m,r)=>{var n=parseInt(String(r.dnr_intern||"").replace(/\\D/g,""),10);return isNaN(n)?m:Math.max(m,n);},0))+1).padStart(3,"0")+'</b>.<br>'
+    +'Bank-Ablage der Vertragsdokumente: <code>50_[interne Nr.]_[Dokumenttyp]_[Objekt]_[YYYY-MM-DD]_[Betrag]_[Bank]</code>.<br>'
+    +'<span style="color:var(--muted,#6b7280)">Alle Felder unten sind manuell editierbar – Änderungen sind sofort gespeichert und für die nächste Anwendung aktuell.</span></div>';
+  $('reg').innerHTML=syst+'<table><thead><tr><th>Interne Nr.</th><th>Bank-Nr.</th><th>Bezeichnung</th><th>Darlehensgeber</th><th>Darlehensnehmer</th><th>Auszahlung</th><th class="eur">Betrag</th><th class="eur">Aktueller Saldo</th><th class="eur">Zins %</th><th>Anlage</th><th>Status</th><th></th></tr></thead><tbody>'
    +list.map(r=>`<tr class="${isDone(r.status)?'done':''}">
-     <td class="dnr">${esc(r.dnr_intern||'—')}</td>
-     <td>${esc(r.dnr_bank||'—')}</td>
-     <td>${esc(r.bez||'—')}</td>
-     <td>${esc(r.geber||'—')}</td>
-     <td>${esc(r.nehmer||'—')}</td>
-     <td>${fmtD(r.aus)}</td>
-     <td class="eur">${r.betrag!=null?eur(r.betrag):'—'}</td>
-     <td class="eur">${r.aktuell!=null?eur(r.aktuell):'—'}</td>
-     <td class="eur">${r.zins!=null?(Number(r.zins).toLocaleString('de-DE',{minimumFractionDigits:2,maximumFractionDigits:2})+' %'):'—'}</td>
+     <td class="dnr"><input value="${esc(r.dnr_intern||'')}" style="width:60px;font-weight:700" onchange="upd('${r.id}','dnr_intern',this.value)"></td>
+     <td><input value="${esc(r.dnr_bank||'')}" style="min-width:90px" onchange="upd('${r.id}','dnr_bank',this.value)"></td>
+     <td><input value="${esc(r.bez||'')}" style="min-width:180px" onchange="upd('${r.id}','bez',this.value)"></td>
+     <td><input value="${esc(r.geber||'')}" style="min-width:140px" onchange="upd('${r.id}','geber',this.value)"></td>
+     <td><input value="${esc(r.nehmer||'')}" style="min-width:140px" onchange="upd('${r.id}','nehmer',this.value)"></td>
+     <td><input type="date" value="${r.aus||''}" onchange="upd('${r.id}','aus',this.value)"></td>
+     <td class="eur"><input style="width:100px;text-align:right" value="${r.betrag!=null?String(r.betrag).replace('.',','):''}" onchange="updN('${r.id}','betrag',this.value)"></td>
+     <td class="eur"><input style="width:100px;text-align:right" value="${r.aktuell!=null?String(r.aktuell).replace('.',','):''}" onchange="updN('${r.id}','aktuell',this.value)"></td>
+     <td class="eur"><input style="width:62px;text-align:right" value="${r.zins!=null?String(r.zins).replace('.',','):''}" onchange="updN('${r.id}','zins',this.value)"></td>
      <td>${anlageCell(r)}</td>
      <td><span class="pill ${isDone(r.status)?'p-done':'p-aktiv'}" title="Status umschalten (Aktiv / Beendet & vollständig zurückgeführt)" onclick="toggleStatus('${r.id}')">${isDone(r.status)?'Beendet &amp; vollständig zurückgeführt':'Aktiv'}</span></td>
+     <td><button class="lnk" style="color:var(--red,#c0392b);background:none;border:none;cursor:pointer;font-size:14px" title="Löschen" onclick="delLoan('${r.id}')">✕</button></td>
    </tr>`).join('')+'</tbody></table>';
 }
+async function upd(id,field,val){var v=(val===''?null:val);var r=ROWS.find(x=>x.id===id);if(r)r[field]=v;const res=await sb.from('loans').update({[field]:v}).eq('id',id);if(res.error){toast('Fehler: '+res.error.message);return;}if(field==='dnr_intern')render();}
+async function updN(id,field,val){var raw=(val||'').trim().replace(/\./g,'').replace(',','.');var num=raw===''?null:Number(raw);if(num!=null&&isNaN(num)){toast('Ungültige Zahl');return;}var r=ROWS.find(x=>x.id===id);if(r)r[field]=num;const res=await sb.from('loans').update({[field]:num}).eq('id',id);if(res.error){toast('Fehler: '+res.error.message);return;}render();}
+async function delLoan(id){if(!confirm('Dieses Darlehen aus dem Register löschen?'))return;const res=await sb.from('loans').delete().eq('id',id);if(res.error){toast('Fehler: '+res.error.message);return;}ROWS=ROWS.filter(x=>x.id!==id);render();toast('Gelöscht');}
 const PUB='https://jqzxctfqvcwbctpjksvg.supabase.co/storage/v1/object/public/darlehen/';
 function anlageCell(r){
   const d=DOK[r.id]; const parts=[];
