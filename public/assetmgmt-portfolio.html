@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="de"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Portfolio · Assetmanagement</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+:root{--bg:#f6f7f9;--surf:#fff;--surf2:#f1f3f6;--line:#e6e8ec;--text:#1c2024;--muted:#6b7280;--dim:#4b5563;--accent:#0f9d6b;--red:#dc2626;--amber:#b45309;--blue:#2563eb;--purple:#7c3aed}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--text);font-family:'Inter',system-ui,-apple-system,'Segoe UI',sans-serif;font-size:14px;min-height:100vh}
+.hdr{background:var(--surf);border-bottom:1px solid var(--line);padding:16px 24px;position:sticky;top:0;z-index:10;display:flex;justify-content:space-between;align-items:flex-end;gap:10px;flex-wrap:wrap}
+.hdr-title{font-size:18px;font-weight:700}.hdr-sub{font-size:12px;color:var(--muted);margin-top:2px}
+.wrap{max-width:1400px;margin:18px auto;padding:0 18px}
+.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:16px}
+.stat{background:var(--surf);border:1px solid var(--line);border-radius:12px;padding:12px 14px}
+.stat .l{font-size:11px;color:var(--muted);font-weight:600}.stat .v{font-size:22px;font-weight:800;margin-top:2px}
+.bar{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:12px}
+.bar select,.bar input{font:inherit;font-size:13px;padding:7px 9px;border:1px solid var(--line);border-radius:8px;background:var(--surf)}
+.btn{background:var(--accent);color:#fff;border:none;border-radius:8px;padding:8px 13px;font:inherit;font-weight:600;font-size:13px;cursor:pointer}
+.btn.mini{padding:5px 10px;font-size:12px}
+.tblwrap{background:var(--surf);border:1px solid var(--line);border-radius:12px;overflow-x:auto}
+table{width:100%;border-collapse:collapse;font-size:12.5px}
+th,td{padding:7px 9px;text-align:left;border-bottom:1px solid var(--line);white-space:nowrap;vertical-align:middle}
+th{font-size:10.5px;text-transform:uppercase;letter-spacing:.3px;color:var(--muted);font-weight:700}
+td input,td select{font:inherit;font-size:12.5px;padding:4px 6px;border:1px solid transparent;border-radius:6px;background:transparent;width:100%;min-width:90px}
+td input:focus,td select:focus{border-color:var(--line);background:var(--surf)}
+.kn{font-weight:800;white-space:nowrap}
+.pill{display:inline-block;font-size:10px;font-weight:700;padding:2px 7px;border-radius:10px;margin:1px 2px 1px 0}
+.p-bestand{background:#dcfce7;color:#166534}.p-verkauft{background:#fee2e2;color:#b91c1c}.p-abwicklung{background:#e5e7eb;color:#374151}.p-verhandlung{background:#f3e8ff;color:#7c3aed}.p-miete{background:#dbeafe;color:#1e40af}.p-gekuendigt{background:#fef3c7;color:#b45309}
+.icobtn{background:none;border:none;color:var(--muted);cursor:pointer;font-size:15px;padding:2px 5px;border-radius:6px}.icobtn:hover{background:var(--surf2);color:var(--red)}
+.toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:#1c2024;color:#fff;padding:10px 16px;border-radius:8px;font-size:13px;opacity:0;pointer-events:none;transition:.2s;z-index:50}.toast.show{opacity:1}
+</style></head><body>
+<div class="hdr">
+  <div><div class="hdr-title">Portfolio · Unsere Immobilien</div><div class="hdr-sub">Assetmanagement · Datenbestand aus Notion „Unsere Immobilien"</div></div>
+  <div style="display:flex;gap:8px"><button class="btn mini" onclick="addRow()">＋ Immobilie</button></div>
+</div>
+<div class="wrap">
+  <div class="cards" id="stats"></div>
+  <div class="bar">
+    <input id="q" placeholder="🔍 Suche (Kennung, Adresse, Eigentümer …)" style="min-width:260px" oninput="render()">
+    <select id="fStatus" onchange="render()"><option value="">Alle Status</option></select>
+    <span id="cnt" style="font-size:12px;color:var(--muted)"></span>
+  </div>
+  <div class="tblwrap">
+    <table><thead><tr>
+      <th>Kennung</th><th>Adresse</th><th>Eigentümer</th><th>Status</th><th>Hausverwaltung</th><th>Finanz. Bank</th><th>Mietkonto</th><th>Seit Besitz</th><th>Ansprechpartner</th><th></th>
+    </tr></thead><tbody id="body"></tbody></table>
+  </div>
+</div>
+<div class="toast" id="toast"></div>
+<script>
+const sb=window.supabase.createClient('https://jqzxctfqvcwbctpjksvg.supabase.co','eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpxenhjdGZxdmN3YmN0cGprc3ZnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODIxMzA0MzIsImV4cCI6MjA5NzcwNjQzMn0.RKIbZxJdusKWWPjBJqlxZ8e1m8So02UslOg55YRsn3o');
+const $=id=>document.getElementById(id);
+const esc=s=>(s==null?'':String(s)).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+function toast(m){const t=$('toast');t.textContent=m;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),1900);}
+let ROWS=[];
+function stCls(s){s=(s||'').toLowerCase();if(s.indexOf('bestand')>=0)return 'p-bestand';if(s.indexOf('verkauft')>=0)return 'p-verkauft';if(s.indexOf('abwicklung')>=0)return 'p-abwicklung';if(s.indexOf('verhandlung')>=0)return 'p-verhandlung';if(s.indexOf('miete')>=0)return 'p-miete';if(s.indexOf('gekündigt')>=0||s.indexOf('gekuendigt')>=0)return 'p-gekuendigt';return 'p-abwicklung';}
+function statusPills(str){return (str||'').split(',').map(function(s){s=s.trim();if(!s)return '';return '<span class="pill '+stCls(s)+'">'+esc(s)+'</span>';}).join('');}
+async function load(){
+  const {data,error}=await sb.from('portfolio_immobilien').select('*').order('kennung');
+  if(error){toast('Fehler: '+error.message);return;}
+  ROWS=data||[];
+  var sset=[];ROWS.forEach(r=>{(r.status||'').split(',').forEach(s=>{s=s.trim();if(s&&sset.indexOf(s)<0)sset.push(s);});});
+  $('fStatus').innerHTML='<option value="">Alle Status</option>'+sset.sort().map(s=>'<option>'+esc(s)+'</option>').join('');
+  render();
+}
+function render(){
+  var q=($('q').value||'').toLowerCase(), fs=$('fStatus').value;
+  var list=ROWS.filter(function(r){
+    if(fs&&(r.status||'').indexOf(fs)<0)return false;
+    if(q){var hay=[r.kennung,r.adresse,r.eigentuemer,r.status,r.hausverwaltung,r.bank,r.mietkonto,r.ansprechpartner].filter(Boolean).join(' ').toLowerCase();if(hay.indexOf(q)<0)return false;}
+    return true;
+  });
+  $('cnt').textContent=list.length+' von '+ROWS.length;
+  $('body').innerHTML=list.map(function(r){
+    return '<tr>'
+    +'<td class="kn"><input value="'+esc(r.kennung||'')+'" onchange="upd(\''+r.id+'\',\'kennung\',this.value)" style="min-width:60px;font-weight:800"></td>'
+    +'<td><input value="'+esc(r.adresse||'')+'" onchange="upd(\''+r.id+'\',\'adresse\',this.value)" style="min-width:220px"></td>'
+    +'<td><input value="'+esc(r.eigentuemer||'')+'" onchange="upd(\''+r.id+'\',\'eigentuemer\',this.value)" style="min-width:150px"></td>'
+    +'<td style="min-width:180px">'+statusPills(r.status)+'<input value="'+esc(r.status||'')+'" onchange="upd(\''+r.id+'\',\'status\',this.value)" style="min-width:170px;color:var(--muted);font-size:11px" placeholder="Status (mit , trennen)"></td>'
+    +'<td><input value="'+esc(r.hausverwaltung||'')+'" onchange="upd(\''+r.id+'\',\'hausverwaltung\',this.value)" style="min-width:150px"></td>'
+    +'<td><input value="'+esc(r.bank||'')+'" onchange="upd(\''+r.id+'\',\'bank\',this.value)" style="min-width:150px"></td>'
+    +'<td><input value="'+esc(r.mietkonto||'')+'" onchange="upd(\''+r.id+'\',\'mietkonto\',this.value)" style="min-width:170px;font-family:ui-monospace,monospace;font-size:11.5px"></td>'
+    +'<td><input type="date" value="'+(r.seit_besitz||'')+'" onchange="upd(\''+r.id+'\',\'seit_besitz\',this.value)"></td>'
+    +'<td><input value="'+esc(r.ansprechpartner||'')+'" onchange="upd(\''+r.id+'\',\'ansprechpartner\',this.value)" style="min-width:120px"></td>'
+    +'<td><button class="icobtn" title="Löschen" onclick="del(\''+r.id+'\')">✕</button></td></tr>';
+  }).join('')||'<tr><td colspan="10" style="text-align:center;color:var(--muted);padding:16px">Keine Treffer.</td></tr>';
+  renderStats();
+}
+function renderStats(){
+  var total=ROWS.length;
+  var bestand=ROWS.filter(r=>(r.status||'').toLowerCase().indexOf('bestand')>=0).length;
+  var verkauft=ROWS.filter(r=>(r.status||'').toLowerCase().indexOf('verkauft')>=0).length;
+  var abw=ROWS.filter(r=>(r.status||'').toLowerCase().indexOf('abwicklung')>=0||( r.status||'').toLowerCase().indexOf('verhandlung')>=0).length;
+  $('stats').innerHTML=[['Immobilien gesamt',total],['Im Bestand',bestand],['Verkauft',verkauft],['In Abwicklung / Verhandlung',abw]]
+    .map(s=>'<div class="stat"><div class="l">'+s[0]+'</div><div class="v">'+s[1]+'</div></div>').join('');
+}
+async function upd(id,field,val){
+  var v=val===''?null:val;var r=ROWS.find(x=>x.id===id);if(r)r[field]=v;
+  if(field==='status')render();
+  var res=await sb.from('portfolio_immobilien').update({[field]:v}).eq('id',id);
+  if(res.error)toast('Fehler: '+res.error.message);
+}
+async function addRow(){
+  var res=await sb.from('portfolio_immobilien').insert({kennung:'',status:'Bestand'}).select();
+  if(res.error){toast('Fehler: '+res.error.message);return;}
+  ROWS.push(res.data[0]);render();
+}
+async function del(id){
+  if(!confirm('Diese Immobilie aus dem Portfolio löschen?'))return;
+  var res=await sb.from('portfolio_immobilien').delete().eq('id',id);
+  if(res.error){toast('Fehler: '+res.error.message);return;}
+  ROWS=ROWS.filter(x=>x.id!==id);render();toast('Gelöscht');
+}
+(async()=>{await sb.auth.getSession();load();})();
+</script>
+</body></html>
