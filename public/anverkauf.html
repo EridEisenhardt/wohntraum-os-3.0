@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="de"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>An- und Verkauf von Immobilien · Assetmanagement</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+:root{--bg:#f6f7f9;--surf:#fff;--surf2:#f1f3f6;--line:#e6e8ec;--text:#1c2024;--muted:#6b7280;--dim:#4b5563;--accent:#0f9d6b;--red:#dc2626;--buy:#185fa5;--sell:#c8741f}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--text);font-family:'Inter',system-ui,-apple-system,'Segoe UI',sans-serif;font-size:14px;line-height:1.5;min-height:100vh}
+.hdr{background:var(--surf);border-bottom:1px solid var(--line);padding:16px 24px;position:sticky;top:0;z-index:10}
+.hdr-title{font-size:18px;font-weight:700}.hdr-sub{font-size:12px;color:var(--muted);margin-top:2px}
+.wrap{max-width:1180px;margin:20px auto;padding:0 20px}
+.cols{display:grid;grid-template-columns:1fr 1fr;gap:18px}
+@media(max-width:860px){.cols{grid-template-columns:1fr}}
+.col{background:var(--surf);border:1px solid var(--line);border-radius:14px;padding:14px 16px}
+.col-hd{font-size:14px;font-weight:700;display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:12px}
+.col.kauf .col-hd{color:var(--buy)}.col.verkauf .col-hd{color:var(--sell)}
+.card{border:1px solid var(--line);border-radius:12px;padding:12px 13px;margin-bottom:12px;background:var(--surf)}
+.card.kauf{border-left:4px solid var(--buy)}.card.verkauf{border-left:4px solid var(--sell)}
+.card-top{display:flex;gap:8px;align-items:center;margin-bottom:8px}
+.fld{margin-bottom:8px}
+label{font-size:11px;font-weight:600;color:var(--dim);display:block;margin-bottom:3px}
+input,select,textarea{width:100%;font:inherit;font-size:13px;padding:7px 9px;border:1px solid var(--line);border-radius:8px;background:var(--surf)}
+textarea{min-height:44px;resize:vertical;font-family:inherit}
+.row2{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.btn{background:var(--accent);color:#fff;border:none;border-radius:8px;padding:8px 13px;font:inherit;font-weight:600;font-size:13px;cursor:pointer}
+.btn.buy{background:var(--buy)}.btn.sell{background:var(--sell)}
+.btn.mini{padding:5px 10px;font-size:12px}
+.icobtn{background:none;border:none;color:var(--muted);cursor:pointer;font-size:15px;padding:2px 5px;border-radius:6px}.icobtn:hover{background:var(--surf2);color:var(--red)}
+.tag{font-size:10.5px;font-weight:700;padding:2px 8px;border-radius:10px}
+.t-offen{background:#eef2f7;color:var(--dim)}.t-notar{background:#fef3c7;color:#b45309}.t-abgeschlossen{background:#dcfce7;color:var(--accent)}
+.title{font-weight:700;flex:1;min-width:0}
+.muted{color:var(--muted)}
+.toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:#1c2024;color:#fff;padding:10px 16px;border-radius:8px;font-size:13px;opacity:0;pointer-events:none;transition:.2s;z-index:50}
+.toast.show{opacity:1}
+</style></head><body>
+<div class="hdr"><div class="hdr-title">An- und Verkauf von Immobilien</div><div class="hdr-sub">Assetmanagement · je Vorgang eine Karte mit Urkundennummern des Notars</div></div>
+<div class="wrap">
+  <div class="cols">
+    <div class="col kauf">
+      <div class="col-hd"><span>🏷️ Kauf von Immobilien</span><button class="btn buy mini" onclick="addCard('kauf')">＋ Kauf-Vorgang</button></div>
+      <div id="kaufList"></div>
+    </div>
+    <div class="col verkauf">
+      <div class="col-hd"><span>💰 Verkauf von Immobilien</span><button class="btn sell mini" onclick="addCard('verkauf')">＋ Verkauf-Vorgang</button></div>
+      <div id="verkaufList"></div>
+    </div>
+  </div>
+</div>
+<div class="toast" id="toast"></div>
+<script>
+const sb=window.supabase.createClient('https://jqzxctfqvcwbctpjksvg.supabase.co','eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpxenhjdGZxdmN3YmN0cGprc3ZnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODIxMzA0MzIsImV4cCI6MjA5NzcwNjQzMn0.RKIbZxJdusKWWPjBJqlxZ8e1m8So02UslOg55YRsn3o');
+const $=id=>document.getElementById(id);
+const esc=s=>(s==null?'':String(s)).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+function toast(m){const t=$('toast');t.textContent=m;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),1900);}
+const STATUS=['offen','beim Notar','abgeschlossen'];
+const STCLS={'offen':'t-offen','beim Notar':'t-notar','abgeschlossen':'t-abgeschlossen'};
+let ROWS=[];
+
+async function load(){
+  const {data,error}=await sb.from('immo_anverkauf').select('*').order('pos').order('created_at',{ascending:false});
+  if(error){toast('Fehler: '+error.message);return;}
+  ROWS=data||[]; render();
+}
+function render(){
+  $('kaufList').innerHTML=ROWS.filter(r=>r.typ==='kauf').map(cardHtml).join('')||'<div class="muted" style="font-size:12.5px;padding:6px 2px">Noch keine Kauf-Vorgänge.</div>';
+  $('verkaufList').innerHTML=ROWS.filter(r=>r.typ==='verkauf').map(cardHtml).join('')||'<div class="muted" style="font-size:12.5px;padding:6px 2px">Noch keine Verkauf-Vorgänge.</div>';
+}
+function cardHtml(r){
+  var st=r.status||'offen';
+  var grundschuld = r.typ==='kauf'
+    ? '<div class="fld"><label>Urkundennummer Grundschuld</label><input value="'+esc(r.urkunde_grundschuld||'')+'" placeholder="z. B. UR-Nr. …" onchange="upd(\''+r.id+'\',\'urkunde_grundschuld\',this.value)"></div>'
+    : '';
+  return '<div class="card '+r.typ+'">'
+    +'<div class="card-top"><input class="title" value="'+esc(r.bezeichnung||'')+'" placeholder="Objekt / Anschrift" onchange="upd(\''+r.id+'\',\'bezeichnung\',this.value)">'
+      +'<span class="tag '+(STCLS[st]||'t-offen')+'">'+esc(st)+'</span>'
+      +'<button class="icobtn" title="Löschen" onclick="del(\''+r.id+'\')">✕</button></div>'
+    +'<div class="fld"><label>Urkundennummer Kaufvertrag (Notar)</label><input value="'+esc(r.urkunde_kaufvertrag||'')+'" placeholder="z. B. UR-Nr. 123/2026" onchange="upd(\''+r.id+'\',\'urkunde_kaufvertrag\',this.value)"></div>'
+    +grundschuld
+    +'<div class="row2">'
+      +'<div class="fld"><label>Notar</label><input value="'+esc(r.notar||'')+'" placeholder="Notariat" onchange="upd(\''+r.id+'\',\'notar\',this.value)"></div>'
+      +'<div class="fld"><label>Datum</label><input type="date" value="'+(r.datum||'')+'" onchange="upd(\''+r.id+'\',\'datum\',this.value)"></div>'
+    +'</div>'
+    +'<div class="row2">'
+      +'<div class="fld"><label>Betrag (€)</label><input inputmode="decimal" value="'+(r.betrag!=null?String(r.betrag).replace(".",","):'')+'" placeholder="0,00" onchange="updNum(\''+r.id+'\',this.value)"></div>'
+      +'<div class="fld"><label>Status</label><select onchange="upd(\''+r.id+'\',\'status\',this.value)">'+STATUS.map(function(s){return '<option'+(st===s?' selected':'')+'>'+s+'</option>';}).join('')+'</select></div>'
+    +'</div>'
+    +'<div class="fld"><label>Notiz</label><textarea onchange="upd(\''+r.id+'\',\'notiz\',this.value)" placeholder="Details, Beteiligte, offene Punkte…">'+esc(r.notiz||'')+'</textarea></div>'
+    +'</div>';
+}
+async function addCard(typ){
+  var res=await sb.from('immo_anverkauf').insert({typ:typ,status:'offen',pos:0}).select();
+  if(res.error){toast('Fehler: '+res.error.message);return;}
+  ROWS.unshift(res.data[0]); render();
+}
+async function upd(id,field,val){
+  var v=val===''?null:val;
+  var r=ROWS.find(x=>x.id===id); if(r)r[field]=v;
+  if(field==='status'||field==='typ')render();
+  var res=await sb.from('immo_anverkauf').update({[field]:v}).eq('id',id);
+  if(res.error)toast('Fehler: '+res.error.message);
+}
+async function updNum(id,val){
+  var raw=(val||'').trim().replace(/\./g,'').replace(',','.');var num=raw===''?null:Number(raw);
+  if(num!=null&&isNaN(num)){toast('Ungültiger Betrag');return;}
+  var r=ROWS.find(x=>x.id===id); if(r)r.betrag=num;
+  var res=await sb.from('immo_anverkauf').update({betrag:num}).eq('id',id);
+  if(res.error)toast('Fehler: '+res.error.message);
+}
+async function del(id){
+  if(!confirm('Diesen Vorgang löschen?'))return;
+  var res=await sb.from('immo_anverkauf').delete().eq('id',id);
+  if(res.error){toast('Fehler: '+res.error.message);return;}
+  ROWS=ROWS.filter(x=>x.id!==id); render(); toast('Gelöscht');
+}
+(async()=>{await sb.auth.getSession();load();})();
+</script>
+</body></html>
