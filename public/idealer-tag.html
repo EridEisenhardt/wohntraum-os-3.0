@@ -80,21 +80,31 @@ function renderTimeChart(){
   if(!window.Chart||!$('timeCv'))return;
   var start=Date.UTC(2026,0,1);
   function doy(ds){return Math.floor((Date.parse(ds+'T00:00:00Z')-start)/86400000)+1;}
-  // Summe ALLER Aktivitäten 2026 (Monatswerte: Gesundheitspunkte + Sporteinheiten), kumulativ zum Monatsende
+  // Monatliche Einheiten (Gesundheitspunkte + Sporteinheiten) über die Monatstage linear verteilt → tägliche Kurve
+  function firstDoy(mi){return Math.floor((Date.UTC(2026,mi,1)-start)/86400000)+1;}
   function lastDoy(mi){return Math.floor((Date.UTC(2026,mi+1,0)-start)/86400000)+1;}
-  var m26=MONTHS.filter(function(m){return m[0]===2026;}).slice().sort(function(a,b){return a[1]-b[1];});
-  var cum=0;var ist=[{x:1,y:0}];
-  m26.forEach(function(m){cum+=(m[2]||0)+(m[3]||0);ist.push({x:lastDoy(m[1]),y:cum});});
+  function dim(mi){return new Date(Date.UTC(2026,mi+1,0)).getUTCDate();}
+  var uPerM={};MONTHS.filter(function(m){return m[0]===2026;}).forEach(function(m){uPerM[m[1]]=(m[2]||0)+(m[3]||0);});
+  function istAt(d){var t=0;for(var mi=0;mi<12;mi++){var u=uPerM[mi]||0;if(!u)continue;var fd=firstDoy(mi),ld=lastDoy(mi);if(d>=ld)t+=u;else if(d>=fd)t+=u*(d-fd+1)/dim(mi);}return t;}
+  var today=doyToday()||1;
+  var ist=[],delta=[];
+  for(var d=1;d<=today;d++){var iv=istAt(d);var sv=ZIEL2026*d/365;ist.push({x:d,y:Math.round(iv*10)/10});delta.push({x:d,y:Math.round((iv-sv)*10)/10});}
+  var cum=Math.round(istAt(today));
   var soll=[{x:1,y:0},{x:365,y:ZIEL2026}];
   if(timeChart)timeChart.destroy();
   timeChart=new Chart($('timeCv'),{type:'line',data:{datasets:[
-    {label:'Ist – Summe aller Aktivitäten',data:ist,borderColor:'#0f9d6b',backgroundColor:'#0f9d6b22',fill:true,stepped:true,pointRadius:3,pointBackgroundColor:'#0f9d6b'},
-    {label:'Soll (Dreisatz → 250 am 31.12.)',data:soll,borderColor:'#f5c518',borderDash:[6,4],borderWidth:2,pointRadius:0,fill:false}
+    {label:'Ist – täglicher Verlauf (Summe aller Aktivitäten)',data:ist,borderColor:'#0f9d6b',backgroundColor:'#0f9d6b22',fill:true,pointRadius:0,borderWidth:2,tension:.15,yAxisID:'y'},
+    {label:'Soll (Dreisatz → 250 am 31.12.)',data:soll,borderColor:'#f5c518',borderDash:[6,4],borderWidth:2,pointRadius:0,fill:false,yAxisID:'y'},
+    {label:'Delta zum Ziel (über/unter Benchmark)',data:delta,borderColor:'#2563eb',backgroundColor:'#2563eb18',borderWidth:2,pointRadius:0,tension:.15,fill:true,yAxisID:'y1'}
   ]},options:{responsive:true,maintainAspectRatio:false,parsing:false,interaction:{mode:'nearest',intersect:false},
-    plugins:{legend:{labels:{boxWidth:12,font:{size:11}}},tooltip:{callbacks:{title:function(items){var v=Math.round(items[0].parsed.x);var d=new Date(Date.UTC(2026,0,v));return ('0'+d.getUTCDate()).slice(-2)+'.'+('0'+(d.getUTCMonth()+1)).slice(-2)+'.2026';},label:function(c){return c.dataset.label+': '+Math.round(c.parsed.y)+' Einheiten';}}}},
-    scales:{x:{type:'linear',min:1,max:365,ticks:{maxTicksLimit:12,callback:function(v){var d=new Date(Date.UTC(2026,0,v));return ('0'+(d.getUTCMonth()+1)).slice(-2)+'/26';}}},y:{beginAtZero:true,suggestedMax:ZIEL2026}}}});
+    plugins:{legend:{labels:{boxWidth:12,font:{size:11}}},tooltip:{callbacks:{title:function(items){var v=Math.round(items[0].parsed.x);var d=new Date(Date.UTC(2026,0,v));return ('0'+d.getUTCDate()).slice(-2)+'.'+('0'+(d.getUTCMonth()+1)).slice(-2)+'.2026';},label:function(c){var v=Math.round(c.parsed.y*10)/10;return c.dataset.label+': '+(c.dataset.yAxisID==='y1'&&v>0?'+':'')+v;}}}},
+    scales:{x:{type:'linear',min:1,max:365,ticks:{maxTicksLimit:12,callback:function(v){var d=new Date(Date.UTC(2026,0,v));return ('0'+(d.getUTCMonth()+1)).slice(-2)+'/26';}}},
+      y:{beginAtZero:true,suggestedMax:ZIEL2026,title:{display:true,text:'Einheiten',font:{size:10}}},
+      y1:{position:'right',grid:{drawOnChartArea:false},title:{display:true,text:'Delta zum Ziel',font:{size:10}},ticks:{callback:function(v){return (v>0?'+':'')+v;}}}}}});
   var sollNow=Math.round(ZIEL2026*doyToday()/365);
-  $('timeNote').innerHTML='Summe aller Aktivitäten bisher <b>'+cum+'</b> Einheiten · Sollwert heute &asymp; <b>'+sollNow+'</b> · Ziel <b>250</b> am 31.12.2026. Jede Aktivit&auml;t = 1 Einheit.';
+  var dNow=cum-sollNow;
+  $('timeNote').innerHTML='Summe aller Aktivitäten bisher <b>'+cum+'</b> Einheiten · Sollwert heute &asymp; <b>'+sollNow+'</b> · '
+    +'<span style="color:'+(dNow>=0?'#1f7a4d':'#c0392b')+';font-weight:700">Delta '+(dNow>=0?'+':'')+dNow+' ('+(dNow>=0?'über':'unter')+' Benchmark)</span> · Ziel <b>250</b> am 31.12.2026.';
 }
 function renderMonths(){
   $('monTbl').querySelector('tbody').innerHTML=MONTHS.map(function(m){var y=m[0],mi=m[1],g=m[2],s=m[3];return '<tr><td>'+MON[mi]+' '+y+'</td><td>'+g+'</td><td>'+s+'</td><td style="font-weight:700">'+(g+s)+'</td></tr>';}).join('');
