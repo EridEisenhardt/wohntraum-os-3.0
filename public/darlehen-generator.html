@@ -166,6 +166,18 @@ tr.sum td{border-top:2px solid var(--text);font-weight:700;background:#fafbfd}
         </div>
       </div>
       <div class="fg"><label>Sicherheiten / Besonderheiten</label><textarea id="sicher" rows="2" placeholder="z. B. Nachrang, Grundschuld, Bürgschaft …" oninput="renderContract()"></textarea></div>
+
+      <div class="fsec">Konten</div>
+      <div class="frow">
+        <div class="fg"><label>Von-Konto (Zahlung geht ab)</label><select id="vonKonto" onchange="renderContract()"></select></div>
+        <div class="fg"><label>Empfänger-Konto (Zahlung geht hin)</label><select id="zuKonto" onchange="renderContract()"></select></div>
+      </div>
+      <div style="margin:-2px 0 8px"><button type="button" class="btn" onclick="toggleBv()" style="padding:6px 11px;font-size:12px;background:var(--surf3);color:var(--text)">＋ / Bankverbindung verwalten</button></div>
+      <div id="bvPanel" style="display:none;border:1px solid var(--line);border-radius:8px;padding:10px;margin-bottom:10px;background:var(--surf2)">
+        <div class="frow"><div class="fg"><label>Bezeichnung</label><input id="bvBez" placeholder="z. B. WT Girokonto"></div><div class="fg"><label>Inhaber</label><input id="bvInh" placeholder="Kontoinhaber"></div></div>
+        <div class="frow"><div class="fg"><label>IBAN</label><input id="bvIban" placeholder="DE.. .... .... .... .... .."></div><div class="fg"><label>Bank / BIC</label><input id="bvBank" placeholder="Bank (BIC optional)"></div></div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:2px"><button type="button" class="btn btn-accent" onclick="saveBv()" style="padding:6px 11px;font-size:12px">💾 Speichern (dauerhaft verfügbar)</button><button type="button" class="btn" onclick="delBvSel()" style="padding:6px 11px;font-size:12px;background:var(--surf3);color:var(--text)">🗑 im Von-Konto gewählte löschen</button></div>
+      </div>
       <p class="hint" id="internHint"></p>
     </div>
   </div>
@@ -414,6 +426,33 @@ function setTab(t){
 function printPlan(){ setTab('plan'); $('contractWrap').classList.add('hideprint'); window.print(); setTimeout(()=>$('contractWrap').classList.remove('hideprint'),500); }
 function printContract(){ setTab('contract'); $('planWrap').classList.add('hideprint'); window.print(); setTimeout(()=>$('planWrap').classList.remove('hideprint'),500); }
 
+// ——— Bankverbindungen (dauerhaft, für Von-/Empfänger-Konto) ———
+let BV=[];
+function bvEsc(s){return (s==null?'':String(s)).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;');}
+function bvLabel(b){return (b.bezeichnung||b.inhaber||'—')+(b.iban?(' · '+b.iban):'');}
+async function loadBv(){const {data}=await sb.from('bankverbindungen').select('*').order('bezeichnung');BV=data||[];fillBvSelects();}
+function fillBvSelects(){
+  var opts='<option value="">— Konto wählen —</option>'+BV.map(function(b){return '<option value="'+b.id+'">'+bvEsc(bvLabel(b))+'</option>';}).join('');
+  var vk=$('vonKonto'),zk=$('zuKonto');var v1=vk?vk.value:'',v2=zk?zk.value:'';
+  if(vk){vk.innerHTML=opts;vk.value=v1;}
+  if(zk){zk.innerHTML=opts;zk.value=v2;}
+}
+function toggleBv(){var p=$('bvPanel');p.style.display=(p.style.display==='none'||!p.style.display)?'block':'none';}
+async function saveBv(){
+  var b={bezeichnung:($('bvBez').value||'').trim()||null,inhaber:($('bvInh').value||'').trim()||null,iban:($('bvIban').value||'').trim()||null,bank:($('bvBank').value||'').trim()||null};
+  if(!b.bezeichnung&&!b.iban){toast('Bitte Bezeichnung oder IBAN angeben');return;}
+  var res=await sb.from('bankverbindungen').insert(b).select();
+  if(res.error){toast('Fehler: '+res.error.message);return;}
+  BV.push(res.data[0]);fillBvSelects();$('bvBez').value='';$('bvInh').value='';$('bvIban').value='';$('bvBank').value='';toast('Bankverbindung gespeichert ✓');
+}
+async function delBvSel(){
+  var id=$('vonKonto').value;if(!id){toast('Bitte im Von-Konto die zu löschende Verbindung wählen');return;}
+  if(!confirm('Diese Bankverbindung dauerhaft löschen?'))return;
+  var res=await sb.from('bankverbindungen').delete().eq('id',id);if(res.error){toast('Fehler: '+res.error.message);return;}
+  BV=BV.filter(function(x){return x.id!==id;});fillBvSelects();toast('Gelöscht');
+}
+function kontoText(id){var b=BV.find(function(x){return x.id===id;});return b?bvLabel(b):null;}
+
 // Schritt 1: Prüfung – Vertrag + Tilgungsplan in einer Datei anzeigen
 function reviewLoan(){
   const p=params();
@@ -446,6 +485,8 @@ async function saveLoan(){
     zinsbind: p.aus?addMonths(p.aus,p.laufzeitMon||0):null,
     status:'Aktiv',
     in_selbstauskunft:false,
+    quell_konto: kontoText($('vonKonto').value)||null,
+    ziel_bank: kontoText($('zuKonto').value)||null,
     notizen:`Darlehensgenerator · ${({annuitaet:'Annuitätendarlehen',tilgung:'Tilgungsdarlehen',endfaellig:'Endfälliges Darlehen',zinsfrei:'Zins- und tilgungsfrei'})[p.art]}`+(p.sicher?` · ${p.sicher}`:''),
   };
   const u=(await sb.auth.getUser()).data.user;
@@ -471,6 +512,7 @@ async function saveLoan(){
 
 calc();
 reserveNextDnr();
+loadBv();
 </script>
 </body>
 </html>
