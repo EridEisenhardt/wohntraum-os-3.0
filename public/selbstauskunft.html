@@ -479,10 +479,28 @@ const VERM=[
  ['gebaeude','4.3','Gebäude (Verkehrswert)'],
  ['grundstuecke','4.4','Unbebaute Grundstücke'],
  ['versich','4.5','Versicherungsansprüche'],
- ['geno_vrbs','4.6','Genossenschaftsanteile · VR Bank Bad Salzungen Schmalkalden eG · Konto 23818446','125'],
- ['geno_vbdm','4.7','Genossenschaftsanteile · Volksbank Darmstadt Mainz eG · Konto 7879905011','50'],
- ['geno_vbaw','4.8','Genossenschaftsanteile · Volksbank Alzey-Worms eG · Konto 8862083807','200'],
 ];
+// Genossenschaftsanteile — mehrspaltig (Bank / Konto / Art / Betrag)
+const GENOSTORE="macherOS_selbst_geno_v1";
+const GENO=[
+ {k:'vrbs',bank:'VR Bank Bad Salzungen Schmalkalden eG',konto:'23818446',def:'125'},
+ {k:'vbdm',bank:'Volksbank Darmstadt Mainz eG',konto:'7879905011',def:'50'},
+ {k:'vbaw',bank:'Volksbank Alzey-Worms eG',konto:'8862083807',def:'200'},
+];
+function genoLoad(){ try{ return JSON.parse(localStorage.getItem(GENOSTORE))||{}; }catch(e){ return {}; } }
+function genoSum(){ const d=genoLoad(); let s=0; GENO.forEach(g=>{ s+=incParse((g.k in d)?d[g.k]:g.def); }); return s; }
+function genoSave(k,val){ const d=genoLoad(); d[k]=val; localStorage.setItem(GENOSTORE,JSON.stringify(d)); renderGeno(); renderVerm(); }
+function renderGeno(){
+  const el=document.getElementById('genotbl'); if(!el) return;
+  const d=genoLoad(); const q=s=>(s==null?'':String(s)).replace(/"/g,'&quot;');
+  let sum=0;
+  const rows=GENO.map(g=>{ const val=(g.k in d)?d[g.k]:g.def; sum+=incParse(val);
+    return `<tr><td>${g.bank}</td><td>${g.konto}</td><td>Genossenschaftsanteil</td>
+      <td style="text-align:right"><input style="${FINL};text-align:right;max-width:150px" inputmode="decimal" value="${q(val)}" placeholder="€" onchange="genoSave('${g.k}',this.value)"></td></tr>`;
+  }).join('');
+  el.innerHTML='<thead><tr><th>Bank</th><th>Konto</th><th>Art des Vermögenswerts</th><th style="text-align:right">Betrag (€)</th></tr></thead><tbody>'
+    + rows + `<tr class="totrow"><td colspan="3">Summe Genossenschaftsanteile</td><td style="text-align:right">${incEUR(sum)}</td></tr></tbody>`;
+}
 function vermLoad(){ try{ return JSON.parse(localStorage.getItem(VERMSTORE))||{}; }catch(e){ return {}; } }
 function renderVerm(){
   const el=document.getElementById('vermtbl'); if(!el) return;
@@ -494,9 +512,11 @@ function renderVerm(){
     return `<tr><td style="width:42px;color:var(--muted)">${f[1]}</td><td>${f[2]}</td>
       <td style="text-align:right"><input style="${FINL};text-align:right;max-width:180px" inputmode="decimal" value="${q(val)}" placeholder="€" onchange="vermSave('${f[0]}',this.value)"></td></tr>`;
   }).join('');
+  const gesamt=sum+genoSum();
   el.innerHTML='<thead><tr><th style="width:42px">Nr.</th><th>Vermögensart</th><th style="text-align:right">Betrag (€)</th></tr></thead><tbody>'
     + rows
-    + `<tr class="totrow"><td></td><td>Summe Vermögen</td><td style="text-align:right">${incEUR(sum)}</td></tr>`
+    + `<tr><td style="color:var(--muted)">4.6</td><td>Genossenschaftsanteile (Aufstellung unten)</td><td style="text-align:right">${incEUR(genoSum())}</td></tr>`
+    + `<tr class="totrow"><td></td><td>Summe Vermögen (inkl. Genossenschaftsanteile)</td><td style="text-align:right">${incEUR(gesamt)}</td></tr>`
     + '</tbody>';
 }
 function vermSave(key,val){ const d=vermLoad(); d[key]=val; localStorage.setItem(VERMSTORE,JSON.stringify(d)); renderVerm(); }
