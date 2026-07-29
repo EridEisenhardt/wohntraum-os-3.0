@@ -84,7 +84,7 @@ tr.sum td{border-top:2px solid var(--text);font-weight:700;background:#fafbfd}
   <div style="display:flex;gap:8px;flex-wrap:wrap">
     <button class="btn" onclick="printPlan()">🖨 Tilgungsplan</button>
     <button class="btn" onclick="printContract()">🖨 Vertrag</button>
-    <button class="btn btn-accent" onclick="saveLoan()">＋ Ins Darlehensregister</button>
+    <button class="btn btn-accent" onclick="reviewLoan()">✓ Erstellen &amp; prüfen</button>
   </div>
 </div>
 
@@ -186,7 +186,17 @@ tr.sum td{border-top:2px solid var(--text);font-weight:700;background:#fafbfd}
     </div>
   </div>
 </div>
-<div class="toast" id="toast"></div>
+<div id="reviewOv" style="position:fixed;inset:0;background:rgba(20,25,35,.5);display:none;align-items:flex-start;justify-content:center;z-index:200;padding:24px 14px;overflow:auto">
+  <div style="background:#fff;border-radius:12px;width:100%;max-width:940px;box-shadow:0 20px 60px rgba(0,0,0,.35);display:flex;flex-direction:column;max-height:92vh">
+    <div style="padding:14px 18px;border-bottom:1px solid #e6e8ec;font-weight:700;display:flex;justify-content:space-between;align-items:center">🔍 Prüfung — Vertrag &amp; Tilgungsplan in einer Datei<span style="cursor:pointer;color:#6b7280" onclick="closeReview()">✕</span></div>
+    <div id="reviewBody" style="padding:20px 22px;overflow:auto;flex:1"></div>
+    <div style="padding:12px 18px;border-top:1px solid #e6e8ec;display:flex;gap:10px;justify-content:flex-end;flex-wrap:wrap;background:#f6f7f9">
+      <button class="btn" onclick="closeReview()">✎ Korrekturen (zurück zur Erstellung)</button>
+      <button class="btn btn-accent" onclick="saveLoan()">✓ Umsetzung — ins Register &amp; laufende Darlehen</button>
+    </div>
+  </div>
+</div>
+<div class="toast" id="toast"</div>
 
 <script>
 const SB_URL='https://jqzxctfqvcwbctpjksvg.supabase.co';
@@ -402,6 +412,21 @@ function setTab(t){
 function printPlan(){ setTab('plan'); $('contractWrap').classList.add('hideprint'); window.print(); setTimeout(()=>$('contractWrap').classList.remove('hideprint'),500); }
 function printContract(){ setTab('contract'); $('planWrap').classList.add('hideprint'); window.print(); setTimeout(()=>$('planWrap').classList.remove('hideprint'),500); }
 
+// Schritt 1: Prüfung – Vertrag + Tilgungsplan in einer Datei anzeigen
+function reviewLoan(){
+  const p=params();
+  if(!p.bez||!p.geber||!p.nehmer||!p.betrag){ toast('Bitte Bezeichnung, Geber, Nehmer und Betrag ausfüllen.'); return; }
+  if(p.art!=='zinsfrei' && !p.zins){ toast('Bitte einen Zinssatz angeben (oder Rückzahlungsart „Zins- und tilgungsfrei" wählen).'); return; }
+  const m=MODEL||computeSchedule(p);
+  renderContract(); renderPlan(p,m);
+  const vertragHtml=$('contract').innerHTML;
+  const planHtml='<h2>Zins- und Tilgungsplan</h2><p>'+($('planNote').textContent||'')+'</p><table class="plan">'+$('planTbl').innerHTML+'</table>';
+  $('reviewBody').innerHTML='<div class="contract">'+vertragHtml+'<hr style="margin:22px 0;border:none;border-top:1px solid #e6e8ec">'+planHtml+'</div>';
+  $('reviewOv').style.display='flex';
+}
+function closeReview(){ $('reviewOv').style.display='none'; }
+
+// Schritt 2: Umsetzung – speichern in Register + laufende Darlehen
 async function saveLoan(){
   const p=params();
   if(!p.bez||!p.geber||!p.nehmer||!p.betrag){ toast('Bitte Bezeichnung, Geber, Nehmer und Betrag ausfüllen.'); return; }
@@ -418,6 +443,7 @@ async function saveLoan(){
     laufzeit: p.aus?addMonths(p.aus,p.laufzeitMon||0):null,
     zinsbind: p.aus?addMonths(p.aus,p.laufzeitMon||0):null,
     status:'Aktiv',
+    in_selbstauskunft:false,
     notizen:`Darlehensgenerator · ${({annuitaet:'Annuitätendarlehen',tilgung:'Tilgungsdarlehen',endfaellig:'Endfälliges Darlehen',zinsfrei:'Zins- und tilgungsfrei'})[p.art]}`+(p.sicher?` · ${p.sicher}`:''),
   };
   const u=(await sb.auth.getUser()).data.user;
@@ -437,6 +463,7 @@ async function saveLoan(){
   } else {
     toast('Darlehen Nr. '+(p.dnr||'—')+' ins Register übernommen ✓');
   }
+  closeReview();
   $('dnr').value=''; await reserveNextDnr();
 }
 
