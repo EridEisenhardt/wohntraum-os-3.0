@@ -43,7 +43,7 @@ tr.avg td{background:var(--surf2);font-weight:700}
 <tbody><tr><td>2026</td><td>35,2</td><td>391</td><td>8,4</td><td>8,4</td></tr><tr><td>2025</td><td>38,9</td><td>377</td><td>5,8</td><td>3,5</td></tr><tr><td>2024</td><td>34,8</td><td>320</td><td>3,5</td><td>2,6</td></tr><tr><td>2023</td><td>39,1</td><td>&ndash;</td><td>&ndash;</td><td>4,8</td></tr><tr class="avg"><td>&Oslash;</td><td>37,2</td><td>362</td><td>5,7</td><td>4,3</td></tr></tbody></table>
 </div>
 
-<div class="kpi"><h2>Summe pro Jahr &middot; Ziel 250 Einheiten (2026)</h2>
+<div class="kpi"><h2>Summe pro Jahr &middot; Ziel 250 Einheiten (2026) &middot; <span id="yearPct" style="color:var(--accent);font-weight:800">&ndash;</span> erreicht</h2>
 <div class="cwrap"><canvas id="yearCv"></canvas></div>
 <div id="yearNote" class="note"></div></div>
 
@@ -74,22 +74,23 @@ const $=id=>document.getElementById(id);
 const esc=s=>(s==null?'':String(s)).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 function toast(m){const t=$('toast');t.textContent=m;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),1800);}
 const CATS=[['akupunktur','Akupunktur'],['sauna','Sauna'],['fusspflege','Fußpflege'],['osteopath','Osteopath'],['massage','Massage'],['handyfasten','Handyfasten'],['egym','EGYM'],['tt','TT'],['golf','Golf'],['joggen','Joggen']];
-let ROWS=[]; let timeChart=null;
+// Kategorien den zwei Bereichen zuordnen
+const HCATS=['akupunktur','sauna','fusspflege','osteopath','massage','handyfasten']; // Gesundheit
+const SCATS=['egym','tt','golf','joggen']; // Sport
+function unitsOf(r){var h=0,s=0;HCATS.forEach(function(c){if(r[c])h++;});SCATS.forEach(function(c){if(r[c])s++;});return {h:h,s:s};}
+let ROWS=[]; let timeChart=null; let yearChart=null;
 function doyToday(){var now=new Date();var y=now.getFullYear();if(y<2026)return 0;if(y>2026)return 365;return Math.floor((Date.UTC(2026,now.getMonth(),now.getDate())-Date.UTC(2026,0,1))/86400000)+1;}
 function renderTimeChart(){
   if(!window.Chart||!$('timeCv'))return;
   var start=Date.UTC(2026,0,1);
   function doy(ds){return Math.floor((Date.parse(ds+'T00:00:00Z')-start)/86400000)+1;}
-  // Monatliche Einheiten (Gesundheitspunkte + Sporteinheiten) über die Monatstage linear verteilt → tägliche Kurve
-  function firstDoy(mi){return Math.floor((Date.UTC(2026,mi,1)-start)/86400000)+1;}
-  function lastDoy(mi){return Math.floor((Date.UTC(2026,mi+1,0)-start)/86400000)+1;}
-  function dim(mi){return new Date(Date.UTC(2026,mi+1,0)).getUTCDate();}
-  var uPerM={};MONTHS.filter(function(m){return m[0]===2026;}).forEach(function(m){uPerM[m[1]]=(m[2]||0)+(m[3]||0);});
-  function istAt(d){var t=0;for(var mi=0;mi<12;mi++){var u=uPerM[mi]||0;if(!u)continue;var fd=firstDoy(mi),ld=lastDoy(mi);if(d>=ld)t+=u;else if(d>=fd)t+=u*(d-fd+1)/dim(mi);}return t;}
+  // Tägliche Einheiten aus den Tageseinträgen (2026), kumuliert → Ist-Kurve
+  var perDay={};
+  ROWS.forEach(function(r){if(String(r.datum).slice(0,4)!=='2026')return;var d=doy(r.datum);if(d<1||d>366)return;var u=unitsOf(r);perDay[d]=(perDay[d]||0)+u.h+u.s;});
   var today=doyToday()||1;
-  var ist=[],delta=[];
-  for(var d=1;d<=today;d++){var iv=istAt(d);var sv=ZIEL2026*d/365;ist.push({x:d,y:Math.round(iv*10)/10});delta.push({x:d,y:Math.round((iv-sv)*10)/10});}
-  var cum=Math.round(istAt(today));
+  var ist=[],delta=[],run=0;
+  for(var d=1;d<=today;d++){run+=(perDay[d]||0);var sv=ZIEL2026*d/365;ist.push({x:d,y:run});delta.push({x:d,y:Math.round((run-sv)*10)/10});}
+  var cum=run;
   var soll=[{x:1,y:0},{x:365,y:ZIEL2026}];
   if(timeChart)timeChart.destroy();
   timeChart=new Chart($('timeCv'),{type:'line',data:{datasets:[
@@ -107,18 +108,28 @@ function renderTimeChart(){
     +'<span style="color:'+(dNow>=0?'#1f7a4d':'#c0392b')+';font-weight:700">Delta '+(dNow>=0?'+':'')+dNow+' ('+(dNow>=0?'über':'unter')+' Benchmark)</span> · Ziel <b>250</b> am 31.12.2026.';
 }
 function renderMonths(){
-  $('monTbl').querySelector('tbody').innerHTML=MONTHS.map(function(m){var y=m[0],mi=m[1],g=m[2],s=m[3];return '<tr><td>'+MON[mi]+' '+y+'</td><td>'+g+'</td><td>'+s+'</td><td style="font-weight:700">'+(g+s)+'</td></tr>';}).join('');
+  var agg={};
+  ROWS.forEach(function(r){var ym=String(r.datum).slice(0,7);if(!agg[ym])agg[ym]={h:0,s:0};var u=unitsOf(r);agg[ym].h+=u.h;agg[ym].s+=u.s;});
+  var yms=Object.keys(agg).sort().reverse();
+  var th=0,ts=0;
+  var rows=yms.map(function(ym){var p=ym.split('-');var mi=parseInt(p[1],10)-1;var g=agg[ym].h,s=agg[ym].s;th+=g;ts+=s;
+    return '<tr><td>'+MON[mi]+' '+p[0]+'</td><td>'+g+'</td><td>'+s+'</td><td style="font-weight:700">'+(g+s)+'</td></tr>';}).join('');
+  var tot='<tr class="avg"><td>&Sigma; Summe alle Einheiten</td><td>'+th+'</td><td>'+ts+'</td><td>'+(th+ts)+'</td></tr>';
+  $('monTbl').querySelector('tbody').innerHTML=rows+tot;
 }
 function renderYearChart(){
-  var yr={};MONTHS.forEach(function(m){yr[m[0]]=(yr[m[0]]||0)+m[2]+m[3];});
+  if(!window.Chart||!$('yearCv'))return;
+  var yr={};ROWS.forEach(function(r){var y=String(r.datum).slice(0,4);var u=unitsOf(r);yr[y]=(yr[y]||0)+u.h+u.s;});
   var years=Object.keys(yr).map(Number).sort();
   var labels=years.map(String).concat(['Ziel 2026']);
   var data=years.map(function(y){return yr[y];}).concat([ZIEL2026]);
   var colors=years.map(function(y){return y===2026?'#0f9d6b':'#9bb4c4';}).concat(['#f5c518']);
-  new Chart($('yearCv'),{type:'bar',data:{labels:labels,datasets:[{label:'Einheiten',data:data,backgroundColor:colors,borderRadius:6}]},
+  if(yearChart)yearChart.destroy();
+  yearChart=new Chart($('yearCv'),{type:'bar',data:{labels:labels,datasets:[{label:'Einheiten',data:data,backgroundColor:colors,borderRadius:6}]},
     options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false},tooltip:{callbacks:{label:function(c){return c.parsed.y+' Einheiten';}}}},scales:{y:{beginAtZero:true,ticks:{font:{size:10}}},x:{ticks:{font:{size:11}}}}}});
-  var ist=yr[2026]||0;
-  $('yearNote').innerHTML='2026 aktuell <b>'+ist+'</b> von <b>'+ZIEL2026+'</b> Einheiten &middot; noch <b>'+Math.max(0,ZIEL2026-ist)+'</b> bis zum Ziel. Gelber Balken = Sollwert.';
+  var ist=yr[2026]||0;var pct=Math.round(ist/ZIEL2026*100);
+  if($('yearPct'))$('yearPct').textContent=pct+'%';
+  $('yearNote').innerHTML='2026 aktuell <b>'+ist+'</b> von <b>'+ZIEL2026+'</b> Einheiten (<b>'+pct+'%</b>) &middot; noch <b>'+Math.max(0,ZIEL2026-ist)+'</b> bis zum Ziel. Gelber Balken = Sollwert.';
 }
 async function load(){
   var res=await sb.from('idealer_tag_eintraege').select('*').order('datum',{ascending:false});
@@ -130,7 +141,7 @@ function renderSummary(){
   ROWS.forEach(function(r){CATS.forEach(function(c){if(r[c[0]])cnt[c[0]]++;});if(r.sonstiges)sonst++;});
   $('catSummary').innerHTML=CATS.map(function(c){return '<div class="goal"><div class="l">'+esc(c[1])+'</div><div class="v">'+cnt[c[0]]+'</div></div>';}).join('')
     +'<div class="goal"><div class="l">Sonstiges</div><div class="v">'+sonst+'</div></div>';
-  renderTimeChart();
+  renderTimeChart(); renderMonths(); renderYearChart();
 }
 function fmtd(d){var p=String(d).split('-');return p.length===3?p[2]+'.'+p[1]+'.'+p[0]:d;}
 function renderDays(){
@@ -161,6 +172,6 @@ async function delDay(id){
   await sb.from('idealer_tag_eintraege').delete().eq('id',id);
   ROWS=ROWS.filter(function(r){return r.id!==id;}); renderSummary(); renderDays();
 }
-renderMonths(); renderYearChart(); load();
+load();
 </script>
 </body></html>
