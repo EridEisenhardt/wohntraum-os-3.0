@@ -41,14 +41,16 @@ tr.total td{background:#e2f2ea;font-weight:800;color:#0b7a52}
 
   <div class="card"><h2>Soll-Aufteilung</h2>
     <div class="bar">
-      <label style="font-size:12px;color:var(--dim);font-weight:600">Monatliches Nettoeinkommen <span style="color:var(--muted);font-weight:400">(aus Selbstauskunft 2.7)</span></label>
-      <input id="netto" type="text" inputmode="decimal" style="width:130px;text-align:right;background:var(--surf2)" readonly title="Kommt automatisch aus der Selbstauskunft (Abschnitt 2 · Einkommensverhältnisse)"> €
-      <button class="btn sec" onclick="refreshNetto()" title="Aktuellen Wert aus der Selbstauskunft übernehmen">↻ aus Selbstauskunft</button>
+      <label style="font-size:12px;color:var(--dim);font-weight:600">Monatliche Einnahmen <span style="color:var(--muted);font-weight:400">(aus Budgetplan)</span></label>
+      <input id="netto" type="text" inputmode="decimal" style="width:130px;text-align:right;background:var(--surf2)" readonly title="Kommt automatisch aus dem Budgetplan (Summe geplante Einnahmen)"> €
+      <button class="btn sec" onclick="refreshBudget()" title="Aktuelle Einnahmen aus dem Budgetplan übernehmen">↻ aus Budgetplan</button>
+      <button class="btn sec" onclick="refreshNetto()" title="Alternativ aus der Selbstauskunft übernehmen">aus Selbstauskunft</button>
       <label class="lblman" style="font-size:11px;color:var(--muted);display:flex;align-items:center;gap:4px"><input type="checkbox" id="nettoMan" onchange="toggleMan()"> manuell</label>
       <span id="pctWarn"></span>
       <span style="flex:1"></span>
       <button class="btn sec" onclick="addKonto()">+ Konto</button>
     </div>
+    <div id="budgInfo" style="font-size:12px;color:var(--muted);margin:-4px 2px 8px"></div>
     <table id="sollTbl"><thead></thead><tbody></tbody></table>
   </div>
 
@@ -130,6 +132,18 @@ function pct(v){return v==null?'–':v.toLocaleString('de-DE',{maximumFractionDi
 function fd(d){if(!d)return '';var p=String(d).split('-');return p.length===3?p[2]+'.'+p[1]+'.'+p[0]:d;}
 const MONN=['Januar','Februar','März','April','Mai','Juni','Juli','August','September','Oktober','November','Dezember'];
 let KONTEN=[],BU=[],REG=[],NETTO=0,chart=null,chartT=null;
+let BUDGEIN=0,BUDGAUS=0;
+async function loadBudget(){
+  const {data,error}=await sb.from('budget_eric').select('art,betrag');
+  BUDGEIN=0;BUDGAUS=0;
+  if(!error&&data){data.forEach(r=>{const b=Number(r.betrag)||0;if(r.art==='einnahme')BUDGEIN+=b;else if(r.art==='ausgabe')BUDGAUS+=b;});}
+}
+function budgInfo(){
+  const el=$('budgInfo'); if(!el)return;
+  const ueb=BUDGEIN-BUDGAUS;
+  el.innerHTML='Budgetplan · geplante Einnahmen <b>'+eur0(BUDGEIN)+'</b> · geplante Ausgaben <b>'+eur0(BUDGAUS)+'</b> · '
+    +'<span style="color:'+(ueb>=0?'var(--green)':'var(--red)')+';font-weight:700">'+(ueb>=0?'Überschuss ':'Defizit ')+eur0(Math.abs(ueb))+'/Monat</span>';
+}
 function kontoById(id){return KONTEN.find(k=>k.id===id);}
 function monatOf(d){return d?String(d).slice(0,7):'';}
 
@@ -142,7 +156,7 @@ async function load(){
   ]);
   KONTEN=a.data||[]; BU=b.data||[]; REG=c.data||[]; NETTO=(d.data&&d.data.netto)||0;
   $('netto').value=NETTO?NETTO.toLocaleString('de-DE',{maximumFractionDigits:0}):'';
-  applySelbst();
+  await loadBudget(); budgInfo(); applyPlan();
   var kopt='<option value="">— Konto wählen —</option>'+KONTEN.map(k=>'<option value="'+k.id+'">'+esc(k.name)+'</option>').join('');
   $('rKonto').innerHTML=kopt;
   $('fKonto').innerHTML='<option value="">Alle Konten</option><option value="__none">Nicht zugeordnet</option>'+KONTEN.map(k=>'<option value="'+k.id+'">'+esc(k.name)+'</option>').join('');
@@ -165,6 +179,19 @@ function applySelbst(){
   var si=selbstEinnahmen();
   if(si>0){NETTO=si;$('netto').value=NETTO.toLocaleString('de-DE',{maximumFractionDigits:0});}
 }
+function applyPlan(){
+  // Primärquelle: Budgetplan (geplante Einnahmen); Fallback: Selbstauskunft
+  if($('nettoMan')&&$('nettoMan').checked)return;
+  if(BUDGEIN>0){NETTO=BUDGEIN;$('netto').value=NETTO.toLocaleString('de-DE',{maximumFractionDigits:0});}
+  else applySelbst();
+}
+async function refreshBudget(){
+  await loadBudget(); budgInfo();
+  if(!BUDGEIN){toast('Keine Einnahmen im Budgetplan gefunden – dort Einnahmen pflegen.');return;}
+  NETTO=BUDGEIN; $('netto').value=NETTO.toLocaleString('de-DE',{maximumFractionDigits:0});
+  await sb.from('konten_setting').upsert({id:1,netto:NETTO,updated_at:new Date().toISOString()},{onConflict:'id'});
+  render(); toast('Einnahmen aus Budgetplan übernommen: '+eur0(NETTO));
+}
 async function refreshNetto(){
   var si=selbstEinnahmen();
   if(!si){toast('Keine Einnahmen in der Selbstauskunft gefunden – dort Abschnitt 2 pflegen.');return;}
@@ -177,7 +204,7 @@ function toggleMan(){
   $('netto').readOnly=!man;
   $('netto').style.background=man?'var(--surf)':'var(--surf2)';
   $('netto').onchange=man?function(){saveNetto(this.value);}:null;
-  if(!man)applySelbst(),render();
+  if(!man)applyPlan(),render();
 }
 
 /* ---------- Soll ---------- */
