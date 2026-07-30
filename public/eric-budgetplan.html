@@ -40,6 +40,8 @@ tr:last-child td{border-bottom:none}
 .abtn{font-size:12px;padding:3px 8px;border-radius:5px;border:1px solid var(--line);background:transparent;color:var(--muted);cursor:pointer}
 .abtn:hover{color:var(--red);border-color:var(--red)}
 .loading,.empty{text-align:center;padding:30px;color:var(--muted)}
+tr.grow td{background:#eaf1f8;font-weight:700;border-bottom:1px solid var(--line)}
+tr.crow td:first-child{background:#fbfcfd}
 .foot{font-size:11px;color:var(--muted);margin-top:16px;border-top:1px solid var(--line);padding-top:12px}
 .toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:var(--surf3);border:1px solid var(--line);border-radius:var(--r);padding:10px 20px;font-size:13px;opacity:0;transition:opacity .3s;pointer-events:none}
 .toast.show{opacity:1}
@@ -142,6 +144,7 @@ const THEAD='<thead><tr>'
   +`<th style="text-align:right;${TH}">Betrag / Monat</th>`
   +`<th style="text-align:left;${TH}">Kategorie (6-Konten)</th>`
   +`<th style="text-align:center;${TH}">Weitergabe</th>`
+  +`<th style="text-align:left;${TH}">Gruppe</th>`
   +`<th style="background:var(--surf2)"></th></tr></thead>`;
 function selWG(r){
   const v=r.weitergabe||'';
@@ -150,22 +153,45 @@ function selWG(r){
     <option ${v==='Ja'?'selected':''}>Ja</option>
     <option ${v==='Nein'?'selected':''}>Nein</option></select>`;
 }
-function rowsHtml(art){
-  const list=ROWS.filter(r=>r.art===art);
-  if(!list.length) return THEAD+`<tbody><tr><td colspan="6" class="empty">Noch keine Position — unten hinzufügen.</td></tr></tbody>`;
-  return THEAD+'<tbody>'+list.map(r=>`<tr>
-    <td><input class="cin" value="${esc(r.bezeichnung)}" placeholder="Bezeichnung…" onchange="upd('${r.id}','bezeichnung',this.value)"></td>
+function rowTr(r,child){
+  const ind = child ? 'padding-left:22px' : '';
+  return `<tr${child?' class="crow"':''}>
+    <td style="${ind}"><input class="cin" value="${esc(r.bezeichnung)}" placeholder="Bezeichnung…" onchange="upd('${r.id}','bezeichnung',this.value)"></td>
     <td style="min-width:150px"><input class="cin" list="firmenliste" value="${esc(r.firma)}" placeholder="Firma / Quelle" onchange="upd('${r.id}','firma',this.value)"></td>
     <td style="width:150px"><input class="cin bet" inputmode="decimal" value="${r.betrag!=null?r.betrag:''}" placeholder="€ / Monat" onchange="upd('${r.id}','betrag',this.value)"></td>
     <td style="width:190px">${selKat(r)}</td>
     <td style="width:90px;text-align:center">${selWG(r)}</td>
+    <td style="width:130px"><input class="cin" list="gruppenliste" value="${esc(r.gruppe)}" placeholder="—" onchange="upd('${r.id}','gruppe',this.value)"></td>
     <td style="width:36px"><button class="abtn" onclick="del('${r.id}')">✕</button></td>
-  </tr>`).join('')+'</tbody>';
+  </tr>`;
+}
+function rowsHtml(art){
+  const list=ROWS.filter(r=>r.art===art);
+  if(!list.length) return THEAD+`<tbody><tr><td colspan="7" class="empty">Noch keine Position — unten hinzufügen.</td></tr></tbody>`;
+  const groups={}, seen={}, blocks=[];
+  list.forEach(r=>{ if(r.gruppe){ (groups[r.gruppe]=groups[r.gruppe]||[]).push(r); } });
+  list.forEach(r=>{
+    if(r.gruppe){ if(!seen[r.gruppe]){ seen[r.gruppe]=true; const rs=groups[r.gruppe]; blocks.push({t:'g',name:r.gruppe,rows:rs,pos:Math.min(...rs.map(x=>x.pos||0))}); } }
+    else { blocks.push({t:'r',row:r,pos:r.pos||0}); }
+  });
+  blocks.sort((a,b)=>a.pos-b.pos);
+  let body='';
+  blocks.forEach(b=>{
+    if(b.t==='r'){ body+=rowTr(b.row,false); }
+    else {
+      const sum=b.rows.reduce((s,x)=>s+(Number(x.betrag)||0),0);
+      body+=`<tr class="grow"><td>▸ ${esc(b.name)} <span style="color:var(--muted);font-weight:400">(${b.rows.length})</span></td><td></td><td style="text-align:right">${eur(sum)}</td><td></td><td></td><td></td><td></td></tr>`;
+      b.rows.forEach(x=>{ body+=rowTr(x,true); });
+    }
+  });
+  return THEAD+'<tbody>'+body+'</tbody>';
 }
 function render(){
   $('einTbl').innerHTML=rowsHtml('einnahme');
   $('ausTbl').innerHTML=rowsHtml('ausgabe');
   if(!document.getElementById('firmenliste')){ const dl=document.createElement('datalist'); dl.id='firmenliste'; dl.innerHTML=FIRMEN.map(f=>`<option value="${esc(f)}">`).join(''); document.body.appendChild(dl); }
+  { let dg=document.getElementById('gruppenliste'); if(!dg){ dg=document.createElement('datalist'); dg.id='gruppenliste'; document.body.appendChild(dg); }
+    const gs=[...new Set(ROWS.map(r=>r.gruppe).filter(Boolean))].sort(); dg.innerHTML=gs.map(g=>`<option value="${esc(g)}">`).join(''); }
   const ein=ROWS.filter(r=>r.art==='einnahme').reduce((s,r)=>s+(Number(r.betrag)||0),0);
   const aus=ROWS.filter(r=>r.art==='ausgabe').reduce((s,r)=>s+(Number(r.betrag)||0),0);
   const saldo=ein-aus;
