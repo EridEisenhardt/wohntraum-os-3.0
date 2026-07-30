@@ -71,6 +71,10 @@ tr:last-child td{border-bottom:none}
       </div>
     </div>
   </div>
+  <div class="card">
+    <div class="card-hd"><span>📊 Ausgaben nach 6-Konten-Kategorien</span><span class="sum" id="katTot">–</span></div>
+    <table id="katTbl"></table>
+  </div>
   <div class="foot" id="foot"></div>
 </div>
 <div class="toast" id="toast"></div>
@@ -84,12 +88,24 @@ const esc=s=>(s==null?'':String(s)).replace(/&/g,'&amp;').replace(/</g,'&lt;').r
 const eur=n=>new Intl.NumberFormat('de-DE',{style:'currency',currency:'EUR',minimumFractionDigits:2,maximumFractionDigits:2}).format(n||0);
 const numDE=v=>{ if(v==null||v==='') return null; const n=parseFloat(String(v).replace(/\./g,'').replace(',','.')); return isNaN(n)?null:n; };
 function toast(m){const t=$('toast');t.textContent=m;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),1800);}
-let ROWS=[];
+let ROWS=[], KONTEN=[];
 
 async function load(){
-  const { data, error } = await sb.from('budget_eric').select('*').order('art',{ascending:true}).order('pos',{ascending:true}).order('created_at',{ascending:true});
-  ROWS = error ? [] : (data||[]);
+  const [rb,rk]=await Promise.all([
+    sb.from('budget_eric').select('*').order('art',{ascending:true}).order('pos',{ascending:true}).order('created_at',{ascending:true}),
+    sb.from('konten_modell').select('id,name,farbe,sort,prozent').order('sort',{ascending:true})
+  ]);
+  ROWS = rb.error ? [] : (rb.data||[]);
+  KONTEN = rk.error ? [] : (rk.data||[]);
   render();
+}
+function kontoById(id){return KONTEN.find(k=>k.id===id);}
+function selKat(r){
+  const v=r.konto_id||'';
+  return `<select class="cin" style="min-width:180px" onchange="upd('${r.id}','konto_id',this.value)">`
+    +`<option value="" ${v===''?'selected':''}>— Kategorie —</option>`
+    +KONTEN.map(k=>`<option value="${k.id}" ${v===k.id?'selected':''}>${esc(k.name)}</option>`).join('')
+    +`</select>`;
 }
 async function addRow(art){
   const max=Math.max(0,...ROWS.filter(r=>r.art===art).map(r=>r.pos||0));
@@ -111,6 +127,7 @@ const THEAD='<thead><tr>'
   +`<th style="text-align:left;${TH}">Bezeichnung</th>`
   +`<th style="text-align:left;${TH}">Firma</th>`
   +`<th style="text-align:right;${TH}">Betrag / Monat</th>`
+  +`<th style="text-align:left;${TH}">Kategorie (6-Konten)</th>`
   +`<th style="text-align:center;${TH}">Weitergabe</th>`
   +`<th style="background:var(--surf2)"></th></tr></thead>`;
 function selWG(r){
@@ -122,11 +139,12 @@ function selWG(r){
 }
 function rowsHtml(art){
   const list=ROWS.filter(r=>r.art===art);
-  if(!list.length) return THEAD+`<tbody><tr><td colspan="5" class="empty">Noch keine Position — unten hinzufügen.</td></tr></tbody>`;
+  if(!list.length) return THEAD+`<tbody><tr><td colspan="6" class="empty">Noch keine Position — unten hinzufügen.</td></tr></tbody>`;
   return THEAD+'<tbody>'+list.map(r=>`<tr>
     <td><input class="cin" value="${esc(r.bezeichnung)}" placeholder="Bezeichnung…" onchange="upd('${r.id}','bezeichnung',this.value)"></td>
     <td style="min-width:150px"><input class="cin" list="firmenliste" value="${esc(r.firma)}" placeholder="Firma / Quelle" onchange="upd('${r.id}','firma',this.value)"></td>
     <td style="width:150px"><input class="cin bet" inputmode="decimal" value="${r.betrag!=null?r.betrag:''}" placeholder="€ / Monat" onchange="upd('${r.id}','betrag',this.value)"></td>
+    <td style="width:190px">${selKat(r)}</td>
     <td style="width:90px;text-align:center">${selWG(r)}</td>
     <td style="width:36px"><button class="abtn" onclick="del('${r.id}')">✕</button></td>
   </tr>`).join('')+'</tbody>';
@@ -147,7 +165,36 @@ function render(){
     [saldo>=0?'pos':'neg', saldo>=0?'Überschuss / Monat':'Defizit / Monat',eur(saldo),eur(saldo*12)+' / Jahr'],
     [saldo>=0?'pos':'neg','Sparquote',sq+' %','Überschuss ÷ Einnahmen']
   ].map(a=>`<div class="kpi ${a[0]}"><div class="l">${a[1]}</div><div class="v">${a[2]}</div><div class="d">${a[3]}</div></div>`).join('');
-  $('foot').innerHTML='Private Haushaltsrechnung von Eric · monatliche Beträge (Cent möglich) · in Supabase gespeichert. Beträge/Bezeichnungen frei editierbar; Positionen hinzufügen oder löschen.';
+  renderKat(aus);
+  $('foot').innerHTML='Private Haushaltsrechnung von Eric · monatliche Beträge (Cent möglich) · in Supabase gespeichert. Beträge/Bezeichnungen frei editierbar; Positionen hinzufügen oder löschen. Kategorien = 6-Kontenmodell.';
+}
+function renderKat(ausTotal){
+  const ausR=ROWS.filter(r=>r.art==='ausgabe');
+  const byKonto={}; let unassigned=0;
+  ausR.forEach(r=>{const b=Number(r.betrag)||0; if(r.konto_id){byKonto[r.konto_id]=(byKonto[r.konto_id]||0)+b;} else {unassigned+=b;}});
+  const th='font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;padding:7px 12px;background:var(--surf2)';
+  let html='<thead><tr>'
+    +`<th style="text-align:left;${th}">Kategorie</th>`
+    +`<th style="text-align:right;${th}">€ / Monat</th>`
+    +`<th style="text-align:right;${th}">Ist-Anteil</th>`
+    +`<th style="text-align:left;${th}">Verteilung</th>`
+    +`<th style="text-align:right;${th}">Soll (6-Konten)</th></tr></thead><tbody>`;
+  const rowsK=KONTEN.map(k=>{const bet=byKonto[k.id]||0; const ist=ausTotal>0?bet/ausTotal*100:0; const soll=Number(k.prozent)||0;
+    return {name:k.name,farbe:k.farbe||'#888',bet,ist,soll};});
+  if(unassigned>0){rowsK.push({name:'Nicht zugeordnet',farbe:'#c0392b',bet:unassigned,ist:ausTotal>0?unassigned/ausTotal*100:0,soll:null});}
+  html+=rowsK.map(r=>{
+    const bar=`<div style="height:8px;border-radius:5px;background:var(--surf2);overflow:hidden;max-width:160px"><span style="display:block;height:100%;width:${Math.min(100,r.ist).toFixed(1)}%;background:${r.farbe}"></span></div>`;
+    return `<tr>
+      <td><span style="display:inline-block;width:9px;height:9px;border-radius:50%;background:${r.farbe};margin-right:7px"></span>${esc(r.name)}</td>
+      <td style="text-align:right">${eur(r.bet)}</td>
+      <td style="text-align:right;font-weight:600">${r.ist.toLocaleString('de-DE',{maximumFractionDigits:1})} %</td>
+      <td>${bar}</td>
+      <td style="text-align:right;color:var(--muted)">${r.soll==null?'–':r.soll.toLocaleString('de-DE',{maximumFractionDigits:1})+' %'}</td>
+    </tr>`;
+  }).join('');
+  html+=`<tr style="font-weight:700;background:var(--surf2)"><td>Gesamt Ausgaben</td><td style="text-align:right">${eur(ausTotal)}</td><td style="text-align:right">100 %</td><td></td><td style="text-align:right;color:var(--muted)">100 %</td></tr></tbody>`;
+  $('katTbl').innerHTML=html;
+  $('katTot').textContent=eur(ausTotal);
 }
 
 (async()=>{
