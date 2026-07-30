@@ -189,22 +189,32 @@ function renderKat(ausTotal){
     +`<th style="text-align:left;${th}">Kategorie</th>`
     +`<th style="text-align:right;${th}">€ / Monat</th>`
     +`<th style="text-align:right;${th}">Ist-Anteil</th>`
-    +`<th style="text-align:left;${th}">Verteilung</th>`
-    +`<th style="text-align:right;${th}">Soll (6-Konten)</th></tr></thead><tbody>`;
+    +`<th style="text-align:right;${th}">Soll (6-Konten)</th>`
+    +`<th style="text-align:right;${th}">∆ %</th>`
+    +`<th style="text-align:right;${th}">∆ €</th></tr></thead><tbody>`;
   const rowsK=KONTEN.map(k=>{const bet=byKonto[k.id]||0; const ist=ausTotal>0?bet/ausTotal*100:0; const soll=Number(k.prozent)||0;
     return {name:k.name,farbe:k.farbe||'#888',bet,ist,soll};});
   if(unassigned>0){rowsK.push({name:'Nicht zugeordnet',farbe:'#c0392b',bet:unassigned,ist:ausTotal>0?unassigned/ausTotal*100:0,soll:null});}
+  const dfmt=(v,suf)=>(v>0?'+':'')+v.toLocaleString('de-DE',{minimumFractionDigits:suf==='€'?2:1,maximumFractionDigits:suf==='€'?2:1})+' '+suf;
   html+=rowsK.map(r=>{
-    const bar=`<div style="height:8px;border-radius:5px;background:var(--surf2);overflow:hidden;max-width:160px"><span style="display:block;height:100%;width:${Math.min(100,r.ist).toFixed(1)}%;background:${r.farbe}"></span></div>`;
+    const bar=`<div style="height:8px;border-radius:5px;background:var(--surf2);overflow:hidden;max-width:120px;margin-left:auto"><span style="display:block;height:100%;width:${Math.min(100,r.ist).toFixed(1)}%;background:${r.farbe}"></span></div>`;
+    let dcell='<td style="text-align:right;color:var(--muted)">–</td><td style="text-align:right;color:var(--muted)">–</td>';
+    if(r.soll!=null){
+      const sollEuro=r.soll/100*ausTotal; const dpct=r.ist-r.soll; const deur=r.bet-sollEuro;
+      const col=deur>0?'var(--red)':'var(--green)'; // über Ziel = mehr ausgegeben = rot
+      const lbl=deur>0?' (über)':(deur<0?' (unter)':'');
+      dcell=`<td style="text-align:right;font-weight:600;color:${col}">${dfmt(dpct,'%')}</td>`
+        +`<td style="text-align:right;font-weight:600;color:${col}">${dfmt(deur,'€')}${lbl}</td>`;
+    }
     return `<tr>
-      <td><span style="display:inline-block;width:9px;height:9px;border-radius:50%;background:${r.farbe};margin-right:7px"></span>${esc(r.name)}</td>
+      <td><span style="display:inline-block;width:9px;height:9px;border-radius:50%;background:${r.farbe};margin-right:7px"></span>${esc(r.name)}<div style="margin-top:4px">${bar}</div></td>
       <td style="text-align:right">${eur(r.bet)}</td>
       <td style="text-align:right;font-weight:600">${r.ist.toLocaleString('de-DE',{maximumFractionDigits:1})} %</td>
-      <td>${bar}</td>
       <td style="text-align:right;color:var(--muted)">${r.soll==null?'–':r.soll.toLocaleString('de-DE',{maximumFractionDigits:1})+' %'}</td>
+      ${dcell}
     </tr>`;
   }).join('');
-  html+=`<tr style="font-weight:700;background:var(--surf2)"><td>Gesamt Ausgaben</td><td style="text-align:right">${eur(ausTotal)}</td><td style="text-align:right">100 %</td><td></td><td style="text-align:right;color:var(--muted)">100 %</td></tr></tbody>`;
+  html+=`<tr style="font-weight:700;background:var(--surf2)"><td>Gesamt Ausgaben</td><td style="text-align:right">${eur(ausTotal)}</td><td style="text-align:right">100 %</td><td style="text-align:right;color:var(--muted)">100 %</td><td style="text-align:right">–</td><td style="text-align:right">–</td></tr></tbody>`;
   $('katTbl').innerHTML=html;
   $('katTot').textContent=eur(ausTotal);
 }
@@ -224,10 +234,11 @@ function exportXlsx(){
   ROWS.forEach(r=>pos.push([r.art==='einnahme'?'Einnahme':'Ausgabe',r.bezeichnung||'',r.firma||'',num(r.betrag),katName(r),r.weitergabe||'']));
   // Blatt 3: Kategorien (Ausgaben)
   const byK={}; let un=0; ROWS.filter(r=>r.art==='ausgabe').forEach(r=>{const b=Number(r.betrag)||0;if(r.konto_id)byK[r.konto_id]=(byK[r.konto_id]||0)+b;else un+=b;});
-  const kat=[['Kategorie','€ / Monat','Ist-Anteil (%)','Soll (%)']];
-  KONTEN.forEach(k=>{const bet=byK[k.id]||0;const ist=aus>0?+(bet/aus*100).toFixed(1):0;kat.push([k.name,bet,ist,Number(k.prozent)||0]);});
-  if(un>0)kat.push(['Nicht zugeordnet',un,aus>0?+(un/aus*100).toFixed(1):0,'']);
-  kat.push(['Gesamt Ausgaben',aus,100,100]);
+  const kat=[['Kategorie','€ / Monat','Ist-Anteil (%)','Soll (%)','∆ %','∆ €']];
+  KONTEN.forEach(k=>{const bet=byK[k.id]||0;const soll=Number(k.prozent)||0;const ist=aus>0?+(bet/aus*100).toFixed(1):0;
+    const sollEuro=soll/100*aus;kat.push([k.name,bet,ist,soll,+(ist-soll).toFixed(1),+(bet-sollEuro).toFixed(2)]);});
+  if(un>0)kat.push(['Nicht zugeordnet',un,aus>0?+(un/aus*100).toFixed(1):0,'','','']);
+  kat.push(['Gesamt Ausgaben',aus,100,100,'','']);
   const wb=XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(zus),'Zusammenfassung');
   XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(pos),'Positionen');
