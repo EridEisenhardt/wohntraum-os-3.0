@@ -98,6 +98,7 @@ export const NAV = [
     { href: '/eric-privat/idealer-tag', icon: 'ti-sun', label: 'Idealer Tag' },
     { href: '/eric-privat/entwicklung', icon: 'ti-stairs-up', label: 'Entwicklung' },
     { href: '/eric-privat/engpassanalyse', icon: 'ti-filter-cog', label: 'Engpassanalyse' },
+    { href: '/eric-privat/vermoegensbilanz', icon: 'ti-scale', label: 'Vermögensbilanz' },
     { href: '/eric-privat/essen-planer', icon: 'ti-tools-kitchen-2', label: 'Essen-Planer' },
     { href: '/eric-privat/kontenmodell', icon: 'ti-wallet', label: '6 Kontenmodell' },
   ] },
