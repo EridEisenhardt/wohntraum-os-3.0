@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Eric Privat · Budgetplan – Macher OS</title>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <style>
 :root{
   --bg:#f6f7f9;--surf:#fff;--surf2:#f1f3f6;--surf3:#e7ebf0;--line:#e6e8ec;--bord2:#eef0f3;
@@ -54,6 +55,10 @@ tr:last-child td{border-bottom:none}
 </div>
 
 <div class="main">
+  <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:12px;flex-wrap:wrap">
+    <div style="font-size:13px;font-weight:600;color:var(--dim)">Zusammenfassung (Monat)</div>
+    <button class="addbtn" style="margin:0" onclick="exportXlsx()">⬇ Export (Excel)</button>
+  </div>
   <div class="kpis" id="kpis"></div>
   <div class="grid">
     <div>
@@ -162,8 +167,8 @@ function render(){
   $('kpis').innerHTML=[
     ['','Einnahmen / Monat',eur(ein),eur(ein*12)+' / Jahr'],
     ['','Ausgaben / Monat',eur(aus),eur(aus*12)+' / Jahr'],
-    [saldo>=0?'pos':'neg', saldo>=0?'Überschuss / Monat':'Defizit / Monat',eur(saldo),eur(saldo*12)+' / Jahr'],
-    [saldo>=0?'pos':'neg','Sparquote',sq+' %','Überschuss ÷ Einnahmen']
+    [saldo>=0?'pos':'neg','Cashflow / Monat',eur(saldo),eur(saldo*12)+' / Jahr'],
+    [saldo>=0?'pos':'neg','Sparquote',sq+' %','Cashflow ÷ Einnahmen']
   ].map(a=>`<div class="kpi ${a[0]}"><div class="l">${a[1]}</div><div class="v">${a[2]}</div><div class="d">${a[3]}</div></div>`).join('');
   renderKat(aus);
   $('foot').innerHTML='Private Haushaltsrechnung von Eric · monatliche Beträge (Cent möglich) · in Supabase gespeichert. Beträge/Bezeichnungen frei editierbar; Positionen hinzufügen oder löschen. Kategorien = 6-Kontenmodell.';
@@ -197,6 +202,33 @@ function renderKat(ausTotal){
   $('katTot').textContent=eur(ausTotal);
 }
 
+function exportXlsx(){
+  if(!window.XLSX){toast('Export-Bibliothek lädt noch – kurz warten.');return;}
+  const num=v=>v==null?null:Number(v);
+  const ein=ROWS.filter(r=>r.art==='einnahme').reduce((s,r)=>s+(Number(r.betrag)||0),0);
+  const aus=ROWS.filter(r=>r.art==='ausgabe').reduce((s,r)=>s+(Number(r.betrag)||0),0);
+  const cf=ein-aus; const sq=ein>0?Math.round(cf/ein*100):0;
+  // Blatt 1: Zusammenfassung
+  const zus=[['Kennzahl','€ / Monat','€ / Jahr'],
+    ['Einnahmen',ein,ein*12],['Ausgaben',aus,aus*12],['Cashflow',cf,cf*12],['Sparquote (%)',sq,'']];
+  // Blatt 2: Positionen
+  const kn=id=>{const k=kontoById(id);return k?k.name:'';};
+  const pos=[['Art','Bezeichnung','Firma / Quelle','Betrag / Monat','Kategorie (6-Konten)','Weitergabe']];
+  ROWS.forEach(r=>pos.push([r.art==='einnahme'?'Einnahme':'Ausgabe',r.bezeichnung||'',r.firma||'',num(r.betrag),kn(r.konto_id),r.weitergabe||'']));
+  // Blatt 3: Kategorien (Ausgaben)
+  const byK={}; let un=0; ROWS.filter(r=>r.art==='ausgabe').forEach(r=>{const b=Number(r.betrag)||0;if(r.konto_id)byK[r.konto_id]=(byK[r.konto_id]||0)+b;else un+=b;});
+  const kat=[['Kategorie','€ / Monat','Ist-Anteil (%)','Soll (%)']];
+  KONTEN.forEach(k=>{const bet=byK[k.id]||0;const ist=aus>0?+(bet/aus*100).toFixed(1):0;kat.push([k.name,bet,ist,Number(k.prozent)||0]);});
+  if(un>0)kat.push(['Nicht zugeordnet',un,aus>0?+(un/aus*100).toFixed(1):0,'']);
+  kat.push(['Gesamt Ausgaben',aus,100,100]);
+  const wb=XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(zus),'Zusammenfassung');
+  XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(pos),'Positionen');
+  XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(kat),'Kategorien');
+  const d=new Date().toISOString().slice(0,10);
+  XLSX.writeFile(wb,'Budgetplan_Eric_'+d+'.xlsx');
+  toast('Excel exportiert ✓');
+}
 (async()=>{
   const { data:{ session } } = await sb.auth.getSession();
   if(!session){ $('main').innerHTML='<div class="empty" style="padding:60px">Bitte zuerst im OS einloggen.</div>'; return; }
