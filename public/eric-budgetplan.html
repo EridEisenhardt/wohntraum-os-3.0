@@ -42,6 +42,8 @@ tr:last-child td{border-bottom:none}
 .loading,.empty{text-align:center;padding:30px;color:var(--muted)}
 tr.grow td{background:#eaf1f8;font-weight:700;border-bottom:1px solid var(--line)}
 tr.crow td:first-child{background:#fbfcfd}
+.mvb{border:none;background:none;color:var(--muted);cursor:pointer;font-size:11px;padding:2px 3px;line-height:1}
+.mvb:hover{color:var(--accent)}
 .foot{font-size:11px;color:var(--muted);margin-top:16px;border-top:1px solid var(--line);padding-top:12px}
 .toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:var(--surf3);border:1px solid var(--line);border-radius:var(--r);padding:10px 20px;font-size:13px;opacity:0;transition:opacity .3s;pointer-events:none}
 .toast.show{opacity:1}
@@ -153,7 +155,10 @@ function selWG(r){
     <option ${v==='Ja'?'selected':''}>Ja</option>
     <option ${v==='Nein'?'selected':''}>Nein</option></select>`;
 }
-function rowTr(r,child){
+function arrows(up,down){
+  return `<button class="mvb" title="nach oben" onclick="${up}">▲</button><button class="mvb" title="nach unten" onclick="${down}">▼</button>`;
+}
+function rowTr(r,child,mv){
   const ind = child ? 'padding-left:22px' : '';
   return `<tr${child?' class="crow"':''}>
     <td style="${ind}"><input class="cin" value="${esc(r.bezeichnung)}" placeholder="Bezeichnung…" onchange="upd('${r.id}','bezeichnung',this.value)"></td>
@@ -162,26 +167,46 @@ function rowTr(r,child){
     <td style="width:190px">${selKat(r)}</td>
     <td style="width:90px;text-align:center">${selWG(r)}</td>
     <td style="width:130px"><input class="cin" list="gruppenliste" value="${esc(r.gruppe)}" placeholder="—" onchange="upd('${r.id}','gruppe',this.value)"></td>
-    <td style="width:36px"><button class="abtn" onclick="del('${r.id}')">✕</button></td>
+    <td style="width:70px;white-space:nowrap;text-align:right">${mv||''}<button class="abtn" onclick="del('${r.id}')">✕</button></td>
   </tr>`;
+}
+function orderedBlocks(art){
+  const list=ROWS.filter(r=>r.art===art).slice().sort((a,b)=>(a.pos||0)-(b.pos||0));
+  const groups={}, seen={}, blocks=[];
+  list.forEach(r=>{ if(r.gruppe){ (groups[r.gruppe]=groups[r.gruppe]||[]).push(r); } });
+  list.forEach(r=>{
+    if(r.gruppe){ if(!seen[r.gruppe]){ seen[r.gruppe]=true; blocks.push({t:'g',name:r.gruppe,rows:groups[r.gruppe]}); } }
+    else { blocks.push({t:'r',rows:[r]}); }
+  });
+  return blocks;
+}
+async function persistOrder(art,blocks){
+  let pos=1; const ups=[];
+  blocks.forEach(b=>b.rows.forEach(r=>{ if(r.pos!==pos){ r.pos=pos; ups.push({id:r.id,pos:pos}); } pos++; }));
+  render();
+  for(const u of ups){ await sb.from('budget_eric').update({pos:u.pos}).eq('id',u.id); }
+}
+async function moveBlock(art,i,dir){
+  const b=orderedBlocks(art); const j=i+dir; if(j<0||j>=b.length)return;
+  const t=b[i]; b[i]=b[j]; b[j]=t; await persistOrder(art,b);
+}
+async function moveMember(art,bi,mi,dir){
+  const b=orderedBlocks(art); const blk=b[bi]; if(!blk||blk.t!=='g')return;
+  const j=mi+dir; if(j<0||j>=blk.rows.length)return;
+  const t=blk.rows[mi]; blk.rows[mi]=blk.rows[j]; blk.rows[j]=t; await persistOrder(art,b);
 }
 function rowsHtml(art){
   const list=ROWS.filter(r=>r.art===art);
   if(!list.length) return THEAD+`<tbody><tr><td colspan="7" class="empty">Noch keine Position — unten hinzufügen.</td></tr></tbody>`;
-  const groups={}, seen={}, blocks=[];
-  list.forEach(r=>{ if(r.gruppe){ (groups[r.gruppe]=groups[r.gruppe]||[]).push(r); } });
-  list.forEach(r=>{
-    if(r.gruppe){ if(!seen[r.gruppe]){ seen[r.gruppe]=true; const rs=groups[r.gruppe]; blocks.push({t:'g',name:r.gruppe,rows:rs,pos:Math.min(...rs.map(x=>x.pos||0))}); } }
-    else { blocks.push({t:'r',row:r,pos:r.pos||0}); }
-  });
-  blocks.sort((a,b)=>a.pos-b.pos);
+  const blocks=orderedBlocks(art);
   let body='';
-  blocks.forEach(b=>{
-    if(b.t==='r'){ body+=rowTr(b.row,false); }
+  blocks.forEach((b,i)=>{
+    const mvB=arrows(`moveBlock('${art}',${i},-1)`,`moveBlock('${art}',${i},1)`);
+    if(b.t==='r'){ body+=rowTr(b.rows[0],false,mvB); }
     else {
       const sum=b.rows.reduce((s,x)=>s+(Number(x.betrag)||0),0);
-      body+=`<tr class="grow"><td>▸ ${esc(b.name)} <span style="color:var(--muted);font-weight:400">(${b.rows.length})</span></td><td></td><td style="text-align:right">${eur(sum)}</td><td></td><td></td><td></td><td></td></tr>`;
-      b.rows.forEach(x=>{ body+=rowTr(x,true); });
+      body+=`<tr class="grow"><td>▸ ${esc(b.name)} <span style="color:var(--muted);font-weight:400">(${b.rows.length})</span></td><td></td><td style="text-align:right">${eur(sum)}</td><td></td><td></td><td></td><td style="text-align:right;white-space:nowrap">${mvB}</td></tr>`;
+      b.rows.forEach((x,mi)=>{ body+=rowTr(x,true,arrows(`moveMember('${art}',${i},${mi},-1)`,`moveMember('${art}',${i},${mi},1)`)); });
     }
   });
   return THEAD+'<tbody>'+body+'</tbody>';
