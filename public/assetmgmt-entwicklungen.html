@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="de"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Assetmanagement · Entwicklungen</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<style>
+:root{--bg:#f6f7f9;--surf:#fff;--surf2:#f1f3f6;--line:#e6e8ec;--text:#1c2024;--muted:#6b7280;--dim:#4b5563;--accent:#185fa5;--green:#1f7a4d;--red:#c0392b}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--text);font-family:'Inter',system-ui,-apple-system,'Segoe UI',sans-serif;font-size:14px;line-height:1.5}
+.hdr{background:var(--surf);border-bottom:1px solid var(--line);padding:16px 24px;position:sticky;top:0;z-index:10;display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}
+.hdr-title{font-size:17px;font-weight:700} .hdr-sub{font-size:11.5px;color:var(--muted)}
+.main{max-width:1180px;margin:20px auto;padding:0 22px 60px}
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:11px;margin-bottom:20px}
+.kpi{background:var(--surf);border:1px solid var(--line);border-radius:12px;padding:14px 16px}
+.kpi .l{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px}
+.kpi .v{font-size:22px;font-weight:700;margin-top:4px}.kpi .d{font-size:11px;color:var(--muted);margin-top:3px}
+.kpi.g .v{color:var(--green)}
+.card{background:var(--surf);border:1px solid var(--line);border-radius:12px;overflow:hidden;margin-bottom:16px}
+.card-hd{padding:12px 16px;border-bottom:1px solid var(--line);font-size:13px;font-weight:600;display:flex;justify-content:space-between;align-items:center}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th,td{padding:7px 11px;border-bottom:1px solid #eef0f3;text-align:right}
+th{font-size:10px;text-transform:uppercase;color:var(--muted);letter-spacing:.04em;background:var(--surf2);position:sticky;top:0}
+th:first-child,td:first-child{text-align:left}
+th:nth-child(2),td:nth-child(2),th:nth-child(3),td:nth-child(3){text-align:left}
+.cin{width:100%;border:1px solid transparent;background:transparent;font:inherit;color:var(--text);padding:5px 6px;border-radius:5px}
+.cin:hover{border-color:var(--line)}.cin:focus{outline:none;border-color:var(--accent);background:var(--surf)}
+.bet{text-align:right}
+tr.trow{background:var(--surf2);font-weight:700}
+tr.tot td{background:#eef2f7;font-weight:800}
+.pill{font-weight:700}
+.addbtn{font-size:12px;font-weight:600;padding:8px 14px;border:1px dashed var(--line);background:var(--surf2);color:var(--accent);border-radius:8px;cursor:pointer;margin:10px 16px 14px}
+.abtn{font-size:12px;padding:3px 8px;border-radius:5px;border:1px solid var(--line);background:transparent;color:var(--muted);cursor:pointer}.abtn:hover{color:var(--red);border-color:var(--red)}
+.toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:#1c2024;color:#fff;border-radius:8px;padding:10px 18px;font-size:13px;opacity:0;transition:opacity .3s;pointer-events:none}
+.toast.show{opacity:1}
+</style></head><body>
+<div class="hdr">
+  <div><div class="hdr-title">Assetmanagement · Entwicklungen</div><div class="hdr-sub">Wertsteigerungs-Maßnahmen · Kosten (eingesetztes Kapital) &amp; Steigerung in € und %</div></div>
+  <button class="addbtn" style="margin:0" onclick="exportXlsx()">⬇ Export (Excel)</button>
+</div>
+<div class="main">
+  <div class="kpis" id="kpis"></div>
+  <div class="card">
+    <div class="card-hd"><span>Entwicklungen nach Typ</span><span id="hdSum"></span></div>
+    <table id="tbl"><thead><tr>
+      <th>Typ</th><th>Bezeichnung</th><th>Objekt</th>
+      <th>Kosten (eingesetztes Kapital)</th><th>Steigerung €</th><th>Steigerung % auf Kapital</th><th></th>
+    </tr></thead><tbody></tbody></table>
+    <button class="addbtn" onclick="addRow()">+ Entwicklung</button>
+  </div>
+  <div style="font-size:11.5px;color:var(--muted)">Steigerung % = Steigerung € ÷ eingesetztes Kapital. Typen: Mieterhöhung, Kauf neuer Immobilien, Modernisierungserhöhung, Apartments. In Supabase gespeichert.</div>
+</div>
+<div class="toast" id="toast"></div>
+<script>
+const sb=window.supabase.createClient('https://jqzxctfqvcwbctpjksvg.supabase.co','eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpxenhjdGZxdmN3YmN0cGprc3ZnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODIxMzA0MzIsImV4cCI6MjA5NzcwNjQzMn0.RKIbZxJdusKWWPjBJqlxZ8e1m8So02UslOg55YRsn3o');
+const $=id=>document.getElementById(id);
+const esc=s=>(s==null?'':String(s)).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;');
+const eur=n=>new Intl.NumberFormat('de-DE',{style:'currency',currency:'EUR',maximumFractionDigits:0}).format(n||0);
+const numDE=v=>{if(v==null||v==='')return null;const n=parseFloat(String(v).replace(/\./g,'').replace(',','.'));return isNaN(n)?null:n;};
+function toast(m){const t=$('toast');t.textContent=m;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),1800);}
+const TYPEN=['Mieterhöhung','Kauf neuer Immobilien','Modernisierungserhöhung','Apartments'];
+let ROWS=[];
+function pct(k,s){return (k&&Number(k)!==0)?(Number(s)/Number(k)*100):null;}
+function pctFmt(p){return p==null?'–':(p>0?'+':'')+p.toLocaleString('de-DE',{maximumFractionDigits:1})+' %';}
+async function load(){
+  const {data,error}=await sb.from('assetmgmt_entwicklungen').select('*').order('typ',{ascending:true}).order('pos',{ascending:true}).order('created_at',{ascending:true});
+  ROWS=error?[]:(data||[]); render();
+}
+async function addRow(){
+  const max=Math.max(0,...ROWS.map(r=>r.pos||0));
+  const {error}=await sb.from('assetmgmt_entwicklungen').insert({typ:TYPEN[0],bezeichnung:'',pos:max+1});
+  if(error){toast('Fehler: '+error.message);return;}
+  load();
+}
+async function upd(id,field,val){
+  const v=(field==='kosten'||field==='steigerung_eur')?numDE(val):(val&&val.trim?val.trim()||null:val);
+  const {error}=await sb.from('assetmgmt_entwicklungen').update({[field]:v}).eq('id',id);
+  if(error){toast('Speichern fehlgeschlagen');return;}
+  const r=ROWS.find(x=>x.id===id);if(r)r[field]=v;render();
+}
+async function del(id){if(!confirm('Eintrag löschen?'))return;await sb.from('assetmgmt_entwicklungen').delete().eq('id',id);load();}
+function selTyp(r){
+  return `<select class="cin" onchange="upd('${r.id}','typ',this.value)">`
+    +TYPEN.map(t=>`<option ${r.typ===t?'selected':''}>${esc(t)}</option>`).join('')+`</select>`;
+}
+function rowHtml(r){
+  const p=pct(r.kosten,r.steigerung_eur);
+  const col=p==null?'var(--muted)':(p>=0?'var(--green)':'var(--red)');
+  return `<tr>
+    <td style="min-width:180px">${selTyp(r)}</td>
+    <td><input class="cin" value="${esc(r.bezeichnung)}" placeholder="Bezeichnung / Maßnahme" onchange="upd('${r.id}','bezeichnung',this.value)"></td>
+    <td style="min-width:110px"><input class="cin" value="${esc(r.objekt)}" placeholder="Objekt (optional)" onchange="upd('${r.id}','objekt',this.value)"></td>
+    <td style="width:170px"><input class="cin bet" inputmode="decimal" value="${r.kosten!=null?r.kosten:''}" placeholder="€" onchange="upd('${r.id}','kosten',this.value)"></td>
+    <td style="width:150px"><input class="cin bet" inputmode="decimal" value="${r.steigerung_eur!=null?r.steigerung_eur:''}" placeholder="€" onchange="upd('${r.id}','steigerung_eur',this.value)"></td>
+    <td style="width:140px;color:${col};font-weight:700">${pctFmt(p)}</td>
+    <td style="width:36px"><button class="abtn" onclick="del('${r.id}')">✕</button></td>
+  </tr>`;
+}
+function render(){
+  const tb=$('tbl').querySelector('tbody');
+  if(!ROWS.length){tb.innerHTML='<tr><td colspan="7" style="text-align:center;color:var(--muted);padding:24px">Noch keine Entwicklung — unten hinzufügen.</td></tr>';}
+  else{
+    let html='';
+    TYPEN.forEach(t=>{
+      const list=ROWS.filter(r=>(r.typ||TYPEN[0])===t);
+      if(!list.length)return;
+      const k=list.reduce((s,r)=>s+(Number(r.kosten)||0),0);
+      const st=list.reduce((s,r)=>s+(Number(r.steigerung_eur)||0),0);
+      html+=`<tr class="trow"><td colspan="3">${esc(t)} (${list.length})</td><td class="bet">${eur(k)}</td><td class="bet">${eur(st)}</td><td>${pctFmt(pct(k,st))}</td><td></td></tr>`;
+      html+=list.map(rowHtml).join('');
+    });
+    // evtl. Typen außerhalb der Liste
+    const other=ROWS.filter(r=>!TYPEN.includes(r.typ||TYPEN[0]));
+    if(other.length){html+=`<tr class="trow"><td colspan="7">Sonstige</td></tr>`+other.map(rowHtml).join('');}
+    const K=ROWS.reduce((s,r)=>s+(Number(r.kosten)||0),0), S=ROWS.reduce((s,r)=>s+(Number(r.steigerung_eur)||0),0);
+    html+=`<tr class="tot"><td colspan="3">Gesamt</td><td class="bet">${eur(K)}</td><td class="bet">${eur(S)}</td><td>${pctFmt(pct(K,S))}</td><td></td></tr>`;
+    tb.innerHTML=html;
+  }
+  const K=ROWS.reduce((s,r)=>s+(Number(r.kosten)||0),0), S=ROWS.reduce((s,r)=>s+(Number(r.steigerung_eur)||0),0);
+  $('hdSum').textContent=ROWS.length+' Maßnahmen';
+  $('kpis').innerHTML=[
+    ['','Eingesetztes Kapital',eur(K),'Summe Kosten'],
+    ['g','Steigerung gesamt',eur(S),'Wertsteigerung / Mehrertrag'],
+    ['g','Rendite auf Kapital',pctFmt(pct(K,S)),'Steigerung ÷ Kapital'],
+  ].map(a=>`<div class="kpi ${a[0]}"><div class="l">${a[1]}</div><div class="v">${a[2]}</div><div class="d">${a[3]}</div></div>`).join('');
+}
+function exportXlsx(){
+  if(!window.XLSX){toast('Export lädt noch – kurz warten.');return;}
+  const aoa=[['Typ','Bezeichnung','Objekt','Kosten (eingesetztes Kapital)','Steigerung €','Steigerung % auf Kapital']];
+  ROWS.forEach(r=>{const p=pct(r.kosten,r.steigerung_eur);aoa.push([r.typ||'',r.bezeichnung||'',r.objekt||'',Number(r.kosten)||0,Number(r.steigerung_eur)||0,p==null?'':+p.toFixed(1)]);});
+  const K=ROWS.reduce((s,r)=>s+(Number(r.kosten)||0),0), S=ROWS.reduce((s,r)=>s+(Number(r.steigerung_eur)||0),0);
+  const pg=pct(K,S); aoa.push(['Gesamt','','',K,S,pg==null?'':+pg.toFixed(1)]);
+  const wb=XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(aoa),'Entwicklungen');
+  XLSX.writeFile(wb,'Assetmanagement_Entwicklungen_'+new Date().toISOString().slice(0,10)+'.xlsx');
+  toast('Excel exportiert ✓');
+}
+load();
+</script>
+</body></html>
