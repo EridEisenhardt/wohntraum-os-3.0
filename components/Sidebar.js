@@ -15,6 +15,9 @@ export const NAV = [
     { href: '/mahnprozess/generator', icon: 'ti-file-invoice', label: 'Mahnungen & Register' },
     { href: '/mahnprozess', icon: 'ti-gavel', label: 'Mahnprozess' },
   ] },
+  { type: 'group', key: 'hausverwaltung', icon: 'ti-home-cog', label: 'Hausverwaltung', area: ['hv', 'backoffice'], mod: 'dashboards', items: [
+    { href: '/hausverwaltung/portfolio', icon: 'ti-building-community', label: 'Portfolio' },
+  ] },
   { type: 'group', key: 'assetmgmt-bh', icon: 'ti-building-bank', label: 'Assetmanagement', area: ['hv', 'backoffice'], mod: 'controlling', items: [
     { href: '/buchhaltung/assetmanagement', icon: 'ti-chart-arcs', label: 'Übersicht' },
     { href: '/buchhaltung/assetmanagement/portfolio', icon: 'ti-building-community', label: 'Portfolio' },

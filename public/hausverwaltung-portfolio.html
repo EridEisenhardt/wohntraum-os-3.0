@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="de"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Hausverwaltung · Portfolio</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+:root{--bg:#f6f7f9;--surf:#fff;--surf2:#f1f3f6;--line:#e6e8ec;--text:#1c2024;--muted:#6b7280;--accent:#0f9d6b}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--text);font-family:'Inter',system-ui,-apple-system,'Segoe UI',sans-serif;font-size:14px;line-height:1.5;min-height:100vh}
+.hdr{background:var(--surf);border-bottom:1px solid var(--line);padding:16px 24px;position:sticky;top:0;z-index:10}
+.hdr-title{font-size:18px;font-weight:700} .hdr-sub{font-size:12px;color:var(--muted);margin-top:2px}
+.wrap{max-width:1400px;margin:20px auto;padding:0 18px}
+.bar{display:flex;gap:10px;align-items:center;margin-bottom:12px;flex-wrap:wrap}
+.bar input{font:inherit;font-size:13px;padding:8px 11px;border:1px solid var(--line);border-radius:8px;background:var(--surf);color:var(--text);min-width:220px}
+.scroll{overflow:auto;border:1px solid var(--line);border-radius:12px;background:var(--surf)}
+table{width:100%;border-collapse:collapse;font-size:13px;min-width:1050px}
+th,td{padding:9px 11px;text-align:left;border-bottom:1px solid var(--line);vertical-align:middle}
+th{font-size:11px;text-transform:uppercase;color:var(--muted);font-weight:700;background:var(--surf2);position:sticky;top:0;z-index:1;white-space:nowrap}
+td.kn{font-weight:700;white-space:nowrap}
+select.crm{font:inherit;font-size:12.5px;padding:6px 8px;border:1px solid var(--line);border-radius:7px;background:#fff;color:var(--text);min-width:170px;max-width:230px}
+select.crm.set{border-color:var(--accent);background:#f2fbf7}
+.hint{font-size:11.5px;color:var(--muted);margin:2px 2px 12px}
+.count{font-size:12px;color:var(--muted)}
+.toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:#1c2024;color:#fff;padding:10px 16px;border-radius:8px;font-size:13px;opacity:0;pointer-events:none;transition:.2s;z-index:50}
+.toast.show{opacity:1}
+a.crmlink{font-size:11px;color:#2563eb;text-decoration:none;margin-left:6px}
+</style></head><body>
+<div class="hdr"><div class="hdr-title">Hausverwaltung · Portfolio</div><div class="hdr-sub">Dienstleister je Objekt zuordnen · Auswahl aus dem CRM</div></div>
+<div class="wrap">
+<div class="bar">
+  <input id="q" placeholder="🔍 Objekt / Adresse suchen…" oninput="render()">
+  <span class="count" id="cnt"></span>
+  <a class="crmlink" href="/crm" target="_top">↗ CRM-Kontakte pflegen</a>
+</div>
+<div class="hint">Die Dropdowns werden aus den CRM-Kontakten gespeist. Neue Firmen/Ansprechpartner zuerst im CRM anlegen, dann hier zuordnen. Änderungen werden sofort gespeichert.</div>
+<div class="scroll"><table id="tbl"><thead><tr>
+  <th>Objekt</th><th>Adresse</th><th>Hausmeister vor Ort</th><th>Elektrofirma</th><th>Heizungsfirma</th><th>Sanitärfirma</th>
+</tr></thead><tbody></tbody></table></div>
+</div>
+<div class="toast" id="toast"></div>
+<script>
+const sb=window.supabase.createClient('https://jqzxctfqvcwbctpjksvg.supabase.co','eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpxenhjdGZxdmN3YmN0cGprc3ZnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODIxMzA0MzIsImV4cCI6MjA5NzcwNjQzMn0.RKIbZxJdusKWWPjBJqlxZ8e1m8So02UslOg55YRsn3o');
+const $=id=>document.getElementById(id);
+const esc=s=>(s==null?'':String(s)).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+function toast(m){const t=$('toast');t.textContent=m;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),1700);}
+let ROWS=[], KONTAKTE=[];
+const FIELDS=[['hausmeister_id','Hausmeister'],['elektro_id','Elektro'],['heizung_id','Heizung'],['sanitaer_id','Sanitär']];
+function kLabel(k){const nm=[k.vorname,k.name].filter(Boolean).join(' ').trim()||'(ohne Name)';return k.position?nm+' · '+k.position:nm;}
+function options(sel){
+  return '<option value="">— wählen —</option>'+KONTAKTE.map(k=>'<option value="'+k.id+'"'+(k.id===sel?' selected':'')+'>'+esc(kLabel(k))+'</option>').join('');
+}
+async function save(id,field,val){
+  const o={};o[field]=val||null;
+  const res=await sb.from('portfolio_immobilien').update(o).eq('id',id);
+  if(res.error){toast('Fehler: '+res.error.message);return;}
+  const r=ROWS.find(x=>x.id===id);if(r)r[field]=val||null;
+  toast('Gespeichert ✓'); render();
+}
+function render(){
+  const q=($('q').value||'').toLowerCase();
+  const list=ROWS.filter(r=>!q||((r.kennung||'')+' '+(r.adresse||'')).toLowerCase().includes(q));
+  $('cnt').textContent=list.length+' von '+ROWS.length+' Objekten';
+  $('tbl').querySelector('tbody').innerHTML=list.map(r=>{
+    const cells=FIELDS.map(f=>{const v=r[f[0]]||'';
+      return '<td><select class="crm'+(v?' set':'')+'" onchange="save(\''+r.id+'\',\''+f[0]+'\',this.value)">'+options(v)+'</select></td>';}).join('');
+    return '<tr><td class="kn">'+esc(r.kennung||'')+'</td><td>'+esc(r.adresse||'')+'</td>'+cells+'</tr>';
+  }).join('')||'<tr><td colspan="6" style="text-align:center;color:var(--muted);padding:20px">Keine Objekte gefunden.</td></tr>';
+}
+async function load(){
+  const [rp,rk]=await Promise.all([
+    sb.from('portfolio_immobilien').select('id,kennung,adresse,hausmeister_id,elektro_id,heizung_id,sanitaer_id').order('kennung'),
+    sb.from('crm_kontakte').select('id,vorname,name,position').order('name')
+  ]);
+  if(rp.error){toast('Fehler Portfolio: '+rp.error.message);return;}
+  if(rk.error){toast('Fehler CRM: '+rk.error.message);}
+  ROWS=rp.data||[]; KONTAKTE=rk.data||[];
+  render();
+}
+load();
+</script>
+</body></html>
