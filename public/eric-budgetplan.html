@@ -98,18 +98,19 @@ let ROWS=[], KONTEN=[];
 async function load(){
   const [rb,rk]=await Promise.all([
     sb.from('budget_eric').select('*').order('art',{ascending:true}).order('pos',{ascending:true}).order('created_at',{ascending:true}),
-    sb.from('konten_modell').select('id,name,farbe,sort,prozent').order('sort',{ascending:true})
+    sb.from('konten_modell').select('id,name,farbe,sort,prozent,abk').order('sort',{ascending:true})
   ]);
   ROWS = rb.error ? [] : (rb.data||[]);
   KONTEN = rk.error ? [] : (rk.data||[]);
   render();
 }
 function kontoById(id){return KONTEN.find(k=>k.id===id);}
+function kLabel(k){return (k&&k.abk?k.abk+' - ':'')+(k?k.name:'');}
 function selKat(r){
   const v=r.kat_einnahme?'__ein':(r.konto_id||'');
   return `<select class="cin" style="min-width:180px" onchange="saveKat('${r.id}',this.value)">`
     +`<option value="" ${v===''?'selected':''}>— Kategorie —</option>`
-    +KONTEN.map(k=>`<option value="${k.id}" ${v===k.id?'selected':''}>${esc(k.name)}</option>`).join('')
+    +KONTEN.map(k=>`<option value="${k.id}" ${v===k.id?'selected':''}>${esc(kLabel(k))}</option>`).join('')
     +`<option value="__ein" ${v==='__ein'?'selected':''}>Einnahmen</option>`
     +`</select>`;
 }
@@ -193,7 +194,7 @@ function renderKat(ausTotal){
     +`<th style="text-align:right;${th}">∆ %</th>`
     +`<th style="text-align:right;${th}">∆ €</th></tr></thead><tbody>`;
   const rowsK=KONTEN.map(k=>{const bet=byKonto[k.id]||0; const ist=ausTotal>0?bet/ausTotal*100:0; const soll=Number(k.prozent)||0;
-    return {name:k.name,farbe:k.farbe||'#888',bet,ist,soll};});
+    return {name:kLabel(k),farbe:k.farbe||'#888',bet,ist,soll};});
   if(unassigned>0){rowsK.push({name:'Nicht zugeordnet',farbe:'#c0392b',bet:unassigned,ist:ausTotal>0?unassigned/ausTotal*100:0,soll:null});}
   const dfmt=(v,suf)=>(v>0?'+':'')+v.toLocaleString('de-DE',{minimumFractionDigits:suf==='€'?2:1,maximumFractionDigits:suf==='€'?2:1})+' '+suf;
   html+=rowsK.map(r=>{
@@ -229,14 +230,14 @@ function exportXlsx(){
   const zus=[['Kennzahl','€ / Monat','€ / Jahr'],
     ['Einnahmen',ein,ein*12],['Ausgaben',aus,aus*12],['Cashflow',cf,cf*12],['Sparquote (%)',sq,'']];
   // Blatt 2: Positionen
-  const katName=r=>{if(r.kat_einnahme)return 'Einnahmen';const k=kontoById(r.konto_id);return k?k.name:'';};
+  const katName=r=>{if(r.kat_einnahme)return 'Einnahmen';const k=kontoById(r.konto_id);return k?kLabel(k):'';};
   const pos=[['Art','Bezeichnung','Firma / Quelle','Betrag / Monat','Kategorie (6-Konten)','Weitergabe']];
   ROWS.forEach(r=>pos.push([r.art==='einnahme'?'Einnahme':'Ausgabe',r.bezeichnung||'',r.firma||'',num(r.betrag),katName(r),r.weitergabe||'']));
   // Blatt 3: Kategorien (Ausgaben)
   const byK={}; let un=0; ROWS.filter(r=>r.art==='ausgabe').forEach(r=>{const b=Number(r.betrag)||0;if(r.konto_id)byK[r.konto_id]=(byK[r.konto_id]||0)+b;else un+=b;});
   const kat=[['Kategorie','€ / Monat','Ist-Anteil (%)','Soll (%)','∆ %','∆ €']];
   KONTEN.forEach(k=>{const bet=byK[k.id]||0;const soll=Number(k.prozent)||0;const ist=aus>0?+(bet/aus*100).toFixed(1):0;
-    const sollEuro=soll/100*aus;kat.push([k.name,bet,ist,soll,+(ist-soll).toFixed(1),+(bet-sollEuro).toFixed(2)]);});
+    const sollEuro=soll/100*aus;kat.push([kLabel(k),bet,ist,soll,+(ist-soll).toFixed(1),+(bet-sollEuro).toFixed(2)]);});
   if(un>0)kat.push(['Nicht zugeordnet',un,aus>0?+(un/aus*100).toFixed(1):0,'','','']);
   kat.push(['Gesamt Ausgaben',aus,100,100,'','']);
   const wb=XLSX.utils.book_new();
