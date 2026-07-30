@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="de"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Engpassanalyse</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+:root{--bg:#f6f7f9;--surf:#fff;--surf2:#f1f3f6;--line:#e6e8ec;--text:#1c2024;--muted:#6b7280;--accent:#0f9d6b;--warn:#c0392b}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--text);font-family:'Inter',system-ui,-apple-system,'Segoe UI',sans-serif;font-size:14px;line-height:1.5;min-height:100vh}
+.hdr{background:var(--surf);border-bottom:1px solid var(--line);padding:16px 24px;position:sticky;top:0;z-index:10}
+.hdr-title{font-size:18px;font-weight:700} .hdr-sub{font-size:12px;color:var(--muted);margin-top:2px}
+.wrap{max-width:920px;margin:22px auto;padding:0 20px}
+.kpi{background:var(--surf);border:1px solid var(--line);border-radius:14px;padding:18px 20px;margin-bottom:18px}
+.kpi h2{font-size:13px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);margin-bottom:12px}
+.focus{background:linear-gradient(135deg,#fff4f2,#ffe7e2);border:1px solid #f4c6bf}
+.focus .big{font-size:22px;font-weight:800;color:var(--warn)}
+.focus .rec{font-size:13px;color:#7a2e26;margin-top:6px}
+.q{padding:10px 0;border-bottom:1px solid var(--line)}
+.q:last-child{border-bottom:none}
+.q .txt{font-size:13.5px;margin-bottom:7px}
+.scale{display:flex;gap:6px;flex-wrap:wrap}
+.sc{border:1px solid var(--line);background:var(--surf2);border-radius:8px;padding:6px 12px;font:inherit;font-size:12.5px;cursor:pointer;transition:.1s}
+.sc:hover{border-color:#c3c8d0}
+.sc.on{background:var(--warn);color:#fff;border-color:var(--warn);font-weight:700}
+.arehead{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:6px}
+.arehead h3{font-size:15px;font-weight:700}
+.scorepill{font-size:12px;font-weight:700;padding:3px 10px;border-radius:20px;background:#e6e8ec;color:#4b5563}
+.bar{height:8px;border-radius:5px;background:#e6e8ec;overflow:hidden;margin:4px 0 2px}
+.bar>span{display:block;height:100%;background:linear-gradient(90deg,#f5c518,#c0392b)}
+.rank{display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--line)}
+.rank:last-child{border-bottom:none}
+.rank .nm{flex:1;font-weight:600;font-size:13.5px}
+.rank .bw{flex:1.4}
+.note{width:100%;font:inherit;font-size:13px;padding:7px 9px;border:1px solid var(--line);border-radius:8px;margin-top:8px;background:#fff;min-height:44px;resize:vertical}
+.legend{font-size:11.5px;color:var(--muted);margin:2px 2px 12px}
+.toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:#1c2024;color:#fff;padding:10px 16px;border-radius:8px;font-size:13px;opacity:0;pointer-events:none;transition:.2s;z-index:50}
+.toast.show{opacity:1}
+details{background:var(--surf);border:1px solid var(--line);border-radius:14px;padding:6px 18px;margin-bottom:14px}
+summary{cursor:pointer;font-weight:700;padding:10px 0;font-size:15px}
+</style></head><body>
+<div class="hdr"><div class="hdr-title">Engpassanalyse</div><div class="hdr-sub">Schmerzpunkte bewerten → größter Engpass wird sichtbar · dort den Fokus setzen</div></div>
+<div class="wrap">
+<div class="kpi focus" id="focusBox"><h2>Dein größter Engpass gerade</h2><div class="big" id="focusName">– noch keine Bewertung –</div><div class="rec" id="focusRec">Bewerte unten die Aussagen (0 = kein Schmerz, 4 = großer Schmerz). Der Bereich mit dem höchsten Schmerz ist dein Engpass.</div></div>
+<div class="kpi"><h2>Rangliste der Engpässe</h2><div id="rank"></div><div class="legend">Nach Theory-of-Constraints: der eine größte Engpass begrenzt das ganze System. Fokus zuerst dorthin – nicht auf alles gleichzeitig.</div></div>
+<div id="areas"></div>
+</div>
+<div class="toast" id="toast"></div>
+<script>
+const sb=window.supabase.createClient('https://jqzxctfqvcwbctpjksvg.supabase.co','eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpxenhjdGZxdmN3YmN0cGprc3ZnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODIxMzA0MzIsImV4cCI6MjA5NzcwNjQzMn0.RKIbZxJdusKWWPjBJqlxZ8e1m8So02UslOg55YRsn3o');
+const esc=s=>(s==null?'':String(s)).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+function toast(m){const t=document.getElementById('toast');t.textContent=m;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),1600);}
+const AREAS=[
+ {k:'liquiditaet',n:'Liquidität & Finanzierung',fokus:'Kläre die nächsten 90 Tage Liquidität, sichere Finanzierungslinien und baue einen Puffer auf. Wende dich Co-Investoren und dem 6-Kontenmodell zu.',q:[
+   'Ich weiß nicht sicher, ob die Liquidität die nächsten 3 Monate reicht.',
+   'Finanzierungen/Anschlüsse sind ungeklärt oder hängen.',
+   'Ich habe zu wenig Puffer für Unvorhergesehenes.']},
+ {k:'cashflow',n:'Cashflow & Rentabilität',fokus:'Analysiere je Objekt den Cashflow, kappe Kostenfresser und hebe Mieten/Einnahmen dort, wo es am meisten bringt.',q:[
+   'Einzelne Objekte fressen mehr Geld als sie bringen.',
+   'Ich habe keinen klaren Überblick über den monatlichen Netto-Cashflow.',
+   'Kostensteigerungen fressen meine Marge auf.']},
+ {k:'team',n:'Team & Delegation',fokus:'Zuständigkeiten klar verteilen (Jürgen/Stephan/Ramona), Aufgaben abgeben und Verantwortung übertragen statt selbst nachzuarbeiten.',q:[
+   'Zu viel hängt an mir, weil Zuständigkeiten unklar sind.',
+   'Ich arbeite Dinge nach, die das Team erledigen sollte.',
+   'Mir fehlt eine Person/Rolle für einen Schlüsselbereich.']},
+ {k:'vertrieb',n:'Vertrieb & Vermietung',fokus:'Vermietungs-Pipeline füllen und Leerstand/Reservierungen abbauen – Mietinteressenten schneller durch den Prozess bringen.',q:[
+   'Leerstand oder unvermietete Einheiten kosten mich Ertrag.',
+   'Die Vermietungs-Pipeline ist zu dünn oder stockt.',
+   'Interessenten springen ab oder dauern zu lange.']},
+ {k:'prozesse',n:'Prozesse & Systeme',fokus:'Wiederkehrende Abläufe als BPMN/Automatik im Wohntraum-OS abbilden, damit sie ohne dich laufen.',q:[
+   'Wiederkehrende Abläufe sind nicht dokumentiert/automatisiert.',
+   'Informationen liegen verstreut, ich suche zu viel.',
+   'Fehler passieren, weil Prozesse nicht standardisiert sind.']},
+ {k:'fokus',n:'Zeit & Fokus',fokus:'Feste Tage einführen: 1 Unternehmer-Tag pro Woche, operative To-dos bündeln, Deep-Work schützen.',q:[
+   'Mein Tag geht im operativen Klein-Klein unter.',
+   'Ich komme nicht zu den wichtigen strategischen Aufgaben.',
+   'Ständige Unterbrechungen zerreißen meinen Fokus.']},
+ {k:'energie',n:'Energie & Gesundheit',fokus:'Bewusste Erholung, Energieräuber eliminieren, Haushaltshilfe, 250 Einheiten Sport & Gesundheit halten.',q:[
+   'Mir fehlt Energie / ich bin oft ausgelaugt.',
+   'Erholung und Sport kommen zu kurz.',
+   'Energieräuber (Menschen/Aufgaben) ziehen mich runter.']},
+ {k:'wachstum',n:'Einkommensströme & Wachstum',fokus:'Neue Ströme aufbauen: Wärme-Contracting, Mieter-Strom, DRME-Provision – skalierbar und wiederkehrend.',q:[
+   'Ich hänge zu stark an wenigen Einkommensquellen.',
+   'Neue Einkommensideen bleiben liegen.',
+   'Wachstum stockt, weil die Zeit/Struktur fehlt.']},
+];
+let ANS={}, NOTES={};
+function setv(fk,v){ANS[fk]=v; sb.from('engpass_antworten').upsert({frage_key:fk,wert:v,updated_at:new Date().toISOString()}).then(r=>{if(r.error)toast('Fehler: '+r.error.message);}); render();}
+function saveNote(ak){const el=document.getElementById('nt-'+ak);const val=el.value.trim();NOTES[ak]=val;sb.from('engpass_notizen').upsert({bereich_key:ak,notiz:val||null,updated_at:new Date().toISOString()}).then(r=>{if(r.error)toast('Fehler: '+r.error.message);else toast('Notiz gespeichert ✓');});}
+function areaScore(a){let s=0,c=0;a.q.forEach((_,i)=>{const v=ANS[a.k+':'+i];if(v!=null){s+=v;c++;}});return c?{avg:s/c,c:c}:{avg:0,c:0};}
+function render(){
+ // areas
+ document.getElementById('areas').innerHTML=AREAS.map(a=>{
+   const sc=areaScore(a);const pct=Math.round(sc.avg/4*100);
+   return `<details ${sc.c?'':''}><summary>${esc(a.n)} <span class="scorepill">Schmerz ${sc.avg.toFixed(1)}/4</span></summary>
+   <div class="bar"><span style="width:${pct}%"></span></div>
+   ${a.q.map((q,i)=>{const fk=a.k+':'+i;const cur=ANS[fk];
+     return `<div class="q"><div class="txt">${esc(q)}</div><div class="scale">${[0,1,2,3,4].map(v=>`<button class="sc${cur===v?' on':''}" onclick="setv('${fk}',${v})">${v}</button>`).join('')}</div></div>`;}).join('')}
+   <textarea class="note" id="nt-${a.k}" placeholder="Konkrete Schmerzpunkte / erste Maßnahme…" onblur="saveNote('${a.k}')">${esc(NOTES[a.k]||'')}</textarea>
+   </details>`;
+ }).join('');
+ // ranking
+ const ranked=AREAS.map(a=>({a,sc:areaScore(a)})).filter(x=>x.sc.c>0).sort((x,y)=>y.sc.avg-x.sc.avg);
+ document.getElementById('rank').innerHTML=ranked.length?ranked.map((x,i)=>{
+   const pct=Math.round(x.sc.avg/4*100);
+   return `<div class="rank"><span class="scorepill">${i+1}</span><span class="nm">${esc(x.a.n)}</span><span class="bw"><div class="bar"><span style="width:${pct}%"></span></div></span><span class="scorepill">${x.sc.avg.toFixed(1)}</span></div>`;
+ }).join(''):'<div class="legend">Noch keine Bewertungen – bewerte die Bereiche unten.</div>';
+ // focus
+ if(ranked.length && ranked[0].sc.avg>0){
+   const top=ranked[0];
+   document.getElementById('focusName').textContent=top.a.n+'  ('+top.sc.avg.toFixed(1)+'/4)';
+   document.getElementById('focusRec').textContent='Fokus: '+top.a.fokus;
+ } else {
+   document.getElementById('focusName').textContent='– noch keine Bewertung –';
+   document.getElementById('focusRec').textContent='Bewerte unten die Aussagen (0 = kein Schmerz, 4 = großer Schmerz). Der Bereich mit dem höchsten Schmerz ist dein Engpass.';
+ }
+}
+async function load(){
+ const [ra,rn]=await Promise.all([sb.from('engpass_antworten').select('*'),sb.from('engpass_notizen').select('*')]);
+ if(!ra.error&&ra.data)ra.data.forEach(r=>{ANS[r.frage_key]=r.wert;});
+ if(!rn.error&&rn.data)rn.data.forEach(r=>{NOTES[r.bereich_key]=r.notiz||'';});
+ render();
+}
+load();
+</script>
+</body></html>

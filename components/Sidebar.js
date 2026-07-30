@@ -93,6 +93,8 @@ export const NAV = [
   { type: 'group', key: 'eric-privat', icon: 'ti-user-heart', label: 'Eric Privat', area: ['vertrieb', 'hv'], mod: 'privat', items: [
     { href: '/eric-privat/budgetplan', icon: 'ti-wallet', label: 'Budgetplan' },
     { href: '/eric-privat/idealer-tag', icon: 'ti-sun', label: 'Idealer Tag' },
+    { href: '/eric-privat/entwicklung', icon: 'ti-stairs-up', label: 'Entwicklung' },
+    { href: '/eric-privat/engpassanalyse', icon: 'ti-filter-cog', label: 'Engpassanalyse' },
     { href: '/eric-privat/essen-planer', icon: 'ti-tools-kitchen-2', label: 'Essen-Planer' },
     { href: '/eric-privat/kontenmodell', icon: 'ti-wallet', label: '6 Kontenmodell' },
   ] },
