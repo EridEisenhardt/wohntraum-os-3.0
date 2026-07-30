@@ -136,6 +136,8 @@ table.num td:nth-child(2),table.num th:nth-child(2){text-align:right}
   <div class="tablewrap"><table class="mini" id="vermtbl"></table></div>
   <div class="note" style="margin-top:14px">4.6 · Genossenschaftsanteile — Bank / Konto / Art des Vermögenswerts / Betrag (editierbar, lokal gespeichert).</div>
   <div class="tablewrap"><table class="mini" id="genotbl"></table></div>
+  <div class="note" style="margin-top:14px">4.7 · Wertpapierdepot — Bank / Depot-Nr. / Wertpapier / Stück / Kurswert (editierbar, lokal gespeichert).</div>
+  <div class="tablewrap"><table class="mini" id="depottbl"></table></div>
 
   <h2><span class="dot" style="background:var(--rh)"></span>5 · Bürgschaften / Grundschulden</h2>
   <div class="note">Datenquelle: Register „Darlehen" → Bürgschaften / Grundschulden (Bank, Nummer der Bank, Objekt, Höhe der Grundschuld). Änderungen dort werden hier automatisch übernommen.</div>
@@ -503,6 +505,25 @@ function renderGeno(){
   el.innerHTML='<thead><tr><th>Bank</th><th>Konto</th><th>Art des Vermögenswerts</th><th style="text-align:right">Betrag (€)</th></tr></thead><tbody>'
     + rows + `<tr class="totrow"><td colspan="3">Summe Genossenschaftsanteile</td><td style="text-align:right">${incEUR(sum)}</td></tr></tbody>`;
 }
+// Wertpapierdepot — mehrspaltig (Bank / Depot-Nr. / Wertpapier / Stück / Kurswert)
+const DEPOTSTORE="macherOS_selbst_depot_v1";
+const DEPOT=[
+ {k:'cc_voda',bank:'Cortal Consors',depot:'unbekannt',wp:'Vodafone Group Plc',stk:'1',def:''},
+];
+function depotLoad(){ try{ return JSON.parse(localStorage.getItem(DEPOTSTORE))||{}; }catch(e){ return {}; } }
+function depotSum(){ const d=depotLoad(); let s=0; DEPOT.forEach(g=>{ s+=incParse((g.k in d)?d[g.k]:g.def); }); return s; }
+function depotSave(k,val){ const d=depotLoad(); d[k]=val; localStorage.setItem(DEPOTSTORE,JSON.stringify(d)); renderDepot(); renderVerm(); }
+function renderDepot(){
+  const el=document.getElementById('depottbl'); if(!el) return;
+  const d=depotLoad(); const q=s=>(s==null?'':String(s)).replace(/"/g,'&quot;');
+  let sum=0;
+  const rows=DEPOT.map(g=>{ const val=(g.k in d)?d[g.k]:g.def; sum+=incParse(val);
+    return `<tr><td>${g.bank}</td><td>${g.depot}</td><td>${g.wp}</td><td style="text-align:right">${g.stk}</td>
+      <td style="text-align:right"><input style="${FINL};text-align:right;max-width:150px" inputmode="decimal" value="${q(val)}" placeholder="€" onchange="depotSave('${g.k}',this.value)"></td></tr>`;
+  }).join('');
+  el.innerHTML='<thead><tr><th>Bank</th><th>Depot-Nr.</th><th>Wertpapier</th><th style="text-align:right">Stück</th><th style="text-align:right">Kurswert (€)</th></tr></thead><tbody>'
+    + rows + `<tr class="totrow"><td colspan="4">Summe Wertpapierdepot</td><td style="text-align:right">${incEUR(sum)}</td></tr></tbody>`;
+}
 function vermLoad(){ try{ return JSON.parse(localStorage.getItem(VERMSTORE))||{}; }catch(e){ return {}; } }
 function renderVerm(){
   const el=document.getElementById('vermtbl'); if(!el) return;
@@ -514,11 +535,12 @@ function renderVerm(){
     return `<tr><td style="width:42px;color:var(--muted)">${f[1]}</td><td>${f[2]}</td>
       <td style="text-align:right"><input style="${FINL};text-align:right;max-width:180px" inputmode="decimal" value="${q(val)}" placeholder="€" onchange="vermSave('${f[0]}',this.value)"></td></tr>`;
   }).join('');
-  const gesamt=sum+genoSum();
+  const gesamt=sum+genoSum()+depotSum();
   el.innerHTML='<thead><tr><th style="width:42px">Nr.</th><th>Vermögensart</th><th style="text-align:right">Betrag (€)</th></tr></thead><tbody>'
     + rows
     + `<tr><td style="color:var(--muted)">4.6</td><td>Genossenschaftsanteile (Aufstellung unten)</td><td style="text-align:right">${incEUR(genoSum())}</td></tr>`
-    + `<tr class="totrow"><td></td><td>Summe Vermögen (inkl. Genossenschaftsanteile)</td><td style="text-align:right">${incEUR(gesamt)}</td></tr>`
+    + `<tr><td style="color:var(--muted)">4.7</td><td>Wertpapierdepot (Aufstellung unten)</td><td style="text-align:right">${incEUR(depotSum())}</td></tr>`
+    + `<tr class="totrow"><td></td><td>Summe Vermögen (inkl. Genossenschaftsanteile &amp; Depot)</td><td style="text-align:right">${incEUR(gesamt)}</td></tr>`
     + '</tbody>';
 }
 function vermSave(key,val){ const d=vermLoad(); d[key]=val; localStorage.setItem(VERMSTORE,JSON.stringify(d)); renderVerm(); }
@@ -564,7 +586,7 @@ function sigInit(){
   sigLine();
 }
 
-applyMarktwerte(); bewkInit(); weitere(); form(); loadBuergSA(); loadDarlehenSA(); loadFirm(); loadBau(); renderInc(); renderExp(); renderVerm(); renderGeno(); sigInit();
+applyMarktwerte(); bewkInit(); weitere(); form(); loadBuergSA(); loadDarlehenSA(); loadFirm(); loadBau(); renderInc(); renderExp(); renderVerm(); renderGeno(); renderDepot(); sigInit();
 async function applyMarktwerte(){
   try{
     const{data}=await sb.from('finance_input').select('code,wert,kategorie').in('kategorie',['Marktwert (PriceHubble)','Miete p.a. (aktuell)','Anzahl Einheiten']);
