@@ -165,7 +165,13 @@ export default function Sidebar({ user, demo, onLogout, role, perms }) {
   // Auswahl/Suche bei Seitenwechsel zurücksetzen (Unterreihe folgt dann der aktiven Seite)
   useEffect(() => { setSelectedKey(null); setQ('') }, [path])
 
-  const chooseArea = (a) => { setArea(a); try { localStorage.setItem('sidebar_area', a) } catch (e) {} }
+  const chooseArea = (a) => { setArea(a); setSelectedKey(null); try { localStorage.setItem('sidebar_area', a) } catch (e) {} }
+  const AREAS = [
+    { v: '', label: 'Alle Bereiche', icon: 'ti-layout-grid' },
+    { v: 'vertrieb', label: 'Vertrieb', icon: 'ti-speakerphone' },
+    { v: 'hv', label: 'Hausverwaltung & Backoffice', icon: 'ti-home' },
+    { v: 'backoffice', label: 'Backoffice & Buchhaltung', icon: 'ti-receipt' },
+  ]
   const isFav = (href) => favs.includes(href)
   const toggleFav = (href, e) => {
     if (e) { e.preventDefault(); e.stopPropagation() }
@@ -222,21 +228,25 @@ export default function Sidebar({ user, demo, onLogout, role, perms }) {
             </>
           )}
         </div>
-        <select value={area} onChange={(e) => chooseArea(e.target.value)} title="Hauptbereich wählen"
-          style={{ font: 'inherit', fontSize: 12.5, fontWeight: 700, padding: '8px 10px', borderRadius: 9, border: '1px solid var(--line)', background: 'transparent', color: 'inherit', cursor: 'pointer' }}>
-          <option value="">🗂 Alle Bereiche</option>
-          <option value="vertrieb">📣 Vertrieb</option>
-          <option value="hv">🏠 Hausverwaltung &amp; Backoffice</option>
-          <option value="backoffice">🧾 Backoffice &amp; Buchhaltung</option>
-        </select>
         <div className="tb-me">
           <div className="av" title={email || 'Demo-Modus'}>{initials}</div>
           {!demo && <button className="logoutbtn" title="Abmelden" onClick={onLogout} style={{ marginLeft: 0 }}><i className="ti ti-logout" /></button>}
         </div>
       </div>
 
-      {/* Reihe 1: Kategorien */}
+      {/* Reihe 1: Geschäftsbereich */}
+      <nav className="tb-geschaeft">
+        <span className="gb-label">Geschäftsbereich</span>
+        {AREAS.map((a) => (
+          <button key={a.v} className={'gb-item' + (area === a.v ? ' active' : '')} onClick={() => chooseArea(a.v)}>
+            <i className={'ti ' + a.icon} /> {a.label}
+          </button>
+        ))}
+      </nav>
+
+      {/* Reihe 2: Kategorien */}
       <nav className="tb-nav">
+        <span className="row-label">Kategorie</span>
         <button className={'tb-group' + (activeKey === 'favoriten' ? ' active' : '')} onClick={() => toggleGroup('favoriten')} title="Favoriten">
           <i className="ti ti-star" style={{ color: '#f5c518' }} /> Favoriten
         </button>
@@ -254,9 +264,10 @@ export default function Sidebar({ user, demo, onLogout, role, perms }) {
         })}
       </nav>
 
-      {/* Reihe 2: Unterkategorien der aktiven Kategorie */}
+      {/* Reihe 3: Unterkategorien der aktiven Kategorie */}
       {subItems.length > 0 && (
         <nav className="tb-sub">
+          <span className="row-label">Unterkategorie</span>
           {subItems.map((it) => (
             <span className="tb-subwrap" key={it.href}>
               <Link href={it.href} className={'tb-subitem' + (isActive(it) ? ' active' : '')}>
