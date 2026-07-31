@@ -24,6 +24,11 @@ body{background:var(--bg);color:var(--text);font-family:'Inter',system-ui,-apple
 .btn{font:inherit;font-size:13px;font-weight:600;padding:9px 15px;border:1px solid var(--line);border-radius:9px;background:var(--surf2);color:var(--text);cursor:pointer}
 .btn-accent{background:var(--accent);color:#fff;border-color:var(--accent)}
 .btn-red{background:var(--red);color:#fff;border-color:var(--red)}
+.modebar{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.modebtn{font:inherit;font-size:12.5px;font-weight:700;padding:10px;border:1px solid var(--line);border-radius:10px;background:var(--surf2);color:var(--text);cursor:pointer;text-align:center;line-height:1.3}
+.modebtn span{display:block;font-weight:400;font-size:11px;color:var(--muted);margin-top:2px}
+.modebtn.on{border-color:var(--accent);background:#eaf1fb;color:var(--accent)}
+.modebtn.on span{color:var(--accent)}
 /* Dokument im Stil der PDF */
 .doc{background:#fff;border:1px solid var(--line);border-radius:8px;padding:38px 44px;font-size:12.5px;color:#222;line-height:1.65}
 .doc .top{display:flex;justify-content:space-between;font-size:12px;color:#333}
@@ -58,8 +63,12 @@ body{background:var(--bg);color:var(--text);font-family:'Inter',system-ui,-apple
 <div class="cols">
   <!-- FORM -->
   <div class="panel">
-    <div class="fsec">Aus Darlehen übernehmen (optional)</div>
-    <div class="fg"><select id="loanSel" onchange="prefillLoan()"><option value="">— Darlehen wählen —</option></select></div>
+    <div class="fsec">Art der Berechnung</div>
+    <div class="modebar">
+      <button type="button" id="mReg" class="modebtn on" onclick="setMode('register')">① Bestehender Vertrag<span>aus Darlehensregister</span></button>
+      <button type="button" id="mMan" class="modebtn" onclick="setMode('manual')">② Manuelle Erfassung<span>frei eingeben</span></button>
+    </div>
+    <div class="fg" id="regPick" style="margin-top:9px"><label>Darlehen aus Register wählen</label><select id="loanSel" onchange="prefillLoan()"><option value="">— Darlehen wählen —</option></select></div>
 
     <div class="fsec">Vertragseckdaten</div>
     <div class="frow">
@@ -271,19 +280,28 @@ function openDoc(id){
   w.document.close();
 }
 async function delReg(id){if(!confirm('Diese Zinsberechnung löschen?'))return;await sb.from('zinsberechnungen').delete().eq('id',id);loadReg();}
+let MODE='register';
+function setMode(m){
+  MODE=m;
+  $('mReg').classList.toggle('on',m==='register');
+  $('mMan').classList.toggle('on',m==='manual');
+  $('regPick').style.display=(m==='register')?'block':'none';
+  if(m==='manual'){ $('loanSel').value=''; ['dnr','bez','geber','geberAdr','nehmer','nehmerAdr','betrag','zins'].forEach(id=>{if($(id))$(id).value='';}); calc(); }
+}
 function prefillLoan(){
   const id=$('loanSel').value; const l=LOANS.find(x=>x.id===id); if(!l)return;
   $('dnr').value=l.dnr_intern||''; $('bez').value=l.bez||''; $('geber').value=l.geber||''; $('nehmer').value=l.nehmer||'';
   $('betrag').value=l.betrag!=null?l.betrag:''; $('zins').value=l.zins!=null?l.zins:''; if(l.aus)$('beginn').value=l.aus;
+  if(l.methode)$('methode').value=l.methode;
   if(l.zweck||l.dnr_intern)$('kVz').value='Darlehensrueckzahlung Nr. '+(l.dnr_intern||'')+' inkl. Zinsen';
   calc();
 }
 let LOANS=[];
 async function loadLoans(){
-  const res=await sb.from('loans').select('id,dnr_intern,bez,geber,nehmer,betrag,zins,aus,zweck').order('dnr_intern');
+  const res=await sb.from('loans').select('id,dnr_intern,bez,geber,nehmer,betrag,zins,aus,zweck,methode').order('dnr_intern');
   LOANS=res.error?[]:(res.data||[]);
   $('loanSel').innerHTML='<option value="">— Darlehen wählen —</option>'+LOANS.map(l=>`<option value="${l.id}">Nr. ${esc(l.dnr_intern||'?')} · ${esc(l.bez||'')}</option>`).join('');
 }
-(function init(){ const t=new Date().toISOString().slice(0,10); $('datum').value=t; loadLoans(); loadReg(); calc(); })();
+(function init(){ const t=new Date().toISOString().slice(0,10); $('datum').value=t; setMode('register'); loadLoans(); loadReg(); calc(); })();
 </script>
 </body></html>
