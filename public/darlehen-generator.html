@@ -172,6 +172,7 @@ tr.sum td{border-top:2px solid var(--text);font-weight:700;background:#fafbfd}
         <div class="fg"><label>Von-Konto (Zahlung geht ab)</label><select id="vonKonto" onchange="renderContract()"></select></div>
         <div class="fg"><label>Empfänger-Konto (Zahlung geht hin)</label><select id="zuKonto" onchange="renderContract()"></select></div>
       </div>
+      <div class="fg"><label>Verwendungszweck der Überweisung</label><input id="zweck" placeholder="z. B. Kaufpreiszahlung Objekt K28" oninput="renderContract()"></div>
       <div style="margin:-2px 0 8px"><button type="button" class="btn" onclick="toggleBv()" style="padding:6px 11px;font-size:12px;background:var(--surf3);color:var(--text)">＋ / Bankverbindung verwalten</button></div>
       <div id="bvPanel" style="display:none;border:1px solid var(--line);border-radius:8px;padding:10px;margin-bottom:10px;background:var(--surf2)">
         <div class="frow"><div class="fg"><label>Bezeichnung</label><input id="bvBez" placeholder="z. B. WT Girokonto"></div><div class="fg"><label>Inhaber</label><input id="bvInh" placeholder="Kontoinhaber"></div></div>
@@ -254,8 +255,11 @@ function params(){
     aus:$('aus').value,
     perJahr:parseInt($('zahlweise').value)||12, sicher:$('sicher').value.trim(),
     dnr:$('dnr').value.trim(),
+    zweck:($('zweck')?$('zweck').value.trim():''),
   };
 }
+function kontoDetail(id){return BV.find(function(x){return x.id===id;})||null;}
+function kontoLine(b){if(!b)return null;var p=[];if(b.inhaber)p.push(b.inhaber);if(b.iban)p.push('IBAN '+b.iban);if(b.bank)p.push(b.bank);return p.join(', ')||null;}
 
 // Tilgungsplan: Perioden gemäß Zahlweise; Aggregation auf Jahre.
 function computeSchedule(p){
@@ -354,6 +358,10 @@ function renderContract(){
   else rueck=`Während der Laufzeit sind ausschließlich die Zinsen ${perWort} zu zahlen (${eur2(m.ratePeriod)}). Die Rückzahlung des gesamten Darlehensbetrags erfolgt in einer Summe am Ende der Laufzeit.`;
   const dnrTxt = p.dnr ? `<span class="pill" style="background:rgba(124,58,237,.1);color:var(--intern)">Interne Darlehensnr. ${p.dnr}</span>` : '';
   const sicher = p.sicher ? p.sicher : (p.typ==='coinvest' ? 'Nachrangdarlehen mit qualifiziertem Rangrücktritt; im Übrigen keine gesonderten Sicherheiten.' : 'Keine gesonderten Sicherheiten vereinbart.');
+  const zuLine = kontoLine(kontoDetail($('zuKonto')?$('zuKonto').value:''));
+  const vonLine = kontoLine(kontoDetail($('vonKonto')?$('vonKonto').value:''));
+  const vzParts=[]; if(p.dnr)vzParts.push('Darlehen '+p.dnr); if(p.bez)vzParts.push(p.bez); if(p.zweck)vzParts.push(p.zweck);
+  const vzRef=vzParts.join(' · ');
 
   $('contract').innerHTML=`
     <h1>Darlehensvertrag</h1>
@@ -368,7 +376,7 @@ function renderContract(){
     <p>Der Darlehensgeber gewährt dem Darlehensnehmer ein Darlehen in Höhe von <b>${eur(p.betrag)}</b> (in Worten: ${p.betrag?betragWorte(p.betrag):'—'}).</p>
 
     <h3>§ 2 Auszahlung</h3>
-    <p>Die Auszahlung des Darlehensbetrags erfolgt am <b>${fmtD(p.aus)}</b> auf ein vom Darlehensnehmer benanntes Konto.</p>
+    <p>Die Auszahlung des Darlehensbetrags erfolgt am <b>${fmtD(p.aus)}</b> ${zuLine?('auf folgendes Konto des Darlehensnehmers: <b>'+bvEsc(zuLine)+'</b>'):'auf ein vom Darlehensnehmer benanntes Konto'}.${vonLine?(' Die Zahlung erfolgt vom Konto des Darlehensgebers ('+bvEsc(vonLine)+').'):''}${vzRef?(' Als <b>Verwendungszweck</b> der Überweisung ist anzugeben: <b>'+bvEsc(vzRef)+'</b>.'):''}</p>
 
     <h3>§ 3 Verzinsung</h3>
     <p>${p.art==='zinsfrei' ? 'Das Darlehen ist <b>zinsfrei</b>. Während der gesamten Laufzeit werden keine Zinsen berechnet.' : `Das Darlehen wird mit <b>${numD(p.zins)} % p.a.</b> verzinst. Die Zinsberechnung erfolgt ${perWort} auf den jeweils valutierenden Darlehensbetrag (act/360 bzw. nach Vereinbarung).`}</p>
@@ -487,6 +495,7 @@ async function saveLoan(){
     in_selbstauskunft:false,
     quell_konto: kontoText($('vonKonto').value)||null,
     ziel_bank: kontoText($('zuKonto').value)||null,
+    zweck: p.zweck||null,
     notizen:`Darlehensgenerator · ${({annuitaet:'Annuitätendarlehen',tilgung:'Tilgungsdarlehen',endfaellig:'Endfälliges Darlehen',zinsfrei:'Zins- und tilgungsfrei'})[p.art]}`+(p.sicher?` · ${p.sicher}`:''),
   };
   const u=(await sb.auth.getUser()).data.user;
