@@ -90,6 +90,9 @@ export default function Cockpit() {
           <div className="date">Überblick · {new Date().toLocaleDateString('de-DE', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}</div>
         </div>
         <div className="actions">
+          <Link href="/verbesserungen" style={{ display: 'inline-flex', alignItems: 'center', gap: 7, background: '#185fa5', color: '#fff', borderRadius: 9, padding: '9px 15px', fontSize: 13.5, fontWeight: 600, textDecoration: 'none' }}>
+            <i className="ti ti-bulb" /> Verbesserungswünsche
+          </Link>
           <span className={'pill ' + (live ? 'live' : 'demo')}>{live ? 'Live-Daten' : 'Demo-Daten'}</span>
         </div>
       </div>

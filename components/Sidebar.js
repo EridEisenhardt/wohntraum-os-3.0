@@ -213,7 +213,7 @@ export default function Sidebar({ user, demo, onLogout, role, perms }) {
   const subItems = activeCat && activeCat.type === 'group' ? activeCat.items.filter((it) => canSeeItem(activeCat, it)) : []
 
   return (
-    <header className="topbar">
+    <header className="appnav">
       <div className="topbar-top">
         <Link href="/" className="brand" style={{ textDecoration: 'none', color: 'inherit', padding: 0, gap: 10 }} title="Zum Cockpit">
           <div className="logo">W</div>

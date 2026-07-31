@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="de"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Verbesserungswünsche</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+:root{--bg:#f6f7f9;--surf:#fff;--surf2:#f1f3f6;--line:#e6e8ec;--text:#1c2024;--muted:#6b7280;--dim:#4b5563;--accent:#185fa5;--green:#1f7a4d;--amber:#b7791f;--red:#c0392b}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--text);font-family:'Inter',system-ui,-apple-system,'Segoe UI',sans-serif;font-size:14px;line-height:1.5}
+.hdr{background:var(--surf);border-bottom:1px solid var(--line);padding:16px 24px;position:sticky;top:0;z-index:10}
+.hdr-title{font-size:18px;font-weight:700}.hdr-sub{font-size:12px;color:var(--muted)}
+.wrap{max-width:1000px;margin:22px auto;padding:0 20px 60px}
+.card{background:var(--surf);border:1px solid var(--line);border-radius:14px;padding:18px 20px;margin-bottom:18px}
+.card h2{font-size:13px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);margin-bottom:12px}
+.fg{margin-bottom:11px}
+.fg label{display:block;font-size:12px;color:var(--dim);font-weight:600;margin-bottom:4px}
+.fg input,.fg textarea{width:100%;font:inherit;font-size:14px;padding:9px 11px;border:1px solid var(--line);border-radius:9px;background:var(--surf);color:var(--text)}
+.fg textarea{min-height:90px;resize:vertical}
+.btn{background:var(--accent);color:#fff;border:none;border-radius:9px;padding:10px 18px;font:inherit;font-weight:600;font-size:14px;cursor:pointer}
+.btn:disabled{opacity:.5;cursor:default}
+.kpis{display:grid;grid-template-columns:repeat(3,1fr);gap:11px;margin-bottom:16px}
+.kpi{background:var(--surf);border:1px solid var(--line);border-radius:12px;padding:13px 15px}
+.kpi .l{font-size:10px;text-transform:uppercase;color:var(--muted)}.kpi .v{font-size:22px;font-weight:700;margin-top:3px}
+.tabs{display:flex;gap:6px;margin-bottom:12px;flex-wrap:wrap}
+.tab{border:1px solid var(--line);background:var(--surf);border-radius:20px;padding:6px 14px;font:inherit;font-size:12.5px;cursor:pointer;color:var(--dim)}
+.tab.on{background:var(--text);color:#fff;border-color:var(--text)}
+.item{border:1px solid var(--line);border-radius:12px;padding:13px 15px;margin-bottom:10px;background:var(--surf);display:flex;gap:12px;align-items:flex-start}
+.item .body{flex:1;min-width:0}
+.item .t{font-weight:700;font-size:14.5px}
+.item .d{font-size:13px;color:var(--dim);margin-top:3px;white-space:pre-wrap}
+.item .meta{font-size:11.5px;color:var(--muted);margin-top:6px}
+.badge{font-size:11px;font-weight:700;padding:3px 10px;border-radius:20px;white-space:nowrap}
+.b-offen{background:#e8f2fd;color:#185fa5}.b-arbeit{background:#fdf1dd;color:#b7791f}.b-umgesetzt{background:#e3f5ea;color:#1f7a4d}
+.stsel{font:inherit;font-size:12px;padding:6px 8px;border:1px solid var(--line);border-radius:8px;background:var(--surf);cursor:pointer}
+.abtn{background:none;border:none;color:var(--muted);cursor:pointer;font-size:15px}.abtn:hover{color:var(--red)}
+.empty{text-align:center;color:var(--muted);padding:24px}
+.toast{position:fixed;bottom:22px;left:50%;transform:translateX(-50%);background:#1c2024;color:#fff;padding:10px 16px;border-radius:8px;font-size:13px;opacity:0;transition:.2s;pointer-events:none;z-index:50}.toast.show{opacity:1}
+</style></head><body>
+<div class="hdr"><div class="hdr-title">💡 Verbesserungswünsche</div><div class="hdr-sub">Wünsche eintragen · landen im Register mit Status „offen" und werden nach und nach abgearbeitet</div></div>
+<div class="wrap">
+  <div class="card">
+    <h2>Neuen Verbesserungswunsch eintragen</h2>
+    <div class="fg"><label>Titel *</label><input id="titel" placeholder="Kurz &amp; knackig, z. B. „Filter im Darlehensregister"></div>
+    <div class="fg"><label>Beschreibung</label><textarea id="beschreibung" placeholder="Was genau soll verbessert werden? Warum?"></textarea></div>
+    <div class="fg"><label>Dein Name (optional)</label><input id="ersteller" placeholder="Name / Kürzel"></div>
+    <button class="btn" id="submitBtn" onclick="submitW()">Abschicken</button>
+  </div>
+
+  <div class="kpis" id="kpis"></div>
+  <div class="card">
+    <h2>Verbesserungsregister</h2>
+    <div class="tabs" id="tabs"></div>
+    <div id="list"></div>
+  </div>
+</div>
+<div class="toast" id="toast"></div>
+<script>
+const sb=window.supabase.createClient('https://jqzxctfqvcwbctpjksvg.supabase.co','eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpxenhjdGZxdmN3YmN0cGprc3ZnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODIxMzA0MzIsImV4cCI6MjA5NzcwNjQzMn0.RKIbZxJdusKWWPjBJqlxZ8e1m8So02UslOg55YRsn3o');
+const $=id=>document.getElementById(id);
+const esc=s=>(s==null?'':String(s)).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+function toast(m){const t=$('toast');t.textContent=m;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),2000);}
+const STATUS=[['offen','Offen','b-offen'],['in_abarbeitung','In Abarbeitung','b-arbeit'],['umgesetzt','Umgesetzt','b-umgesetzt']];
+function stMeta(s){return STATUS.find(x=>x[0]===s)||STATUS[0];}
+function fmt(d){return d?new Date(d).toLocaleDateString('de-DE',{day:'2-digit',month:'2-digit',year:'numeric'}):'';}
+let ROWS=[], filt='';
+async function submitW(){
+  const titel=$('titel').value.trim();
+  if(!titel){toast('Bitte einen Titel eingeben');return;}
+  $('submitBtn').disabled=true;
+  const rec={titel,beschreibung:$('beschreibung').value.trim()||null,ersteller:$('ersteller').value.trim()||null,status:'offen'};
+  const res=await sb.from('verbesserungen').insert(rec);
+  $('submitBtn').disabled=false;
+  if(res.error){toast('Fehler: '+res.error.message);return;}
+  $('titel').value='';$('beschreibung').value='';
+  toast('Verbesserungswunsch aufgenommen ✓ (Status: offen)');
+  load();
+}
+async function setStatus(id,val){
+  const res=await sb.from('verbesserungen').update({status:val,updated_at:new Date().toISOString()}).eq('id',id);
+  if(res.error){toast('Fehler: '+res.error.message);return;}
+  const r=ROWS.find(x=>x.id===id);if(r)r.status=val;render();toast('Status aktualisiert');
+}
+async function delW(id){if(!confirm('Diesen Eintrag löschen?'))return;await sb.from('verbesserungen').delete().eq('id',id);ROWS=ROWS.filter(x=>x.id!==id);render();}
+function render(){
+  const c={offen:0,in_abarbeitung:0,umgesetzt:0};ROWS.forEach(r=>{c[r.status]=(c[r.status]||0)+1;});
+  $('kpis').innerHTML=STATUS.map(s=>`<div class="kpi"><div class="l">${s[1]}</div><div class="v">${c[s[0]]||0}</div></div>`).join('');
+  $('tabs').innerHTML=[['','Alle']].concat(STATUS.map(s=>[s[0],s[1]])).map(t=>`<button class="tab ${filt===t[0]?'on':''}" onclick="setFilt('${t[0]}')">${t[1]}</button>`).join('');
+  const list=ROWS.filter(r=>!filt||r.status===filt);
+  $('list').innerHTML=list.length?list.map(r=>{const m=stMeta(r.status);
+    return `<div class="item">
+      <div class="body">
+        <div class="t">${esc(r.titel)}</div>
+        ${r.beschreibung?`<div class="d">${esc(r.beschreibung)}</div>`:''}
+        <div class="meta">${r.ersteller?esc(r.ersteller)+' · ':''}${fmt(r.created_at)}</div>
+      </div>
+      <span class="badge ${m[2]}">${m[1]}</span>
+      <select class="stsel" onchange="setStatus('${r.id}',this.value)">
+        ${STATUS.map(s=>`<option value="${s[0]}" ${r.status===s[0]?'selected':''}>${s[1]}</option>`).join('')}
+      </select>
+      <button class="abtn" title="Löschen" onclick="delW('${r.id}')">✕</button>
+    </div>`;}).join(''):'<div class="empty">Noch keine Einträge in dieser Ansicht.</div>';
+}
+function setFilt(f){filt=f;render();}
+async function load(){
+  const res=await sb.from('verbesserungen').select('*').order('created_at',{ascending:false});
+  ROWS=res.error?[]:(res.data||[]);render();
+}
+(async()=>{ try{ const {data:{session}}=await sb.auth.getSession(); if(session&&session.user&&session.user.email)$('ersteller').value=session.user.email; }catch(e){} load(); })();
+</script>
+</body></html>
