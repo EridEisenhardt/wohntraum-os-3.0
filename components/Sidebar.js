@@ -126,7 +126,7 @@ export function permNodes() {
 
 export default function Sidebar({ user, demo, onLogout, role, perms }) {
   const path = usePathname()
-  const [area, setArea] = useState('')
+  const [area, setArea] = useState(null)
   const [favs, setFavs] = useState([])
   const [q, setQ] = useState('')
   const [selectedKey, setSelectedKey] = useState(null)
@@ -165,9 +165,16 @@ export default function Sidebar({ user, demo, onLogout, role, perms }) {
   // Auswahl/Suche bei Seitenwechsel zurücksetzen (Unterreihe folgt dann der aktiven Seite)
   useEffect(() => { setSelectedKey(null); setQ('') }, [path])
 
-  const chooseArea = (a) => { setArea(a); setSelectedKey(null); try { localStorage.setItem('sidebar_area', a) } catch (e) {} }
+  const chooseArea = (a) => {
+    setArea((prev) => {
+      const next = prev === a ? null : a
+      try { localStorage.setItem('sidebar_area', next || '') } catch (e) {}
+      return next
+    })
+    setSelectedKey(null)
+  }
   const AREAS = [
-    { v: '', label: 'Alle Bereiche', icon: 'ti-layout-grid' },
+    { v: 'all', label: 'Alle Bereiche', icon: 'ti-layout-grid' },
     { v: 'vertrieb', label: 'Vertrieb', icon: 'ti-speakerphone' },
     { v: 'hv', label: 'Hausverwaltung & Backoffice', icon: 'ti-home' },
     { v: 'backoffice', label: 'Backoffice & Buchhaltung', icon: 'ti-receipt' },
@@ -198,7 +205,11 @@ export default function Sidebar({ user, demo, onLogout, role, perms }) {
   const ql = q.trim().toLowerCase()
   const results = ql ? flatSearch.filter((x) => (x.label + ' ' + x.group).toLowerCase().includes(ql)) : []
 
-  const visibleNav = NAV.filter((n) => { const a = Array.isArray(n.area) ? n.area : [n.area]; return (area === '' || a.includes('common') || a.includes(area)) && canSee(n) })
+  const visibleNav = NAV.filter((n) => {
+    const a = Array.isArray(n.area) ? n.area : [n.area]
+    const inArea = (area === 'all' || area === null) ? true : (a.includes('common') || a.includes(area))
+    return inArea && canSee(n)
+  })
   const showFav = selectedKey === 'favoriten'
   const activeGroup = (selectedKey && selectedKey !== 'favoriten')
     ? visibleNav.find((n) => n.type === 'group' && n.key === selectedKey)
@@ -244,7 +255,8 @@ export default function Sidebar({ user, demo, onLogout, role, perms }) {
         ))}
       </nav>
 
-      {/* Reihe 2: Kategorien */}
+      {/* Reihe 2: Kategorien – erscheinen nach Klick auf einen Geschäftsbereich */}
+      {area !== null && (
       <nav className="tb-nav">
         <span className="row-label">Kategorie</span>
         <button className={'tb-group' + (activeKey === 'favoriten' ? ' active' : '')} onClick={() => toggleGroup('favoriten')} title="Favoriten">
@@ -263,9 +275,10 @@ export default function Sidebar({ user, demo, onLogout, role, perms }) {
           )
         })}
       </nav>
+      )}
 
       {/* Reihe 3: Unterkategorien der aktiven Kategorie */}
-      {subItems.length > 0 && (
+      {area !== null && subItems.length > 0 && (
         <nav className="tb-sub">
           <span className="row-label">Unterkategorie</span>
           {subItems.map((it) => (
