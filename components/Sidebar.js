@@ -129,8 +129,7 @@ export default function Sidebar({ user, demo, onLogout, role, perms }) {
   const [area, setArea] = useState('')
   const [favs, setFavs] = useState([])
   const [q, setQ] = useState('')
-  const [openKey, setOpenKey] = useState(null)
-  const [anchor, setAnchor] = useState({ left: 12, top: 96 })
+  const [selectedKey, setSelectedKey] = useState(null)
   const isAdmin = role === 'admin'
 
   const has = (key) => !!(perms && Object.prototype.hasOwnProperty.call(perms, key))
@@ -163,8 +162,8 @@ export default function Sidebar({ user, demo, onLogout, role, perms }) {
     try { const a = localStorage.getItem('sidebar_area'); if (a) setArea(a) } catch (e) {}
     try { const f = localStorage.getItem('sidebar_favs'); if (f) setFavs(JSON.parse(f)) } catch (e) {}
   }, [])
-  // Menü schließen bei Seitenwechsel
-  useEffect(() => { setOpenKey(null); setQ('') }, [path])
+  // Auswahl/Suche bei Seitenwechsel zurücksetzen (Unterreihe folgt dann der aktiven Seite)
+  useEffect(() => { setSelectedKey(null); setQ('') }, [path])
 
   const chooseArea = (a) => { setArea(a); try { localStorage.setItem('sidebar_area', a) } catch (e) {} }
   const isFav = (href) => favs.includes(href)
@@ -178,13 +177,7 @@ export default function Sidebar({ user, demo, onLogout, role, perms }) {
   }
 
   const isActive = (item) => item.exact ? path === item.href : (path === item.href || path.startsWith(item.href + '/'))
-  const openMenu = (key, e) => {
-    const r = e.currentTarget.getBoundingClientRect()
-    const w = typeof window !== 'undefined' ? window.innerWidth : 1200
-    setAnchor({ left: Math.min(r.left, w - 250), top: r.bottom + 4 })
-    setOpenKey((prev) => (prev === key ? null : key))
-  }
-  const closeMenu = () => setOpenKey(null)
+  const toggleGroup = (key) => setSelectedKey((prev) => (prev === key ? null : key))
 
   const allSubItems = NAV.filter((n) => n.type === 'group').flatMap((g) => g.items.map((it) => ({ item: it, group: g })))
   const favItems = favs.map((h) => allSubItems.find((x) => x.item.href === h)).filter((x) => x && canSee(x.group) && canSeeItem(x.group, x.item)).map((x) => x.item)
@@ -200,16 +193,12 @@ export default function Sidebar({ user, demo, onLogout, role, perms }) {
   const results = ql ? flatSearch.filter((x) => (x.label + ' ' + x.group).toLowerCase().includes(ql)) : []
 
   const visibleNav = NAV.filter((n) => { const a = Array.isArray(n.area) ? n.area : [n.area]; return (area === '' || a.includes('common') || a.includes(area)) && canSee(n) })
-  const openGroup = openKey && openKey !== 'favoriten' ? NAV.find((n) => n.type === 'group' && n.key === openKey) : null
-
-  const ddLink = (it) => (
-    <div key={it.href} className="dd-row">
-      <Link href={it.href} className={'' + (isActive(it) ? 'active' : '')} onClick={closeMenu}>
-        <i className={'ti ' + it.icon} /> {it.label}
-      </Link>
-      <span onClick={(e) => toggleFav(it.href, e)} title={isFav(it.href) ? 'Aus Favoriten entfernen' : 'Zu Favoriten'} style={{ cursor: 'pointer', padding: '0 9px', fontSize: 14, color: isFav(it.href) ? '#f5c518' : 'rgba(128,128,128,.45)' }}>{isFav(it.href) ? '★' : '☆'}</span>
-    </div>
-  )
+  const showFav = selectedKey === 'favoriten'
+  const activeGroup = (selectedKey && selectedKey !== 'favoriten')
+    ? visibleNav.find((n) => n.type === 'group' && n.key === selectedKey)
+    : visibleNav.find((n) => n.type === 'group' && n.items.some(isActive))
+  const activeKey = showFav ? 'favoriten' : (activeGroup ? activeGroup.key : null)
+  const subItems = showFav ? favItems : (activeGroup ? activeGroup.items.filter((it) => canSeeItem(activeGroup, it)) : [])
 
   return (
     <header className="topbar">
@@ -220,6 +209,18 @@ export default function Sidebar({ user, demo, onLogout, role, perms }) {
         </Link>
         <div className="tb-search">
           <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="🔍 Thema suchen…" />
+          {ql && (
+            <>
+              <div className="tb-backdrop" onClick={() => setQ('')} />
+              <div className="sresults">
+                {results.length ? results.map((x) => (
+                  <Link key={x.href} href={x.href} className={isActive(x) ? 'active' : ''} onClick={() => setQ('')}>
+                    <i className={'ti ' + x.icon} /> {x.label}{x.group && <span style={{ marginLeft: 'auto', fontSize: 10.5, color: 'var(--hint)' }}>{x.group}</span>}
+                  </Link>
+                )) : <div style={{ padding: '10px 12px', color: 'var(--hint)', fontStyle: 'italic', fontSize: 13 }}>Kein Treffer für „{q}"</div>}
+              </div>
+            </>
+          )}
         </div>
         <select value={area} onChange={(e) => chooseArea(e.target.value)} title="Hauptbereich wählen"
           style={{ font: 'inherit', fontSize: 12.5, fontWeight: 700, padding: '8px 10px', borderRadius: 9, border: '1px solid var(--line)', background: 'transparent', color: 'inherit', cursor: 'pointer' }}>
@@ -234,9 +235,10 @@ export default function Sidebar({ user, demo, onLogout, role, perms }) {
         </div>
       </div>
 
+      {/* Reihe 1: Kategorien */}
       <nav className="tb-nav">
-        <button className={'tb-group' + (openKey === 'favoriten' ? ' active' : '')} onClick={(e) => openMenu('favoriten', e)} title="Favoriten">
-          <i className="ti ti-star" style={{ color: '#f5c518' }} /> Favoriten <i className="ti ti-chevron-down chev" />
+        <button className={'tb-group' + (activeKey === 'favoriten' ? ' active' : '')} onClick={() => toggleGroup('favoriten')} title="Favoriten">
+          <i className="ti ti-star" style={{ color: '#f5c518' }} /> Favoriten
         </button>
         {visibleNav.map((n) => {
           if (n.type === 'link') return (
@@ -244,37 +246,26 @@ export default function Sidebar({ user, demo, onLogout, role, perms }) {
               <i className={'ti ' + n.icon} /> {n.label}
             </Link>
           )
-          const groupActive = n.items.some(isActive)
           return (
-            <button key={n.key} className={'tb-group' + (groupActive || openKey === n.key ? ' active' : '')} onClick={(e) => openMenu(n.key, e)}>
-              <i className={'ti ' + n.icon} /> {n.label} <i className="ti ti-chevron-down chev" />
+            <button key={n.key} className={'tb-group' + (activeKey === n.key ? ' active' : '')} onClick={() => toggleGroup(n.key)}>
+              <i className={'ti ' + n.icon} /> {n.label}
             </button>
           )
         })}
       </nav>
 
-      {ql && (
-        <>
-          <div className="tb-backdrop" onClick={() => setQ('')} />
-          <div className="tb-dd" style={{ left: 18, top: anchor.top, minWidth: 300 }}>
-            {results.length ? results.map((x) => (
-              <div key={x.href} className="dd-row"><Link href={x.href} className={isActive(x) ? 'active' : ''} onClick={() => setQ('')}>
-                <i className={'ti ' + x.icon} /> {x.label}{x.group && <span style={{ marginLeft: 'auto', fontSize: 10.5, color: 'var(--hint)' }}>{x.group}</span>}
-              </Link></div>
-            )) : <div style={{ padding: '10px 12px', color: 'var(--hint)', fontStyle: 'italic', fontSize: 13 }}>Kein Treffer für „{q}"</div>}
-          </div>
-        </>
-      )}
-
-      {openKey && !ql && (
-        <>
-          <div className="tb-backdrop" onClick={closeMenu} />
-          <div className="tb-dd" style={{ left: anchor.left, top: anchor.top }}>
-            {openKey === 'favoriten'
-              ? (favItems.length ? favItems.map(ddLink) : <div style={{ padding: '10px 12px', color: 'var(--hint)', fontStyle: 'italic', fontSize: 13 }}>Noch keine – Stern ☆ antippen</div>)
-              : (openGroup ? openGroup.items.filter((it) => canSeeItem(openGroup, it)).map(ddLink) : null)}
-          </div>
-        </>
+      {/* Reihe 2: Unterkategorien der aktiven Kategorie */}
+      {subItems.length > 0 && (
+        <nav className="tb-sub">
+          {subItems.map((it) => (
+            <span className="tb-subwrap" key={it.href}>
+              <Link href={it.href} className={'tb-subitem' + (isActive(it) ? ' active' : '')}>
+                <i className={'ti ' + it.icon} /> {it.label}
+              </Link>
+              <span className="favstar" onClick={(e) => toggleFav(it.href, e)} title={isFav(it.href) ? 'Aus Favoriten entfernen' : 'Zu Favoriten'} style={{ color: isFav(it.href) ? '#f5c518' : 'rgba(128,128,128,.4)' }}>{isFav(it.href) ? '★' : '☆'}</span>
+            </span>
+          ))}
+        </nav>
       )}
     </header>
   )
