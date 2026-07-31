@@ -111,18 +111,22 @@ async function load(){
 function kontoById(id){return KONTEN.find(k=>k.id===id);}
 function kLabel(k){return (k&&k.abk?k.abk+' - ':'')+(k?k.name:'');}
 function selKat(r){
-  const v=r.kat_einnahme?'__ein':(r.konto_id||'');
-  return `<select class="cin" style="min-width:180px" onchange="saveKat('${r.id}',this.value)">`
+  const v=r.kat_business?'__biz':(r.kat_einnahme?'__ein':(r.konto_id||''));
+  return `<select class="cin" style="min-width:200px" onchange="saveKat('${r.id}',this.value)">`
     +`<option value="" ${v===''?'selected':''}>— Kategorie —</option>`
     +KONTEN.map(k=>`<option value="${k.id}" ${v===k.id?'selected':''}>${esc(kLabel(k))}</option>`).join('')
     +`<option value="__ein" ${v==='__ein'?'selected':''}>Einnahmen</option>`
+    +`<option value="__biz" ${v==='__biz'?'selected':''}>Business – Kostenübernahme durch Firma</option>`
     +`</select>`;
 }
 async function saveKat(id,val){
-  const patch = val==='__ein' ? {konto_id:null,kat_einnahme:true} : {konto_id:(val||null),kat_einnahme:false};
+  let patch;
+  if(val==='__ein') patch={konto_id:null,kat_einnahme:true,kat_business:false};
+  else if(val==='__biz') patch={konto_id:null,kat_einnahme:false,kat_business:true};
+  else patch={konto_id:(val||null),kat_einnahme:false,kat_business:false};
   const { error } = await sb.from('budget_eric').update(patch).eq('id',id);
   if(error){ toast('Speichern fehlgeschlagen'); return; }
-  const r=ROWS.find(x=>x.id===id); if(r){ r.konto_id=patch.konto_id; r.kat_einnahme=patch.kat_einnahme; } render();
+  const r=ROWS.find(x=>x.id===id); if(r){ r.konto_id=patch.konto_id; r.kat_einnahme=patch.kat_einnahme; r.kat_business=patch.kat_business; } render();
 }
 async function addRow(art){
   const max=Math.max(0,...ROWS.filter(r=>r.art===art).map(r=>r.pos||0));
@@ -229,13 +233,19 @@ function render(){
     [saldo>=0?'pos':'neg','Cashflow / Monat',eur(saldo),eur(saldo*12)+' / Jahr'],
     [saldo>=0?'pos':'neg','Sparquote',sq+' %','Cashflow ÷ Einnahmen']
   ].map(a=>`<div class="kpi ${a[0]}"><div class="l">${a[1]}</div><div class="v">${a[2]}</div><div class="d">${a[3]}</div></div>`).join('');
-  renderKat(aus);
+  renderKat();
   $('foot').innerHTML='Private Haushaltsrechnung von Eric · monatliche Beträge (Cent möglich) · in Supabase gespeichert. Beträge/Bezeichnungen frei editierbar; Positionen hinzufügen oder löschen. Kategorien = 6-Kontenmodell.';
 }
-function renderKat(ausTotal){
+function renderKat(){
   const ausR=ROWS.filter(r=>r.art==='ausgabe');
-  const byKonto={}; let unassigned=0;
-  ausR.forEach(r=>{const b=Number(r.betrag)||0; if(r.konto_id){byKonto[r.konto_id]=(byKonto[r.konto_id]||0)+b;} else if(!r.kat_einnahme){unassigned+=b;}});
+  const byKonto={}; let unassigned=0, business=0;
+  ausR.forEach(r=>{const b=Number(r.betrag)||0;
+    if(r.kat_business){business+=b;}
+    else if(r.kat_einnahme){/* als Einnahme markiert – zählt nicht */}
+    else if(r.konto_id){byKonto[r.konto_id]=(byKonto[r.konto_id]||0)+b;}
+    else {unassigned+=b;}
+  });
+  const ausTotal=Object.values(byKonto).reduce((s,v)=>s+v,0)+unassigned; // Basis 6-Kontenmodell (ohne Business)
   const th='font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;padding:7px 12px;background:var(--surf2)';
   let html='<thead><tr>'
     +`<th style="text-align:left;${th}">Kategorie</th>`
@@ -266,7 +276,9 @@ function renderKat(ausTotal){
       ${dcell}
     </tr>`;
   }).join('');
-  html+=`<tr style="font-weight:700;background:var(--surf2)"><td>Gesamt Ausgaben</td><td style="text-align:right">${eur(ausTotal)}</td><td style="text-align:right">100 %</td><td style="text-align:right;color:var(--muted)">100 %</td><td style="text-align:right">–</td><td style="text-align:right">–</td></tr></tbody>`;
+  html+=`<tr style="font-weight:700;background:var(--surf2)"><td>Gesamt (6-Kontenmodell)</td><td style="text-align:right">${eur(ausTotal)}</td><td style="text-align:right">100 %</td><td style="text-align:right;color:var(--muted)">100 %</td><td style="text-align:right">–</td><td style="text-align:right">–</td></tr>`;
+  if(business>0){html+=`<tr style="color:var(--muted)"><td><span style="display:inline-block;width:9px;height:9px;border-radius:50%;background:#6b7280;margin-right:7px"></span>Business – Kostenübernahme durch Firma</td><td style="text-align:right">${eur(business)}</td><td colspan="4" style="text-align:right;font-style:italic">nicht im 6-Kontenmodell</td></tr>`;}
+  html+='</tbody>';
   $('katTbl').innerHTML=html;
   $('katTot').textContent=eur(ausTotal);
 }
@@ -281,16 +293,20 @@ function exportXlsx(){
   const zus=[['Kennzahl','€ / Monat','€ / Jahr'],
     ['Einnahmen',ein,ein*12],['Ausgaben',aus,aus*12],['Cashflow',cf,cf*12],['Sparquote (%)',sq,'']];
   // Blatt 2: Positionen
-  const katName=r=>{if(r.kat_einnahme)return 'Einnahmen';const k=kontoById(r.konto_id);return k?kLabel(k):'';};
+  const katName=r=>{if(r.kat_business)return 'Business (Firma)';if(r.kat_einnahme)return 'Einnahmen';const k=kontoById(r.konto_id);return k?kLabel(k):'';};
   const pos=[['Art','Bezeichnung','Firma / Quelle','Betrag / Monat','Kategorie (6-Konten)','Weitergabe']];
   ROWS.forEach(r=>pos.push([r.art==='einnahme'?'Einnahme':'Ausgabe',r.bezeichnung||'',r.firma||'',num(r.betrag),katName(r),r.weitergabe||'']));
-  // Blatt 3: Kategorien (Ausgaben)
-  const byK={}; let un=0; ROWS.filter(r=>r.art==='ausgabe').forEach(r=>{const b=Number(r.betrag)||0;if(r.konto_id)byK[r.konto_id]=(byK[r.konto_id]||0)+b;else un+=b;});
+  // Blatt 3: Kategorien (Ausgaben, ohne Business & Einnahmen)
+  const byK={}; let un=0, biz=0;
+  ROWS.filter(r=>r.art==='ausgabe').forEach(r=>{const b=Number(r.betrag)||0;
+    if(r.kat_business){biz+=b;} else if(r.kat_einnahme){} else if(r.konto_id){byK[r.konto_id]=(byK[r.konto_id]||0)+b;} else {un+=b;}});
+  const base=Object.values(byK).reduce((s,v)=>s+v,0)+un;
   const kat=[['Kategorie','€ / Monat','Ist-Anteil (%)','Soll (%)','∆ %','∆ €']];
-  KONTEN.forEach(k=>{const bet=byK[k.id]||0;const soll=Number(k.prozent)||0;const ist=aus>0?+(bet/aus*100).toFixed(1):0;
-    const sollEuro=soll/100*aus;kat.push([kLabel(k),bet,ist,soll,+(ist-soll).toFixed(1),+(bet-sollEuro).toFixed(2)]);});
-  if(un>0)kat.push(['Nicht zugeordnet',un,aus>0?+(un/aus*100).toFixed(1):0,'','','']);
-  kat.push(['Gesamt Ausgaben',aus,100,100,'','']);
+  KONTEN.forEach(k=>{const bet=byK[k.id]||0;const soll=Number(k.prozent)||0;const ist=base>0?+(bet/base*100).toFixed(1):0;
+    const sollEuro=soll/100*base;kat.push([kLabel(k),bet,ist,soll,+(ist-soll).toFixed(1),+(bet-sollEuro).toFixed(2)]);});
+  if(un>0)kat.push(['Nicht zugeordnet',un,base>0?+(un/base*100).toFixed(1):0,'','','']);
+  kat.push(['Gesamt (6-Kontenmodell)',base,100,100,'','']);
+  if(biz>0)kat.push(['Business – Kostenübernahme durch Firma (nicht im 6-Kontenmodell)',biz,'','','','']);
   const wb=XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(zus),'Zusammenfassung');
   XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(pos),'Positionen');
