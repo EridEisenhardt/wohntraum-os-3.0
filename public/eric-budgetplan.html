@@ -149,15 +149,19 @@ const THEAD='<thead><tr>'
   +`<th style="text-align:left;${TH}">Firma</th>`
   +`<th style="text-align:right;${TH}">Betrag / Monat</th>`
   +`<th style="text-align:left;${TH}">Kategorie (6-Konten)</th>`
-  +`<th style="text-align:center;${TH}">Weitergabe</th>`
+  +`<th style="text-align:center;${TH}">Weitergabe (an wen/wohin)</th>`
   +`<th style="text-align:left;${TH}">Gruppe</th>`
   +`<th style="background:var(--surf2)"></th></tr></thead>`;
 function selWG(r){
   const v=r.weitergabe||'';
-  return `<select class="cin" style="text-align:center" onchange="upd('${r.id}','weitergabe',this.value)">
+  let html=`<select class="cin" style="text-align:center;min-width:70px" onchange="upd('${r.id}','weitergabe',this.value)">
     <option value="" ${v===''?'selected':''}>—</option>
     <option ${v==='Ja'?'selected':''}>Ja</option>
     <option ${v==='Nein'?'selected':''}>Nein</option></select>`;
+  if(v==='Ja'){
+    html+=`<input class="cin" list="weiterListe" value="${esc(r.weitergabe_an)}" placeholder="an wen / wohin?" style="margin-top:4px;font-size:12px;text-align:left" onchange="upd('${r.id}','weitergabe_an',this.value)">`;
+  }
+  return html;
 }
 function arrows(up,down){
   return `<button class="mvb" title="nach oben" onclick="${up}">▲</button><button class="mvb" title="nach unten" onclick="${down}">▼</button>`;
@@ -169,7 +173,7 @@ function rowTr(r,child,mv){
     <td style="min-width:150px"><input class="cin" list="firmenliste" value="${esc(r.firma)}" placeholder="Firma / Quelle" onchange="upd('${r.id}','firma',this.value)"></td>
     <td style="width:150px"><input class="cin bet" inputmode="decimal" value="${r.betrag!=null?r.betrag:''}" placeholder="€ / Monat" onchange="upd('${r.id}','betrag',this.value)"></td>
     <td style="width:190px">${selKat(r)}</td>
-    <td style="width:90px;text-align:center">${selWG(r)}</td>
+    <td style="width:150px;text-align:center;vertical-align:top">${selWG(r)}</td>
     <td style="width:130px"><input class="cin" list="gruppenliste" value="${esc(r.gruppe)}" placeholder="—" onchange="upd('${r.id}','gruppe',this.value)"></td>
     <td style="width:70px;white-space:nowrap;text-align:right">${mv||''}<button class="abtn" onclick="del('${r.id}')">✕</button></td>
   </tr>`;
@@ -219,6 +223,10 @@ function render(){
   $('einTbl').innerHTML=rowsHtml('einnahme');
   $('ausTbl').innerHTML=rowsHtml('ausgabe');
   if(!document.getElementById('firmenliste')){ const dl=document.createElement('datalist'); dl.id='firmenliste'; dl.innerHTML=FIRMEN.map(f=>`<option value="${esc(f)}">`).join(''); document.body.appendChild(dl); }
+  { let dw=document.getElementById('weiterListe'); if(!dw){ dw=document.createElement('datalist'); dw.id='weiterListe'; document.body.appendChild(dw); }
+    const base=['Wohn(T)raum Rheinhessen GmbH','Mieter (Nebenkosten)','Objekt / Immobilie','Steuerberater','Privat'];
+    const used=[...new Set(ROWS.map(r=>r.weitergabe_an).filter(Boolean))];
+    dw.innerHTML=[...new Set(base.concat(FIRMEN).concat(used))].map(x=>`<option value="${esc(x)}">`).join(''); }
   { let dg=document.getElementById('gruppenliste'); if(!dg){ dg=document.createElement('datalist'); dg.id='gruppenliste'; document.body.appendChild(dg); }
     const gs=[...new Set(ROWS.map(r=>r.gruppe).filter(Boolean))].sort(); dg.innerHTML=gs.map(g=>`<option value="${esc(g)}">`).join(''); }
   const ein=ROWS.filter(r=>r.art==='einnahme').reduce((s,r)=>s+(Number(r.betrag)||0),0);
@@ -294,8 +302,8 @@ function exportXlsx(){
     ['Einnahmen',ein,ein*12],['Ausgaben',aus,aus*12],['Cashflow',cf,cf*12],['Sparquote (%)',sq,'']];
   // Blatt 2: Positionen
   const katName=r=>{if(r.kat_business)return 'Business (Firma)';if(r.kat_einnahme)return 'Einnahmen';const k=kontoById(r.konto_id);return k?kLabel(k):'';};
-  const pos=[['Art','Bezeichnung','Firma / Quelle','Betrag / Monat','Kategorie (6-Konten)','Weitergabe']];
-  ROWS.forEach(r=>pos.push([r.art==='einnahme'?'Einnahme':'Ausgabe',r.bezeichnung||'',r.firma||'',num(r.betrag),katName(r),r.weitergabe||'']));
+  const pos=[['Art','Bezeichnung','Firma / Quelle','Betrag / Monat','Kategorie (6-Konten)','Weitergabe','Weitergabe an']];
+  ROWS.forEach(r=>pos.push([r.art==='einnahme'?'Einnahme':'Ausgabe',r.bezeichnung||'',r.firma||'',num(r.betrag),katName(r),r.weitergabe||'',r.weitergabe==='Ja'?(r.weitergabe_an||''):'']));
   // Blatt 3: Kategorien (Ausgaben, ohne Business & Einnahmen)
   const byK={}; let un=0, biz=0;
   ROWS.filter(r=>r.art==='ausgabe').forEach(r=>{const b=Number(r.betrag)||0;
