@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="de"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Liegestütz · Eric Privat</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
+<style>
+:root{--bg:#f6f7f9;--surf:#fff;--surf2:#f1f3f6;--line:#e6e8ec;--text:#1c2024;--muted:#6b7280;--dim:#4b5563;--accent:#0f9d6b}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--text);font-family:'Inter',system-ui,-apple-system,'Segoe UI',sans-serif;font-size:14px;line-height:1.5}
+.hdr{background:var(--surf);border-bottom:1px solid var(--line);padding:16px 24px;position:sticky;top:0;z-index:10}
+.hdr-title{font-size:18px;font-weight:700}.hdr-sub{font-size:12px;color:var(--muted)}
+.wrap{max-width:1000px;margin:22px auto;padding:0 20px 60px}
+.kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:11px;margin-bottom:18px}
+@media(max-width:720px){.kpis{grid-template-columns:repeat(2,1fr)}}
+.kpi{background:var(--surf);border:1px solid var(--line);border-radius:12px;padding:14px 16px}
+.kpi .l{font-size:10px;text-transform:uppercase;color:var(--muted)}.kpi .v{font-size:23px;font-weight:700;margin-top:3px;color:var(--accent)}
+.kpi .d{font-size:11px;color:var(--muted);margin-top:2px}
+.card{background:var(--surf);border:1px solid var(--line);border-radius:14px;padding:18px 20px;margin-bottom:18px}
+.card h2{font-size:13px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);margin-bottom:12px}
+.cwrap{position:relative;height:300px}
+.bar{display:flex;gap:9px;align-items:center;flex-wrap:wrap}
+.bar input,.bar select{font:inherit;font-size:14px;padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:var(--surf);color:var(--text)}
+.btn{background:var(--accent);color:#fff;border:none;border-radius:8px;padding:9px 15px;font:inherit;font-weight:600;font-size:13px;cursor:pointer}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th,td{padding:8px 11px;border-bottom:1px solid var(--line);text-align:right}
+th:first-child,td:first-child{text-align:left}
+th{font-size:10.5px;text-transform:uppercase;color:var(--muted);background:var(--surf2)}
+td input{width:90px;text-align:right;font:inherit;font-size:13px;padding:5px 7px;border:1px solid var(--line);border-radius:6px}
+tr.year td{background:var(--surf2);font-weight:700}
+.scroll{max-height:460px;overflow:auto;border:1px solid var(--line);border-radius:10px}
+.abtn{background:none;border:none;color:#c0392b;cursor:pointer;font-size:14px}
+.toast{position:fixed;bottom:22px;left:50%;transform:translateX(-50%);background:#1c2024;color:#fff;padding:10px 16px;border-radius:8px;font-size:13px;opacity:0;transition:.2s;pointer-events:none;z-index:50}.toast.show{opacity:1}
+</style></head><body>
+<div class="hdr"><div class="hdr-title">💪 Liegestütz</div><div class="hdr-sub">Eric Privat · monatliche Liegestütze &amp; Gesamtsumme</div></div>
+<div class="wrap">
+  <div class="kpis" id="kpis"></div>
+
+  <div class="card"><h2>Für den aktuellen Monat hinzufügen</h2>
+    <div class="bar">
+      <select id="mSel"></select>
+      <input id="addN" inputmode="numeric" placeholder="Anzahl" style="width:120px">
+      <button class="btn" onclick="addToMonth()">+ Hinzufügen</button>
+      <span style="font-size:12px;color:var(--muted)">addiert die Anzahl auf den gewählten Monat</span>
+    </div>
+  </div>
+
+  <div class="card"><h2>Verlauf · kumulierte Gesamtsumme</h2><div class="cwrap"><canvas id="cumCv"></canvas></div></div>
+  <div class="card"><h2>Liegestütze pro Monat</h2><div class="cwrap"><canvas id="monCv"></canvas></div></div>
+
+  <div class="card"><h2>Pro Jahr</h2><table id="yearTbl"></table></div>
+
+  <div class="card"><h2>Monatswerte (editierbar)</h2>
+    <div class="scroll"><table id="monTbl"></table></div>
+    <div class="bar" style="margin-top:10px">
+      <select id="njMonat"></select><input id="njJahr" inputmode="numeric" placeholder="Jahr" style="width:90px"><input id="njWert" inputmode="numeric" placeholder="Anzahl" style="width:110px">
+      <button class="btn" onclick="addMonth()">+ Monat anlegen</button>
+    </div>
+  </div>
+</div>
+<div class="toast" id="toast"></div>
+<script>
+const sb=window.supabase.createClient('https://jqzxctfqvcwbctpjksvg.supabase.co','eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpxenhjdGZxdmN3YmN0cGprc3ZnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODIxMzA0MzIsImV4cCI6MjA5NzcwNjQzMn0.RKIbZxJdusKWWPjBJqlxZ8e1m8So02UslOg55YRsn3o');
+const $=id=>document.getElementById(id);
+const MON=['Januar','Februar','März','April','Mai','Juni','Juli','August','September','Oktober','November','Dezember'];
+const nf=n=>new Intl.NumberFormat('de-DE').format(n||0);
+function toast(m){const t=$('toast');t.textContent=m;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),1800);}
+function toInt(v){const n=parseInt(String(v==null?'':v).replace(/\./g,'').replace(/[^\d-]/g,''),10);return isNaN(n)?0:n;}
+let ROWS=[], cumChart=null, monChart=null;
+function key(r){return r.jahr*100+r.monat;}
+async function load(){
+  const res=await sb.from('liegestuetz_monat').select('*');
+  ROWS=(res.error?[]:(res.data||[])).sort((a,b)=>key(a)-key(b));
+  render();
+}
+function render(){
+  const total=ROWS.reduce((s,r)=>s+(r.anzahl||0),0);
+  const active=ROWS.filter(r=>r.anzahl>0);
+  const months=active.length||1;
+  const now=new Date(); const cy=now.getFullYear();
+  const thisYear=ROWS.filter(r=>r.jahr===cy).reduce((s,r)=>s+(r.anzahl||0),0);
+  const curM=ROWS.find(r=>r.jahr===cy&&r.monat===now.getMonth()+1);
+  $('kpis').innerHTML=[
+    ['Gesamtsumme',nf(total),'alle Liegestütze'],
+    ['Ø / aktiver Monat',nf(Math.round(total/months)),active.length+' Monate mit Training'],
+    [cy+' gesamt',nf(thisYear),'dieses Jahr'],
+    ['Aktueller Monat',nf(curM?curM.anzahl:0),MON[now.getMonth()]+' '+cy],
+  ].map(k=>`<div class="kpi"><div class="l">${k[0]}</div><div class="v">${k[1]}</div><div class="d">${k[2]}</div></div>`).join('');
+  // Monatsauswahl (add) – letzte 14 Monate + aktueller
+  fillMonthSelect();
+  fillNewMonthSelect();
+  renderYear(); renderMonTbl(); drawCharts(total);
+}
+function fillMonthSelect(){
+  const now=new Date(); const opts=[];
+  for(let i=0;i<14;i++){const d=new Date(now.getFullYear(),now.getMonth()-i,1);opts.push(`<option value="${d.getFullYear()}-${d.getMonth()+1}">${MON[d.getMonth()]} ${d.getFullYear()}</option>`);}
+  const cur=$('mSel').value; $('mSel').innerHTML=opts.join(''); if(cur)$('mSel').value=cur;
+}
+function fillNewMonthSelect(){ if($('njMonat').innerHTML)return; $('njMonat').innerHTML=MON.map((m,i)=>`<option value="${i+1}">${m}</option>`).join(''); $('njJahr').value=new Date().getFullYear(); }
+async function upsert(jahr,monat,anzahl){
+  const res=await sb.from('liegestuetz_monat').upsert({jahr,monat,anzahl,updated_at:new Date().toISOString()},{onConflict:'jahr,monat'});
+  if(res.error){toast('Fehler: '+res.error.message);return false;}
+  return true;
+}
+async function addToMonth(){
+  const v=$('mSel').value; const n=toInt($('addN').value); if(!n){toast('Bitte Anzahl eingeben');return;}
+  const [y,m]=v.split('-').map(Number);
+  const r=ROWS.find(x=>x.jahr===y&&x.monat===m); const neu=(r?r.anzahl:0)+n;
+  if(await upsert(y,m,neu)){$('addN').value='';toast('+'+n+' → '+MON[m-1]+' '+y);load();}
+}
+async function updCell(id,val){
+  const r=ROWS.find(x=>x.id===id); if(!r)return; const n=toInt(val);
+  const res=await sb.from('liegestuetz_monat').update({anzahl:n,updated_at:new Date().toISOString()}).eq('id',id);
+  if(res.error){toast('Fehler: '+res.error.message);return;} r.anzahl=n; render();
+}
+async function delMonth(id){ if(!confirm('Diesen Monat löschen?'))return; await sb.from('liegestuetz_monat').delete().eq('id',id); ROWS=ROWS.filter(x=>x.id!==id); render(); }
+async function addMonth(){
+  const m=Number($('njMonat').value), y=toInt($('njJahr').value), w=toInt($('njWert').value);
+  if(!y){toast('Bitte Jahr eingeben');return;}
+  if(await upsert(y,m,w)){$('njWert').value='';toast('Monat gespeichert');load();}
+}
+function renderYear(){
+  const yr={}; ROWS.forEach(r=>{yr[r.jahr]=(yr[r.jahr]||0)+(r.anzahl||0);});
+  const years=Object.keys(yr).map(Number).sort();
+  const total=ROWS.reduce((s,r)=>s+(r.anzahl||0),0);
+  $('yearTbl').innerHTML='<thead><tr><th>Jahr</th><th>Liegestütze</th><th>Anteil</th></tr></thead><tbody>'
+    +years.map(y=>`<tr><td>${y}</td><td>${nf(yr[y])}</td><td>${total?Math.round(yr[y]/total*100):0} %</td></tr>`).join('')
+    +`<tr class="year"><td>Gesamt</td><td>${nf(total)}</td><td>100 %</td></tr></tbody>`;
+}
+function renderMonTbl(){
+  const list=[...ROWS].sort((a,b)=>key(b)-key(a));
+  $('monTbl').innerHTML='<thead><tr><th>Monat</th><th>Liegestütze</th><th></th></tr></thead><tbody>'
+    +list.map(r=>`<tr><td>${MON[r.monat-1]} ${r.jahr}</td><td><input inputmode="numeric" value="${r.anzahl||0}" onchange="updCell('${r.id}',this.value)"></td><td><button class="abtn" onclick="delMonth('${r.id}')">✕</button></td></tr>`).join('')
+    +'</tbody>';
+}
+function drawCharts(total){
+  if(!window.Chart)return;
+  const asc=[...ROWS].sort((a,b)=>key(a)-key(b));
+  const labels=asc.map(r=>MON[r.monat-1].slice(0,3)+' '+String(r.jahr).slice(2));
+  let run=0; const cum=asc.map(r=>{run+=(r.anzahl||0);return run;});
+  const mon=asc.map(r=>r.anzahl||0);
+  if(cumChart)cumChart.destroy();
+  cumChart=new Chart($('cumCv'),{type:'line',data:{labels,datasets:[{label:'Gesamtsumme',data:cum,borderColor:'#0f9d6b',backgroundColor:'#0f9d6b22',fill:true,tension:.15,pointRadius:0,borderWidth:2}]},
+    options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>nf(c.parsed.y)+' gesamt'}}},scales:{y:{ticks:{callback:v=>nf(v)}},x:{ticks:{maxTicksLimit:12,font:{size:10}}}}}});
+  if(monChart)monChart.destroy();
+  monChart=new Chart($('monCv'),{type:'bar',data:{labels,datasets:[{label:'pro Monat',data:mon,backgroundColor:'#0f9d6b',borderRadius:4}]},
+    options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>nf(c.parsed.y)+' Liegestütze'}}},scales:{y:{beginAtZero:true,ticks:{font:{size:10}}},x:{ticks:{maxTicksLimit:12,font:{size:10}}}}}});
+}
+load();
+</script>
+</body></html>
