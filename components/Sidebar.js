@@ -126,16 +126,15 @@ export function permNodes() {
 
 export default function Sidebar({ user, demo, onLogout, role, perms }) {
   const path = usePathname()
-  const [collapsed, setCollapsed] = useState({})
   const [area, setArea] = useState('')
   const [favs, setFavs] = useState([])
   const [q, setQ] = useState('')
+  const [openKey, setOpenKey] = useState(null)
+  const [anchor, setAnchor] = useState({ left: 12, top: 96 })
   const isAdmin = role === 'admin'
-  // Sichtbarkeit je Kategorie/Unterkategorie. Neue Schlüssel (cat:/sub:/lnk:) haben Vorrang;
-  // ist für ein Element kein neuer Schlüssel gesetzt, greift das alte Modulrecht (n.mod) als Fallback.
+
   const has = (key) => !!(perms && Object.prototype.hasOwnProperty.call(perms, key))
   const on = (key) => { const p = perms && perms[key]; return !!(p && p.sehen) }
-  // Unterkategorie sichtbar?
   const canSeeItem = (n, it) => {
     if (demo || isAdmin) return true
     if (n.key === 'eric-privat') return isAdmin
@@ -150,10 +149,9 @@ export default function Sidebar({ user, demo, onLogout, role, perms }) {
       if (!perms) return true
       const catKey = 'cat:' + n.key
       const base = has(catKey) ? on(catKey) : on(n.mod)
-      // Kategorie erscheint auch, wenn mindestens eine Unterkategorie freigeschaltet ist
       return base || (n.items || []).some((it) => canSeeItem(n, it))
     }
-    if (!n.mod) return true // Cockpit, Alle Tools, Konto – Grundnavigation
+    if (!n.mod) return true
     if (demo || isAdmin) return true
     if (NODE_ADMIN_ONLY(n.mod)) return isAdmin
     if (!perms) return true
@@ -162,10 +160,11 @@ export default function Sidebar({ user, demo, onLogout, role, perms }) {
   }
 
   useEffect(() => {
-    try { const s = localStorage.getItem('sidebar_collapsed'); if (s) setCollapsed(JSON.parse(s)) } catch (e) {}
     try { const a = localStorage.getItem('sidebar_area'); if (a) setArea(a) } catch (e) {}
     try { const f = localStorage.getItem('sidebar_favs'); if (f) setFavs(JSON.parse(f)) } catch (e) {}
   }, [])
+  // Menü schließen bei Seitenwechsel
+  useEffect(() => { setOpenKey(null); setQ('') }, [path])
 
   const chooseArea = (a) => { setArea(a); try { localStorage.setItem('sidebar_area', a) } catch (e) {} }
   const isFav = (href) => favs.includes(href)
@@ -178,31 +177,20 @@ export default function Sidebar({ user, demo, onLogout, role, perms }) {
     })
   }
 
-  const toggle = (key) => setCollapsed((prev) => {
-    const next = { ...prev, [key]: !prev[key] }
-    try { localStorage.setItem('sidebar_collapsed', JSON.stringify(next)) } catch (e) {}
-    return next
-  })
-
   const isActive = (item) => item.exact ? path === item.href : (path === item.href || path.startsWith(item.href + '/'))
-  const cls = (active) => 'nav-item' + (active ? ' active' : '')
-  const subCls = (active) => 'nav-sub' + (active ? ' active' : '')
-  const renderSub = (it) => (
-    <div key={it.href} style={{ display: 'flex', alignItems: 'center' }}>
-      <Link href={it.href} className={subCls(isActive(it))} style={{ flex: 1, minWidth: 0 }}>
-        <i className={'ti ' + it.icon} /> {it.label}
-      </Link>
-      <span onClick={(e) => toggleFav(it.href, e)} title={isFav(it.href) ? 'Aus Favoriten entfernen' : 'Zu Favoriten hinzufügen'}
-        style={{ cursor: 'pointer', padding: '0 9px', fontSize: 15, lineHeight: 1, color: isFav(it.href) ? '#f5c518' : 'rgba(128,128,128,.45)' }}>
-        {isFav(it.href) ? '★' : '☆'}
-      </span>
-    </div>
-  )
+  const openMenu = (key, e) => {
+    const r = e.currentTarget.getBoundingClientRect()
+    const w = typeof window !== 'undefined' ? window.innerWidth : 1200
+    setAnchor({ left: Math.min(r.left, w - 250), top: r.bottom + 4 })
+    setOpenKey((prev) => (prev === key ? null : key))
+  }
+  const closeMenu = () => setOpenKey(null)
+
   const allSubItems = NAV.filter((n) => n.type === 'group').flatMap((g) => g.items.map((it) => ({ item: it, group: g })))
   const favItems = favs.map((h) => allSubItems.find((x) => x.item.href === h)).filter((x) => x && canSee(x.group) && canSeeItem(x.group, x.item)).map((x) => x.item)
   const email = user && user.email ? user.email : null
   const initials = email ? email.slice(0, 2).toUpperCase() : 'EE'
-  // Themen-Suche über alle sichtbaren Seiten
+
   const flatSearch = []
   NAV.forEach((n) => {
     if (n.type === 'link') { if (canSee(n)) flatSearch.push({ href: n.href, label: n.label, icon: n.icon, group: '' }) }
@@ -211,97 +199,83 @@ export default function Sidebar({ user, demo, onLogout, role, perms }) {
   const ql = q.trim().toLowerCase()
   const results = ql ? flatSearch.filter((x) => (x.label + ' ' + x.group).toLowerCase().includes(ql)) : []
 
-  return (
-    <aside className="sidebar">
-      <Link href="/" className="brand" style={{ textDecoration: 'none', color: 'inherit', cursor: 'pointer' }} title="Zum Cockpit">
-        <div className="logo">W</div>
-        <div>
-          <div className="name">Wohntraum</div>
-          <div className="sub">Rheinhessen OS</div>
-        </div>
+  const visibleNav = NAV.filter((n) => { const a = Array.isArray(n.area) ? n.area : [n.area]; return (area === '' || a.includes('common') || a.includes(area)) && canSee(n) })
+  const openGroup = openKey && openKey !== 'favoriten' ? NAV.find((n) => n.type === 'group' && n.key === openKey) : null
+
+  const ddLink = (it) => (
+    <div key={it.href} className="dd-row">
+      <Link href={it.href} className={'' + (isActive(it) ? 'active' : '')} onClick={closeMenu}>
+        <i className={'ti ' + it.icon} /> {it.label}
       </Link>
+      <span onClick={(e) => toggleFav(it.href, e)} title={isFav(it.href) ? 'Aus Favoriten entfernen' : 'Zu Favoriten'} style={{ cursor: 'pointer', padding: '0 9px', fontSize: 14, color: isFav(it.href) ? '#f5c518' : 'rgba(128,128,128,.45)' }}>{isFav(it.href) ? '★' : '☆'}</span>
+    </div>
+  )
 
-      <div style={{ padding: '2px 0 6px', position: 'relative' }}>
-        <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="🔍 Thema suchen…"
-          style={{ width: '100%', font: 'inherit', fontSize: 12.5, padding: '8px 26px 8px 10px', borderRadius: 8, border: '1px solid rgba(128,128,128,.35)', background: 'transparent', color: 'inherit' }} />
-        {q && <span onClick={() => setQ('')} title="Leeren" style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', cursor: 'pointer', color: 'rgba(128,128,128,.7)', fontSize: 14 }}>✕</span>}
-      </div>
-
-      <div style={{ padding: '2px 0 8px' }}>
+  return (
+    <header className="topbar">
+      <div className="topbar-top">
+        <Link href="/" className="brand" style={{ textDecoration: 'none', color: 'inherit', padding: 0, gap: 10 }} title="Zum Cockpit">
+          <div className="logo">W</div>
+          <div><div className="name">Wohntraum</div><div className="sub">Rheinhessen OS</div></div>
+        </Link>
+        <div className="tb-search">
+          <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="🔍 Thema suchen…" />
+        </div>
         <select value={area} onChange={(e) => chooseArea(e.target.value)} title="Hauptbereich wählen"
-          style={{ width: '100%', font: 'inherit', fontSize: 12.5, fontWeight: 700, padding: '8px 10px', borderRadius: 8, border: '1px solid rgba(128,128,128,.35)', background: 'transparent', color: 'inherit', cursor: 'pointer' }}>
+          style={{ font: 'inherit', fontSize: 12.5, fontWeight: 700, padding: '8px 10px', borderRadius: 9, border: '1px solid var(--line)', background: 'transparent', color: 'inherit', cursor: 'pointer' }}>
           <option value="">🗂 Alle Bereiche</option>
           <option value="vertrieb">📣 Vertrieb</option>
           <option value="hv">🏠 Hausverwaltung &amp; Backoffice</option>
           <option value="backoffice">🧾 Backoffice &amp; Buchhaltung</option>
         </select>
+        <div className="tb-me">
+          <div className="av" title={email || 'Demo-Modus'}>{initials}</div>
+          {!demo && <button className="logoutbtn" title="Abmelden" onClick={onLogout} style={{ marginLeft: 0 }}><i className="ti ti-logout" /></button>}
+        </div>
       </div>
 
-      {ql && (
-        <div>
-          {results.length ? results.map((x) => (
-            <Link key={x.href} href={x.href} className={cls(isActive(x))} onClick={() => setQ('')}>
-              <i className={'ti ' + x.icon} /> {x.label}
-              {x.group && <span style={{ marginLeft: 'auto', fontSize: 10.5, color: 'rgba(128,128,128,.7)' }}>{x.group}</span>}
-            </Link>
-          )) : <div className="nav-sub" style={{ color: 'var(--muted, #6b7280)', fontStyle: 'italic', cursor: 'default' }}>Kein Treffer für „{q}"</div>}
-        </div>
-      )}
-
-      {!ql && (() => {
-        const isOpen = !collapsed['favoriten']
-        return (
-          <div>
-            <div className="nav-group" onClick={() => toggle('favoriten')} style={{ cursor: 'pointer', userSelect: 'none' }} title={isOpen ? 'Einklappen' : 'Ausklappen'}>
-              <i className="ti ti-star lead" style={{ color: '#f5c518' }} />
-              <span>Favoriten</span>
-              <i className="ti ti-chevron-down chev" style={{ transform: isOpen ? 'none' : 'rotate(-90deg)', transition: 'transform .15s' }} />
-            </div>
-            {isOpen && (favItems.length
-              ? favItems.map(renderSub)
-              : <div className="nav-sub" style={{ color: 'var(--muted, #6b7280)', fontStyle: 'italic', cursor: 'default' }}>Noch keine – Stern ☆ antippen</div>)}
-          </div>
-        )
-      })()}
-
-      {!ql && NAV.filter((n) => { const a = Array.isArray(n.area) ? n.area : [n.area]; return (area === '' || a.includes('common') || a.includes(area)) && canSee(n) }).map((n) => {
-        if (n.type === 'link') {
-          return (
-            <Link key={n.href} href={n.href} className={cls(isActive(n))}>
+      <nav className="tb-nav">
+        <button className={'tb-group' + (openKey === 'favoriten' ? ' active' : '')} onClick={(e) => openMenu('favoriten', e)} title="Favoriten">
+          <i className="ti ti-star" style={{ color: '#f5c518' }} /> Favoriten <i className="ti ti-chevron-down chev" />
+        </button>
+        {visibleNav.map((n) => {
+          if (n.type === 'link') return (
+            <Link key={n.href} href={n.href} className={'tb-item' + (isActive(n) ? ' active' : '')}>
               <i className={'ti ' + n.icon} /> {n.label}
             </Link>
           )
-        }
-        const isOpen = !collapsed[n.key]
-        const groupActive = n.items.some(isActive)
-        return (
-          <div key={n.key}>
-            <div className="nav-group" onClick={() => toggle(n.key)} style={{ cursor: 'pointer', userSelect: 'none' }} title={isOpen ? 'Einklappen' : 'Ausklappen'}>
-              <i className={'ti ' + n.icon + ' lead'} />
-              <span style={{ fontWeight: groupActive && !isOpen ? 700 : undefined }}>{n.label}</span>
-              <i className="ti ti-chevron-down chev" style={{ transform: isOpen ? 'none' : 'rotate(-90deg)', transition: 'transform .15s' }} />
-            </div>
-            {isOpen && n.items.filter((it) => canSeeItem(n, it)).map(renderSub)}
-          </div>
-        )
-      })}
+          const groupActive = n.items.some(isActive)
+          return (
+            <button key={n.key} className={'tb-group' + (groupActive || openKey === n.key ? ' active' : '')} onClick={(e) => openMenu(n.key, e)}>
+              <i className={'ti ' + n.icon} /> {n.label} <i className="ti ti-chevron-down chev" />
+            </button>
+          )
+        })}
+      </nav>
 
-      <Link href="/konto" className="nav-item"><i className="ti ti-settings" /> Einstellungen &amp; Passwort</Link>
-
-      <div className="me">
-        <div className="av">{initials}</div>
-        <div style={{ minWidth: 0 }}>
-          <div style={{ fontSize: 13, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-            {email || 'Demo-Modus'}
+      {ql && (
+        <>
+          <div className="tb-backdrop" onClick={() => setQ('')} />
+          <div className="tb-dd" style={{ left: 18, top: anchor.top, minWidth: 300 }}>
+            {results.length ? results.map((x) => (
+              <div key={x.href} className="dd-row"><Link href={x.href} className={isActive(x) ? 'active' : ''} onClick={() => setQ('')}>
+                <i className={'ti ' + x.icon} /> {x.label}{x.group && <span style={{ marginLeft: 'auto', fontSize: 10.5, color: 'var(--hint)' }}>{x.group}</span>}
+              </Link></div>
+            )) : <div style={{ padding: '10px 12px', color: 'var(--hint)', fontStyle: 'italic', fontSize: 13 }}>Kein Treffer für „{q}"</div>}
           </div>
-          <div style={{ fontSize: 11, color: 'var(--hint)' }}>{demo ? 'ohne Supabase' : 'angemeldet'}</div>
-        </div>
-        {!demo && (
-          <button className="logoutbtn" title="Abmelden" onClick={onLogout}>
-            <i className="ti ti-logout" />
-          </button>
-        )}
-      </div>
-    </aside>
+        </>
+      )}
+
+      {openKey && !ql && (
+        <>
+          <div className="tb-backdrop" onClick={closeMenu} />
+          <div className="tb-dd" style={{ left: anchor.left, top: anchor.top }}>
+            {openKey === 'favoriten'
+              ? (favItems.length ? favItems.map(ddLink) : <div style={{ padding: '10px 12px', color: 'var(--hint)', fontStyle: 'italic', fontSize: 13 }}>Noch keine – Stern ☆ antippen</div>)
+              : (openGroup ? openGroup.items.filter((it) => canSeeItem(openGroup, it)).map(ddLink) : null)}
+          </div>
+        </>
+      )}
+    </header>
   )
 }
