@@ -124,12 +124,27 @@ export function permNodes() {
   return nodes
 }
 
+// Zuordnung jeder Kategorie/Verknüpfung zu einem Geschäftsbereich
+const GESCHAEFTE = [
+  { v: 'vertrieb', label: 'Vertrieb', icon: 'ti-chart-line' },
+  { v: 'buchhaltung', label: 'Buchhaltung', icon: 'ti-calculator' },
+  { v: 'hausverwaltung', label: 'Hausverwaltung', icon: 'ti-home' },
+  { v: 'gf', label: 'Geschäftsführer', icon: 'ti-user' },
+]
+const GB_MAP = {
+  ankauf: 'vertrieb', vermietung: 'vertrieb', crm: 'vertrieb', baustandard: 'vertrieb', assetmanagement: 'vertrieb', strategie: 'vertrieb',
+  buchhaltung: 'buchhaltung', controlling: 'buchhaltung', finance: 'buchhaltung', 'assetmgmt-bh': 'buchhaltung', stammdaten: 'buchhaltung',
+  hausverwaltung: 'hausverwaltung', prozesse: 'hausverwaltung',
+  produktivitaet: 'gf', personal: 'gf', 'eric-privat': 'gf',
+  '/portfolio': 'vertrieb', '/gf-dashboard': 'gf', '/aktivitaeten': 'hausverwaltung', '/dokumente': 'buchhaltung', '/nutzer': 'gf',
+}
+const gbOf = (n) => (n.type === 'group' ? GB_MAP[n.key] : GB_MAP[n.href])
+
 export default function Sidebar({ user, demo, onLogout, role, perms }) {
   const path = usePathname()
-  const [area, setArea] = useState(null)
-  const [favs, setFavs] = useState([])
+  const [selectedGb, setSelectedGb] = useState(null)
+  const [selectedCat, setSelectedCat] = useState(null)
   const [q, setQ] = useState('')
-  const [selectedKey, setSelectedKey] = useState(null)
   const isAdmin = role === 'admin'
 
   const has = (key) => !!(perms && Object.prototype.hasOwnProperty.call(perms, key))
@@ -159,41 +174,21 @@ export default function Sidebar({ user, demo, onLogout, role, perms }) {
   }
 
   useEffect(() => {
-    try { const a = localStorage.getItem('sidebar_area'); if (a) setArea(a) } catch (e) {}
-    try { const f = localStorage.getItem('sidebar_favs'); if (f) setFavs(JSON.parse(f)) } catch (e) {}
+    try { const g = localStorage.getItem('sidebar_gb'); if (g) setSelectedGb(g) } catch (e) {}
   }, [])
-  // Auswahl/Suche bei Seitenwechsel zurücksetzen (Unterreihe folgt dann der aktiven Seite)
-  useEffect(() => { setSelectedKey(null); setQ('') }, [path])
-
-  const chooseArea = (a) => {
-    setArea((prev) => {
-      const next = prev === a ? null : a
-      try { localStorage.setItem('sidebar_area', next || '') } catch (e) {}
-      return next
-    })
-    setSelectedKey(null)
-  }
-  const AREAS = [
-    { v: 'all', label: 'Alle Bereiche', icon: 'ti-layout-grid' },
-    { v: 'vertrieb', label: 'Vertrieb', icon: 'ti-speakerphone' },
-    { v: 'hv', label: 'Hausverwaltung & Backoffice', icon: 'ti-home' },
-    { v: 'backoffice', label: 'Backoffice & Buchhaltung', icon: 'ti-receipt' },
-  ]
-  const isFav = (href) => favs.includes(href)
-  const toggleFav = (href, e) => {
-    if (e) { e.preventDefault(); e.stopPropagation() }
-    setFavs((prev) => {
-      const next = prev.includes(href) ? prev.filter((h) => h !== href) : [...prev, href]
-      try { localStorage.setItem('sidebar_favs', JSON.stringify(next)) } catch (er) {}
-      return next
-    })
-  }
+  useEffect(() => { setSelectedCat(null); setQ('') }, [path])
 
   const isActive = (item) => item.exact ? path === item.href : (path === item.href || path.startsWith(item.href + '/'))
-  const toggleGroup = (key) => setSelectedKey((prev) => (prev === key ? null : key))
+  const chooseGb = (g) => {
+    setSelectedGb((prev) => {
+      const next = prev === g ? null : g
+      try { localStorage.setItem('sidebar_gb', next || '') } catch (e) {}
+      return next
+    })
+    setSelectedCat(null)
+  }
+  const toggleCat = (key) => setSelectedCat((prev) => (prev === key ? null : key))
 
-  const allSubItems = NAV.filter((n) => n.type === 'group').flatMap((g) => g.items.map((it) => ({ item: it, group: g })))
-  const favItems = favs.map((h) => allSubItems.find((x) => x.item.href === h)).filter((x) => x && canSee(x.group) && canSeeItem(x.group, x.item)).map((x) => x.item)
   const email = user && user.email ? user.email : null
   const initials = email ? email.slice(0, 2).toUpperCase() : 'EE'
 
@@ -205,17 +200,17 @@ export default function Sidebar({ user, demo, onLogout, role, perms }) {
   const ql = q.trim().toLowerCase()
   const results = ql ? flatSearch.filter((x) => (x.label + ' ' + x.group).toLowerCase().includes(ql)) : []
 
-  const visibleNav = NAV.filter((n) => {
-    const a = Array.isArray(n.area) ? n.area : [n.area]
-    const inArea = (area === 'all' || area === null) ? true : (a.includes('common') || a.includes(area))
-    return inArea && canSee(n)
-  })
-  const showFav = selectedKey === 'favoriten'
-  const activeGroup = (selectedKey && selectedKey !== 'favoriten')
-    ? visibleNav.find((n) => n.type === 'group' && n.key === selectedKey)
-    : visibleNav.find((n) => n.type === 'group' && n.items.some(isActive))
-  const activeKey = showFav ? 'favoriten' : (activeGroup ? activeGroup.key : null)
-  const subItems = showFav ? favItems : (activeGroup ? activeGroup.items.filter((it) => canSeeItem(activeGroup, it)) : [])
+  // Aktive Ableitung aus dem aktuellen Pfad
+  const activeGroupPath = NAV.find((n) => n.type === 'group' && canSee(n) && n.items.some(isActive))
+  const activeLinkPath = NAV.find((n) => n.type === 'link' && isActive(n))
+  const derivedGb = activeGroupPath ? gbOf(activeGroupPath) : (activeLinkPath ? gbOf(activeLinkPath) : null)
+  const activeGb = selectedGb || derivedGb || null
+
+  const catItems = NAV.filter((n) => canSee(n) && gbOf(n) === activeGb)
+  const activeCat = selectedCat
+    ? catItems.find((n) => n.type === 'group' && n.key === selectedCat)
+    : (activeGroupPath && gbOf(activeGroupPath) === activeGb ? activeGroupPath : null)
+  const subItems = activeCat && activeCat.type === 'group' ? activeCat.items.filter((it) => canSeeItem(activeCat, it)) : []
 
   return (
     <header className="topbar">
@@ -240,54 +235,48 @@ export default function Sidebar({ user, demo, onLogout, role, perms }) {
           )}
         </div>
         <div className="tb-me">
+          <Link href="/tools" className="nav-mini" title="Alle Tools"><i className="ti ti-layout-grid" /></Link>
+          <Link href="/konto" className="nav-mini" title="Mein Konto"><i className="ti ti-user-cog" /></Link>
           <div className="av" title={email || 'Demo-Modus'}>{initials}</div>
           {!demo && <button className="logoutbtn" title="Abmelden" onClick={onLogout} style={{ marginLeft: 0 }}><i className="ti ti-logout" /></button>}
         </div>
       </div>
 
-      {/* Reihe 1: Geschäftsbereich */}
-      <nav className="tb-geschaeft">
-        <span className="gb-label">Geschäftsbereich</span>
-        {AREAS.map((a) => (
-          <button key={a.v} className={'gb-item' + (area === a.v ? ' active' : '')} onClick={() => chooseArea(a.v)}>
-            <i className={'ti ' + a.icon} /> {a.label}
+      {/* Zeile 1: Geschäftsbereich */}
+      <nav className="gbbar">
+        {GESCHAEFTE.map((g) => (
+          <button key={g.v} className={'gb' + (activeGb === g.v ? ' active' : '')} onClick={() => chooseGb(g.v)}>
+            <i className={'ti ' + g.icon} /> {g.label}
           </button>
         ))}
       </nav>
 
-      {/* Reihe 2: Kategorien – erscheinen nach Klick auf einen Geschäftsbereich */}
-      {area !== null && (
-      <nav className="tb-nav">
-        <span className="row-label">Kategorie</span>
-        <button className={'tb-group' + (activeKey === 'favoriten' ? ' active' : '')} onClick={() => toggleGroup('favoriten')} title="Favoriten">
-          <i className="ti ti-star" style={{ color: '#f5c518' }} /> Favoriten
-        </button>
-        {visibleNav.map((n) => {
-          if (n.type === 'link') return (
-            <Link key={n.href} href={n.href} className={'tb-item' + (isActive(n) ? ' active' : '')}>
-              <i className={'ti ' + n.icon} /> {n.label}
-            </Link>
-          )
-          return (
-            <button key={n.key} className={'tb-group' + (activeKey === n.key ? ' active' : '')} onClick={() => toggleGroup(n.key)}>
-              <i className={'ti ' + n.icon} /> {n.label}
-            </button>
-          )
-        })}
-      </nav>
+      {/* Zeile 2: Kategorie */}
+      {activeGb && catItems.length > 0 && (
+        <nav className="catbar">
+          {catItems.map((n) => {
+            if (n.type === 'link') return (
+              <Link key={n.href} href={n.href} className={'cat' + (isActive(n) ? ' active' : '')}>
+                <i className={'ti ' + n.icon} /> {n.label}
+              </Link>
+            )
+            const catActive = activeCat && activeCat.key === n.key
+            return (
+              <button key={n.key} className={'cat' + (catActive ? ' active' : '')} onClick={() => toggleCat(n.key)}>
+                <i className={'ti ' + n.icon} /> {n.label}
+              </button>
+            )
+          })}
+        </nav>
       )}
 
-      {/* Reihe 3: Unterkategorien der aktiven Kategorie */}
-      {area !== null && subItems.length > 0 && (
-        <nav className="tb-sub">
-          <span className="row-label">Unterkategorie</span>
+      {/* Zeile 3: Unterkategorie */}
+      {subItems.length > 0 && (
+        <nav className="subpanel">
           {subItems.map((it) => (
-            <span className="tb-subwrap" key={it.href}>
-              <Link href={it.href} className={'tb-subitem' + (isActive(it) ? ' active' : '')}>
-                <i className={'ti ' + it.icon} /> {it.label}
-              </Link>
-              <span className="favstar" onClick={(e) => toggleFav(it.href, e)} title={isFav(it.href) ? 'Aus Favoriten entfernen' : 'Zu Favoriten'} style={{ color: isFav(it.href) ? '#f5c518' : 'rgba(128,128,128,.4)' }}>{isFav(it.href) ? '★' : '☆'}</span>
-            </span>
+            <Link key={it.href} href={it.href} className={isActive(it) ? 'active' : ''}>
+              <i className={'ti ' + it.icon} /> {it.label}
+            </Link>
           ))}
         </nav>
       )}
