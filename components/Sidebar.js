@@ -73,6 +73,7 @@ export const NAV = [
     { href: '/finance/darlehen', icon: 'ti-businessplan', label: 'Darlehen' },
     { href: '/finance/darlehensregister', icon: 'ti-list-numbers', label: 'Darlehensregister' },
     { href: '/finance/darlehensgenerator', icon: 'ti-calculator', label: 'Darlehensgenerator' },
+    { href: '/finance/zinsberechnung', icon: 'ti-percentage', label: 'Zinsberechnung' },
     { href: '/finance/selbstauskunft', icon: 'ti-user-search', label: 'Selbstauskunft für die Bank' },
     { href: '/finance/reporting', icon: 'ti-report-analytics', label: 'Reporting für die Bank' },
     { href: '/finance/steuer-bilanz', icon: 'ti-receipt-tax', label: 'Steuer und Bilanzunterlagen' },

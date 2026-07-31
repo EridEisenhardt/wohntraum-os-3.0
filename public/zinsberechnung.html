@@ -1,0 +1,289 @@
+<!DOCTYPE html>
+<html lang="de"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Zinsberechnung</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+:root{--bg:#f6f7f9;--surf:#fff;--surf2:#f1f3f6;--surf3:#e7ebf0;--line:#e6e8ec;--text:#1c2024;--muted:#6b7280;--dim:#4b5563;--accent:#185fa5;--red:#c0392b;--green:#1f7a4d}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--text);font-family:'Inter',system-ui,-apple-system,'Segoe UI',sans-serif;font-size:14px;line-height:1.5}
+.hdr{background:var(--surf);border-bottom:1px solid var(--line);padding:16px 24px;position:sticky;top:0;z-index:10}
+.hdr-title{font-size:17px;font-weight:700}.hdr-sub{font-size:11.5px;color:var(--muted)}
+.wrap{max-width:1320px;margin:20px auto;padding:0 20px 60px}
+.cols{display:grid;grid-template-columns:400px 1fr;gap:20px;align-items:start}
+@media(max-width:1000px){.cols{grid-template-columns:1fr}}
+.panel{background:var(--surf);border:1px solid var(--line);border-radius:14px;padding:16px}
+.fsec{font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);font-weight:700;margin:14px 0 7px;border-top:1px solid var(--line);padding-top:12px}
+.fsec:first-child{border-top:none;margin-top:0;padding-top:0}
+.fg{margin-bottom:9px}
+.fg label{display:block;font-size:11.5px;color:var(--dim);font-weight:600;margin-bottom:3px}
+.fg input,.fg select,.fg textarea{width:100%;font:inherit;font-size:13px;padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:var(--surf);color:var(--text)}
+.frow{display:grid;grid-template-columns:1fr 1fr;gap:9px}
+.kpis{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:14px}
+.kpi{background:var(--surf2);border:1px solid var(--line);border-radius:10px;padding:11px 13px}
+.kpi .l{font-size:10px;color:var(--muted);text-transform:uppercase}.kpi .v{font-size:18px;font-weight:700;margin-top:3px}
+.btn{font:inherit;font-size:13px;font-weight:600;padding:9px 15px;border:1px solid var(--line);border-radius:9px;background:var(--surf2);color:var(--text);cursor:pointer}
+.btn-accent{background:var(--accent);color:#fff;border-color:var(--accent)}
+.btn-red{background:var(--red);color:#fff;border-color:var(--red)}
+/* Dokument im Stil der PDF */
+.doc{background:#fff;border:1px solid var(--line);border-radius:8px;padding:38px 44px;font-size:12.5px;color:#222;line-height:1.65}
+.doc .top{display:flex;justify-content:space-between;font-size:12px;color:#333}
+.doc .rule{height:3px;background:var(--red);margin:18px 0 14px;border-radius:2px}
+.doc h1{font-size:19px;margin:6px 0 2px}
+.doc .subt{color:#555;font-size:12.5px;margin-bottom:6px}
+.doc h3{font-size:13.5px;margin:20px 0 7px}
+.doc table{width:100%;border-collapse:collapse;font-size:12px;margin:6px 0}
+.doc td{padding:7px 10px;border:1px solid #e2e5e9;vertical-align:top}
+.doc td.k{background:#f6f7f9;font-weight:600;width:42%}
+.doc .formula{background:#f3f4f6;font-family:'Courier New',monospace;font-size:12px;padding:9px 12px;border-radius:6px;margin:6px 0}
+.doc table.sum td{border:none;border-bottom:1px solid #e2e5e9}
+.doc table.sum tr.h td{background:var(--red);color:#fff;font-weight:700;text-transform:uppercase;font-size:11px}
+.doc table.sum tr.g td{background:#222;color:#fff;font-weight:700}
+.doc .foot{font-size:11px;color:#555;margin-top:16px;border-top:1px solid #e2e5e9;padding-top:10px}
+.doc .sign{margin-top:34px}.doc .sigline{border-top:1px solid #333;width:230px;padding-top:5px;font-size:11px}
+.num{text-align:right}
+/* Overlay */
+.ov{position:fixed;inset:0;background:rgba(0,0,0,.45);display:none;align-items:flex-start;justify-content:center;z-index:60;padding:24px;overflow:auto}
+.ov .box{background:var(--surf);border-radius:14px;max-width:900px;width:100%;padding:18px}
+.ov .bar{display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:12px;position:sticky;top:0}
+.reg table{width:100%;border-collapse:collapse;font-size:13px}
+.reg th,.reg td{padding:8px 10px;border-bottom:1px solid var(--line);text-align:left}
+.reg th{font-size:10.5px;text-transform:uppercase;color:var(--muted);background:var(--surf2)}
+.reg .num{text-align:right}
+.lnk{color:var(--accent);cursor:pointer;background:none;border:none;font:inherit;font-size:13px}
+.toast{position:fixed;bottom:22px;left:50%;transform:translateX(-50%);background:#1c2024;color:#fff;padding:10px 16px;border-radius:8px;font-size:13px;opacity:0;transition:.2s;pointer-events:none;z-index:80}
+.toast.show{opacity:1}
+</style></head><body>
+<div class="hdr"><div class="hdr-title">Zinsberechnung</div><div class="hdr-sub">Zinsabrechnung nach Laufzeit &amp; Zinsmethode · Prüfen → erstellen → Register</div></div>
+<div class="wrap">
+<div class="cols">
+  <!-- FORM -->
+  <div class="panel">
+    <div class="fsec">Aus Darlehen übernehmen (optional)</div>
+    <div class="fg"><select id="loanSel" onchange="prefillLoan()"><option value="">— Darlehen wählen —</option></select></div>
+
+    <div class="fsec">Vertragseckdaten</div>
+    <div class="frow">
+      <div class="fg"><label>Darlehensnummer</label><input id="dnr" oninput="calc()" placeholder="z. B. 128"></div>
+      <div class="fg"><label>Bezeichnung</label><input id="bez" oninput="calc()" placeholder="Darlehen …"></div>
+    </div>
+    <div class="fg"><label>Darlehensgeber</label><input id="geber" oninput="calc()" placeholder="Firma / Person"></div>
+    <div class="fg"><label>Adresse Darlehensgeber</label><textarea id="geberAdr" rows="2" oninput="calc()" placeholder="Straße, PLZ Ort"></textarea></div>
+    <div class="fg"><label>Darlehensnehmer</label><input id="nehmer" oninput="calc()" placeholder="Firma / Person"></div>
+    <div class="fg"><label>Adresse Darlehensnehmer</label><textarea id="nehmerAdr" rows="2" oninput="calc()" placeholder="Straße, PLZ Ort"></textarea></div>
+    <div class="frow">
+      <div class="fg"><label>Darlehensbetrag (€)</label><input id="betrag" inputmode="decimal" oninput="calc()" placeholder="20000"></div>
+      <div class="fg"><label>Zinssatz (% p.a.)</label><input id="zins" inputmode="decimal" oninput="calc()" placeholder="8"></div>
+    </div>
+
+    <div class="fsec">Laufzeit &amp; Methode</div>
+    <div class="fg"><label>Zinsmethode</label>
+      <select id="methode" onchange="calc()">
+        <option value="act/365">act/365 (tatsächliche Tage / 365)</option>
+        <option value="act/360">act/360 (tatsächliche Tage / 360)</option>
+        <option value="30E/360">30E/360 (deutsche kaufmännische)</option>
+        <option value="act/act">act/act (taggenau je Jahr)</option>
+      </select>
+    </div>
+    <div class="frow">
+      <div class="fg"><label>Beginn (Auszahlung)</label><input type="date" id="beginn" onchange="calc()"></div>
+      <div class="fg"><label>Ende (Rückzahlung)</label><input type="date" id="ende" onchange="calc()"></div>
+    </div>
+    <div class="fg"><label>Vereinbartes Fälligkeitsdatum (optional)</label><input type="date" id="faellig" onchange="calc()"></div>
+
+    <div class="fsec">Abrechnung / Zahlung</div>
+    <div class="frow">
+      <div class="fg"><label>Ort</label><input id="ort" oninput="calc()" placeholder="Eschborn"></div>
+      <div class="fg"><label>Abrechnungsdatum</label><input type="date" id="datum" onchange="calc()"></div>
+    </div>
+    <div class="fg"><label>Kontoinhaber</label><input id="kInh" oninput="calc()" placeholder="Darlehensgeber"></div>
+    <div class="frow">
+      <div class="fg"><label>Kreditinstitut</label><input id="kBank" oninput="calc()"></div>
+      <div class="fg"><label>BIC</label><input id="kBic" oninput="calc()"></div>
+    </div>
+    <div class="fg"><label>IBAN</label><input id="kIban" oninput="calc()"></div>
+    <div class="fg"><label>Verwendungszweck</label><input id="kVz" oninput="calc()" placeholder="Darlehensrückzahlung Nr. … inkl. Zinsen"></div>
+
+    <div style="margin-top:14px"><button class="btn btn-accent" style="width:100%" onclick="review()">✓ Prüfen</button></div>
+  </div>
+
+  <!-- OUTPUT -->
+  <div class="panel">
+    <div class="kpis" id="kpis"></div>
+    <div class="doc" id="doc"></div>
+  </div>
+</div>
+
+<!-- Register -->
+<div class="panel reg" style="margin-top:20px">
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px"><b>Register der Zinsberechnungen</b><span id="regCnt" style="font-size:12px;color:var(--muted)"></span></div>
+  <div style="overflow-x:auto"><table id="regTbl"><thead><tr>
+    <th>Nr.</th><th>Darlehen</th><th>Geber → Nehmer</th><th>Zeitraum</th><th>Methode</th><th class="num">Betrag</th><th class="num">Zinsen</th><th class="num">Gesamt</th><th>Erstellt</th><th></th>
+  </tr></thead><tbody></tbody></table></div>
+</div>
+</div>
+
+<!-- Prüf-Overlay -->
+<div class="ov" id="ov"><div class="box">
+  <div class="bar">
+    <button class="btn" onclick="closeReview()">← Zurück zur Korrektur</button>
+    <button class="btn btn-accent" onclick="save()">Zinsberechnung erstellen</button>
+  </div>
+  <div id="ovBody"></div>
+</div></div>
+<div class="toast" id="toast"></div>
+<script>
+const sb=window.supabase.createClient('https://jqzxctfqvcwbctpjksvg.supabase.co','eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpxenhjdGZxdmN3YmN0cGprc3ZnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODIxMzA0MzIsImV4cCI6MjA5NzcwNjQzMn0.RKIbZxJdusKWWPjBJqlxZ8e1m8So02UslOg55YRsn3o');
+const $=id=>document.getElementById(id);
+const esc=s=>(s==null?'':String(s)).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+function toast(m){const t=$('toast');t.textContent=m;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),1900);}
+const nl2br=s=>esc(s).replace(/\n/g,'<br>');
+const num=v=>{const n=parseFloat(String(v==null?'':v).replace(/\./g,'').replace(',','.'));return isNaN(n)?0:n;};
+const eur=n=>new Intl.NumberFormat('de-DE',{style:'currency',currency:'EUR',minimumFractionDigits:2,maximumFractionDigits:2}).format(n||0);
+const fmtD=d=>{if(!d)return '—';const p=String(d).split('-');return p.length===3?p[2]+'.'+p[1]+'.'+p[0]:d;}
+function isLeap(y){return (y%4===0&&y%100!==0)||y%400===0;}
+function daysBetween(a,b){return Math.round((Date.parse(b)-Date.parse(a))/86400000);}
+function days360E(a,b){const da=new Date(a),db=new Date(b);let d1=da.getUTCDate(),d2=db.getUTCDate();if(d1===31)d1=30;if(d2===31)d2=30;return (db.getUTCFullYear()-da.getUTCFullYear())*360+(db.getUTCMonth()-da.getUTCMonth())*30+(d2-d1);}
+function factorActAct(a,b){let cur=Date.parse(a),end=Date.parse(b),f=0;while(cur<end){const y=new Date(cur).getUTCFullYear();const ye=Date.UTC(y+1,0,1);const seg=Math.min(ye,end);f+=((seg-cur)/86400000)/(isLeap(y)?366:365);cur=seg;}return f;}
+function calcFactor(method,a,b){if(method==='30E/360')return {tage:days360E(a,b),faktor:days360E(a,b)/360};const d=daysBetween(a,b);if(method==='act/360')return {tage:d,faktor:d/360};if(method==='act/act')return {tage:d,faktor:factorActAct(a,b)};return {tage:d,faktor:d/365};}
+function monthBreakdown(a,b){const res=[];let d=new Date(Date.parse(a));d.setUTCDate(d.getUTCDate()+1);const end=new Date(Date.parse(b));const MON=['Januar','Februar','März','April','Mai','Juni','Juli','August','September','Oktober','November','Dezember'];
+  while(d.getTime()<=end.getTime()){const y=d.getUTCFullYear(),mo=d.getUTCMonth();const me=new Date(Date.UTC(y,mo+1,0));const segEnd=(me.getTime()<=end.getTime())?me:end;const first=d.getUTCDate(),last=segEnd.getUTCDate();res.push({lbl:MON[mo]+' '+y,cnt:last-first+1,r:('0'+first).slice(-2)+'.'+('0'+(mo+1)).slice(-2)+'. – '+('0'+last).slice(-2)+'.'+('0'+(mo+1)).slice(-2)+'.'+y});d=new Date(Date.UTC(y,mo+1,1));}
+  return res;}
+function P(){return {dnr:$('dnr').value.trim(),bez:$('bez').value.trim(),geber:$('geber').value.trim(),geberAdr:$('geberAdr').value.trim(),nehmer:$('nehmer').value.trim(),nehmerAdr:$('nehmerAdr').value.trim(),betrag:num($('betrag').value),zins:num($('zins').value),methode:$('methode').value,beginn:$('beginn').value,ende:$('ende').value,faellig:$('faellig').value,ort:$('ort').value.trim(),datum:$('datum').value,kInh:$('kInh').value.trim(),kBank:$('kBank').value.trim(),kBic:$('kBic').value.trim(),kIban:$('kIban').value.trim(),kVz:$('kVz').value.trim()};}
+function compute(p){const ok=p.beginn&&p.ende&&Date.parse(p.ende)>Date.parse(p.beginn);const cf=ok?calcFactor(p.methode,p.beginn,p.ende):{tage:0,faktor:0};const zinsen=Math.round(p.betrag*(p.zins/100)*cf.faktor*100)/100;const gesamt=Math.round((p.betrag+zinsen)*100)/100;return {ok,tage:cf.tage,faktor:cf.faktor,zinsen,gesamt};}
+function docHtml(p,c){
+  const mb=(p.beginn&&p.ende&&c.ok)?monthBreakdown(p.beginn,p.ende):[];
+  const mbRows=mb.map(m=>`<tr><td class="k" style="background:#fff;border:none;width:30%">${m.lbl}:</td><td style="border:none">${m.cnt} Tage (${m.r})</td></tr>`).join('')
+    +`<tr><td class="k" style="background:#fff;border:none;font-weight:700">Gesamt:</td><td style="border:none;font-weight:700">${c.tage} Tage</td></tr>`;
+  const faktorTxt=c.faktor?c.faktor.toFixed(6).replace('.',','):'—';
+  return `
+    <div class="top"><div>${nl2br(p.geber||'Darlehensgeber')}<br>${nl2br(p.geberAdr||'')}</div><div>${esc(p.ort||'')}${p.ort&&p.datum?', ':''}${fmtD(p.datum)!=='—'?fmtD(p.datum):''}</div></div>
+    <div style="margin-top:14px;font-size:12px">An:<br><b>${esc(p.nehmer||'Darlehensnehmer')}</b><br>${nl2br(p.nehmerAdr||'')}</div>
+    <div class="rule"></div>
+    <h1>Zinsabrechnung – Darlehensvertrag Nr. ${esc(p.dnr||'—')}</h1>
+    <div class="subt">${esc(p.bez||('Darlehen '+(p.geber||'')+' an '+(p.nehmer||'')))}</div>
+
+    <h3>1. Vertragseckdaten</h3>
+    <table>
+      <tr><td class="k">Vertragsparteien:</td><td>${esc(p.geber||'—')} (Darlehensgeber) / ${esc(p.nehmer||'—')} (Darlehensnehmer)</td></tr>
+      <tr><td class="k">Vertragsnummer:</td><td>Darlehensvertrag Nr. ${esc(p.dnr||'—')}</td></tr>
+      <tr><td class="k">Darlehensbetrag:</td><td>${eur(p.betrag)}</td></tr>
+      <tr><td class="k">Zinssatz:</td><td>${p.zins.toLocaleString('de-DE',{minimumFractionDigits:2})} % p.a.</td></tr>
+      <tr><td class="k">Vereinbartes Fälligkeitsdatum:</td><td>${fmtD(p.faellig)}</td></tr>
+      <tr><td class="k">Auszahlungsdatum:</td><td>${fmtD(p.beginn)}</td></tr>
+      <tr><td class="k">Tatsächliches Rückzahlungsdatum:</td><td>${fmtD(p.ende)}</td></tr>
+    </table>
+
+    <h3>2. Laufzeitberechnung</h3>
+    <p style="font-size:12px;color:#444">Maßgeblich ist der Zeitraum vom Auszahlungsdatum bis zum Rückzahlungsdatum (Methode <b>${esc(p.methode)}</b>).</p>
+    <table>
+      <tr><td class="k">Auszahlungsdatum:</td><td>${fmtD(p.beginn)}</td></tr>
+      <tr><td class="k">Rückzahlungsdatum:</td><td>${fmtD(p.ende)}</td></tr>
+      <tr><td class="k">Laufzeit:</td><td>${c.tage} Kalendertage</td></tr>
+    </table>
+    <table style="margin-top:2px">${mbRows}</table>
+
+    <h3>3. Zinsberechnung</h3>
+    <div class="formula">Zinsen = Darlehensbetrag × Zinssatz × Faktor (${esc(p.methode)})</div>
+    <div class="formula">Zinsen = ${eur(p.betrag)} × ${(p.zins/100).toLocaleString('de-DE',{minimumFractionDigits:2})} × ${faktorTxt}</div>
+    <div class="formula">Zinsen = <b>${eur(c.zinsen)}</b></div>
+
+    <h3>4. Zusammenfassung – fälliger Gesamtbetrag</h3>
+    <table class="sum">
+      <tr class="h"><td>Position</td><td class="num">Betrag</td></tr>
+      <tr><td>Darlehensbetrag (Hauptforderung)</td><td class="num">${eur(p.betrag)}</td></tr>
+      <tr><td>Zinsen (${p.zins.toLocaleString('de-DE',{minimumFractionDigits:2})} % p.a., ${c.tage} Tage, ${esc(p.methode)})</td><td class="num">${eur(c.zinsen)}</td></tr>
+      <tr class="g"><td>Gesamtbetrag (fällig zur Rückzahlung)</td><td class="num">${eur(c.gesamt)}</td></tr>
+    </table>
+
+    <h3>5. Zahlungsanweisung</h3>
+    <p style="font-size:12px;color:#444">Bitte überweisen Sie den Gesamtbetrag von <b>${eur(c.gesamt)}</b>${p.ende?(' bis zum <b>'+fmtD(p.ende)+'</b>'):''} auf folgendes Konto des Darlehensgebers:</p>
+    <table>
+      <tr><td class="k">Kontoinhaber:</td><td>${esc(p.kInh||p.geber||'—')}</td></tr>
+      <tr><td class="k">Kreditinstitut:</td><td>${esc(p.kBank||'—')}</td></tr>
+      <tr><td class="k">IBAN:</td><td>${esc(p.kIban||'—')}</td></tr>
+      <tr><td class="k">BIC:</td><td>${esc(p.kBic||'—')}</td></tr>
+      <tr><td class="k">Verwendungszweck:</td><td>${esc(p.kVz||('Darlehensrückzahlung Nr. '+(p.dnr||'')+' inkl. Zinsen'))}</td></tr>
+    </table>
+
+    <div class="foot">Die Zinsberechnung erfolgt auf Basis der Methode ${esc(p.methode)}. Diese Abrechnung ergibt sich aus dem Darlehensvertrag Nr. ${esc(p.dnr||'—')}.</div>
+    <div class="sign"><div class="sigline">${esc(p.geber||'')}</div></div>
+  `;
+}
+let CUR=null;
+function calc(){
+  const p=P(); const c=compute(p); CUR={p,c};
+  $('kpis').innerHTML=[
+    ['Laufzeit', c.ok?(c.tage+' Tage'):'—'],
+    ['Zinsen', c.ok?eur(c.zinsen):'—'],
+    ['Gesamtbetrag', c.ok?eur(c.gesamt):'—'],
+  ].map(k=>`<div class="kpi"><div class="l">${k[0]}</div><div class="v">${k[1]}</div></div>`).join('');
+  $('doc').innerHTML=docHtml(p,c);
+}
+function review(){
+  const p=P();
+  if(!p.geber||!p.nehmer||!p.betrag||!p.beginn||!p.ende){toast('Bitte Geber, Nehmer, Betrag, Beginn und Ende ausfüllen.');return;}
+  if(Date.parse(p.ende)<=Date.parse(p.beginn)){toast('Ende muss nach Beginn liegen.');return;}
+  calc();
+  $('ovBody').innerHTML='<div class="doc">'+docHtml(CUR.p,CUR.c)+'</div>';
+  $('ov').style.display='flex';
+}
+function closeReview(){$('ov').style.display='none';}
+async function save(){
+  const {p,c}=CUR;
+  const nextNr=(REG.reduce((m,r)=>Math.max(m,r.nr||0),0))+1;
+  const rec={nr:nextNr,darlehen_id:$('loanSel').value||null,darlehen_nr:p.dnr||null,bez:p.bez||null,
+    geber:p.geber,geber_adresse:p.geberAdr||null,nehmer:p.nehmer,nehmer_adresse:p.nehmerAdr||null,
+    betrag:p.betrag,zins:p.zins,methode:p.methode,beginn:p.beginn,ende:p.ende,faellig:p.faellig||null,
+    ort:p.ort||null,datum:p.datum||null,tage:c.tage,faktor:c.faktor,zinsen:c.zinsen,gesamt:c.gesamt,
+    konto_inhaber:p.kInh||null,kreditinstitut:p.kBank||null,iban:p.kIban||null,bic:p.kBic||null,verwendungszweck:p.kVz||null,
+    doc_html:docHtml(p,c)};
+  const res=await sb.from('zinsberechnungen').insert(rec).select();
+  if(res.error){toast('Fehler: '+res.error.message);return;}
+  closeReview(); toast('Zinsberechnung Nr. '+nextNr+' im Register ✓'); loadReg();
+}
+let REG=[];
+async function loadReg(){
+  const res=await sb.from('zinsberechnungen').select('*').order('nr',{ascending:false});
+  REG=res.error?[]:(res.data||[]);
+  $('regCnt').textContent=REG.length+' Einträge';
+  $('regTbl').querySelector('tbody').innerHTML=REG.length?REG.map(r=>`<tr>
+    <td><b>${r.nr||'—'}</b></td><td>${esc(r.darlehen_nr||'—')}${r.bez?'<br><span style="color:var(--muted);font-size:11px">'+esc(r.bez)+'</span>':''}</td>
+    <td style="font-size:12px">${esc(r.geber||'')} → ${esc(r.nehmer||'')}</td>
+    <td style="font-size:12px">${fmtD(r.beginn)} – ${fmtD(r.ende)}<br><span style="color:var(--muted)">${r.tage||0} Tage</span></td>
+    <td>${esc(r.methode||'')}</td>
+    <td class="num">${eur(r.betrag)}</td><td class="num">${eur(r.zinsen)}</td><td class="num"><b>${eur(r.gesamt)}</b></td>
+    <td style="font-size:11px;color:var(--muted)">${r.created_at?new Date(r.created_at).toLocaleDateString('de-DE'):''}</td>
+    <td style="white-space:nowrap"><button class="lnk" onclick="openDoc('${r.id}')">📄 öffnen</button> · <button class="lnk" style="color:var(--red)" onclick="delReg('${r.id}')">✕</button></td>
+  </tr>`).join(''):'<tr><td colspan="10" style="text-align:center;color:var(--muted);padding:20px">Noch keine Zinsberechnung erstellt.</td></tr>';
+}
+function openDoc(id){
+  const r=REG.find(x=>x.id===id); if(!r){toast('Nicht gefunden');return;}
+  const w=window.open('','_blank'); if(!w){toast('Bitte Pop-ups erlauben');return;}
+  w.document.write(`<!DOCTYPE html><html lang="de"><head><meta charset="UTF-8"><title>Zinsberechnung Nr. ${r.nr} · Darlehen ${esc(r.darlehen_nr||'')}</title>
+    <style>body{font-family:Arial,Helvetica,sans-serif;color:#222;max-width:820px;margin:20px auto;padding:0 24px;line-height:1.65;font-size:13px}
+    .top{display:flex;justify-content:space-between}.rule{height:3px;background:#c0392b;margin:18px 0 14px}h1{font-size:20px;margin:6px 0 2px}h3{font-size:14px;margin:20px 0 7px}
+    table{width:100%;border-collapse:collapse;font-size:12.5px;margin:6px 0}td{padding:7px 10px;border:1px solid #e2e5e9;vertical-align:top}td.k{background:#f6f7f9;font-weight:600;width:42%}
+    .formula{background:#f3f4f6;font-family:'Courier New',monospace;padding:9px 12px;border-radius:6px;margin:6px 0}
+    table.sum td{border:none;border-bottom:1px solid #e2e5e9}table.sum tr.h td{background:#c0392b;color:#fff;font-weight:700;text-transform:uppercase;font-size:11px}table.sum tr.g td{background:#222;color:#fff;font-weight:700}
+    .num{text-align:right}.foot{font-size:11px;color:#555;margin-top:16px;border-top:1px solid #e2e5e9;padding-top:10px}.sign{margin-top:34px}.sigline{border-top:1px solid #333;width:230px;padding-top:5px;font-size:11px}
+    .toolbar{text-align:center;margin-bottom:16px}.toolbar button{font-size:13px;padding:8px 16px;border:1px solid #185fa5;background:#185fa5;color:#fff;border-radius:8px;cursor:pointer}@media print{.toolbar{display:none}}</style></head><body>
+    <div class="toolbar"><button onclick="window.print()">🖨 Drucken / als PDF speichern</button></div>${r.doc_html||'<p>Kein Dokument.</p>'}</body></html>`);
+  w.document.close();
+}
+async function delReg(id){if(!confirm('Diese Zinsberechnung löschen?'))return;await sb.from('zinsberechnungen').delete().eq('id',id);loadReg();}
+function prefillLoan(){
+  const id=$('loanSel').value; const l=LOANS.find(x=>x.id===id); if(!l)return;
+  $('dnr').value=l.dnr_intern||''; $('bez').value=l.bez||''; $('geber').value=l.geber||''; $('nehmer').value=l.nehmer||'';
+  $('betrag').value=l.betrag!=null?l.betrag:''; $('zins').value=l.zins!=null?l.zins:''; if(l.aus)$('beginn').value=l.aus;
+  if(l.zweck||l.dnr_intern)$('kVz').value='Darlehensrueckzahlung Nr. '+(l.dnr_intern||'')+' inkl. Zinsen';
+  calc();
+}
+let LOANS=[];
+async function loadLoans(){
+  const res=await sb.from('loans').select('id,dnr_intern,bez,geber,nehmer,betrag,zins,aus,zweck').order('dnr_intern');
+  LOANS=res.error?[]:(res.data||[]);
+  $('loanSel').innerHTML='<option value="">— Darlehen wählen —</option>'+LOANS.map(l=>`<option value="${l.id}">Nr. ${esc(l.dnr_intern||'?')} · ${esc(l.bez||'')}</option>`).join('');
+}
+(function init(){ const t=new Date().toISOString().slice(0,10); $('datum').value=t; loadLoans(); loadReg(); calc(); })();
+</script>
+</body></html>
