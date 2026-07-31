@@ -140,7 +140,7 @@ table.num td:nth-child(2),table.num th:nth-child(2){text-align:right}
   <div class="tablewrap"><table class="mini" id="vermtbl"></table></div>
   <div class="note" style="margin-top:14px">4.6 · Genossenschaftsanteile — Bank / Konto / Art des Vermögenswerts / Betrag (editierbar, lokal gespeichert).</div>
   <div class="tablewrap"><table class="mini" id="genotbl"></table></div>
-  <div class="note" style="margin-top:14px">4.7 · Wertpapierdepot — Bank / Depot-Nr. / Wertpapier / Stück / Kurswert (editierbar, lokal gespeichert).</div>
+  <div class="note" style="margin-top:14px">4.7 · Wertpapierdepot — Stück &amp; Kurswert je Stück eintragen; der Gesamtwert (Stück × Kurswert) wird automatisch berechnet. Editierbar, lokal gespeichert.</div>
   <div class="tablewrap"><table class="mini" id="depottbl"></table></div>
 
   <h2><span class="dot" style="background:var(--rh)"></span>5 · Bürgschaften / Grundschulden</h2>
@@ -510,23 +510,27 @@ function renderGeno(){
     + rows + `<tr class="totrow"><td colspan="3">Summe Genossenschaftsanteile</td><td style="text-align:right">${incEUR(sum)}</td></tr></tbody>`;
 }
 // Wertpapierdepot — mehrspaltig (Bank / Depot-Nr. / Wertpapier / Stück / Kurswert)
-const DEPOTSTORE="macherOS_selbst_depot_v1";
+const DEPOTSTORE="macherOS_selbst_depot_v2";
 const DEPOT=[
- {k:'cc_voda',bank:'Cortal Consors',depot:'unbekannt',wp:'Vodafone Group Plc',stk:'1',def:''},
+ {k:'cc_voda',bank:'Cortal Consors',depot:'unbekannt',wp:'Vodafone Group Plc',stk:'1',kurs:''},
 ];
 function depotLoad(){ try{ return JSON.parse(localStorage.getItem(DEPOTSTORE))||{}; }catch(e){ return {}; } }
-function depotSum(){ const d=depotLoad(); let s=0; DEPOT.forEach(g=>{ s+=incParse((g.k in d)?d[g.k]:g.def); }); return s; }
-function depotSave(k,val){ const d=depotLoad(); d[k]=val; localStorage.setItem(DEPOTSTORE,JSON.stringify(d)); renderDepot(); renderVerm(); }
+function depotRow(g){ const d=depotLoad(); const e=(d[g.k]&&typeof d[g.k]==='object')?d[g.k]:{}; return { stk:('stk' in e)?e.stk:g.stk, kurs:('kurs' in e)?e.kurs:(g.kurs||'') }; }
+function depotGesamt(g){ const r=depotRow(g); return incParse(r.stk)*incParse(r.kurs); }
+function depotSum(){ let s=0; DEPOT.forEach(g=>{ s+=depotGesamt(g); }); return s; }
+function depotSave(k,field,val){ const d=depotLoad(); if(!d[k]||typeof d[k]!=='object') d[k]={}; d[k][field]=val; localStorage.setItem(DEPOTSTORE,JSON.stringify(d)); renderDepot(); renderVerm(); }
 function renderDepot(){
   const el=document.getElementById('depottbl'); if(!el) return;
-  const d=depotLoad(); const q=s=>(s==null?'':String(s)).replace(/"/g,'&quot;');
+  const q=s=>(s==null?'':String(s)).replace(/"/g,'&quot;');
   let sum=0;
-  const rows=DEPOT.map(g=>{ const val=(g.k in d)?d[g.k]:g.def; sum+=incParse(val);
-    return `<tr><td>${g.bank}</td><td>${g.depot}</td><td>${g.wp}</td><td style="text-align:right">${g.stk}</td>
-      <td style="text-align:right"><input style="${FINL};text-align:right;max-width:150px" inputmode="decimal" value="${q(val)}" placeholder="€" onchange="depotSave('${g.k}',this.value)"></td></tr>`;
+  const rows=DEPOT.map(g=>{ const r=depotRow(g); const ges=incParse(r.stk)*incParse(r.kurs); sum+=ges;
+    return `<tr><td>${g.bank}</td><td>${g.depot}</td><td>${g.wp}</td>
+      <td style="text-align:right"><input style="${FINL};text-align:right;max-width:80px" inputmode="decimal" value="${q(r.stk)}" placeholder="Stück" onchange="depotSave('${g.k}','stk',this.value)"></td>
+      <td style="text-align:right"><input style="${FINL};text-align:right;max-width:120px" inputmode="decimal" value="${q(r.kurs)}" placeholder="€ / Stück" onchange="depotSave('${g.k}','kurs',this.value)"></td>
+      <td style="text-align:right;font-weight:600">${incEUR(ges)}</td></tr>`;
   }).join('');
-  el.innerHTML='<thead><tr><th>Bank</th><th>Depot-Nr.</th><th>Wertpapier</th><th style="text-align:right">Stück</th><th style="text-align:right">Kurswert (€)</th></tr></thead><tbody>'
-    + rows + `<tr class="totrow"><td colspan="4">Summe Wertpapierdepot</td><td style="text-align:right">${incEUR(sum)}</td></tr></tbody>`;
+  el.innerHTML='<thead><tr><th>Bank</th><th>Depot-Nr.</th><th>Wertpapier</th><th style="text-align:right">Stück</th><th style="text-align:right">Kurswert je Stück (€)</th><th style="text-align:right">Gesamtwert (€)</th></tr></thead><tbody>'
+    + rows + `<tr class="totrow"><td colspan="5">Summe Wertpapierdepot</td><td style="text-align:right">${incEUR(sum)}</td></tr></tbody>`;
 }
 function vermLoad(){ try{ return JSON.parse(localStorage.getItem(VERMSTORE))||{}; }catch(e){ return {}; } }
 function renderVerm(){
