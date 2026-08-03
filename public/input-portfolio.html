@@ -43,6 +43,13 @@ th.grp{text-align:center;color:#fff;border-left:2px solid var(--surf);border-rig
 th.grp-gray{background:#6b7280}th.grp-blue{background:#2f6db0}th.grp-purple{background:#7b53b8}
 .chk{color:var(--green);font-weight:700}
 .over{color:var(--red)}
+.einchart{background:var(--surf);border:1px solid var(--line);border-radius:12px;padding:14px 16px;margin-bottom:12px}
+.einchart .ct{font-size:12px;font-weight:700;text-transform:uppercase;color:var(--muted);margin-bottom:10px}
+.echart-row{display:flex;align-items:center;gap:10px;margin-bottom:7px}
+.echart-lbl{flex:0 0 190px;font-size:12.5px}
+.echart-track{flex:1;background:var(--surf2);border-radius:6px;height:20px;overflow:hidden}
+.echart-fill{height:100%;border-radius:6px;transition:width .3s}
+.echart-val{flex:0 0 120px;font-size:12.5px;text-align:right;font-variant-numeric:tabular-nums;color:var(--dim,#4b5563)}
 </style></head><body>
 <div class="hdr">
   <div><div class="hdr-title">🏢 Input Portfolio</div><div class="hdr-sub">Gebäude · Einheiten · Mietverträge — zentrale Stammdaten (Import aus Nahaus)</div></div>
@@ -66,6 +73,7 @@ th.grp-gray{background:#6b7280}th.grp-blue{background:#2f6db0}th.grp-purple{back
   </div>
   <div class="hint" id="hint"></div>
   <div class="legend"><span><span class="sw" style="background:#eceef1"></span>Eric Eisenhardt (privat)</span><span><span class="sw" style="background:#e7f0fb"></span>Wohn(T)raum Rheinhessen GmbH</span></div>
+  <div class="einchart" id="einchart" style="display:none"></div>
   <div class="scroll"><table id="tbl"><thead id="thead"></thead><tbody></tbody></table></div>
 </div>
 <div class="toast" id="toast"></div>
@@ -99,11 +107,13 @@ function waitTage(m){if(m.days==null)return '—';return m.days<=0?'<span class=
 function waitMon(m){if(m.days==null)return '—';return m.days<=0?'<span class="chk">✅</span>':String(Math.round(m.days/30.4375));}
 
 // Konfiguration je Tab
-const TABLES={geb:'gebaeude',ein:'einheiten',ver:'mietvertraege'};
+const TABLES={geb:'gebaeude',ein:'einheiten',ver:'mietvertraege',leer:'einheiten'};
+const LEER_STATI=['Leerstand','In Renovierung/Sanierung'];
 const HINTS={
   geb:'Objekte des Bestands. Fristen (15%-Grenze 3 J., 6b-Rücklage 6 J., Spekulation 10 J.) werden automatisch aus dem Nutzen-/Lastenübergang berechnet. Nur zur Orientierung – steuerlich mit dem Steuerberater abstimmen.',
   ein:'Einheiten je Gebäude (Wohnungen, Gewerbe, Garagen…). Fläche in m². Lage & Ausstattung frei erfassbar.',
-  ver:'Mietverträge je Einheit. Mietdauer wird automatisch aus dem Mietbeginn berechnet. Warmmiete = Summe der Bestandteile (nur Anzeige, editierbar bleibt Warmmiete-Feld).'
+  ver:'Mietverträge je Einheit. Mietdauer wird automatisch aus dem Mietbeginn berechnet. Warmmiete = Summe der Bestandteile (nur Anzeige, editierbar bleibt Warmmiete-Feld).',
+  leer:'Alle Einheiten mit Status „Leerstand" oder „In Renovierung/Sanierung". Änderungen wirken direkt auf die Einheit.'
 };
 
 async function save(id,field,val,numeric){
@@ -113,7 +123,7 @@ async function save(id,field,val,numeric){
   if(res.error){toast('Fehler: '+res.error.message);return;}
   const arr=TAB==='geb'?GEB:TAB==='ein'?EIN:VER;
   const r=arr.find(x=>x.id===id); if(r)r[field]=v;
-  if(field==='beginn'||field==='nutzen_lasten'||field==='gebaeude_id'||field==='einheit_id'||field==='kennung'||field==='kategorie'||field==='bezeichnung')render(); else toast('Gespeichert ✓');
+  if(field==='beginn'||field==='nutzen_lasten'||field==='nl_hinweis'||field==='eigentuemer'||field==='gebaeude_id'||field==='einheit_id'||field==='kennung'||field==='kategorie'||field==='bezeichnung')render(); else toast('Gespeichert ✓');
 }
 async function saveEin(eid,field,val){
   if(!eid||eid==='null'){toast('Erst Einheit wählen');return;}
@@ -146,6 +156,7 @@ function rowGeb(r){
   const m3=milestone(nl,3), m6=milestone(nl,6), m10=milestone(nl,10);
   const eig=r.eigentuemer||'';
   const isGmbH=eig.includes('GmbH'), isEric=eig.startsWith('Eric');
+  const hasHin=!!(r.nl_hinweis&&r.nl_hinweis.trim());
   const blk=(m,show)=>show?('<td class="calc">'+fmtDE(m.t)+'</td><td class="calc">'+waitTage(m)+'</td><td class="calc">'+waitMon(m)+'</td>'):'<td class="calc"></td><td class="calc"></td><td class="calc"></td>';
   return '<tr class="'+ownerClass(r.eigentuemer)+'">'
    +'<td class="kn"><input value="'+esc(r.kennung)+'" style="width:66px" onchange="save(\''+r.id+'\',\'kennung\',this.value)"></td>'
@@ -154,10 +165,11 @@ function rowGeb(r){
    +'<td><input value="'+esc(r.ort)+'" onchange="save(\''+r.id+'\',\'ort\',this.value)"></td>'
    +'<td><select onchange="save(\''+r.id+'\',\'eigentuemer\',this.value)">'+opts(eigs,r.eigentuemer,'—')+'</select></td>'
    +'<td><input value="'+esc(r.notiz)+'" style="min-width:120px" onchange="save(\''+r.id+'\',\'notiz\',this.value)"></td>'
-   +'<td><input type="date" value="'+esc(nl)+'" onchange="save(\''+r.id+'\',\'nutzen_lasten\',this.value)"></td>'
-   +blk(m3,true)
-   +blk(m6,isGmbH)
-   +blk(m10,isEric)
+   +'<td><input type="date" value="'+esc(nl)+'" '+(hasHin?'disabled':'')+' onchange="save(\''+r.id+'\',\'nutzen_lasten\',this.value)">'
+     +'<input value="'+esc(r.nl_hinweis)+'" placeholder="oder Hinweis (z.B. Rent To Rent)" style="margin-top:3px;font-size:11px" onchange="save(\''+r.id+'\',\'nl_hinweis\',this.value)"></td>'
+   +blk(m3,!hasHin)
+   +blk(m6,isGmbH&&!hasHin)
+   +blk(m10,isEric&&!hasHin)
    +'<td><button class="abtn" onclick="del(\''+r.id+'\')">✕</button></td></tr>';
 }
 function columnsEin(){return ['Gebäude','Kategorie','Status','Bezeichnung','Fläche m²','Lage','Ausstattung','Notiz',''];}
@@ -213,7 +225,7 @@ function render(){
       +'<th class="grp grp-blue" colspan="3">Aktivierung 6b-Rücklage · 6 Jahre abgelaufen</th>'
       +'<th class="grp grp-purple" colspan="3">Verkauf privat steuerfrei · 10 Jahre</th>'
       +'<th rowspan="2"></th></tr>';
-    const sub=['Stichtag','Warten (T)','Warten (M)'];
+    const sub=['Stichtag','Warten (Tage)','Warten (Monate)'];
     let r2='<tr>'+[].concat(sub,sub,sub).map(c=>'<th>'+esc(c)+'</th>').join('')+'</tr>';
     $('thead').innerHTML=r1+r2;
   } else {
@@ -221,6 +233,7 @@ function render(){
   }
   $('tbl').querySelector('tbody').innerHTML=rows.join('')||'<tr><td colspan="'+cols.length+'" style="text-align:center;color:var(--muted);padding:20px">Keine Einträge.</td></tr>';
   $('cnt').textContent=list.length+' Einträge';
+  renderEinChart(TAB==='ein'?list:null);
   const mergeV=[...new Set([...VERM_DEF,...distinct(VER,x=>x.vermittler)])];
   const mergeE=[...new Set([...EINK_DEF,...distinct(VER,x=>x.einkommensquelle)])];
   $('dlVerm').innerHTML=mergeV.map(v=>'<option value="'+esc(v)+'">').join('');
@@ -240,9 +253,11 @@ function exportCSV(){
     const exMon=m=>m.days==null?'':(m.days<=0?'0':(m.days/30.4375).toFixed(1));
     GEB.forEach(g=>{const m3=milestone(g.nutzen_lasten,3),m6=milestone(g.nutzen_lasten,6),m10=milestone(g.nutzen_lasten,10);
       const eig=g.eigentuemer||'',gmbh=eig.includes('GmbH'),eric=eig.startsWith('Eric');
-      rows.push([g.kennung,g.name,g.plz,g.ort,g.eigentuemer,g.notiz,g.nutzen_lasten,exM(m3),exT(m3),exMon(m3),
-        gmbh?exM(m6):'',gmbh?exT(m6):'',gmbh?exMon(m6):'',
-        eric?exM(m10):'',eric?exT(m10):'',eric?exMon(m10):'']);});
+      const hin=(g.nl_hinweis||'').trim();
+      rows.push([g.kennung,g.name,g.plz,g.ort,g.eigentuemer,g.notiz,hin||g.nutzen_lasten||'',
+        hin?'':exM(m3),hin?'':exT(m3),hin?'':exMon(m3),
+        (gmbh&&!hin)?exM(m6):'',(gmbh&&!hin)?exT(m6):'',(gmbh&&!hin)?exMon(m6):'',
+        (eric&&!hin)?exM(m10):'',(eric&&!hin)?exT(m10):'',(eric&&!hin)?exMon(m10):'']);});
     download('portfolio_gebaeude_'+today+'.csv',rows);
   } else if(TAB==='ein'){
     const rows=[['Gebäude','Kategorie','Status','Bezeichnung','Fläche m²','Lage','Ausstattung','Notiz']];
@@ -255,6 +270,22 @@ function exportCSV(){
     download('portfolio_mietvertraege_'+today+'.csv',rows);
   }
   toast('CSV exportiert ✓');
+}
+function renderEinChart(list){
+  const box=$('einchart');
+  if(!list){box.style.display='none';return;}
+  box.style.display='';
+  const cats=[['Vermietet','#1f7a4d'],['Leerstand','#c0392b'],['In Renovierung/Sanierung','#e08a1e'],['Ohne Status','#9aa1ab']];
+  const total=list.length||1;
+  const cnt={}; cats.forEach(c=>cnt[c[0]]=0);
+  list.forEach(e=>{const s=(e.status&&e.status.trim())?e.status.trim():'Ohne Status';cnt[s]=(cnt[s]||0)+1;});
+  let html='<div class="ct">Einheiten nach Status · '+list.length+' Einheiten</div>';
+  cats.forEach(c=>{const n=cnt[c[0]]||0;const pct=(n/total*100);
+    html+='<div class="echart-row"><div class="echart-lbl">'+esc(c[0])+'</div>'
+      +'<div class="echart-track"><div class="echart-fill" style="width:'+pct.toFixed(1)+'%;background:'+c[1]+'"></div></div>'
+      +'<div class="echart-val">'+n+' · '+pct.toFixed(1).replace('.',',')+' %</div></div>';
+  });
+  box.innerHTML=html;
 }
 function renderKpis(){
   let k=[];
