@@ -115,9 +115,12 @@ function calc(r){
   var roi=(steig!=null&&steig>0)?g/steig:null;
   var proE=(eN&&eN>0)?g/eN:null;
   var proM2=(wf&&wf>0)?g/wf:null;
-  var durchlauf=(r.datum_beginn&&r.datum_ende)?Math.round((Date.parse(r.datum_ende)-Date.parse(r.datum_beginn))/86400000):null;
+  var heute=new Date().toISOString().slice(0,10);
+  var endeDauer=r.datum_ende?r.datum_ende:(r.datum_beginn?heute:null); // ohne Ende -> heutiges Datum
+  var laufend=!!(r.datum_beginn&&!r.datum_ende);
+  var durchlauf=(r.datum_beginn&&endeDauer)?Math.round((Date.parse(endeDauer)-Date.parse(r.datum_beginn))/86400000):null;
   var bisVerm=(r.datum_beginn&&r.datum_vermietung)?Math.round((Date.parse(r.datum_vermietung)-Date.parse(r.datum_beginn))/86400000):null;
-  return {g,steig,steigP,roi,proE,proM2,durchlauf,bisVerm};
+  return {g,steig,steigP,roi,proE,proM2,durchlauf,laufend,bisVerm};
 }
 const TYPEN=['Sanierungen','Umbauarbeiten'];
 const COLS=[
@@ -145,14 +148,14 @@ function fieldInput(r,c,fn){
   fn=fn||'upd';
   var key=c[0],type=c[2],cls=c[3]||'';
   var val=r[key]==null?'':r[key];
-  if(type==='dauer'){var k=calc(r);return (k.durchlauf==null?'–':String(k.durchlauf));}
+  if(type==='dauer'){var k=calc(r);return (k.durchlauf==null?'–':String(k.durchlauf)+(k.laufend?' ⏳':''));}
   if(type==='typ'){return '<select style="min-width:120px" onchange="'+fn+'(\''+r.id+'\',\''+key+'\',this.value)">'+TYPEN.map(t=>'<option '+(t===val?'selected':'')+'>'+esc(t)+'</option>').join('')+'</select>';}
   if(type==='team'){return '<input class="'+cls+'" list="teamDL" value="'+esc(val)+'" onchange="'+fn+'(\''+r.id+'\',\''+key+'\',this.value)">';}
   if(type==='date'){return '<input class="'+cls+'" type="date" value="'+esc(val)+'" onchange="'+fn+'(\''+r.id+'\',\''+key+'\',this.value)">';}
   if(type==='text'){return '<input class="'+cls+'" type="text" value="'+esc(val)+'" onchange="'+fn+'(\''+r.id+'\',\''+key+'\',this.value)">';}
   return '<input class="'+cls+'" type="text" inputmode="decimal" value="'+esc(val)+'" onchange="'+fn+'(\''+r.id+'\',\''+key+'\',this.value)">';
 }
-function inputCell(r,c){ return '<td'+(c[2]==='dauer'?' class="calc" title="automatisch aus Beginn und Ende"':'')+'>'+fieldInput(r,c)+'</td>'; }
+function inputCell(r,c){ return '<td'+(c[2]==='dauer'?' class="calc" title="automatisch: Ende (bzw. heute, solange kein Ende) minus Beginn. ⏳ = läuft noch"':'')+'>'+fieldInput(r,c)+'</td>'; }
 function render(){
   $('cnt').textContent=ROWS.length;
   $('emptyHint').style.display=ROWS.length?'none':'block';
@@ -291,8 +294,9 @@ const GRP1=['projektnummer','typ','objekt','objekt_wohnung','art','team','wohnfl
 const GRP2=['miete_vorher','miete_nachher','kosten_material','kosten_handwerker','kosten_entsorgung','kosten_planung'];
 function fieldRow(r,key){
   var c=COLS.find(function(x){return x[0]===key;}); if(!c)return '';
-  var inner=fieldInput(r,c,'updD');
-  if(c[2]==='dauer'){inner='<div class="dauerbox">'+inner+' Tage</div>';}
+  var inner;
+  if(c[2]==='dauer'){var k=calc(r);inner='<div class="dauerbox">'+(k.durchlauf==null?'–':k.durchlauf+' Tage'+(k.laufend?' · läuft ⏳':''))+'</div>';}
+  else inner=fieldInput(r,c,'updD');
   return '<div class="fld"><label>'+esc(c[1])+'</label>'+inner+'</div>';
 }
 function openDetail(id){DETAIL_CUR=id;$('dDlg').style.display='flex';renderDetail(id);}
@@ -302,7 +306,7 @@ function renderDetail(id){
   var r=ROWS.find(function(x){return x.id===id;}); if(!r)return;
   $('dTitle').textContent='Sanierung · '+((r.projektnummer?r.projektnummer+' — ':'')+(r.objekt_wohnung||r.objekt||'Sanierung'));
   var k=calc(r);
-  var kpiCards=[['Kosten gesamt',eur(k.g)],['€ / Einheit',eur(k.proE)],['€ / m²',eur2(k.proM2)],['Mietsteigerung €',eur(k.steig)],['Mietsteigerung %',pct(k.steigP)],['ROI (Monate)',d1(k.roi)],['Durchlaufzeit (Tage)',k.durchlauf==null?'–':k.durchlauf],['Beginn→Vermietung (Tage)',k.bisVerm==null?'–':k.bisVerm]];
+  var kpiCards=[['Kosten gesamt',eur(k.g)],['€ / Einheit',eur(k.proE)],['€ / m²',eur2(k.proM2)],['Mietsteigerung €',eur(k.steig)],['Mietsteigerung %',pct(k.steigP)],['ROI (Monate)',d1(k.roi)],['Durchlaufzeit (Tage)',(k.durchlauf==null?'–':k.durchlauf+(k.laufend?' ⏳ läuft':''))],['Beginn→Vermietung (Tage)',k.bisVerm==null?'–':k.bisVerm]];
   $('dBody').innerHTML=
     '<div class="dsec"><h3>Bereich 1 · Objekt &amp; Rahmendaten</h3><div class="fgrid">'+GRP1.map(function(key){return fieldRow(r,key);}).join('')+'</div></div>'
    +'<div class="dsec"><h3>Bereich 2 · Miete &amp; Kosten</h3><div class="fgrid">'+GRP2.map(function(key){return fieldRow(r,key);}).join('')+'</div></div>'
