@@ -132,7 +132,7 @@ export function permNodes() {
 }
 
 // Zuordnung jeder Kategorie/Verknüpfung zu einem Geschäftsbereich
-const GESCHAEFTE = [
+export const GESCHAEFTE = [
   { v: 'fav', label: 'Favoriten', icon: 'ti-star' },
   { v: 'desktop', label: 'Desktop', icon: 'ti-home', href: '/' },
   { v: 'vertrieb', label: 'Vertrieb', icon: 'ti-chart-line' },
@@ -141,7 +141,7 @@ const GESCHAEFTE = [
   { v: 'hausmeisterdienst', label: 'Hausmeisterdienst', icon: 'ti-tools' },
   { v: 'gf', label: 'Geschäftsführer', icon: 'ti-user' },
 ]
-const GB_MAP = {
+export const GB_MAP = {
   ankauf: 'vertrieb', vermietung: 'vertrieb', crm: 'vertrieb', baustandard: 'vertrieb', assetmanagement: 'vertrieb', strategie: 'vertrieb',
   buchhaltung: 'buchhaltung', controlling: 'buchhaltung', finance: 'buchhaltung', 'assetmgmt-bh': 'buchhaltung', stammdaten: 'buchhaltung',
   hausverwaltung: 'hausverwaltung', prozesse: 'hausverwaltung',
@@ -149,7 +149,7 @@ const GB_MAP = {
   '/gf-dashboard': 'gf', '/beschluesse': 'gf', '/aktivitaeten': 'hausverwaltung', '/dokumente': 'buchhaltung', '/nutzer': 'gf',
   '/hausmeisterdienst': 'hausmeisterdienst',
 }
-const gbOf = (n) => (n.type === 'group' ? GB_MAP[n.key] : GB_MAP[n.href])
+export const gbOf = (n) => (n.type === 'group' ? GB_MAP[n.key] : GB_MAP[n.href])
 
 export default function Sidebar({ user, demo, onLogout, role, perms }) {
   const path = usePathname()
@@ -210,6 +210,11 @@ export default function Sidebar({ user, demo, onLogout, role, perms }) {
     })
     setSelectedCat(null)
   }
+  const selectGb = (g) => {
+    setSelectedGb(g)
+    try { localStorage.setItem('sidebar_gb', g || '') } catch (e) {}
+    setSelectedCat(null)
+  }
   const toggleCat = (key) => setSelectedCat((prev) => (prev === key ? null : key))
 
   const email = user && user.email ? user.email : null
@@ -226,7 +231,8 @@ export default function Sidebar({ user, demo, onLogout, role, perms }) {
   // Aktive Ableitung aus dem aktuellen Pfad
   const activeGroupPath = NAV.find((n) => n.type === 'group' && canSee(n) && n.items.some(isActive))
   const activeLinkPath = NAV.find((n) => n.type === 'link' && isActive(n))
-  const derivedGb = activeGroupPath ? gbOf(activeGroupPath) : (activeLinkPath ? gbOf(activeLinkPath) : null)
+  const bereichGb = path && path.startsWith('/bereich/') ? path.split('/')[2] : null
+  const derivedGb = bereichGb || (activeGroupPath ? gbOf(activeGroupPath) : (activeLinkPath ? gbOf(activeLinkPath) : null))
   const activeGb = selectedGb || derivedGb || null
 
   const catItems = NAV.filter((n) => canSee(n) && gbOf(n) === activeGb)
@@ -275,17 +281,24 @@ export default function Sidebar({ user, demo, onLogout, role, perms }) {
 
       {/* Zeile 1: Geschäftsbereich */}
       <nav className="gbbar">
-        {GESCHAEFTE.map((g) => (
-          g.href ? (
+        {GESCHAEFTE.map((g) => {
+          if (g.href) return (
             <Link key={g.v} href={g.href} className={'gb' + (path === g.href ? ' active' : '')}>
               <i className={'ti ' + g.icon} /> {g.label}
             </Link>
-          ) : (
+          )
+          if (g.v === 'fav') return (
             <button key={g.v} className={'gb' + (activeGb === g.v ? ' active' : '')} onClick={() => chooseGb(g.v)}>
               <i className={'ti ' + g.icon} /> {g.label}
             </button>
           )
-        ))}
+          const bereichPath = '/bereich/' + g.v
+          return (
+            <Link key={g.v} href={bereichPath} className={'gb' + (activeGb === g.v ? ' active' : '')} onClick={() => selectGb(g.v)}>
+              <i className={'ti ' + g.icon} /> {g.label}
+            </Link>
+          )
+        })}
       </nav>
 
       {/* Zeile 2: Favoriten */}
