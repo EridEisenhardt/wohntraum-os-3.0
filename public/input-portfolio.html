@@ -1,0 +1,222 @@
+<!DOCTYPE html>
+<html lang="de"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Input Portfolio</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+:root{--bg:#f6f7f9;--surf:#fff;--surf2:#f1f3f6;--line:#e6e8ec;--text:#1c2024;--muted:#6b7280;--accent:#185fa5;--green:#1f7a4d;--red:#c0392b}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--text);font-family:'Inter',system-ui,-apple-system,'Segoe UI',sans-serif;font-size:14px;line-height:1.5}
+.hdr{background:var(--surf);border-bottom:1px solid var(--line);padding:14px 22px;position:sticky;top:0;z-index:20;display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}
+.hdr-title{font-size:17px;font-weight:700}.hdr-sub{font-size:11.5px;color:var(--muted)}
+.wrap{max-width:1600px;margin:14px auto;padding:0 16px 60px}
+.tabs{display:flex;gap:6px;margin-bottom:12px;flex-wrap:wrap}
+.tab{font:inherit;font-size:13.5px;font-weight:600;padding:8px 16px;border:1px solid var(--line);border-radius:9px;background:var(--surf);color:var(--dim,#4b5563);cursor:pointer}
+.tab.active{background:var(--accent);color:#fff;border-color:var(--accent)}
+.tab .n{font-size:11px;opacity:.8;margin-left:5px}
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:12px}
+.kpi{background:var(--surf);border:1px solid var(--line);border-radius:11px;padding:10px 13px}
+.kpi .l{font-size:10px;text-transform:uppercase;color:var(--muted)}.kpi .v{font-size:19px;font-weight:700;margin-top:2px}
+.bar{display:flex;gap:9px;align-items:center;flex-wrap:wrap;margin-bottom:10px}
+.bar input[type=text],.bar select{font:inherit;font-size:13px;padding:7px 10px;border:1px solid var(--line);border-radius:8px;background:var(--surf);color:var(--text)}
+.bar input[type=text]{min-width:220px}
+.btn{font:inherit;font-size:13px;font-weight:600;padding:8px 13px;border:1px solid var(--line);border-radius:8px;background:var(--surf2);color:var(--text);cursor:pointer}
+.btn-accent{background:var(--accent);color:#fff;border-color:var(--accent)}
+.count{font-size:12px;color:var(--muted)}
+.scroll{overflow:auto;border:1px solid var(--line);border-radius:12px;background:var(--surf)}
+table{width:100%;border-collapse:collapse;font-size:12.5px;min-width:900px}
+th,td{padding:7px 9px;border-bottom:1px solid var(--line);text-align:left;vertical-align:middle;white-space:nowrap}
+th{font-size:9.5px;text-transform:uppercase;color:var(--muted);background:var(--surf2);position:sticky;top:0;z-index:1}
+td input,td select{width:100%;font:inherit;font-size:12.5px;padding:5px 6px;border:1px solid transparent;border-radius:6px;background:transparent;color:var(--text)}
+td input:hover,td select:hover{border-color:var(--line)}td input:focus,td select:focus{outline:none;border-color:var(--accent);background:var(--surf)}
+td.num input{text-align:right}
+td.kn{font-weight:700}
+.mini{color:var(--muted);font-size:11px}
+.calc{color:var(--muted);font-variant-numeric:tabular-nums}
+.abtn{background:none;border:none;color:var(--muted);cursor:pointer;font-size:14px}.abtn:hover{color:var(--red)}
+.toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:#1c2024;color:#fff;padding:10px 16px;border-radius:8px;font-size:13px;opacity:0;transition:.2s;pointer-events:none;z-index:50}.toast.show{opacity:1}
+.hint{font-size:11.5px;color:var(--muted);margin:0 2px 10px}
+</style></head><body>
+<div class="hdr">
+  <div><div class="hdr-title">🏢 Input Portfolio</div><div class="hdr-sub">Gebäude · Einheiten · Mietverträge — zentrale Stammdaten (Import aus Nahaus)</div></div>
+  <div style="display:flex;gap:8px">
+    <label class="btn" style="cursor:pointer">⬆︎ CSV importieren<input type="file" id="csv" accept=".csv" style="display:none" onchange="importCSV(event)"></label>
+    <button class="btn btn-accent" onclick="addRow()">+ Neu</button>
+  </div>
+</div>
+<div class="wrap">
+  <div class="tabs">
+    <button class="tab active" data-t="geb" onclick="setTab('geb')">Gebäude<span class="n" id="n_geb"></span></button>
+    <button class="tab" data-t="ein" onclick="setTab('ein')">Einheiten<span class="n" id="n_ein"></span></button>
+    <button class="tab" data-t="ver" onclick="setTab('ver')">Mietverträge<span class="n" id="n_ver"></span></button>
+  </div>
+  <div class="kpis" id="kpis"></div>
+  <div class="bar">
+    <input type="text" id="q" placeholder="🔍 Suchen…" oninput="render()">
+    <select id="fGeb" onchange="render()"></select>
+    <span class="count" id="cnt"></span>
+  </div>
+  <div class="hint" id="hint"></div>
+  <div class="scroll"><table id="tbl"><thead><tr id="thead"></tr></thead><tbody></tbody></table></div>
+</div>
+<div class="toast" id="toast"></div>
+<script>
+const sb=window.supabase.createClient('https://jqzxctfqvcwbctpjksvg.supabase.co','eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpxenhjdGZxdmN3YmN0cGprc3ZnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODIxMzA0MzIsImV4cCI6MjA5NzcwNjQzMn0.RKIbZxJdusKWWPjBJqlxZ8e1m8So02UslOg55YRsn3o');
+const $=id=>document.getElementById(id);
+const esc=s=>(s==null?'':String(s)).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+function toast(m){const t=$('toast');t.textContent=m;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),1700);}
+const eur=v=>v==null||v===''?'':Number(v).toLocaleString('de-DE',{minimumFractionDigits:0,maximumFractionDigits:2});
+
+let TAB='geb';
+let GEB=[], EIN=[], VER=[];
+const KATS=['Wohnung','Apartment','Haus','Gewerbe','Laden','Tabak','Garage','Stellplatz','Garten','Grundstück','Sonstiges'];
+const STATI=['aktiv','gekündigt','beendet','leerstand'];
+
+function gebLabel(g){return (g.kennung?g.kennung+' · ':'')+(g.name||'');}
+function einLabel(e){const g=GEB.find(x=>x.id===e.gebaeude_id);return (g&&g.kennung?g.kennung+' ':'')+(e.kategorie||'')+' '+(e.bezeichnung||'');}
+function distinct(arr,f){return [...new Set(arr.map(f).filter(v=>v!=null&&v!==''))].sort((a,b)=>String(a).localeCompare(String(b),'de'));}
+function opts(list,sel,ph){return '<option value="">'+(ph||'—')+'</option>'+list.map(v=>'<option'+(String(v)===String(sel)?' selected':'')+'>'+esc(v)+'</option>').join('');}
+function optsKV(list,sel){return '<option value="">—</option>'+list.map(o=>'<option value="'+o.id+'"'+(o.id===sel?' selected':'')+'>'+esc(o.label)+'</option>').join('');}
+function daysBetween(d){if(!d)return null;const a=new Date(d),b=new Date();if(isNaN(a))return null;return Math.max(0,Math.round((b-a)/86400000));}
+
+// Konfiguration je Tab
+const TABLES={geb:'gebaeude',ein:'einheiten',ver:'mietvertraege'};
+const HINTS={
+  geb:'Objekte des Bestands. Kennung = Kürzel (z.B. S16). Änderungen speichern sofort.',
+  ein:'Einheiten je Gebäude (Wohnungen, Gewerbe, Garagen…). Fläche in m². Lage & Ausstattung frei erfassbar.',
+  ver:'Mietverträge je Einheit. Mietdauer wird automatisch aus dem Mietbeginn berechnet. Warmmiete = Summe der Bestandteile (nur Anzeige, editierbar bleibt Warmmiete-Feld).'
+};
+
+async function save(id,field,val,numeric){
+  let v=val; if(numeric){v=(val===''||val==null)?null:Number(String(val).replace(',','.'));if(isNaN(v))v=null;}
+  else {v=(val&&String(val).trim())?String(val).trim():null;}
+  const res=await sb.from(TABLES[TAB]).update({[field]:v}).eq('id',id);
+  if(res.error){toast('Fehler: '+res.error.message);return;}
+  const arr=TAB==='geb'?GEB:TAB==='ein'?EIN:VER;
+  const r=arr.find(x=>x.id===id); if(r)r[field]=v;
+  if(field==='beginn'||field==='gebaeude_id'||field==='einheit_id'||field==='kennung'||field==='kategorie'||field==='bezeichnung')render(); else toast('Gespeichert ✓');
+}
+async function addRow(){
+  if(TAB==='geb'){const r=await sb.from('gebaeude').insert({name:'Neues Gebäude',pos:GEB.length}).select();if(r.error)return toast(r.error.message);GEB.unshift(r.data[0]);}
+  else if(TAB==='ein'){const gid=$('fGeb').value||(GEB[0]&&GEB[0].id)||null;const r=await sb.from('einheiten').insert({gebaeude_id:gid,kategorie:'Wohnung',pos:EIN.length}).select();if(r.error)return toast(r.error.message);EIN.unshift(r.data[0]);}
+  else {const r=await sb.from('mietvertraege').insert({status:'aktiv',pos:VER.length}).select();if(r.error)return toast(r.error.message);VER.unshift(r.data[0]);}
+  render(); toast('Angelegt');
+}
+async function del(id){if(!confirm('Diesen Eintrag löschen?'))return;const res=await sb.from(TABLES[TAB]).delete().eq('id',id);if(res.error)return toast(res.error.message);
+  if(TAB==='geb')GEB=GEB.filter(x=>x.id!==id);else if(TAB==='ein')EIN=EIN.filter(x=>x.id!==id);else VER=VER.filter(x=>x.id!==id);render();}
+
+function setTab(t){TAB=t;document.querySelectorAll('.tab').forEach(b=>b.classList.toggle('active',b.dataset.t===t));$('q').value='';$('fGeb').style.display=(t==='geb')?'none':'';render();}
+
+function fillGebFilter(){
+  const cur=$('fGeb').value;
+  $('fGeb').innerHTML='<option value="">Alle Gebäude</option>'+GEB.map(g=>'<option value="'+g.id+'"'+(g.id===cur?' selected':'')+'>'+esc(gebLabel(g))+'</option>').join('');
+}
+
+// Spaltendefinition
+function columnsGeb(){return ['Kennung','Name / Adresse','PLZ','Ort','Eigentümer','Notiz',''];}
+function rowGeb(r){
+  const eigs=distinct(GEB,x=>x.eigentuemer);
+  return '<tr>'
+   +'<td class="kn"><input value="'+esc(r.kennung)+'" onchange="save(\''+r.id+'\',\'kennung\',this.value)"></td>'
+   +'<td><input value="'+esc(r.name)+'" onchange="save(\''+r.id+'\',\'name\',this.value)"></td>'
+   +'<td><input value="'+esc(r.plz)+'" style="width:70px" onchange="save(\''+r.id+'\',\'plz\',this.value)"></td>'
+   +'<td><input value="'+esc(r.ort)+'" onchange="save(\''+r.id+'\',\'ort\',this.value)"></td>'
+   +'<td><select onchange="save(\''+r.id+'\',\'eigentuemer\',this.value)">'+opts(eigs,r.eigentuemer,'—')+'</select></td>'
+   +'<td><input value="'+esc(r.notiz)+'" onchange="save(\''+r.id+'\',\'notiz\',this.value)"></td>'
+   +'<td><button class="abtn" onclick="del(\''+r.id+'\')">✕</button></td></tr>';
+}
+function columnsEin(){return ['Gebäude','Kategorie','Bezeichnung','Fläche m²','Lage','Ausstattung','Notiz',''];}
+function rowEin(r){
+  const gl=GEB.map(g=>({id:g.id,label:gebLabel(g)}));
+  return '<tr>'
+   +'<td><select onchange="save(\''+r.id+'\',\'gebaeude_id\',this.value)">'+optsKV(gl,r.gebaeude_id)+'</select></td>'
+   +'<td><select onchange="save(\''+r.id+'\',\'kategorie\',this.value)">'+opts(KATS,r.kategorie,'—')+'</select></td>'
+   +'<td><input value="'+esc(r.bezeichnung)+'" style="width:90px" onchange="save(\''+r.id+'\',\'bezeichnung\',this.value)"></td>'
+   +'<td class="num"><input value="'+esc(r.flaeche_qm)+'" style="width:70px" onchange="save(\''+r.id+'\',\'flaeche_qm\',this.value,1)"></td>'
+   +'<td><input value="'+esc(r.lage)+'" onchange="save(\''+r.id+'\',\'lage\',this.value)"></td>'
+   +'<td><input value="'+esc(r.ausstattung)+'" onchange="save(\''+r.id+'\',\'ausstattung\',this.value)"></td>'
+   +'<td><input value="'+esc(r.notiz)+'" onchange="save(\''+r.id+'\',\'notiz\',this.value)"></td>'
+   +'<td><button class="abtn" onclick="del(\''+r.id+'\')">✕</button></td></tr>';
+}
+function columnsVer(){return ['Einheit','Mieter','Status','Mietbeginn','Dauer (T)','Dauer (J)','Bew.','Kaltmiete','Heizung','BK','Strom','WLAN','Garage','Keller','Hausm.','EBK','Warmmiete','Kaution','Vermittler','Einkommensquelle','Notiz',''];}
+function rowVer(r){
+  const el=EIN.map(e=>({id:e.id,label:einLabel(e)}));
+  const verm=distinct(VER,x=>x.vermittler), eink=distinct(VER,x=>x.einkommensquelle);
+  const tage=daysBetween(r.beginn);
+  const num=(f,w)=>'<td class="num"><input value="'+esc(r[f])+'" style="width:'+(w||64)+'px" onchange="save(\''+r.id+'\',\''+f+'\',this.value,1)"></td>';
+  return '<tr>'
+   +'<td><select style="min-width:150px" onchange="save(\''+r.id+'\',\'einheit_id\',this.value)">'+optsKV(el,r.einheit_id)+'</select></td>'
+   +'<td><input value="'+esc(r.mieter)+'" style="min-width:130px" onchange="save(\''+r.id+'\',\'mieter\',this.value)"></td>'
+   +'<td><select onchange="save(\''+r.id+'\',\'status\',this.value)">'+opts(STATI,r.status,'—')+'</select></td>'
+   +'<td><input type="date" value="'+esc(r.beginn)+'" onchange="save(\''+r.id+'\',\'beginn\',this.value)"></td>'
+   +'<td class="calc">'+(tage==null?'—':tage)+'</td>'
+   +'<td class="calc">'+(tage==null?'—':(tage/365.25).toFixed(1))+'</td>'
+   +'<td class="num"><input value="'+esc(r.anzahl_bewohner)+'" style="width:44px" onchange="save(\''+r.id+'\',\'anzahl_bewohner\',this.value,1)"></td>'
+   +num('kaltmiete')+num('heizung')+num('betriebskosten')+num('strom')+num('wlan')+num('garage')+num('mieterkeller')+num('hausmeister')+num('ebk')+num('warmmiete')+num('kaution')
+   +'<td><input list="dlVerm" value="'+esc(r.vermittler)+'" style="min-width:110px" onchange="save(\''+r.id+'\',\'vermittler\',this.value)"></td>'
+   +'<td><input list="dlEink" value="'+esc(r.einkommensquelle)+'" style="min-width:130px" onchange="save(\''+r.id+'\',\'einkommensquelle\',this.value)"></td>'
+   +'<td><input value="'+esc(r.notiz)+'" style="min-width:120px" onchange="save(\''+r.id+'\',\'notiz\',this.value)"></td>'
+   +'<td><button class="abtn" onclick="del(\''+r.id+'\')">✕</button></td></tr>';
+}
+
+function render(){
+  $('n_geb').textContent=GEB.length;$('n_ein').textContent=EIN.length;$('n_ver').textContent=VER.length;
+  fillGebFilter();
+  $('hint').textContent=HINTS[TAB];
+  const q=($('q').value||'').toLowerCase(), fg=$('fGeb').value;
+  let cols, rows, list;
+  if(TAB==='geb'){cols=columnsGeb();list=GEB.filter(r=>!q||(gebLabel(r)+' '+(r.ort||'')+' '+(r.eigentuemer||'')).toLowerCase().includes(q));rows=list.map(rowGeb);}
+  else if(TAB==='ein'){cols=columnsEin();list=EIN.filter(r=>(!fg||r.gebaeude_id===fg)&&(!q||(einLabel(r)+' '+(r.lage||'')+' '+(r.ausstattung||'')).toLowerCase().includes(q)));rows=list.map(rowEin);}
+  else {cols=columnsVer();list=VER.filter(r=>(!fg||r.gebaeude_id===fg)&&(!q||((r.mieter||'')+' '+einLabel(EIN.find(e=>e.id===r.einheit_id)||{})).toLowerCase().includes(q)));rows=list.map(rowVer);}
+  $('thead').innerHTML=cols.map(c=>'<th>'+esc(c)+'</th>').join('');
+  $('tbl').querySelector('tbody').innerHTML=rows.join('')||'<tr><td colspan="'+cols.length+'" style="text-align:center;color:var(--muted);padding:20px">Keine Einträge.</td></tr>';
+  $('cnt').textContent=list.length+' Einträge';
+  renderKpis();
+}
+function renderKpis(){
+  let k=[];
+  if(TAB==='geb'){k=[['Gebäude',GEB.length],['Eric privat',GEB.filter(g=>g.eigentuemer&&g.eigentuemer.startsWith('Eric')).length],['GmbH',GEB.filter(g=>g.eigentuemer&&g.eigentuemer.includes('GmbH')).length]];}
+  else if(TAB==='ein'){const w=EIN.filter(e=>['Wohnung','Apartment'].includes(e.kategorie)).length;k=[['Einheiten',EIN.length],['Wohnungen/App.',w],['Gewerbe/Sonst.',EIN.length-w]];}
+  else {const aktiv=VER.filter(v=>v.status==='aktiv');const warm=aktiv.reduce((s,v)=>s+(Number(v.warmmiete)||0),0);const kalt=aktiv.reduce((s,v)=>s+(Number(v.kaltmiete)||0),0);k=[['Verträge',VER.length],['aktiv',aktiv.length],['Σ Warmmiete/Mon.',eur(warm)+' €'],['Σ Kaltmiete/Mon.',eur(kalt)+' €']];}
+  $('kpis').innerHTML=k.map(x=>'<div class="kpi"><div class="l">'+esc(x[0])+'</div><div class="v">'+x[1]+'</div></div>').join('');
+}
+
+// CSV Import (Header = Spaltennamen; ordnet dem aktiven Tab zu)
+const CSVMAP={
+  geb:{'kennung':'kennung','name':'name','adresse':'name','plz':'plz','ort':'ort','eigentümer':'eigentuemer','eigentuemer':'eigentuemer','notiz':'notiz'},
+  ein:{'kategorie':'kategorie','bezeichnung':'bezeichnung','wohnung':'bezeichnung','fläche':'flaeche_qm','flaeche':'flaeche_qm','lage':'lage','ausstattung':'ausstattung','notiz':'notiz'},
+  ver:{'mieter':'mieter','status':'status','mietbeginn':'beginn','beginn':'beginn','bewohner':'anzahl_bewohner','kaltmiete':'kaltmiete','heizung':'heizung','betriebskosten':'betriebskosten','strom':'strom','wlan':'wlan','garage':'garage','mieterkeller':'mieterkeller','hausmeister':'hausmeister','ebk':'ebk','warmmiete':'warmmiete','kaution':'kaution','vermittler':'vermittler','einkommensquelle':'einkommensquelle','notiz':'notiz'}
+};
+const NUMF=new Set(['flaeche_qm','anzahl_bewohner','kaltmiete','heizung','betriebskosten','strom','wlan','garage','mieterkeller','hausmeister','ebk','warmmiete','kaution']);
+function parseCSV(text){const rows=[];let i=0,f='',row=[],q=false;const push=()=>{row.push(f);f='';};const pr=()=>{push();rows.push(row);row=[];};
+  while(i<text.length){const c=text[i];if(q){if(c==='"'){if(text[i+1]==='"'){f+='"';i++;}else q=false;}else f+=c;}
+   else{if(c==='"')q=true;else if(c===','||c===';')push();else if(c==='\n')pr();else if(c==='\r'){}else f+=c;}i++;}
+  if(f!==''||row.length)pr();return rows.filter(r=>r.some(x=>x!==''));}
+async function importCSV(ev){
+  const file=ev.target.files[0];if(!file)return;ev.target.value='';
+  const text=await file.text();const rows=parseCSV(text);if(rows.length<2)return toast('CSV leer.');
+  const map=CSVMAP[TAB];const hdr=rows[0].map(h=>h.trim().toLowerCase());
+  const idx={};hdr.forEach((h,i)=>{for(const key in map){if(h.includes(key)&&!(map[key] in idx))idx[map[key]]=i;}});
+  if(!Object.keys(idx).length)return toast('Keine passenden Spalten erkannt.');
+  const recs=rows.slice(1).map(r=>{const o={};for(const col in idx){let v=r[idx[col]];v=(v==null?'':v).trim();if(v==='')continue;o[col]=NUMF.has(col)?Number(v.replace(/\./g,'').replace(',','.')):v;}return o;}).filter(o=>Object.keys(o).length);
+  if(!recs.length)return toast('Keine Datenzeilen.');
+  if(!confirm(recs.length+' Zeilen in „'+TABLES[TAB]+'" importieren?'))return;
+  if(TAB==='ein'){const gid=$('fGeb').value;if(gid)recs.forEach(o=>o.gebaeude_id=gid);}
+  const res=await sb.from(TABLES[TAB]).insert(recs).select();
+  if(res.error)return toast('Import-Fehler: '+res.error.message);
+  toast(res.data.length+' importiert ✓');await load();
+}
+
+async function load(){
+  const [rg,re,rv]=await Promise.all([
+    sb.from('gebaeude').select('*').order('pos',{nullsFirst:false}).order('kennung'),
+    sb.from('einheiten').select('*').order('pos'),
+    sb.from('mietvertraege').select('*').order('pos')
+  ]);
+  GEB=rg.data||[];EIN=re.data||[];VER=rv.data||[];
+  render();
+}
+load();
+</script>
+<datalist id="dlVerm"></datalist>
+<datalist id="dlEink"></datalist>
+</body></html>
