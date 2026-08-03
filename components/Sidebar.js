@@ -21,6 +21,9 @@ export const NAV = [
     { href: '/hausverwaltung/mietermeldungen', icon: 'ti-message-report', label: 'Mietermeldungen' },
     { href: '/hausverwaltung/dienstleister', icon: 'ti-address-book', label: 'Firmen & Dienstleister' },
   ] },
+  { type: 'group', key: 'hausmeisterdienst', icon: 'ti-tools', label: 'Hausmeisterdienst', area: ['hv', 'backoffice'], mod: 'dashboards', items: [
+    { href: '/hausmeisterdienst', icon: 'ti-tools', label: 'Übersicht' },
+  ] },
   { type: 'group', key: 'assetmgmt-bh', icon: 'ti-building-bank', label: 'Assetmanagement', area: ['hv', 'backoffice'], mod: 'controlling', items: [
     { href: '/buchhaltung/assetmanagement', icon: 'ti-chart-arcs', label: 'Übersicht' },
     { href: '/buchhaltung/assetmanagement/portfolio', icon: 'ti-building-community', label: 'Portfolio' },
@@ -140,7 +143,7 @@ const GESCHAEFTE = [
 const GB_MAP = {
   ankauf: 'vertrieb', vermietung: 'vertrieb', crm: 'vertrieb', baustandard: 'vertrieb', assetmanagement: 'vertrieb', strategie: 'vertrieb',
   buchhaltung: 'buchhaltung', controlling: 'buchhaltung', finance: 'buchhaltung', 'assetmgmt-bh': 'buchhaltung', stammdaten: 'buchhaltung',
-  hausverwaltung: 'hausverwaltung', prozesse: 'hausverwaltung',
+  hausverwaltung: 'hausverwaltung', prozesse: 'hausverwaltung', hausmeisterdienst: 'hausverwaltung',
   produktivitaet: 'gf', personal: 'gf', 'eric-privat': 'gf',
   '/portfolio': 'vertrieb', '/gf-dashboard': 'gf', '/beschluesse': 'gf', '/aktivitaeten': 'hausverwaltung', '/dokumente': 'buchhaltung', '/nutzer': 'gf',
 }
