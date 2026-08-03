@@ -24,14 +24,14 @@ select.crm.set{border-color:var(--accent);background:#f2fbf7}
 .toast.show{opacity:1}
 a.crmlink{font-size:11px;color:#2563eb;text-decoration:none;margin-left:6px}
 </style></head><body>
-<div class="hdr"><div class="hdr-title">Hausverwaltung · Portfolio</div><div class="hdr-sub">Dienstleister je Objekt zuordnen · Auswahl aus dem CRM</div></div>
+<div class="hdr"><div class="hdr-title">Hausverwaltung · Portfolio</div><div class="hdr-sub">Dienstleister je Objekt zuordnen · Auswahl aus Firmen &amp; Dienstleister</div></div>
 <div class="wrap">
 <div class="bar">
   <input id="q" placeholder="🔍 Objekt / Adresse suchen…" oninput="render()">
   <span class="count" id="cnt"></span>
-  <a class="crmlink" href="/crm" target="_top">↗ CRM-Kontakte pflegen</a>
+  <a class="crmlink" href="/hausverwaltung/dienstleister" target="_top">↗ Firmen &amp; Dienstleister pflegen</a>
 </div>
-<div class="hint">Die Dropdowns werden aus den CRM-Kontakten gespeist. Neue Firmen/Ansprechpartner zuerst im CRM anlegen, dann hier zuordnen. Änderungen werden sofort gespeichert.</div>
+<div class="hint">Die Dropdowns werden ausschließlich aus „Firmen &amp; Dienstleister" gespeist. Neue Firmen/Ansprechpartner zuerst dort anlegen, dann hier zuordnen. Änderungen werden sofort gespeichert.</div>
 <div class="scroll"><table id="tbl"><thead><tr>
   <th>Objekt</th><th>Adresse</th><th>Status</th><th>Hausverwaltung</th><th>Finanz. Bank</th><th>Hausmeister vor Ort</th><th>Elektrofirma</th><th>Heizungsfirma</th><th>Sanitärfirma</th>
 </tr></thead><tbody></tbody></table></div>
@@ -45,7 +45,7 @@ function toast(m){const t=$('toast');t.textContent=m;t.classList.add('show');set
 let ROWS=[], KONTAKTE=[];
 const FIELDS=[['hausmeister_id','Hausmeister'],['elektro_id','Elektro'],['heizung_id','Heizung'],['sanitaer_id','Sanitär']];
 const TXTF=[['status','Status'],['hausverwaltung','Hausverwaltung'],['bank','Finanz. Bank']];
-function kLabel(k){const nm=[k.vorname,k.name].filter(Boolean).join(' ').trim()||'(ohne Name)';return k.position?nm+' · '+k.position:nm;}
+function kLabel(k){const person=[k.vorname,k.name].filter(Boolean).join(' ').trim();const parts=[];if(k._firma)parts.push(k._firma);if(person)parts.push(person);else if(!k._firma)parts.push('(ohne Name)');let s=parts.join(' · ');if(k.position)s+=' · '+k.position;return s;}
 function options(sel){
   return '<option value="">— wählen —</option>'+KONTAKTE.map(k=>'<option value="'+k.id+'"'+(k.id===sel?' selected':'')+'>'+esc(kLabel(k))+'</option>').join('');
 }
@@ -71,13 +71,23 @@ function render(){
   }).join('')||'<tr><td colspan="9" style="text-align:center;color:var(--muted);padding:20px">Keine Objekte gefunden.</td></tr>';
 }
 async function load(){
-  const [rp,rk]=await Promise.all([
+  const [rp,rk,rf]=await Promise.all([
     sb.from('portfolio_immobilien').select('id,kennung,adresse,status,hausverwaltung,bank,hausmeister_id,elektro_id,heizung_id,sanitaer_id').order('kennung'),
-    sb.from('crm_kontakte').select('id,vorname,name,position').order('name')
+    sb.from('hv_kontakte').select('id,vorname,name,position,firma_id').order('name'),
+    sb.from('hv_firmen').select('id,name,branche').order('name')
   ]);
   if(rp.error){toast('Fehler Portfolio: '+rp.error.message);return;}
-  if(rk.error){toast('Fehler CRM: '+rk.error.message);}
-  ROWS=rp.data||[]; KONTAKTE=rk.data||[];
+  if(rk.error){toast('Fehler Kontakte: '+rk.error.message);}
+  if(rf.error){toast('Fehler Firmen: '+rf.error.message);}
+  ROWS=rp.data||[];
+  const firms=rf.data||[]; const fmap={}; firms.forEach(f=>fmap[f.id]=f.name);
+  const rawK=rk.data||[];
+  // Firmen & Dienstleister: Kontakte als "Firma · Ansprechpartner" + Firmen ganz ohne Kontakt
+  const kontakte=rawK.map(k=>({id:k.id,_firma:fmap[k.firma_id]||'',vorname:k.vorname,name:k.name,position:k.position}));
+  const mitKontakt=new Set(rawK.map(k=>k.firma_id).filter(Boolean));
+  const firmenOhneKontakt=firms.filter(f=>!mitKontakt.has(f.id))
+    .map(f=>({id:f.id,_firma:f.name,vorname:'',name:'',position:f.branche||''}));
+  KONTAKTE=kontakte.concat(firmenOhneKontakt);
   render();
 }
 load();
