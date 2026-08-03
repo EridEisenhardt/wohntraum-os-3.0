@@ -612,9 +612,19 @@ async function loadBudgetSA(){
 applyMarktwerte(); bewkInit(); weitere(); form(); loadBuergSA(); loadDarlehenSA(); loadFirm(); loadBau(); loadBudgetSA(); renderInc(); renderExp(); renderVerm(); renderGeno(); renderDepot(); sigInit();
 async function applyMarktwerte(){
   try{
-    const{data}=await sb.from('finance_input').select('code,wert,kategorie').in('kategorie',['Marktwert (PriceHubble)','Miete p.a. (aktuell)','Anzahl Einheiten']);
-    if(data&&data.length){const mw={},mi={},un={};data.forEach(r=>{const t=r.kategorie;(t==='Miete p.a. (aktuell)'?mi:t==='Anzahl Einheiten'?un:mw)[r.code]=r.wert;});
-      OBJ.forEach(o=>{if(o.code in mw)o.mw=(mw[o.code]==null?null:Number(mw[o.code]));if(o.code in mi&&mi[o.code]!=null)o.miete=Number(mi[o.code]);if(o.code in un)o.einheiten=(un[o.code]==null?null:Number(un[o.code]));});}
+    const [fin,mv,geb]=await Promise.all([
+      sb.from('finance_input').select('code,wert,kategorie').in('kategorie',['Marktwert (PriceHubble)','Miete p.a. (aktuell)','Anzahl Einheiten']),
+      sb.from('mietvertraege').select('kaltmiete,status,gebaeude_id'),
+      sb.from('gebaeude').select('id,kennung,nl_hinweis')
+    ]);
+    // Marktwert, Anzahl Einheiten & Fallback-Miete aus Input (finance_input)
+    const miFallback={};
+    if(fin.data&&fin.data.length){const mw={},un={};fin.data.forEach(r=>{const t=r.kategorie;if(t==='Miete p.a. (aktuell)'){miFallback[r.code]=r.wert;return;}(t==='Anzahl Einheiten'?un:mw)[r.code]=r.wert;});
+      OBJ.forEach(o=>{if(o.code in mw)o.mw=(mw[o.code]==null?null:Number(mw[o.code]));if(o.code in un)o.einheiten=(un[o.code]==null?null:Number(un[o.code]));});}
+    // Miete p.a. = Kaltmiete aktiver Verträge × 12 je Objekt (Input Portfolio). Rent-to-Rent = manueller Wert. Ohne Portfolio-Daten: Fallback auf altes Input-Feld.
+    if(mv.data&&geb.data){const kByG={},r2r={};geb.data.forEach(g=>{kByG[g.id]=g.kennung;if(g.nl_hinweis&&g.nl_hinweis.trim())r2r[g.kennung]=1;});const m={};
+      mv.data.forEach(v=>{if(v.status==='aktiv'){const c=kByG[v.gebaeude_id];if(c)m[c]=(m[c]||0)+(Number(v.kaltmiete)||0);}});
+      OBJ.forEach(o=>{if((o.code in m)&&m[o.code]>0&&!r2r[o.code])o.miete=Math.round(m[o.code]*12);else if(o.code in miFallback&&miFallback[o.code]!=null)o.miete=Number(miFallback[o.code]);});}
   }catch(e){}
   kpis(); objtbl();
 }

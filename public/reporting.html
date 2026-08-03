@@ -801,8 +801,21 @@ render();
 // Zentrale Datenquellen (Finance · Input, Bürgschaften-Register)
 const _sbRep=window.supabase.createClient('https://jqzxctfqvcwbctpjksvg.supabase.co','eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpxenhjdGZxdmN3YmN0cGprc3ZnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODIxMzA0MzIsImV4cCI6MjA5NzcwNjQzMn0.RKIbZxJdusKWWPjBJqlxZ8e1m8So02UslOg55YRsn3o');
 (async()=>{try{
-  const{data}=await _sbRep.from('finance_input').select('code,wert,kategorie').in('kategorie',['Marktwert (PriceHubble)','Miete p.a. (aktuell)','Anzahl Einheiten','Investition in Weiterbildung']);
-  if(data&&data.length){const mw={},mi={},un={};data.forEach(r=>{const t=r.kategorie;if(t==='Investition in Weiterbildung'){if(r.wert!=null)WEITERB=Number(r.wert);return;}(t==='Miete p.a. (aktuell)'?mi:t==='Anzahl Einheiten'?un:mw)[r.code]=r.wert;});let ch=false;OBJ.forEach(o=>{if(o.c in mw){o.mw=(mw[o.c]==null?null:Number(mw[o.c]));ch=true;}if(o.c in mi&&mi[o.c]!=null){o.m=Number(mi[o.c]);ch=true;}if(o.c in un){o.units=(un[o.c]==null?null:Number(un[o.c]));ch=true;}});save();render();}
+  const [fin,mv,geb]=await Promise.all([
+    _sbRep.from('finance_input').select('code,wert,kategorie').in('kategorie',['Marktwert (PriceHubble)','Miete p.a. (aktuell)','Anzahl Einheiten','Investition in Weiterbildung']),
+    _sbRep.from('mietvertraege').select('kaltmiete,status,gebaeude_id'),
+    _sbRep.from('gebaeude').select('id,kennung,nl_hinweis')
+  ]);
+  const data=fin.data; const miFallback={};
+  if(data&&data.length){const mw={},un={};data.forEach(r=>{const t=r.kategorie;if(t==='Investition in Weiterbildung'){if(r.wert!=null)WEITERB=Number(r.wert);return;}if(t==='Miete p.a. (aktuell)'){miFallback[r.code]=r.wert;return;}(t==='Anzahl Einheiten'?un:mw)[r.code]=r.wert;});
+    OBJ.forEach(o=>{if(o.c in mw)o.mw=(mw[o.c]==null?null:Number(mw[o.c]));if(o.c in un)o.units=(un[o.c]==null?null:Number(un[o.c]));});}
+  // Miete p.a. = Kaltmiete aktiver Verträge × 12 je Objekt (Input Portfolio). Rent-to-Rent = manuell. Ohne Portfolio-Daten: Fallback auf altes Input-Feld.
+  if(mv.data&&geb.data){const kByG={},r2r={};geb.data.forEach(g=>{kByG[g.id]=g.kennung;if(g.nl_hinweis&&g.nl_hinweis.trim())r2r[g.kennung]=1;});const m={};
+    mv.data.forEach(v=>{if(v.status==='aktiv'){const c=kByG[v.gebaeude_id];if(c)m[c]=(m[c]||0)+(Number(v.kaltmiete)||0);}});
+    OBJ.forEach(o=>{if((o.c in m)&&m[o.c]>0&&!r2r[o.c])o.m=Math.round(m[o.c]*12);else if(o.c in miFallback&&miFallback[o.c]!=null)o.m=Number(miFallback[o.c]);});
+    // Gesamtmiete p.a. konsistent aus den Objektwerten neu berechnen
+    const tot=OBJ.reduce((s,o)=>s+(Number(o.m)||0),0); if(tot>0)PORT.miete=tot;}
+  save();render();
 }catch(e){}})();
 async function loadBuergReport(){
   const tb=document.getElementById('buergBody'); if(!tb) return;
