@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="de"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Mietermeldungen · Prozesse</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+:root{--bg:#f6f7f9;--surf:#fff;--surf2:#f1f3f6;--line:#e6e8ec;--text:#1c2024;--muted:#6b7280;--dim:#4b5563;--accent:#185fa5}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--text);font-family:'Inter',system-ui,-apple-system,'Segoe UI',sans-serif;font-size:14px;line-height:1.5}
+.hdr{background:var(--surf);border-bottom:1px solid var(--line);padding:14px 22px;position:sticky;top:0;z-index:10}
+.hdr-title{font-size:17px;font-weight:700}.hdr-sub{font-size:11.5px;color:var(--muted)}
+.wrap{max-width:1400px;margin:16px auto;padding:0 18px 50px;display:grid;grid-template-columns:320px 1fr;gap:18px;align-items:start}
+@media(max-width:880px){.wrap{grid-template-columns:1fr}}
+.panel{background:var(--surf);border:1px solid var(--line);border-radius:14px;padding:12px}
+.side{position:sticky;top:78px;max-height:calc(100vh - 96px);overflow:auto}
+.side .search{width:100%;font:inherit;font-size:13px;padding:8px 10px;border:1px solid var(--line);border-radius:8px;margin-bottom:8px}
+.grp{font-size:10px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);font-weight:700;margin:12px 4px 5px}
+.item{display:flex;align-items:center;gap:8px;padding:9px 10px;border-radius:9px;cursor:pointer;font-size:13.5px}
+.item:hover{background:var(--surf2)} .item.on{background:#eaf1fb;color:var(--accent);font-weight:600}
+.item .dot{width:8px;height:8px;border-radius:50%;background:#cbd5e1;flex:none}
+.addbtn{width:100%;margin-top:10px;border:1px dashed #c3c8d0;background:none;color:var(--muted);border-radius:9px;padding:9px;font:inherit;font-weight:600;font-size:13px;cursor:pointer}
+.addbtn:hover{color:var(--text);border-color:#9aa1ab}
+.det h2{font-size:16px;margin-bottom:2px}
+.fg{margin-bottom:12px}
+.fg label{display:block;font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);font-weight:700;margin-bottom:4px}
+.fg input,.fg textarea{width:100%;font:inherit;font-size:13.5px;padding:9px 11px;border:1px solid var(--line);border-radius:9px;background:var(--surf);color:var(--text)}
+.fg textarea{resize:vertical;line-height:1.55}
+.frow{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+@media(max-width:560px){.frow{grid-template-columns:1fr}}
+.detbar{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;gap:10px}
+.delbtn{background:none;border:1px solid var(--line);color:#c0392b;border-radius:8px;padding:6px 11px;font:inherit;font-size:12.5px;cursor:pointer}
+.empty{color:var(--muted);text-align:center;padding:40px}
+.toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:#1c2024;color:#fff;padding:10px 16px;border-radius:8px;font-size:13px;opacity:0;transition:.2s;pointer-events:none;z-index:50}.toast.show{opacity:1}
+</style></head><body>
+<div class="hdr"><div class="hdr-title">🏠 Mietermeldungen · Prozesse & Abläufe</div><div class="hdr-sub">Standardfälle der Hausverwaltung dokumentieren und weiterentwickeln</div></div>
+<div class="wrap">
+  <div class="panel side">
+    <input class="search" id="q" placeholder="🔍 Fall suchen…" oninput="renderList()">
+    <div id="list"></div>
+    <button class="addbtn" onclick="addItem()">+ Neuer Fall</button>
+  </div>
+  <div class="panel det" id="det"><div class="empty">Wähle links einen Fall aus.</div></div>
+</div>
+<div class="toast" id="toast"></div>
+<script>
+const sb=window.supabase.createClient('https://jqzxctfqvcwbctpjksvg.supabase.co','eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpxenhjdGZxdmN3YmN0cGprc3ZnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODIxMzA0MzIsImV4cCI6MjA5NzcwNjQzMn0.RKIbZxJdusKWWPjBJqlxZ8e1m8So02UslOg55YRsn3o');
+const $=id=>document.getElementById(id);
+const esc=s=>(s==null?'':String(s)).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+function toast(m){const t=$('toast');t.textContent=m;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),1700);}
+let ROWS=[],CUR=null;
+function renderList(){
+  const q=($('q').value||'').toLowerCase();
+  const list=ROWS.filter(r=>!q||((r.titel||'')+' '+(r.kategorie||'')).toLowerCase().includes(q));
+  const grps={}; list.forEach(r=>{const g=r.kategorie||'Sonstige';(grps[g]=grps[g]||[]).push(r);});
+  $('list').innerHTML=Object.keys(grps).map(g=>`<div class="grp">${esc(g)}</div>`+grps[g].map(r=>
+    `<div class="item ${CUR===r.id?'on':''}" onclick="select('${r.id}')"><span class="dot" style="background:${(r.ablauf&&r.ablauf.trim())?'#0f9d6b':'#cbd5e1'}"></span>${esc(r.titel)}</div>`).join('')).join('')
+    || '<div class="empty" style="padding:20px">Kein Treffer.</div>';
+}
+function select(id){CUR=id;renderList();renderDet();}
+function renderDet(){
+  const r=ROWS.find(x=>x.id===CUR);
+  if(!r){$('det').innerHTML='<div class="empty">Wähle links einen Fall aus.</div>';return;}
+  $('det').innerHTML=`
+    <div class="detbar"><h2 style="flex:1">${esc(r.titel)}</h2><button class="delbtn" onclick="delItem('${r.id}')">✕ Löschen</button></div>
+    <div class="frow">
+      <div class="fg"><label>Titel</label><input value="${esc(r.titel)}" onchange="upd('${r.id}','titel',this.value)"></div>
+      <div class="fg"><label>Kategorie</label><input value="${esc(r.kategorie)}" list="katDL" onchange="upd('${r.id}','kategorie',this.value)"></div>
+    </div>
+    <div class="frow">
+      <div class="fg"><label>Verantwortlich</label><input value="${esc(r.verantwortlich)}" placeholder="z. B. Jürgen / Hausverwaltung" onchange="upd('${r.id}','verantwortlich',this.value)"></div>
+      <div class="fg"><label>Fristen & Rechtliches</label><input value="${esc(r.fristen)}" placeholder="z. B. Kündigungsfrist, gesetzl. Vorgaben" onchange="upd('${r.id}','fristen',this.value)"></div>
+    </div>
+    <div class="fg"><label>Prozess / Ablauf (Schritte)</label><textarea rows="12" placeholder="Schritt-für-Schritt-Ablauf…" onchange="upd('${r.id}','ablauf',this.value)">${esc(r.ablauf)}</textarea></div>
+    <div class="fg"><label>Vorlagen / Dokumente / Links</label><textarea rows="3" placeholder="Muster-Anschreiben, Asana-Board, Nahaus-Vorlage…" onchange="upd('${r.id}','vorlagen',this.value)">${esc(r.vorlagen)}</textarea></div>
+    <div class="fg"><label>Notizen</label><textarea rows="3" placeholder="Hinweise, Sonderfälle, offene Punkte…" onchange="upd('${r.id}','notizen',this.value)">${esc(r.notizen)}</textarea></div>`;
+  let dl=$('katDL'); if(!dl){dl=document.createElement('datalist');dl.id='katDL';document.body.appendChild(dl);}
+  dl.innerHTML=[...new Set(ROWS.map(r=>r.kategorie).filter(Boolean))].map(k=>`<option value="${esc(k)}">`).join('');
+}
+async function upd(id,field,val){
+  const v=(val&&val.trim())?val.trim():null;
+  const res=await sb.from('mietermeldungen').update({[field]:v}).eq('id',id);
+  if(res.error){toast('Fehler: '+res.error.message);return;}
+  const r=ROWS.find(x=>x.id===id); if(r)r[field]=v;
+  if(field==='titel'||field==='kategorie'||field==='ablauf')renderList();
+  toast('Gespeichert ✓');
+}
+async function addItem(){
+  const max=Math.max(0,...ROWS.map(r=>r.pos||0));
+  const res=await sb.from('mietermeldungen').insert({titel:'Neuer Fall',kategorie:'Sonstige',pos:max+1}).select();
+  if(res.error){toast('Fehler: '+res.error.message);return;}
+  ROWS.push(res.data[0]); CUR=res.data[0].id; renderList(); renderDet();
+}
+async function delItem(id){
+  if(!confirm('Diesen Fall löschen?'))return;
+  await sb.from('mietermeldungen').delete().eq('id',id);
+  ROWS=ROWS.filter(x=>x.id!==id); if(CUR===id)CUR=null; renderList(); renderDet();
+}
+async function load(){
+  const res=await sb.from('mietermeldungen').select('*').order('pos',{ascending:true});
+  ROWS=res.error?[]:(res.data||[]); if(ROWS.length)CUR=ROWS[0].id; renderList(); renderDet();
+}
+load();
+</script>
+</body></html>
