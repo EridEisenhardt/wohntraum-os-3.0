@@ -43,6 +43,7 @@ tr.own-gmbh td{background:#e7f0fb}
 <div class="hdr">
   <div><div class="hdr-title">🏢 Input Portfolio</div><div class="hdr-sub">Gebäude · Einheiten · Mietverträge — zentrale Stammdaten (Import aus Nahaus)</div></div>
   <div style="display:flex;gap:8px">
+    <button class="btn" onclick="exportCSV()">⬇︎ CSV Export</button>
     <label class="btn" style="cursor:pointer">⬆︎ CSV importieren<input type="file" id="csv" accept=".csv" style="display:none" onchange="importCSV(event)"></label>
     <button class="btn btn-accent" onclick="addRow()">+ Neu</button>
   </div>
@@ -75,6 +76,8 @@ let TAB='geb';
 let GEB=[], EIN=[], VER=[];
 const KATS=['Wohnung','Apartment','Haus','Gewerbe','Laden','Tabak','Garage','Stellplatz','Garten','Grundstück','Sonstiges'];
 const STATI=['aktiv','gekündigt','beendet','leerstand'];
+const VERM_DEF=['Eigenakquise','Makler','ImmoScout24','Immowelt','eBay Kleinanzeigen','WG-Gesucht','Empfehlung','Aushang','Bestandsmieter','Sonstiges'];
+const EINK_DEF=['Angestellt','Selbstständig','Rentner','Student','Auszubildender','Jobcenter / Bürgergeld','BAföG','Sozialleistungen','Unbekannt','Sonstiges'];
 
 function ownerClass(eig){if(!eig)return '';if(eig.includes('GmbH'))return 'own-gmbh';if(eig.startsWith('Eric'))return 'own-eric';return '';}
 function ownerClassByGeb(gid){const g=GEB.find(x=>x.id===gid);return g?ownerClass(g.eigentuemer):'';}
@@ -144,7 +147,7 @@ function rowEin(r){
    +'<td><input value="'+esc(r.notiz)+'" onchange="save(\''+r.id+'\',\'notiz\',this.value)"></td>'
    +'<td><button class="abtn" onclick="del(\''+r.id+'\')">✕</button></td></tr>';
 }
-function columnsVer(){return ['Einheit','Mieter','Status','Mietbeginn','Dauer (T)','Dauer (J)','Bew.','Kaltmiete','Heizung','BK','Strom','WLAN','Garage','Keller','Hausm.','EBK','Warmmiete','Kaution','Vermittler','Einkommensquelle','Notiz',''];}
+function columnsVer(){return ['Einheit','Mieter','Status','Mietbeginn','Dauer (T)','Dauer (J)','Bew.','Kaltmiete','Heizung','BK','Strom','WLAN','Garage','Keller','Hausm.','EBK','Warmmiete','Kaution','Mieter-Vermittler','Einkommensquelle','Notiz',''];}
 function rowVer(r){
   const el=EIN.map(e=>({id:e.id,label:einLabel(e)}));
   const verm=distinct(VER,x=>x.vermittler), eink=distinct(VER,x=>x.einkommensquelle);
@@ -177,7 +180,33 @@ function render(){
   $('thead').innerHTML=cols.map(c=>'<th>'+esc(c)+'</th>').join('');
   $('tbl').querySelector('tbody').innerHTML=rows.join('')||'<tr><td colspan="'+cols.length+'" style="text-align:center;color:var(--muted);padding:20px">Keine Einträge.</td></tr>';
   $('cnt').textContent=list.length+' Einträge';
+  const mergeV=[...new Set([...VERM_DEF,...distinct(VER,x=>x.vermittler)])];
+  const mergeE=[...new Set([...EINK_DEF,...distinct(VER,x=>x.einkommensquelle)])];
+  $('dlVerm').innerHTML=mergeV.map(v=>'<option value="'+esc(v)+'">').join('');
+  $('dlEink').innerHTML=mergeE.map(v=>'<option value="'+esc(v)+'">').join('');
   renderKpis();
+}
+function csvCell(v){v=(v==null?'':String(v));return /[";\n]/.test(v)?'"'+v.replace(/"/g,'""')+'"':v;}
+function download(name,rows){const csv=rows.map(r=>r.map(csvCell).join(';')).join('\r\n');
+  const blob=new Blob(['﻿'+csv],{type:'text/csv;charset=utf-8;'});const u=URL.createObjectURL(blob);
+  const a=document.createElement('a');a.href=u;a.download=name;a.click();URL.revokeObjectURL(u);}
+function exportCSV(){
+  const today=new Date().toISOString().slice(0,10);
+  if(TAB==='geb'){
+    const rows=[['Kennung','Name / Adresse','PLZ','Ort','Eigentümer','Notiz']];
+    GEB.forEach(g=>rows.push([g.kennung,g.name,g.plz,g.ort,g.eigentuemer,g.notiz]));
+    download('portfolio_gebaeude_'+today+'.csv',rows);
+  } else if(TAB==='ein'){
+    const rows=[['Gebäude','Kategorie','Bezeichnung','Fläche m²','Lage','Ausstattung','Notiz']];
+    EIN.forEach(e=>{const g=GEB.find(x=>x.id===e.gebaeude_id)||{};rows.push([gebLabel(g),e.kategorie,e.bezeichnung,e.flaeche_qm,e.lage,e.ausstattung,e.notiz]);});
+    download('portfolio_einheiten_'+today+'.csv',rows);
+  } else {
+    const rows=[['Gebäude','Einheit','Mieter','Status','Mietbeginn','Mietdauer (Tage)','Mietdauer (Jahre)','Anzahl Bewohner','Kaltmiete','Heizung','Betriebskosten','Strom','WLAN','Garage','Mieterkeller','Hausmeister','EBK','Warmmiete','Kaution','Mieter-Vermittler','Einkommensquelle','Notiz']];
+    VER.forEach(v=>{const e=EIN.find(x=>x.id===v.einheit_id)||{};const g=GEB.find(x=>x.id===v.gebaeude_id)||{};const t=daysBetween(v.beginn);
+      rows.push([gebLabel(g),einLabel(e),v.mieter,v.status,v.beginn,t==null?'':t,t==null?'':(t/365.25).toFixed(1),v.anzahl_bewohner,v.kaltmiete,v.heizung,v.betriebskosten,v.strom,v.wlan,v.garage,v.mieterkeller,v.hausmeister,v.ebk,v.warmmiete,v.kaution,v.vermittler,v.einkommensquelle,v.notiz]);});
+    download('portfolio_mietvertraege_'+today+'.csv',rows);
+  }
+  toast('CSV exportiert ✓');
 }
 function renderKpis(){
   let k=[];
