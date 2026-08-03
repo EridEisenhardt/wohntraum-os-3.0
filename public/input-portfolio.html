@@ -87,11 +87,16 @@ function distinct(arr,f){return [...new Set(arr.map(f).filter(v=>v!=null&&v!==''
 function opts(list,sel,ph){return '<option value="">'+(ph||'—')+'</option>'+list.map(v=>'<option'+(String(v)===String(sel)?' selected':'')+'>'+esc(v)+'</option>').join('');}
 function optsKV(list,sel){return '<option value="">—</option>'+list.map(o=>'<option value="'+o.id+'"'+(o.id===sel?' selected':'')+'>'+esc(o.label)+'</option>').join('');}
 function daysBetween(d){if(!d)return null;const a=new Date(d),b=new Date();if(isNaN(a))return null;return Math.max(0,Math.round((b-a)/86400000));}
+function addYears(d,n){if(!d)return null;const a=new Date(d);if(isNaN(a))return null;a.setFullYear(a.getFullYear()+n);return a;}
+function fmtDE(dt){return dt?dt.toLocaleDateString('de-DE'):'';}
+function milestone(nl,years){const t=addYears(nl,years);if(!t)return {t:null,days:null};return {t,days:Math.ceil((t-new Date())/86400000)};}
+function waitTage(m){if(m.days==null)return '—';return m.days<=0?'<span style="color:var(--green)">erreicht ✓</span>':String(m.days);}
+function waitMon(m){if(m.days==null)return '—';return m.days<=0?'<span style="color:var(--green)">erreicht ✓</span>':(m.days/30.4375).toFixed(1);}
 
 // Konfiguration je Tab
 const TABLES={geb:'gebaeude',ein:'einheiten',ver:'mietvertraege'};
 const HINTS={
-  geb:'Objekte des Bestands. Kennung = Kürzel (z.B. S16). Änderungen speichern sofort.',
+  geb:'Objekte des Bestands. Fristen (15%-Grenze 3 J., 6b-Rücklage 6 J., Spekulation 10 J.) werden automatisch aus dem Nutzen-/Lastenübergang berechnet. Nur zur Orientierung – steuerlich mit dem Steuerberater abstimmen.',
   ein:'Einheiten je Gebäude (Wohnungen, Gewerbe, Garagen…). Fläche in m². Lage & Ausstattung frei erfassbar.',
   ver:'Mietverträge je Einheit. Mietdauer wird automatisch aus dem Mietbeginn berechnet. Warmmiete = Summe der Bestandteile (nur Anzeige, editierbar bleibt Warmmiete-Feld).'
 };
@@ -129,16 +134,22 @@ function fillGebFilter(){
 }
 
 // Spaltendefinition
-function columnsGeb(){return ['Kennung','Name / Adresse','PLZ','Ort','Eigentümer','Notiz',''];}
+function columnsGeb(){return ['Kennung','Name / Adresse','PLZ','Ort','Eigentümer','Notiz','Nutzen-/Lastenübergang','15%-Grenze entfällt (3 J.)','Warten (T)','Warten (M)','6b-Rücklage (6 J.)','Warten (T)','Warten (M)','Spekulation (10 J.)','Warten (T)','Warten (M)',''];}
 function rowGeb(r){
   const eigs=distinct(GEB,x=>x.eigentuemer);
+  const nl=r.nutzen_lasten;
+  const m3=milestone(nl,3), m6=milestone(nl,6), m10=milestone(nl,10);
   return '<tr class="'+ownerClass(r.eigentuemer)+'">'
-   +'<td class="kn"><input value="'+esc(r.kennung)+'" onchange="save(\''+r.id+'\',\'kennung\',this.value)"></td>'
+   +'<td class="kn"><input value="'+esc(r.kennung)+'" style="width:66px" onchange="save(\''+r.id+'\',\'kennung\',this.value)"></td>'
    +'<td><input value="'+esc(r.name)+'" onchange="save(\''+r.id+'\',\'name\',this.value)"></td>'
-   +'<td><input value="'+esc(r.plz)+'" style="width:70px" onchange="save(\''+r.id+'\',\'plz\',this.value)"></td>'
+   +'<td><input value="'+esc(r.plz)+'" style="width:64px" onchange="save(\''+r.id+'\',\'plz\',this.value)"></td>'
    +'<td><input value="'+esc(r.ort)+'" onchange="save(\''+r.id+'\',\'ort\',this.value)"></td>'
    +'<td><select onchange="save(\''+r.id+'\',\'eigentuemer\',this.value)">'+opts(eigs,r.eigentuemer,'—')+'</select></td>'
-   +'<td><input value="'+esc(r.notiz)+'" onchange="save(\''+r.id+'\',\'notiz\',this.value)"></td>'
+   +'<td><input value="'+esc(r.notiz)+'" style="min-width:120px" onchange="save(\''+r.id+'\',\'notiz\',this.value)"></td>'
+   +'<td><input type="date" value="'+esc(nl)+'" onchange="save(\''+r.id+'\',\'nutzen_lasten\',this.value)"></td>'
+   +'<td class="calc">'+fmtDE(m3.t)+'</td><td class="calc">'+waitTage(m3)+'</td><td class="calc">'+waitMon(m3)+'</td>'
+   +'<td class="calc">'+fmtDE(m6.t)+'</td><td class="calc">'+waitTage(m6)+'</td><td class="calc">'+waitMon(m6)+'</td>'
+   +'<td class="calc">'+fmtDE(m10.t)+'</td><td class="calc">'+waitTage(m10)+'</td><td class="calc">'+waitMon(m10)+'</td>'
    +'<td><button class="abtn" onclick="del(\''+r.id+'\')">✕</button></td></tr>';
 }
 function columnsEin(){return ['Gebäude','Kategorie','Bezeichnung','Fläche m²','Lage','Ausstattung','Notiz',''];}
@@ -202,8 +213,12 @@ function download(name,rows){const csv=rows.map(r=>r.map(csvCell).join(';')).joi
 function exportCSV(){
   const today=new Date().toISOString().slice(0,10);
   if(TAB==='geb'){
-    const rows=[['Kennung','Name / Adresse','PLZ','Ort','Eigentümer','Notiz']];
-    GEB.forEach(g=>rows.push([g.kennung,g.name,g.plz,g.ort,g.eigentuemer,g.notiz]));
+    const rows=[['Kennung','Name / Adresse','PLZ','Ort','Eigentümer','Notiz','Nutzen-/Lastenübergang','15%-Grenze entfällt (3J)','Warten Tage','Warten Monate','6b-Rücklage (6J)','Warten Tage','Warten Monate','Spekulation (10J)','Warten Tage','Warten Monate']];
+    const exM=m=>m.t?m.t.toISOString().slice(0,10):'';
+    const exT=m=>m.days==null?'':(m.days<=0?'0':m.days);
+    const exMon=m=>m.days==null?'':(m.days<=0?'0':(m.days/30.4375).toFixed(1));
+    GEB.forEach(g=>{const m3=milestone(g.nutzen_lasten,3),m6=milestone(g.nutzen_lasten,6),m10=milestone(g.nutzen_lasten,10);
+      rows.push([g.kennung,g.name,g.plz,g.ort,g.eigentuemer,g.notiz,g.nutzen_lasten,exM(m3),exT(m3),exMon(m3),exM(m6),exT(m6),exMon(m6),exM(m10),exT(m10),exMon(m10)]);});
     download('portfolio_gebaeude_'+today+'.csv',rows);
   } else if(TAB==='ein'){
     const rows=[['Gebäude','Kategorie','Bezeichnung','Fläche m²','Lage','Ausstattung','Notiz']];
