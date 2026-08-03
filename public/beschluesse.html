@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="de"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Beschlüsse</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+:root{--bg:#f6f7f9;--surf:#fff;--surf2:#f1f3f6;--line:#e6e8ec;--text:#1c2024;--muted:#6b7280;--dim:#4b5563;--accent:#185fa5;--green:#1f7a4d;--red:#c0392b}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--text);font-family:'Inter',system-ui,-apple-system,'Segoe UI',sans-serif;font-size:14px;line-height:1.5}
+.hdr{background:var(--surf);border-bottom:1px solid var(--line);padding:14px 22px;position:sticky;top:0;z-index:10;display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}
+.hdr-title{font-size:17px;font-weight:700}.hdr-sub{font-size:11.5px;color:var(--muted)}
+.wrap{max-width:1400px;margin:16px auto;padding:0 18px 50px}
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;margin-bottom:14px}
+.kpi{background:var(--surf);border:1px solid var(--line);border-radius:12px;padding:11px 14px}
+.kpi .l{font-size:10px;text-transform:uppercase;color:var(--muted)}.kpi .v{font-size:20px;font-weight:700;margin-top:2px}
+.bar{display:flex;gap:9px;align-items:center;flex-wrap:wrap;margin-bottom:12px}
+.bar input,.bar select{font:inherit;font-size:13px;padding:7px 10px;border:1px solid var(--line);border-radius:8px;background:var(--surf);color:var(--text)}
+.bar input[type=text]{min-width:220px}
+.btn{font:inherit;font-size:13px;font-weight:600;padding:8px 13px;border:1px solid var(--line);border-radius:8px;background:var(--surf2);color:var(--text);cursor:pointer}
+.btn-accent{background:var(--accent);color:#fff;border-color:var(--accent)}
+.count{font-size:12px;color:var(--muted)}
+.scroll{overflow:auto;border:1px solid var(--line);border-radius:12px;background:var(--surf)}
+table{width:100%;border-collapse:collapse;font-size:13px;min-width:1150px}
+th,td{padding:8px 10px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}
+th{font-size:10px;text-transform:uppercase;color:var(--muted);background:var(--surf2);white-space:nowrap;position:sticky;top:0;z-index:1}
+td input,td textarea,td select{width:100%;font:inherit;font-size:13px;padding:5px 7px;border:1px solid transparent;border-radius:6px;background:transparent;color:var(--text);resize:vertical}
+td input:hover,td textarea:hover,td select:hover{border-color:var(--line)}td input:focus,td textarea:focus,td select:focus{outline:none;border-color:var(--accent);background:var(--surf)}
+td textarea{min-height:34px}
+.st{font-weight:700;border-radius:6px}
+.st-neu{color:#4b5563}.st-abst{color:#185fa5}.st-gueltig{color:#1f7a4d}.st-abgelehnt{color:#c0392b}
+.abtn{background:none;border:none;color:var(--muted);cursor:pointer;font-size:14px}.abtn:hover{color:var(--red)}
+.toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:#1c2024;color:#fff;padding:10px 16px;border-radius:8px;font-size:13px;opacity:0;transition:.2s;pointer-events:none;z-index:50}.toast.show{opacity:1}
+</style></head><body>
+<div class="hdr">
+  <div><div class="hdr-title">📋 Beschlüsse</div><div class="hdr-sub">Unternehmens-Entscheidungen dokumentieren · übernommen aus Notion, künftig hier pflegen</div></div>
+  <button class="btn btn-accent" onclick="addRow()">+ Neuer Beschluss</button>
+</div>
+<div class="wrap">
+  <div class="kpis" id="kpis"></div>
+  <div class="bar">
+    <input type="text" id="q" placeholder="🔍 Suchen (Titel / Infos)…" oninput="render()">
+    <select id="fStatus" onchange="render()"></select>
+    <select id="fCluster" onchange="render()"></select>
+    <button class="btn" onclick="clearF()">Filter zurücksetzen</button>
+    <span class="count" id="cnt"></span>
+  </div>
+  <div class="scroll"><table id="tbl"><thead><tr>
+    <th style="width:46px">Nr.</th><th style="min-width:220px">Titel</th><th style="width:130px">Status</th>
+    <th style="min-width:130px">Themen-Cluster</th><th style="min-width:120px">Beteiligte</th>
+    <th style="width:120px">Gültig ab</th><th style="width:120px">Fällig bis</th>
+    <th style="min-width:240px">Weitere Informationen</th><th style="width:36px"></th>
+  </tr></thead><tbody></tbody></table></div>
+</div>
+<datalist id="clusterDL"></datalist>
+<datalist id="beteiligtDL"><option value="Eric"><option value="Ramona"><option value="Stephan"><option value="Mustafa"><option value="Stb Ralph Arens"></datalist>
+<div class="toast" id="toast"></div>
+<script>
+const sb=window.supabase.createClient('https://jqzxctfqvcwbctpjksvg.supabase.co','eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpxenhjdGZxdmN3YmN0cGprc3ZnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODIxMzA0MzIsImV4cCI6MjA5NzcwNjQzMn0.RKIbZxJdusKWWPjBJqlxZ8e1m8So02UslOg55YRsn3o');
+const $=id=>document.getElementById(id);
+const esc=s=>(s==null?'':String(s)).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+function toast(m){const t=$('toast');t.textContent=m;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),1700);}
+const STATUS=['Neu','in Abstimmung','gültig','abgelehnt'];
+function stCls(s){return s==='gültig'?'st-gueltig':s==='in Abstimmung'?'st-abst':s==='abgelehnt'?'st-abgelehnt':'st-neu';}
+let ROWS=[];
+function fillSelects(){
+  const cs=$('fStatus').value; $('fStatus').innerHTML='<option value="">Alle Status</option>'+STATUS.map(s=>`<option ${s===cs?'selected':''}>${esc(s)}</option>`).join('');
+  const cc=$('fCluster').value; const cl=[...new Set(ROWS.flatMap(r=>(r.cluster||'').split(',').map(x=>x.trim()).filter(Boolean)))].sort();
+  $('fCluster').innerHTML='<option value="">Alle Cluster</option>'+cl.map(c=>`<option ${c===cc?'selected':''}>${esc(c)}</option>`).join('');
+  $('clusterDL').innerHTML=['Mietverwaltung','Hausverwaltung','Mitarbeiter','Buchhaltung','Akquise','Sonstiges'].concat(cl).filter((v,i,a)=>a.indexOf(v)===i).map(c=>`<option value="${esc(c)}">`).join('');
+}
+function clearF(){$('q').value='';$('fStatus').value='';$('fCluster').value='';render();}
+async function upd(id,field,val){
+  const dateF=['gueltig_ab','faellig_bis'];
+  let v; if(field==='nr'){v=val===''?null:parseInt(val,10);if(isNaN(v))v=null;} else {v=(val&&val.trim())?val.trim():null;}
+  const res=await sb.from('beschluesse').update({[field]:v}).eq('id',id);
+  if(res.error){toast('Fehler: '+res.error.message);return;}
+  const r=ROWS.find(x=>x.id===id); if(r)r[field]=v;
+  if(field==='status'||field==='cluster')render(); else fillSelects();
+}
+async function addRow(){
+  const max=Math.max(0,...ROWS.map(r=>r.nr||0));
+  const res=await sb.from('beschluesse').insert({nr:max+1,titel:'Neuer Beschluss',status:'Neu',gueltig_ab:new Date().toISOString().slice(0,10)}).select();
+  if(res.error){toast('Fehler: '+res.error.message);return;}
+  ROWS.unshift(res.data[0]); render(); toast('Beschluss angelegt');
+}
+async function del(id){if(!confirm('Diesen Beschluss löschen?'))return;await sb.from('beschluesse').delete().eq('id',id);ROWS=ROWS.filter(x=>x.id!==id);render();}
+function render(){
+  const c={};STATUS.forEach(s=>c[s]=0);ROWS.forEach(r=>{c[r.status]=(c[r.status]||0)+1;});
+  $('kpis').innerHTML=[['Beschlüsse',ROWS.length]].concat(STATUS.map(s=>[s,c[s]||0])).map(k=>`<div class="kpi"><div class="l">${esc(k[0])}</div><div class="v">${k[1]}</div></div>`).join('');
+  fillSelects();
+  const q=($('q').value||'').toLowerCase(), fs=$('fStatus').value, fc=$('fCluster').value;
+  const list=ROWS.filter(r=>{
+    if(q && !((r.titel||'')+' '+(r.infos||'')).toLowerCase().includes(q))return false;
+    if(fs && r.status!==fs)return false;
+    if(fc && !((r.cluster||'').split(',').map(x=>x.trim()).includes(fc)))return false;
+    return true;
+  });
+  $('cnt').textContent=list.length+' von '+ROWS.length;
+  $('tbl').querySelector('tbody').innerHTML=list.map(r=>`<tr>
+    <td><input value="${esc(r.nr==null?'':r.nr)}" inputmode="numeric" style="width:40px" onchange="upd('${r.id}','nr',this.value)"></td>
+    <td><textarea rows="1" onchange="upd('${r.id}','titel',this.value)">${esc(r.titel)}</textarea></td>
+    <td><select class="st ${stCls(r.status)}" onchange="upd('${r.id}','status',this.value)">${STATUS.map(s=>`<option ${s===r.status?'selected':''}>${esc(s)}</option>`).join('')}</select></td>
+    <td><input list="clusterDL" value="${esc(r.cluster)}" placeholder="Cluster" onchange="upd('${r.id}','cluster',this.value)"></td>
+    <td><input list="beteiligtDL" value="${esc(r.beteiligt)}" placeholder="Beteiligte" onchange="upd('${r.id}','beteiligt',this.value)"></td>
+    <td><input type="date" value="${esc(r.gueltig_ab)}" onchange="upd('${r.id}','gueltig_ab',this.value)"></td>
+    <td><input type="date" value="${esc(r.faellig_bis)}" onchange="upd('${r.id}','faellig_bis',this.value)"></td>
+    <td><textarea rows="1" placeholder="Begründung / Details…" onchange="upd('${r.id}','infos',this.value)">${esc(r.infos)}</textarea></td>
+    <td><button class="abtn" onclick="del('${r.id}')">✕</button></td>
+  </tr>`).join('')||'<tr><td colspan="9" style="text-align:center;color:var(--muted);padding:20px">Keine Beschlüsse in dieser Ansicht.</td></tr>';
+}
+async function load(){
+  const res=await sb.from('beschluesse').select('*').order('nr',{ascending:true,nullsFirst:false});
+  ROWS=res.error?[]:(res.data||[]); render();
+}
+load();
+</script>
+</body></html>
