@@ -134,6 +134,7 @@ export function permNodes() {
 // Zuordnung jeder Kategorie/Verknüpfung zu einem Geschäftsbereich
 const GESCHAEFTE = [
   { v: 'fav', label: 'Favoriten', icon: 'ti-star' },
+  { v: 'desktop', label: 'Desktop', icon: 'ti-home', href: '/' },
   { v: 'vertrieb', label: 'Vertrieb', icon: 'ti-chart-line' },
   { v: 'buchhaltung', label: 'Buchhaltung', icon: 'ti-calculator' },
   { v: 'hausverwaltung', label: 'Hausverwaltung', icon: 'ti-home' },
@@ -275,9 +276,15 @@ export default function Sidebar({ user, demo, onLogout, role, perms }) {
       {/* Zeile 1: Geschäftsbereich */}
       <nav className="gbbar">
         {GESCHAEFTE.map((g) => (
-          <button key={g.v} className={'gb' + (activeGb === g.v ? ' active' : '')} onClick={() => chooseGb(g.v)}>
-            <i className={'ti ' + g.icon} /> {g.label}
-          </button>
+          g.href ? (
+            <Link key={g.v} href={g.href} className={'gb' + (path === g.href ? ' active' : '')}>
+              <i className={'ti ' + g.icon} /> {g.label}
+            </Link>
+          ) : (
+            <button key={g.v} className={'gb' + (activeGb === g.v ? ' active' : '')} onClick={() => chooseGb(g.v)}>
+              <i className={'ti ' + g.icon} /> {g.label}
+            </button>
+          )
         ))}
       </nav>
 
