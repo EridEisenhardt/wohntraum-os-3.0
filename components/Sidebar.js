@@ -23,6 +23,7 @@ export const NAV = [
     { href: '/buchhaltung/assetmanagement', icon: 'ti-chart-arcs', label: 'Übersicht' },
     { href: '/buchhaltung/assetmanagement/portfolio', icon: 'ti-building-community', label: 'Portfolio' },
     { href: '/buchhaltung/assetmanagement/entwicklungen', icon: 'ti-trending-up', label: 'Entwicklungen' },
+    { href: '/buchhaltung/assetmanagement/liquiditaet', icon: 'ti-cash', label: 'Liquidität' },
     { href: '/buchhaltung/assetmanagement/anverkauf', icon: 'ti-transfer', label: 'An- und Verkauf von Immobilien' },
   ] },
   { type: 'group', key: 'assetmanagement', icon: 'ti-building-estate', label: 'Assetmanagement (Optimierung)', area: ['vertrieb', 'hv'], mod: 'dashboards', items: [
