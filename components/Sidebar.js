@@ -89,6 +89,7 @@ export const NAV = [
     { href: '/stammdaten/firmen', icon: 'ti-building', label: 'Firmen' },
   ] },
   { type: 'group', key: 'personal', icon: 'ti-users-group', label: 'Personal', area: ['hv', 'backoffice'], mod: 'personal', items: [
+    { href: '/personal/zustaendigkeiten', icon: 'ti-list-check', label: 'Zuständigkeiten & SOPs' },
     { href: '/personal/akte', icon: 'ti-id', label: 'Personalakte' },
     { href: '/personal/urlaub', icon: 'ti-beach', label: 'Urlaub' },
     { href: '/personal/krankheit', icon: 'ti-vaccine', label: 'Krankheit' },

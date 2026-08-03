@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="de"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Zuständigkeit der Mitarbeiter</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<style>
+:root{--bg:#f6f7f9;--surf:#fff;--surf2:#f1f3f6;--line:#e6e8ec;--text:#1c2024;--muted:#6b7280;--dim:#4b5563;--accent:#185fa5;--red:#c0392b}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--text);font-family:'Inter',system-ui,-apple-system,'Segoe UI',sans-serif;font-size:14px;line-height:1.5}
+.hdr{background:var(--surf);border-bottom:1px solid var(--line);padding:14px 22px;position:sticky;top:0;z-index:10;display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}
+.hdr-title{font-size:17px;font-weight:700}.hdr-sub{font-size:11.5px;color:var(--muted)}
+.wrap{max-width:1500px;margin:16px auto;padding:0 18px 60px}
+.bar{display:flex;gap:9px;align-items:center;flex-wrap:wrap;margin-bottom:12px}
+.bar input,.bar select{font:inherit;font-size:13px;padding:7px 10px;border:1px solid var(--line);border-radius:8px;background:var(--surf);color:var(--text)}
+.bar input[type=text]{min-width:200px}
+.btn{font:inherit;font-size:13px;font-weight:600;padding:8px 13px;border:1px solid var(--line);border-radius:8px;background:var(--surf2);color:var(--text);cursor:pointer}
+.btn-accent{background:var(--accent);color:#fff;border-color:var(--accent)}
+.count{font-size:12px;color:var(--muted)}
+.scroll{overflow:auto;border:1px solid var(--line);border-radius:12px;background:var(--surf)}
+table{width:100%;border-collapse:collapse;font-size:12.5px;min-width:1250px}
+th,td{padding:7px 9px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}
+th{font-size:10px;text-transform:uppercase;color:var(--muted);background:var(--surf2);position:sticky;top:0;white-space:nowrap;z-index:1}
+td input,td textarea{width:100%;font:inherit;font-size:12.5px;padding:4px 6px;border:1px solid transparent;border-radius:6px;background:transparent;color:var(--text);resize:vertical}
+td input:hover,td textarea:hover{border-color:var(--line)} td input:focus,td textarea:focus{outline:none;border-color:var(--accent);background:var(--surf)}
+td textarea{min-height:34px}
+.pill{display:inline-block;font-size:10.5px;font-weight:700;padding:2px 8px;border-radius:20px;background:#eef2f7;color:#4b5563;white-space:nowrap}
+.abtn{background:none;border:none;color:var(--muted);cursor:pointer;font-size:14px}.abtn:hover{color:var(--red)}
+.mitarb{font-weight:700}
+.src{font-size:9.5px;color:#9aa1ab}
+.toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:#1c2024;color:#fff;padding:10px 16px;border-radius:8px;font-size:13px;opacity:0;transition:.2s;pointer-events:none;z-index:50}.toast.show{opacity:1}
+</style></head><body>
+<div class="hdr">
+  <div><div class="hdr-title">Zuständigkeit der Mitarbeiter</div><div class="hdr-sub">Verantwortungsbereiche · Legitimationen (erforderliche Zugänge) · SOP (Prozessbeschreibungen)</div></div>
+  <button class="btn" onclick="exportXlsx()">⬇ Export (Excel)</button>
+</div>
+<div class="wrap">
+  <div class="bar">
+    <input type="text" id="q" placeholder="🔍 Aufgabe suchen…" oninput="render()">
+    <select id="fMit" onchange="render()"></select>
+    <select id="fKat" onchange="render()"></select>
+    <select id="fSrc" onchange="render()"></select>
+    <button class="btn" onclick="clearF()">Filter zurücksetzen</button>
+    <span class="count" id="cnt"></span>
+    <span style="flex:1"></span>
+    <button class="btn btn-accent" onclick="addRow()">+ Aufgabe</button>
+  </div>
+  <div class="scroll"><table id="tbl"><thead><tr>
+    <th style="min-width:190px">Aufgabe / Aufgabenbereich</th>
+    <th style="min-width:130px">Kategorie</th>
+    <th style="min-width:110px">Verantwortlich</th>
+    <th style="min-width:100px">Vertretung</th>
+    <th style="min-width:200px">Regelaufgaben</th>
+    <th style="min-width:180px">Legitimationen<br><span style="font-weight:400;text-transform:none">erforderliche Zugänge</span></th>
+    <th style="min-width:200px">SOP<br><span style="font-weight:400;text-transform:none">Prozessbeschreibung</span></th>
+    <th style="min-width:40px"></th>
+  </tr></thead><tbody></tbody></table></div>
+</div>
+<div class="toast" id="toast"></div>
+<script>
+const sb=window.supabase.createClient('https://jqzxctfqvcwbctpjksvg.supabase.co','eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpxenhjdGZxdmN3YmN0cGprc3ZnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODIxMzA0MzIsImV4cCI6MjA5NzcwNjQzMn0.RKIbZxJdusKWWPjBJqlxZ8e1m8So02UslOg55YRsn3o');
+const $=id=>document.getElementById(id);
+const esc=s=>(s==null?'':String(s)).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;');
+function toast(m){const t=$('toast');t.textContent=m;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),1700);}
+let ROWS=[];
+function tokens(field){const set=new Set();ROWS.forEach(r=>{(r[field]||'').split(',').forEach(x=>{x=x.trim();if(x)set.add(x);});});return [...set].sort();}
+function fillSelects(){
+  const cur=$('fMit').value; $('fMit').innerHTML='<option value="">Alle Mitarbeiter</option>'+tokens('verantwortlich').map(x=>`<option ${x===cur?'selected':''}>${esc(x)}</option>`).join('');
+  const ck=$('fKat').value; $('fKat').innerHTML='<option value="">Alle Kategorien</option>'+tokens('kategorie').map(x=>`<option ${x===ck?'selected':''}>${esc(x)}</option>`).join('');
+  const cs=$('fSrc').value; $('fSrc').innerHTML='<option value="">Alle Quellen</option>'+[...new Set(ROWS.map(r=>r.quelle).filter(Boolean))].sort().map(x=>`<option ${x===cs?'selected':''}>${esc(x)}</option>`).join('');
+}
+function clearF(){$('q').value='';$('fMit').value='';$('fKat').value='';$('fSrc').value='';render();}
+async function upd(id,field,val){
+  const v=(val&&val.trim())?val.trim():null;
+  const res=await sb.from('zustaendigkeiten').update({[field]:v}).eq('id',id);
+  if(res.error){toast('Fehler: '+res.error.message);return;}
+  const r=ROWS.find(x=>x.id===id); if(r)r[field]=v; fillSelects();
+}
+async function addRow(){
+  const max=Math.max(0,...ROWS.map(r=>r.pos||0));
+  const res=await sb.from('zustaendigkeiten').insert({aufgabe:'Neue Aufgabe',quelle:'manuell',pos:max+1}).select();
+  if(res.error){toast('Fehler: '+res.error.message);return;}
+  ROWS.unshift(res.data[0]); render(); toast('Aufgabe angelegt');
+}
+async function del(id){if(!confirm('Diese Aufgabe löschen?'))return;await sb.from('zustaendigkeiten').delete().eq('id',id);ROWS=ROWS.filter(x=>x.id!==id);render();}
+function inp(r,f,ph){return `<input value="${esc(r[f])}" placeholder="${ph||''}" onchange="upd('${r.id}','${f}',this.value)">`;}
+function ta(r,f,ph){return `<textarea placeholder="${ph||''}" onchange="upd('${r.id}','${f}',this.value)">${esc(r[f])}</textarea>`;}
+function render(){
+  const q=($('q').value||'').toLowerCase(), fm=$('fMit').value, fk=$('fKat').value, fs=$('fSrc').value;
+  const list=ROWS.filter(r=>{
+    if(q && !((r.aufgabe||'')+' '+(r.regelaufgaben||'')).toLowerCase().includes(q))return false;
+    if(fm && !((r.verantwortlich||'').split(',').map(x=>x.trim()).includes(fm)))return false;
+    if(fk && !((r.kategorie||'').split(',').map(x=>x.trim()).includes(fk)))return false;
+    if(fs && r.quelle!==fs)return false;
+    return true;
+  });
+  $('cnt').textContent=list.length+' von '+ROWS.length+' Aufgaben';
+  $('tbl').querySelector('tbody').innerHTML=list.map(r=>`<tr>
+    <td>${ta(r,'aufgabe')}${r.quelle?`<div class="src">Quelle: ${esc(r.quelle)}</div>`:''}</td>
+    <td>${inp(r,'kategorie','Kategorie')}</td>
+    <td class="mitarb">${inp(r,'verantwortlich','Mitarbeiter')}</td>
+    <td>${inp(r,'vertretung','Vertretung')}</td>
+    <td>${ta(r,'regelaufgaben','Regelaufgaben / Ablauf')}</td>
+    <td>${ta(r,'legitimationen','Zugänge / Berechtigungen')}</td>
+    <td>${ta(r,'sop','SOP / Prozessbeschreibung')}</td>
+    <td><button class="abtn" title="Löschen" onclick="del('${r.id}')">✕</button></td>
+  </tr>`).join('')||'<tr><td colspan="8" style="text-align:center;color:var(--muted);padding:20px">Keine Aufgaben in dieser Ansicht.</td></tr>';
+}
+function exportXlsx(){
+  if(!window.XLSX){toast('Export lädt noch…');return;}
+  const aoa=[['Aufgabe / Aufgabenbereich','Kategorie','Verantwortlich','Vertretung','Regelaufgaben','Legitimationen (erforderliche Zugänge)','SOP (Prozessbeschreibung)','Quelle']];
+  ROWS.forEach(r=>aoa.push([r.aufgabe||'',r.kategorie||'',r.verantwortlich||'',r.vertretung||'',r.regelaufgaben||'',r.legitimationen||'',r.sop||'',r.quelle||'']));
+  const wb=XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(aoa),'Zuständigkeiten');
+  XLSX.writeFile(wb,'Zustaendigkeiten_'+new Date().toISOString().slice(0,10)+'.xlsx'); toast('Excel exportiert ✓');
+}
+async function load(){
+  const res=await sb.from('zustaendigkeiten').select('*').order('pos',{ascending:true});
+  ROWS=res.error?[]:(res.data||[]); fillSelects(); render();
+}
+load();
+</script>
+</body></html>
