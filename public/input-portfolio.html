@@ -64,6 +64,7 @@ th.grp-gray{background:#6b7280}th.grp-blue{background:#2f6db0}th.grp-purple{back
     <button class="tab active" data-t="geb" onclick="setTab('geb')">Gebäude<span class="n" id="n_geb"></span></button>
     <button class="tab" data-t="ein" onclick="setTab('ein')">Einheiten<span class="n" id="n_ein"></span></button>
     <button class="tab" data-t="ver" onclick="setTab('ver')">Mietverträge<span class="n" id="n_ver"></span></button>
+    <button class="tab" data-t="leer" onclick="setTab('leer')">Leerstand<span class="n" id="n_leer"></span></button>
   </div>
   <div class="kpis" id="kpis"></div>
   <div class="bar">
@@ -121,7 +122,7 @@ async function save(id,field,val,numeric){
   else {v=(val&&String(val).trim())?String(val).trim():null;}
   const res=await sb.from(TABLES[TAB]).update({[field]:v}).eq('id',id);
   if(res.error){toast('Fehler: '+res.error.message);return;}
-  const arr=TAB==='geb'?GEB:TAB==='ein'?EIN:VER;
+  const arr=TAB==='geb'?GEB:(TAB==='ein'||TAB==='leer')?EIN:VER;
   const r=arr.find(x=>x.id===id); if(r)r[field]=v;
   if(field==='beginn'||field==='nutzen_lasten'||field==='nl_hinweis'||field==='eigentuemer'||field==='gebaeude_id'||field==='einheit_id'||field==='kennung'||field==='kategorie'||field==='bezeichnung')render(); else toast('Gespeichert ✓');
 }
@@ -135,13 +136,15 @@ async function saveEin(eid,field,val){
 async function addRow(){
   if(TAB==='geb'){const r=await sb.from('gebaeude').insert({name:'Neues Gebäude',pos:GEB.length}).select();if(r.error)return toast(r.error.message);GEB.unshift(r.data[0]);}
   else if(TAB==='ein'){const gid=$('fGeb').value||(GEB[0]&&GEB[0].id)||null;const r=await sb.from('einheiten').insert({gebaeude_id:gid,kategorie:'Wohnung',pos:EIN.length}).select();if(r.error)return toast(r.error.message);EIN.unshift(r.data[0]);}
+  else if(TAB==='leer'){const gid=$('fGeb').value||(GEB[0]&&GEB[0].id)||null;const r=await sb.from('einheiten').insert({gebaeude_id:gid,kategorie:'Wohnung',status:'Leerstand',pos:EIN.length}).select();if(r.error)return toast(r.error.message);EIN.unshift(r.data[0]);}
   else {const r=await sb.from('mietvertraege').insert({status:'aktiv',pos:VER.length}).select();if(r.error)return toast(r.error.message);VER.unshift(r.data[0]);}
   render(); toast('Angelegt');
 }
 async function del(id){if(!confirm('Diesen Eintrag löschen?'))return;const res=await sb.from(TABLES[TAB]).delete().eq('id',id);if(res.error)return toast(res.error.message);
-  if(TAB==='geb')GEB=GEB.filter(x=>x.id!==id);else if(TAB==='ein')EIN=EIN.filter(x=>x.id!==id);else VER=VER.filter(x=>x.id!==id);render();}
+  if(TAB==='geb')GEB=GEB.filter(x=>x.id!==id);else if(TAB==='ein'||TAB==='leer')EIN=EIN.filter(x=>x.id!==id);else VER=VER.filter(x=>x.id!==id);render();}
 
 function setTab(t){TAB=t;document.querySelectorAll('.tab').forEach(b=>b.classList.toggle('active',b.dataset.t===t));$('q').value='';$('fGeb').style.display=(t==='geb')?'none':'';render();}
+function kennungOf(gid){const g=GEB.find(x=>x.id===gid);return g?(g.kennung||''):'';}
 
 function fillGebFilter(){
   const cur=$('fGeb').value;
@@ -186,13 +189,14 @@ function rowEin(r){
    +'<td><input value="'+esc(r.notiz)+'" onchange="save(\''+r.id+'\',\'notiz\',this.value)"></td>'
    +'<td><button class="abtn" onclick="del(\''+r.id+'\')">✕</button></td></tr>';
 }
-function columnsVer(){return ['Einheit','Ausstattungsmerkmale','Lage der Wohnung','Mieter','Status','Mietbeginn','Dauer (T)','Dauer (J)','Bew.','Kaltmiete','Heizung','BK','Strom','WLAN','Garage','Keller','Hausm.','EBK','Warmmiete','Kaution','Mieter-Vermittler','Einkommensquelle','Notiz',''];}
+function columnsVer(){return ['Objekt','Einheit','Ausstattungsmerkmale','Lage der Wohnung','Mieter','Status','Mietbeginn','Dauer (T)','Dauer (J)','Bew.','Kaltmiete','Heizung','BK','Strom','WLAN','Garage','Keller','Hausm.','EBK','Warmmiete','Kaution','Mieter-Vermittler','Einkommensquelle','Notiz',''];}
 function rowVer(r){
   const el=EIN.map(e=>({id:e.id,label:einLabel(e)}));
   const eh=EIN.find(x=>x.id===r.einheit_id)||{};
   const tage=daysBetween(r.beginn);
   const num=(f,w)=>'<td class="num"><input value="'+esc(r[f])+'" style="width:'+(w||64)+'px" onchange="save(\''+r.id+'\',\''+f+'\',this.value,1)"></td>';
   return '<tr class="'+ownerClassByGeb(r.gebaeude_id)+'">'
+   +'<td class="kn">'+esc(kennungOf(r.gebaeude_id))+'</td>'
    +'<td><select style="min-width:150px" onchange="save(\''+r.id+'\',\'einheit_id\',this.value)">'+optsKV(el,r.einheit_id)+'</select></td>'
    +'<td><input value="'+esc(eh.ausstattung)+'" style="min-width:150px" '+(r.einheit_id?'':'disabled placeholder="Erst Einheit wählen"')+' onchange="saveEin(\''+r.einheit_id+'\',\'ausstattung\',this.value)"></td>'
    +'<td><input value="'+esc(eh.lage)+'" style="min-width:140px" '+(r.einheit_id?'':'disabled placeholder="Erst Einheit wählen"')+' onchange="saveEin(\''+r.einheit_id+'\',\'lage\',this.value)"></td>'
@@ -211,12 +215,14 @@ function rowVer(r){
 
 function render(){
   $('n_geb').textContent=GEB.length;$('n_ein').textContent=EIN.length;$('n_ver').textContent=VER.length;
+  $('n_leer').textContent=EIN.filter(e=>LEER_STATI.includes(e.status)).length;
   fillGebFilter();
   $('hint').textContent=HINTS[TAB];
   const q=($('q').value||'').toLowerCase(), fg=$('fGeb').value;
   let cols, rows, list;
   if(TAB==='geb'){cols=columnsGeb();list=GEB.filter(r=>!q||(gebLabel(r)+' '+(r.ort||'')+' '+(r.eigentuemer||'')).toLowerCase().includes(q));rows=list.map(rowGeb);}
   else if(TAB==='ein'){cols=columnsEin();list=EIN.filter(r=>(!fg||r.gebaeude_id===fg)&&(!q||(einLabel(r)+' '+(r.lage||'')+' '+(r.ausstattung||'')).toLowerCase().includes(q)));rows=list.map(rowEin);}
+  else if(TAB==='leer'){cols=columnsEin();list=EIN.filter(r=>LEER_STATI.includes(r.status)&&(!fg||r.gebaeude_id===fg)&&(!q||(einLabel(r)+' '+(r.lage||'')+' '+(r.ausstattung||'')).toLowerCase().includes(q)));rows=list.map(rowEin);}
   else {cols=columnsVer();list=VER.filter(r=>(!fg||r.gebaeude_id===fg)&&(!q||((r.mieter||'')+' '+einLabel(EIN.find(e=>e.id===r.einheit_id)||{})).toLowerCase().includes(q)));rows=list.map(rowVer);}
   if(TAB==='geb'){
     const base=['Kennung','Name / Adresse','PLZ','Ort','Eigentümer','Notiz','Nutzen-/Lastenübergang'];
