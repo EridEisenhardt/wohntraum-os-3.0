@@ -21,9 +21,7 @@ export const NAV = [
     { href: '/hausverwaltung/mietermeldungen', icon: 'ti-message-report', label: 'Mietermeldungen' },
     { href: '/hausverwaltung/dienstleister', icon: 'ti-address-book', label: 'Firmen & Dienstleister' },
   ] },
-  { type: 'group', key: 'hausmeisterdienst', icon: 'ti-tools', label: 'Hausmeisterdienst', area: ['hv', 'backoffice'], mod: 'dashboards', items: [
-    { href: '/hausmeisterdienst', icon: 'ti-tools', label: 'Übersicht' },
-  ] },
+  { type: 'link', href: '/hausmeisterdienst', icon: 'ti-tools', label: 'Übersicht', area: ['hv', 'backoffice'], mod: 'dashboards' },
   { type: 'group', key: 'assetmgmt-bh', icon: 'ti-building-bank', label: 'Assetmanagement', area: ['hv', 'backoffice'], mod: 'controlling', items: [
     { href: '/buchhaltung/assetmanagement', icon: 'ti-chart-arcs', label: 'Übersicht' },
     { href: '/buchhaltung/assetmanagement/portfolio', icon: 'ti-building-community', label: 'Portfolio' },
@@ -135,17 +133,20 @@ export function permNodes() {
 
 // Zuordnung jeder Kategorie/Verknüpfung zu einem Geschäftsbereich
 const GESCHAEFTE = [
+  { v: 'fav', label: 'Favoriten', icon: 'ti-star' },
   { v: 'vertrieb', label: 'Vertrieb', icon: 'ti-chart-line' },
   { v: 'buchhaltung', label: 'Buchhaltung', icon: 'ti-calculator' },
   { v: 'hausverwaltung', label: 'Hausverwaltung', icon: 'ti-home' },
+  { v: 'hausmeisterdienst', label: 'Hausmeisterdienst', icon: 'ti-tools' },
   { v: 'gf', label: 'Geschäftsführer', icon: 'ti-user' },
 ]
 const GB_MAP = {
   ankauf: 'vertrieb', vermietung: 'vertrieb', crm: 'vertrieb', baustandard: 'vertrieb', assetmanagement: 'vertrieb', strategie: 'vertrieb',
   buchhaltung: 'buchhaltung', controlling: 'buchhaltung', finance: 'buchhaltung', 'assetmgmt-bh': 'buchhaltung', stammdaten: 'buchhaltung',
-  hausverwaltung: 'hausverwaltung', prozesse: 'hausverwaltung', hausmeisterdienst: 'hausverwaltung',
+  hausverwaltung: 'hausverwaltung', prozesse: 'hausverwaltung',
   produktivitaet: 'gf', personal: 'gf', 'eric-privat': 'gf',
   '/portfolio': 'vertrieb', '/gf-dashboard': 'gf', '/beschluesse': 'gf', '/aktivitaeten': 'hausverwaltung', '/dokumente': 'buchhaltung', '/nutzer': 'gf',
+  '/hausmeisterdienst': 'hausmeisterdienst',
 }
 const gbOf = (n) => (n.type === 'group' ? GB_MAP[n.key] : GB_MAP[n.href])
 
@@ -154,6 +155,7 @@ export default function Sidebar({ user, demo, onLogout, role, perms }) {
   const [selectedGb, setSelectedGb] = useState(null)
   const [selectedCat, setSelectedCat] = useState(null)
   const [q, setQ] = useState('')
+  const [favs, setFavs] = useState([])
   const isAdmin = role === 'admin'
 
   const has = (key) => !!(perms && Object.prototype.hasOwnProperty.call(perms, key))
@@ -184,8 +186,19 @@ export default function Sidebar({ user, demo, onLogout, role, perms }) {
 
   useEffect(() => {
     try { const g = localStorage.getItem('sidebar_gb'); if (g) setSelectedGb(g) } catch (e) {}
+    try { const f = localStorage.getItem('sidebar_favs'); if (f) setFavs(JSON.parse(f)) } catch (e) {}
   }, [])
   useEffect(() => { setSelectedCat(null); setQ('') }, [path])
+
+  const isFav = (href) => favs.includes(href)
+  const toggleFav = (href, e) => {
+    if (e) { e.preventDefault(); e.stopPropagation() }
+    setFavs((prev) => {
+      const next = prev.includes(href) ? prev.filter((h) => h !== href) : [...prev, href]
+      try { localStorage.setItem('sidebar_favs', JSON.stringify(next)) } catch (er) {}
+      return next
+    })
+  }
 
   const isActive = (item) => item.exact ? path === item.href : (path === item.href || path.startsWith(item.href + '/'))
   const chooseGb = (g) => {
@@ -220,6 +233,14 @@ export default function Sidebar({ user, demo, onLogout, role, perms }) {
     ? catItems.find((n) => n.type === 'group' && n.key === selectedCat)
     : (activeGroupPath && gbOf(activeGroupPath) === activeGb ? activeGroupPath : null)
   const subItems = activeCat && activeCat.type === 'group' ? activeCat.items.filter((it) => canSeeItem(activeCat, it)) : []
+
+  // Favoriten
+  const allLeaf = []
+  NAV.forEach((n) => {
+    if (n.type === 'link') { if (canSee(n)) allLeaf.push({ href: n.href, label: n.label, icon: n.icon }) }
+    else if (n.type === 'group' && canSee(n)) { n.items.forEach((it) => { if (canSeeItem(n, it)) allLeaf.push({ href: it.href, label: it.label, icon: it.icon }) }) }
+  })
+  const favItems = favs.map((h) => allLeaf.find((x) => x.href === h)).filter(Boolean)
 
   return (
     <header className="appnav">
