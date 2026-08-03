@@ -37,6 +37,12 @@ input[type=date]{min-width:120px}
 .empty{color:var(--muted);font-size:13px;padding:16px}
 .toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:#1c2024;color:#fff;padding:10px 16px;border-radius:8px;font-size:13px;opacity:0;pointer-events:none;transition:.2s;z-index:50}
 .toast.show{opacity:1}
+.dsec{margin-bottom:18px}.dsec h3{font-size:12px;text-transform:uppercase;letter-spacing:.04em;color:var(--dim);margin:0 0 9px;border-bottom:1px solid var(--line);padding-bottom:5px}
+.fgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:11px}
+.fld{display:flex;flex-direction:column;gap:3px}
+.fld label{font-size:11px;color:var(--muted);font-weight:600}
+.fld input,.fld select{font:inherit;font-size:13px;padding:7px 9px;border:1px solid var(--line);border-radius:8px;background:var(--surf);color:var(--text);text-align:left;width:100%}
+.fld .dauerbox{font-size:13px;padding:7px 9px;background:#f4faf7;border-radius:8px;font-weight:700;color:#0b7a52}
 </style></head><body>
 <div class="hdr"><div class="hdr-title">KPI Sanierungen</div><div class="hdr-sub">Baustandard &middot; Auswertung umgesetzter Sanierungen</div></div>
 <datalist id="teamDL"></datalist>
@@ -67,6 +73,15 @@ input[type=date]{min-width:120px}
       <div id="rSums" style="font-size:12.5px;color:var(--dim);flex:1"></div>
       <div style="font-size:15px;font-weight:700">Gesamt: <span id="rTotal">–</span></div>
     </div>
+  </div>
+</div>
+<div id="dDlg" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:60;align-items:center;justify-content:center" onclick="if(event.target===this)closeDetail()">
+  <div style="background:var(--surf);border-radius:14px;width:min(1000px,96vw);max-height:90vh;display:flex;flex-direction:column;box-shadow:0 10px 40px rgba(0,0,0,.25)">
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:14px 18px;border-bottom:1px solid var(--line)">
+      <b id="dTitle">Sanierung</b>
+      <div style="display:flex;gap:10px;align-items:center"><button class="btn sec" onclick="openRechFromDetail()">🧾 Rechnungen</button><span style="cursor:pointer;font-size:18px;color:var(--muted)" onclick="closeDetail()">✕</span></div>
+    </div>
+    <div style="padding:16px 18px;overflow:auto" id="dBody"></div>
   </div>
 </div>
 <div class="toast" id="toast"></div>
@@ -126,16 +141,18 @@ function head(){
     +'<th class="calc">Beginn→Vermietung (Tage)</th><th></th></tr>';
   return h;
 }
-function inputCell(r,c){
+function fieldInput(r,c,fn){
+  fn=fn||'upd';
   var key=c[0],type=c[2],cls=c[3]||'';
   var val=r[key]==null?'':r[key];
-  if(type==='dauer'){var k=calc(r);return '<td class="calc" title="automatisch aus Beginn und Ende">'+(k.durchlauf==null?'–':k.durchlauf)+'</td>';}
-  if(type==='typ'){return '<td><select style="min-width:120px" onchange="upd(\''+r.id+'\',\''+key+'\',this.value)">'+TYPEN.map(t=>'<option '+(t===val?'selected':'')+'>'+esc(t)+'</option>').join('')+'</select></td>';}
-  if(type==='team'){return '<td><input class="'+cls+'" list="teamDL" value="'+esc(val)+'" onchange="upd(\''+r.id+'\',\''+key+'\',this.value)"></td>';}
-  if(type==='date'){return '<td><input class="'+cls+'" type="date" value="'+esc(val)+'" onchange="upd(\''+r.id+'\',\''+key+'\',this.value)"></td>';}
-  if(type==='text'){return '<td><input class="'+cls+'" type="text" value="'+esc(val)+'" onchange="upd(\''+r.id+'\',\''+key+'\',this.value)"></td>';}
-  return '<td><input class="'+cls+'" type="text" inputmode="decimal" value="'+esc(val)+'" onchange="upd(\''+r.id+'\',\''+key+'\',this.value)"></td>';
+  if(type==='dauer'){var k=calc(r);return (k.durchlauf==null?'–':String(k.durchlauf));}
+  if(type==='typ'){return '<select style="min-width:120px" onchange="'+fn+'(\''+r.id+'\',\''+key+'\',this.value)">'+TYPEN.map(t=>'<option '+(t===val?'selected':'')+'>'+esc(t)+'</option>').join('')+'</select>';}
+  if(type==='team'){return '<input class="'+cls+'" list="teamDL" value="'+esc(val)+'" onchange="'+fn+'(\''+r.id+'\',\''+key+'\',this.value)">';}
+  if(type==='date'){return '<input class="'+cls+'" type="date" value="'+esc(val)+'" onchange="'+fn+'(\''+r.id+'\',\''+key+'\',this.value)">';}
+  if(type==='text'){return '<input class="'+cls+'" type="text" value="'+esc(val)+'" onchange="'+fn+'(\''+r.id+'\',\''+key+'\',this.value)">';}
+  return '<input class="'+cls+'" type="text" inputmode="decimal" value="'+esc(val)+'" onchange="'+fn+'(\''+r.id+'\',\''+key+'\',this.value)">';
 }
+function inputCell(r,c){ return '<td'+(c[2]==='dauer'?' class="calc" title="automatisch aus Beginn und Ende"':'')+'>'+fieldInput(r,c)+'</td>'; }
 function render(){
   $('cnt').textContent=ROWS.length;
   $('emptyHint').style.display=ROWS.length?'none':'block';
@@ -143,7 +160,9 @@ function render(){
   $('tbl').querySelector('tbody').innerHTML=ROWS.map(function(r){
     var k=calc(r);
     var rn=rechOf(r.id).length;
-    return '<tr>'+COLS.map(c=>inputCell(r,c)).join('')
+    return '<tr>'
+      +'<td style="text-align:left;position:sticky;left:0;background:var(--surf);z-index:2;white-space:nowrap"><button class="btn sec" style="padding:3px 7px;font-size:11px" onclick="openDetail(\''+r.id+'\')" title="Öffnen">🔍</button> '+fieldInput(r,COLS[0])+'</td>'
+      +COLS.slice(1).map(c=>inputCell(r,c)).join('')
       +'<td><button class="btn sec" style="padding:4px 9px;font-size:12px;white-space:nowrap" onclick="openRech(\''+r.id+'\')">🧾 '+(rn?rn+' · '+eur(rechSum(r.id)):'erfassen')+'</button></td>'
       +'<td class="calc">'+eur(k.g)+'</td>'
       +'<td class="calc">'+eur(k.proE)+'</td>'
@@ -267,6 +286,29 @@ async function onBelegChosen(ev){
   if(x){x.beleg_pfad=path;x.beleg_name=file.name;}
   toast('Beleg hochgeladen ✓ – bitte Betrag & Firma eintragen'); renderRech();
 }
+let DETAIL_CUR=null;
+const GRP1=['projektnummer','typ','objekt','objekt_wohnung','art','team','wohnflaeche','einheiten_vorher','einheiten_nachher','datum_beginn','datum_ende','_durchlauf','datum_vermietung'];
+const GRP2=['miete_vorher','miete_nachher','kosten_material','kosten_handwerker','kosten_entsorgung','kosten_planung'];
+function fieldRow(r,key){
+  var c=COLS.find(function(x){return x[0]===key;}); if(!c)return '';
+  var inner=fieldInput(r,c,'updD');
+  if(c[2]==='dauer'){inner='<div class="dauerbox">'+inner+' Tage</div>';}
+  return '<div class="fld"><label>'+esc(c[1])+'</label>'+inner+'</div>';
+}
+function openDetail(id){DETAIL_CUR=id;$('dDlg').style.display='flex';renderDetail(id);}
+function closeDetail(){$('dDlg').style.display='none';DETAIL_CUR=null;}
+function openRechFromDetail(){if(DETAIL_CUR){var id=DETAIL_CUR;closeDetail();openRech(id);}}
+function renderDetail(id){
+  var r=ROWS.find(function(x){return x.id===id;}); if(!r)return;
+  $('dTitle').textContent='Sanierung · '+((r.projektnummer?r.projektnummer+' — ':'')+(r.objekt_wohnung||r.objekt||'Sanierung'));
+  var k=calc(r);
+  var kpiCards=[['Kosten gesamt',eur(k.g)],['€ / Einheit',eur(k.proE)],['€ / m²',eur2(k.proM2)],['Mietsteigerung €',eur(k.steig)],['Mietsteigerung %',pct(k.steigP)],['ROI (Monate)',d1(k.roi)],['Durchlaufzeit (Tage)',k.durchlauf==null?'–':k.durchlauf],['Beginn→Vermietung (Tage)',k.bisVerm==null?'–':k.bisVerm]];
+  $('dBody').innerHTML=
+    '<div class="dsec"><h3>Bereich 1 · Objekt &amp; Rahmendaten</h3><div class="fgrid">'+GRP1.map(function(key){return fieldRow(r,key);}).join('')+'</div></div>'
+   +'<div class="dsec"><h3>Bereich 2 · Miete &amp; Kosten</h3><div class="fgrid">'+GRP2.map(function(key){return fieldRow(r,key);}).join('')+'</div></div>'
+   +'<div class="dsec"><h3>Ergebnis · KPIs</h3><div class="kpis">'+kpiCards.map(function(c){return '<div class="kpi"><div class="l">'+c[0]+'</div><div class="v">'+c[1]+'</div></div>';}).join('')+'</div></div>';
+}
+async function updD(id,field,val){ await upd(id,field,val); if(DETAIL_CUR===id) renderDetail(id); }
 async function addRow(){
   var res=await sb.from('sanierungen').insert({objekt:'Neue Sanierung'}).select();
   if(res.error){toast('Fehler: '+res.error.message);return;}
