@@ -281,8 +281,19 @@ export default function Sidebar({ user, demo, onLogout, role, perms }) {
         ))}
       </nav>
 
+      {/* Zeile 2: Favoriten */}
+      {activeGb === 'fav' && (
+        <nav className="catbar">
+          {favItems.length ? favItems.map((it) => (
+            <Link key={it.href} href={it.href} className={'cat' + (isActive(it) ? ' active' : '')}>
+              <i className={'ti ' + it.icon} /> {it.label}
+            </Link>
+          )) : <span style={{ padding: '10px 14px', color: 'var(--muted)', fontSize: 12.5 }}>Noch keine Favoriten – Stern ☆ in der Unterkategorie antippen.</span>}
+        </nav>
+      )}
+
       {/* Zeile 2: Kategorie */}
-      {activeGb && catItems.length > 0 && (
+      {activeGb && activeGb !== 'fav' && catItems.length > 0 && (
         <nav className="catbar">
           {catItems.map((n) => {
             if (n.type === 'link') return (
@@ -304,9 +315,12 @@ export default function Sidebar({ user, demo, onLogout, role, perms }) {
       {subItems.length > 0 && (
         <nav className="subpanel">
           {subItems.map((it) => (
-            <Link key={it.href} href={it.href} className={isActive(it) ? 'active' : ''}>
-              <i className={'ti ' + it.icon} /> {it.label}
-            </Link>
+            <span key={it.href} className="subwrap">
+              <Link href={it.href} className={isActive(it) ? 'active' : ''}>
+                <i className={'ti ' + it.icon} /> {it.label}
+              </Link>
+              <span className="favstar2" onClick={(e) => toggleFav(it.href, e)} title={isFav(it.href) ? 'Aus Favoriten entfernen' : 'Zu Favoriten hinzufügen'} style={{ color: isFav(it.href) ? '#f5c518' : 'rgba(255,255,255,.55)' }}>{isFav(it.href) ? '★' : '☆'}</span>
+            </span>
           ))}
         </nav>
       )}
