@@ -126,6 +126,17 @@ async function save(id,field,val,numeric){
   const r=arr.find(x=>x.id===id); if(r)r[field]=v;
   if(field==='beginn'||field==='nutzen_lasten'||field==='nl_hinweis'||field==='eigentuemer'||field==='gebaeude_id'||field==='einheit_id'||field==='kennung'||field==='kategorie'||field==='bezeichnung')render(); else toast('Gespeichert ✓');
 }
+function parseDateInput(v){v=(v||'').trim();let m;
+  if(m=v.match(/^(\d{4})-(\d{2})-(\d{2})$/))return v;
+  if(m=v.match(/^(\d{1,2})\.(\d{1,2})\.(\d{2,4})$/)){let d=m[1].padStart(2,'0'),mo=m[2].padStart(2,'0'),y=m[3];if(y.length===2)y='20'+y;return y+'-'+mo+'-'+d;}
+  return null;}
+async function saveNL(id,val){
+  const iso=parseDateInput(val); let nl=null,hin=null;
+  if(iso)nl=iso; else if((val||'').trim())hin=val.trim();
+  const res=await sb.from('gebaeude').update({nutzen_lasten:nl,nl_hinweis:hin}).eq('id',id);
+  if(res.error){toast('Fehler: '+res.error.message);return;}
+  const r=GEB.find(x=>x.id===id); if(r){r.nutzen_lasten=nl;r.nl_hinweis=hin;} render();
+}
 async function saveEin(eid,field,val){
   if(!eid||eid==='null'){toast('Erst Einheit wählen');return;}
   const v=(val&&String(val).trim())?String(val).trim():null;
@@ -168,8 +179,7 @@ function rowGeb(r){
    +'<td><input value="'+esc(r.ort)+'" onchange="save(\''+r.id+'\',\'ort\',this.value)"></td>'
    +'<td><select onchange="save(\''+r.id+'\',\'eigentuemer\',this.value)">'+opts(eigs,r.eigentuemer,'—')+'</select></td>'
    +'<td><input value="'+esc(r.notiz)+'" style="min-width:120px" onchange="save(\''+r.id+'\',\'notiz\',this.value)"></td>'
-   +'<td><input type="date" value="'+esc(nl)+'" '+(hasHin?'disabled':'')+' onchange="save(\''+r.id+'\',\'nutzen_lasten\',this.value)">'
-     +'<input value="'+esc(r.nl_hinweis)+'" placeholder="oder Hinweis (z.B. Rent To Rent)" style="margin-top:3px;font-size:11px" onchange="save(\''+r.id+'\',\'nl_hinweis\',this.value)"></td>'
+   +'<td><input value="'+esc(hasHin?r.nl_hinweis:(nl?fmtDE(new Date(nl)):''))+'" placeholder="TT.MM.JJJJ oder Hinweis" style="min-width:150px" onchange="saveNL(\''+r.id+'\',this.value)"></td>'
    +blk(m3,!hasHin)
    +blk(m6,isGmbH&&!hasHin)
    +blk(m10,isEric&&!hasHin)
