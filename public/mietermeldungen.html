@@ -26,6 +26,17 @@ body{background:var(--bg);color:var(--text);font-family:'Inter',system-ui,-apple
 .fg textarea{resize:vertical;line-height:1.55}
 .frow{display:grid;grid-template-columns:1fr 1fr;gap:12px}
 .esk label{color:#b06f14}.esk textarea{border-color:#e0a94f;background:#fff9ef}
+.maptool{display:flex;gap:8px;align-items:center;margin-bottom:8px;flex-wrap:wrap}
+.maphint{font-size:11px;color:var(--muted)}
+.mapwrap{position:relative;border:1px solid var(--line);border-radius:10px;background:#fafbfc;height:420px;overflow:auto}
+.mapcanvas{position:relative;min-width:1100px;min-height:640px}
+.mapsvg{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
+.mnode{position:absolute;width:158px;background:var(--surf);border:1px solid #b9c6d6;border-radius:9px;box-shadow:0 2px 6px rgba(0,0,0,.08);z-index:2}
+.mnode.sel{border-color:var(--accent);box-shadow:0 0 0 2px rgba(24,95,165,.3)}
+.mnode .mhead{cursor:move;background:var(--accent);color:#fff;border-radius:8px 8px 0 0;padding:3px 6px;display:flex;align-items:center;gap:2px;font-size:11px;user-select:none}
+.mnode .mhead .sp{flex:1;letter-spacing:2px;opacity:.7}
+.mnode .mbtn{background:none;border:none;color:#fff;cursor:pointer;font-size:13px;padding:0 3px;line-height:1}
+.mnode textarea{width:100%;border:none;background:none;font:inherit;font-size:12px;padding:5px 6px;resize:none;color:var(--text);outline:none}
 @media(max-width:560px){.frow{grid-template-columns:1fr}}
 .detbar{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;gap:10px}
 .delbtn{background:none;border:1px solid var(--line);color:#c0392b;border-radius:8px;padding:6px 11px;font:inherit;font-size:12.5px;cursor:pointer}
@@ -75,9 +86,65 @@ function renderDet(){
     <div class="fg esk"><label>⚠️ Eskalation → an Eric melden</label><textarea rows="3" placeholder="→ An Eric melden, wenn …" onchange="upd('${r.id}','eskalation',this.value)">${esc(r.eskalation)}</textarea></div>
     <div class="fg"><label>📞 Telefon-Skript</label><textarea rows="7" placeholder="Gesprächsleitfaden fürs Telefon…" onchange="upd('${r.id}','telefonskript',this.value)">${esc(r.telefonskript)}</textarea></div>
     <div class="fg"><label>Vorlagen / Dokumente / Links</label><textarea rows="3" placeholder="Muster-Anschreiben, Asana-Board, Nahaus-Vorlage…" onchange="upd('${r.id}','vorlagen',this.value)">${esc(r.vorlagen)}</textarea></div>
-    <div class="fg"><label>Notizen</label><textarea rows="3" placeholder="Hinweise, Sonderfälle, offene Punkte…" onchange="upd('${r.id}','notizen',this.value)">${esc(r.notizen)}</textarea></div>`;
+    <div class="fg"><label>Notizen</label><textarea rows="3" placeholder="Hinweise, Sonderfälle, offene Punkte…" onchange="upd('${r.id}','notizen',this.value)">${esc(r.notizen)}</textarea></div>
+    <div class="fg"><label>🧠 Mindmap · Schritte skizzieren</label>
+      <div class="maptool"><button class="addbtn" style="width:auto;margin:0;padding:6px 12px" onclick="mapAdd()">+ Schritt</button><span class="maphint">Kopf ziehen = verschieben · „→" klicken, dann Ziel-Kästchen anklicken = verbinden · Text direkt eintippen</span></div>
+      <div class="mapwrap" id="mapWrap"><div class="mapcanvas" id="mapCanvas"><svg class="mapsvg" id="mapSvg"><defs><marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6 Z" fill="#7089a6"/></marker></defs></svg></div></div>
+    </div>`;
   let dl=$('katDL'); if(!dl){dl=document.createElement('datalist');dl.id='katDL';document.body.appendChild(dl);}
   dl.innerHTML=[...new Set(ROWS.map(r=>r.kategorie).filter(Boolean))].map(k=>`<option value="${esc(k)}">`).join('');
+  initMap(r);
+}
+let MAP={nodes:[],edges:[]},MAP_ID=null,MAP_CONNECT=null,mapSaveT=null;
+function initMap(r){
+  MAP_ID=r.id;MAP_CONNECT=null;
+  var m=r.mindmap; if(typeof m==='string'){try{m=JSON.parse(m);}catch(e){m=null;}}
+  MAP=(m&&m.nodes)?m:{nodes:[],edges:[]};
+  renderMap();
+}
+function saveMap(){
+  if(mapSaveT)clearTimeout(mapSaveT);
+  var id=MAP_ID, data=JSON.parse(JSON.stringify(MAP));
+  mapSaveT=setTimeout(async function(){var res=await sb.from('mietermeldungen').update({mindmap:data}).eq('id',id);if(!res.error){var r=ROWS.find(x=>x.id===id);if(r)r.mindmap=data;}},500);
+}
+function mapAdd(){
+  var i=MAP.nodes.length;
+  MAP.nodes.push({id:'n'+Date.now()+Math.floor(Math.random()*1000),x:40+(i%5)*180,y:40+Math.floor(i/5)*120,text:'Schritt '+(i+1)});
+  renderMap();saveMap();
+}
+function mapDel(id){MAP.nodes=MAP.nodes.filter(n=>n.id!==id);MAP.edges=MAP.edges.filter(e=>e.from!==id&&e.to!==id);if(MAP_CONNECT===id)MAP_CONNECT=null;renderMap();saveMap();}
+function mapText(id,val){var n=MAP.nodes.find(x=>x.id===id);if(n){n.text=val;saveMap();}}
+function mapConnect(id){MAP_CONNECT=(MAP_CONNECT===id?null:id);renderMap();}
+function mapNodeClick(id){if(MAP_CONNECT&&MAP_CONNECT!==id){if(!MAP.edges.some(e=>e.from===MAP_CONNECT&&e.to===id))MAP.edges.push({from:MAP_CONNECT,to:id});MAP_CONNECT=null;renderMap();saveMap();}}
+function renderMap(){
+  var cv=$('mapCanvas');if(!cv)return;
+  cv.querySelectorAll('.mnode').forEach(function(el){el.remove();});
+  MAP.nodes.forEach(function(n){
+    var d=document.createElement('div');d.className='mnode'+(MAP_CONNECT===n.id?' sel':'');d.style.left=n.x+'px';d.style.top=n.y+'px';d.dataset.id=n.id;
+    d.innerHTML='<div class="mhead"><span class="sp">⋮⋮</span><button class="mbtn" title="verbinden" onclick="mapConnect(\''+n.id+'\')">→</button><button class="mbtn" title="löschen" onclick="mapDel(\''+n.id+'\')">×</button></div><textarea rows="2" oninput="mapText(\''+n.id+'\',this.value)">'+esc(n.text)+'</textarea>';
+    d.querySelector('.mhead').addEventListener('mousedown',function(e){mapDragStart(e,n.id);});
+    d.addEventListener('mousedown',function(e){if(MAP_CONNECT&&MAP_CONNECT!==n.id&&!e.target.classList.contains('mbtn'))mapNodeClick(n.id);});
+    cv.appendChild(d);
+  });
+  drawEdges();
+}
+function drawEdges(){
+  var svg=$('mapSvg');if(!svg)return;
+  svg.querySelectorAll('line').forEach(function(l){l.remove();});
+  MAP.edges.forEach(function(e){
+    var a=MAP.nodes.find(n=>n.id===e.from),b=MAP.nodes.find(n=>n.id===e.to);if(!a||!b)return;
+    var ln=document.createElementNS('http://www.w3.org/2000/svg','line');
+    ln.setAttribute('x1',a.x+79);ln.setAttribute('y1',a.y+34);ln.setAttribute('x2',b.x+79);ln.setAttribute('y2',b.y+8);
+    ln.setAttribute('stroke','#7089a6');ln.setAttribute('stroke-width','2');ln.setAttribute('marker-end','url(#arrow)');
+    svg.appendChild(ln);
+  });
+}
+function mapDragStart(e,id){
+  e.preventDefault();var n=MAP.nodes.find(x=>x.id===id);if(!n)return;
+  var sx=e.clientX,sy=e.clientY,ox=n.x,oy=n.y;
+  function mv(ev){n.x=Math.max(0,ox+(ev.clientX-sx));n.y=Math.max(0,oy+(ev.clientY-sy));var el=$('mapCanvas').querySelector('.mnode[data-id="'+id+'"]');if(el){el.style.left=n.x+'px';el.style.top=n.y+'px';}drawEdges();}
+  function up(){document.removeEventListener('mousemove',mv);document.removeEventListener('mouseup',up);saveMap();}
+  document.addEventListener('mousemove',mv);document.addEventListener('mouseup',up);
 }
 async function upd(id,field,val){
   const v=(val&&val.trim())?val.trim():null;
