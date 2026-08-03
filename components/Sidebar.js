@@ -27,6 +27,7 @@ export const NAV = [
     { href: '/buchhaltung/assetmanagement/input-portfolio', icon: 'ti-database-import', label: 'Input Portfolio' },
     { href: '/buchhaltung/assetmanagement/portfolio', icon: 'ti-building-community', label: 'Portfolio' },
     { href: '/buchhaltung/assetmanagement/entwicklungen', icon: 'ti-trending-up', label: 'Entwicklungen' },
+    { href: '/buchhaltung/assetmanagement/zielentwicklung', icon: 'ti-target-arrow', label: 'Zielentwicklung in €' },
     { href: '/buchhaltung/assetmanagement/liquiditaet', icon: 'ti-cash', label: 'Liquidität' },
     { href: '/buchhaltung/assetmanagement/anverkauf', icon: 'ti-transfer', label: 'An- und Verkauf von Immobilien' },
   ] },

@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="de"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Zielentwicklung in € · Assetmanagement</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
+<style>
+:root{--bg:#f6f7f9;--surf:#fff;--surf2:#f1f3f6;--line:#e6e8ec;--text:#1c2024;--muted:#6b7280;--dim:#4b5563;--accent:#185fa5;--green:#1f7a4d;--red:#c0392b}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--text);font-family:'Inter',system-ui,-apple-system,'Segoe UI',sans-serif;font-size:14px;line-height:1.5}
+.hdr{background:var(--surf);border-bottom:1px solid var(--line);padding:14px 22px;position:sticky;top:0;z-index:10}
+.hdr-title{font-size:17px;font-weight:700}.hdr-sub{font-size:11.5px;color:var(--muted)}
+.wrap{max-width:1100px;margin:16px auto;padding:0 18px 60px}
+.set{display:flex;gap:14px;flex-wrap:wrap;align-items:flex-end;background:var(--surf);border:1px solid var(--line);border-radius:12px;padding:14px 16px;margin-bottom:14px}
+.fld{display:flex;flex-direction:column;gap:4px}
+.fld label{font-size:10.5px;text-transform:uppercase;color:var(--muted);font-weight:700}
+.fld input{font:inherit;font-size:14px;padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:var(--surf);color:var(--text);width:180px}
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px;margin-bottom:14px}
+.kpi{background:var(--surf);border:1px solid var(--line);border-radius:12px;padding:12px 14px}
+.kpi .l{font-size:10px;text-transform:uppercase;color:var(--muted)}.kpi .v{font-size:20px;font-weight:700;margin-top:2px}
+.kpi.big{background:linear-gradient(135deg,#1f7a4d,#146b41);color:#fff;border:none}.kpi.big .l{color:rgba(255,255,255,.85)}
+.prog{height:14px;background:var(--surf2);border-radius:8px;overflow:hidden;margin-top:8px}
+.prog>div{height:100%;background:#1f7a4d;border-radius:8px;transition:width .4s}
+.card{background:var(--surf);border:1px solid var(--line);border-radius:12px;padding:14px 16px}
+.card h3{font-size:13px;margin-bottom:10px}
+.hint{font-size:11.5px;color:var(--muted);margin-top:8px}
+.toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:#1c2024;color:#fff;padding:10px 16px;border-radius:8px;font-size:13px;opacity:0;transition:.2s;pointer-events:none;z-index:50}.toast.show{opacity:1}
+</style></head><body>
+<div class="hdr"><div class="hdr-title">📈 Zielentwicklung in € · Assetmanagement</div><div class="hdr-sub">Kaltmiete-Wachstum im laufenden Jahr · Start 31.12. · Ziel +X % · Ist aus Input Portfolio</div></div>
+<div class="wrap">
+  <div class="set">
+    <div class="fld"><label>Jahr</label><input id="jahr" type="number" value="2026" style="width:100px" onchange="load()"></div>
+    <div class="fld"><label>Start · Kaltmiete p.a. 31.12.</label><input id="start" type="number" step="0.01" placeholder="z. B. 417000" onchange="saveField('startwert',this.value)"></div>
+    <div class="fld"><label>Wachstumsziel %</label><input id="wp" type="number" step="0.1" value="10" style="width:110px" onchange="saveField('wachstum_pct',this.value)"></div>
+  </div>
+  <div class="kpis" id="kpis"></div>
+  <div class="card"><h3>Monatliche Zielerreichung im Jahr <span id="jlabel"></span></h3><canvas id="chart" height="120"></canvas>
+    <div class="hint" id="chartHint"></div></div>
+</div>
+<div class="toast" id="toast"></div>
+<script>
+const sb=window.supabase.createClient('https://jqzxctfqvcwbctpjksvg.supabase.co','eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpxenhjdGZxdmN3YmN0cGprc3ZnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODIxMzA0MzIsImV4cCI6MjA5NzcwNjQzMn0.RKIbZxJdusKWWPjBJqlxZ8e1m8So02UslOg55YRsn3o');
+const $=id=>document.getElementById(id);
+const nf=new Intl.NumberFormat('de-DE',{maximumFractionDigits:0});
+const eur=v=>v==null||isNaN(v)?'—':nf.format(Math.round(v))+' €';
+const pct=v=>v==null||isNaN(v)?'—':v.toLocaleString('de-DE',{maximumFractionDigits:1})+' %';
+function toast(m){const t=$('toast');t.textContent=m;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),1600);}
+const MN=['Jan','Feb','Mär','Apr','Mai','Jun','Jul','Aug','Sep','Okt','Nov','Dez'];
+let ROW=null, IST=0, MONTHS=[], chart=null;
+
+async function saveField(f,val){
+  if(!ROW)return; const v=(val===''||val==null)?null:Number(String(val).replace(',','.'));
+  const res=await sb.from('zielentwicklung_miete').update({[f]:v,updated_at:new Date().toISOString()}).eq('id',ROW.id);
+  if(res.error){toast('Fehler: '+res.error.message);return;}
+  ROW[f]=v; toast('Gespeichert ✓'); compute();
+}
+async function load(){
+  const jahr=parseInt($('jahr').value,10)||new Date().getFullYear();
+  $('jlabel').textContent=jahr;
+  // Zielzeile (bei Bedarf anlegen)
+  let r=await sb.from('zielentwicklung_miete').select('*').eq('jahr',jahr).maybeSingle();
+  if(!r.data){const ins=await sb.from('zielentwicklung_miete').insert({jahr,wachstum_pct:10}).select().single();ROW=ins.data;}
+  else ROW=r.data;
+  $('start').value=ROW.startwert==null?'':ROW.startwert;
+  $('wp').value=ROW.wachstum_pct==null?'':ROW.wachstum_pct;
+  // Ist = Summe Kaltmiete aktiver Verträge × 12 (Input Portfolio)
+  const mv=await sb.from('mietvertraege').select('kaltmiete,status');
+  IST=mv.data?Math.round(mv.data.filter(v=>v.status==='aktiv').reduce((s,v)=>s+(Number(v.kaltmiete)||0),0)*12):0;
+  // Monatswerte aus Controlling-Statistik
+  const cs=await sb.from('controlling_statistik').select('monat,jahressollmiete').eq('jahr',jahr);
+  MONTHS=Array(12).fill(null);(cs.data||[]).forEach(x=>{if(x.monat>=1&&x.monat<=12)MONTHS[x.monat-1]=x.jahressollmiete;});
+  compute();
+}
+function erreichung(ist,start,ziel){if(start==null||ziel==null||ziel===start)return null;return (ist-start)/(ziel-start)*100;}
+function compute(){
+  const start=ROW.startwert, wp=ROW.wachstum_pct==null?0:ROW.wachstum_pct;
+  const ziel=start==null?null:start*(1+wp/100);
+  const wachstumZiel=(start==null||ziel==null)?null:ziel-start;
+  const erreicht=IST-(start||0);
+  const erq=erreichung(IST,start,ziel);
+  const rest=ziel==null?null:ziel-IST;
+  const cur=start==null?null:((IST-start)/start*100); // aktuelles Wachstum in %
+  const k=[
+    ['Start · Kaltmiete 31.12.',eur(start)],
+    ['Zielwert (+'+ (wp||0) +' %)',eur(ziel)],
+    ['Aktuelle Jahressollmiete',eur(IST)],
+    ['Wachstum aktuell',start==null?'—':pct(cur)],
+    ['Δ erreicht (Ist − Start)',eur(erreicht)],
+    ['Rest bis Ziel',rest==null?'—':eur(rest)]
+  ];
+  let html=k.map(x=>'<div class="kpi"><div class="l">'+x[0]+'</div><div class="v">'+x[1]+'</div></div>').join('');
+  const erqShow=erq==null?0:Math.max(0,Math.min(100,erq));
+  html+='<div class="kpi big" style="grid-column:span 2"><div class="l">Zielerreichung (Dreisatz zum 31.12.)</div><div class="v">'+(erq==null?'—':pct(erq))+'</div><div class="prog"><div style="width:'+erqShow+'%"></div></div></div>';
+  $('kpis').innerHTML=html;
+  // Chart: monatliche Zielerreichung %
+  const data=MONTHS.map(m=>m==null?null:erreichung(m,start,ziel));
+  const hasData=data.some(x=>x!=null)&&start!=null&&ziel!=null;
+  $('chartHint').textContent=hasData?'Je Monat: (Jahressollmiete des Monats − Start) ÷ (Ziel − Start). Monatswerte stammen aus Controlling · Statistik.':(start==null?'Bitte Start-Kaltmiete (31.12.) eintragen.':'Noch keine Monatswerte in Controlling · Statistik für dieses Jahr erfasst.');
+  drawChart(data);
+}
+function drawChart(data){
+  if(!window.Chart)return; const ctx=$('chart');
+  if(chart)chart.destroy();
+  chart=new Chart(ctx,{type:'line',data:{labels:MN,datasets:[
+    {label:'Zielerreichung %',data:data,borderColor:'#1f7a4d',backgroundColor:'rgba(31,122,77,.12)',tension:.25,spanGaps:true,pointRadius:4,fill:true},
+    {label:'Ziel (100 %)',data:MN.map(()=>100),borderColor:'#c0392b',borderDash:[6,5],pointRadius:0,borderWidth:1.5}
+  ]},options:{responsive:true,plugins:{legend:{position:'bottom'}},scales:{y:{ticks:{callback:v=>v+' %'}}}}});
+}
+load();
+</script>
+</body></html>
