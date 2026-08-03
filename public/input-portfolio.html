@@ -239,7 +239,7 @@ function render(){
   }
   $('tbl').querySelector('tbody').innerHTML=rows.join('')||'<tr><td colspan="'+cols.length+'" style="text-align:center;color:var(--muted);padding:20px">Keine Einträge.</td></tr>';
   $('cnt').textContent=list.length+' Einträge';
-  renderEinChart(TAB==='ein'?list:null);
+  renderEinChart((TAB==='ein'||TAB==='leer')?list:null);
   const mergeV=[...new Set([...VERM_DEF,...distinct(VER,x=>x.vermittler)])];
   const mergeE=[...new Set([...EINK_DEF,...distinct(VER,x=>x.einkommensquelle)])];
   $('dlVerm').innerHTML=mergeV.map(v=>'<option value="'+esc(v)+'">').join('');
@@ -265,10 +265,11 @@ function exportCSV(){
         (gmbh&&!hin)?exM(m6):'',(gmbh&&!hin)?exT(m6):'',(gmbh&&!hin)?exMon(m6):'',
         (eric&&!hin)?exM(m10):'',(eric&&!hin)?exT(m10):'',(eric&&!hin)?exMon(m10):'']);});
     download('portfolio_gebaeude_'+today+'.csv',rows);
-  } else if(TAB==='ein'){
+  } else if(TAB==='ein'||TAB==='leer'){
+    const src=TAB==='leer'?EIN.filter(e=>LEER_STATI.includes(e.status)):EIN;
     const rows=[['Gebäude','Kategorie','Status','Bezeichnung','Fläche m²','Lage','Ausstattung','Notiz']];
-    EIN.forEach(e=>{const g=GEB.find(x=>x.id===e.gebaeude_id)||{};rows.push([gebLabel(g),e.kategorie,e.status,e.bezeichnung,e.flaeche_qm,e.lage,e.ausstattung,e.notiz]);});
-    download('portfolio_einheiten_'+today+'.csv',rows);
+    src.forEach(e=>{const g=GEB.find(x=>x.id===e.gebaeude_id)||{};rows.push([gebLabel(g),e.kategorie,e.status,e.bezeichnung,e.flaeche_qm,e.lage,e.ausstattung,e.notiz]);});
+    download((TAB==='leer'?'portfolio_leerstand_':'portfolio_einheiten_')+today+'.csv',rows);
   } else {
     const rows=[['Gebäude','Einheit','Ausstattungsmerkmale','Lage der Wohnung','Mieter','Status','Mietbeginn','Mietdauer (Tage)','Mietdauer (Jahre)','Anzahl Bewohner','Kaltmiete','Heizung','Betriebskosten','Strom','WLAN','Garage','Mieterkeller','Hausmeister','EBK','Warmmiete','Kaution','Mieter-Vermittler','Einkommensquelle','Notiz']];
     VER.forEach(v=>{const e=EIN.find(x=>x.id===v.einheit_id)||{};const g=GEB.find(x=>x.id===v.gebaeude_id)||{};const t=daysBetween(v.beginn);
@@ -297,6 +298,7 @@ function renderKpis(){
   let k=[];
   if(TAB==='geb'){k=[['Gebäude',GEB.length],['Eric privat',GEB.filter(g=>g.eigentuemer&&g.eigentuemer.startsWith('Eric')).length],['GmbH',GEB.filter(g=>g.eigentuemer&&g.eigentuemer.includes('GmbH')).length]];}
   else if(TAB==='ein'){const w=EIN.filter(e=>['Wohnung','Apartment'].includes(e.kategorie)).length;k=[['Einheiten',EIN.length],['Wohnungen/App.',w],['Gewerbe/Sonst.',EIN.length-w]];}
+  else if(TAB==='leer'){const leer=EIN.filter(e=>e.status==='Leerstand').length,reno=EIN.filter(e=>e.status==='In Renovierung/Sanierung').length;const quote=EIN.length?((leer+reno)/EIN.length*100):0;k=[['Leerstand',leer],['In Renov./San.',reno],['Summe',leer+reno],['Leerstandsquote',quote.toFixed(1).replace('.',',')+' %']];}
   else {const aktiv=VER.filter(v=>v.status==='aktiv');const warm=aktiv.reduce((s,v)=>s+(Number(v.warmmiete)||0),0);const kalt=aktiv.reduce((s,v)=>s+(Number(v.kaltmiete)||0),0);k=[['Verträge',VER.length],['aktiv',aktiv.length],['Σ Warmmiete/Mon.',eur(warm)+' €'],['Σ Kaltmiete/Mon.',eur(kalt)+' €']];}
   $('kpis').innerHTML=k.map(x=>'<div class="kpi"><div class="l">'+esc(x[0])+'</div><div class="v">'+x[1]+'</div></div>').join('');
 }
