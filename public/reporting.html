@@ -801,11 +801,14 @@ render();
 // Zentrale Datenquellen (Finance · Input, Bürgschaften-Register)
 const _sbRep=window.supabase.createClient('https://jqzxctfqvcwbctpjksvg.supabase.co','eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpxenhjdGZxdmN3YmN0cGprc3ZnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODIxMzA0MzIsImV4cCI6MjA5NzcwNjQzMn0.RKIbZxJdusKWWPjBJqlxZ8e1m8So02UslOg55YRsn3o');
 (async()=>{try{
-  const [fin,mv,geb]=await Promise.all([
+  const [fin,mv,geb,wb]=await Promise.all([
     _sbRep.from('finance_input').select('code,wert,kategorie').in('kategorie',['Marktwert (PriceHubble)','Miete p.a. (aktuell)','Anzahl Einheiten','Investition in Weiterbildung']),
     _sbRep.from('mietvertraege').select('kaltmiete,status,gebaeude_id'),
-    _sbRep.from('gebaeude').select('id,kennung,nl_hinweis')
+    _sbRep.from('gebaeude').select('id,kennung,nl_hinweis'),
+    _sbRep.from('weiterbildung').select('kosten')
   ]);
+  // Investition in Weiterbildung = Summe aus Modul "Aus- und Fortbildung" (Eric Privat)
+  if(wb.data&&wb.data.length){const w=wb.data.reduce((s,x)=>s+(Number(x.kosten)||0),0);if(w>0)WEITERB=Math.round(w);}
   const data=fin.data; const miFallback={};
   if(data&&data.length){const mw={},un={};data.forEach(r=>{const t=r.kategorie;if(t==='Investition in Weiterbildung'){if(r.wert!=null)WEITERB=Number(r.wert);return;}if(t==='Miete p.a. (aktuell)'){miFallback[r.code]=r.wert;return;}(t==='Anzahl Einheiten'?un:mw)[r.code]=r.wert;});
     OBJ.forEach(o=>{if(o.c in mw)o.mw=(mw[o.c]==null?null:Number(mw[o.c]));if(o.c in un)o.units=(un[o.c]==null?null:Number(un[o.c]));});}

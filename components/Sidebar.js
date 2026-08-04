@@ -63,6 +63,7 @@ export const NAV = [
   ] },
   { type: 'group', key: 'controlling', icon: 'ti-chart-histogram', label: 'Controlling', area: 'hv', mod: 'controlling', items: [
     { href: '/controlling/statistik', icon: 'ti-chart-bar', label: 'Statistik' },
+    { href: '/controlling/xray', icon: 'ti-scan', label: 'xRay' },
     { href: '/controlling/monatswechsel', icon: 'ti-calendar-dollar', label: 'Monatswechsel (Controlling)' },
     { href: '/controlling/nahaus-rechnungen', icon: 'ti-receipt', label: 'Rechnungen Unternehmen' },
   ] },
@@ -109,6 +110,7 @@ export const NAV = [
     { href: '/eric-privat/entwicklung', icon: 'ti-stairs-up', label: 'Entwicklung' },
     { href: '/eric-privat/engpassanalyse', icon: 'ti-filter-cog', label: 'Engpassanalyse' },
     { href: '/eric-privat/vermoegensbilanz', icon: 'ti-scale', label: 'Vermögensbilanz' },
+    { href: '/eric-privat/weiterbildung', icon: 'ti-school', label: 'Aus- und Fortbildung' },
     { href: '/eric-privat/liegestuetz', icon: 'ti-barbell', label: 'Liegestütz' },
     { href: '/eric-privat/essen-planer', icon: 'ti-tools-kitchen-2', label: 'Essen-Planer' },
     { href: '/eric-privat/kontenmodell', icon: 'ti-wallet', label: '6 Kontenmodell' },
@@ -145,7 +147,7 @@ export const GESCHAEFTE = [
 ]
 export const GB_MAP = {
   ankauf: 'vertrieb', vermietung: 'vertrieb', crm: 'vertrieb', baustandard: 'vertrieb', assetmanagement: 'vertrieb', strategie: 'vertrieb',
-  buchhaltung: 'buchhaltung', controlling: 'buchhaltung', finance: 'buchhaltung', 'assetmgmt-bh': 'buchhaltung', stammdaten: 'buchhaltung',
+  buchhaltung: 'buchhaltung', controlling: 'buchhaltung', finance: 'buchhaltung', 'assetmgmt-bh': 'vertrieb', stammdaten: 'buchhaltung',
   hausverwaltung: 'hausverwaltung', prozesse: 'hausverwaltung',
   produktivitaet: 'gf', personal: 'gf', 'eric-privat': 'gf',
   '/gf-dashboard': 'gf', '/beschluesse': 'gf', '/aktivitaeten': 'hausverwaltung', '/dokumente': 'buchhaltung', '/nutzer': 'gf',

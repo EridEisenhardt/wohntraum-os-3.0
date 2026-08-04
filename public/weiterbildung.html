@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="de"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Aus- und Fortbildung · Eric Eisenhardt</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+:root{--bg:#f6f7f9;--surf:#fff;--surf2:#f1f3f6;--line:#e6e8ec;--text:#1c2024;--muted:#6b7280;--dim:#4b5563;--accent:#185fa5;--green:#1f7a4d;--red:#c0392b}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--text);font-family:'Inter',system-ui,-apple-system,'Segoe UI',sans-serif;font-size:14px;line-height:1.5}
+.hdr{background:var(--surf);border-bottom:1px solid var(--line);padding:14px 22px;position:sticky;top:0;z-index:20;display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}
+.hdr-title{font-size:17px;font-weight:700}.hdr-sub{font-size:11.5px;color:var(--muted)}
+.wrap{max-width:1200px;margin:14px auto;padding:0 16px 60px}
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px;margin-bottom:14px}
+.kpi{background:var(--surf);border:1px solid var(--line);border-radius:12px;padding:11px 14px}
+.kpi.big{background:linear-gradient(135deg,#185fa5,#124a80);color:#fff;border:none}.kpi.big .l{color:rgba(255,255,255,.85)}
+.kpi .l{font-size:10px;text-transform:uppercase;color:var(--muted)}.kpi .v{font-size:19px;font-weight:700;margin-top:2px}
+.bar{display:flex;gap:9px;align-items:center;flex-wrap:wrap;margin-bottom:10px}
+.bar input[type=text],.bar select{font:inherit;font-size:13px;padding:7px 10px;border:1px solid var(--line);border-radius:8px;background:var(--surf)}
+.btn{font:inherit;font-size:13px;font-weight:600;padding:8px 13px;border:1px solid var(--line);border-radius:8px;background:var(--surf2);color:var(--text);cursor:pointer}
+.btn-accent{background:var(--accent);color:#fff;border-color:var(--accent)}
+.count{font-size:12px;color:var(--muted)}
+.years{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px}
+.ychip{background:var(--surf);border:1px solid var(--line);border-radius:9px;padding:6px 11px;font-size:12px}
+.ychip b{color:var(--accent)}
+.scroll{overflow:auto;border:1px solid var(--line);border-radius:12px;background:var(--surf)}
+table{width:100%;border-collapse:collapse;font-size:13px;min-width:820px}
+th,td{padding:8px 10px;border-bottom:1px solid var(--line);text-align:left;vertical-align:middle;white-space:nowrap}
+th{font-size:10px;text-transform:uppercase;color:var(--muted);background:var(--surf2);position:sticky;top:0;z-index:1}
+td input{width:100%;font:inherit;font-size:13px;padding:5px 7px;border:1px solid transparent;border-radius:6px;background:transparent}
+td input:hover{border-color:var(--line)}td input:focus{outline:none;border-color:var(--accent);background:var(--surf)}
+td.num input{text-align:right}
+tr.sumrow td{background:#eaf1f8;font-weight:700;border-bottom:2px solid var(--accent)}
+.abtn{background:none;border:none;color:var(--muted);cursor:pointer;font-size:14px}.abtn:hover{color:var(--red)}
+.toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:#1c2024;color:#fff;padding:10px 16px;border-radius:8px;font-size:13px;opacity:0;transition:.2s;pointer-events:none;z-index:50}.toast.show{opacity:1}
+</style></head><body>
+<div class="hdr">
+  <div><div class="hdr-title">🎓 Aus- und Fortbildung · Eric Eisenhardt</div><div class="hdr-sub">Investment in Weiterbildung · fließt in die Top-Kennzahlen im Reporting</div></div>
+  <button class="btn btn-accent" onclick="addRow()">+ Eintrag</button>
+</div>
+<div class="wrap">
+  <div class="kpis" id="kpis"></div>
+  <div class="years" id="years"></div>
+  <div class="bar">
+    <input type="text" id="q" placeholder="🔍 Anbieter / Thema / Jahr…" oninput="render()">
+    <select id="fJahr" onchange="render()"></select>
+    <span class="count" id="cnt"></span>
+  </div>
+  <div class="scroll"><table id="tbl"><thead><tr>
+    <th style="width:90px">Jahr</th><th style="width:120px">Monat</th><th>Anbieter</th><th>Thema</th><th style="width:130px;text-align:right">Kosten</th><th>Notiz</th><th style="width:36px"></th>
+  </tr></thead><tbody></tbody></table></div>
+</div>
+<div class="toast" id="toast"></div>
+<script>
+const sb=window.supabase.createClient('https://jqzxctfqvcwbctpjksvg.supabase.co','eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpxenhjdGZxdmN3YmN0cGprc3ZnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODIxMzA0MzIsImV4cCI6MjA5NzcwNjQzMn0.RKIbZxJdusKWWPjBJqlxZ8e1m8So02UslOg55YRsn3o');
+const $=id=>document.getElementById(id);
+const esc=s=>(s==null?'':String(s)).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+const nf=new Intl.NumberFormat('de-DE',{minimumFractionDigits:2,maximumFractionDigits:2});
+const eur=v=>v==null||v===''?'':nf.format(Number(v))+' €';
+function toast(m){const t=$('toast');t.textContent=m;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),1600);}
+let ROWS=[];
+async function save(id,field,val,num){let v;if(num){v=(val===''||val==null)?null:Number(String(val).replace(/\./g,'').replace(',','.'));if(isNaN(v))v=null;}else v=(val&&val.trim())?val.trim():null;
+  const res=await sb.from('weiterbildung').update({[field]:v}).eq('id',id);if(res.error){toast('Fehler: '+res.error.message);return;}
+  const r=ROWS.find(x=>x.id===id);if(r)r[field]=v;if(field==='jahr'||field==='kosten')render();else toast('Gespeichert ✓');}
+async function addRow(){const r=await sb.from('weiterbildung').insert({jahr:String(new Date().getFullYear()),pos:ROWS.length}).select();if(r.error)return toast(r.error.message);ROWS.push(r.data[0]);render();toast('Eintrag angelegt');}
+async function del(id){if(!confirm('Eintrag löschen?'))return;const res=await sb.from('weiterbildung').delete().eq('id',id);if(res.error)return toast(res.error.message);ROWS=ROWS.filter(x=>x.id!==id);render();}
+function jahrKey(j){const m=String(j||'').match(/(\d{4})/);return m?m[1]:String(j||'?');}
+function render(){
+  const total=ROWS.reduce((s,r)=>s+(Number(r.kosten)||0),0);
+  const years={};ROWS.forEach(r=>{const k=jahrKey(r.jahr);years[k]=(years[k]||0)+(Number(r.kosten)||0);});
+  const yk=Object.keys(years).sort();
+  const cy=String(new Date().getFullYear());
+  $('kpis').innerHTML=[['Anzahl Maßnahmen',ROWS.length],['Jahre aktiv',yk.length],['Laufendes Jahr '+cy,eur(years[cy]||0)]].map(x=>'<div class="kpi"><div class="l">'+esc(x[0])+'</div><div class="v">'+x[1]+'</div></div>').join('')
+    +'<div class="kpi big" style="grid-column:span 2"><div class="l">Gesamtinvestment Weiterbildung</div><div class="v">'+eur(total)+'</div></div>';
+  $('years').innerHTML=yk.map(k=>'<span class="ychip">'+esc(k)+': <b>'+eur(years[k])+'</b></span>').join('');
+  const cur=$('fJahr').value;$('fJahr').innerHTML='<option value="">Alle Jahre</option>'+yk.map(k=>'<option'+(k===cur?' selected':'')+'>'+esc(k)+'</option>').join('');
+  const q=($('q').value||'').toLowerCase(), fj=$('fJahr').value;
+  const list=ROWS.filter(r=>(!fj||jahrKey(r.jahr)===fj)&&(!q||((r.anbieter||'')+' '+(r.thema||'')+' '+(r.jahr||'')).toLowerCase().includes(q)));
+  const sumF=list.reduce((s,r)=>s+(Number(r.kosten)||0),0);
+  $('cnt').textContent=list.length+' von '+ROWS.length+' Einträgen';
+  $('tbl').querySelector('tbody').innerHTML=list.map(r=>`<tr>
+    <td><input value="${esc(r.jahr)}" onchange="save('${r.id}','jahr',this.value)"></td>
+    <td><input value="${esc(r.monat)}" onchange="save('${r.id}','monat',this.value)"></td>
+    <td><input value="${esc(r.anbieter)}" onchange="save('${r.id}','anbieter',this.value)"></td>
+    <td><input value="${esc(r.thema)}" onchange="save('${r.id}','thema',this.value)"></td>
+    <td class="num"><input value="${r.kosten!=null?r.kosten:''}" inputmode="decimal" onchange="save('${r.id}','kosten',this.value,1)"></td>
+    <td><input value="${esc(r.notiz)}" onchange="save('${r.id}','notiz',this.value)"></td>
+    <td><button class="abtn" onclick="del('${r.id}')">✕</button></td></tr>`).join('')
+    +`<tr class="sumrow"><td colspan="4">Summe (${list.length})</td><td class="num" style="text-align:right">${eur(sumF)}</td><td colspan="2"></td></tr>`
+    ||'<tr><td colspan="7" style="text-align:center;color:var(--muted);padding:20px">Keine Einträge.</td></tr>';
+}
+async function load(){const res=await sb.from('weiterbildung').select('*').order('pos',{nullsFirst:false});ROWS=res.error?[]:(res.data||[]);render();}
+load();
+</script>
+</body></html>
