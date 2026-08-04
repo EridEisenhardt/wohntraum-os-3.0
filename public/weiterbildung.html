@@ -2,6 +2,7 @@
 <html lang="de"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Aus- und Fortbildung · Eric Eisenhardt</title>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
 <style>
 :root{--bg:#f6f7f9;--surf:#fff;--surf2:#f1f3f6;--line:#e6e8ec;--text:#1c2024;--muted:#6b7280;--dim:#4b5563;--accent:#185fa5;--green:#1f7a4d;--red:#c0392b}
 *{box-sizing:border-box;margin:0;padding:0}
@@ -38,6 +39,10 @@ tr.sumrow td{background:#eaf1f8;font-weight:700;border-bottom:2px solid var(--ac
 </div>
 <div class="wrap">
   <div class="kpis" id="kpis"></div>
+  <div style="background:var(--surf);border:1px solid var(--line);border-radius:12px;padding:14px 16px;margin-bottom:14px">
+    <div style="font-size:13px;font-weight:600;margin-bottom:10px">Investment pro Jahr</div>
+    <canvas id="chart" height="110"></canvas>
+  </div>
   <div class="years" id="years"></div>
   <div class="bar">
     <input type="text" id="q" placeholder="🔍 Anbieter / Thema / Jahr…" oninput="render()">
@@ -56,7 +61,14 @@ const esc=s=>(s==null?'':String(s)).replace(/&/g,'&amp;').replace(/</g,'&lt;').r
 const nf=new Intl.NumberFormat('de-DE',{minimumFractionDigits:2,maximumFractionDigits:2});
 const eur=v=>v==null||v===''?'':nf.format(Number(v))+' €';
 function toast(m){const t=$('toast');t.textContent=m;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),1600);}
-let ROWS=[];
+let ROWS=[], chart=null;
+function drawChart(labels,values){
+  if(!window.Chart)return;const ctx=document.getElementById('chart');if(!ctx)return;
+  if(chart)chart.destroy();
+  chart=new Chart(ctx,{type:'bar',data:{labels,datasets:[{label:'Investment pro Jahr (€)',data:values,backgroundColor:'#185fa5',borderRadius:5,maxBarThickness:48}]},
+    options:{responsive:true,plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>new Intl.NumberFormat('de-DE',{maximumFractionDigits:0}).format(c.parsed.y)+' €'}}},
+      scales:{y:{ticks:{callback:v=>new Intl.NumberFormat('de-DE',{notation:'compact'}).format(v)+' €'}}}}});
+}
 async function save(id,field,val,num){let v;if(num){v=(val===''||val==null)?null:Number(String(val).replace(/\./g,'').replace(',','.'));if(isNaN(v))v=null;}else v=(val&&val.trim())?val.trim():null;
   const res=await sb.from('weiterbildung').update({[field]:v}).eq('id',id);if(res.error){toast('Fehler: '+res.error.message);return;}
   const r=ROWS.find(x=>x.id===id);if(r)r[field]=v;if(field==='jahr'||field==='kosten')render();else toast('Gespeichert ✓');}
@@ -71,6 +83,7 @@ function render(){
   $('kpis').innerHTML=[['Anzahl Maßnahmen',ROWS.length],['Jahre aktiv',yk.length],['Laufendes Jahr '+cy,eur(years[cy]||0)]].map(x=>'<div class="kpi"><div class="l">'+esc(x[0])+'</div><div class="v">'+x[1]+'</div></div>').join('')
     +'<div class="kpi big" style="grid-column:span 2"><div class="l">Gesamtinvestment Weiterbildung</div><div class="v">'+eur(total)+'</div></div>';
   $('years').innerHTML=yk.map(k=>'<span class="ychip">'+esc(k)+': <b>'+eur(years[k])+'</b></span>').join('');
+  drawChart(yk,yk.map(k=>Math.round(years[k])));
   const cur=$('fJahr').value;$('fJahr').innerHTML='<option value="">Alle Jahre</option>'+yk.map(k=>'<option'+(k===cur?' selected':'')+'>'+esc(k)+'</option>').join('');
   const q=($('q').value||'').toLowerCase(), fj=$('fJahr').value;
   const list=ROWS.filter(r=>(!fj||jahrKey(r.jahr)===fj)&&(!q||((r.anbieter||'')+' '+(r.thema||'')+' '+(r.jahr||'')).toLowerCase().includes(q)));
