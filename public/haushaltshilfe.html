@@ -41,7 +41,8 @@ textarea:focus{outline:none;border-color:var(--accent);background:var(--surf)}
 </div>
 <div class="wrap">
   <div class="tabs">
-    <button class="tab active" data-t="auf" onclick="setTab('auf')">Aufgaben & offene Fragen<span class="n" id="n_auf"></span></button>
+    <button class="tab active" data-t="auf" onclick="setTab('auf')">Aufgaben & Botengänge<span class="n" id="n_auf"></span></button>
+    <button class="tab" data-t="eink" onclick="setTab('eink')">Einkaufsliste<span class="n" id="n_eink"></span></button>
     <button class="tab" data-t="wis" onclick="setTab('wis')">Einarbeitung & Wissen<span class="n" id="n_wis"></span></button>
   </div>
   <div class="intro" id="intro"></div>
@@ -56,30 +57,39 @@ const $=id=>document.getElementById(id);
 const esc=s=>(s==null?'':String(s)).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 function toast(m){const t=$('toast');t.textContent=m;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),1600);}
 function grow(t){t.style.height='auto';t.style.height=(t.scrollHeight+2)+'px';}
-let TAB='auf', AUF=[], WIS=[];
+let TAB='auf', AUF=[], WIS=[], EINK=[];
 const STATI=['Offen','In Klärung','Geklärt','Erledigt'];
 const PRIO=['Hoch','Mittel','Niedrig'];
 const ZUST=['Haushaltshilfe','Eric'];
+const ART=['Aufgabe','Botengang','Kleine Aufgabe','Frage'];
 const KAT=['Küche','Wäsche','Einkauf','Reinigung','Pflanzen & Tiere','Termine','Post','Schlüssel & Zugang','Sonstiges'];
-const TBL={auf:'haushaltshilfe_aufgaben',wis:'haushaltshilfe_wissen'};
-const INTRO={auf:'Hier kommen alle Aufgaben und offenen Fragen rein. Eric stellt eine Frage/Aufgabe, die Haushaltshilfe kann direkt darunter antworten. Status auf „Geklärt" setzen, wenn erledigt.',
+const EKAT=['Obst & Gemüse','Molkerei','Fleisch & Fisch','Trocken & Konserven','Getränke','Tiefkühl','Haushalt & Drogerie','Sonstiges'];
+const TBL={auf:'haushaltshilfe_aufgaben',wis:'haushaltshilfe_wissen',eink:'haushaltshilfe_einkauf'};
+const INTRO={auf:'Aufgaben, Botengänge, kleine Aufgaben und offene Fragen. Art wählen (Aufgabe/Botengang/…). Eric stellt eine Frage/Aufgabe, die Haushaltshilfe kann direkt darunter antworten. Status auf „Geklärt/Erledigt" setzen.',
+ eink:'Einkaufsliste: Positionen aus dem Essensplaner (Wunschwoche) landen hier automatisch. Zusätzlich eigene Einkaufswünsche mit „+ Neu" ergänzen. Haken = gekauft.',
  wis:'Anleitungen und Wissen für die Einarbeitung – so findet sich auch eine Nachfolge schnell zurecht. Ein Thema pro Karte, Kategorie wählen, Inhalt frei beschreiben.'};
 
 function setTab(t){TAB=t;document.querySelectorAll('.tab').forEach(b=>b.classList.toggle('active',b.dataset.t===t));render();}
-async function save(id,field,val){const arr=TAB==='auf'?AUF:WIS;const v=(val&&val.trim())?val.trim():null;
+function arrOf(t){return t==='auf'?AUF:t==='wis'?WIS:EINK;}
+async function save(id,field,val){const arr=arrOf(TAB);const v=(val&&val.trim())?val.trim():null;
   const res=await sb.from(TBL[TAB]).update({[field]:v}).eq('id',id);if(res.error){toast('Fehler: '+res.error.message);return;}
-  const r=arr.find(x=>x.id===id);if(r)r[field]=v;if(field==='status'||field==='prioritaet')render();else toast('Gespeichert ✓');}
+  const r=arr.find(x=>x.id===id);if(r)r[field]=v;if(field==='status'||field==='prioritaet'||field==='kategorie')render();else toast('Gespeichert ✓');}
+async function toggleGekauft(id,checked){const res=await sb.from('haushaltshilfe_einkauf').update({gekauft:checked}).eq('id',id);if(res.error){toast('Fehler: '+res.error.message);return;}const r=EINK.find(x=>x.id===id);if(r)r.gekauft=checked;render();}
+async function resetGekauft(){if(!confirm('Alle Haken zurücksetzen?'))return;await sb.from('haushaltshilfe_einkauf').update({gekauft:false}).gt('created_at','1900-01-01');EINK.forEach(x=>x.gekauft=false);render();}
+async function clearGekauft(){if(!confirm('Alle gekauften Positionen entfernen?'))return;await sb.from('haushaltshilfe_einkauf').delete().eq('gekauft',true);EINK=EINK.filter(x=>!x.gekauft);render();}
 async function addRow(){
-  if(TAB==='auf'){const r=await sb.from('haushaltshilfe_aufgaben').insert({titel:'Neue Aufgabe / Frage',status:'Offen',prioritaet:'Mittel',zustaendig:'Haushaltshilfe',pos:AUF.length}).select();if(r.error)return toast(r.error.message);AUF.unshift(r.data[0]);}
+  if(TAB==='auf'){const r=await sb.from('haushaltshilfe_aufgaben').insert({titel:'Neue Aufgabe',art:'Aufgabe',status:'Offen',prioritaet:'Mittel',zustaendig:'Haushaltshilfe',pos:AUF.length}).select();if(r.error)return toast(r.error.message);AUF.unshift(r.data[0]);}
+  else if(TAB==='eink'){const r=await sb.from('haushaltshilfe_einkauf').insert({artikel:'Neuer Wunsch',quelle:'Wunsch',kategorie:'Sonstiges',pos:EINK.length}).select();if(r.error)return toast(r.error.message);EINK.unshift(r.data[0]);}
   else{const r=await sb.from('haushaltshilfe_wissen').insert({thema:'Neues Thema',kategorie:'Sonstiges',pos:WIS.length}).select();if(r.error)return toast(r.error.message);WIS.unshift(r.data[0]);}
   render();toast('Angelegt');}
 async function del(id){if(!confirm('Eintrag löschen?'))return;const res=await sb.from(TBL[TAB]).delete().eq('id',id);if(res.error)return toast(res.error.message);
-  if(TAB==='auf')AUF=AUF.filter(x=>x.id!==id);else WIS=WIS.filter(x=>x.id!==id);render();}
+  const t=TAB;if(t==='auf')AUF=AUF.filter(x=>x.id!==id);else if(t==='eink')EINK=EINK.filter(x=>x.id!==id);else WIS=WIS.filter(x=>x.id!==id);render();}
 
 function opt(list,sel){return list.map(v=>'<option'+(v===sel?' selected':'')+'>'+esc(v)+'</option>').join('');}
 function cardAuf(r){return `<div class="card">
   <div class="top">
     <input class="thema" value="${esc(r.titel)}" onchange="save('${r.id}','titel',this.value)">
+    <select class="kat" onchange="save('${r.id}','art',this.value)" title="Art">${opt(ART,r.art)}</select>
     <select class="st st-${(r.status||'').replace(/\\s/g,'')}" onchange="save('${r.id}','status',this.value)">${opt(STATI,r.status)}</select>
     <select class="pr" onchange="save('${r.id}','prioritaet',this.value)">${opt(PRIO,r.prioritaet)}</select>
     <select class="zu" onchange="save('${r.id}','zustaendig',this.value)">${opt(ZUST,r.zustaendig)}</select>
@@ -99,8 +109,19 @@ function cardWis(r){return `<div class="card">
   <textarea oninput="grow(this)" onchange="save('${r.id}','inhalt',this.value)" placeholder="Anleitung / Ablauf / Hinweise …">${esc(r.inhalt)}</textarea>
 </div>`;}
 
+function lineEink(r){
+  const src=r.quelle==='Essensplaner'?'<span class="pill" style="background:#eef4fb;color:#185fa5;border-color:#cfe0f2">Essensplaner'+(r.woche?' · '+esc(r.woche):'')+'</span>':'<span class="pill" style="background:#eef8f2;color:#1f7a4d;border-color:#bfe0cd">Wunsch</span>';
+  return `<div class="card" style="padding:8px 12px;margin-bottom:7px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+    <input type="checkbox" ${r.gekauft?'checked':''} onchange="toggleGekauft('${r.id}',this.checked)" style="width:17px;height:17px">
+    <input value="${esc(r.artikel)}" style="flex:1;min-width:140px;font:inherit;font-size:14px;border:1px solid transparent;border-radius:6px;padding:4px 6px;background:transparent${r.gekauft?';text-decoration:line-through;color:var(--muted)':''}" onchange="save('${r.id}','artikel',this.value)">
+    <input value="${esc(r.menge)}" placeholder="Menge" style="width:90px;font:inherit;font-size:13px;border:1px solid var(--line);border-radius:6px;padding:4px 6px;background:var(--surf2)" onchange="save('${r.id}','menge',this.value)">
+    <input value="${esc(r.einkaufsort)}" placeholder="Ort" style="width:110px;font:inherit;font-size:13px;border:1px solid var(--line);border-radius:6px;padding:4px 6px;background:var(--surf2)" onchange="save('${r.id}','einkaufsort',this.value)">
+    ${src}
+    <button class="abtn" onclick="del('${r.id}')">✕</button>
+  </div>`;
+}
 function render(){
-  $('n_auf').textContent=AUF.length;$('n_wis').textContent=WIS.length;
+  $('n_auf').textContent=AUF.length;$('n_wis').textContent=WIS.length;$('n_eink').textContent=EINK.filter(x=>!x.gekauft).length;
   $('intro').textContent=INTRO[TAB];
   $('katDL').innerHTML=KAT.map(k=>'<option value="'+esc(k)+'">').join('');
   if(TAB==='auf'){
@@ -108,6 +129,15 @@ function render(){
     const q=(($('q')&&$('q').value)||'').toLowerCase(), f=fs();
     const list=AUF.filter(r=>(!f||r.status===f)&&(!q||((r.titel||'')+' '+(r.frage||'')+' '+(r.antwort||'')).toLowerCase().includes(q)));
     $('list').innerHTML=list.map(cardAuf).join('')||'<div class="empty">Keine Aufgaben. Mit „+ Neu" die erste anlegen.</div>';
+  } else if(TAB==='eink'){
+    const offen=EINK.filter(x=>!x.gekauft).length, gek=EINK.filter(x=>x.gekauft).length;
+    $('bar').innerHTML='<input type="text" id="q" placeholder="🔍 Suchen…" oninput="render()"><label style="font-size:12.5px;color:var(--dim)"><input type="checkbox" id="hideG" '+(_hideG?'checked':'')+' onchange="_hideG=this.checked;render()"> gekaufte ausblenden</label><button class="btn" onclick="resetGekauft()">Haken zurücksetzen</button><button class="btn" onclick="clearGekauft()">Gekaufte entfernen</button><span style="font-size:12px;color:var(--muted)">'+offen+' offen · '+gek+' gekauft</span>';
+    const q=(($('q')&&$('q').value)||'').toLowerCase();
+    let list=EINK.filter(r=>(!_hideG||!r.gekauft)&&(!q||((r.artikel||'')+' '+(r.einkaufsort||'')).toLowerCase().includes(q)));
+    const byCat={};list.forEach(r=>{const c=r.kategorie||'Sonstiges';(byCat[c]=byCat[c]||[]).push(r);});
+    const cats=EKAT.filter(c=>byCat[c]).concat(Object.keys(byCat).filter(c=>!EKAT.includes(c)));
+    $('list').innerHTML=list.length?cats.map(c=>'<div style="font-size:11px;font-weight:700;text-transform:uppercase;color:var(--muted);margin:12px 2px 6px">'+esc(c)+'</div>'+byCat[c].map(lineEink).join('')).join(''):'<div class="empty">Keine Positionen. Aus dem Essensplaner senden oder mit „+ Neu" einen Wunsch ergänzen.</div>';
+    return;
   } else {
     $('bar').innerHTML='<input type="text" id="q" placeholder="🔍 Suchen…" oninput="render()"><select id="fK" onchange="render()"><option value="">Alle Kategorien</option>'+[...new Set(WIS.map(w=>w.kategorie).filter(Boolean))].sort().map(k=>'<option'+(fk()===k?' selected':'')+'>'+esc(k)+'</option>').join('')+'</select>';
     const q=(($('q')&&$('q').value)||'').toLowerCase(), f=fk();
@@ -116,13 +146,14 @@ function render(){
   }
   document.querySelectorAll('textarea').forEach(grow);
 }
-let _fs='',_fk='';function fs(){const e=$('fS');if(e)_fs=e.value;return _fs;}function fk(){const e=$('fK');if(e)_fk=e.value;return _fk;}
+let _fs='',_fk='',_hideG=false;function fs(){const e=$('fS');if(e)_fs=e.value;return _fs;}function fk(){const e=$('fK');if(e)_fk=e.value;return _fk;}
 async function load(){
-  const [a,w]=await Promise.all([
+  const [a,w,e]=await Promise.all([
     sb.from('haushaltshilfe_aufgaben').select('*').order('pos',{nullsFirst:false}),
-    sb.from('haushaltshilfe_wissen').select('*').order('pos',{nullsFirst:false})
+    sb.from('haushaltshilfe_wissen').select('*').order('pos',{nullsFirst:false}),
+    sb.from('haushaltshilfe_einkauf').select('*').order('pos',{nullsFirst:false})
   ]);
-  AUF=a.data||[];WIS=w.data||[];render();
+  AUF=a.data||[];WIS=w.data||[];EINK=e.data||[];render();
 }
 load();
 </script>
