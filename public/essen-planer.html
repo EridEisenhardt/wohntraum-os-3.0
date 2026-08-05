@@ -296,17 +296,16 @@ function copyList(){
   if(navigator.clipboard){navigator.clipboard.writeText(txt).then(()=>toast('In Zwischenablage kopiert ✓'),()=>toast('Kopieren nicht möglich'));}
   else toast('Kopieren nicht möglich');
 }
+var EKATMAP={'Obst':'Obst & Gemüse','Gemüse':'Obst & Gemüse','Milch':'Molkerei','Molkerei':'Molkerei','Käse':'Molkerei','Fleisch':'Fleisch & Fisch','Fisch':'Fleisch & Fisch','Wurst':'Fleisch & Fisch','Getränk':'Getränke','Getränke':'Getränke','TK':'Tiefkühl','Tiefkühl':'Tiefkühl','Drogerie':'Haushalt & Drogerie','Haushalt':'Haushalt & Drogerie'};
+function mapEkat(k){k=k||'';for(var key in EKATMAP){if(k.toLowerCase().indexOf(key.toLowerCase())>=0)return EKATMAP[key];}return 'Sonstiges';}
 async function sendToHaushaltshilfe(){
   var agg=aggregate(FREE); var keys=Object.keys(agg); if(!keys.length){toast('Liste ist leer');return;}
-  var byCat={}; keys.forEach(function(k){var a=agg[k];(byCat[a.kategorie]=byCat[a.kategorie]||[]).push(a);});
-  var txt=''; LKAT.filter(c=>byCat[c]).forEach(function(c){txt+=c+':\n';byCat[c].sort((x,y)=>x.name.localeCompare(y.name)).forEach(function(a){txt+='- '+a.name+(mengeTxt(a)?' ('+mengeTxt(a)+')':'')+(a.ort?' @ '+a.ort:'')+'\n';});txt+='\n';});
-  txt=('Bitte für die Woche '+curWeek+' einkaufen:\n\n'+txt).trim();
-  var titel='Einkauf Wunschwoche '+curWeek;
+  var recs=keys.map(function(k,i){var a=agg[k];return {artikel:a.name,menge:mengeTxt(a)||null,kategorie:mapEkat(a.kategorie),einkaufsort:a.ort||null,quelle:'Essensplaner',woche:curWeek,gekauft:false,pos:i};});
   try{
-    var ex=await sb.from('haushaltshilfe_aufgaben').select('id').eq('titel',titel).limit(1);
-    if(ex.data&&ex.data.length){await sb.from('haushaltshilfe_aufgaben').update({frage:txt,status:'Offen'}).eq('id',ex.data[0].id);}
-    else{await sb.from('haushaltshilfe_aufgaben').insert({titel:titel,status:'Offen',prioritaet:'Mittel',zustaendig:'Haushaltshilfe',frage:txt,pos:9999});}
-    toast('An Haushaltshilfe gesendet ✓');
+    await sb.from('haushaltshilfe_einkauf').delete().eq('quelle','Essensplaner');
+    var res=await sb.from('haushaltshilfe_einkauf').insert(recs);
+    if(res.error){toast('Fehler: '+res.error.message);return;}
+    toast(recs.length+' Positionen an Haushaltshilfe gesendet ✓');
   }catch(e){toast('Fehler beim Senden');}
 }
 (async()=>{const{data:{session}}=await sb.auth.getSession();load();})();
