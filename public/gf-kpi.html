@@ -36,6 +36,7 @@ body{background:var(--bg);color:var(--text);font-family:'Inter',system-ui,-apple
   <button class="btn btn-accent" onclick="addRow()">+ Struktur</button>
 </div>
 <div class="wrap">
+  <div class="tot" id="head"></div>
   <div class="tot" id="tot"></div>
   <div class="grid" id="grid"></div>
 </div>
@@ -47,7 +48,12 @@ const esc=s=>(s==null?'':String(s)).replace(/&/g,'&amp;').replace(/</g,'&lt;').r
 const nf=new Intl.NumberFormat('de-DE',{maximumFractionDigits:0});
 const eur=v=>(v==null||isNaN(v)?'0':nf.format(Math.round(v)))+' €';
 function toast(m){const t=$('toast');t.textContent=m;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),1600);}
-let ROWS=[];
+let ROWS=[], LIQ={}, LIQTOT=0, OFFEN=0;
+// Zuordnung kontostaende.gesellschaft (Kürzel) -> Struktur-Name
+const GESMAP={'ee':'Eric Eisenhardt (privat)','rh':'Wohn(T)raum Rheinhessen GmbH','kibo':'Wohn(T)raum Kibo GmbH','fly':'Fly with Aly GmbH','anders':'Anders MACHER GmbH'};
+function liqOf(struktur){let s=0;Object.keys(LIQ).forEach(g=>{if((GESMAP[g]||g)===struktur||g===struktur)s+=LIQ[g];});return s;}
+async function saveOffen(val){const v=(val===''||val==null)?0:Number(String(val).replace(/\./g,'').replace(',','.'));OFFEN=isNaN(v)?0:v;
+  await sb.from('gf_kpi_werte').update({wert:OFFEN,updated_at:new Date().toISOString()}).eq('schluessel','offene_mieten');renderHead();toast('Gespeichert ✓');}
 async function save(id,field,val,num){let v;if(num){v=(val===''||val==null)?null:Number(String(val).replace(/\./g,'').replace(',','.'));if(isNaN(v))v=null;}else v=(val&&val.trim())?val.trim():null;
   const res=await sb.from('gf_cashflow').update({[field]:v}).eq('id',id);if(res.error){toast('Fehler: '+res.error.message);return;}
   const r=ROWS.find(x=>x.id===id);if(r)r[field]=v;render();}
@@ -60,13 +66,33 @@ function render(){
       <div class="nm"><input value="${esc(r.struktur)}" onchange="save('${r.id}','struktur',this.value)"><button class="abtn" onclick="del('${r.id}')">✕</button></div>
       <div class="line"><span class="lbl">Summe Einnahmen p.a.</span><input inputmode="decimal" value="${r.einnahmen!=null?r.einnahmen:''}" onchange="save('${r.id}','einnahmen',this.value,1)"></div>
       <div class="line"><span class="lbl">Summe Ausgaben p.a.</span><input inputmode="decimal" value="${r.ausgaben!=null?r.ausgaben:''}" onchange="save('${r.id}','ausgaben',this.value,1)"></div>
+      <div class="line"><span class="lbl">Liquidität · Bankguthaben</span><span style="font-weight:600">${eur(liqOf(r.struktur))}</span></div>
       <div class="cfrow"><span class="lbl">Cashflow</span><span class="val ${cf>=0?'pos':'neg'}">${eur(cf)}</span></div>
     </div>`;}).join('')||'<div style="color:var(--muted);padding:20px">Noch keine Struktur. Mit „+ Struktur" anlegen.</div>';
   const cf=se-sa;
   $('tot').innerHTML=[['Σ Einnahmen p.a.',eur(se),''],['Σ Ausgaben p.a.',eur(sa),''],['Σ Cashflow p.a.',eur(cf),'cf'],['Strukturen',ROWS.length,'']]
     .map(x=>'<div class="tk '+(x[2]||'')+'"><div class="l">'+esc(x[0])+'</div><div class="v">'+x[1]+'</div></div>').join('');
 }
-async function load(){const res=await sb.from('gf_cashflow').select('*').order('pos',{nullsFirst:false});ROWS=res.error?[]:(res.data||[]);render();}
+function renderHead(){
+  $('head').innerHTML=[
+    ['Σ Offene Mieten','<input inputmode="decimal" value="'+(OFFEN||0)+'" onchange="saveOffen(this.value)" style="width:150px;text-align:right;font:inherit;font-size:20px;font-weight:700;border:1px solid var(--line);border-radius:8px;padding:4px 8px;background:var(--surf2)"> €','of'],
+    ['Σ Liquidität · Bankguthaben',eur(LIQTOT),'lq']
+  ].map(x=>'<div class="tk '+(x[2]==='lq'?'cf':'')+'" style="grid-column:span 2"><div class="l">'+esc(x[0])+'</div><div class="v">'+x[1]+'</div></div>').join('');
+}
+async function load(){
+  const [cf,ks,km,kv]=await Promise.all([
+    sb.from('gf_cashflow').select('*').order('pos',{nullsFirst:false}),
+    sb.from('kontostaende').select('gesellschaft,saldo'),
+    sb.from('mahn_register').select('betrag,status'),
+    sb.from('gf_kpi_werte').select('*').eq('schluessel','offene_mieten').maybeSingle()
+  ]);
+  ROWS=cf.error?[]:(cf.data||[]);
+  LIQ={};LIQTOT=0;(ks.data||[]).forEach(r=>{const g=(r.gesellschaft||'').toLowerCase();LIQ[g]=(LIQ[g]||0)+(Number(r.saldo)||0);LIQTOT+=(Number(r.saldo)||0);});
+  // Offene Mieten: manueller Wert; falls Mahnregister offene Posten hat, nimm dessen Summe
+  const mahn=(km.data||[]).filter(x=>x.status&&!/bezahlt|erledigt|storno/i.test(x.status)).reduce((s,x)=>s+(Number(x.betrag)||0),0);
+  OFFEN=mahn>0?Math.round(mahn):(kv.data?Number(kv.data.wert)||0:0);
+  renderHead();render();
+}
 load();
 </script>
 </body></html>
