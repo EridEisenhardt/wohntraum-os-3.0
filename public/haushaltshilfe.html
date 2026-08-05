@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="de"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Haushaltshilfe</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+:root{--bg:#f6f7f9;--surf:#fff;--surf2:#f1f3f6;--line:#e6e8ec;--text:#1c2024;--muted:#6b7280;--dim:#4b5563;--accent:#185fa5;--green:#1f7a4d;--amber:#e08a1e;--red:#c0392b}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--text);font-family:'Inter',system-ui,-apple-system,'Segoe UI',sans-serif;font-size:14px;line-height:1.5}
+.hdr{background:var(--surf);border-bottom:1px solid var(--line);padding:14px 22px;position:sticky;top:0;z-index:20;display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}
+.hdr-title{font-size:17px;font-weight:700}.hdr-sub{font-size:11.5px;color:var(--muted)}
+.wrap{max-width:1100px;margin:14px auto;padding:0 16px 60px}
+.tabs{display:flex;gap:6px;margin-bottom:12px;flex-wrap:wrap}
+.tab{font:inherit;font-size:13.5px;font-weight:600;padding:8px 16px;border:1px solid var(--line);border-radius:9px;background:var(--surf);color:var(--dim);cursor:pointer}
+.tab.active{background:var(--accent);color:#fff;border-color:var(--accent)}
+.tab .n{font-size:11px;opacity:.85;margin-left:5px}
+.intro{font-size:12.5px;color:var(--muted);margin-bottom:12px}
+.bar{display:flex;gap:9px;align-items:center;flex-wrap:wrap;margin-bottom:12px}
+.bar input[type=text],.bar select{font:inherit;font-size:13px;padding:7px 10px;border:1px solid var(--line);border-radius:8px;background:var(--surf)}
+.bar input[type=text]{min-width:200px}
+.btn{font:inherit;font-size:13px;font-weight:600;padding:8px 13px;border:1px solid var(--line);border-radius:8px;background:var(--surf2);color:var(--text);cursor:pointer}
+.btn-accent{background:var(--accent);color:#fff;border-color:var(--accent)}
+.card{background:var(--surf);border:1px solid var(--line);border-radius:12px;padding:14px 16px;margin-bottom:12px}
+.card .top{display:flex;gap:10px;align-items:center;margin-bottom:8px}
+.card input.thema{flex:1;font:inherit;font-size:15px;font-weight:600;border:1px solid transparent;border-radius:7px;padding:5px 7px;background:transparent}
+.card input.thema:hover{border-color:var(--line)}.card input.thema:focus{outline:none;border-color:var(--accent);background:var(--surf2)}
+.pill{font-size:11px;padding:2px 9px;border-radius:20px;border:1px solid var(--line);background:var(--surf2);color:var(--dim)}
+select.kat,select.st,select.pr,select.zu{font:inherit;font-size:12px;padding:5px 8px;border:1px solid var(--line);border-radius:20px;background:var(--surf2);color:var(--dim);cursor:pointer}
+textarea{width:100%;font:inherit;font-size:13.5px;padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:var(--surf2);color:var(--text);resize:none;overflow:hidden;line-height:1.5}
+textarea:focus{outline:none;border-color:var(--accent);background:var(--surf)}
+.lbl{font-size:10.5px;text-transform:uppercase;color:var(--muted);font-weight:700;margin:8px 0 3px}
+.abtn{background:none;border:none;color:var(--muted);cursor:pointer;font-size:15px}.abtn:hover{color:var(--red)}
+.st-Offen{color:var(--red)!important;border-color:#f0c4bd!important;background:#fdeeec!important}
+.st-InKlärung{color:var(--amber)!important;border-color:#f0dcbd!important;background:#fdf6ec!important}
+.st-Geklärt,.st-Erledigt{color:var(--green)!important;border-color:#bfe0cd!important;background:#eef8f2!important}
+.empty{text-align:center;color:var(--muted);padding:26px}
+.toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:#1c2024;color:#fff;padding:10px 16px;border-radius:8px;font-size:13px;opacity:0;transition:.2s;pointer-events:none;z-index:50}.toast.show{opacity:1}
+</style></head><body>
+<div class="hdr">
+  <div><div class="hdr-title">🏠 Haushaltshilfe</div><div class="hdr-sub">Einarbeitung & Kommunikation · für aktuelle Hilfe und Nachfolge</div></div>
+  <button class="btn btn-accent" onclick="addRow()">+ Neu</button>
+</div>
+<div class="wrap">
+  <div class="tabs">
+    <button class="tab active" data-t="auf" onclick="setTab('auf')">Aufgaben & offene Fragen<span class="n" id="n_auf"></span></button>
+    <button class="tab" data-t="wis" onclick="setTab('wis')">Einarbeitung & Wissen<span class="n" id="n_wis"></span></button>
+  </div>
+  <div class="intro" id="intro"></div>
+  <div class="bar" id="bar"></div>
+  <div id="list"></div>
+</div>
+<div class="toast" id="toast"></div>
+<datalist id="katDL"></datalist>
+<script>
+const sb=window.supabase.createClient('https://jqzxctfqvcwbctpjksvg.supabase.co','eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpxenhjdGZxdmN3YmN0cGprc3ZnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODIxMzA0MzIsImV4cCI6MjA5NzcwNjQzMn0.RKIbZxJdusKWWPjBJqlxZ8e1m8So02UslOg55YRsn3o');
+const $=id=>document.getElementById(id);
+const esc=s=>(s==null?'':String(s)).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+function toast(m){const t=$('toast');t.textContent=m;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),1600);}
+function grow(t){t.style.height='auto';t.style.height=(t.scrollHeight+2)+'px';}
+let TAB='auf', AUF=[], WIS=[];
+const STATI=['Offen','In Klärung','Geklärt','Erledigt'];
+const PRIO=['Hoch','Mittel','Niedrig'];
+const ZUST=['Haushaltshilfe','Eric'];
+const KAT=['Küche','Wäsche','Einkauf','Reinigung','Pflanzen & Tiere','Termine','Post','Schlüssel & Zugang','Sonstiges'];
+const TBL={auf:'haushaltshilfe_aufgaben',wis:'haushaltshilfe_wissen'};
+const INTRO={auf:'Hier kommen alle Aufgaben und offenen Fragen rein. Eric stellt eine Frage/Aufgabe, die Haushaltshilfe kann direkt darunter antworten. Status auf „Geklärt" setzen, wenn erledigt.',
+ wis:'Anleitungen und Wissen für die Einarbeitung – so findet sich auch eine Nachfolge schnell zurecht. Ein Thema pro Karte, Kategorie wählen, Inhalt frei beschreiben.'};
+
+function setTab(t){TAB=t;document.querySelectorAll('.tab').forEach(b=>b.classList.toggle('active',b.dataset.t===t));render();}
+async function save(id,field,val){const arr=TAB==='auf'?AUF:WIS;const v=(val&&val.trim())?val.trim():null;
+  const res=await sb.from(TBL[TAB]).update({[field]:v}).eq('id',id);if(res.error){toast('Fehler: '+res.error.message);return;}
+  const r=arr.find(x=>x.id===id);if(r)r[field]=v;if(field==='status'||field==='prioritaet')render();else toast('Gespeichert ✓');}
+async function addRow(){
+  if(TAB==='auf'){const r=await sb.from('haushaltshilfe_aufgaben').insert({titel:'Neue Aufgabe / Frage',status:'Offen',prioritaet:'Mittel',zustaendig:'Haushaltshilfe',pos:AUF.length}).select();if(r.error)return toast(r.error.message);AUF.unshift(r.data[0]);}
+  else{const r=await sb.from('haushaltshilfe_wissen').insert({thema:'Neues Thema',kategorie:'Sonstiges',pos:WIS.length}).select();if(r.error)return toast(r.error.message);WIS.unshift(r.data[0]);}
+  render();toast('Angelegt');}
+async function del(id){if(!confirm('Eintrag löschen?'))return;const res=await sb.from(TBL[TAB]).delete().eq('id',id);if(res.error)return toast(res.error.message);
+  if(TAB==='auf')AUF=AUF.filter(x=>x.id!==id);else WIS=WIS.filter(x=>x.id!==id);render();}
+
+function opt(list,sel){return list.map(v=>'<option'+(v===sel?' selected':'')+'>'+esc(v)+'</option>').join('');}
+function cardAuf(r){return `<div class="card">
+  <div class="top">
+    <input class="thema" value="${esc(r.titel)}" onchange="save('${r.id}','titel',this.value)">
+    <select class="st st-${(r.status||'').replace(/\\s/g,'')}" onchange="save('${r.id}','status',this.value)">${opt(STATI,r.status)}</select>
+    <select class="pr" onchange="save('${r.id}','prioritaet',this.value)">${opt(PRIO,r.prioritaet)}</select>
+    <select class="zu" onchange="save('${r.id}','zustaendig',this.value)">${opt(ZUST,r.zustaendig)}</select>
+    <button class="abtn" onclick="del('${r.id}')">✕</button>
+  </div>
+  <div class="lbl">Frage / Aufgabe (von Eric)</div>
+  <textarea oninput="grow(this)" onchange="save('${r.id}','frage',this.value)" placeholder="Was ist zu klären / zu tun?">${esc(r.frage)}</textarea>
+  <div class="lbl">Antwort / Rückmeldung (Haushaltshilfe)</div>
+  <textarea oninput="grow(this)" onchange="save('${r.id}','antwort',this.value)" placeholder="Antwort, Rückfrage oder Erledigt-Vermerk…">${esc(r.antwort)}</textarea>
+</div>`;}
+function cardWis(r){return `<div class="card">
+  <div class="top">
+    <input class="thema" value="${esc(r.thema)}" onchange="save('${r.id}','thema',this.value)">
+    <input class="kat" list="katDL" value="${esc(r.kategorie)}" style="width:150px;font:inherit;font-size:12px;padding:5px 8px;border:1px solid var(--line);border-radius:20px;background:var(--surf2)" onchange="save('${r.id}','kategorie',this.value)">
+    <button class="abtn" onclick="del('${r.id}')">✕</button>
+  </div>
+  <textarea oninput="grow(this)" onchange="save('${r.id}','inhalt',this.value)" placeholder="Anleitung / Ablauf / Hinweise …">${esc(r.inhalt)}</textarea>
+</div>`;}
+
+function render(){
+  $('n_auf').textContent=AUF.length;$('n_wis').textContent=WIS.length;
+  $('intro').textContent=INTRO[TAB];
+  $('katDL').innerHTML=KAT.map(k=>'<option value="'+esc(k)+'">').join('');
+  if(TAB==='auf'){
+    $('bar').innerHTML='<input type="text" id="q" placeholder="🔍 Suchen…" oninput="render()"><select id="fS" onchange="render()"><option value="">Alle Status</option>'+STATI.map(s=>'<option'+(fs()===s?' selected':'')+'>'+esc(s)+'</option>').join('')+'</select><span style="font-size:12px;color:var(--muted)">'+AUF.filter(a=>a.status==='Offen').length+' offen</span>';
+    const q=(($('q')&&$('q').value)||'').toLowerCase(), f=fs();
+    const list=AUF.filter(r=>(!f||r.status===f)&&(!q||((r.titel||'')+' '+(r.frage||'')+' '+(r.antwort||'')).toLowerCase().includes(q)));
+    $('list').innerHTML=list.map(cardAuf).join('')||'<div class="empty">Keine Aufgaben. Mit „+ Neu" die erste anlegen.</div>';
+  } else {
+    $('bar').innerHTML='<input type="text" id="q" placeholder="🔍 Suchen…" oninput="render()"><select id="fK" onchange="render()"><option value="">Alle Kategorien</option>'+[...new Set(WIS.map(w=>w.kategorie).filter(Boolean))].sort().map(k=>'<option'+(fk()===k?' selected':'')+'>'+esc(k)+'</option>').join('')+'</select>';
+    const q=(($('q')&&$('q').value)||'').toLowerCase(), f=fk();
+    const list=WIS.filter(r=>(!f||r.kategorie===f)&&(!q||((r.thema||'')+' '+(r.inhalt||'')).toLowerCase().includes(q)));
+    $('list').innerHTML=list.map(cardWis).join('')||'<div class="empty">Noch kein Wissen erfasst. Mit „+ Neu" das erste Thema anlegen.</div>';
+  }
+  document.querySelectorAll('textarea').forEach(grow);
+}
+let _fs='',_fk='';function fs(){const e=$('fS');if(e)_fs=e.value;return _fs;}function fk(){const e=$('fK');if(e)_fk=e.value;return _fk;}
+async function load(){
+  const [a,w]=await Promise.all([
+    sb.from('haushaltshilfe_aufgaben').select('*').order('pos',{nullsFirst:false}),
+    sb.from('haushaltshilfe_wissen').select('*').order('pos',{nullsFirst:false})
+  ]);
+  AUF=a.data||[];WIS=w.data||[];render();
+}
+load();
+</script>
+</body></html>
