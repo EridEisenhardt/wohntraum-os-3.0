@@ -8,10 +8,10 @@
 body{background:var(--bg);color:var(--text);font-family:'Inter',system-ui,-apple-system,'Segoe UI',sans-serif;font-size:14px;line-height:1.5}
 .hdr{background:var(--surf);border-bottom:1px solid var(--line);padding:14px 22px;position:sticky;top:0;z-index:20;display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}
 .hdr-title{font-size:17px;font-weight:700}.hdr-sub{font-size:11.5px;color:var(--muted)}
-.wrap{max-width:1100px;margin:16px auto;padding:0 16px 60px}
-.tot{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px;margin-bottom:16px}
-.tk{background:var(--surf);border:1px solid var(--line);border-radius:12px;padding:12px 15px}
-.tk .l{font-size:10px;text-transform:uppercase;color:var(--muted)}.tk .v{font-size:21px;font-weight:700;margin-top:2px}
+.wrap{max-width:1280px;margin:10px auto;padding:0 14px 16px}
+.tot{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px;margin-bottom:10px}
+.tk{background:var(--surf);border:1px solid var(--line);border-radius:10px;padding:8px 12px}
+.tk .l{font-size:9.5px;text-transform:uppercase;color:var(--muted)}.tk .v{font-size:17px;font-weight:700;margin-top:2px}
 .tk.cf{background:linear-gradient(135deg,#185fa5,#124a80);color:#fff;border:none}.tk.cf .l{color:rgba(255,255,255,.85)}
 .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:14px}
 .card{background:var(--surf);border:1px solid var(--line);border-radius:14px;padding:16px 18px}
@@ -64,14 +64,26 @@ function toast(m){const t=$('toast');t.textContent=m;t.classList.add('show');set
 let ROWS=[], OFFEN=0, BANK=0;
 async function saveKpi(key,val){const v=(val===''||val==null)?0:Number(String(val).replace(/\./g,'').replace(',','.'));const num=isNaN(v)?0:v;
   if(key==='offene_mieten')OFFEN=num;else BANK=num;
-  await sb.from('gf_kpi_werte').update({wert:num,updated_at:new Date().toISOString()}).eq('schluessel',key);renderHead();toast('Gespeichert ✓');}
+  await sb.from('gf_kpi_werte').update({wert:num,updated_at:new Date().toISOString()}).eq('schluessel',key);render();toast('Gespeichert ✓');}
 async function save(id,field,val,num){let v;if(num){v=(val===''||val==null)?null:Number(String(val).replace(/\./g,'').replace(',','.'));if(isNaN(v))v=null;}else v=(val&&val.trim())?val.trim():null;
   const res=await sb.from('gf_cashflow').update({[field]:v}).eq('id',id);if(res.error){toast('Fehler: '+res.error.message);return;}
   const r=ROWS.find(x=>x.id===id);if(r)r[field]=v;render();}
 async function addRow(){const r=await sb.from('gf_cashflow').insert({struktur:'Neue Struktur',einnahmen:0,ausgaben:0,pos:ROWS.length}).select();if(r.error)return toast(r.error.message);ROWS.push(r.data[0]);render();toast('Struktur angelegt');}
 async function del(id){if(!confirm('Struktur löschen?'))return;const res=await sb.from('gf_cashflow').delete().eq('id',id);if(res.error)return toast(res.error.message);ROWS=ROWS.filter(x=>x.id!==id);render();}
+function renderHead(se,sa){
+  const cf=se-sa;
+  $('head').innerHTML=[
+    ['Offene Mieten',kpiInput('offene_mieten',OFFEN),''],
+    ['Liquidität · Bankguthaben',kpiInput('bankguthaben',BANK),''],
+    ['Σ Einnahmen p.a.',eur(se),''],
+    ['Σ Ausgaben p.a.',eur(sa),''],
+    ['Σ Cashflow p.a.',eur(cf),'cf'],
+    ['Strukturen',ROWS.length,'']
+  ].map(x=>'<div class="tk '+(x[2]||'')+'"><div class="l">'+esc(x[0])+'</div><div class="v">'+x[1]+'</div></div>').join('');
+  $('tot').innerHTML='';
+}
 function render(){
-  if(!ROWS.length){$('grid').innerHTML='<div style="color:var(--muted);padding:20px">Noch keine Struktur. Mit „+ Struktur" anlegen.</div>';$('tot').innerHTML='';return;}
+  if(!ROWS.length){$('grid').innerHTML='<div style="color:var(--muted);padding:20px">Noch keine Struktur. Mit „+ Struktur" anlegen.</div>';renderHead(0,0);return;}
   let se=0,sa=0;
   const cols=ROWS.map(r=>{const e=Number(r.einnahmen)||0,a=Number(r.ausgaben)||0;se+=e;sa+=a;return {r:r,e:e,a:a,cf:e-a};});
   const inp=(r,f)=>'<td class="num"><input inputmode="decimal" value="'+(r[f]!=null?r[f]:'')+'" onchange="save(\''+r.id+'\',\''+f+'\',this.value,1)"></td>';
@@ -83,17 +95,9 @@ function render(){
   h+='<tr class="cfr"><td class="rowlbl">Cashflow p.a.</td>'+cols.map(c=>'<td class="num '+(c.cf>=0?'pos':'neg')+'">'+eur(c.cf)+'</td>').join('')+'<td class="num tot '+((se-sa)>=0?'pos':'neg')+'">'+eur(se-sa)+'</td></tr>';
   h+='</tbody></table></div>';
   $('grid').innerHTML=h;
-  const cf=se-sa;
-  $('tot').innerHTML=[['Σ Einnahmen p.a.',eur(se),''],['Σ Ausgaben p.a.',eur(sa),''],['Σ Cashflow p.a.',eur(cf),'cf'],['Strukturen',ROWS.length,'']]
-    .map(x=>'<div class="tk '+(x[2]||'')+'"><div class="l">'+esc(x[0])+'</div><div class="v">'+x[1]+'</div></div>').join('');
+  renderHead(se,sa);
 }
-function kpiInput(key,val){return '<input inputmode="decimal" value="'+(val||0)+'" onchange="saveKpi(\''+key+'\',this.value)" style="width:170px;text-align:right;font:inherit;font-size:20px;font-weight:700;border:1px solid var(--line);border-radius:8px;padding:4px 8px;background:var(--surf2)"> €';}
-function renderHead(){
-  $('head').innerHTML=[
-    ['Σ Offene Mieten',kpiInput('offene_mieten',OFFEN)],
-    ['Σ Liquidität · Bankguthaben',kpiInput('bankguthaben',BANK)]
-  ].map(x=>'<div class="tk" style="grid-column:span 2"><div class="l">'+esc(x[0])+'</div><div class="v">'+x[1]+'</div></div>').join('');
-}
+function kpiInput(key,val){return '<input inputmode="decimal" value="'+(val||0)+'" onchange="saveKpi(\''+key+'\',this.value)" style="width:130px;text-align:right;font:inherit;font-size:16px;font-weight:700;border:1px solid var(--line);border-radius:7px;padding:3px 7px;background:var(--surf2)"> €';}
 async function load(){
   const [cf,kv]=await Promise.all([
     sb.from('gf_cashflow').select('*').order('pos',{nullsFirst:false}),
@@ -102,7 +106,7 @@ async function load(){
   ROWS=cf.error?[]:(cf.data||[]);
   const m={};(kv.data||[]).forEach(r=>m[r.schluessel]=Number(r.wert)||0);
   OFFEN=m.offene_mieten||0;BANK=m.bankguthaben||0;
-  renderHead();render();
+  render();
 }
 load();
 </script>
