@@ -85,6 +85,7 @@ details>summary{cursor:pointer;font-size:12.5px;color:var(--muted);font-weight:6
       <div class="bar">
         <button class="btn sec" onclick="resetGekauft()">Haken zur&uuml;cksetzen</button>
         <button class="btn sec" onclick="copyList()">Als Text kopieren</button>
+        <button class="btn big" onclick="sendToHaushaltshilfe()">&#127968; An Haushaltshilfe senden</button>
       </div>
       <div id="shopList"></div>
     </div>
@@ -294,6 +295,19 @@ function copyList(){
   var txt='Einkaufsliste '+curWeek+'\n'; LKAT.filter(c=>byCat[c]).forEach(function(c){txt+='\n'+c+':\n';byCat[c].forEach(function(a){txt+='- '+a.name+(mengeTxt(a)?' ('+mengeTxt(a)+')':'')+(a.ort?' @ '+a.ort:'')+'\n';});});
   if(navigator.clipboard){navigator.clipboard.writeText(txt).then(()=>toast('In Zwischenablage kopiert ✓'),()=>toast('Kopieren nicht möglich'));}
   else toast('Kopieren nicht möglich');
+}
+async function sendToHaushaltshilfe(){
+  var agg=aggregate(FREE); var keys=Object.keys(agg); if(!keys.length){toast('Liste ist leer');return;}
+  var byCat={}; keys.forEach(function(k){var a=agg[k];(byCat[a.kategorie]=byCat[a.kategorie]||[]).push(a);});
+  var txt=''; LKAT.filter(c=>byCat[c]).forEach(function(c){txt+=c+':\n';byCat[c].sort((x,y)=>x.name.localeCompare(y.name)).forEach(function(a){txt+='- '+a.name+(mengeTxt(a)?' ('+mengeTxt(a)+')':'')+(a.ort?' @ '+a.ort:'')+'\n';});txt+='\n';});
+  txt=('Bitte für die Woche '+curWeek+' einkaufen:\n\n'+txt).trim();
+  var titel='Einkauf Wunschwoche '+curWeek;
+  try{
+    var ex=await sb.from('haushaltshilfe_aufgaben').select('id').eq('titel',titel).limit(1);
+    if(ex.data&&ex.data.length){await sb.from('haushaltshilfe_aufgaben').update({frage:txt,status:'Offen'}).eq('id',ex.data[0].id);}
+    else{await sb.from('haushaltshilfe_aufgaben').insert({titel:titel,status:'Offen',prioritaet:'Mittel',zustaendig:'Haushaltshilfe',frage:txt,pos:9999});}
+    toast('An Haushaltshilfe gesendet ✓');
+  }catch(e){toast('Fehler beim Senden');}
 }
 (async()=>{const{data:{session}}=await sb.auth.getSession();load();})();
 </script>
