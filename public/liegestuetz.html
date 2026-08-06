@@ -59,6 +59,10 @@ tr.year td{background:var(--surf2);font-weight:700}
 
   <div class="card"><h2>Pro Jahr</h2><table id="yearTbl"></table></div>
 
+  <div class="card"><h2 style="cursor:pointer;user-select:none" onclick="toggleArch()"><span id="archArrow">▾</span> 📅 Liegestütz-Archiv · alle Tageseinträge</h2>
+    <div id="archBox"><div class="scroll"><table id="archTbl"></table></div></div>
+  </div>
+
   <div class="card"><h2 style="cursor:pointer;user-select:none" onclick="toggleMon()"><span id="monArrow">▸</span> Monatswerte (editierbar)</h2>
     <div id="monBox" style="display:none">
       <div class="scroll"><table id="monTbl"></table></div>
@@ -85,6 +89,23 @@ async function load(){
   ROWS=(res.error?[]:(res.data||[])).sort((a,b)=>key(a)-key(b));
   render();
   loadTag();
+  loadArchiv();
+}
+function toggleArch(){const b=$('archBox');const open=b.style.display!=='none';b.style.display=open?'none':'';$('archArrow').textContent=open?'▸':'▾';}
+let ARCH=[];
+async function loadArchiv(){
+  const res=await sb.from('liegestuetz_tag').select('*').order('datum',{ascending:false});
+  ARCH=res.data||[];renderArchiv();
+}
+function renderArchiv(){
+  if(!ARCH.length){$('archTbl').innerHTML='<tbody><tr><td style="color:var(--muted);padding:14px">Noch keine Tageseinträge. Trage oben bei „Tageseinträge" deine Liegestütze je Tag ein – sie erscheinen hier im Archiv.</td></tr></tbody>';return;}
+  const total=ARCH.reduce((s,r)=>s+(r.anzahl||0),0);
+  let rows='';let curMon='';
+  ARCH.forEach(r=>{const d=new Date(r.datum+'T00:00:00');const mk=MON[d.getMonth()]+' '+d.getFullYear();
+    if(mk!==curMon){curMon=mk;const ms=ARCH.filter(x=>{const dd=new Date(x.datum+'T00:00:00');return dd.getMonth()===d.getMonth()&&dd.getFullYear()===d.getFullYear();}).reduce((s,x)=>s+(x.anzahl||0),0);
+      rows+='<tr style="background:var(--surf2)"><td colspan="3" style="font-weight:700">'+mk+' · Σ '+nf(ms)+'</td></tr>';}
+    rows+='<tr><td>'+d.toLocaleDateString('de-DE',{weekday:'short',day:'2-digit',month:'2-digit',year:'numeric'})+'</td><td style="text-align:right;font-weight:600">'+nf(r.anzahl)+'</td><td></td></tr>';});
+  $('archTbl').innerHTML='<thead><tr><th>Datum</th><th style="text-align:right">Liegestütze</th><th></th></tr></thead><tbody>'+rows+'</tbody><tfoot><tr style="font-weight:700;border-top:2px solid var(--line)"><td>Gesamt Tageseinträge</td><td style="text-align:right">'+nf(total)+'</td><td></td></tr></tfoot>';
 }
 /* ---- Tageseinträge ---- */
 const WDS=['So','Mo','Di','Mi','Do','Fr','Sa'];
@@ -108,15 +129,17 @@ function renderTag(){
       +'<input inputmode="numeric" value="'+(has?v:'')+'" placeholder="–" style="width:100%;border:none;background:transparent;font:inherit;font-size:14px;font-weight:600;text-align:right;padding:2px 0;color:'+(has?'#1f7a4d':'#c0392b')+'" onchange="saveTag(\''+k+'\',this.value)"></div>';
   }
   $('tagGrid').innerHTML=html;
-  $('tagSum').textContent='Σ '+nf(sum)+' Liegestütze · '+filled+' von '+days+' Tagen eingetragen';
+  const mrow=ROWS.find(r=>r.jahr===TAGY&&r.monat===TAGM+1);const mval=mrow?mrow.anzahl:0;
+  $('tagSum').innerHTML='Σ Tage: <b>'+nf(sum)+'</b> · '+filled+'/'+days+' Tage · Monatswert (Übersicht): <b>'+nf(mval)+'</b>'+(sum>0&&sum!==mval?' <button class="btn" style="padding:2px 8px;font-size:11px" onclick="syncMonth()">→ als Monatswert übernehmen</button>':'');
 }
+async function syncMonth(){const sum=Object.values(TAG).reduce((s,v)=>s+(Number(v)||0),0);if(!confirm('Monatswert für '+MON[TAGM]+' '+TAGY+' auf die Tagessumme '+nf(sum)+' setzen? (überschreibt den bisherigen Monatswert)'))return;if(await upsert(TAGY,TAGM+1,sum)){toast('Monatswert aktualisiert');load();}}
 async function saveTag(datum,val){
   const raw=String(val==null?'':val).trim();
-  if(raw===''){await sb.from('liegestuetz_tag').delete().eq('datum',datum);delete TAG[datum];renderTag();return;}
+  if(raw===''){await sb.from('liegestuetz_tag').delete().eq('datum',datum);delete TAG[datum];renderTag();loadArchiv();return;}
   const n=toInt(raw);
   const res=await sb.from('liegestuetz_tag').upsert({datum:datum,anzahl:n,updated_at:new Date().toISOString()},{onConflict:'datum'});
   if(res.error){toast('Fehler: '+res.error.message);return;}
-  TAG[datum]=n;renderTag();toast('Gespeichert ✓');
+  TAG[datum]=n;renderTag();loadArchiv();toast('Gespeichert ✓');
 }
 function render(){
   const total=ROWS.reduce((s,r)=>s+(r.anzahl||0),0);
