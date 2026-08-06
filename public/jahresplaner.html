@@ -72,7 +72,7 @@ const KCOL={};KATS.forEach(k=>KCOL[k[0]]=k[1]);
 const KICON={'Urlaub':'🏖️','Seminar':'🎓','Mastermind':'🧠','Tischtennis':'🏓','Fortbildung':'📚','Geburtstag':'🎂','Betriebsferien':'🏢🔒','Hundesitting':'🐕','Business':'💼','Sonstiges':'📌'};
 const CY=new Date().getFullYear();
 const TODAY=(function(){const d=new Date();return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');})();
-let YEAR=CY, EV=[];
+let YEAR=CY, EV=[], GEB=[];
 
 function iso(y,m,d){return y+'-'+String(m+1).padStart(2,'0')+'-'+String(d).padStart(2,'0');}
 function easter(Y){var a=Y%19,b=Math.floor(Y/100),c=Y%100,d=Math.floor(b/4),e=b%4,f=Math.floor((b+8)/25),g=Math.floor((b-f+1)/3),h=(19*a+b-d-g+15)%30,i=Math.floor(c/4),k=c%4,l=(32+2*e+2*i-h-k)%7,mm=Math.floor((a+11*h+22*l)/451),mo=Math.floor((h+l-7*mm+114)/31),da=((h+l-7*mm+114)%31)+1;return new Date(Y,mo-1,da);}
@@ -89,6 +89,9 @@ function buildDayMap(){
   const map={};
   EV.forEach(ev=>{const von=new Date(ev.datum+'T00:00:00');const bisS=ev.bis||ev.datum;const bis=new Date(bisS+'T00:00:00');const multi=bisS!==ev.datum;
     for(let d=new Date(von);d<=bis;d=addD(d,1)){const k=keyOf(d);(map[k]=map[k]||[]).push({ev:ev,start:k===ev.datum,end:k===bisS,multi:multi});}});
+  // wiederkehrende Geburtstage im angezeigten Jahr
+  GEB.forEach(g=>{if(!g.tag||!g.monat)return;const k=iso(YEAR,g.monat-1,g.tag);const alter=g.geburtsjahr?(' ('+(YEAR-g.geburtsjahr)+')'):'';
+    (map[k]=map[k]||[]).push({ev:{kategorie:'Geburtstag',status:'fix',titel:(g.name||'Geburtstag')+alter,notiz:g.notiz},start:true,end:true,multi:false});});
   return map;
 }
 function cell(Y,m,d,HOL,DM){
@@ -122,13 +125,34 @@ function renderCal(){
   $('cal').innerHTML=block(0)+block(6);
 }
 function renderTabs(){
-  $('tabs').innerHTML=[CY,CY+1].map(y=>'<button class="tab'+(y===YEAR?' active':'')+'" onclick="setYear('+y+')">'+y+'</button>').join('');
+  $('tabs').innerHTML=[CY,CY+1].map(y=>'<button class="tab'+(y===YEAR?' active':'')+'" onclick="setYear('+y+')">'+y+'</button>').join('')
+    +'<button class="tab" style="background:#fff0f6;color:#e64980;border-color:#f2c2d6" onclick="openBdayMgr()">🎂 Geburtstage</button>';
   $('legend').innerHTML=KATS.map(k=>'<span><i style="background:'+k[1]+'"></i>'+(KICON[k[0]]||'')+' '+k[0]+'</span>').join('')
     +'<span style="margin-left:6px"><i style="background:#185fa5;border-left:3px solid #185fa5"></i>fix</span>'
     +'<span><i style="border:1px dashed #185fa5;background:repeating-linear-gradient(45deg,#185fa522,#185fa522 3px,transparent 3px,transparent 6px)"></i>⏳ reserviert</span>'
     +'<span style="color:var(--muted)">· Tag anklicken zum Eintragen</span>';
 }
 function setYear(y){YEAR=y;renderTabs();load();}
+
+/* ---- Geburtstags-Register ---- */
+function openBdayMgr(){renderBdayMgr();$('ov').classList.add('show');}
+function renderBdayMgr(){
+  const bi='font:inherit;font-size:13px;padding:5px 7px;border:1px solid var(--line);border-radius:6px;background:#fff';
+  let h='<h3>🎂 Geburtstage · jährlich wiederkehrend</h3><div style="font-size:11.5px;color:var(--muted);margin-bottom:10px">Name, Tag und Monat – erscheinen automatisch in jedem Jahr. Jahr (optional) zeigt das Alter.</div>';
+  h+='<div style="display:flex;gap:6px;font-size:10px;color:var(--muted);text-transform:uppercase;font-weight:700;padding:0 4px 4px 24px"><span style="flex:1">Name</span><span style="width:56px">Tag</span><span style="width:56px">Monat</span><span style="width:70px">Geb.-Jahr</span><span style="width:20px"></span></div>';
+  h+=GEB.slice().sort((a,b)=>((a.monat||0)-(b.monat||0))||((a.tag||0)-(b.tag||0))).map(g=>
+    '<div class="ev-item"><span class="dot" style="background:'+KCOL.Geburtstag+'"></span>'
+    +'<input value="'+esc(g.name||'')+'" placeholder="Name" style="flex:1;'+bi+'" onchange="updBday(\''+g.id+'\',\'name\',this.value)">'
+    +'<input type="number" min="1" max="31" value="'+(g.tag||'')+'" style="width:56px;'+bi+'" onchange="updBday(\''+g.id+'\',\'tag\',this.value)">'
+    +'<input type="number" min="1" max="12" value="'+(g.monat||'')+'" style="width:56px;'+bi+'" onchange="updBday(\''+g.id+'\',\'monat\',this.value)">'
+    +'<input type="number" value="'+(g.geburtsjahr||'')+'" style="width:70px;'+bi+'" onchange="updBday(\''+g.id+'\',\'geburtsjahr\',this.value)">'
+    +'<button class="abtn" onclick="delBday(\''+g.id+'\')">✕</button></div>').join('')||'<div style="color:var(--muted);font-size:12.5px">Noch keine Geburtstage.</div>';
+  h+='<div style="display:flex;gap:8px;justify-content:space-between;margin-top:12px"><button class="btn btn-accent" onclick="addBday()">+ Geburtstag</button><button class="btn" onclick="closeModal()">Schließen</button></div>';
+  $('modal').innerHTML=h;
+}
+async function addBday(){const r=await sb.from('geburtstage').insert({name:'Neuer Name',tag:1,monat:1,pos:GEB.length}).select();if(r.error){toast(r.error.message);return;}GEB.push(r.data[0]);renderBdayMgr();renderCal();}
+async function updBday(id,field,val){const g=GEB.find(x=>x.id===id);if(!g)return;let v=val;if(field==='tag'||field==='monat'||field==='geburtsjahr'){v=val===''?null:parseInt(val,10);if(isNaN(v))v=null;}else v=(val&&val.trim())?val.trim():null;const res=await sb.from('geburtstage').update({[field]:v}).eq('id',id);if(res.error){toast(res.error.message);return;}g[field]=v;renderCal();toast('Gespeichert ✓');}
+async function delBday(id){const res=await sb.from('geburtstage').delete().eq('id',id);if(res.error){toast(res.error.message);return;}GEB=GEB.filter(x=>x.id!==id);renderBdayMgr();renderCal();}
 
 /* ---- Modal ---- */
 let CURDAY=null;
@@ -183,9 +207,12 @@ async function toggleStatus(id){const e=EV.find(x=>x.id===id);if(!e)return;const
 $('ov').addEventListener('click',e=>{if(e.target===$('ov'))closeModal();});
 
 async function load(){
-  // Einträge, die das Jahr berühren (Start oder Ende im Jahr)
-  const res=await sb.from('jahresplaner').select('*').or('jahr.eq.'+YEAR+',datum.gte.'+YEAR+'-01-01');
+  const [res,gb]=await Promise.all([
+    sb.from('jahresplaner').select('*').or('jahr.eq.'+YEAR+',datum.gte.'+YEAR+'-01-01'),
+    sb.from('geburtstage').select('*').order('monat').order('tag')
+  ]);
   EV=(res.data||[]).filter(e=>{const von=e.datum,bis=e.bis||e.datum;return von<=YEAR+'-12-31'&&bis>=YEAR+'-01-01';});
+  GEB=gb.data||[];
   renderCal();
 }
 renderTabs();load();
