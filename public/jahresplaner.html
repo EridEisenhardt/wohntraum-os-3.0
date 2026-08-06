@@ -28,6 +28,7 @@ table.cal td{border:1px solid #e6e8ec;height:22px;font-size:11px;padding:0;verti
 .evs{flex:1;min-width:0;display:flex;flex-direction:column;gap:1px;padding:1px 2px 1px 0}
 .ev{padding:1px 4px;font-size:10px;font-weight:600;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;border-radius:2px}
 .evbar{height:6px;border-radius:2px;margin:0 2px}
+.ev.res{font-style:italic}
 .holname{font-size:8.5px;color:#c0392b;padding:2px 3px;align-self:center;white-space:nowrap;overflow:hidden}
 .empty{width:16.66%}
 /* Modal */
@@ -94,8 +95,10 @@ function cell(Y,m,d,HOL,DM){
   const kw=wd===1?'<span class="kw">'+isoWeek(dt)+'</span>':'';
   let right='';
   if(starts.length||cont.length){
-    let parts=starts.map(s=>{const e=s.ev;const ic=KICON[e.kategorie]||'';return '<div class="ev" style="background:'+KCOL[e.kategorie]+'33;color:'+KCOL[e.kategorie]+'" title="'+esc((e.titel||e.kategorie)+(e.notiz?' · '+e.notiz:''))+'">'+ic+' '+esc(e.titel||e.kategorie)+'</div>';});
-    cont.forEach(c=>parts.push('<div class="evbar" style="background:'+KCOL[c.ev.kategorie]+'55" title="'+esc(c.ev.titel||c.ev.kategorie)+'"></div>'));
+    let parts=starts.map(s=>{const e=s.ev;const ic=KICON[e.kategorie]||'';const col=KCOL[e.kategorie];const tt=esc((e.status==='reserviert'?'RESERVIERT · ':'')+(e.titel||e.kategorie)+(e.notiz?' · '+e.notiz:''));
+      if(e.status==='reserviert')return '<div class="ev res" style="border:1px dashed '+col+';background:repeating-linear-gradient(45deg,'+col+'22,'+col+'22 5px,transparent 5px,transparent 10px);color:'+col+'" title="'+tt+'">'+ic+' '+esc(e.titel||e.kategorie)+' ⏳</div>';
+      return '<div class="ev" style="background:'+col+'33;border-left:3px solid '+col+';color:#1c2024" title="'+tt+'">'+ic+' '+esc(e.titel||e.kategorie)+'</div>';});
+    cont.forEach(c=>{const col=KCOL[c.ev.kategorie];const res=c.ev.status==='reserviert';parts.push('<div class="evbar" style="'+(res?'border:1px dashed '+col+';background:'+col+'11':'background:'+col+'55')+'" title="'+esc(c.ev.titel||c.ev.kategorie)+'"></div>');});
     right='<div class="evs">'+parts.join('')+'</div>';
   }
   else if(hol){right='<div class="holname">'+esc(hol)+'</div>';}
@@ -115,7 +118,10 @@ function renderCal(){
 }
 function renderTabs(){
   $('tabs').innerHTML=[CY,CY+1].map(y=>'<button class="tab'+(y===YEAR?' active':'')+'" onclick="setYear('+y+')">'+y+'</button>').join('');
-  $('legend').innerHTML=KATS.map(k=>'<span><i style="background:'+k[1]+'"></i>'+(KICON[k[0]]||'')+' '+k[0]+'</span>').join('')+'<span style="color:var(--muted)">· Tag anklicken zum Eintragen</span>';
+  $('legend').innerHTML=KATS.map(k=>'<span><i style="background:'+k[1]+'"></i>'+(KICON[k[0]]||'')+' '+k[0]+'</span>').join('')
+    +'<span style="margin-left:6px"><i style="background:#185fa5;border-left:3px solid #185fa5"></i>fix</span>'
+    +'<span><i style="border:1px dashed #185fa5;background:repeating-linear-gradient(45deg,#185fa522,#185fa522 3px,transparent 3px,transparent 6px)"></i>⏳ reserviert</span>'
+    +'<span style="color:var(--muted)">· Tag anklicken zum Eintragen</span>';
 }
 function setYear(y){YEAR=y;renderTabs();load();}
 
@@ -127,9 +133,21 @@ function renderModal(){
   const dt=new Date(CURDAY+'T00:00:00');
   const dayEvs=EV.filter(e=>{const von=e.datum,bis=e.bis||e.datum;return CURDAY>=von&&CURDAY<=bis;});
   let h='<h3>'+dt.toLocaleDateString('de-DE',{weekday:'long',day:'numeric',month:'long',year:'numeric'})+'</h3>';
-  h+=dayEvs.map(e=>'<div class="ev-item"><span class="dot" style="background:'+KCOL[e.kategorie]+'"></span><span class="t"><b>'+(KICON[e.kategorie]||'')+' '+esc(e.titel||e.kategorie)+'</b><div class="d">'+esc(e.kategorie)+(e.bis&&e.bis!==e.datum?' · '+fmt(e.datum)+'–'+fmt(e.bis):'')+(e.notiz?' · '+esc(e.notiz):'')+'</div></span><button class="abtn" onclick="delEv(\''+e.id+'\')">✕</button></div>').join('')||'<div style="color:var(--muted);font-size:12.5px;margin-bottom:8px">Noch kein Eintrag an diesem Tag.</div>';
+  h+=dayEvs.map(e=>{const res=e.status==='reserviert';const si='font:inherit;font-size:12px;padding:5px 7px;border:1px solid var(--line);border-radius:6px;background:#fff';
+    return '<div class="ev-item" style="flex-direction:column;align-items:stretch;gap:6px'+(res?';border-style:dashed':'')+'">'
+    +'<div style="display:flex;gap:6px;align-items:center">'
+      +'<span class="dot" style="background:'+KCOL[e.kategorie]+'"></span>'
+      +'<select style="'+si+'" onchange="updateEv(\''+e.id+'\',\'kategorie\',this.value)">'+KATS.map(k=>'<option value="'+k[0]+'"'+(k[0]===e.kategorie?' selected':'')+'>'+(KICON[k[0]]||'')+' '+k[0]+'</option>').join('')+'</select>'
+      +'<input value="'+esc(e.titel||'')+'" placeholder="Titel" style="flex:1;'+si+'" onchange="updateEv(\''+e.id+'\',\'titel\',this.value)">'
+      +'<button class="btn" style="padding:4px 8px;font-size:11px" onclick="toggleStatus(\''+e.id+'\')">'+(res?'⏳ reserviert':'✓ fix')+'</button>'
+      +'<button class="abtn" onclick="delEv(\''+e.id+'\')">✕</button>'
+    +'</div>'
+    +'<div class="row2"><div class="fld"><label>Von</label><input type="date" value="'+esc(e.datum)+'" onchange="updateEv(\''+e.id+'\',\'datum\',this.value)"></div><div class="fld"><label>Bis (optional)</label><input type="date" value="'+esc(e.bis||'')+'" onchange="updateEv(\''+e.id+'\',\'bis\',this.value)"></div></div>'
+    +'<input value="'+esc(e.notiz||'')+'" placeholder="Notiz" style="'+si+'" onchange="updateEv(\''+e.id+'\',\'notiz\',this.value)">'
+    +'</div>';}).join('')||'<div style="color:var(--muted);font-size:12.5px;margin-bottom:8px">Noch kein Eintrag an diesem Tag.</div>';
   h+='<div style="border-top:1px solid var(--line);margin:12px 0 10px"></div><div style="font-weight:700;font-size:12px;margin-bottom:8px">Neuer Eintrag</div>';
-  h+='<div class="fld"><label>Kategorie</label><select id="m_kat">'+KATS.map(k=>'<option value="'+k[0]+'">'+(KICON[k[0]]||'')+' '+k[0]+'</option>').join('')+'</select></div>';
+  h+='<div class="row2"><div class="fld"><label>Kategorie</label><select id="m_kat">'+KATS.map(k=>'<option value="'+k[0]+'">'+(KICON[k[0]]||'')+' '+k[0]+'</option>').join('')+'</select></div>'
+    +'<div class="fld"><label>Status</label><select id="m_status"><option value="fix">Fix (verbindlich)</option><option value="reserviert">Reserviert (Option)</option></select></div></div>';
   h+='<div class="fld"><label>Titel</label><input id="m_titel" placeholder="z. B. Golfurlaub mit Papa"></div>';
   h+='<div class="row2"><div class="fld"><label>Von</label><input type="date" id="m_von" value="'+CURDAY+'"></div><div class="fld"><label>Bis (optional)</label><input type="date" id="m_bis"></div></div>';
   h+='<div class="fld"><label>Notiz (optional)</label><input id="m_notiz"></div>';
@@ -139,12 +157,24 @@ function renderModal(){
 function fmt(s){const d=new Date(s+'T00:00:00');return d.toLocaleDateString('de-DE',{day:'2-digit',month:'2-digit'});}
 async function addEv(){
   const von=$('m_von').value||CURDAY, bis=$('m_bis').value||null;
-  const rec={jahr:new Date(von+'T00:00:00').getFullYear(),datum:von,bis:(bis&&bis>von)?bis:null,kategorie:$('m_kat').value,titel:($('m_titel').value||'').trim()||null,notiz:($('m_notiz').value||'').trim()||null};
+  const rec={jahr:new Date(von+'T00:00:00').getFullYear(),datum:von,bis:(bis&&bis>von)?bis:null,kategorie:$('m_kat').value,status:($('m_status')?$('m_status').value:'fix'),titel:($('m_titel').value||'').trim()||null,notiz:($('m_notiz').value||'').trim()||null};
   const res=await sb.from('jahresplaner').insert(rec).select();
   if(res.error){toast('Fehler: '+res.error.message);return;}
   EV.push(res.data[0]);renderCal();renderModal();toast('Eingetragen ✓');
 }
 async function delEv(id){const res=await sb.from('jahresplaner').delete().eq('id',id);if(res.error){toast(res.error.message);return;}EV=EV.filter(x=>x.id!==id);renderCal();renderModal();toast('Gelöscht');}
+async function updateEv(id,field,val){
+  const e=EV.find(x=>x.id===id);if(!e)return;
+  let v=val, upd={};
+  if(field==='datum'){if(!val)return;e.jahr=new Date(val+'T00:00:00').getFullYear();upd.jahr=e.jahr;}
+  if(field==='bis'){v=val||null;if(v&&v<e.datum)v=null;}
+  if((field==='titel'||field==='notiz')&&(!val||!val.trim()))v=null;
+  upd[field]=v;
+  const res=await sb.from('jahresplaner').update(upd).eq('id',id);
+  if(res.error){toast('Fehler: '+res.error.message);return;}
+  e[field]=v;renderCal();renderModal();toast('Gespeichert ✓');
+}
+async function toggleStatus(id){const e=EV.find(x=>x.id===id);if(!e)return;const ns=e.status==='reserviert'?'fix':'reserviert';const res=await sb.from('jahresplaner').update({status:ns}).eq('id',id);if(res.error){toast(res.error.message);return;}e.status=ns;renderCal();renderModal();toast(ns==='reserviert'?'Als reserviert markiert':'Als fix markiert');}
 $('ov').addEventListener('click',e=>{if(e.target===$('ov'))closeModal();});
 
 async function load(){
