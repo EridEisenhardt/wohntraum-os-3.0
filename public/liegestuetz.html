@@ -40,7 +40,7 @@ tr.year td{background:var(--surf2);font-weight:700}
       <select id="mSel"></select>
       <input id="addN" inputmode="numeric" placeholder="Anzahl" style="width:120px">
       <button class="btn" onclick="addToMonth()">+ Hinzufügen</button>
-      <span style="font-size:12px;color:var(--muted)">addiert die Anzahl auf den gewählten Monat</span>
+      <span style="font-size:12px;color:var(--muted)">addiert die Anzahl auf den Monat – beim aktuellen Monat auch auf den heutigen Tag im Kalender</span>
     </div>
   </div>
 
@@ -174,7 +174,15 @@ async function addToMonth(){
   const v=$('mSel').value; const n=toInt($('addN').value); if(!n){toast('Bitte Anzahl eingeben');return;}
   const [y,m]=v.split('-').map(Number);
   const r=ROWS.find(x=>x.jahr===y&&x.monat===m); const neu=(r?r.anzahl:0)+n;
-  if(await upsert(y,m,neu)){$('addN').value='';toast('+'+n+' → '+MON[m-1]+' '+y);load();}
+  const ok=await upsert(y,m,neu);
+  const now=new Date();
+  if(ok && y===now.getFullYear() && m===now.getMonth()+1){
+    const dk=isoT(now.getFullYear(),now.getMonth(),now.getDate());
+    const ex=await sb.from('liegestuetz_tag').select('anzahl').eq('datum',dk).maybeSingle();
+    const curd=(ex.data?Number(ex.data.anzahl)||0:0);
+    await sb.from('liegestuetz_tag').upsert({datum:dk,anzahl:curd+n,updated_at:new Date().toISOString()},{onConflict:'datum'});
+  }
+  if(ok){$('addN').value='';toast('+'+n+' → '+MON[m-1]+' '+y+(y===now.getFullYear()&&m===now.getMonth()+1?' · heute im Kalender':''));load();}
 }
 async function updCell(id,val){
   const r=ROWS.find(x=>x.id===id); if(!r)return; const n=toInt(val);
