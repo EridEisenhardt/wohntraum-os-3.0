@@ -118,6 +118,7 @@ export const NAV = [
     { href: '/eric-privat/essen-planer', icon: 'ti-tools-kitchen-2', label: 'Essen-Planer' },
     { href: '/eric-privat/kontenmodell', icon: 'ti-wallet', label: '6 Kontenmodell' },
   ] },
+  { type: 'link', href: '/jahresplaner', icon: 'ti-calendar', label: 'Jahresplaner', area: ['vertrieb', 'hv'], mod: 'privat' },
   { type: 'link', href: '/haushaltshilfe', icon: 'ti-home-heart', label: 'Haushaltshilfe', area: ['vertrieb', 'hv'], mod: 'privat' },
   { type: 'link', href: '/konto', icon: 'ti-user-cog', label: 'Mein Konto', area: 'common' },
   { type: 'link', href: '/nutzer', icon: 'ti-shield-lock', label: 'Nutzerverwaltung', area: 'common', mod: 'nutzer' },
@@ -155,7 +156,7 @@ export const GB_MAP = {
   hausverwaltung: 'hausverwaltung', prozesse: 'hausverwaltung',
   produktivitaet: 'gf', personal: 'gf', 'eric-privat': 'gf',
   'gf-dashboard': 'gf', '/gf-dashboard': 'gf', '/beschluesse': 'gf', '/aktivitaeten': 'hausverwaltung', '/dokumente': 'buchhaltung', '/nutzer': 'gf',
-  '/hausmeisterdienst': 'hausmeisterdienst', '/haushaltshilfe': 'gf',
+  '/hausmeisterdienst': 'hausmeisterdienst', '/haushaltshilfe': 'gf', '/jahresplaner': 'gf',
 }
 export const gbOf = (n) => (n.type === 'group' ? GB_MAP[n.key] : GB_MAP[n.href])
 
