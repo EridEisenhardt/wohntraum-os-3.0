@@ -24,6 +24,7 @@ table.cal td{border:1px solid #e6e8ec;height:22px;font-size:11px;padding:0;verti
 .dn{flex:0 0 34px;padding:2px 3px;font-variant-numeric:tabular-nums;display:flex;gap:3px;color:#333}
 .dn b{min-width:15px;text-align:right}
 .we{background:#fff9c4}.hol{background:#ffd9cf}
+.ferien{background:#e3f0fb}.bridge{background:#ede7fb}
 .daywrap.today{box-shadow:inset 0 0 0 3px #e8590c;border-radius:3px}
 .daywrap.today .dn b{color:#e8590c;font-weight:800}
 .kw{color:#999;font-size:9px;margin-left:auto;padding:2px 3px}
@@ -94,9 +95,33 @@ function buildDayMap(){
     (map[k]=map[k]||[]).push({ev:{kategorie:'Geburtstag',status:'fix',titel:(g.name||'Geburtstag')+alter,notiz:g.notiz},start:true,end:true,multi:false});});
   return map;
 }
-function cell(Y,m,d,HOL,DM){
+// Schulferien Rheinland-Pfalz (Quelle: schulferien.org) – nur RLP hat weder Winter- noch Pfingstferien
+const SCHULFERIEN=[
+  ['Weihnachtsferien','2025-12-22','2026-01-07'],
+  ['Osterferien','2026-03-30','2026-04-10'],
+  ['Sommerferien','2026-06-29','2026-08-07'],
+  ['Herbstferien','2026-10-05','2026-10-16'],
+  ['Weihnachtsferien','2026-12-23','2027-01-08'],
+  ['Osterferien','2027-03-22','2027-04-02'],
+  ['Sommerferien','2027-06-28','2027-08-06'],
+  ['Herbstferien','2027-10-04','2027-10-15'],
+  ['Weihnachtsferien','2027-12-23','2028-01-07']
+];
+function ferienData(){const map={},labelDay={};
+  SCHULFERIEN.forEach(f=>{const von=new Date(f[1]+'T00:00:00'),bis=new Date(f[2]+'T00:00:00');let first=null;
+    for(let d=new Date(von);d<=bis;d=addD(d,1)){if(d.getFullYear()!==YEAR)continue;const k=keyOf(d);map[k]=f[0];if(!first)first=k;}
+    if(first)labelDay[first]=f[0];});
+  return {map:map,labelDay:labelDay};}
+function bridgeSet(HOL){const s={};
+  Object.keys(HOL).forEach(k=>{const d=new Date(k+'T00:00:00');const wd=d.getDay();
+    if(wd===2){const b=addD(d,-1);if(b.getFullYear()===YEAR)s[keyOf(b)]=1;}
+    if(wd===4){const b=addD(d,1);if(b.getFullYear()===YEAR)s[keyOf(b)]=1;}});
+  Object.keys(s).forEach(k=>{const d=new Date(k+'T00:00:00');if(HOL[k]||d.getDay()===0||d.getDay()===6)delete s[k];});
+  return s;}
+function cell(Y,m,d,HOL,DM,FER,BRG){
   if(d>new Date(Y,m+1,0).getDate())return '<td class="empty"></td>';
   const dt=new Date(Y,m,d),wd=dt.getDay(),k=iso(Y,m,d),hol=HOL[k],we=(wd===0||wd===6);
+  const inF=FER.map[k],isBridge=BRG[k];
   const evs=DM[k]||[],starts=evs.filter(e=>e.start),cont=evs.filter(e=>!e.start);
   const kw=wd===1?'<span class="kw">'+isoWeek(dt)+'</span>':'';
   let right='';
@@ -110,16 +135,19 @@ function cell(Y,m,d,HOL,DM){
     right='<div class="evs">'+parts.join('')+'</div>';
   }
   else if(hol){right='<div class="holname">'+esc(hol)+'</div>';}
-  const cls=(hol?'hol':(we?'we':''))+(k===TODAY?' today':'');
-  return '<td><div class="daywrap '+cls+'" onclick="openDay(\''+k+'\')"><div class="dn"><b>'+d+'</b>'+WD[wd]+kw+'</div>'+right+'</div></td>';
+  else if(isBridge){right='<div class="holname" style="color:#7048e8">🌉 Brückentag</div>';}
+  else if(FER.labelDay[k]){right='<div class="holname" style="color:#1971c2">🏫 '+esc(FER.labelDay[k])+'</div>';}
+  const cls=(hol?'hol':(isBridge?'bridge':(inF?'ferien':(we?'we':''))))+(k===TODAY?' today':'');
+  const tt=isBridge?' title="Möglicher Brückentag"':(inF?' title="Schulferien RLP: '+esc(inF)+'"':'');
+  return '<td><div class="daywrap '+cls+'"'+tt+' onclick="openDay(\''+k+'\')"><div class="dn"><b>'+d+'</b>'+WD[wd]+kw+'</div>'+right+'</div></td>';
 }
 function renderCal(){
-  const HOL=holidays(YEAR),DM=buildDayMap();
+  const HOL=holidays(YEAR),DM=buildDayMap(),FER=ferienData(),BRG=bridgeSet(HOL);
   function block(mstart){
     let h='<div class="block"><table class="cal"><thead><tr>';
     for(let m=mstart;m<mstart+6;m++)h+='<th>'+MONTHS[m]+'</th>';
     h+='</tr></thead><tbody>';
-    for(let d=1;d<=31;d++){h+='<tr>';for(let m=mstart;m<mstart+6;m++)h+=cell(YEAR,m,d,HOL,DM);h+='</tr>';}
+    for(let d=1;d<=31;d++){h+='<tr>';for(let m=mstart;m<mstart+6;m++)h+=cell(YEAR,m,d,HOL,DM,FER,BRG);h+='</tr>';}
     return h+'</tbody></table></div>';
   }
   $('cal').innerHTML=block(0)+block(6);
@@ -130,6 +158,8 @@ function renderTabs(){
   $('legend').innerHTML=KATS.map(k=>'<span><i style="background:'+k[1]+'"></i>'+(KICON[k[0]]||'')+' '+k[0]+'</span>').join('')
     +'<span style="margin-left:6px"><i style="background:#185fa5;border-left:3px solid #185fa5"></i>fix</span>'
     +'<span><i style="border:1px dashed #185fa5;background:repeating-linear-gradient(45deg,#185fa522,#185fa522 3px,transparent 3px,transparent 6px)"></i>⏳ reserviert</span>'
+    +'<span><i style="background:#e3f0fb"></i>🏫 Schulferien RLP</span>'
+    +'<span><i style="background:#ede7fb"></i>🌉 Brückentag</span>'
     +'<span style="color:var(--muted)">· Tag anklicken zum Eintragen</span>';
 }
 function setYear(y){YEAR=y;renderTabs();load();}
