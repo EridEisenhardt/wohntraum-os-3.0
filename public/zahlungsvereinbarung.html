@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Zahlungsvereinbarungsgenerator – Macher OS</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
 :root{
   --ink:#1a2332;--muted:#5b6b82;--line:#d8dee8;--bg:#fff;--soft:#f4f6fa;
@@ -105,6 +106,16 @@ body{font-family:'DM Sans',-apple-system,Segoe UI,Roboto,Arial,sans-serif;color:
     <div class="calcbox">Verzugszins: <b id="zinsanzeige">6,27 % p.a.</b> &nbsp;(Basiszins + Zuschlag, §§ 247, 288 BGB)</div>
     <div class="hint">Basiszinssatz wird zum 1.1. und 1.7. von der Bundesbank angepasst (Stand 01.01.2026: 1,27 %). Vor Erstellung ggf. tagesaktuell auf bundesbank.de prüfen.</div>
 
+    <div class="fld" style="margin-top:12px;background:#fff8e1;border:1px solid #ffe082;border-radius:8px;padding:10px 12px">
+      <label style="display:flex;align-items:center;gap:8px;cursor:pointer"><input type="checkbox" id="nachtrag" onchange="toggleNachtrag()"> <b>Alte / bestehende Vereinbarung nachtragen</b></label>
+      <div id="nachtragFelder" style="display:none;margin-top:10px">
+        <div class="two">
+          <div class="fld"><label>Vereinbarung ursprünglich vom</label><input type="date" id="urspr"></div>
+          <div class="fld"><label>Bereits gezahlte Raten (Anzahl)</label><input id="gezahlt" inputmode="numeric" placeholder="z. B. 4" value="0"></div>
+        </div>
+        <div class="hint">Beim Nachtragen wird die bestehende Vereinbarung dokumentiert: bereits geleistete Raten werden im Tilgungsplan als „bezahlt" markiert und die aktuelle Restforderung ausgewiesen.</div>
+      </div>
+    </div>
     <div class="fld" style="margin-top:12px"><label>Ort (für Unterschrift)</label><input id="ort" placeholder="z. B. Worms"></div>
 
     <div class="warnbox" id="warn"></div>
@@ -116,7 +127,10 @@ body{font-family:'DM Sans',-apple-system,Segoe UI,Roboto,Arial,sans-serif;color:
   <!-- Dokument -->
   <div class="docwrap">
     <div class="controls">
-      <button class="primary" onclick="window.print()">🖨 Drucken / PDF</button>
+      <button class="btn sec" onclick="zurueckZurEingabe()">◀ Zurück / Korrigieren</button>
+      <button class="primary" onclick="finalSave()">✔ Vertrag final erstellen &amp; ins Register</button>
+      <button class="btn sec" onclick="window.print()">🖨 Drucken / PDF</button>
+      <span id="saveInfo" style="font-size:12px;color:var(--muted);align-self:center"></span>
     </div>
     <div class="sheet" id="sheet">
       <div class="placeholder">Pflichtfelder ausfüllen und „Vereinbarung erzeugen" klicken.<br>Vorschau des Vertrags inkl. Anlage „Zins- und Tilgungsplan" erscheint hier.</div>
@@ -131,11 +145,31 @@ const dt=s=>{ if(!s) return '—'; const d=new Date(s); return d.toLocaleDateStr
 const numDE=v=>{ if(v==null||v==='') return NaN; return parseFloat(String(v).replace(/\./g,'').replace(',','.')); };
 const esc=s=>(s==null?'':String(s)).replace(/&/g,'&amp;').replace(/</g,'&lt;');
 
+const _sb=window.supabase.createClient('https://jqzxctfqvcwbctpjksvg.supabase.co','eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpxenhjdGZxdmN3YmN0cGprc3ZnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODIxMzA0MzIsImV4cCI6MjA5NzcwNjQzMn0.RKIbZxJdusKWWPjBJqlxZ8e1m8So02UslOg55YRsn3o');
+function zurueckZurEingabe(){ window.scrollTo({top:0,behavior:'smooth'}); const f=document.getElementById('mieter'); if(f)f.focus(); }
+async function finalSave(){
+  const warn=document.getElementById('warn'); warn.style.display='none';
+  if(!validate()){ warn.style.display='block'; warn.textContent='Bitte alle rot markierten Pflichtfelder ausfüllen.'; return; }
+  const g=id=>document.getElementById(id).value.trim();
+  const nachtrag=document.getElementById('nachtrag').checked;
+  const gezahlt=parseInt(document.getElementById('gezahlt').value,10)||0;
+  const urspr=document.getElementById('urspr').value;
+  const rec={ mieter:g('mieter'), objekt:g('objekt'), wohnung:g('whg'),
+    forderung:numDE(g('forderung'))||null, rate:numDE(g('rate'))||null,
+    basiszins:numDE(g('basis'))||null, zuschlag:numDE(g('zuschlag'))||null,
+    start_datum:document.getElementById('erste').value||null, status:'laufend', sonderzahlungen:[],
+    notiz:'Gläubiger: '+g('glaeubiger')+(nachtrag?(' · Nachtrag bestehender Vereinbarung'+(urspr?(' vom '+urspr):'')+' · '+gezahlt+' Rate(n) bereits gezahlt'):'') };
+  document.getElementById('saveInfo').textContent='Speichere …';
+  const res=await _sb.from('zahlungsvereinbarungen').insert(rec).select();
+  if(res.error){ document.getElementById('saveInfo').textContent='Fehler: '+res.error.message; return; }
+  document.getElementById('saveInfo').innerHTML='✔ Ins Register übernommen. <a href="/vermietung/zahlungsvereinbarung-register" target="_top" style="color:var(--accent);font-weight:600">Register öffnen ↗</a>';
+}
 function today(){ const d=new Date(); return d.toISOString().slice(0,10); }
 function firstNextMonth(){ const d=new Date(); const n=new Date(d.getFullYear(), d.getMonth()+1, 1); return n.toISOString().slice(0,10); }
 document.getElementById('datum').value=today();
 document.getElementById('erste').value=firstNextMonth();
 
+function toggleNachtrag(){ document.getElementById('nachtragFelder').style.display=document.getElementById('nachtrag').checked?'block':'none'; }
 function zinsSatz(){ const b=numDE(document.getElementById('basis').value)||0; const z=numDE(document.getElementById('zuschlag').value)||0; return b+z; }
 function updZins(){ document.getElementById('zinsanzeige').textContent=pct(zinsSatz())+' p.a.'; }
 ['basis','zuschlag'].forEach(id=>document.getElementById(id).addEventListener('input',updZins));
@@ -185,11 +219,19 @@ function gen(){
   const summeZahlung=plan.rows.reduce((s,r)=>s+r.zahlung,0);
   const laufzeit=plan.rows.length;
 
-  const planRows=plan.rows.map(r=>`<tr><td>${r.nr}</td><td>${r.datum.toLocaleDateString('de-DE',{month:'2-digit',year:'numeric'})}</td><td>${eur(r.zahlung)}</td><td>${eur(r.zins)}</td><td>${eur(r.tilg)}</td><td>${eur(r.rest)}</td></tr>`).join('');
+  const nachtrag=document.getElementById('nachtrag').checked;
+  const gezahlt=nachtrag?Math.max(0,Math.min(parseInt(document.getElementById('gezahlt').value,10)||0,plan.rows.length)):0;
+  const urspr=document.getElementById('urspr').value;
+  const restNow=gezahlt>0?plan.rows[gezahlt-1].rest:forderung;
+  const h1sub=nachtrag?'Nachträgliche Dokumentation einer bestehenden Ratenzahlungsvereinbarung':'über eine bestehende Forderung aus einem Mietverhältnis';
+  const introExtra=nachtrag?`<p style="background:#fff8e1;border:1px solid #ffe082;border-radius:6px;padding:8px 10px"><b>Nachtrag:</b> Diese Urkunde dokumentiert eine bereits bestehende${urspr?(`, am <b>${dt(urspr)}</b> getroffene`):''} Ratenzahlungsvereinbarung. Bislang wurden <b>${gezahlt} Rate(n)</b> geleistet; die aktuelle Restforderung beträgt <b>${eur(restNow)}</b>.</p>`:'';
+
+  const planRows=plan.rows.map(r=>{const paid=r.nr<=gezahlt;return `<tr${paid?' style="background:#eef8f2;color:#1f7a4d"':''}><td>${paid?'✓ ':''}${r.nr}</td><td>${r.datum.toLocaleDateString('de-DE',{month:'2-digit',year:'numeric'})}</td><td>${eur(r.zahlung)}</td><td>${eur(r.zins)}</td><td>${eur(r.tilg)}</td><td>${eur(r.rest)}</td></tr>`;}).join('');
 
   document.getElementById('sheet').innerHTML=`
     <h1>Ratenzahlungsvereinbarung</h1>
-    <div class="sub">über eine bestehende Forderung aus einem Mietverhältnis</div>
+    <div class="sub">${h1sub}</div>
+    ${introExtra}
 
     <div class="parties">
       <div class="p"><div class="role">Gläubiger / Vermieter</div><b>${esc(glaeubiger)}</b><br>nachfolgend „Gläubiger"</div>
