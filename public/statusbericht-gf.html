@@ -92,6 +92,7 @@ h2 .dot{width:9px;height:9px;border-radius:3px;display:inline-block}
       <div class="cat" style="padding:12px 16px 8px"><div style="font-size:12px;font-weight:600;color:var(--dim);margin-bottom:6px">📬 Mails im Postfach</div><div style="position:relative;height:260px"><canvas id="chMail"></canvas></div></div>
       <div class="cat" style="padding:12px 16px 8px"><div style="font-size:12px;font-weight:600;color:var(--dim);margin-bottom:6px">✅ Aufgaben fällig &amp; überfällig (Asana + Todoist)</div><div style="position:relative;height:260px"><canvas id="chTasks"></canvas></div></div>
       <div class="cat" style="padding:12px 16px 8px;grid-column:1/-1"><div style="font-size:12px;font-weight:600;color:var(--dim);margin-bottom:6px">🗂 Alle Eric zugewiesenen Asana-Aufgaben (offen, unabhängig von Fälligkeit)</div><div style="position:relative;height:260px"><canvas id="chGesamt"></canvas></div></div>
+      <div class="cat" style="padding:12px 16px 8px;grid-column:1/-1"><div style="font-size:12px;font-weight:600;color:var(--dim);margin-bottom:6px">🤝 Zuarbeit fürs Team — Asana-Tag „.Eric_Zuarbeit fürs Team" (offene Aufgaben, unabhängig von Zuordnung)</div><div style="position:relative;height:260px"><canvas id="chZuarbeit"></canvas></div></div>
     </div>
 
     <h2><span class="dot" style="background:var(--danger)"></span>Alle fälligen &amp; überfälligen Aufgaben</h2>
@@ -130,7 +131,7 @@ async function load(){
   render(data[0].payload, data[0].generated_at);
 }
 
-let MCHART=null, TCHART=null, GCHART=null;
+let MCHART=null, TCHART=null, GCHART=null, ZCHART=null;
 function renderMetrics(p){
   const cur = METRICS.length ? METRICS[METRICS.length-1] : null;
   const k=p.kpis||{};
@@ -139,12 +140,14 @@ function renderMetrics(p){
   const todo = cur && cur.todoist_faellig!=null ? cur.todoist_faellig : (k.todoist!=null?k.todoist:'—');
   const sum = (typeof asana==='number'&&typeof todo==='number') ? asana+todo : '—';
   const offenGes = cur && cur.asana_offen_gesamt!=null ? cur.asana_offen_gesamt : (k.asana_offen_gesamt!=null?k.asana_offen_gesamt:'—');
+  const zuarbeit = cur && cur.zuarbeit_team!=null ? cur.zuarbeit_team : (k.zuarbeit_team!=null?k.zuarbeit_team:'—');
   document.getElementById('metricKpis').innerHTML=[
     ['accent', mail, 'Mails im Postfach', 'INBOX gesamt'],
     ['', offenGes, 'Asana zugewiesen (offen)', 'alle mir zugewiesenen Aufgaben'],
     ['danger', asana, 'Asana heute + überfällig', 'heute fällig oder überfällig'],
     ['warn', todo, 'Todoist heute + überfällig', 'heute fällig oder überfällig'],
     ['', sum, 'Aufgaben fällig gesamt', 'Asana + Todoist'],
+    ['accent', zuarbeit, 'Zuarbeit fürs Team', 'Asana-Tag ·Eric_Zuarbeit fürs Team (offen)'],
   ].map(a=>`<div class="kpi ${a[0]}"><div class="l">${a[2]}</div><div class="v">${a[1]}</div><div class="h">${a[3]}</div></div>`).join('');
   drawChart();
 }
@@ -153,6 +156,7 @@ function drawChart(){
   if(MCHART){ MCHART.destroy(); MCHART=null; }
   if(TCHART){ TCHART.destroy(); TCHART=null; }
   if(GCHART){ GCHART.destroy(); GCHART=null; }
+  if(ZCHART){ ZCHART.destroy(); ZCHART=null; }
   if(!METRICS.length) return;
   const labels=METRICS.map(r=>{ const p=String(r.datum).split('-'); return p[2]+'.'+p[1]; });
   const ds=(lab,key,col,fill)=>({label:lab,data:METRICS.map(r=>r[key]),borderColor:col,backgroundColor:fill||col,tension:.25,pointRadius:3,borderWidth:2,spanGaps:true,fill:!!fill});
@@ -172,6 +176,10 @@ function drawChart(){
   const g=document.getElementById('chGesamt');
   if(g) GCHART=new Chart(g,{ type:'line', data:{ labels, datasets:[
     ds('Asana zugewiesen (offen gesamt)','asana_offen_gesamt','#6b7280','rgba(107,114,128,.12)')
+  ] }, options:opts() });
+  const z=document.getElementById('chZuarbeit');
+  if(z) ZCHART=new Chart(z,{ type:'line', data:{ labels, datasets:[
+    ds('Zuarbeit fürs Team (Tag, offen)','zuarbeit_team','#185fa5','rgba(24,95,165,.12)')
   ] }, options:opts() });
 }
 

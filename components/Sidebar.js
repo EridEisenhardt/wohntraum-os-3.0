@@ -171,6 +171,7 @@ export default function Sidebar({ user, demo, onLogout, role, perms }) {
   const [selectedCat, setSelectedCat] = useState(null)
   const [q, setQ] = useState('')
   const [favs, setFavs] = useState([])
+  const [dragFav, setDragFav] = useState(null)
   const isAdmin = role === 'admin'
 
   const has = (key) => !!(perms && Object.prototype.hasOwnProperty.call(perms, key))
@@ -212,6 +213,18 @@ export default function Sidebar({ user, demo, onLogout, role, perms }) {
       const next = prev.includes(href) ? prev.filter((h) => h !== href) : [...prev, href]
       try { localStorage.setItem('sidebar_favs', JSON.stringify(next)) } catch (er) {}
       return next
+    })
+  }
+
+  // Favoriten umsortieren: 'dragged' vor 'target' einfügen (target=null → ans Ende)
+  const moveFavBefore = (dragged, target) => {
+    if (!dragged || dragged === target) return
+    setFavs((prev) => {
+      const arr = prev.filter((h) => h !== dragged)
+      const to = target == null ? -1 : arr.indexOf(target)
+      if (to < 0) arr.push(dragged); else arr.splice(to, 0, dragged)
+      try { localStorage.setItem('sidebar_favs', JSON.stringify(arr)) } catch (er) {}
+      return arr
     })
   }
 
@@ -315,14 +328,37 @@ export default function Sidebar({ user, demo, onLogout, role, perms }) {
         })}
       </nav>
 
-      {/* Zeile 2: Favoriten */}
+      {/* Zeile 2: Favoriten (per Drag & Drop umsortierbar) */}
       {activeGb === 'fav' && (
         <nav className="catbar">
-          {favItems.length ? favItems.map((it) => (
-            <Link key={it.href} href={it.href} className={'cat' + (isActive(it) ? ' active' : '')}>
-              <i className={'ti ' + it.icon} /> {it.label}
-            </Link>
-          )) : <span style={{ padding: '10px 14px', color: 'var(--muted)', fontSize: 12.5 }}>Noch keine Favoriten – Stern ☆ in der Unterkategorie antippen.</span>}
+          {favItems.length ? (
+            <>
+              {favItems.map((it) => (
+                <Link
+                  key={it.href}
+                  href={it.href}
+                  className={'cat' + (isActive(it) ? ' active' : '')}
+                  draggable
+                  onDragStart={(e) => { setDragFav(it.href); e.dataTransfer.effectAllowed = 'move' }}
+                  onDragEnd={() => setDragFav(null)}
+                  onDragOver={(e) => { if (dragFav && dragFav !== it.href) e.preventDefault() }}
+                  onDrop={(e) => { e.preventDefault(); moveFavBefore(dragFav, it.href); setDragFav(null) }}
+                  title="Ziehen zum Umsortieren"
+                  style={{ cursor: 'grab', opacity: dragFav === it.href ? 0.4 : 1 }}
+                >
+                  <i className="ti ti-grip-vertical" style={{ opacity: 0.45, fontSize: 13, marginRight: 1 }} /> <i className={'ti ' + it.icon} /> {it.label}
+                </Link>
+              ))}
+              {dragFav && (
+                <span
+                  onDragOver={(e) => e.preventDefault()}
+                  onDrop={(e) => { e.preventDefault(); moveFavBefore(dragFav, null); setDragFav(null) }}
+                  title="Ans Ende verschieben"
+                  style={{ minWidth: 40, alignSelf: 'stretch', borderRadius: 8, border: '1px dashed var(--muted)', opacity: 0.55, margin: '4px 0' }}
+                />
+              )}
+            </>
+          ) : <span style={{ padding: '10px 14px', color: 'var(--muted)', fontSize: 12.5 }}>Noch keine Favoriten – Stern ☆ in der Unterkategorie antippen.</span>}
         </nav>
       )}
 
