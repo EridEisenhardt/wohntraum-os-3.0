@@ -50,10 +50,12 @@ a.pdf{font-size:12px;color:var(--accent);text-decoration:none}
     <input type="text" id="q" placeholder="🔍 Mieter / Objekt…" oninput="render()">
     <select id="fStatus" onchange="render()"><option value="">Alle Status</option><option>laufend</option><option>abgeschlossen</option><option>gekündigt</option><option>Verzug</option></select>
     <span class="count" id="cnt" style="font-size:12px;color:var(--muted)"></span>
+    <span style="margin-left:auto;display:flex;gap:6px"><button class="btn btn-accent" id="vList" onclick="setView('liste')">📋 Liste</button><button class="btn" id="vDetail" onclick="setView('detail')">🗂 Ratenzahlung (Detail)</button></span>
   </div>
   <div id="list"></div>
 </div>
 <div class="toast" id="toast"></div>
+<datalist id="statusDL"><option>laufend</option><option>abgeschlossen</option><option>gekündigt</option><option>Verzug</option><option>ausgesetzt</option><option>in Klärung</option><option>notariell</option></datalist>
 <script>
 const sb=window.supabase.createClient('https://jqzxctfqvcwbctpjksvg.supabase.co','eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpxenhjdGZxdmN3YmN0cGprc3ZnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODIxMzA0MzIsImV4cCI6MjA5NzcwNjQzMn0.RKIbZxJdusKWWPjBJqlxZ8e1m8So02UslOg55YRsn3o');
 const $=id=>document.getElementById(id);
@@ -62,7 +64,19 @@ function toast(m){const t=$('toast');t.textContent=m;t.classList.add('show');set
 const eur=v=>v==null||isNaN(v)?'–':new Intl.NumberFormat('de-DE',{style:'currency',currency:'EUR'}).format(v);
 const num=v=>{if(v==null||v==='')return null;const n=parseFloat(String(v).replace(/\./g,'').replace(',','.'));return isNaN(n)?null:n;};
 const ym=d=>d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0');
-let ROWS=[];
+let ROWS=[], view='liste';
+function setView(v){view=v;const a=$('vList'),b=$('vDetail');if(a)a.className='btn'+(v==='liste'?' btn-accent':'');if(b)b.className='btn'+(v==='detail'?' btn-accent':'');render();}
+function listeHTML(list){
+  let h='<div class="scroll"><table style="min-width:840px"><thead><tr><th style="text-align:left">Mieter</th><th style="text-align:left">Objekt · Whg</th><th style="text-align:left">Status</th><th>Forderung</th><th>Rate/Mon.</th><th>Laufzeit</th><th>Zinsen (Plan)</th><th>Sonderz.</th><th style="text-align:left">Anlagen</th></tr></thead><tbody>';
+  h+=list.map(r=>{const c=calcOf(r);const ok=c&&!c.withSz.fail;const lz=ok?c.withSz.rows.length+' Raten':'—';const zi=ok?eur(c.withSz.totalZins):'—';const sz=(r.sonderzahlungen||[]).filter(s=>num(s.betrag)>0).length;
+    return '<tr><td style="text-align:left;font-weight:600">'+esc(r.mieter||'')+'</td>'
+      +'<td style="text-align:left">'+esc((r.objekt||'')+(r.wohnung?' · '+r.wohnung:''))+'</td>'
+      +'<td style="text-align:left">'+esc(r.status||'')+'</td>'
+      +'<td>'+eur(Number(r.forderung)||0)+'</td>'+'<td>'+eur(Number(r.rate)||0)+'</td>'
+      +'<td>'+lz+'</td>'+'<td>'+zi+'</td>'+'<td>'+(sz||'')+'</td>'
+      +'<td style="text-align:left">'+(r.pdf_url?'<a class="pdf" href="'+esc(r.pdf_url)+'" target="_blank">📄 PDF</a> ':'')+(r.asana_url?'<a class="pdf" href="'+esc(r.asana_url)+'" target="_blank">🗂 Asana</a>':'')+'</td></tr>';}).join('');
+  return h+'</tbody></table></div>';
+}
 
 // Zins-/Tilgungsplan mit optionalen Sonderzahlungen
 function schedule(forderung,rate,jahresZins,startDate,sonder){
@@ -149,7 +163,8 @@ function card(r){
   const f=(lbl,field,val,typ,w)=>'<div class="fld"><label>'+lbl+'</label><input value="'+esc(val==null?'':val)+'" '+(typ==='n'?'inputmode="decimal"':'')+' onchange="save(\''+r.id+'\',\''+field+'\',this.value,\''+(typ||'')+'\')"></div>';
   return '<div class="card">'
     +'<div class="chead"><input class="nm" value="'+esc(r.mieter||'')+'" placeholder="Mieter" style="border:1px solid transparent;border-radius:7px;padding:4px 6px;background:transparent" onchange="save(\''+r.id+'\',\'mieter\',this.value)">'
-      +'<select style="font:inherit;font-size:12px;padding:5px 9px;border:1px solid var(--line);border-radius:20px;background:var(--surf2)" onchange="save(\''+r.id+'\',\'status\',this.value)">'+['laufend','abgeschlossen','gekündigt','Verzug'].map(s=>'<option'+(s===r.status?' selected':'')+'>'+s+'</option>').join('')+'</select>'
+      +'<input list="statusDL" value="'+esc(r.status||'')+'" placeholder="Status" title="Status (frei ergänzbar)" style="width:150px;font:inherit;font-size:12px;padding:5px 9px;border:1px solid var(--line);border-radius:20px;background:var(--surf2)" onchange="save(\''+r.id+'\',\'status\',this.value)">'
+      +(r.asana_url?'<a class="pdf" href="'+esc(r.asana_url)+'" target="_blank">🗂 Asana</a>':'')
       +(r.pdf_url?'<a class="pdf" href="'+esc(r.pdf_url)+'" target="_blank">📄 '+esc(r.pdf_name||'PDF')+'</a>':'')
       +'<label class="btn" style="padding:5px 10px;cursor:pointer">⬆︎ PDF<input type="file" accept="application/pdf" style="display:none" onchange="uploadPdf(\''+r.id+'\',this)"></label>'
       +'<button class="abtn" onclick="del(\''+r.id+'\')">✕</button></div>'
@@ -158,6 +173,7 @@ function card(r){
       +f('Forderung €','forderung',r.forderung,'n')+f('Monatl. Rate €','rate',r.rate,'n')
       +'<div class="fld"><label>Erste Rate am</label><input type="date" value="'+esc(r.start_datum)+'" onchange="save(\''+r.id+'\',\'start_datum\',this.value)"></div>'
       +f('Basiszins %','basiszins',r.basiszins,'n')+f('Zuschlag %-Pkt','zuschlag',r.zuschlag,'n')
+      +'<div class="fld" style="grid-column:span 2"><label>Asana-Aufgabe (Link)</label><input value="'+esc(r.asana_url||'')+'" placeholder="https://app.asana.com/…" onchange="save(\''+r.id+'\',\'asana_url\',this.value)"></div>'
       +f('Notiz','notiz',r.notiz)
     +'</div>'
     +'<div class="sec"><h4>Sonderzahlungen (höher als die Rate – passt Zins &amp; Tilgung an)</h4><div id="sonder_'+r.id+'"></div></div>'
@@ -174,7 +190,9 @@ function render(){
   const q=($('q').value||'').toLowerCase(), fs=$('fStatus').value;
   const list=ROWS.filter(r=>(!fs||r.status===fs)&&(!q||((r.mieter||'')+' '+(r.objekt||'')+' '+(r.wohnung||'')).toLowerCase().includes(q)));
   $('cnt').textContent=list.length+' von '+ROWS.length;
-  $('list').innerHTML=list.map(card).join('')||'<div style="color:var(--muted);padding:20px">Keine Vereinbarungen. Mit „+ Neue Vereinbarung" erfassen.</div>';
+  if(!list.length){$('list').innerHTML='<div style="color:var(--muted);padding:20px">Keine Vereinbarungen. Mit „+ Neue Vereinbarung" erfassen.</div>';renderKpis();return;}
+  if(view==='liste'){$('list').innerHTML=listeHTML(list);renderKpis();return;}
+  $('list').innerHTML=list.map(card).join('');
   list.forEach(r=>{renderSonder(r.id);renderCalc(r.id);});
   renderKpis();
 }

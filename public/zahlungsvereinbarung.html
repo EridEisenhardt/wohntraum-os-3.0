@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Zahlungsvereinbarungsgenerator – Macher OS</title>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.2/html2pdf.bundle.min.js"></script>
 <style>
 :root{
   --ink:#1a2332;--muted:#5b6b82;--line:#d8dee8;--bg:#fff;--soft:#f4f6fa;
@@ -159,10 +160,24 @@ async function finalSave(){
     basiszins:numDE(g('basis'))||null, zuschlag:numDE(g('zuschlag'))||null,
     start_datum:document.getElementById('erste').value||null, status:'laufend', sonderzahlungen:[],
     notiz:'Gläubiger: '+g('glaeubiger')+(nachtrag?(' · Nachtrag bestehender Vereinbarung'+(urspr?(' vom '+urspr):'')+' · '+gezahlt+' Rate(n) bereits gezahlt'):'') };
-  document.getElementById('saveInfo').textContent='Speichere …';
+  gen(); // Vorschau mit aktuellen Werten sicherstellen
+  const info=document.getElementById('saveInfo'); info.textContent='Speichere …';
   const res=await _sb.from('zahlungsvereinbarungen').insert(rec).select();
-  if(res.error){ document.getElementById('saveInfo').textContent='Fehler: '+res.error.message; return; }
-  document.getElementById('saveInfo').innerHTML='✔ Ins Register übernommen. <a href="/vermietung/zahlungsvereinbarung-register" target="_top" style="color:var(--accent);font-weight:600">Register öffnen ↗</a>';
+  if(res.error){ info.textContent='Fehler: '+res.error.message; return; }
+  const id=res.data&&res.data[0]&&res.data[0].id;
+  // Vertrag als PDF erzeugen und übernehmen
+  try{
+    if(id && window.html2pdf){
+      info.textContent='Erzeuge Vertrags-PDF …';
+      const el=document.getElementById('sheet');
+      const blob=await html2pdf().set({margin:8,image:{type:'jpeg',quality:0.95},html2canvas:{scale:2,useCORS:true},jsPDF:{unit:'mm',format:'a4',orientation:'portrait'},pagebreak:{mode:['css','legacy']}}).from(el).outputPdf('blob');
+      const fname='Ratenzahlungsvereinbarung_'+(g('mieter')||'Mieter').replace(/[^a-zA-Z0-9]/g,'_')+'.pdf';
+      const path='zahlungsvereinbarungen/'+id+'_'+Date.now()+'.pdf';
+      const up=await _sb.storage.from('darlehen').upload(path,blob,{contentType:'application/pdf',upsert:true});
+      if(!up.error){ const url=_sb.storage.from('darlehen').getPublicUrl(path).data.publicUrl; await _sb.from('zahlungsvereinbarungen').update({pdf_url:url,pdf_name:fname}).eq('id',id); }
+    }
+  }catch(e){}
+  info.innerHTML='✔ Ins Register übernommen (inkl. Vertrags-PDF). <a href="/vermietung/zahlungsvereinbarung-register" target="_top" style="color:var(--accent);font-weight:600">Register öffnen ↗</a>';
 }
 function today(){ const d=new Date(); return d.toISOString().slice(0,10); }
 function firstNextMonth(){ const d=new Date(); const n=new Date(d.getFullYear(), d.getMonth()+1, 1); return n.toISOString().slice(0,10); }
