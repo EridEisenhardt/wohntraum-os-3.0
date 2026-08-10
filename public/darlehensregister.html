@@ -36,7 +36,8 @@ tbody tr:hover td{background:#fafbfc}
 <div class="main">
   <div class="kpis" id="kpis"></div>
   <div class="tabs" id="tabs"></div>
-  <div class="card"><div class="card-hd"><span>Darlehen — chronologisch nach interner Nummer</span><span class="crumb" id="cnt"></span></div>
+  <div class="card"><div class="card-hd"><span>Darlehen — chronologisch nach interner Nummer</span><span class="crumb" id="cnt"></span>
+    <span style="margin-left:auto;display:flex;gap:6px"><button id="vList" class="tab active" onclick="setView('liste')">📋 Liste</button><button id="vTab" class="tab" onclick="setView('tabelle')">✎ Bearbeiten</button></span></div>
     <div class="tablewrap" id="reg"><div class="empty" id="loading">Lädt…</div></div></div>
   <div class="foot">Alle Darlehen werden mit ihrer internen Darlehensnummer geführt. Über den Status-Klick lässt sich ein Darlehen zwischen <b>Aktiv</b> und <b>Abgeschlossen</b> umschalten — abgeschlossene bleiben zur chronologischen Nachverfolgung erhalten. Stammdaten werden unter „Darlehen" gepflegt.</div>
 </div><div class="toast" id="toast"></div>
@@ -51,7 +52,24 @@ const STATUS_STORNO='Storniert';
 function isDone(s){s=(s||'').toLowerCase();return s.startsWith('beendet')||s.startsWith('abgeschl')||s.includes('zurückgef');}
 function isStorno(s){return /storniert/i.test(s||'');}
 function statusOf(r){return isStorno(r.status)?STATUS_STORNO:(isDone(r.status)?STATUS_DONE:'Aktiv');}
-let ROWS=[],DOK={},filt='';
+let ROWS=[],DOK={},filt='',view='liste';
+function setView(v){view=v;const l=$('vList'),t=$('vTab');if(l)l.classList.toggle('active',v==='liste');if(t)t.classList.toggle('active',v==='tabelle');render();}
+function stBadge(r){const c=isStorno(r.status)?'#c0392b':(isDone(r.status)?'#6b7280':'#1f7a4d');const bg=isStorno(r.status)?'#fdeeec':(isDone(r.status)?'#f1f3f6':'#eef8f2');const t=isStorno(r.status)?'Storniert':(isDone(r.status)?'Beendet':'Aktiv');return '<span style="font-size:11px;font-weight:700;color:'+c+';background:'+bg+';border-radius:20px;padding:2px 9px;white-space:nowrap">'+t+'</span>';}
+function listeHTML(list){
+  return '<table><thead><tr><th>Nr.</th><th>Status</th><th>Bezeichnung</th><th>Darlehensgeber</th><th>Objekt</th><th>Auszahlung</th><th class="eur">Betrag</th><th class="eur">Saldo</th><th class="eur">Zins %</th><th>Anlage</th></tr></thead><tbody>'
+    +list.map(r=>'<tr class="'+(isStorno(r.status)?'storno':(isDone(r.status)?'done':''))+'">'
+      +'<td class="dnr" style="font-weight:700">'+esc(r.dnr_intern||'')+'</td>'
+      +'<td>'+stBadge(r)+'</td>'
+      +'<td>'+esc(r.bez||'')+'</td>'
+      +'<td>'+esc(r.geber||'')+'</td>'
+      +'<td>'+esc(r.obj||'')+'</td>'
+      +'<td>'+fmtD(r.aus)+'</td>'
+      +'<td class="eur">'+eur(r.betrag)+'</td>'
+      +'<td class="eur">'+eur(r.aktuell)+'</td>'
+      +'<td class="eur">'+(r.zins!=null?String(r.zins).replace('.',',')+' %':'—')+'</td>'
+      +'<td>'+anlageCell(r)+'</td></tr>').join('')
+    +'</tbody></table>';
+}
 const TABS=[['','Alle'],['aktiv','Aktiv'],['done','Beendet'],['storno','Storniert']];
 function sortKey(r){const n=parseInt(String(r.dnr_intern||'').replace(/\D/g,''),10);return isNaN(n)?9e9:n;}
 async function load(){
@@ -83,6 +101,7 @@ function render(){
     +'Interne Darlehensnr.: fortlaufende 3-stellige Nummer (001, 002, …). Die nächste freie Nummer vergibt der Darlehensgenerator automatisch (höchste vorhandene + 1) – nächste frei: <b>'+String((ROWS.reduce((m,r)=>{var n=parseInt(String(r.dnr_intern||"").replace(/\\D/g,""),10);return isNaN(n)?m:Math.max(m,n);},0))+1).padStart(3,"0")+'</b>.<br>'
     +'Bank-Ablage der Vertragsdokumente: <code>50_[interne Nr.]_[Dokumenttyp]_[Objekt]_[YYYY-MM-DD]_[Betrag]_[Bank]</code>.<br>'
     +'<span style="color:var(--muted,#6b7280)">Alle Felder unten sind manuell editierbar – Änderungen sind sofort gespeichert und für die nächste Anwendung aktuell.</span></div>';
+  if(view==='liste'){$('reg').innerHTML=syst+listeHTML(list);return;}
   $('reg').innerHTML=syst+'<table><thead><tr><th>Interne Nr.</th><th>Status</th><th>Bank-Nr.</th><th>Bezeichnung</th><th>Zweck (Verwendungszweck)</th><th>Darlehensgeber</th><th>Darlehensnehmer</th><th>Auszahlung</th><th class="eur">Betrag</th><th class="eur">Aktueller Saldo</th><th class="eur">Zins %</th><th>Anlage</th><th></th></tr></thead><tbody>'
    +list.map(r=>`<tr class="${isStorno(r.status)?'storno':(isDone(r.status)?'done':'')}">
      <td class="dnr"><input value="${esc(r.dnr_intern||'')}" style="width:60px;font-weight:700" onchange="upd('${r.id}','dnr_intern',this.value)"></td>
