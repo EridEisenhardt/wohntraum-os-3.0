@@ -48,6 +48,23 @@ td input:focus,td select:focus,td textarea:focus{border-color:var(--accent);back
 
 <div class="main">
   <div class="card">
+    <div class="card-hd">
+      <span>🧭 Entscheidungslogik – Basis des Mahnprozesses</span>
+      <button class="btn sec sm" onclick="copyLogic()">Mermaid kopieren</button>
+    </div>
+    <div class="mv" id="logicmv"></div>
+    <div class="legend">
+      <span><span class="sw" style="background:#e6f4ec"></span>Start / Ende</span>
+      <span><span class="sw" style="background:#dbe7f4"></span>Aktion / Maßnahme</span>
+      <span><span class="sw" style="background:#fdf1e0"></span>Entscheidung</span>
+      <span>🟢 langjährig/kulant · 🟡 Standard · 🔴 schnelle Eskalation</span>
+    </div>
+    <div class="card-bd"><div class="hint">
+      Feste Referenz: Diese Logik steuert die Empfehlung „Nächster Schritt" im Mahnregister. Entscheidungspunkte: <b>Ausstandsart</b> (Miete/Betriebskosten/Kaution), <b>noch Eigentümer?</b> (verkauft → 1 Mahnung + Anruf → Inkasso), <b>Ampel</b> (Härtegrad) und <b>Zahlungsvereinbarung</b> (bei ausbleibender Rate: rot → Inkasso, gelb → 1 Mahnung/Jahr, grün → kulant). Hinweis: rechtliche Schritte (Kündigung/Räumung/Inkasso) im Zweifel anwaltlich prüfen.
+    </div></div>
+  </div>
+
+  <div class="card">
     <div class="card-hd">Ablauf – so läuft der Mahnprozess</div>
     <div class="mv" id="mv"></div>
     <div class="legend">
@@ -90,6 +107,60 @@ mermaid.initialize({startOnLoad:false,securityLevel:'loose',flowchart:{useMaxWid
   themeVariables:{fontFamily:'Inter,system-ui,sans-serif',fontSize:'13px',lineColor:'#8b95a1',primaryTextColor:'#1c2024'}});
 
 const $=id=>document.getElementById(id);
+const LOGIC=`flowchart TD
+  A([Zahlungsausstand festgestellt]):::se --> ART[/Ausstandsart bestimmen:<br/>Miete · Betriebskosten · Kaution/]:::io
+  ART --> OWN{Noch Eigentümer<br/>des Objekts?}:::dec
+
+  OWN -->|Nein – verkauft| S1[1. Mahnung]:::st
+  S1 --> S2[Telefonischer Kontakt / Anruf]:::st
+  S2 --> S3[Ans Inkasso übergeben]:::st
+  S3 --> ENDE([Vorgang abgeschlossen]):::se
+
+  OWN -->|Ja| AMP{Ampel-Einstufung<br/>nach Mieterhistorie}:::dec
+
+  AMP -->|🟢 Grün · langjährig, kulant| G1[Zahlungsvereinbarung anbieten]:::st
+  G1 --> ZV{Zahlungsvereinbarung<br/>geschlossen?}:::dec
+
+  AMP -->|🟡 Gelb · Standard| Y1[1. Mahnung]:::st
+  Y1 --> YP1{Zahlung erfolgt?}:::dec
+  YP1 -->|Ja| ENDE
+  YP1 -->|Nein| Y2[2. Mahnung]:::st
+  Y2 --> YP2{Zahlung erfolgt?}:::dec
+  YP2 -->|Ja| ENDE
+  YP2 -->|Nein| Y3[3. / letzte Mahnung]:::st
+  Y3 --> YP3{Zahlung oder<br/>Ratenzahlung?}:::dec
+  YP3 -->|Ratenzahlung| G1
+  YP3 -->|Nein| INK[Ans Inkasso übergeben]:::st
+  INK --> ENDE
+
+  AMP -->|🔴 Rot · Eskalation| R1[1. Mahnung + Anruf]:::st
+  R1 --> RP{Zahlung erfolgt?}:::dec
+  RP -->|Ja| ENDE
+  RP -->|Nein| R2[Kündigung androhen]:::st
+  R2 --> R3[Kündigung aussprechen]:::st
+  R3 --> R4[Räumungsklage]:::st
+  R4 --> INK
+
+  ZV -->|Nein| AMP
+  ZV -->|Ja| ZVP{Raten werden<br/>eingehalten?}:::dec
+  ZVP -->|Ja – bis Tilgung| ENDE
+  ZVP -->|Nein – Rate ausgeblieben| ZVA{Ampel bei<br/>ausbleibender Rate}:::dec
+  ZVA -->|🔴 Rot| INK
+  ZVA -->|🟡 Gelb| YJ[Eine Mahnung pro Jahr]:::st
+  YJ --> ENDE
+  ZVA -->|🟢 Grün| GK[Kontakt · neue Ratenzahlung]:::st
+  GK --> ZV
+
+  classDef se fill:#e6f4ec,stroke:#1f7a4d,stroke-width:1px;
+  classDef st fill:#dbe7f4,stroke:#185fa5,stroke-width:1px;
+  classDef dec fill:#fdf1e0,stroke:#b45309,stroke-width:1px;
+  classDef io fill:#f1f3f6,stroke:#6b7280,stroke-width:1px;`;
+async function renderLogic(){
+  try{const{svg}=await mermaid.render('logicmmd'+(++svgId),LOGIC);$('logicmv').innerHTML=svg;}
+  catch(e){$('logicmv').innerHTML='<div class="empty">Diagramm konnte nicht gezeichnet werden.</div>';}
+}
+function copyLogic(){navigator.clipboard.writeText(LOGIC).then(()=>alert('Mermaid-Code der Entscheidungslogik kopiert.'),()=>prompt('Mermaid-Code:',LOGIC));}
+window.copyLogic=copyLogic;
 const TYPEN=[['start','Start'],['schritt','Schritt'],['entscheidung','Entscheidung'],['ende','Ende']];
 const PERS=['','Eric','Ramona','Jürgen','Stephan','Extern'];
 const AKT=[['','— keine —'],['/finance/liquiditaetsplanung','Liquiditätsplanung'],['/vermietung/zahlungsvereinbarung','Ratenzahlung'],['/controlling/nahaus-rechnungen','Rechnungen Unternehmen'],['/crm','CRM']];
@@ -206,7 +277,7 @@ window.upd=upd; window.addStep=addStep; window.delStep=delStep; window.move=move
 (async()=>{
   const{data:{session}}=await sb.auth.getSession();
   if(!session){document.querySelector('.main').innerHTML='<div class="empty" style="padding:60px">Bitte zuerst im OS einloggen.</div>';return;}
-  load();
+  renderLogic(); load();
 })();
 </script>
 </body></html>
