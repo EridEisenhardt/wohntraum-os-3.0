@@ -69,6 +69,13 @@ td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
       </div>
       <div class="fld"><label>Ampel / Härtegrad (Mieterbewertung)</label>
         <select id="ampel" onchange="updEigentumHinweis()"><option value="grün">🟢 Grün – guter/langjähriger Mieter (kulant)</option><option value="gelb" selected>🟡 Gelb – Standard</option><option value="rot">🔴 Rot – schnelle Eskalation</option></select></div>
+      <div class="fld" style="background:#f1f3f6;border:1px solid var(--line,#e6e8ec);border-radius:8px;padding:10px 12px">
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer"><input type="checkbox" id="inZv" onchange="updEigentumHinweis()"> Mietschulden in <b>Zahlungsvereinbarung</b> umgewandelt</label>
+        <div id="zvFelder" style="display:none;margin-top:8px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+          <input id="zvUrl" placeholder="Link zur Zahlungsvereinbarung (optional)" style="flex:1;min-width:200px;font:inherit;font-size:13px;padding:6px 8px;border:1px solid var(--line,#e6e8ec);border-radius:7px">
+          <a class="btn sm" href="/vermietung/zahlungsvereinbarung-register" target="_top" style="text-decoration:none">↗ Register öffnen</a>
+        </div>
+      </div>
       <div id="eigentumHinweis" style="background:#eef4fb;border:1px solid #cfe0f2;border-radius:8px;padding:8px 12px;font-size:12.5px;margin-bottom:10px"></div>
       <div class="row">
         <div class="fld"><label>Offener Betrag (€)</label><input id="betrag" inputmode="decimal" oninput="preview()" placeholder="z. B. 842,00"></div>
@@ -137,11 +144,17 @@ const STATUS=['Erstellt','Versandt','In Klärung','Bezahlt','Storniert','Erledig
 const STATUSCLS={'Erstellt':'s-Erstellt','Versandt':'s-Versandt','In Klärung':'s-InKlärung','Bezahlt':'s-Bezahlt','Storniert':'s-Storniert','Erledigt':'s-Erledigt'};
 const AMPELDOT={'grün':'🟢','gelb':'🟡','rot':'🔴'};
 function updEigentumHinweis(){
-  var e=($('eigentum')&&$('eigentum').value)||'Eigentümer', a=($('ampel')&&$('ampel').value)||'gelb', parts=[];
+  var e=($('eigentum')&&$('eigentum').value)||'Eigentümer', a=($('ampel')&&$('ampel').value)||'gelb';
+  var zv=$('inZv')&&$('inZv').checked; if($('zvFelder'))$('zvFelder').style.display=zv?'flex':'none';
+  var parts=[];
   if(e==='verkauft')parts.push('<b>Objekt bereits verkauft:</b> nach <b>einer Mahnung + telefonischer Kontaktaufnahme</b> geht die Forderung direkt ans <b>Inkasso</b> – keine weiteren Mahnstufen.');
   if(a==='rot')parts.push('🔴 <b>Rot:</b> schnelle Eskalation – Kündigung, Räumung und Inkasso zügig einleiten.');
   else if(a==='grün')parts.push('🟢 <b>Grün:</b> guter/langjähriger Mieter – kulant, längere Fristen, Ratenzahlung anbieten.');
   else parts.push('🟡 <b>Gelb:</b> Standardvorgehen nach den Mahnstufen.');
+  if(zv){
+    var esk=a==='rot'?'bei <b>Rot</b> direkt ans <b>Inkasso</b>':(a==='gelb'?'bei <b>Gelb</b> eine <b>Mahnung pro Jahr</b>':'bei <b>Grün</b> kulant – Kontaktaufnahme und neue Ratenzahlung vereinbaren');
+    parts.push('📄 <b>Zahlungsvereinbarung aktiv.</b> Bei <b>ausbleibender Ratenzahlung</b>: '+esk+'.');
+  }
   var box=$('eigentumHinweis'); if(box)box.innerHTML='Empfohlenes Vorgehen: '+parts.join(' &nbsp;·&nbsp; ');
 }
 let REG=[],IBANS=[],SELIB='',ibEditId='';
@@ -289,7 +302,7 @@ async function save(){
   else{ pdfUrl=sb.storage.from('mahnungen').getPublicUrl(path).data.publicUrl; }
   var row={nummer:n,datum:$('datum').value||new Date().toISOString().slice(0,10),empfaenger:$('emp').value,anschrift:$('anschrift').value,
     objekt:$('objekt').value,we:$('we').value,betrag:parseNum($('betrag').value),mahnstufe:$('stufe').value,
-    ausstand_art:$('ausstand').value,eigentum_status:$('eigentum').value,ampel:$('ampel').value,
+    ausstand_art:$('ausstand').value,eigentum_status:$('eigentum').value,ampel:$('ampel').value,in_zv:$('inZv').checked,zv_url:($('zvUrl').value||'').trim()||null,
     betreff:$('betreff').value,text:$('text').value,frist:$('frist').value||null,status:'Erstellt',pdf_url:pdfUrl,pdf_name:fn};
   var res=await sb.from('mahn_register').insert(row).select();
   if(res.error){toast('Fehler: '+res.error.message);return;}
@@ -310,7 +323,7 @@ function renderReg(){
     +'<td>'+esc(deDate(r.datum))+'</td>'
     +'<td>'+esc(r.empfaenger||'—')+'</td>'
     +'<td>'+esc((r.objekt||'')+(r.we?' · '+r.we:''))+'</td>'
-    +'<td>'+(AMPELDOT[r.ampel]||'')+' '+esc(r.ausstand_art||'—')+'</td>'
+    +'<td>'+(AMPELDOT[r.ampel]||'')+' '+esc(r.ausstand_art||'—')+(r.in_zv?' <a href="'+esc(r.zv_url||'/vermietung/zahlungsvereinbarung-register')+'" target="_top" class="pill s-Bezahlt" style="text-decoration:none">📄 ZV</a>':'')+'</td>'
     +'<td>'+(r.eigentum_status==='verkauft'?'<span class="pill s-Storniert">verkauft</span>':esc(r.eigentum_status||'—'))+'</td>'
     +'<td class="num">'+eur(Number(r.betrag))+'</td>'
     +'<td>'+esc(r.mahnstufe||'')+'</td>'
