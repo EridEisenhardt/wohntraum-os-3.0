@@ -65,6 +65,7 @@ const eur=v=>v==null||isNaN(v)?'–':new Intl.NumberFormat('de-DE',{style:'curre
 const num=v=>{if(v==null||v==='')return null;const n=parseFloat(String(v).replace(/\./g,'').replace(',','.'));return isNaN(n)?null:n;};
 const ym=d=>d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0');
 let ROWS=[], view='liste';
+function extUrl(u){u=(u||'').trim();if(!u)return '';return /^https?:\/\//i.test(u)?u:'https://'+u;}
 function setView(v){view=v;const a=$('vList'),b=$('vDetail');if(a)a.className='btn'+(v==='liste'?' btn-accent':'');if(b)b.className='btn'+(v==='detail'?' btn-accent':'');render();}
 function openDetail(id){setView('detail');setTimeout(function(){const box=document.getElementById('sonder_'+id);if(box){const c=box.closest('.card');if(c){c.scrollIntoView({behavior:'smooth',block:'center'});c.style.boxShadow='0 0 0 2px var(--accent)';setTimeout(function(){c.style.boxShadow='';},1600);}}},60);}
 function listeHTML(list){
@@ -76,29 +77,33 @@ function listeHTML(list){
       +'<td>'+eur(Number(r.forderung)||0)+'</td>'+'<td>'+eur(Number(r.rate)||0)+'</td>'
       +'<td>'+lz+'</td>'+'<td>'+zi+'</td>'
       +'<td>'+(sz?'<span style="cursor:pointer;color:var(--accent);font-weight:600" onclick="openDetail(\''+r.id+'\')" title="Sonderzahlungen bearbeiten">'+sz+' ✎</span>':'0')+'</td>'
-      +'<td style="text-align:left">'+(r.pdf_url?'<a class="pdf" href="'+esc(r.pdf_url)+'" target="_blank">📄 PDF</a> ':'')+(r.asana_url?'<a class="pdf" href="'+esc(r.asana_url)+'" target="_blank">🗂 Asana</a>':'')+'</td>'
+      +'<td style="text-align:left">'+(r.pdf_url?'<a class="pdf" href="'+esc(r.pdf_url)+'" target="_blank">📄 PDF</a> ':'')+(r.asana_url?'<a class="pdf" href="'+esc(extUrl(r.asana_url))+'" target="_blank" rel="noopener">🗂 Asana öffnen ↗</a>':'')+'</td>'
       +'<td><button class="btn" style="padding:4px 9px;font-size:12px" onclick="openDetail(\''+r.id+'\')">✎ Bearbeiten</button></td></tr>';}).join('');
   return h+'</tbody></table></div>';
 }
 
-// Zins-/Tilgungsplan mit optionalen Sonderzahlungen
+// Zins-/Tilgungsplan mit optionalen Sonderzahlungen.
+// Sonderzahlung "zinsen" (Standard): zusätzliche Zinszahlung, reduziert NICHT die Hauptforderung → keine Annuitäten-Reduzierung.
+// Sonderzahlung "tilgung": reduziert die Hauptforderung → verkürzt Laufzeit/Zins.
 function schedule(forderung,rate,jahresZins,startDate,sonder){
-  const i=(jahresZins||0)/100/12; const smap={};
-  (sonder||[]).forEach(s=>{const b=num(s.betrag);if(s.datum&&b>0){const d=new Date(s.datum+'T00:00:00');smap[ym(d)]=(smap[ym(d)]||0)+b;}});
-  let R=forderung, rows=[], d=new Date(startDate), guard=0, totalZins=0;
+  const i=(jahresZins||0)/100/12; const r2=x=>Math.round(x*100)/100;
+  const smapT={},smapZ={};
+  (sonder||[]).forEach(s=>{const b=num(s.betrag);if(s.datum&&b>0){const k=ym(new Date(s.datum+'T00:00:00'));if((s.art||'zinsen')==='tilgung')smapT[k]=(smapT[k]||0)+b;else smapZ[k]=(smapZ[k]||0)+b;}});
+  let R=forderung, rows=[], d=new Date(startDate), guard=0, totalZins=0, totalZinsSonder=0;
   while(R>0.005 && guard++<600){
-    const zins=Math.round(R*i*100)/100;
-    const sz=smap[ym(d)]||0;
-    let zahlung=rate+sz;
-    let tilg=Math.round((zahlung-zins)*100)/100;
-    if(tilg<=0) return {rows,totalZins,fail:true};
-    if(tilg>R){ tilg=R; zahlung=Math.round((tilg+zins)*100)/100; }
-    R=Math.round((R-tilg)*100)/100;
-    totalZins+=zins;
-    rows.push({nr:rows.length+1,datum:new Date(d),zahlung,zins,tilg,rest:R,sz});
+    const k=ym(d);
+    const zins=r2(R*i);
+    const szT=smapT[k]||0, szZ=smapZ[k]||0;
+    const tilgReg=r2(rate-zins);
+    if(tilgReg<=0 && szT<=0) return {rows,totalZins,fail:true};
+    let tilg=(tilgReg>0?tilgReg:0)+szT;
+    if(tilg>R) tilg=R;
+    R=r2(R-tilg);
+    totalZins+=zins; totalZinsSonder+=szZ;
+    rows.push({nr:rows.length+1,datum:new Date(d),zahlung:r2(zins+tilg+szZ),zins:r2(zins+szZ),tilg:r2(tilg),rest:R,szT:szT,szZ:szZ,sz:szT+szZ});
     d.setMonth(d.getMonth()+1);
   }
-  return {rows,totalZins:Math.round(totalZins*100)/100,fail:false};
+  return {rows,totalZins:r2(totalZins),totalZinsSonder:r2(totalZinsSonder),fail:false};
 }
 
 async function save(id,field,val,typ){
@@ -147,13 +152,13 @@ function renderCalc(id){
   let res='<div class="res">'
     +'<span>Verzugszins: <b>'+c.zins.toLocaleString('de-DE',{minimumFractionDigits:2,maximumFractionDigits:2})+' % p.a.</b></span>'
     +'<span>Laufzeit: <b>'+w.rows.length+' Raten</b></span>'
-    +'<span>Zinsen gesamt: <b>'+eur(w.totalZins)+'</b></span>'
+    +'<span>Zinsen gesamt: <b>'+eur(Math.round((w.totalZins+(w.totalZinsSonder||0))*100)/100)+'</b></span>'
     +'<span>letzte Rate: <b>'+eur(last.zahlung)+'</b> ('+last.datum.toLocaleDateString('de-DE',{month:'2-digit',year:'numeric'})+')</span>'
-    +(spar!=null&&spar>0?'<span style="color:var(--green)">durch Sonderzahlungen: <b>−'+eur(spar)+' Zinsen · '+monSpar+' Monate kürzer</b></span>':'')
+    +(spar!=null&&spar>0?'<span style="color:var(--green)">durch Tilgungs-Sonderzahlungen: <b>−'+eur(spar)+' Zinsen · '+monSpar+' Monate kürzer</b></span>':'')
     +'</div>';
-  const rows=w.rows.map(x=>'<tr'+(x.sz>0?' class="sz-row"':'')+'><td>'+x.nr+'</td><td>'+x.datum.toLocaleDateString('de-DE',{month:'2-digit',year:'numeric'})+'</td><td>'+eur(x.zahlung)+(x.sz>0?' <span style="font-size:10px">(+'+eur(x.sz)+' Sonder)</span>':'')+'</td><td>'+eur(x.zins)+'</td><td>'+eur(x.tilg)+'</td><td>'+eur(x.rest)+'</td></tr>').join('');
-  const sumZ=w.rows.reduce((s,x)=>s+(x.zahlung||0),0), sumT=w.rows.reduce((s,x)=>s+(x.tilg||0),0);
-  const sumRow='<tr style="font-weight:700;border-top:2px solid var(--accent);background:#eef4fb"><td style="text-align:left;font-size:15px">∑</td><td style="text-align:left">Summe (gesamte Laufzeit)</td><td>'+eur(Math.round(sumZ*100)/100)+'</td><td>'+eur(w.totalZins)+'</td><td>'+eur(Math.round(sumT*100)/100)+'</td><td>'+eur(0)+'</td></tr>';
+  const rows=w.rows.map(x=>{const lbl=(x.szT>0?' <span style="font-size:10px">(+'+eur(x.szT)+' Tilgung)</span>':'')+(x.szZ>0?' <span style="font-size:10px">(+'+eur(x.szZ)+' Zinsen)</span>':'');return '<tr'+(x.sz>0?' class="sz-row"':'')+'><td>'+x.nr+'</td><td>'+x.datum.toLocaleDateString('de-DE',{month:'2-digit',year:'numeric'})+'</td><td>'+eur(x.zahlung)+lbl+'</td><td>'+eur(x.zins)+'</td><td>'+eur(x.tilg)+'</td><td>'+eur(x.rest)+'</td></tr>';}).join('');
+  const sumZ=w.rows.reduce((s,x)=>s+(x.zahlung||0),0), sumT=w.rows.reduce((s,x)=>s+(x.tilg||0),0), sumZins=w.rows.reduce((s,x)=>s+(x.zins||0),0);
+  const sumRow='<tr style="font-weight:700;border-top:2px solid var(--accent);background:#eef4fb"><td style="text-align:left;font-size:15px">∑</td><td style="text-align:left">Summe (gesamte Laufzeit)</td><td>'+eur(Math.round(sumZ*100)/100)+'</td><td>'+eur(Math.round(sumZins*100)/100)+'</td><td>'+eur(Math.round(sumT*100)/100)+'</td><td>'+eur(0)+'</td></tr>';
   res+='<details style="margin-top:8px"><summary style="cursor:pointer;font-size:12.5px;color:var(--accent)">Zins- und Tilgungsplan ('+w.rows.length+' Raten)</summary>'
     +'<div class="scroll"><table><thead><tr><th>Nr.</th><th>Fällig</th><th>Zahlung</th><th>Zinsen</th><th>Tilgung</th><th>Restforderung</th></tr></thead><tbody>'+rows+sumRow+'</tbody></table></div></details>';
   box.innerHTML=res;
@@ -161,16 +166,19 @@ function renderCalc(id){
 function renderSonder(id){
   const r=ROWS.find(x=>x.id===id);const box=document.getElementById('sonder_'+id);if(!box)return;
   const arr=r.sonderzahlungen||[];
-  box.innerHTML=arr.map((s,i)=>'<div class="sz"><input type="date" value="'+esc(s.datum)+'" onchange="updSonder(\''+id+'\','+i+',\'datum\',this.value)"><input inputmode="decimal" placeholder="Betrag €" value="'+esc(s.betrag)+'" style="width:120px" onchange="updSonder(\''+id+'\','+i+',\'betrag\',this.value)"><button class="abtn" onclick="delSonder(\''+id+'\','+i+')">✕</button></div>').join('')
-    +'<button class="btn" style="padding:5px 10px;margin-top:4px" onclick="addSonder(\''+id+'\')">+ Sonderzahlung</button>';
+  box.innerHTML=arr.map((s,i)=>{const art=s.art||'zinsen';return '<div class="sz"><input type="date" value="'+esc(s.datum)+'" onchange="updSonder(\''+id+'\','+i+',\'datum\',this.value)"><input inputmode="decimal" placeholder="Betrag €" value="'+esc(s.betrag)+'" style="width:110px" onchange="updSonder(\''+id+'\','+i+',\'betrag\',this.value)">'
+    +'<select style="font:inherit;font-size:13px;padding:5px 8px;border:1px solid var(--line);border-radius:7px;background:var(--surf2)" onchange="updSonder(\''+id+'\','+i+',\'art\',this.value)"><option value="zinsen"'+(art==='zinsen'?' selected':'')+'>auf Zinsen (Standard)</option><option value="tilgung"'+(art==='tilgung'?' selected':'')+'>auf Hauptforderung (Tilgung)</option></select>'
+    +'<button class="abtn" onclick="delSonder(\''+id+'\','+i+')">✕</button></div>';}).join('')
+    +'<button class="btn" style="padding:5px 10px;margin-top:4px" onclick="addSonder(\''+id+'\')">+ Sonderzahlung</button>'
+    +'<div style="font-size:11px;color:var(--muted);margin-top:6px">„auf Zinsen" (Standard): zusätzliche Zinszahlung, die Hauptforderung bleibt bestehen (keine Annuitäten-Reduzierung). „auf Tilgung": reduziert die Hauptforderung und verkürzt die Laufzeit.</div>';
 }
 function card(r){
   const f=(lbl,field,val,typ,w)=>'<div class="fld"><label>'+lbl+'</label><input value="'+esc(val==null?'':val)+'" '+(typ==='n'?'inputmode="decimal"':'')+' onchange="save(\''+r.id+'\',\''+field+'\',this.value,\''+(typ||'')+'\')"></div>';
   return '<div class="card">'
     +'<div class="chead"><input class="nm" value="'+esc(r.mieter||'')+'" placeholder="Mieter" style="border:1px solid transparent;border-radius:7px;padding:4px 6px;background:transparent" onchange="save(\''+r.id+'\',\'mieter\',this.value)">'
       +'<input list="statusDL" value="'+esc(r.status||'')+'" placeholder="Status" title="Status (frei ergänzbar)" style="width:150px;font:inherit;font-size:12px;padding:5px 9px;border:1px solid var(--line);border-radius:20px;background:var(--surf2)" onchange="save(\''+r.id+'\',\'status\',this.value)">'
-      +(r.asana_url?'<a class="pdf" href="'+esc(r.asana_url)+'" target="_blank">🗂 Asana</a>':'')
-      +(r.pdf_url?'<a class="pdf" href="'+esc(r.pdf_url)+'" target="_blank">📄 '+esc(r.pdf_name||'PDF')+'</a>':'')
+      +(r.asana_url?'<a class="pdf" href="'+esc(extUrl(r.asana_url))+'" target="_blank" rel="noopener">🗂 Asana öffnen ↗</a>':'')
+      +(r.pdf_url?'<a class="pdf" href="'+esc(r.pdf_url)+'" target="_blank" rel="noopener">📄 '+esc(r.pdf_name||'PDF')+'</a>':'')
       +'<label class="btn" style="padding:5px 10px;cursor:pointer">⬆︎ PDF<input type="file" accept="application/pdf" style="display:none" onchange="uploadPdf(\''+r.id+'\',this)"></label>'
       +'<button class="abtn" onclick="del(\''+r.id+'\')">✕</button></div>'
     +'<div class="grid">'
