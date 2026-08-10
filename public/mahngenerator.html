@@ -125,12 +125,23 @@ td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
     <h2>📒 Mahnregister</h2>
     <div style="overflow-x:auto">
       <table id="tReg"><thead><tr>
-        <th>Nr.</th><th>Datum</th><th>Empfänger</th><th>Objekt/WE</th><th>Ausstand</th><th>Eigentum</th><th class="num">Betrag</th><th>Mahnstufe</th><th>Status</th><th>Datei</th><th></th>
+        <th>Nr.</th><th>Datum</th><th>Empfänger</th><th>Objekt/WE</th><th>Ausstand</th><th>Eigentum</th><th class="num">Betrag</th><th>Mahnstufe</th><th>Status</th><th>Nächster Schritt</th><th>Datei</th><th></th>
       </tr></thead><tbody id="regBody"></tbody></table>
     </div>
   </div>
 </div>
 <div class="toast" id="toast"></div>
+<div id="ovNext" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:60;align-items:center;justify-content:center" onclick="if(event.target===this)closeNext()">
+  <div style="background:#fff;border-radius:14px;padding:18px 20px;width:520px;max-width:94vw">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px"><b id="nxTitle">Nächster Prozessschritt</b><span style="cursor:pointer;color:#6b7280" onclick="closeNext()">✕</span></div>
+    <div id="nxRec" style="background:#eef4fb;border:1px solid #cfe0f2;border-radius:8px;padding:10px 12px;font-size:12.5px;margin-bottom:12px"></div>
+    <div style="display:flex;flex-direction:column;gap:3px;margin-bottom:8px"><label style="font-size:10.5px;text-transform:uppercase;color:#6b7280;font-weight:700">Nächster Schritt</label>
+      <select id="nxSel" style="font:inherit;font-size:14px;padding:8px 10px;border:1px solid #e6e8ec;border-radius:8px"></select></div>
+    <div style="display:flex;flex-direction:column;gap:3px;margin-bottom:12px"><label style="font-size:10.5px;text-transform:uppercase;color:#6b7280;font-weight:700">Fällig am (optional)</label>
+      <input type="date" id="nxDate" style="font:inherit;font-size:14px;padding:8px 10px;border:1px solid #e6e8ec;border-radius:8px"></div>
+    <div style="display:flex;gap:8px;justify-content:flex-end"><button class="btn sm sec" onclick="closeNext()">Abbrechen</button><button class="btn sm" onclick="saveNext()">Schritt speichern</button></div>
+  </div>
+</div>
 <script>
 const sb=window.supabase.createClient('https://jqzxctfqvcwbctpjksvg.supabase.co','eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpxenhjdGZxdmN3YmN0cGprc3ZnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODIxMzA0MzIsImV4cCI6MjA5NzcwNjQzMn0.RKIbZxJdusKWWPjBJqlxZ8e1m8So02UslOg55YRsn3o');
 const $=id=>document.getElementById(id);
@@ -330,10 +341,47 @@ function renderReg(){
     +'<td><select onchange="setStatus(\''+r.id+'\',this.value)" style="width:auto;padding:4px 8px">'
       +STATUS.map(function(s){return '<option'+(st===s?' selected':'')+'>'+s+'</option>';}).join('')+'</select> '
       +'<span class="pill '+(STATUSCLS[st]||'s-Erstellt')+'">'+esc(st)+'</span></td>'
+    +'<td>'+(r.naechster_schritt?'<b>'+esc(r.naechster_schritt)+'</b>'+(r.naechster_am?'<br><span class="muted" style="font-size:11px">bis '+esc(deDate(r.naechster_am))+'</span>':''):'')+' <button class="btn sm" style="padding:3px 8px" onclick="openNext(\''+r.id+'\')">❓ Schritt</button></td>'
     +'<td>'+(r.pdf_url?'<a class="link" href="'+esc(r.pdf_url)+'" target="_blank">⬇ PDF</a>':'<span class="muted">–</span>')+'</td>'
     +'<td><button class="icobtn" title="Aus Register entfernen" onclick="delReg(\''+r.id+'\')">✕</button></td>'
     +'</tr>';
   }).join('')||'<tr><td colspan="9" class="muted">Noch keine Mahnungen im Register.</td></tr>';
+}
+var NXCUR=null;
+var NXOPT=['Telefonischer Kontakt (Anruf)','Zahlungsvereinbarung anbieten','2. Mahnung','3. / letzte Mahnung','Eine Mahnung pro Jahr (bei ZV)','Kündigung androhen','Kündigung aussprechen','Räumungsklage','Ans Inkasso übergeben','Vorgang abschließen'];
+function stufeNum(s){var m=String(s||'').match(/(\d+)/);return m?parseInt(m[1],10):0;}
+function recommendNext(r){
+  var a=r.ampel||'gelb', sn=stufeNum(r.mahnstufe), st=r.status||'';
+  if(/bezahlt|erledigt/i.test(st)) return {rec:'Vorgang abschließen',grund:'Forderung ist beglichen/erledigt.'};
+  if(r.eigentum_status==='verkauft') return {rec: sn>=1?'Telefonischer Kontakt (Anruf)':'Ans Inkasso übergeben',grund:'Objekt verkauft → nach 1 Mahnung + Anruf direkt ans Inkasso.'};
+  if(r.in_zv){ // Zahlungsvereinbarung – bei ausbleibender Rate
+    if(a==='rot') return {rec:'Ans Inkasso übergeben',grund:'Zahlungsvereinbarung + 🔴 Rot → bei ausbleibender Rate direkt ans Inkasso.'};
+    if(a==='gelb') return {rec:'Eine Mahnung pro Jahr (bei ZV)',grund:'Zahlungsvereinbarung + 🟡 Gelb → eine Mahnung pro Jahr.'};
+    return {rec:'Telefonischer Kontakt (Anruf)',grund:'Zahlungsvereinbarung + 🟢 Grün → kulant: Kontakt aufnehmen, neue Ratenzahlung.'};
+  }
+  if(a==='grün') return {rec:'Zahlungsvereinbarung anbieten',grund:'🟢 Grün: guter/langjähriger Mieter – kulant, Ratenzahlung anbieten.'};
+  if(a==='rot'){ if(sn<=1) return {rec:'Kündigung androhen',grund:'🔴 Rot: schnelle Eskalation nach der 1. Mahnung.'}; if(sn===2) return {rec:'Kündigung aussprechen',grund:'🔴 Rot: nach 2. Mahnung Kündigung.'}; return {rec:'Ans Inkasso übergeben',grund:'🔴 Rot: zügig Räumung/Inkasso.'}; }
+  // gelb Standard
+  if(sn<=1) return {rec:'2. Mahnung',grund:'🟡 Gelb: nächste Mahnstufe.'};
+  if(sn===2) return {rec:'3. / letzte Mahnung',grund:'🟡 Gelb: letzte Mahnung + Anruf.'};
+  return {rec:'Ans Inkasso übergeben',grund:'🟡 Gelb: nach den Mahnstufen ans Inkasso.'};
+}
+function openNext(id){
+  var r=REG.find(function(x){return x.id===id;}); if(!r)return; NXCUR=r;
+  var rc=recommendNext(r);
+  $('nxTitle').textContent='Nächster Schritt · '+nrLabel(r.nummer)+' · '+(r.empfaenger||'');
+  $('nxRec').innerHTML='<b>Empfehlung:</b> '+esc(rc.rec)+'<br><span style="color:#6b7280">'+rc.grund+'</span>';
+  var cur=r.naechster_schritt||rc.rec;
+  $('nxSel').innerHTML=NXOPT.map(function(o){return '<option'+(o===cur?' selected':'')+'>'+esc(o)+'</option>';}).join('');
+  $('nxDate').value=r.naechster_am||'';
+  $('ovNext').style.display='flex';
+}
+function closeNext(){$('ovNext').style.display='none';NXCUR=null;}
+async function saveNext(){
+  if(!NXCUR)return; var sch=$('nxSel').value, am=$('nxDate').value||null;
+  var res=await sb.from('mahn_register').update({naechster_schritt:sch,naechster_am:am}).eq('id',NXCUR.id);
+  if(res.error){toast('Fehler: '+res.error.message);return;}
+  NXCUR.naechster_schritt=sch;NXCUR.naechster_am=am;closeNext();renderReg();toast('Nächster Schritt gespeichert ✓');
 }
 async function setStatus(id,val){
   var res=await sb.from('mahn_register').update({status:val}).eq('id',id);
