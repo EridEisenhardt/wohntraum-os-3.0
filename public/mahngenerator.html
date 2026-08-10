@@ -142,6 +142,23 @@ td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
     <div style="display:flex;gap:8px;justify-content:flex-end"><button class="btn sm sec" onclick="closeNext()">Abbrechen</button><button class="btn sm" onclick="saveNext()">Schritt speichern</button></div>
   </div>
 </div>
+<div id="ovHist" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:60;align-items:center;justify-content:center" onclick="if(event.target===this)closeHist()">
+  <div style="background:#fff;border-radius:14px;padding:18px 20px;width:600px;max-width:94vw;max-height:88vh;display:flex;flex-direction:column">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px"><b id="hxTitle">Historie</b><span style="cursor:pointer;color:#6b7280" onclick="closeHist()">✕</span></div>
+    <div id="hxList" style="overflow:auto;flex:1;margin-bottom:12px;min-height:80px"></div>
+    <div style="border-top:1px solid #e6e8ec;padding-top:12px">
+      <div style="display:flex;gap:8px;margin-bottom:8px;flex-wrap:wrap">
+        <select id="hxTyp" onchange="hxTypChg()" style="font:inherit;font-size:13px;padding:7px 9px;border:1px solid #e6e8ec;border-radius:8px">
+          <option value="Telefonnotiz">📞 Telefonnotiz</option><option value="Notiz">📝 Notiz</option>
+          <option value="Mahnstufe">⬆️ Mahnstufe geändert</option><option value="Sonstiges">• Sonstiges</option>
+        </select>
+        <input id="hxStufe" placeholder="z. B. 2. Mahnung" style="display:none;font:inherit;font-size:13px;padding:7px 9px;border:1px solid #e6e8ec;border-radius:8px;width:150px">
+      </div>
+      <textarea id="hxNote" rows="3" placeholder="Notiz / Gesprächsinhalt …" style="width:100%;font:inherit;font-size:14px;padding:8px 10px;border:1px solid #e6e8ec;border-radius:8px;resize:vertical"></textarea>
+      <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:8px"><button class="btn sm sec" onclick="closeHist()">Schließen</button><button class="btn sm" onclick="saveHistNote()">Eintrag hinzufügen</button></div>
+    </div>
+  </div>
+</div>
 <script>
 const sb=window.supabase.createClient('https://jqzxctfqvcwbctpjksvg.supabase.co','eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpxenhjdGZxdmN3YmN0cGprc3ZnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODIxMzA0MzIsImV4cCI6MjA5NzcwNjQzMn0.RKIbZxJdusKWWPjBJqlxZ8e1m8So02UslOg55YRsn3o');
 const $=id=>document.getElementById(id);
@@ -317,6 +334,7 @@ async function save(){
     betreff:$('betreff').value,text:$('text').value,frist:$('frist').value||null,status:'Erstellt',pdf_url:pdfUrl,pdf_name:fn};
   var res=await sb.from('mahn_register').insert(row).select();
   if(res.error){toast('Fehler: '+res.error.message);return;}
+  if(res.data&&res.data[0])await addHist(res.data[0].id,'Erstellt','Mahnung '+label+' erstellt ('+(row.ausstand_art||'')+', '+eur(Number(row.betrag))+')',row.mahnstufe);
   doc.save(fn); // lokale Kopie
   toast('Mahnung '+label+' erstellt & abgelegt ✓');
   await loadReg();
@@ -343,7 +361,7 @@ function renderReg(){
       +'<span class="pill '+(STATUSCLS[st]||'s-Erstellt')+'">'+esc(st)+'</span></td>'
     +'<td>'+(r.naechster_schritt?'<b>'+esc(r.naechster_schritt)+'</b>'+(r.naechster_am?'<br><span class="muted" style="font-size:11px">bis '+esc(deDate(r.naechster_am))+'</span>':''):'')+' <button class="btn sm" style="padding:3px 8px" onclick="openNext(\''+r.id+'\')">❓ Schritt</button></td>'
     +'<td>'+(r.pdf_url?'<a class="link" href="'+esc(r.pdf_url)+'" target="_blank">⬇ PDF</a>':'<span class="muted">–</span>')+'</td>'
-    +'<td><button class="icobtn" title="Aus Register entfernen" onclick="delReg(\''+r.id+'\')">✕</button></td>'
+    +'<td style="white-space:nowrap"><button class="btn sm" title="Historie &amp; Telefonnotizen" style="padding:3px 8px" onclick="openHist(\''+r.id+'\')">📜 Historie</button> <button class="icobtn" title="Aus Register entfernen" onclick="delReg(\''+r.id+'\')">✕</button></td>'
     +'</tr>';
   }).join('')||'<tr><td colspan="9" class="muted">Noch keine Mahnungen im Register.</td></tr>';
 }
@@ -381,12 +399,14 @@ async function saveNext(){
   if(!NXCUR)return; var sch=$('nxSel').value, am=$('nxDate').value||null;
   var res=await sb.from('mahn_register').update({naechster_schritt:sch,naechster_am:am}).eq('id',NXCUR.id);
   if(res.error){toast('Fehler: '+res.error.message);return;}
+  await addHist(NXCUR.id,'Schritt','Nächster Schritt: '+sch+(am?' (bis '+deDate(am)+')':''),null);
   NXCUR.naechster_schritt=sch;NXCUR.naechster_am=am;closeNext();renderReg();toast('Nächster Schritt gespeichert ✓');
 }
 async function setStatus(id,val){
   var res=await sb.from('mahn_register').update({status:val}).eq('id',id);
   if(res.error){toast('Fehler: '+res.error.message);return;}
   var r=REG.find(x=>x.id===id); if(r)r.status=val; renderReg();
+  await addHist(id,'Status','Status geändert auf: '+val,null);
 }
 async function delReg(id){
   if(!confirm('Diesen Registereintrag entfernen? (Die PDF-Datei bleibt im Speicher erhalten.)'))return;
@@ -394,6 +414,52 @@ async function delReg(id){
   if(res.error){toast('Fehler: '+res.error.message);return;}
   REG=REG.filter(x=>x.id!==id); renderReg(); toast('Entfernt');
 }
+
+// ---- Historie & Telefonnotizen ----
+var HXCUR=null;
+var HXICON={'Telefonnotiz':'📞','Notiz':'📝','Mahnstufe':'⬆️','Status':'🔄','Schritt':'➡️','Erstellt':'📄','Sonstiges':'•'};
+var HXCOL={'Telefonnotiz':'#185fa5','Notiz':'#6b7280','Mahnstufe':'#b45309','Status':'#1f7a4d','Schritt':'#185fa5','Erstellt':'#1f7a4d','Sonstiges':'#9ca3af'};
+function deDateTime(iso){if(!iso)return '';var d=new Date(iso);if(isNaN(d))return esc(iso);var p=n=>String(n).padStart(2,'0');return p(d.getDate())+'.'+p(d.getMonth()+1)+'.'+d.getFullYear()+' '+p(d.getHours())+':'+p(d.getMinutes());}
+async function addHist(regId,typ,notiz,mahnstufe){
+  if(!regId)return;
+  await sb.from('mahn_historie').insert({register_id:regId,typ:typ||'Notiz',notiz:notiz||null,mahnstufe:mahnstufe||null});
+}
+function openHist(id){
+  var r=REG.find(function(x){return x.id===id;}); if(!r)return; HXCUR=r;
+  $('hxTitle').textContent='Historie · '+nrLabel(r.nummer)+' · '+(r.empfaenger||'');
+  $('hxTyp').value='Telefonnotiz';$('hxNote').value='';hxTypChg();
+  $('hxList').innerHTML='<div class="muted" style="padding:14px">lädt …</div>';
+  $('ovHist').style.display='flex'; loadHist();
+}
+function closeHist(){$('ovHist').style.display='none';HXCUR=null;}
+function hxTypChg(){$('hxStufe').style.display=($('hxTyp').value==='Mahnstufe')?'inline-block':'none';}
+async function loadHist(){
+  if(!HXCUR)return;
+  var res=await sb.from('mahn_historie').select('*').eq('register_id',HXCUR.id).order('ts',{ascending:true});
+  renderHist(res.error?[]:(res.data||[]));
+}
+function renderHist(rows){
+  if(!rows.length){$('hxList').innerHTML='<div class="muted" style="padding:14px">Noch keine Einträge. Erste Notiz unten hinzufügen.</div>';return;}
+  $('hxList').innerHTML=rows.map(function(h){
+    var col=HXCOL[h.typ]||'#9ca3af', ic=HXICON[h.typ]||'•';
+    var stufe=h.mahnstufe?' <span class="pill s-Erstellt" style="font-size:11px">'+esc(h.mahnstufe)+'</span>':'';
+    return '<div style="border-left:3px solid '+col+';padding:6px 0 6px 12px;margin-bottom:8px">'
+      +'<div style="font-size:11.5px;color:#6b7280">'+ic+' '+esc(h.typ)+stufe+' · '+deDateTime(h.ts)+'</div>'
+      +(h.notiz?'<div style="font-size:13.5px;white-space:pre-wrap;margin-top:2px">'+esc(h.notiz)+'</div>':'')
+      +'</div>';
+  }).join('');
+  var el=$('hxList'); el.scrollTop=el.scrollHeight;
+}
+async function saveHistNote(){
+  if(!HXCUR)return;
+  var typ=$('hxTyp').value, note=($('hxNote').value||'').trim(), stufe=(typ==='Mahnstufe')?($('hxStufe').value||'').trim():null;
+  if(!note&&!stufe){toast('Bitte Notiz eingeben');return;}
+  await addHist(HXCUR.id,typ,note,stufe);
+  if(typ==='Mahnstufe'&&stufe){ await sb.from('mahn_register').update({mahnstufe:stufe}).eq('id',HXCUR.id); HXCUR.mahnstufe=stufe; renderReg(); }
+  $('hxNote').value='';$('hxStufe').value='';hxTypChg();
+  loadHist(); toast('Eintrag hinzugefügt ✓');
+}
+window.openHist=openHist;window.closeHist=closeHist;window.saveHistNote=saveHistNote;window.hxTypChg=hxTypChg;
 
 (async()=>{
   await sb.auth.getSession();
