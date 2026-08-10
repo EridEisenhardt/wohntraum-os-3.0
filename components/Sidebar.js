@@ -24,6 +24,8 @@ export const NAV = [
     { href: '/portfolio', icon: 'ti-chart-dots-3', label: 'Portfolio (Faktor · Cashflow)' },
     { href: '/hausverwaltung/mietermeldungen', icon: 'ti-message-report', label: 'Mietermeldungen' },
     { href: '/hausverwaltung/dienstleister', icon: 'ti-address-book', label: 'Firmen & Dienstleister' },
+    { href: '/vermietung/zahlungsvereinbarung', icon: 'ti-file-dollar', label: 'Ratenzahlungsgenerator' },
+    { href: '/vermietung/zahlungsvereinbarung-register', icon: 'ti-receipt-2', label: 'Zahlungsvereinbarungen (Register)' },
   ] },
   { type: 'link', href: '/hausmeisterdienst', icon: 'ti-tools', label: 'Übersicht', area: ['hv', 'backoffice'], mod: 'dashboards' },
   { type: 'group', key: 'assetmgmt-bh', icon: 'ti-building-bank', label: 'Assetmanagement', area: ['hv', 'backoffice'], mod: 'controlling', items: [
