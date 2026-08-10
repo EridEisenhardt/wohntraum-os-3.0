@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="de"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Zahlungsvereinbarungen · Register</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+:root{--bg:#f6f7f9;--surf:#fff;--surf2:#f1f3f6;--line:#e6e8ec;--text:#1c2024;--muted:#6b7280;--dim:#4b5563;--accent:#185fa5;--green:#1f7a4d;--red:#c0392b}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--text);font-family:'Inter',system-ui,-apple-system,'Segoe UI',sans-serif;font-size:14px;line-height:1.5}
+.hdr{background:var(--surf);border-bottom:1px solid var(--line);padding:14px 22px;position:sticky;top:0;z-index:20;display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}
+.hdr-title{font-size:17px;font-weight:700}.hdr-sub{font-size:11.5px;color:var(--muted)}
+.wrap{max-width:1100px;margin:14px auto;padding:0 16px 60px}
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:14px}
+.kpi{background:var(--surf);border:1px solid var(--line);border-radius:11px;padding:10px 13px}
+.kpi .l{font-size:10px;text-transform:uppercase;color:var(--muted)}.kpi .v{font-size:18px;font-weight:700;margin-top:2px}
+.bar{display:flex;gap:9px;align-items:center;flex-wrap:wrap;margin-bottom:12px}
+.bar input[type=text],.bar select{font:inherit;font-size:13px;padding:7px 10px;border:1px solid var(--line);border-radius:8px;background:var(--surf)}
+.btn{font:inherit;font-size:13px;font-weight:600;padding:8px 13px;border:1px solid var(--line);border-radius:8px;background:var(--surf2);color:var(--text);cursor:pointer}
+.btn-accent{background:var(--accent);color:#fff;border-color:var(--accent)}
+.card{background:var(--surf);border:1px solid var(--line);border-radius:14px;padding:16px 18px;margin-bottom:14px}
+.chead{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px}
+.chead .nm{font-size:15px;font-weight:700;flex:1;min-width:180px}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px 12px}
+.fld{display:flex;flex-direction:column;gap:3px}
+.fld label{font-size:10px;text-transform:uppercase;color:var(--muted);font-weight:700}
+.fld input,.fld select{font:inherit;font-size:13px;padding:6px 8px;border:1px solid var(--line);border-radius:7px;background:var(--surf2)}
+.fld input:focus,.fld select:focus{outline:none;border-color:var(--accent);background:var(--surf)}
+.sec{border-top:1px solid var(--line);margin-top:12px;padding-top:10px}
+.sec h4{font-size:11px;text-transform:uppercase;color:var(--muted);margin-bottom:8px;letter-spacing:.4px}
+.sz{display:flex;gap:8px;align-items:center;margin-bottom:6px;flex-wrap:wrap}
+.sz input{font:inherit;font-size:13px;padding:5px 8px;border:1px solid var(--line);border-radius:7px;background:var(--surf2)}
+.res{display:flex;gap:16px;flex-wrap:wrap;background:var(--surf2);border-radius:9px;padding:10px 12px;margin-top:10px;font-size:12.5px}
+.res b{font-size:15px}
+.scroll{overflow:auto;border:1px solid var(--line);border-radius:9px;margin-top:8px}
+table{width:100%;border-collapse:collapse;font-size:12px;min-width:520px}
+th,td{padding:5px 8px;border-bottom:1px solid var(--line);text-align:right;white-space:nowrap}
+th{background:var(--surf2);font-size:10px;text-transform:uppercase;color:var(--muted);position:sticky;top:0}
+th:first-child,td:first-child{text-align:left}
+tr.sz-row td{background:#eef8f2;color:#1f7a4d;font-weight:600}
+.abtn{background:none;border:none;color:var(--muted);cursor:pointer;font-size:15px}.abtn:hover{color:var(--red)}
+a.pdf{font-size:12px;color:var(--accent);text-decoration:none}
+.toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:#1c2024;color:#fff;padding:10px 16px;border-radius:8px;font-size:13px;opacity:0;transition:.2s;pointer-events:none;z-index:50}.toast.show{opacity:1}
+</style></head><body>
+<div class="hdr">
+  <div><div class="hdr-title">🧾 Zahlungsvereinbarungen · Register</div><div class="hdr-sub">Laufende Ratenzahlungs­vereinbarungen erfassen · Sonderzahlungen passen Zins &amp; Tilgung an</div></div>
+  <button class="btn btn-accent" onclick="addRow()">+ Neue Vereinbarung</button>
+</div>
+<div class="wrap">
+  <div class="kpis" id="kpis"></div>
+  <div class="bar">
+    <input type="text" id="q" placeholder="🔍 Mieter / Objekt…" oninput="render()">
+    <select id="fStatus" onchange="render()"><option value="">Alle Status</option><option>laufend</option><option>abgeschlossen</option><option>gekündigt</option><option>Verzug</option></select>
+    <span class="count" id="cnt" style="font-size:12px;color:var(--muted)"></span>
+  </div>
+  <div id="list"></div>
+</div>
+<div class="toast" id="toast"></div>
+<script>
+const sb=window.supabase.createClient('https://jqzxctfqvcwbctpjksvg.supabase.co','eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpxenhjdGZxdmN3YmN0cGprc3ZnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODIxMzA0MzIsImV4cCI6MjA5NzcwNjQzMn0.RKIbZxJdusKWWPjBJqlxZ8e1m8So02UslOg55YRsn3o');
+const $=id=>document.getElementById(id);
+const esc=s=>(s==null?'':String(s)).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+function toast(m){const t=$('toast');t.textContent=m;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),1700);}
+const eur=v=>v==null||isNaN(v)?'–':new Intl.NumberFormat('de-DE',{style:'currency',currency:'EUR'}).format(v);
+const num=v=>{if(v==null||v==='')return null;const n=parseFloat(String(v).replace(/\./g,'').replace(',','.'));return isNaN(n)?null:n;};
+const ym=d=>d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0');
+let ROWS=[];
+
+// Zins-/Tilgungsplan mit optionalen Sonderzahlungen
+function schedule(forderung,rate,jahresZins,startDate,sonder){
+  const i=(jahresZins||0)/100/12; const smap={};
+  (sonder||[]).forEach(s=>{const b=num(s.betrag);if(s.datum&&b>0){const d=new Date(s.datum+'T00:00:00');smap[ym(d)]=(smap[ym(d)]||0)+b;}});
+  let R=forderung, rows=[], d=new Date(startDate), guard=0, totalZins=0;
+  while(R>0.005 && guard++<600){
+    const zins=Math.round(R*i*100)/100;
+    const sz=smap[ym(d)]||0;
+    let zahlung=rate+sz;
+    let tilg=Math.round((zahlung-zins)*100)/100;
+    if(tilg<=0) return {rows,totalZins,fail:true};
+    if(tilg>R){ tilg=R; zahlung=Math.round((tilg+zins)*100)/100; }
+    R=Math.round((R-tilg)*100)/100;
+    totalZins+=zins;
+    rows.push({nr:rows.length+1,datum:new Date(d),zahlung,zins,tilg,rest:R,sz});
+    d.setMonth(d.getMonth()+1);
+  }
+  return {rows,totalZins:Math.round(totalZins*100)/100,fail:false};
+}
+
+async function save(id,field,val,typ){
+  let v=val;
+  if(typ==='n')v=num(val);
+  else v=(val&&val.trim())?val.trim():null;
+  const res=await sb.from('zahlungsvereinbarungen').update({[field]:v}).eq('id',id);
+  if(res.error){toast('Fehler: '+res.error.message);return;}
+  const r=ROWS.find(x=>x.id===id);if(r)r[field]=v;
+  if(field==='status'){render();}else{renderCalc(id);renderKpis();}
+}
+async function saveSonder(id,arr){
+  const res=await sb.from('zahlungsvereinbarungen').update({sonderzahlungen:arr}).eq('id',id);
+  if(res.error){toast('Fehler: '+res.error.message);return;}
+  const r=ROWS.find(x=>x.id===id);if(r)r.sonderzahlungen=arr;renderCalc(id);renderKpis();
+}
+function addSonder(id){const r=ROWS.find(x=>x.id===id);const arr=(r.sonderzahlungen||[]).concat([{datum:'',betrag:''}]);saveSonder(id,arr);renderSonder(id);}
+function updSonder(id,idx,field,val){const r=ROWS.find(x=>x.id===id);const arr=(r.sonderzahlungen||[]).slice();arr[idx]=Object.assign({},arr[idx],{[field]:val});saveSonder(id,arr);}
+function delSonder(id,idx){const r=ROWS.find(x=>x.id===id);const arr=(r.sonderzahlungen||[]).slice();arr.splice(idx,1);saveSonder(id,arr);renderSonder(id);}
+async function addRow(){const r=await sb.from('zahlungsvereinbarungen').insert({mieter:'Neuer Mieter',status:'laufend',basiszins:1.27,zuschlag:5,start_datum:new Date().toISOString().slice(0,10),pos:ROWS.length}).select();if(r.error)return toast(r.error.message);ROWS.unshift(r.data[0]);render();toast('Angelegt');}
+async function del(id){if(!confirm('Vereinbarung löschen?'))return;const res=await sb.from('zahlungsvereinbarungen').delete().eq('id',id);if(res.error)return toast(res.error.message);ROWS=ROWS.filter(x=>x.id!==id);render();}
+async function uploadPdf(id,input){
+  const f=input.files&&input.files[0];if(!f)return;
+  const path='zahlungsvereinbarungen/'+id+'_'+Date.now()+'_'+f.name.replace(/[^a-zA-Z0-9._-]/g,'_');
+  const up=await sb.storage.from('darlehen').upload(path,f,{upsert:true});
+  if(up.error){toast('Upload-Fehler: '+up.error.message);return;}
+  const url=sb.storage.from('darlehen').getPublicUrl(path).data.publicUrl;
+  await sb.from('zahlungsvereinbarungen').update({pdf_url:url,pdf_name:f.name}).eq('id',id);
+  const r=ROWS.find(x=>x.id===id);if(r){r.pdf_url=url;r.pdf_name=f.name;}render();toast('PDF hochgeladen ✓');
+}
+
+function calcOf(r){
+  const forderung=Number(r.forderung)||0, rate=Number(r.rate)||0, zins=(Number(r.basiszins)||0)+(Number(r.zuschlag)||0);
+  if(!forderung||!rate||!r.start_datum) return null;
+  const start=new Date(r.start_datum+'T00:00:00');
+  const withSz=schedule(forderung,rate,zins,new Date(start),r.sonderzahlungen||[]);
+  const noSz=schedule(forderung,rate,zins,new Date(start),[]);
+  return {zins,withSz,noSz};
+}
+function renderCalc(id){
+  const r=ROWS.find(x=>x.id===id);const c=calcOf(r);const box=document.getElementById('calc_'+id);if(!box)return;
+  if(!c){box.innerHTML='<div class="res" style="color:var(--muted)">Forderung, Rate und Startdatum ausfüllen für die Berechnung.</div>';return;}
+  if(c.withSz.fail){box.innerHTML='<div class="res" style="color:var(--red)">Rate deckt die Zinsen nicht – Forderung würde nicht getilgt. Höhere Rate oder Sonderzahlung nötig.</div>';return;}
+  const w=c.withSz,n=c.noSz;const spar=n.fail?null:Math.round((n.totalZins-w.totalZins)*100)/100;const monSpar=n.fail?null:(n.rows.length-w.rows.length);
+  const last=w.rows[w.rows.length-1];
+  let res='<div class="res">'
+    +'<span>Verzugszins: <b>'+c.zins.toLocaleString('de-DE',{minimumFractionDigits:2,maximumFractionDigits:2})+' % p.a.</b></span>'
+    +'<span>Laufzeit: <b>'+w.rows.length+' Raten</b></span>'
+    +'<span>Zinsen gesamt: <b>'+eur(w.totalZins)+'</b></span>'
+    +'<span>letzte Rate: <b>'+eur(last.zahlung)+'</b> ('+last.datum.toLocaleDateString('de-DE',{month:'2-digit',year:'numeric'})+')</span>'
+    +(spar!=null&&spar>0?'<span style="color:var(--green)">durch Sonderzahlungen: <b>−'+eur(spar)+' Zinsen · '+monSpar+' Monate kürzer</b></span>':'')
+    +'</div>';
+  const rows=w.rows.map(x=>'<tr'+(x.sz>0?' class="sz-row"':'')+'><td>'+x.nr+'</td><td>'+x.datum.toLocaleDateString('de-DE',{month:'2-digit',year:'numeric'})+'</td><td>'+eur(x.zahlung)+(x.sz>0?' <span style="font-size:10px">(+'+eur(x.sz)+' Sonder)</span>':'')+'</td><td>'+eur(x.zins)+'</td><td>'+eur(x.tilg)+'</td><td>'+eur(x.rest)+'</td></tr>').join('');
+  res+='<details style="margin-top:8px"><summary style="cursor:pointer;font-size:12.5px;color:var(--accent)">Zins- und Tilgungsplan ('+w.rows.length+' Raten)</summary>'
+    +'<div class="scroll"><table><thead><tr><th>Nr.</th><th>Fällig</th><th>Zahlung</th><th>Zinsen</th><th>Tilgung</th><th>Restforderung</th></tr></thead><tbody>'+rows+'</tbody></table></div></details>';
+  box.innerHTML=res;
+}
+function renderSonder(id){
+  const r=ROWS.find(x=>x.id===id);const box=document.getElementById('sonder_'+id);if(!box)return;
+  const arr=r.sonderzahlungen||[];
+  box.innerHTML=arr.map((s,i)=>'<div class="sz"><input type="date" value="'+esc(s.datum)+'" onchange="updSonder(\''+id+'\','+i+',\'datum\',this.value)"><input inputmode="decimal" placeholder="Betrag €" value="'+esc(s.betrag)+'" style="width:120px" onchange="updSonder(\''+id+'\','+i+',\'betrag\',this.value)"><button class="abtn" onclick="delSonder(\''+id+'\','+i+')">✕</button></div>').join('')
+    +'<button class="btn" style="padding:5px 10px;margin-top:4px" onclick="addSonder(\''+id+'\')">+ Sonderzahlung</button>';
+}
+function card(r){
+  const f=(lbl,field,val,typ,w)=>'<div class="fld"><label>'+lbl+'</label><input value="'+esc(val==null?'':val)+'" '+(typ==='n'?'inputmode="decimal"':'')+' onchange="save(\''+r.id+'\',\''+field+'\',this.value,\''+(typ||'')+'\')"></div>';
+  return '<div class="card">'
+    +'<div class="chead"><input class="nm" value="'+esc(r.mieter||'')+'" placeholder="Mieter" style="border:1px solid transparent;border-radius:7px;padding:4px 6px;background:transparent" onchange="save(\''+r.id+'\',\'mieter\',this.value)">'
+      +'<select style="font:inherit;font-size:12px;padding:5px 9px;border:1px solid var(--line);border-radius:20px;background:var(--surf2)" onchange="save(\''+r.id+'\',\'status\',this.value)">'+['laufend','abgeschlossen','gekündigt','Verzug'].map(s=>'<option'+(s===r.status?' selected':'')+'>'+s+'</option>').join('')+'</select>'
+      +(r.pdf_url?'<a class="pdf" href="'+esc(r.pdf_url)+'" target="_blank">📄 '+esc(r.pdf_name||'PDF')+'</a>':'')
+      +'<label class="btn" style="padding:5px 10px;cursor:pointer">⬆︎ PDF<input type="file" accept="application/pdf" style="display:none" onchange="uploadPdf(\''+r.id+'\',this)"></label>'
+      +'<button class="abtn" onclick="del(\''+r.id+'\')">✕</button></div>'
+    +'<div class="grid">'
+      +f('Objekt','objekt',r.objekt)+f('Wohnung','wohnung',r.wohnung)
+      +f('Forderung €','forderung',r.forderung,'n')+f('Monatl. Rate €','rate',r.rate,'n')
+      +'<div class="fld"><label>Erste Rate am</label><input type="date" value="'+esc(r.start_datum)+'" onchange="save(\''+r.id+'\',\'start_datum\',this.value)"></div>'
+      +f('Basiszins %','basiszins',r.basiszins,'n')+f('Zuschlag %-Pkt','zuschlag',r.zuschlag,'n')
+      +f('Notiz','notiz',r.notiz)
+    +'</div>'
+    +'<div class="sec"><h4>Sonderzahlungen (höher als die Rate – passt Zins &amp; Tilgung an)</h4><div id="sonder_'+r.id+'"></div></div>'
+    +'<div id="calc_'+r.id+'"></div>'
+    +'</div>';
+}
+function renderKpis(){
+  let laufend=0,offen=0,zins=0;
+  ROWS.forEach(r=>{if(r.status==='laufend')laufend++;const c=calcOf(r);if(c&&!c.withSz.fail){offen+=Number(r.forderung)||0;zins+=c.withSz.totalZins;}});
+  $('kpis').innerHTML=[['Vereinbarungen',ROWS.length],['davon laufend',laufend],['Σ Forderungen',eur(offen)],['Σ Zinsen (Plan)',eur(Math.round(zins*100)/100)]]
+    .map(x=>'<div class="kpi"><div class="l">'+esc(x[0])+'</div><div class="v">'+x[1]+'</div></div>').join('');
+}
+function render(){
+  const q=($('q').value||'').toLowerCase(), fs=$('fStatus').value;
+  const list=ROWS.filter(r=>(!fs||r.status===fs)&&(!q||((r.mieter||'')+' '+(r.objekt||'')+' '+(r.wohnung||'')).toLowerCase().includes(q)));
+  $('cnt').textContent=list.length+' von '+ROWS.length;
+  $('list').innerHTML=list.map(card).join('')||'<div style="color:var(--muted);padding:20px">Keine Vereinbarungen. Mit „+ Neue Vereinbarung" erfassen.</div>';
+  list.forEach(r=>{renderSonder(r.id);renderCalc(r.id);});
+  renderKpis();
+}
+async function load(){const res=await sb.from('zahlungsvereinbarungen').select('*').order('pos',{nullsFirst:false}).order('created_at',{ascending:false});ROWS=res.error?[]:(res.data||[]);render();}
+load();
+</script>
+</body></html>
