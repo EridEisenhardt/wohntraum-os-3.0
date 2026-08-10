@@ -205,6 +205,8 @@ export default function Sidebar({ user, demo, onLogout, role, perms }) {
     try { const f = localStorage.getItem('sidebar_favs'); if (f) setFavs(JSON.parse(f)) } catch (e) {}
   }, [])
   useEffect(() => { setSelectedCat(null); setQ('') }, [path])
+  // Favoriten-Änderungen an die linke Favoritenleiste (FavRail) melden
+  useEffect(() => { try { window.dispatchEvent(new CustomEvent('wt-favs', { detail: favs })) } catch (e) {} }, [favs])
 
   const isFav = (href) => favs.includes(href)
   const toggleFav = (href, e) => {
