@@ -91,7 +91,8 @@ h2 .dot{width:9px;height:9px;border-radius:3px;display:inline-block}
     <div class="grid" style="margin-top:14px">
       <div class="cat" style="padding:12px 16px 8px"><div style="font-size:12px;font-weight:600;color:var(--dim);margin-bottom:6px">📬 Mails im Postfach</div><div style="position:relative;height:260px"><canvas id="chMail"></canvas></div></div>
       <div class="cat" style="padding:12px 16px 8px"><div style="font-size:12px;font-weight:600;color:var(--dim);margin-bottom:6px">✅ Aufgaben fällig &amp; überfällig (Asana + Todoist)</div><div style="position:relative;height:260px"><canvas id="chTasks"></canvas></div></div>
-      <div class="cat" style="padding:12px 16px 8px;grid-column:1/-1"><div style="font-size:12px;font-weight:600;color:var(--dim);margin-bottom:6px">🤝 Zuarbeit fürs Team — Asana-Tag „.Eric_Zuarbeit fürs Team" (offene Aufgaben, unabhängig von Zuordnung)</div><div style="position:relative;height:260px"><canvas id="chZuarbeit"></canvas></div></div>
+      <div class="cat" style="padding:12px 16px 8px"><div style="font-size:12px;font-weight:600;color:var(--dim);margin-bottom:6px">🤝 Zuarbeit fürs Team — Asana-Tag „.Eric_Zuarbeit fürs Team" (offene Aufgaben)</div><div style="position:relative;height:260px"><canvas id="chZuarbeit"></canvas></div></div>
+      <div class="cat" style="padding:12px 16px 8px"><div style="font-size:12px;font-weight:600;color:var(--dim);margin-bottom:6px">💶 GPM's pro Tag — an dem Tag erfasste Geld produzierende Maßnahmen &amp; Systeme (letzte 30 Tage)</div><div style="position:relative;height:260px"><canvas id="chGpm"></canvas></div></div>
       <div class="cat" style="padding:12px 16px 8px;grid-column:1/-1"><div style="font-size:12px;font-weight:600;color:var(--dim);margin-bottom:6px">🗂 Alle Eric zugewiesenen Asana-Aufgaben (offen, unabhängig von Fälligkeit)</div><div style="position:relative;height:260px"><canvas id="chGesamt"></canvas></div></div>
     </div>
 
@@ -117,21 +118,25 @@ const sb=window.supabase.createClient(SB_URL,SB_KEY);
 
 const TODAY=new Date();
 function fmtD(iso){ if(!iso) return '—'; const p=iso.split('-'); return p[2]+'.'+p[1]+'.'+p[0]; }
+function ymd(d){ const y=d.getFullYear(); const m=String(d.getMonth()+1).padStart(2,'0'); const dd=String(d.getDate()).padStart(2,'0'); return y+'-'+m+'-'+dd; }
 function dueClass(iso){ if(!iso) return 'due-ok'; const d=new Date(iso); const diff=(d-TODAY)/86400000; if(diff<0) return 'due-over'; if(diff<=7) return 'due-soon'; return 'due-ok'; }
 function dueLabel(iso){ if(!iso) return 'kein Datum'; const d=new Date(iso); const diff=Math.round((d-TODAY)/86400000); if(diff<0) return Math.abs(diff)+' T überfällig'; if(diff===0) return 'heute'; if(diff<=7) return 'in '+diff+' T'; return fmtD(iso); }
 const esc=s=>(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 
-let METRICS=[];
+let METRICS=[], GPM=[];
 async function load(){
   const { data, error } = await sb.from('gf_statusbericht').select('payload,generated_at').order('generated_at',{ascending:false}).limit(1);
   if(error){ document.getElementById('loading').textContent='Fehler beim Laden: '+error.message; return; }
   if(!data || !data.length){ document.getElementById('loading').textContent='Noch kein Statusbericht vorhanden.'; return; }
   const m = await sb.from('gf_metrics').select('*').order('datum',{ascending:true});
   METRICS = m.error ? [] : (m.data||[]);
+  const since=new Date(); since.setDate(since.getDate()-29);
+  const g = await sb.from('gpm_aktivitaeten').select('datum,gruppe').gte('datum', ymd(since));
+  GPM = g.error ? [] : (g.data||[]);
   render(data[0].payload, data[0].generated_at);
 }
 
-let MCHART=null, TCHART=null, GCHART=null, ZCHART=null;
+let MCHART=null, TCHART=null, GCHART=null, ZCHART=null, GPMCHART=null;
 function renderMetrics(p){
   const cur = METRICS.length ? METRICS[METRICS.length-1] : null;
   const k=p.kpis||{};
@@ -157,6 +162,8 @@ function drawChart(){
   if(TCHART){ TCHART.destroy(); TCHART=null; }
   if(GCHART){ GCHART.destroy(); GCHART=null; }
   if(ZCHART){ ZCHART.destroy(); ZCHART=null; }
+  if(GPMCHART){ GPMCHART.destroy(); GPMCHART=null; }
+  drawGpm();
   if(!METRICS.length) return;
   const labels=METRICS.map(r=>{ const p=String(r.datum).split('-'); return p[2]+'.'+p[1]; });
   const ds=(lab,key,col,fill)=>({label:lab,data:METRICS.map(r=>r[key]),borderColor:col,backgroundColor:fill||col,tension:.25,pointRadius:3,borderWidth:2,spanGaps:true,fill:!!fill});
@@ -181,6 +188,27 @@ function drawChart(){
   if(z) ZCHART=new Chart(z,{ type:'line', data:{ labels, datasets:[
     ds('Zuarbeit fürs Team (Tag, offen)','zuarbeit_team','#185fa5','rgba(24,95,165,.12)')
   ] }, options:opts() });
+}
+function drawGpm(){
+  const gp=document.getElementById('chGpm'); if(!gp||!window.Chart) return;
+  // letzte 30 Tage (heute rückwärts), pro Tag erfasste GPM-Einträge
+  const days=[]; const base=new Date(); base.setHours(0,0,0,0);
+  for(let i=29;i>=0;i--){ const d=new Date(base); d.setDate(d.getDate()-i); days.push(ymd(d)); }
+  const geld={}, sys={}; days.forEach(d=>{ geld[d]=0; sys[d]=0; });
+  (GPM||[]).forEach(r=>{ const d=r.datum; if(geld[d]==null) return; if(r.gruppe==='systeme') sys[d]++; else geld[d]++; });
+  const labels=days.map(d=>{ const p=d.split('-'); return p[2]+'.'+p[1]; });
+  const gV=days.map(d=>geld[d]), sV=days.map(d=>sys[d]);
+  GPMCHART=new Chart(gp,{ type:'bar', data:{ labels, datasets:[
+    { label:'Geld produzierend', data:gV, backgroundColor:'#185fa5', stack:'gpm', borderRadius:2 },
+    { label:'Systeme', data:sV, backgroundColor:'#c8741f', stack:'gpm', borderRadius:2 }
+  ] }, options:{
+    responsive:true, maintainAspectRatio:false,
+    interaction:{ mode:'index', intersect:false },
+    plugins:{ legend:{ labels:{ boxWidth:12, font:{ size:11 } } },
+      tooltip:{ callbacks:{ footer:items=>{ let s=0; items.forEach(i=>s+=i.parsed.y); return 'Gesamt: '+s; } } } },
+    scales:{ x:{ stacked:true, ticks:{ font:{ size:9 }, maxRotation:0, autoSkip:true } },
+      y:{ stacked:true, beginAtZero:true, ticks:{ precision:0 } } }
+  } });
 }
 
 function render(p, gen){
