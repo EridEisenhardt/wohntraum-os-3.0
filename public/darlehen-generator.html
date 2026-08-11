@@ -96,6 +96,21 @@ tr.sum td{border-top:2px solid var(--text);font-weight:700;background:#fafbfd}
     <div class="panel-hd">Darlehensparameter</div>
     <div class="form">
       <div class="fg">
+        <label>Modus</label>
+        <select id="modus" onchange="modusChg()">
+          <option value="neu">➕ Neues Darlehen anlegen</option>
+          <option value="auf">⬆️ Bestehendes Darlehen erhöhen (Aufstockung)</option>
+        </select>
+      </div>
+      <div class="fg" id="aufstockBox" style="display:none;border:1px solid var(--intern);border-radius:8px;padding:10px 12px;background:rgba(124,58,237,.05)">
+        <label>Bestehendes Darlehen wählen</label>
+        <select id="aufstockLoan" onchange="aufstockPick()"><option value="">— lädt … —</option></select>
+        <div id="aufstockInfo" style="font-size:12px;color:var(--muted,#6b7280);margin-top:8px"></div>
+        <div class="fg" style="margin-top:10px"><label>Erhöhung um (€) *</label><input id="erhoehung" type="number" min="0" step="1000" value="0" oninput="erhoehungChg()"></div>
+        <div id="aufstockTotal" style="font-size:13px;font-weight:600;margin-top:4px;color:var(--intern)"></div>
+        <div style="font-size:11px;color:var(--muted,#6b7280);margin-top:6px">Es wird ein <b>Nachtrag zur Darlehenserhöhung</b> erzeugt und der bestehende Darlehensbetrag im Register erhöht – kein neuer Vertrag/keine neue Nummer.</div>
+      </div>
+      <div class="fg">
         <label>Darlehenstyp *</label>
         <select id="typ" onchange="calc()">
           <option value="intern">🔄 Internes Darlehen (zwischen Gesellschaften)</option>
@@ -239,6 +254,7 @@ function addMonths(iso,mo){const d=new Date(iso);d.setMonth(d.getMonth()+mo);ret
 $('aus').value=new Date().toISOString().slice(0,10);
 
 let MODEL=null;
+let AUFSTOCK=null, LOANS=[];
 
 // ——— Nächste interne Darlehensnummer aus dem Register reservieren ———
 async function reserveNextDnr(){
@@ -265,7 +281,50 @@ function params(){
     dnr:$('dnr').value.trim(),
     zweck:($('zweck')?$('zweck').value.trim():''),
     methode:($('methode')?$('methode').value:'act/365'),
+    modus:($('modus')?$('modus').value:'neu'),
+    loanId: AUFSTOCK?AUFSTOCK.id:null,
+    betragAlt: AUFSTOCK?Number(AUFSTOCK.aktuell||AUFSTOCK.betrag||0):0,
+    erhoehung: parseFloat($('erhoehung')?$('erhoehung').value:0)||0,
   };
+}
+// ——— Aufstockung: bestehendes Darlehen erhöhen ———
+function modusChg(){
+  const auf=$('modus').value==='auf';
+  $('aufstockBox').style.display=auf?'block':'none';
+  if(auf){ if(!LOANS.length) loadLoans(); }
+  else { AUFSTOCK=null; $('dnr').readOnly=false; }
+  calc();
+}
+async function loadLoans(){
+  const {data}=await sb.from('loans').select('id,dnr_intern,bez,geber,nehmer,betrag,aktuell,zins,tilg,methode,aus,status,notizen').order('dnr_intern');
+  LOANS=data||[];
+  $('aufstockLoan').innerHTML='<option value="">— Darlehen wählen —</option>'+LOANS.map(function(l){
+    return '<option value="'+l.id+'">'+(l.dnr_intern?('Nr. '+bvEsc(l.dnr_intern)+' · '):'')+bvEsc(l.bez||'(ohne Bezeichnung)')+' · '+eur(Number(l.aktuell||l.betrag||0))+'</option>';
+  }).join('');
+}
+async function aufstockPick(){
+  const id=$('aufstockLoan').value; AUFSTOCK=LOANS.find(function(l){return l.id===id;})||null;
+  if(!AUFSTOCK){ $('aufstockInfo').textContent=''; $('aufstockTotal').textContent=''; $('dnr').readOnly=false; return; }
+  let meta=null;
+  try{ const {data}=await sb.from('loan_dokumente').select('meta,created_at').eq('loan_id',AUFSTOCK.id).order('created_at',{ascending:false}).limit(1); if(data&&data[0])meta=data[0].meta; }catch(e){}
+  $('bez').value=AUFSTOCK.bez||''; $('geber').value=AUFSTOCK.geber||''; $('nehmer').value=AUFSTOCK.nehmer||'';
+  $('dnr').value=AUFSTOCK.dnr_intern||''; $('dnr').readOnly=true;
+  if(AUFSTOCK.zins!=null)$('zins').value=AUFSTOCK.zins;
+  if(AUFSTOCK.tilg!=null&&AUFSTOCK.tilg!==0)$('tilg').value=AUFSTOCK.tilg;
+  if(AUFSTOCK.methode&&$('methode'))$('methode').value=AUFSTOCK.methode;
+  if(meta){ if(meta.art)$('art').value=meta.art; if(meta.aus)$('aus').value=meta.aus; if(meta.laufzeitMon){ $('laufzeit').value=meta.laufzeitMon; $('lzEinheit').value='m'; } }
+  const alt=Number(AUFSTOCK.aktuell||AUFSTOCK.betrag||0);
+  $('aufstockInfo').innerHTML='Aktueller Darlehensstand: <b>'+eur(alt)+'</b>'+(AUFSTOCK.status?' · Status '+bvEsc(AUFSTOCK.status):'');
+  $('erhoehung').value=0;
+  erhoehungChg();
+}
+function erhoehungChg(){
+  if(!AUFSTOCK){ calc(); return; }
+  const alt=Number(AUFSTOCK.aktuell||AUFSTOCK.betrag||0), inc=parseFloat($('erhoehung').value)||0;
+  const neu=alt+inc;
+  $('betrag').value=neu;
+  $('aufstockTotal').innerHTML='Neuer Gesamtbetrag: <b>'+eur(neu)+'</b> &nbsp;(bisher '+eur(alt)+' + Erhöhung '+eur(inc)+')';
+  calc();
 }
 function sepaVz(s){s=(s==null?'':String(s));s=s.replace(/[–—·]/g,'-').replace(/ä/g,'ae').replace(/ö/g,'oe').replace(/ü/g,'ue').replace(/ß/g,'ss').replace(/Ä/g,'Ae').replace(/Ö/g,'Oe').replace(/Ü/g,'Ue').replace(/[^A-Za-z0-9 \/?:().,'+\-]/g,' ');return s.replace(/\s+/g,' ').trim();}
 function kontoDetail(id){return BV.find(function(x){return x.id===id;})||null;}
@@ -373,20 +432,32 @@ function renderContract(){
   const vzParts=[]; if(p.dnr)vzParts.push('Darlehen '+p.dnr); if(p.bez)vzParts.push(p.bez); if(p.zweck)vzParts.push(p.zweck);
   const vzRef=sepaVz(vzParts.join(' - '));
 
+  const isAuf = p.modus==='auf' && AUFSTOCK;
+  const titel = isAuf ? 'Nachtrag zur Darlehenserhöhung' : 'Darlehensvertrag';
+  const einl = isAuf
+    ? `Die Parteien vereinbaren den folgenden Nachtrag zum bestehenden Darlehen${p.dnr?(' Nr. '+p.dnr):''}${AUFSTOCK.bez?(' „'+bvEsc(AUFSTOCK.bez)+'“'):''}:`
+    : 'Die Parteien schließen den folgenden Darlehensvertrag:';
+  const par1 = isAuf
+    ? `Der bestehende Darlehensbetrag in Höhe von <b>${eur(p.betragAlt)}</b> wird um <b>${eur(p.erhoehung)}</b> (in Worten: ${p.erhoehung?betragWorte(p.erhoehung):'—'}) auf insgesamt <b>${eur(p.betrag)}</b> erhöht. Die übrigen Bedingungen des ursprünglichen Darlehensvertrags gelten für den Gesamtbetrag unverändert fort, soweit in diesem Nachtrag nichts Abweichendes geregelt ist.`
+    : `Der Darlehensgeber gewährt dem Darlehensnehmer ein Darlehen in Höhe von <b>${eur(p.betrag)}</b> (in Worten: ${p.betrag?betragWorte(p.betrag):'—'}).`;
+  const par2label = isAuf ? '§ 2 Auszahlung des Erhöhungsbetrags' : '§ 2 Auszahlung';
+  const par2 = isAuf
+    ? `Die Auszahlung des Erhöhungsbetrags von <b>${eur(p.erhoehung)}</b> erfolgt am <b>${fmtD(p.aus)}</b> ${zuLine?('auf folgendes Konto des Darlehensnehmers: <b>'+bvEsc(zuLine)+'</b>'):'auf ein vom Darlehensnehmer benanntes Konto'}.${vonLine?(' Die Zahlung erfolgt vom Konto des Darlehensgebers ('+bvEsc(vonLine)+').'):''}${vzRef?(' Als <b>Verwendungszweck</b> der Überweisung ist anzugeben: <b>'+bvEsc(vzRef)+'</b>.'):''}`
+    : `Die Auszahlung des Darlehensbetrags erfolgt am <b>${fmtD(p.aus)}</b> ${zuLine?('auf folgendes Konto des Darlehensnehmers: <b>'+bvEsc(zuLine)+'</b>'):'auf ein vom Darlehensnehmer benanntes Konto'}.${vonLine?(' Die Zahlung erfolgt vom Konto des Darlehensgebers ('+bvEsc(vonLine)+').'):''}${vzRef?(' Als <b>Verwendungszweck</b> der Überweisung ist anzugeben: <b>'+bvEsc(vzRef)+'</b>.'):''}`;
   $('contract').innerHTML=`
-    <h1>Darlehensvertrag</h1>
-    <div class="ct-sub">${typLbl} ${pill} ${dnrTxt} &nbsp;·&nbsp; ${p.bez||'—'}</div>
+    <h1>${titel}</h1>
+    <div class="ct-sub">${typLbl} ${pill} ${dnrTxt} &nbsp;·&nbsp; ${p.bez||'—'}${isAuf?' &nbsp;·&nbsp; <span class="pill" style="background:rgba(124,58,237,.12);color:var(--intern)">Erhöhung +'+eur(p.erhoehung)+'</span>':''}</div>
     <div class="parties">
       <div><b>Darlehensgeber</b><br>${p.geber||'________________'}</div>
       <div><b>Darlehensnehmer</b><br>${p.nehmer||'________________'}</div>
     </div>
-    <p>Die Parteien schließen den folgenden Darlehensvertrag:</p>
+    <p>${einl}</p>
 
-    <h3>§ 1 Darlehensbetrag</h3>
-    <p>Der Darlehensgeber gewährt dem Darlehensnehmer ein Darlehen in Höhe von <b>${eur(p.betrag)}</b> (in Worten: ${p.betrag?betragWorte(p.betrag):'—'}).</p>
+    <h3>§ 1 ${isAuf?'Erhöhung des Darlehensbetrags':'Darlehensbetrag'}</h3>
+    <p>${par1}</p>
 
-    <h3>§ 2 Auszahlung</h3>
-    <p>Die Auszahlung des Darlehensbetrags erfolgt am <b>${fmtD(p.aus)}</b> ${zuLine?('auf folgendes Konto des Darlehensnehmers: <b>'+bvEsc(zuLine)+'</b>'):'auf ein vom Darlehensnehmer benanntes Konto'}.${vonLine?(' Die Zahlung erfolgt vom Konto des Darlehensgebers ('+bvEsc(vonLine)+').'):''}${vzRef?(' Als <b>Verwendungszweck</b> der Überweisung ist anzugeben: <b>'+bvEsc(vzRef)+'</b>.'):''}</p>
+    <h3>${par2label}</h3>
+    <p>${par2}</p>
 
     <h3>§ 3 Verzinsung</h3>
     <p>${p.art==='zinsfrei' ? 'Das Darlehen ist <b>zinsfrei</b>. Während der gesamten Laufzeit werden keine Zinsen berechnet.' : `Das Darlehen wird mit <b>${numD(p.zins)} % p.a.</b> verzinst. Die Zinsberechnung erfolgt ${perWort} auf den jeweils valutierenden Darlehensbetrag nach der Methode <b>${bvEsc(p.methode||'act/365')}</b>.`}</p>
@@ -474,6 +545,8 @@ function kontoText(id){var b=BV.find(function(x){return x.id===id;});return b?bv
 // Schritt 1: Prüfung – Vertrag + Tilgungsplan in einer Datei anzeigen
 function reviewLoan(){
   const p=params();
+  if(p.modus==='auf' && !AUFSTOCK){ toast('Bitte ein bestehendes Darlehen zum Erhöhen auswählen.'); return; }
+  if(p.modus==='auf' && !(p.erhoehung>0)){ toast('Bitte einen Erhöhungsbetrag größer 0 angeben.'); return; }
   if(!p.bez||!p.geber||!p.nehmer||!p.betrag){ toast('Bitte Bezeichnung, Geber, Nehmer und Betrag ausfüllen.'); return; }
   if(p.art!=='zinsfrei' && !p.zins){ toast('Bitte einen Zinssatz angeben (oder Rückzahlungsart „Zins- und tilgungsfrei" wählen).'); return; }
   const m=MODEL||computeSchedule(p);
@@ -491,6 +564,29 @@ async function saveLoan(){
   if(!p.bez||!p.geber||!p.nehmer||!p.betrag){ toast('Bitte Bezeichnung, Geber, Nehmer und Betrag ausfüllen.'); return; }
   if(p.art!=='zinsfrei' && !p.zins){ toast('Bitte einen Zinssatz angeben (oder Rückzahlungsart „Zins- und tilgungsfrei" wählen).'); return; }
   const m=MODEL||computeSchedule(p);
+  // ——— Aufstockung: bestehendes Darlehen erhöhen statt neu anlegen ———
+  if(p.modus==='auf' && AUFSTOCK){
+    if(!(p.erhoehung>0)){ toast('Bitte einen Erhöhungsbetrag größer 0 angeben.'); return; }
+    const kdA = m.ratePeriod*(p.perJahr/12);
+    const heute=new Date().toISOString().slice(0,10);
+    const upd={ betrag:p.betrag, aktuell:p.betrag, zins:p.art==='zinsfrei'?0:p.zins,
+      tilg:p.art==='annuitaet'?p.tilg:0, kapitaldienst:Math.round(kdA*100)/100, methode:p.methode||AUFSTOCK.methode||null,
+      notizen:(AUFSTOCK.notizen?AUFSTOCK.notizen+' · ':'')+`Aufstockung am ${heute}: +${eur(p.erhoehung)} (von ${eur(p.betragAlt)} auf ${eur(p.betrag)})` };
+    const {error:eu}=await sb.from('loans').update(upd).eq('id',AUFSTOCK.id);
+    if(eu){ toast('Erhöhung fehlgeschlagen: '+eu.message); return; }
+    renderContract(); renderPlan(p,m);
+    const vHtml=$('contract').innerHTML;
+    const pHtml='<h2>Zins- und Tilgungsplan (Gesamtbetrag nach Erhöhung)</h2><p>'+($('planNote').textContent||'')+'</p><table class="plan">'+$('planTbl').innerHTML+'</table>';
+    const meta={aufstockung:true,dnr:p.dnr||null,bez:p.bez,geber:p.geber,nehmer:p.nehmer,betrag:p.betrag,betrag_alt:p.betragAlt,erhoehung:p.erhoehung,zins:upd.zins,art:p.art,laufzeitMon:p.laufzeitMon,aus:p.aus,datum:heute};
+    const {error:e3}=await sb.from('loan_dokumente').insert({loan_id:AUFSTOCK.id,vertrag_html:vHtml,plan_html:pHtml,meta});
+    if(e3){ toast('Erhöht, Nachtrag-Ablage fehlgeschlagen: '+e3.message); }
+    else { toast('Darlehen Nr. '+(p.dnr||'—')+' um '+eur(p.erhoehung)+' erhöht · Nachtrag abgelegt ✓'); }
+    // lokalen Stand aktualisieren
+    AUFSTOCK.betrag=p.betrag; AUFSTOCK.aktuell=p.betrag;
+    const li=LOANS.find(function(l){return l.id===AUFSTOCK.id;}); if(li){li.betrag=p.betrag;li.aktuell=p.betrag;}
+    closeReview(); $('erhoehung').value=0; erhoehungChg();
+    return;
+  }
   const kd = p.art==='endfaellig' ? m.ratePeriod*(p.perJahr/12) : m.ratePeriod*(p.perJahr/12); // auf Monat normiert
   const rec={
     typ:p.typ, bez:p.bez, geber:p.geber, nehmer:p.nehmer,
