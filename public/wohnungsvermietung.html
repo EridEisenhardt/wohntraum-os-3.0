@@ -91,6 +91,14 @@ select.inl.st{font-weight:700;color:var(--accent);border-color:var(--line);backg
         <tbody id="vhBody"></tbody>
       </table>
     </div>
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;margin:16px 2px 6px;border-top:1px solid var(--line);padding-top:12px">
+      <b style="font-size:13px">📋 Monatsübersicht — welche Einheit in welchem Monat</b>
+      <span style="display:inline-flex;gap:8px">
+        <button class="chip" onclick="vhExportCsv()" title="Diese Liste als CSV herunterladen">⬇ Download CSV</button>
+        <button class="chip" onclick="vhPrint()" title="Monatsübersicht drucken / als PDF speichern">🖨 Drucken</button>
+      </span>
+    </div>
+    <div id="vhList"></div>
   </div>
   <div class="card">
     <div class="card-hd">Neue Einheit in den Vermietungsprozess</div>
@@ -126,6 +134,8 @@ const VHROWS=[['rueck','↩︎ Rückläufer (Einheiten zurück)'],['vermietet','
 const VHSTAT=['grau','gelb','gruen','blau'];
 const VHSTYLE={grau:'background:#e5e7eb;color:#374151',gelb:'background:#fde68a;color:#92400e',gruen:'background:#bbf7d0;color:#166534',blau:'background:#bfdbfe;color:#1e40af'};
 const VHNEXT={grau:'gelb',gelb:'gruen',gruen:'blau',blau:'grau'};
+const VHKATLBL={rueck:'↩︎ Rückläufer',vermietet:'🔑 Neuvermietung',sanierung:'🏗 Sanierung'};
+const VHSTATLBL={grau:'noch nichts',gelb:'in Arbeit',gruen:'vorbereitet',blau:'umgesetzt'};
 let VHY=new Date().getFullYear(), VHE=[];
 function vhYear(d){VHY+=d;vhLoad();}
 async function vhLoad(){
@@ -134,9 +144,9 @@ async function vhLoad(){
   VHE=data||[]; vhRender();
 }
 function vhRender(){
-  $('vhHead').innerHTML='<th style="text-align:left;padding:6px 8px;min-width:150px"></th>'+VHMON.map(m=>'<th style="padding:6px 6px;text-align:center;border-bottom:1px solid var(--line);color:var(--muted);font-weight:700;min-width:96px">'+m+'</th>').join('');
+  $('vhHead').innerHTML='<th style="text-align:left;padding:6px 8px;min-width:150px;border-right:2px solid var(--line)"></th>'+VHMON.map(m=>'<th style="padding:6px 6px;text-align:center;border-bottom:1px solid var(--line);border-right:1px solid var(--line);color:var(--muted);font-weight:700;min-width:96px">'+m+'</th>').join('');
   $('vhBody').innerHTML=VHROWS.map(function(rw){
-    return '<tr><td style="font-weight:600;padding:6px 8px;border-bottom:1px solid var(--line);vertical-align:top">'+rw[1]+'</td>'
+    return '<tr><td style="font-weight:600;padding:6px 8px;border-bottom:1px solid var(--line);border-right:2px solid var(--line);vertical-align:top">'+rw[1]+'</td>'
       +VHMON.map(function(m,i){var mo=i+1;var isSan=rw[0]==='sanierung';
         var items=VHE.filter(function(e){
           if(e.kategorie!==rw[0])return false;
@@ -151,10 +161,45 @@ function vhRender(){
             +'<b onclick="event.stopPropagation();vhRen(\''+e.id+'\')" title="Umbenennen" style="cursor:pointer;opacity:.6">✎</b>'
             +'<b onclick="event.stopPropagation();vhDel(\''+e.id+'\')" title="Löschen" style="cursor:pointer;opacity:.6">×</b></span>';
         }).join('');
-        return '<td ondragover="event.preventDefault()" ondrop="vhDrop(event,'+mo+',\''+rw[0]+'\')" style="padding:4px;border-bottom:1px solid var(--line);vertical-align:top">'+chips
+        return '<td ondragover="event.preventDefault()" ondrop="vhDrop(event,'+mo+',\''+rw[0]+'\')" style="padding:4px;border-bottom:1px solid var(--line);border-right:1px solid var(--line);vertical-align:top">'+chips
           +'<div><button class="chip" style="padding:2px 8px;font-size:11px;margin-top:3px" onclick="vhAdd('+mo+',\''+rw[0]+'\')">＋</button></div></td>';
       }).join('')+'</tr>';
   }).join('');
+  vhRenderList();
+}
+function vhRenderList(){
+  var html=VHMON.map(function(mn,i){
+    var mo=i+1;
+    var items=VHE.filter(function(e){var isSan=e.kategorie==='sanierung';if(isSan){var bis=e.bis_monat||e.monat;return e.monat<=mo&&bis>=mo;}return e.monat===mo;});
+    if(!items.length)return '';
+    var rowsH=items.slice().sort(function(a,b){return String(a.kategorie).localeCompare(String(b.kategorie))||String(a.einheit||'').localeCompare(String(b.einheit||''));}).map(function(e){
+      var isSan=e.kategorie==='sanierung';var bis=e.bis_monat||e.monat;
+      var span=(isSan&&bis>e.monat)?(' <span style="color:var(--muted);font-size:11px">('+VHMON[e.monat-1]+'–'+VHMON[bis-1]+')</span>'):'';
+      var st=VHSTYLE[e.status]||VHSTYLE.grau;
+      return '<div style="display:flex;align-items:center;gap:8px;padding:4px 2px;border-bottom:1px solid #f1f3f6">'
+        +'<span style="min-width:132px;font-size:12px;color:var(--dim)">'+(VHKATLBL[e.kategorie]||e.kategorie)+'</span>'
+        +'<span style="font-weight:600;font-size:12.5px">'+esc(e.einheit||'—')+span+'</span>'
+        +'<span style="'+st+';font-size:10.5px;font-weight:600;padding:1px 8px;border-radius:10px;margin-left:auto">'+(VHSTATLBL[e.status]||e.status)+'</span>'
+        +'</div>';
+    }).join('');
+    return '<div style="margin-bottom:14px;break-inside:avoid"><div style="font-weight:700;font-size:13px;color:var(--text);border-bottom:2px solid #185fa5;padding:4px 2px;margin-bottom:2px">'+mn+' '+VHY+' <span style="color:var(--muted);font-weight:500">· '+items.length+' Einträge</span></div>'+rowsH+'</div>';
+  }).join('');
+  $('vhList').innerHTML=html||'<div style="color:var(--muted);font-size:12.5px;padding:8px 2px">Keine Einträge in '+VHY+'.</div>';
+}
+function vhExportCsv(){
+  var rows=[['Jahr','Monat','Bis-Monat','Kategorie','Einheit','Status']];
+  VHE.slice().sort(function(a,b){return (a.monat-b.monat)||String(a.kategorie).localeCompare(String(b.kategorie));}).forEach(function(e){
+    rows.push([VHY,VHMON[(e.monat||1)-1],e.bis_monat?VHMON[e.bis_monat-1]:'',(VHKATLBL[e.kategorie]||e.kategorie).replace(/^[^ ]+ /,''),e.einheit||'',VHSTATLBL[e.status]||e.status]);
+  });
+  var csv=rows.map(function(r){return r.map(function(c){c=(c==null?'':String(c));return /[";\n]/.test(c)?'"'+c.replace(/"/g,'""')+'"':c;}).join(';');}).join('\r\n');
+  var blob=new Blob(['﻿'+csv],{type:'text/csv;charset=utf-8'});
+  var url=URL.createObjectURL(blob);var a=document.createElement('a');a.href=url;a.download='Vermietungshorizont_'+VHY+'.csv';document.body.appendChild(a);a.click();a.remove();URL.revokeObjectURL(url);
+  toast('CSV heruntergeladen ✓');
+}
+function vhPrint(){
+  var w=window.open('','_blank'); if(!w){toast('Popup blockiert – bitte CSV verwenden');return;}
+  w.document.write('<html><head><title>Vermietungshorizont '+VHY+'</title><style>body{font-family:Inter,system-ui,sans-serif;padding:24px;color:#1c2024}h2{font-size:17px;margin-bottom:12px}</style></head><body><h2>Vermietungshorizont '+VHY+'</h2>'+$('vhList').innerHTML+'</body></html>');
+  w.document.close(); w.focus(); setTimeout(function(){try{w.print();}catch(e){}},250);
 }
 async function vhAdd(monat,kat){
   var name=(prompt('Einheit (z. B. Rh24 WE1):')||'').trim(); if(!name)return;
