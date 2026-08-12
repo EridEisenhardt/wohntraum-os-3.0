@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="de"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Gerichtsfälle · Anwalt / Gericht / Inkasso</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+:root{--bg:#f6f7f9;--surf:#fff;--surf2:#f1f3f6;--line:#e6e8ec;--bord2:#eef0f3;--text:#1c2024;--muted:#6b7280;--dim:#4b5563;--accent:#185fa5;--green:#1f7a4d;--red:#c0392b;--warn:#b45309}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--text);font-family:'Inter',system-ui,-apple-system,'Segoe UI',sans-serif;font-size:14px;line-height:1.5;min-height:100vh}
+.hdr{background:var(--surf);border-bottom:1px solid var(--line);padding:16px 24px;position:sticky;top:0;z-index:10;display:flex;align-items:center;gap:14px;flex-wrap:wrap}
+.hdr-title{font-size:18px;font-weight:700}.hdr-sub{font-size:12px;color:var(--muted);margin-top:2px}
+.spacer{flex:1}
+.wrap{max-width:1500px;margin:18px auto;padding:0 16px 60px}
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:16px}
+.kpi{background:var(--surf);border:1px solid var(--line);border-radius:12px;padding:12px 14px}
+.kpi .l{font-size:11px;color:var(--muted);font-weight:600}
+.kpi .v{font-size:22px;font-weight:700}
+.btn{background:var(--accent);color:#fff;border:none;border-radius:8px;padding:8px 13px;font:inherit;font-weight:600;font-size:13px;cursor:pointer}
+.btn.sec{background:var(--surf2);color:var(--text);border:1px solid var(--line)}
+.btn:hover{opacity:.93}
+.card{background:var(--surf);border:1px solid var(--line);border-radius:14px;padding:6px;margin-bottom:16px;overflow:hidden}
+.scroll{overflow:auto}
+table{width:100%;border-collapse:collapse;font-size:12.5px;min-width:1400px}
+th,td{padding:7px 8px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}
+th{position:sticky;top:0;background:var(--surf2);font-size:10px;text-transform:uppercase;color:var(--muted);font-weight:700;z-index:1}
+td.num,th.num{text-align:right;white-space:nowrap}
+td .lfd{font-weight:700;color:var(--muted)}
+td input,td textarea,td select{width:100%;font:inherit;font-size:12.5px;padding:5px 6px;border:1px solid transparent;border-radius:6px;background:transparent;color:inherit;resize:vertical}
+td input:hover,td textarea:hover,td select:hover{border-color:var(--line)}
+td input:focus,td textarea:focus,td select:focus{outline:none;border-color:var(--accent);background:var(--surf)}
+.pill{display:inline-block;padding:2px 8px;border-radius:20px;font-size:11px;font-weight:600}
+.abtn{background:none;border:none;color:var(--muted);cursor:pointer;font-size:15px}.abtn:hover{color:var(--red)}
+.toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:#1c2024;color:#fff;padding:10px 16px;border-radius:8px;font-size:13px;opacity:0;transition:.2s;pointer-events:none;z-index:50}.toast.show{opacity:1}
+.empty{color:var(--muted);padding:20px;text-align:center;font-size:13px}
+.legend{font-size:11.5px;color:var(--muted);padding:8px 6px 0}
+</style></head><body>
+<div class="hdr">
+  <div><div class="hdr-title">⚖️ Gerichtsfälle</div><div class="hdr-sub">Hausverwaltung · Anwalt / Gericht / Inkasso — Fallübersicht</div></div>
+  <div class="spacer"></div>
+  <button class="btn sec" onclick="exportCsv()">⬇ CSV</button>
+  <button class="btn" onclick="addRow()">+ Fall</button>
+</div>
+<div class="wrap">
+  <div class="kpis" id="kpis"></div>
+  <div class="card"><div class="scroll">
+    <table id="tbl"><thead><tr>
+      <th style="width:42px">Nr.</th>
+      <th style="width:150px">Status</th>
+      <th style="width:180px">Dienstleister / Anwalt</th>
+      <th style="width:170px">Unser Az. (RA)</th>
+      <th style="width:140px">Az. Gegenseite</th>
+      <th style="width:140px">Az. Gericht</th>
+      <th style="width:160px">Schuldner Name</th>
+      <th style="width:100px">Kundennr.</th>
+      <th class="num" style="width:120px">Hauptforderung €</th>
+      <th class="num" style="width:110px">Streitwert €</th>
+      <th style="width:160px">Kategorie / Thema</th>
+      <th style="width:140px">Gericht</th>
+      <th style="width:240px">Letzter Status / Nächster Schritt</th>
+      <th style="width:36px"></th>
+    </tr></thead><tbody id="body"></tbody></table>
+  </div>
+  <div class="legend">Alle Felder direkt editierbar (Änderung wird automatisch gespeichert). Struktur & Einträge übernommen aus „ANWALT_GERICHT_INKASSO Fallübersicht".</div>
+  </div>
+</div>
+<div class="toast" id="toast"></div>
+<script>
+const sb=window.supabase.createClient('https://jqzxctfqvcwbctpjksvg.supabase.co','eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpxenhjdGZxdmN3YmN0cGprc3ZnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODIxMzA0MzIsImV4cCI6MjA5NzcwNjQzMn0.RKIbZxJdusKWWPjBJqlxZ8e1m8So02UslOg55YRsn3o');
+const $=id=>document.getElementById(id);
+const esc=s=>(s==null?'':String(s)).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+function toast(m){const t=$('toast');t.textContent=m;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),1800);}
+const eur=n=>(n==null||n===''||isNaN(n))?'—':Number(n).toLocaleString('de-DE',{minimumFractionDigits:2,maximumFractionDigits:2})+' €';
+const STATI=['Kündigungsphase','Anwalt','Klage in Vorbereitung','Klage bei Gericht','Klage bei Amtsgericht','Klage bei Landgericht','Inkasso','Vergleich','Ruht','Erledigt'];
+const SCOL={'Kündigungsphase':'background:#fef3c7;color:#92400e','Anwalt':'background:#dbeafe;color:#1e40af','Klage in Vorbereitung':'background:#e0e7ff;color:#3730a3','Klage bei Gericht':'background:#fee2e2;color:#991b1b','Klage bei Amtsgericht':'background:#fee2e2;color:#991b1b','Klage bei Landgericht':'background:#fecaca;color:#7f1d1d','Inkasso':'background:#ffedd5;color:#9a3412','Vergleich':'background:#dcfce7;color:#166534','Ruht':'background:#e5e7eb;color:#374151','Erledigt':'background:#dcfce7;color:#166534'};
+let ROWS=[];
+const NUMF=['hauptforderung','streitwert'];
+async function save(id,field,val){
+  let v=(val==null||String(val).trim()==='')?null:val;
+  if(NUMF.includes(field)&&v!=null){v=parseFloat(String(v).replace(/\./g,'').replace(',','.'));if(isNaN(v))v=null;}
+  const res=await sb.from('gerichtsfaelle').update({[field]:v}).eq('id',id);
+  if(res.error){toast('Fehler: '+res.error.message);return;}
+  const r=ROWS.find(x=>x.id===id);if(r)r[field]=v;
+  if(field==='status'){render();}else{renderKpis();toast('Gespeichert ✓');}
+}
+async function addRow(){
+  const nextLfd=ROWS.length?Math.max.apply(null,ROWS.map(r=>r.lfd||0))+1:1;
+  const res=await sb.from('gerichtsfaelle').insert({lfd:nextLfd,status:'Anwalt'}).select();
+  if(res.error){toast(res.error.message);return;}
+  ROWS.push(res.data[0]);render();toast('Fall angelegt');
+}
+async function del(id){
+  if(!confirm('Diesen Gerichtsfall löschen?'))return;
+  const res=await sb.from('gerichtsfaelle').delete().eq('id',id);
+  if(res.error){toast(res.error.message);return;}
+  ROWS=ROWS.filter(x=>x.id!==id);render();toast('Gelöscht');
+}
+function statusSel(r){
+  const cur=r.status||'';const has=STATI.includes(cur);
+  return '<select onchange="save(\''+r.id+'\',\'status\',this.value)">'
+    +STATI.map(s=>'<option'+(s===cur?' selected':'')+'>'+esc(s)+'</option>').join('')
+    +(has?'':'<option selected>'+esc(cur)+'</option>')+'</select>';
+}
+function inp(r,f,ph){return '<input value="'+esc(r[f])+'" placeholder="'+(ph||'')+'" onchange="save(\''+r.id+'\',\''+f+'\',this.value)">';}
+function num(r,f){return '<input class="num" inputmode="decimal" value="'+(r[f]==null?'':r[f])+'" onchange="save(\''+r.id+'\',\''+f+'\',this.value)" style="text-align:right">';}
+function ta(r,f,ph){return '<textarea rows="2" placeholder="'+(ph||'')+'" onchange="save(\''+r.id+'\',\''+f+'\',this.value)">'+esc(r[f])+'</textarea>';}
+function render(){
+  const list=[...ROWS].sort((a,b)=>(a.lfd||0)-(b.lfd||0));
+  $('body').innerHTML=list.map(r=>'<tr>'
+    +'<td><span class="lfd">'+(r.lfd!=null?esc(r.lfd):'')+'</span></td>'
+    +'<td>'+statusSel(r)+'<div style="margin-top:3px"><span class="pill" style="'+(SCOL[r.status]||'background:#e5e7eb;color:#374151')+'">'+esc(r.status||'—')+'</span></div></td>'
+    +'<td>'+inp(r,'dienstleister','RA …')+'</td>'
+    +'<td>'+inp(r,'az_ra')+'</td>'
+    +'<td>'+inp(r,'az_gegen')+'</td>'
+    +'<td>'+inp(r,'az_gericht')+'</td>'
+    +'<td>'+inp(r,'schuldner')+'</td>'
+    +'<td>'+inp(r,'kundennr')+'</td>'
+    +'<td class="num">'+num(r,'hauptforderung')+'</td>'
+    +'<td class="num">'+num(r,'streitwert')+'</td>'
+    +'<td>'+inp(r,'kategorie')+'</td>'
+    +'<td>'+inp(r,'gericht')+'</td>'
+    +'<td>'+ta(r,'letzter_status')+'</td>'
+    +'<td><button class="abtn" title="Löschen" onclick="del(\''+r.id+'\')">✕</button></td>'
+    +'</tr>').join('')||'<tr><td colspan="14" class="empty">Noch keine Gerichtsfälle. Mit „+ Fall" anlegen.</td></tr>';
+  renderKpis();
+}
+function renderKpis(){
+  const n=ROWS.length;
+  const gericht=ROWS.filter(r=>/Klage bei/i.test(r.status||'')).length;
+  const anwalt=ROWS.filter(r=>/Anwalt|Vorbereitung|Kündigungsphase/i.test(r.status||'')).length;
+  const summe=ROWS.reduce((a,r)=>a+(Number(r.hauptforderung)||0),0);
+  $('kpis').innerHTML=[
+    ['Fälle gesamt',n],
+    ['Bei Gericht (Klage)',gericht],
+    ['Anwalt / Vorstufe',anwalt],
+    ['Σ Hauptforderung',eur(summe)]
+  ].map(k=>'<div class="kpi"><div class="l">'+k[0]+'</div><div class="v">'+k[1]+'</div></div>').join('');
+}
+function exportCsv(){
+  const head=['Lfd. Nr.','Status','Dienstleister / Anwalt','Unser Aktenzeichen (RA)','Aktenzeichen Gegenseite','Aktenzeichen Gericht','Schuldner Name','Kundennummer','Hauptforderung (EUR)','Streitwert (EUR)','Kategorie / Thema','Gericht','Letzter Status / Nächster Schritt'];
+  const keys=['lfd','status','dienstleister','az_ra','az_gegen','az_gericht','schuldner','kundennr','hauptforderung','streitwert','kategorie','gericht','letzter_status'];
+  const list=[...ROWS].sort((a,b)=>(a.lfd||0)-(b.lfd||0));
+  const rows=[head].concat(list.map(r=>keys.map(k=>r[k]==null?'':r[k])));
+  const csv=rows.map(r=>r.map(c=>{c=String(c);return /[";\n]/.test(c)?'"'+c.replace(/"/g,'""')+'"':c;}).join(';')).join('\r\n');
+  const blob=new Blob(['﻿'+csv],{type:'text/csv;charset=utf-8'});
+  const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download='Gerichtsfaelle.csv';document.body.appendChild(a);a.click();a.remove();URL.revokeObjectURL(url);
+  toast('CSV heruntergeladen ✓');
+}
+async function load(){
+  const res=await sb.from('gerichtsfaelle').select('*').order('lfd');
+  ROWS=res.error?[]:(res.data||[]);render();
+}
+load();
+</script>
+</body></html>
