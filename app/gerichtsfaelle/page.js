@@ -4,7 +4,7 @@ export default function GerichtsfaellePage() {
     <div style={{ margin: '-26px -30px', height: '100vh' }}>
       <iframe
         src="/gerichtsfaelle.html"
-        title="Gerichtsfälle"
+        title="Gericht-Anwalt-Inkasso"
         style={{ width: '100%', height: '100%', border: 'none' }}
       />
     </div>
