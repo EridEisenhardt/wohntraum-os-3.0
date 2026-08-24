@@ -97,16 +97,39 @@ const esc=s=>(s==null?'':String(s)).replace(/&/g,'&amp;').replace(/</g,'&lt;').r
 const eur=n=>new Intl.NumberFormat('de-DE',{style:'currency',currency:'EUR',minimumFractionDigits:2,maximumFractionDigits:2}).format(n||0);
 const numDE=v=>{ if(v==null||v==='') return null; const n=parseFloat(String(v).replace(/\./g,'').replace(',','.')); return isNaN(n)?null:n; };
 function toast(m){const t=$('toast');t.textContent=m;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),1800);}
-let ROWS=[], KONTEN=[];
+let ROWS=[], KONTEN=[], SA_SUM={};
 
 async function load(){
-  const [rb,rk]=await Promise.all([
+  const [rb,rk,rs]=await Promise.all([
     sb.from('budget_eric').select('*').order('art',{ascending:true}).order('pos',{ascending:true}).order('created_at',{ascending:true}),
-    sb.from('konten_modell').select('id,name,farbe,sort,prozent,abk').order('sort',{ascending:true})
+    sb.from('konten_modell').select('id,name,farbe,sort,prozent,abk').order('sort',{ascending:true}),
+    sb.from('budget_sa_summary').select('*')
   ]);
   ROWS = rb.error ? [] : (rb.data||[]);
   KONTEN = rk.error ? [] : (rk.data||[]);
+  SA_SUM = {}; (rs.error?[]:(rs.data||[])).forEach(x=>{ SA_SUM[x.gruppe]=x; });
   render();
+}
+function saBtn(art,name){
+  const on=SA_SUM[name]&&SA_SUM[name].aktiv;
+  const nm=String(name).replace(/'/g,"\\'");
+  if(on) return `<button class="mvb" title="In Selbstauskunft übertragen – klicken zum Entfernen" style="background:#dcfce7;color:#166534;border-color:#bbf7d0;font-size:11px;padding:3px 8px" onclick="untransferGroup('${nm}')">✓ Selbstauskunft</button>`;
+  return `<button class="mvb" title="Zusammenfassung dieser Gruppe in die Selbstauskunft der Bank übertragen" style="font-size:11px;padding:3px 8px" onclick="transferGroup('${art}','${nm}')">→ Selbstauskunft</button>`;
+}
+async function transferGroup(art,name){
+  const sum=ROWS.filter(r=>r.art===art&&r.gruppe===name).reduce((s,x)=>s+(Number(x.betrag)||0),0);
+  const up=await sb.from('budget_sa_summary').upsert({gruppe:name,art:art,betrag:sum,aktiv:true,updated_at:new Date().toISOString()},{onConflict:'gruppe'});
+  if(up.error){ toast('Fehler: '+up.error.message); return; }
+  // Einzelpositionen der Gruppe nicht zusätzlich einzeln übertragen (keine Doppelzählung)
+  await sb.from('budget_eric').update({weitergabe:null}).eq('art',art).eq('gruppe',name);
+  ROWS.forEach(r=>{ if(r.art===art&&r.gruppe===name) r.weitergabe=null; });
+  SA_SUM[name]={gruppe:name,art:art,betrag:sum,aktiv:true};
+  render(); toast('„'+name+'" ('+eur(sum)+') in Selbstauskunft übertragen ✓');
+}
+async function untransferGroup(name){
+  const d=await sb.from('budget_sa_summary').delete().eq('gruppe',name);
+  if(d.error){ toast('Fehler: '+d.error.message); return; }
+  delete SA_SUM[name]; render(); toast('Aus Selbstauskunft entfernt');
 }
 function kontoById(id){return KONTEN.find(k=>k.id===id);}
 function kLabel(k){return (k&&k.abk?k.abk+' - ':'')+(k?k.name:'');}
@@ -213,7 +236,7 @@ function rowsHtml(art){
     if(b.t==='r'){ body+=rowTr(b.rows[0],false,mvB); }
     else {
       const sum=b.rows.reduce((s,x)=>s+(Number(x.betrag)||0),0);
-      body+=`<tr class="grow"><td>▸ ${esc(b.name)} <span style="color:var(--muted);font-weight:400">(${b.rows.length})</span></td><td></td><td style="text-align:right">${eur(sum)}</td><td></td><td></td><td></td><td style="text-align:right;white-space:nowrap">${mvB}</td></tr>`;
+      body+=`<tr class="grow"><td>▸ ${esc(b.name)} <span style="color:var(--muted);font-weight:400">(${b.rows.length})</span></td><td></td><td style="text-align:right">${eur(sum)}</td><td></td><td style="text-align:center">${saBtn(art,b.name)}</td><td></td><td style="text-align:right;white-space:nowrap">${mvB}</td></tr>`;
       b.rows.forEach((x,mi)=>{ body+=rowTr(x,true,arrows(`moveMember('${art}',${i},${mi},-1)`,`moveMember('${art}',${i},${mi},1)`)); });
     }
   });

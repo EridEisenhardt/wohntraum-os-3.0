@@ -599,11 +599,17 @@ function sigInit(){
 async function loadBudgetSA(){
   const el=document.getElementById('budgetSaTbl'); if(!el) return;
   const head='<thead><tr><th style="text-align:left">Art</th><th style="text-align:left">Bezeichnung</th><th style="text-align:left">Detail</th><th>€ / Monat</th><th>€ / Jahr</th></tr></thead>';
-  const { data, error } = await sb.from('budget_eric').select('art,bezeichnung,betrag,weitergabe,weitergabe_an,pos').eq('weitergabe','Ja').order('art',{ascending:true}).order('pos',{ascending:true});
-  if(error || !data || !data.length){ el.innerHTML=head+'<tbody><tr><td colspan="5" style="text-align:center;color:var(--muted);white-space:normal">Keine Budgetplan-Positionen mit „Weitergabe Selbstauskunft: Ja".</td></tr></tbody>'; return; }
+  const [rp,rsum]=await Promise.all([
+    sb.from('budget_eric').select('art,bezeichnung,betrag,weitergabe,weitergabe_an,pos').eq('weitergabe','Ja').order('art',{ascending:true}).order('pos',{ascending:true}),
+    sb.from('budget_sa_summary').select('gruppe,art,betrag,aktiv').eq('aktiv',true)
+  ]);
+  const base=(rp.error||!rp.data)?[]:rp.data;
+  const sumRows=((rsum.error||!rsum.data)?[]:rsum.data).map(s=>({art:s.art||'ausgabe',bezeichnung:(s.gruppe||'')+' (Zusammenfassung)',betrag:s.betrag,weitergabe_an:'Gruppensumme aus Budgetplan',_sum:true}));
+  const data=base.concat(sumRows);
+  if(!data.length){ el.innerHTML=head+'<tbody><tr><td colspan="5" style="text-align:center;color:var(--muted);white-space:normal">Keine Budgetplan-Positionen mit „Weitergabe Selbstauskunft: Ja".</td></tr></tbody>'; return; }
   const ein=data.filter(r=>r.art==='einnahme'), aus=data.filter(r=>r.art==='ausgabe');
   const sum=a=>a.reduce((s,r)=>s+(Number(r.betrag)||0),0);
-  const rows=list=>list.map(r=>`<tr><td style="text-align:left">${r.art==='einnahme'?'Einnahme':'Ausgabe'}</td><td style="text-align:left">${escH(r.bezeichnung)}</td><td style="text-align:left">${escH(r.weitergabe_an)}</td><td>${eur(r.betrag)}</td><td>${eur((Number(r.betrag)||0)*12)}</td></tr>`).join('');
+  const rows=list=>list.map(r=>`<tr${r._sum?' style="font-weight:600;background:#f7fafc"':''}><td style="text-align:left">${r.art==='einnahme'?'Einnahme':'Ausgabe'}</td><td style="text-align:left">${escH(r.bezeichnung)}</td><td style="text-align:left">${escH(r.weitergabe_an)}</td><td>${eur(r.betrag)}</td><td>${eur((Number(r.betrag)||0)*12)}</td></tr>`).join('');
   let body='';
   if(ein.length) body+=rows(ein)+`<tr class="totrow"><td colspan="3">Summe Einnahmen (Weitergabe)</td><td>${eur(sum(ein))}</td><td>${eur(sum(ein)*12)}</td></tr>`;
   if(aus.length) body+=rows(aus)+`<tr class="totrow"><td colspan="3">Summe Ausgaben (Weitergabe)</td><td>${eur(sum(aus))}</td><td>${eur(sum(aus)*12)}</td></tr>`;
