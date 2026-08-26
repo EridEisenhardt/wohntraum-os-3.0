@@ -435,7 +435,7 @@ function fieldHtml(typ,f,val){
   const [key,label,kind]=f;
   let inp;
   if(kind==='textarea')inp=`<textarea id="m_${key}" rows="3">${esc(val)}</textarea>`;
-  else if(kind==='firma')inp=`<select id="m_${key}" data-prev="${val==null?'':esc(val)}" onchange="firmaSel(this)"><option value="">—</option>${F.map(x=>`<option value="${x.id}" ${x.id===val?'selected':''}>${esc(x.name)}</option>`).join('')}<option value="__new__">➕ Neue Firma anlegen …</option></select>`;
+  else if(kind==='firma'){const cur=val?firmaName(val):'';inp=`<input id="m_${key}" list="dl_${key}" value="${esc(cur)}" placeholder="Firma eintippen – neue werden automatisch angelegt" autocomplete="off"><datalist id="dl_${key}">${F.map(x=>`<option value="${esc(x.name)}">`).join('')}</datalist>`;}
   else if(kind==='kontakt')inp=`<select id="m_${key}"><option value="">—</option>${K.map(x=>`<option value="${x.id}" ${x.id===val?'selected':''}>${esc(kName(x))}</option>`).join('')}</select>`;
   else if(kind==='stufe')inp=`<select id="m_${key}">${STUFEN.map(s=>`<option ${s===val?'selected':''}>${esc(s)}</option>`).join('')}</select>`;
   else if(kind==='pot')inp=`<select id="m_${key}"><option value="">—</option>${POT.map(x=>`<option ${x===val?'selected':''}>${esc(x)}</option>`).join('')}</select>`;
@@ -514,10 +514,13 @@ async function openNewAkt(){
 function closeDlg(){$('ov').classList.remove('show');CUR=null;}
 async function saveEntity(){
   if(!CUR)return;const {typ,id,rec}=CUR;const row={};
-  SPEC[typ].forEach(f=>{
-    if(f[2]==='kats'){row[f[0]]=readKats();return;}
-    const el=$('m_'+f[0]);if(!el)return;let v=el.value;if(v===''||v==='__new__')v=null;
-    if(f[2]==='number'&&v!=null)v=Number(v);row[f[0]]=v;});
+  for(const f of SPEC[typ]){
+    if(f[2]==='kats'){row[f[0]]=readKats();continue;}
+    const el=$('m_'+f[0]);if(!el)continue;
+    if(f[2]==='firma'){row[f[0]]=await resolveFirma(el.value);continue;}
+    let v=el.value;if(v===''||v==='__new__')v=null;
+    if(f[2]==='number'&&v!=null)v=Number(v);row[f[0]]=v;
+  }
   row.updated_at=new Date().toISOString();
   if(id){
     const norm=v=>Array.isArray(v)?v.slice().sort().join(', '):String(v==null?'':v);
