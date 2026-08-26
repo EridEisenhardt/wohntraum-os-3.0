@@ -21,6 +21,12 @@ select,input{width:100%;font:inherit;font-size:13px;padding:8px 10px;border:1px 
 .result{background:#0b1220;color:#e6f0ea;border-radius:10px;padding:14px 16px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:14px;word-break:break-all;margin:12px 0}
 .bar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:8px}
 .hint{font-size:11.5px;color:var(--muted);margin-top:8px}
+.chiprow{display:flex;flex-wrap:wrap;gap:6px}
+.chip{font:inherit;font-size:11.5px;font-weight:600;padding:4px 10px;border-radius:20px;border:1px solid var(--line);background:var(--surf2,#f1f3f6);color:var(--text);cursor:pointer;white-space:nowrap}
+.chip:hover{border-color:var(--accent)}
+.chip.on{background:var(--accent);color:#fff;border-color:var(--accent)}
+.chip.cat{font-size:12px;padding:5px 12px}
+.chiplbl{font-size:10px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);font-weight:700;margin:8px 0 3px}
 .tag{display:inline-block;background:var(--surf2);color:var(--dim);font-size:10.5px;font-weight:700;padding:2px 8px;border-radius:10px;margin-left:6px}
 .toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:#1c2024;color:#fff;padding:10px 16px;border-radius:8px;font-size:13px;opacity:0;pointer-events:none;transition:.2s;z-index:50}
 .toast.show{opacity:1}
@@ -38,7 +44,9 @@ select,input{width:100%;font:inherit;font-size:13px;padding:8px 10px;border:1px 
     <div class="fld" id="bankNrFld" style="display:none"><label>Sortier-Nr. (Bank – steht vorne)</label>
       <input id="bankNr" oninput="renderName()" placeholder="z. B. 50" style="max-width:160px"></div>
     <div class="fld"><label>Thema / Dokumententyp</label>
-      <select id="typSel" onchange="onTyp()"></select></div>
+      <div id="catChips" class="chiprow"></div>
+      <div class="chiplbl">Vorlage wählen</div>
+      <div id="docChips" class="chiprow"></div></div>
     <div class="tmpl" id="tmplHint"></div>
     <div class="grid" id="fields" style="margin-top:14px"></div>
     <div class="result" id="result">—</div>
@@ -106,15 +114,32 @@ async function projHinterlegen(){
   PROJ.push({nr:nr,objekt:objekt,art:'Umbau'}); renderProjDL();
   toast('In KPI Sanierungen hinterlegt ✓');
 }
+var CURCAT=null, CURDOC=null;
 async function load(){
   var res=await sb.from('dokument_vorlagen').select('*').eq('aktiv',true).order('sort');
   VOR=res.data||[];
   var cats=[...new Set(VOR.map(v=>v.kategorie))];
-  $('typSel').innerHTML=cats.map(c=>'<optgroup label="'+esc(c)+'">'+VOR.filter(v=>v.kategorie===c).map(v=>'<option value="'+v.id+'">'+esc(v.dokument)+'</option>').join('')+'</optgroup>').join('');
+  CURCAT=cats[0]||null;
+  var first=VOR.find(v=>v.kategorie===CURCAT); CURDOC=first?first.id:null;
+  renderCatChips(cats); renderDocChips();
   await loadProj();
   onTyp();
 }
-function curVor(){return VOR.find(v=>v.id===$('typSel').value);}
+function renderCatChips(cats){
+  $('catChips').innerHTML=cats.map(function(c){return '<button type="button" class="chip cat'+(c===CURCAT?' on':'')+'" onclick="selectCat(\''+esc(c).replace(/'/g,"\\'")+'\')">'+esc(c)+'</button>';}).join('');
+}
+function renderDocChips(){
+  var list=VOR.filter(function(v){return v.kategorie===CURCAT;});
+  $('docChips').innerHTML=list.map(function(v){return '<button type="button" class="chip'+(v.id===CURDOC?' on':'')+'" onclick="selectDoc(\''+v.id+'\')">'+esc(v.dokument)+'</button>';}).join('')||'<span class="hint" style="margin:0">Keine Vorlagen in dieser Rubrik.</span>';
+}
+function selectCat(c){
+  CURCAT=c;
+  var first=VOR.find(function(v){return v.kategorie===c;});
+  CURDOC=first?first.id:null;
+  renderCatChips([...new Set(VOR.map(v=>v.kategorie))]); renderDocChips(); onTyp();
+}
+function selectDoc(id){ CURDOC=id; renderDocChips(); onTyp(); }
+function curVor(){return VOR.find(v=>v.id===CURDOC);}
 function onTyp(){
   var v=curVor(); if(!v)return;
   $('tmplHint').innerHTML='Vorlage: <code>'+esc(v.template)+'</code>'+(v.hinweis?'<span class="tag">'+esc(v.hinweis)+'</span>':'');
