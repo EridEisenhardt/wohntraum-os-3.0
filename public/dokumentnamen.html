@@ -43,6 +43,14 @@ select,input{width:100%;font:inherit;font-size:13px;padding:8px 10px;border:1px 
     </div>
     <div class="fld" id="bankNrFld" style="display:none"><label>Sortier-Nr. (Bank – steht vorne)</label>
       <input id="bankNr" oninput="renderName()" placeholder="z. B. 50" style="max-width:160px"></div>
+    <div class="fld"><label>Dokument auswählen / suchen</label>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+        <select id="allDocSel" onchange="pickResult(this.value)" style="flex:0 0 auto;min-width:230px">
+          <option value="">— alle Dokumente —</option>
+        </select>
+        <input id="docSearch" placeholder="🔍 suchen: Mietvertrag, Rechnung, Darlehen …" oninput="doSearch()" autocomplete="off" style="flex:1;min-width:190px">
+      </div>
+      <div id="searchResults" class="chiprow" style="margin-top:6px;display:none"></div></div>
     <div class="fld"><label>Thema / Dokumententyp</label>
       <div id="catChips" class="chiprow"></div>
       <div class="chiplbl" id="vorlageLbl">Vorlage wählen</div>
@@ -123,9 +131,31 @@ async function load(){
   var cats=[...new Set(VOR.map(v=>v.kategorie))];
   CURCAT=cats[0]||null;
   var first=VOR.find(v=>v.kategorie===CURCAT); CURDOC=first?first.id:null;
-  renderCatChips(cats); applyCatUI();
+  renderCatChips(cats); renderAllDocSel(); applyCatUI();
   await loadProj();
   onTyp();
+}
+function renderAllDocSel(){
+  var cats=[...new Set(VOR.map(v=>v.kategorie))];
+  $('allDocSel').innerHTML='<option value="">— alle Dokumente —</option>'+cats.map(function(c){
+    return '<optgroup label="'+esc(c)+'">'+VOR.filter(function(v){return v.kategorie===c;}).map(function(v){return '<option value="'+v.id+'"'+(v.id===CURDOC?' selected':'')+'>'+esc(v.dokument)+'</option>';}).join('')+'</optgroup>';
+  }).join('');
+}
+function syncSel(){ if($('allDocSel'))$('allDocSel').value=CURDOC||''; }
+function doSearch(){
+  var q=($('docSearch').value||'').trim().toLowerCase();
+  var box=$('searchResults');
+  if(!q){ box.style.display='none'; box.innerHTML=''; return; }
+  var hits=VOR.filter(function(v){return (v.dokument||'').toLowerCase().includes(q)||(v.kategorie||'').toLowerCase().includes(q);}).slice(0,20);
+  box.style.display='flex';
+  box.innerHTML=hits.length?hits.map(function(v){return '<button type="button" class="chip'+(v.id===CURDOC?' on':'')+'" title="'+esc(v.kategorie)+'" onclick="pickResult(\''+v.id+'\')">'+esc(v.dokument)+' <span style="opacity:.6;font-weight:400">· '+esc(v.kategorie)+'</span></button>';}).join(''):'<span class="hint" style="margin:0">Kein Treffer.</span>';
+}
+function pickResult(id){
+  if(!id)return;
+  var v=VOR.find(function(x){return x.id===id;}); if(!v)return;
+  CURCAT=v.kategorie; CURDOC=id;
+  $('docSearch').value=''; $('searchResults').style.display='none'; $('searchResults').innerHTML='';
+  renderCatChips([...new Set(VOR.map(x=>x.kategorie))]); applyCatUI(); syncSel(); onTyp();
 }
 function renderCatChips(cats){
   $('catChips').innerHTML=cats.map(function(c){return '<button type="button" class="chip cat'+(c===CURCAT?' on':'')+'" onclick="selectCat(\''+esc(c).replace(/'/g,"\\'")+'\')">'+esc(c)+'</button>';}).join('');
@@ -150,9 +180,9 @@ function selectCat(c){
   CURCAT=c;
   var first=VOR.find(function(v){return v.kategorie===c;});
   CURDOC=first?first.id:null;
-  renderCatChips([...new Set(VOR.map(v=>v.kategorie))]); applyCatUI(); onTyp();
+  renderCatChips([...new Set(VOR.map(v=>v.kategorie))]); applyCatUI(); syncSel(); onTyp();
 }
-function selectDoc(id){ CURDOC=id; if(isMieter())renderMieterSel(); else renderDocChips(); onTyp(); }
+function selectDoc(id){ CURDOC=id; if(isMieter())renderMieterSel(); else renderDocChips(); syncSel(); onTyp(); }
 function curVor(){return VOR.find(v=>v.id===CURDOC);}
 function onTyp(){
   var v=curVor(); if(!v)return;
