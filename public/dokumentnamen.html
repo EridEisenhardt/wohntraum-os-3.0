@@ -45,10 +45,12 @@ select,input{width:100%;font:inherit;font-size:13px;padding:8px 10px;border:1px 
       <input id="bankNr" oninput="renderName()" placeholder="z. B. 50" style="max-width:160px"></div>
     <div class="fld"><label>Thema / Dokumententyp</label>
       <div id="catChips" class="chiprow"></div>
-      <div class="chiplbl">Vorlage wählen</div>
+      <div class="chiplbl" id="vorlageLbl">Vorlage wählen</div>
       <div id="docChips" class="chiprow"></div></div>
     <div class="tmpl" id="tmplHint"></div>
     <div class="grid" id="fields" style="margin-top:14px"></div>
+    <div class="fld" id="mieterDocFld" style="display:none;margin-top:12px"><label>Mieter-Dokument wählen</label>
+      <select id="mieterDocSel" onchange="selectDoc(this.value)"></select></div>
     <div class="result" id="result">—</div>
     <div class="bar">
       <button class="btn" onclick="copyName()">📋 Namen kopieren</button>
@@ -121,24 +123,36 @@ async function load(){
   var cats=[...new Set(VOR.map(v=>v.kategorie))];
   CURCAT=cats[0]||null;
   var first=VOR.find(v=>v.kategorie===CURCAT); CURDOC=first?first.id:null;
-  renderCatChips(cats); renderDocChips();
+  renderCatChips(cats); applyCatUI();
   await loadProj();
   onTyp();
 }
 function renderCatChips(cats){
   $('catChips').innerHTML=cats.map(function(c){return '<button type="button" class="chip cat'+(c===CURCAT?' on':'')+'" onclick="selectCat(\''+esc(c).replace(/'/g,"\\'")+'\')">'+esc(c)+'</button>';}).join('');
 }
+function isMieter(){return CURCAT==='Mieter';}
+function applyCatUI(){
+  var m=isMieter();
+  $('vorlageLbl').style.display=m?'none':'';
+  $('docChips').style.display=m?'none':'';
+  $('mieterDocFld').style.display=m?'':'none';
+  if(m) renderMieterSel(); else renderDocChips();
+}
 function renderDocChips(){
   var list=VOR.filter(function(v){return v.kategorie===CURCAT;});
   $('docChips').innerHTML=list.map(function(v){return '<button type="button" class="chip'+(v.id===CURDOC?' on':'')+'" onclick="selectDoc(\''+v.id+'\')">'+esc(v.dokument)+'</button>';}).join('')||'<span class="hint" style="margin:0">Keine Vorlagen in dieser Rubrik.</span>';
+}
+function renderMieterSel(){
+  var list=VOR.filter(function(v){return v.kategorie==='Mieter';});
+  $('mieterDocSel').innerHTML=list.map(function(v){return '<option value="'+v.id+'"'+(v.id===CURDOC?' selected':'')+'>'+esc(v.dokument)+'</option>';}).join('');
 }
 function selectCat(c){
   CURCAT=c;
   var first=VOR.find(function(v){return v.kategorie===c;});
   CURDOC=first?first.id:null;
-  renderCatChips([...new Set(VOR.map(v=>v.kategorie))]); renderDocChips(); onTyp();
+  renderCatChips([...new Set(VOR.map(v=>v.kategorie))]); applyCatUI(); onTyp();
 }
-function selectDoc(id){ CURDOC=id; renderDocChips(); onTyp(); }
+function selectDoc(id){ CURDOC=id; if(isMieter())renderMieterSel(); else renderDocChips(); onTyp(); }
 function curVor(){return VOR.find(v=>v.id===CURDOC);}
 function onTyp(){
   var v=curVor(); if(!v)return;
