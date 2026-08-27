@@ -78,6 +78,7 @@ tbody tr:hover td{background:#fafbfc}
         <div class="fld wide"><label>Titel</label><input id="f_titel" type="text"></div>
         <div class="fld"><label>Status</label><select id="f_status"></select></div>
         <div class="fld"><label>Priorität</label><select id="f_prio"></select></div>
+        <div class="fld wide"><label>Bereich</label><select id="f_quelle" onchange="quelleChg()"><option value="vertrieb">Vertrieb (CRM-Kontakte)</option><option value="hausverwaltung">Hausverwaltung (Dienstleister)</option></select></div>
         <div class="fld"><label>Kontakt</label><select id="f_kontakt_id"></select></div>
         <div class="fld"><label>Firma</label><select id="f_firma_id"></select></div>
         <div class="fld"><label>Verantwortlich</label><select id="f_verantwortlich"></select></div>
@@ -109,19 +110,25 @@ const PERS=['','Eric','Jürgen','Stephan','Ramona','Extern'];
 const sCls=s=>'s-'+String(s||'Neu').replace(/\s+/g,'');
 const heute=()=>new Date().toISOString().slice(0,10);
 
-let VIEW='offen', T=[], K=[], F=[], CUR=null, DRAG=null, q='', fPrio='', fKontakt='', fVer='';
+let VIEW='offen', T=[], KV=[], FV=[], KH=[], FH=[], CUR=null, DRAG=null, q='', fPrio='', fKontakt='', fVer='', fQuelle='';
+const QLBL={vertrieb:'Vertrieb',hausverwaltung:'Hausverwaltung'};
 
 const kName=k=>((k.vorname||'')+' '+(k.name||'')).trim()||'(ohne Name)';
-const kontaktName=id=>{const x=K.find(k=>k.id===id);return x?kName(x):'';};
-const firmaName=id=>{const x=F.find(f=>f.id===id);return x?x.name:'';};
+const Kof=ql=>ql==='hausverwaltung'?KH:KV;
+const Fof=ql=>ql==='hausverwaltung'?FH:FV;
+const kontaktName=(ql,id)=>{const x=Kof(ql).find(k=>k.id===id);return x?kName(x):'';};
+const firmaName=(ql,id)=>{const x=Fof(ql).find(f=>f.id===id);return x?x.name:'';};
+const refName=t=>kontaktName(t.quelle,t.kontakt_id)||firmaName(t.quelle,t.firma_id)||'';
 
 async function load(){
-  const[t,k,f]=await Promise.all([
-    sb.from('crm_tickets').select('*').order('created_at',{ascending:false}),
+  const[t,kv,fv,kh,fh]=await Promise.all([
+    sb.from('tickets').select('*').order('nummer',{ascending:false}),
     sb.from('crm_kontakte').select('*').order('name'),
-    sb.from('crm_firmen').select('*').order('name')
+    sb.from('crm_firmen').select('*').order('name'),
+    sb.from('hv_kontakte').select('*').order('name'),
+    sb.from('hv_firmen').select('*').order('name')
   ]);
-  T=t.data||[];K=k.data||[];F=f.data||[];
+  T=t.data||[];KV=kv.data||[];FV=fv.data||[];KH=kh.data||[];FH=fh.data||[];
   initNav();render();
 }
 
@@ -138,8 +145,9 @@ function dueCls(t){
 }
 function baseList(){
   let l=T.slice();
-  if(q){const s=q.toLowerCase();l=l.filter(t=>[t.titel,t.beschreibung,kontaktName(t.kontakt_id),firmaName(t.firma_id)].filter(Boolean).some(v=>String(v).toLowerCase().includes(s)));}
+  if(q){const s=q.toLowerCase();l=l.filter(t=>[t.titel,t.beschreibung,refName(t)].filter(Boolean).some(v=>String(v).toLowerCase().includes(s)));}
   if(fPrio)l=l.filter(t=>t.prio===fPrio);
+  if(fQuelle)l=l.filter(t=>(t.quelle||'vertrieb')===fQuelle);
   if(fKontakt)l=l.filter(t=>t.kontakt_id===fKontakt);
   if(fVer)l=l.filter(t=>(t.verantwortlich||'')===fVer);
   return l;
@@ -159,9 +167,13 @@ function kpis(){
 function filterBar(){
   return `<div class="bar">
     <input placeholder="Ticket suchen …" value="${esc(q)}" oninput="q=this.value;clearTimeout(window._t);window._t=setTimeout(render,150)">
+    <select onchange="fQuelle=this.value;render()"><option value="">Alle Bereiche</option><option value="vertrieb" ${fQuelle==='vertrieb'?'selected':''}>Vertrieb</option><option value="hausverwaltung" ${fQuelle==='hausverwaltung'?'selected':''}>Hausverwaltung</option></select>
     <select onchange="fPrio=this.value;render()"><option value="">Alle Prioritäten</option>${PRIO.map(p=>`<option ${fPrio===p?'selected':''}>${p}</option>`).join('')}</select>
     <select onchange="fVer=this.value;render()"><option value="">Alle Verantwortlichen</option>${PERS.filter(Boolean).map(p=>`<option ${fVer===p?'selected':''}>${esc(p)}</option>`).join('')}</select>
-    <select onchange="fKontakt=this.value;render()"><option value="">Alle Kontakte</option>${K.map(k=>`<option value="${k.id}" ${fKontakt===k.id?'selected':''}>${esc(kName(k))}</option>`).join('')}</select>
+    <select onchange="fKontakt=this.value;render()"><option value="">Alle Kontakte</option>
+      <optgroup label="Vertrieb">${KV.map(k=>`<option value="${k.id}" ${fKontakt===k.id?'selected':''}>${esc(kName(k))}</option>`).join('')}</optgroup>
+      <optgroup label="Hausverwaltung">${KH.map(k=>`<option value="${k.id}" ${fKontakt===k.id?'selected':''}>${esc(kName(k))}</option>`).join('')}</optgroup>
+    </select>
   </div>`;
 }
 function rows(list){
@@ -170,7 +182,8 @@ function rows(list){
     <td><span class="lnk" onclick="openTicket('${t.id}')">${esc(t.titel)}</span></td>
     <td><span class="pill ${sCls(t.status)}">${esc(t.status)}</span></td>
     <td><span class="pr pr-${esc(t.prio||'P2')}">${esc(t.prio||'P2')}</span></td>
-    <td>${esc(kontaktName(t.kontakt_id))||esc(firmaName(t.firma_id))||'—'}</td>
+    <td><span class="pill s-Wartet">${esc(QLBL[t.quelle]||'Vertrieb')}</span></td>
+    <td>${esc(refName(t))||'—'}</td>
     <td>${esc(t.verantwortlich)||'—'}</td>
     <td class="${dueCls(t)}">${fmtD(t.faellig)}</td>
     <td>${t.asana_url?`<a class="asana" href="${esc(t.asana_url)}" target="_blank" rel="noopener">● Asana ↗</a>`:'—'}</td>
@@ -182,7 +195,7 @@ function render(){
   const list=VIEW==='offen'?all.filter(t=>t.status!=='Erledigt').sort((a,b)=>(a.faellig||'9999')<(b.faellig||'9999')?-1:1):all;
   $('main').innerHTML=kpis()+`<div class="card"><div class="card-hd"><span>${VIEW==='offen'?'Offene ToDos':'Alle Tickets'} <span style="color:var(--muted);font-weight:400">· ${list.length}</span></span></div>
    <div class="card-bd">${filterBar()}
-   ${list.length?`<div class="tablewrap"><table><thead><tr><th>Nr</th><th>Titel</th><th>Status</th><th>Prio</th><th>Bezug</th><th>Verantwortlich</th><th>Fällig</th><th>Asana</th><th></th></tr></thead><tbody>${rows(list)}</tbody></table></div>`
+   ${list.length?`<div class="tablewrap"><table><thead><tr><th>Nr</th><th>Titel</th><th>Status</th><th>Prio</th><th>Bereich</th><th>Bezug</th><th>Verantwortlich</th><th>Fällig</th><th>Asana</th><th></th></tr></thead><tbody>${rows(list)}</tbody></table></div>`
    :'<div class="empty">Keine Tickets — oben „+ Ticket".</div>'}</div></div>`;
 }
 function renderBoard(){
@@ -194,7 +207,8 @@ function renderBoard(){
        <div class="kbt" onclick="openTicket('${t.id}')">#${t.nummer} · ${esc(t.titel)}</div>
        <div class="kbm"><span class="pr pr-${esc(t.prio||'P2')}">${esc(t.prio||'P2')}</span>
          ${t.faellig?`<span class="${dueCls(t)}">${fmtD(t.faellig)}</span>`:''}
-         ${t.kontakt_id?`<span>${esc(kontaktName(t.kontakt_id))}</span>`:''}
+         <span class="pill s-Wartet">${esc(QLBL[t.quelle]||'Vertrieb')}</span>
+         ${refName(t)?`<span>${esc(refName(t))}</span>`:''}
          ${t.asana_url?`<a class="asana" href="${esc(t.asana_url)}" target="_blank" rel="noopener">● Asana ↗</a>`:''}</div>
      </div>`).join('');
      return `<div class="kbcol" ondragover="allowDrop(event,this)" ondragleave="this.classList.remove('over')" ondrop="drop(event,'${esc(s)}',this)">
@@ -212,7 +226,7 @@ async function drop(ev,status,el){
 }
 async function setStatus(id,status){
   const patch={status,updated_at:new Date().toISOString(),erledigt_at:status==='Erledigt'?new Date().toISOString():null};
-  const{error}=await sb.from('crm_tickets').update(patch).eq('id',id);
+  const{error}=await sb.from('tickets').update(patch).eq('id',id);
   if(error){toast(error.message);return;}
   const t=T.find(x=>x.id===id);if(t)Object.assign(t,patch);
   render();toast('Status: '+status+' ✓');
@@ -223,8 +237,9 @@ function fillForm(t){
   $('f_titel').value=t.titel||'';
   $('f_status').innerHTML=STATUS.map(s=>`<option ${(t.status||'Neu')===s?'selected':''}>${s}</option>`).join('');
   $('f_prio').innerHTML=PRIO.map(p=>`<option ${(t.prio||'P2')===p?'selected':''}>${p}</option>`).join('');
-  $('f_kontakt_id').innerHTML=selOpts(K,t.kontakt_id,kName);
-  $('f_firma_id').innerHTML=selOpts(F,t.firma_id,x=>x.name);
+  const ql=t.quelle||'vertrieb'; $('f_quelle').value=ql;
+  $('f_kontakt_id').innerHTML=selOpts(Kof(ql),t.kontakt_id,kName);
+  $('f_firma_id').innerHTML=selOpts(Fof(ql),t.firma_id,x=>x.name);
   $('f_verantwortlich').innerHTML=PERS.map(p=>`<option value="${esc(p)}" ${(t.verantwortlich||'')===p?'selected':''}>${p||'—'}</option>`).join('');
   $('f_faellig').value=t.faellig||'';
   $('f_asana_url').value=t.asana_url||'';
@@ -241,8 +256,14 @@ function openTicket(id){
 }
 function openNew(){
   CUR={id:null};$('dlgTitle').textContent='Neues Ticket';
-  fillForm({status:'Neu',prio:'P2'});$('ov').classList.add('show');
+  fillForm({status:'Neu',prio:'P2',quelle:fQuelle||'vertrieb'});$('ov').classList.add('show');
 }
+function quelleChg(){
+  const ql=$('f_quelle').value;
+  $('f_kontakt_id').innerHTML=selOpts(Kof(ql),'',kName);
+  $('f_firma_id').innerHTML=selOpts(Fof(ql),'',x=>x.name);
+}
+window.quelleChg=quelleChg;
 function closeDlg(){$('ov').classList.remove('show');CUR=null;}
 
 async function saveTicket(){
@@ -250,20 +271,20 @@ async function saveTicket(){
   const titel=$('f_titel').value.trim();
   if(!titel){toast('Titel fehlt');return;}
   const status=$('f_status').value;
-  const row={titel,status,prio:$('f_prio').value,
+  const row={titel,status,prio:$('f_prio').value,quelle:$('f_quelle').value||'vertrieb',
     kontakt_id:$('f_kontakt_id').value||null,firma_id:$('f_firma_id').value||null,
     verantwortlich:$('f_verantwortlich').value||null,faellig:$('f_faellig').value||null,
     asana_url:$('f_asana_url').value.trim()||null,beschreibung:$('f_beschreibung').value||null,
     updated_at:new Date().toISOString(),
     erledigt_at:status==='Erledigt'?new Date().toISOString():null};
-  if(CUR.id){const{error}=await sb.from('crm_tickets').update(row).eq('id',CUR.id);if(error){toast(error.message);return;}toast('Ticket gespeichert ✓');}
-  else{const{error}=await sb.from('crm_tickets').insert(row);if(error){toast(error.message);return;}toast('Ticket angelegt ✓');}
+  if(CUR.id){const{error}=await sb.from('tickets').update(row).eq('id',CUR.id);if(error){toast(error.message);return;}toast('Ticket gespeichert ✓');}
+  else{const{error}=await sb.from('tickets').insert(row);if(error){toast(error.message);return;}toast('Ticket angelegt ✓');}
   closeDlg();load();
 }
 async function delTicket(id){
   const t=T.find(x=>x.id===id);
   if(!confirm('Ticket #'+(t?t.nummer:'')+' löschen?'))return;
-  await sb.from('crm_tickets').delete().eq('id',id);load();
+  await sb.from('tickets').delete().eq('id',id);load();
 }
 
 window.setView=setView;window.openTicket=openTicket;window.openNew=openNew;window.closeDlg=closeDlg;
