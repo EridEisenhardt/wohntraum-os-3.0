@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="de"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Wissensdatenbank · Interne Schulungsplattform</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+:root{--bg:#f6f7f9;--surf:#fff;--surf2:#f1f3f6;--line:#e6e8ec;--text:#1c2024;--muted:#6b7280;--dim:#4b5563;--accent:#6d28d9}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--text);font-family:'Inter',system-ui,-apple-system,'Segoe UI',sans-serif;font-size:14px;line-height:1.5;min-height:100vh}
+.hdr{background:var(--surf);border-bottom:1px solid var(--line);padding:16px 24px;position:sticky;top:0;z-index:10;display:flex;align-items:center;gap:14px;flex-wrap:wrap}
+.hdr-title{font-size:18px;font-weight:700}.hdr-sub{font-size:12px;color:var(--muted);margin-top:2px}
+.spacer{flex:1}
+.wrap{max-width:1200px;margin:18px auto;padding:0 18px 60px}
+.bar{display:flex;gap:8px;align-items:center;margin-bottom:14px;flex-wrap:wrap}
+.bar input,.bar select{font:inherit;font-size:13px;padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:var(--surf);color:var(--text)}
+.btn{background:var(--accent);color:#fff;border:none;border-radius:8px;padding:8px 13px;font:inherit;font-weight:600;font-size:13px;cursor:pointer}
+.btn.sec{background:var(--surf2);color:var(--text);border:1px solid var(--line)}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:14px}
+.card{background:var(--surf);border:1px solid var(--line);border-radius:14px;padding:14px 16px;display:flex;flex-direction:column;gap:8px}
+.card .top{display:flex;justify-content:space-between;align-items:flex-start;gap:8px}
+.pill{display:inline-block;padding:2px 9px;border-radius:20px;font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.03em}
+.p-typ{background:#ede9fe;color:#5b21b6}
+.p-st-Aktiv{background:#dcfce7;color:#166534}.p-st-Geplant{background:#fef9c3;color:#854d0e}.p-st-Abgeschlossen{background:#dbeafe;color:#1e40af}
+.title{font-size:15px;font-weight:700}
+.meta{font-size:12px;color:var(--muted)}
+.desc{font-size:13px;color:var(--dim)}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:2px}
+.open{display:inline-flex;align-items:center;gap:6px;background:var(--accent);color:#fff;text-decoration:none;font-size:12.5px;font-weight:600;padding:6px 11px;border-radius:8px}
+.icobtn{background:none;border:none;color:var(--muted);cursor:pointer;font-size:14px}.icobtn:hover{color:#c0392b}
+.prog{height:6px;background:var(--surf2);border-radius:6px;overflow:hidden}.prog>span{display:block;height:100%;background:var(--accent)}
+.empty{color:var(--muted);padding:30px;text-align:center}
+.ov{position:fixed;inset:0;background:rgba(20,25,35,.5);display:none;align-items:center;justify-content:center;z-index:60;padding:20px}
+.ov.show{display:flex}
+.dlg{background:var(--surf);border-radius:14px;width:100%;max-width:560px;max-height:90vh;overflow:auto}
+.dlg-hd{padding:14px 18px;border-bottom:1px solid var(--line);font-weight:700;display:flex;justify-content:space-between;align-items:center}
+.dlg-bd{padding:16px 18px;display:grid;gap:10px}
+.fld{display:flex;flex-direction:column;gap:4px}
+.fld label{font-size:11px;text-transform:uppercase;color:var(--muted);font-weight:700}
+.fld input,.fld select,.fld textarea{font:inherit;font-size:13.5px;padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:var(--surf);color:var(--text);resize:vertical}
+.dlg-ft{padding:12px 18px;border-top:1px solid var(--line);display:flex;justify-content:flex-end;gap:8px}
+.toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:#1c2024;color:#fff;padding:10px 16px;border-radius:8px;font-size:13px;opacity:0;pointer-events:none;transition:.2s;z-index:70}.toast.show{opacity:1}
+</style></head><body>
+<div class="hdr">
+  <div><div class="hdr-title">📚 Wissensdatenbank</div><div class="hdr-sub">Interne Schulungsplattform · Videokurse, Plattformen &amp; Vorlagen</div></div>
+  <div class="spacer"></div>
+  <button class="btn" onclick="openNew()">+ Eintrag</button>
+</div>
+<div class="wrap">
+  <div class="bar">
+    <input id="q" placeholder="🔍 suchen…" oninput="render()" style="min-width:200px">
+    <select id="fTyp" onchange="render()"><option value="">Alle Typen</option></select>
+    <select id="fStatus" onchange="render()"><option value="">Alle Status</option><option>Aktiv</option><option>Geplant</option><option>Abgeschlossen</option></select>
+    <span class="meta" id="cnt"></span>
+  </div>
+  <div class="grid" id="grid"><div class="empty">Lädt…</div></div>
+</div>
+
+<div class="ov" id="ov"><div class="dlg">
+  <div class="dlg-hd"><span id="dlgTitle">Eintrag</span><span class="icobtn" onclick="closeDlg()">✕</span></div>
+  <div class="dlg-bd">
+    <div class="fld"><label>Titel</label><input id="m_titel" placeholder="z. B. DRME Akademie"></div>
+    <div class="fld"><label>Typ</label><select id="m_typ">
+      <option>Schulungsplattform</option><option>Videokurs</option><option>Plattform</option><option>Vorlage</option><option>Dokumentation</option><option>Sonstiges</option>
+    </select></div>
+    <div class="fld"><label>Anbieter</label><input id="m_anbieter" placeholder="z. B. DRME"></div>
+    <div class="fld"><label>Thema / Bereich</label><input id="m_thema" placeholder="z. B. Provisionsgeber Strom- & Gasverträge"></div>
+    <div class="fld"><label>Link (URL)</label><input id="m_url" placeholder="https://…"></div>
+    <div class="fld"><label>Beschreibung</label><textarea id="m_beschreibung" rows="3"></textarea></div>
+    <div class="fld"><label>Status</label><select id="m_status"><option>Aktiv</option><option>Geplant</option><option>Abgeschlossen</option></select></div>
+    <div class="fld"><label>Fortschritt (%)</label><input id="m_fortschritt" type="number" min="0" max="100" placeholder="0–100"></div>
+  </div>
+  <div class="dlg-ft"><button class="btn sec" onclick="closeDlg()">Abbrechen</button><button class="btn" onclick="saveDlg()">Speichern</button></div>
+</div></div>
+<div class="toast" id="toast"></div>
+<script>
+const sb=window.supabase.createClient('https://jqzxctfqvcwbctpjksvg.supabase.co','eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpxenhjdGZxdmN3YmN0cGprc3ZnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODIxMzA0MzIsImV4cCI6MjA5NzcwNjQzMn0.RKIbZxJdusKWWPjBJqlxZ8e1m8So02UslOg55YRsn3o');
+const $=id=>document.getElementById(id);
+const esc=s=>(s==null?'':String(s)).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+function toast(m){const t=$('toast');t.textContent=m;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),1800);}
+let ROWS=[], EDIT=null;
+function typeOpts(){const ts=[...new Set(ROWS.map(r=>r.typ).filter(Boolean))].sort();$('fTyp').innerHTML='<option value="">Alle Typen</option>'+ts.map(t=>'<option'+($('fTyp').value===t?' selected':'')+'>'+esc(t)+'</option>').join('');}
+function render(){
+  const q=($('q').value||'').toLowerCase(),ft=$('fTyp').value,fs=$('fStatus').value;
+  const list=ROWS.filter(r=>(!ft||r.typ===ft)&&(!fs||r.status===fs)&&(!q||((r.titel||'')+' '+(r.anbieter||'')+' '+(r.thema||'')+' '+(r.beschreibung||'')).toLowerCase().includes(q)))
+    .sort((a,b)=>(a.pos||0)-(b.pos||0)||String(a.titel||'').localeCompare(String(b.titel||''),'de'));
+  $('cnt').textContent=list.length+' von '+ROWS.length;
+  $('grid').innerHTML=list.map(r=>{
+    const fp=(r.fortschritt!=null&&!isNaN(r.fortschritt))?Math.max(0,Math.min(100,r.fortschritt)):null;
+    return '<div class="card">'
+      +'<div class="top"><span class="pill p-typ">'+esc(r.typ||'—')+'</span><span class="pill p-st-'+esc(r.status||'Aktiv')+'">'+esc(r.status||'Aktiv')+'</span></div>'
+      +'<div class="title">'+esc(r.titel||'(ohne Titel)')+'</div>'
+      +'<div class="meta">'+[r.anbieter,r.thema].filter(Boolean).map(esc).join(' · ')+'</div>'
+      +(r.beschreibung?'<div class="desc">'+esc(r.beschreibung)+'</div>':'')
+      +(fp!=null?'<div class="prog"><span style="width:'+fp+'%"></span></div><div class="meta">'+fp+'% abgeschlossen</div>':'')
+      +'<div class="row" style="margin-top:auto">'
+        +(r.url?'<a class="open" href="'+esc(r.url)+'" target="_blank" rel="noopener">▶ Öffnen</a>':'')
+        +'<button class="btn sec" style="padding:6px 11px;font-size:12.5px" onclick="openEdit(\''+r.id+'\')">✎ Bearbeiten</button>'
+        +'<button class="icobtn" title="Löschen" onclick="del(\''+r.id+'\')" style="margin-left:auto">🗑</button>'
+      +'</div></div>';
+  }).join('')||'<div class="empty">Noch keine Einträge. Mit „+ Eintrag" anlegen.</div>';
+}
+function openNew(){EDIT=null;$('dlgTitle').textContent='Neuer Eintrag';['titel','anbieter','thema','url','beschreibung','fortschritt'].forEach(k=>$('m_'+k).value='');$('m_typ').value='Schulungsplattform';$('m_status').value='Aktiv';$('ov').classList.add('show');}
+function openEdit(id){const r=ROWS.find(x=>x.id===id);if(!r)return;EDIT=id;$('dlgTitle').textContent='Eintrag bearbeiten';$('m_titel').value=r.titel||'';$('m_typ').value=r.typ||'Plattform';$('m_anbieter').value=r.anbieter||'';$('m_thema').value=r.thema||'';$('m_url').value=r.url||'';$('m_beschreibung').value=r.beschreibung||'';$('m_status').value=r.status||'Aktiv';$('m_fortschritt').value=(r.fortschritt==null?'':r.fortschritt);$('ov').classList.add('show');}
+function closeDlg(){$('ov').classList.remove('show');}
+async function saveDlg(){
+  const row={titel:$('m_titel').value.trim()||null,typ:$('m_typ').value,anbieter:$('m_anbieter').value.trim()||null,thema:$('m_thema').value.trim()||null,url:$('m_url').value.trim()||null,beschreibung:$('m_beschreibung').value.trim()||null,status:$('m_status').value,fortschritt:$('m_fortschritt').value===''?null:parseInt($('m_fortschritt').value,10)};
+  if(!row.titel){toast('Bitte Titel angeben');return;}
+  if(EDIT){const res=await sb.from('wissensdatenbank').update(row).eq('id',EDIT);if(res.error){toast('Fehler: '+res.error.message);return;}}
+  else{row.pos=ROWS.length?Math.max.apply(null,ROWS.map(r=>r.pos||0))+1:1;const res=await sb.from('wissensdatenbank').insert(row);if(res.error){toast('Fehler: '+res.error.message);return;}}
+  closeDlg();await load();toast('Gespeichert ✓');
+}
+async function del(id){if(!confirm('Diesen Eintrag löschen?'))return;const res=await sb.from('wissensdatenbank').delete().eq('id',id);if(res.error){toast(res.error.message);return;}ROWS=ROWS.filter(x=>x.id!==id);render();toast('Gelöscht');}
+async function load(){const res=await sb.from('wissensdatenbank').select('*').order('pos');ROWS=res.error?[]:(res.data||[]);typeOpts();render();}
+load();
+</script>
+</body></html>

@@ -100,6 +100,9 @@ export const NAV = [
     { href: '/prozesse/bpmn', icon: 'ti-hierarchy-2', label: 'BPMN-Modellierung' },
   ] },
   { type: 'link', href: '/dokumente', icon: 'ti-files', label: 'Dokumente', area: 'common', mod: 'dokumente' },
+  { type: 'group', key: 'wissensdatenbank', icon: 'ti-book', label: 'Wissensdatenbank', area: ['vertrieb', 'hv', 'backoffice'], mod: 'dashboards', items: [
+    { href: '/wissensdatenbank', icon: 'ti-school', label: 'Schulungsplattform' },
+  ] },
   { type: 'group', key: 'stammdaten', icon: 'ti-database', label: 'Stammdaten', area: 'hv', mod: 'dokumente', items: [
     { href: '/stammdaten/kontakte', icon: 'ti-users', label: 'Kontakte' },
     { href: '/stammdaten/firmen', icon: 'ti-building', label: 'Firmen' },
@@ -156,6 +159,7 @@ export const GESCHAEFTE = [
   { v: 'hausverwaltung', label: 'Hausverwaltung', icon: 'ti-home' },
   { v: 'hausmeisterdienst', label: 'Hausmeisterdienst', icon: 'ti-tools' },
   { v: 'gf', label: 'Geschäftsführer', icon: 'ti-user' },
+  { v: 'wissen', label: 'Wissensdatenbank', icon: 'ti-book' },
 ]
 export const GB_MAP = {
   ankauf: 'vertrieb', vermietung: 'vertrieb', crm: 'vertrieb', baustandard: 'vertrieb', assetmanagement: 'vertrieb', strategie: 'vertrieb',
@@ -164,6 +168,7 @@ export const GB_MAP = {
   produktivitaet: 'gf', personal: 'gf', 'eric-privat': 'gf',
   'gf-dashboard': 'gf', '/gf-dashboard': 'gf', '/beschluesse': 'gf', '/aktivitaeten': 'hausverwaltung', '/dokumente': 'buchhaltung', '/nutzer': 'gf',
   '/hausmeisterdienst': 'hausmeisterdienst', '/haushaltshilfe': 'gf', '/jahresplaner': 'gf', '/persoenliche-assistenz': 'gf', '/ziele-entwicklung': 'gf',
+  wissensdatenbank: 'wissen',
 }
 export const gbOf = (n) => (n.type === 'group' ? GB_MAP[n.key] : GB_MAP[n.href])
 
