@@ -183,9 +183,13 @@ export default function Sidebar({ user, demo, onLogout, role, perms }) {
 
   const has = (key) => !!(perms && Object.prototype.hasOwnProperty.call(perms, key))
   const on = (key) => { const p = perms && perms[key]; return !!(p && p.sehen) }
+  // Wer die Rolle eines Geschäftsbereichs trägt, sieht dessen Einträge automatisch
+  // (z. B. Rolle "hausverwaltung" → alle Kategorien/Links im Bereich Hausverwaltung).
+  const roleOwnsBereich = (n) => !!role && gbOf(n) === role
   const canSeeItem = (n, it) => {
     if (demo || isAdmin) return true
     if (n.key === 'eric-privat') return isAdmin
+    if (roleOwnsBereich(n)) return true
     if (!perms) return true
     const key = 'sub:' + it.href
     return has(key) ? on(key) : on(n.mod)
@@ -194,11 +198,13 @@ export default function Sidebar({ user, demo, onLogout, role, perms }) {
     if (n.type === 'group') {
       if (demo || isAdmin) return true
       if (n.key === 'eric-privat') return isAdmin
+      if (roleOwnsBereich(n)) return true
       if (!perms) return true
       const catKey = 'cat:' + n.key
       const base = has(catKey) ? on(catKey) : on(n.mod)
       return base || (n.items || []).some((it) => canSeeItem(n, it))
     }
+    if (roleOwnsBereich(n)) return true
     if (!n.mod) return true
     if (demo || isAdmin) return true
     if (NODE_ADMIN_ONLY(n.mod)) return isAdmin
