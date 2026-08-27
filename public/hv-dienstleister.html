@@ -155,10 +155,11 @@ const TBL={kontakt:'hv_kontakte',firma:'hv_firmen',deal:'hv_deals'};
 const LBL={kontakt:'Kontakt',firma:'Firma',deal:'Deal'};
 const SPEC={
  kontakt:[['vorname','Vorname','text'],['name','Nachname','text'],['email','E-Mail','text'],['telefon','Telefon','text'],['website','Homepage','text'],['position','Position','text'],['firma_id','Firma','firma'],['strasse','Straße & Hausnummer','text'],['plz','PLZ','text'],['ort','Ort','text'],['land','Land','text'],['kategorien','Kategorien','kats'],['potenzial','Potenzial','pot'],['letzter_kontakt','Letzter Kontakt (manuell)','date'],['notizen','Notizen','textarea']],
- firma:[['name','Firmenname','text'],['branche','Branche','text'],['website','Homepage','text'],['telefon','Telefon','text'],['strasse','Straße & Hausnummer','text'],['plz','PLZ','text'],['ort','Ort','text'],['land','Land','text'],['kategorien','Kategorien','kats'],['potenzial','Potenzial','pot'],['letzter_kontakt','Letzter Kontakt (manuell)','date'],['notizen','Notizen','textarea']],
+ firma:[['name','Firmenname','text'],['branche','Branche','text'],['website','Homepage','text'],['telefon','Telefon','text'],['strasse','Straße & Hausnummer','text'],['plz','PLZ','text'],['ort','Ort','text'],['land','Land','text'],['kategorien','Kategorien','kats'],['gebaeude','Gebäude (Ansprechpartner für)','geb'],['potenzial','Potenzial','pot'],['letzter_kontakt','Letzter Kontakt (manuell)','date'],['notizen','Notizen','textarea']],
  deal:[['titel','Titel','text'],['firma_id','Firma','firma'],['kontakt_id','Kontakt','kontakt'],['wert','Wert (€)','number'],['stufe','Stufe','stufe'],['wahrscheinlichkeit','Wahrscheinlichkeit (%)','number'],['abschluss_datum','Abschlussdatum','date'],['notizen','Notizen','textarea']]
 };
-let VIEW='kontakte', K=[],F=[],D=[],A=[],TL=[],M=[],KAT=[],TCK=[], CUR=null, DRAG=null, q='', kFilt='', pFilt='', aFilt={typ:'',status:''};
+let VIEW='kontakte', K=[],F=[],D=[],A=[],TL=[],M=[],KAT=[],TCK=[],GEB=[], CUR=null, DRAG=null, q='', kFilt='', pFilt='', aFilt={typ:'',status:''};
+let CURGEB=[];
 const TSTATUS=['Neu','In Bearbeitung','Wartet','Erledigt'];
 const POT=['A','B+','B','C'];
 const POTC={'A':'#1f7a4d','B+':'#185fa5','B':'#b45309','C':'#6b7280'};
@@ -203,6 +204,8 @@ function katText(hex){
 }
 const chipStyle=n=>`background:${esc(katColor(n))};color:${katText(katColor(n))}`;
 function katChips(o){const a=katsOf(o);return a.length?`<div class="chips">${a.map(n=>`<span class="chip" style="${chipStyle(n)}">${esc(n)}</span>`).join('')}</div>`:'—';}
+const gebOf=o=>Array.isArray(o.gebaeude)?o.gebaeude:[];
+function gebChipsCell(o){const a=gebOf(o);return a.length?`<div class="chips">${a.map(n=>`<span class="chip" style="background:#eef4fb;color:#185fa5">🏢 ${esc(n)}</span>`).join('')}</div>`:'—';}
 function katFilterSel(){return `<select onchange="kFilt=this.value;render()"><option value="">Alle Kategorien</option>${KAT.map(k=>`<option ${kFilt===k.name?'selected':''}>${esc(k.name)}</option>`).join('')}</select>`;}
 const katMatch=o=>!kFilt||katsOf(o).includes(kFilt);
 const potMatch=o=>!pFilt||(o.potenzial||'')===pFilt;
@@ -214,7 +217,7 @@ function initNav(){const t=[['kontakte','Kontakte'],['firmen','Firmen'],['deals'
 function setView(v){VIEW=v;q='';kFilt='';pFilt='';initNav();render();}
 
 async function load(){
-  const[k,f,d,a,tl,m,kt,tc]=await Promise.all([
+  const[k,f,d,a,tl,m,kt,tc,g]=await Promise.all([
     sb.from('hv_kontakte').select('*').order('name'),
     sb.from('hv_firmen').select('*').order('name'),
     sb.from('hv_deals').select('*').order('created_at',{ascending:false}),
@@ -222,9 +225,12 @@ async function load(){
     sb.from('hv_timeline').select('*').order('created_at',{ascending:false}),
     sb.from('hv_mails').select('*').order('datum',{ascending:false}).limit(1000),
     sb.from('hv_kategorien').select('*').order('sort').order('name'),
-    sb.from('hv_tickets').select('*').order('created_at',{ascending:false})
+    sb.from('hv_tickets').select('*').order('created_at',{ascending:false}),
+    sb.from('gebaeude').select('name,kennung').order('name')
   ]);
   K=k.data||[];F=f.data||[];D=d.data||[];A=a.data||[];TL=tl.data||[];M=m.data||[];KAT=kt.data||[];TCK=tc.data||[];
+  GEB=((g&&g.data)||[]).map(x=>x.name).filter(Boolean);
+  GEB.sort((a,b)=>String(a).localeCompare(String(b),'de',{sensitivity:'base'}));
   KAT.sort((a,b)=>String(a.name||'').localeCompare(String(b.name||''),'de',{sensitivity:'base'}));
   K.sort((a,b)=>kName(a).localeCompare(kName(b),'de',{sensitivity:'base'}));
   F.sort((a,b)=>String(a.name||'').localeCompare(String(b.name||''),'de',{sensitivity:'base'}));
@@ -335,6 +341,7 @@ function renderFirmen(){
     {key:'name',label:'Firma',text:f=>f.name,cell:f=>`<span class="lnk" onclick="openEntity('firma','${f.id}')">${esc(f.name)}</span>`},
     {key:'pot',label:'Pot.',text:f=>f.potenzial,cell:f=>potBadge(f.potenzial)},
     {key:'kat',label:'Kategorien',text:f=>katsOf(f).join(', '),cell:f=>katChips(f)},
+    {key:'geb',label:'Gebäude',text:f=>gebOf(f).join(', '),cell:f=>gebChipsCell(f)},
     {key:'branche',label:'Branche',text:f=>f.branche,cell:f=>esc(f.branche)||'—'},
     {key:'anschrift',label:'Anschrift',text:f=>anschrift(f),cell:f=>esc(anschrift(f))||'—'},
     {key:'lk',label:'Letzter Kontakt',text:f=>{const d=lastContact('firma',f);return d?fmtD(d):'';},cell:f=>lastContactCell('firma',f)},
@@ -446,8 +453,15 @@ function fieldHtml(typ,f,val){
       <select id="katAdd" onchange="katPick(this.value)"></select>
     </div>`;
   }
+  else if(kind==='geb'){
+    CURGEB=Array.isArray(val)?val.slice():[];
+    inp=`<div class="katsel" id="m_${key}">
+      <div class="chips" id="gebChips"></div>
+      <select id="gebAdd" onchange="gebPick(this.value)"></select>
+    </div>`;
+  }
   else inp=`<input id="m_${key}" type="${kind==='number'?'number':kind==='date'?'date':'text'}" value="${val==null?'':esc(val)}">`;
-  return `<div class="fld ${kind==='textarea'||kind==='kats'?'wide':''}"><label>${label}</label>${inp}</div>`;
+  return `<div class="fld ${kind==='textarea'||kind==='kats'||kind==='geb'?'wide':''}"><label>${label}</label>${inp}</div>`;
 }
 
 // ——— Firma im Dialog: bestehende wählen oder neue direkt anlegen ———
@@ -493,13 +507,27 @@ function katRender(){
 function katPick(name){if(name&&!CURKATS.includes(name))CURKATS.push(name);katRender();}
 function katRemove(name){CURKATS=CURKATS.filter(n=>n!==name);katRender();}
 function readKats(){return CURKATS.slice();}
+// ——— Gebäude-Auswahl im Dialog (Dropdown + entfernbare Chips) ———
+function gebRender(){
+  const chips=$('gebChips'),sel=$('gebAdd');if(!chips||!sel)return;
+  chips.innerHTML=CURGEB.length?CURGEB.map(n=>`<span class="chip" style="background:#eef4fb;color:#185fa5">🏢 ${esc(n)}
+    <span class="x" title="entfernen" onclick="gebRemove('${esc(n).replace(/'/g,"\\'")}')">✕</span></span>`).join('')
+    :'<span style="font-size:12px;color:var(--muted)">Keinem Gebäude zugeordnet.</span>';
+  const rest=GEB.filter(n=>!CURGEB.includes(n));
+  sel.innerHTML=`<option value="">${GEB.length?(rest.length?'+ Gebäude wählen …':'Alle Gebäude zugeordnet'):'Keine Gebäude gefunden'}</option>`
+    +rest.map(n=>`<option value="${esc(n)}">${esc(n)}</option>`).join('');
+  sel.disabled=!rest.length;
+}
+function gebPick(name){if(name&&!CURGEB.includes(name))CURGEB.push(name);gebRender();}
+function gebRemove(name){CURGEB=CURGEB.filter(n=>n!==name);gebRender();}
+function readGeb(){return CURGEB.slice();}
 function openEntity(typ,id){
   const rec=(typ==='kontakt'?K:typ==='firma'?F:D).find(x=>x.id===id);if(!rec)return;
   CUR={typ,id,rec:{...rec}};
   $('dlgTitle').textContent=LBL[typ]+' · '+(typ==='kontakt'?kName(rec):typ==='firma'?rec.name:(rec.titel||'Deal'));
   CURKATS=[];
   $('dlgFields').innerHTML=SPEC[typ].map(f=>fieldHtml(typ,f,rec[f[0]])).join('');
-  katRender();
+  katRender(); gebRender();
   $('mailBtn').style.display=(typ==='kontakt'||typ==='deal')?'':'none';
   $('tckWrap').style.display='';renderTickets();
   $('tlWrap').style.display='';
@@ -512,7 +540,7 @@ function openNew(){
   $('dlgTitle').textContent='Neuer '+LBL[typ];
   CURKATS=[];
   $('dlgFields').innerHTML=SPEC[typ].map(f=>fieldHtml(typ,f,typ==='deal'&&f[0]==='stufe'?STUFEN[0]:'')).join('');
-  katRender();
+  katRender(); gebRender();
   $('mailBtn').style.display='none';
   $('tckWrap').style.display='none';
   $('noteInput').value='';$('tlWrap').style.display='none';$('ov').classList.add('show');
@@ -529,6 +557,7 @@ async function saveEntity(){
   if(!CUR)return;const {typ,id,rec}=CUR;const row={};
   for(const f of SPEC[typ]){
     if(f[2]==='kats'){row[f[0]]=readKats();continue;}
+    if(f[2]==='geb'){row[f[0]]=readGeb();continue;}
     const el=$('m_'+f[0]);if(!el)continue;
     if(f[2]==='firma'){row[f[0]]=await resolveFirma(el.value);continue;}
     let v=el.value;if(v===''||v==='__new__')v=null;
@@ -542,7 +571,7 @@ async function saveEntity(){
     for(const f of changes){let alt=rec[f[0]],neu=row[f[0]];
       if(f[2]==='firma'){alt=firmaName(alt);neu=firmaName(neu);}
       if(f[2]==='kontakt'){alt=kontaktName(alt);neu=kontaktName(neu);}
-      if(f[2]==='kats'){alt=(alt||[]).join(', ')||'—';neu=(neu||[]).join(', ')||'—';}
+      if(f[2]==='kats'||f[2]==='geb'){alt=(alt||[]).join(', ')||'—';neu=(neu||[]).join(', ')||'—';}
       await logTL(typ,id,'aenderung',{feld:f[1],alt,neu});}
     toast(changes.length?changes.length+' Änderung(en) gespeichert ✓':'Keine Änderungen');
   } else {
