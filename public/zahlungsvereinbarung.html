@@ -79,6 +79,10 @@ body{font-family:'DM Sans',-apple-system,Segoe UI,Roboto,Arial,sans-serif;color:
       <div class="fld"><label>Mietername <span class="req">*</span></label><input id="mieter" placeholder="Vor- und Nachname"></div>
     </div>
 
+    <div class="fld"><label>Bankkonto für Mietzahlung (IBAN im Vertrag)</label>
+      <select id="konto"><option value="">— ohne IBAN (allgemein „vom Gläubiger benanntes Konto") —</option></select>
+      <div class="hint">Konten aus „Bankverbindungen". Das gewählte Konto (IBAN, Bank, Inhaber) wird in § 2 des Vertrags als Zahlungsziel eingesetzt.</div></div>
+
     <div class="fld"><label>Status des Mietvertrags <span class="req">*</span></label>
       <select id="status">
         <option value="">— bitte wählen —</option>
@@ -148,6 +152,26 @@ const esc=s=>(s==null?'':String(s)).replace(/&/g,'&amp;').replace(/</g,'&lt;');
 
 const _sb=window.supabase.createClient('https://jqzxctfqvcwbctpjksvg.supabase.co','eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpxenhjdGZxdmN3YmN0cGprc3ZnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODIxMzA0MzIsImV4cCI6MjA5NzcwNjQzMn0.RKIbZxJdusKWWPjBJqlxZ8e1m8So02UslOg55YRsn3o');
 function zurueckZurEingabe(){ window.scrollTo({top:0,behavior:'smooth'}); const f=document.getElementById('mieter'); if(f)f.focus(); }
+let KONTEN=[];
+function kontoLabel(k){var p=[k.bezeichnung,k.bank,k.iban].filter(Boolean);return p.join(' · ');}
+function kontoById(id){return KONTEN.find(function(k){return k.id===id;});}
+function kontoSatz(k){
+  if(!k) return 'kostenfrei auf ein vom Gläubiger benanntes Konto zu zahlen';
+  var parts=[];
+  if(k.iban) parts.push('<b>IBAN '+esc(k.iban)+'</b>');
+  if(k.bank) parts.push('bei '+esc(k.bank));
+  if(k.bic) parts.push('BIC '+esc(k.bic));
+  if(k.inhaber) parts.push('Kontoinhaber '+esc(k.inhaber));
+  return 'kostenfrei auf folgendes Konto des Gläubigers zu zahlen: '+parts.join(', ');
+}
+async function loadKonten(){
+  const res=await _sb.from('bankverbindungen').select('id,bezeichnung,inhaber,iban,bic,bank').order('bezeichnung');
+  KONTEN=res.error?[]:(res.data||[]);
+  const sel=document.getElementById('konto'); if(!sel)return;
+  sel.innerHTML='<option value="">— ohne IBAN (allgemein „vom Gläubiger benanntes Konto") —</option>'
+    +KONTEN.map(function(k){return '<option value="'+k.id+'">'+esc(kontoLabel(k))+'</option>';}).join('');
+}
+loadKonten();
 async function finalSave(){
   const warn=document.getElementById('warn'); warn.style.display='none';
   if(!validate()){ warn.style.display='block'; warn.textContent='Bitte alle rot markierten Pflichtfelder ausfüllen.'; return; }
@@ -155,10 +179,13 @@ async function finalSave(){
   const nachtrag=document.getElementById('nachtrag').checked;
   const gezahlt=parseInt(document.getElementById('gezahlt').value,10)||0;
   const urspr=document.getElementById('urspr').value;
+  const _k=kontoById((document.getElementById('konto')||{}).value);
   const rec={ mieter:g('mieter'), objekt:g('objekt'), wohnung:g('whg'),
     forderung:numDE(g('forderung'))||null, rate:numDE(g('rate'))||null,
     basiszins:numDE(g('basis'))||null, zuschlag:numDE(g('zuschlag'))||null,
     start_datum:document.getElementById('erste').value||null, status:'laufend', sonderzahlungen:[],
+    konto_iban:_k?(_k.iban||null):null,
+    konto_info:_k?[_k.bezeichnung,_k.bank,_k.inhaber].filter(Boolean).join(' · ')||null:null,
     notiz:'Gläubiger: '+g('glaeubiger')+(nachtrag?(' · Nachtrag bestehender Vereinbarung'+(urspr?(' vom '+urspr):'')+' · '+gezahlt+' Rate(n) bereits gezahlt'):'') };
   gen(); // Vorschau mit aktuellen Werten sicherstellen
   const info=document.getElementById('saveInfo'); info.textContent='Speichere …';
@@ -259,7 +286,7 @@ function gen(){
     <p>Der Schuldner erkennt die gegen ihn bestehende Gesamtforderung in Höhe von <b>${eur(forderung)}</b> (in Worten: ${esc(forderung.toLocaleString('de-DE'))} Euro) dem Grunde und der Höhe nach ausdrücklich an.</p>
 
     <h3>§ 2 Ratenzahlung</h3>
-    <p>Der Schuldner verpflichtet sich, die anerkannte Forderung nebst Zinsen (§ 3) in monatlichen Raten von <b>${eur(rate)}</b> zu tilgen. Die Raten sind jeweils zum Monatsersten, erstmals am <b>${dt(erste)}</b>, kostenfrei auf ein vom Gläubiger benanntes Konto zu zahlen. Nach dem anliegenden Zins- und Tilgungsplan (Anlage 1) ergeben sich voraussichtlich <b>${laufzeit} Raten</b>; die Schlussrate beträgt <b>${eur(last.zahlung)}</b>.</p>
+    <p>Der Schuldner verpflichtet sich, die anerkannte Forderung nebst Zinsen (§ 3) in monatlichen Raten von <b>${eur(rate)}</b> zu tilgen. Die Raten sind jeweils zum Monatsersten, erstmals am <b>${dt(erste)}</b>, ${kontoSatz(kontoById((document.getElementById('konto')||{}).value))}. Nach dem anliegenden Zins- und Tilgungsplan (Anlage 1) ergeben sich voraussichtlich <b>${laufzeit} Raten</b>; die Schlussrate beträgt <b>${eur(last.zahlung)}</b>.</p>
 
     <h3>§ 2a Sondertilgung und Sonderzahlungen</h3>
     <p>Der Schuldner ist berechtigt, jederzeit und ohne vorherige Ankündigung über die vereinbarte Rate hinaus Sonderzahlungen (Sondertilgungen) zu leisten. Eine Sonderzahlung wird zunächst auf die bis dahin aufgelaufenen Zinsen (§ 367 BGB) und im Übrigen in voller Höhe auf die Hauptforderung angerechnet; sie verringert dadurch die Restforderung sowie die künftig anfallenden Zinsen und verkürzt die Laufzeit. Eine Vorfälligkeitsentschädigung oder ein sonstiges Entgelt fällt nicht an. Sonderzahlungen entbinden den Schuldner nicht von der Pflicht zur weiteren Zahlung der laufenden Raten gemäß § 2, solange die Gesamtforderung noch nicht vollständig getilgt ist.</p>
