@@ -79,9 +79,9 @@ body{font-family:'DM Sans',-apple-system,Segoe UI,Roboto,Arial,sans-serif;color:
       <div class="fld"><label>Mietername <span class="req">*</span></label><input id="mieter" placeholder="Vor- und Nachname"></div>
     </div>
 
-    <div class="fld"><label>Bankkonto für Mietzahlung (IBAN im Vertrag)</label>
-      <select id="konto"><option value="">— ohne IBAN (allgemein „vom Gläubiger benanntes Konto") —</option></select>
-      <div class="hint">Konten aus „Bankverbindungen". Das gewählte Konto (IBAN, Bank, Inhaber) wird in § 2 des Vertrags als Zahlungsziel eingesetzt.</div></div>
+    <div class="fld"><label>Mietkonto (Objekt · IBAN) für die Zahlung</label>
+      <select id="konto" onchange="kontoChg()"><option value="">— ohne IBAN (allgemein „vom Gläubiger benanntes Konto") —</option></select>
+      <div class="hint">Mietkonten aus „Hausverwaltung · Portfolio". Die IBAN des gewählten Objekts wird in § 2 des Vertrags als Zahlungsziel eingesetzt.</div></div>
 
     <div class="fld"><label>Status des Mietvertrags <span class="req">*</span></label>
       <select id="status">
@@ -153,23 +153,24 @@ const esc=s=>(s==null?'':String(s)).replace(/&/g,'&amp;').replace(/</g,'&lt;');
 const _sb=window.supabase.createClient('https://jqzxctfqvcwbctpjksvg.supabase.co','eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpxenhjdGZxdmN3YmN0cGprc3ZnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODIxMzA0MzIsImV4cCI6MjA5NzcwNjQzMn0.RKIbZxJdusKWWPjBJqlxZ8e1m8So02UslOg55YRsn3o');
 function zurueckZurEingabe(){ window.scrollTo({top:0,behavior:'smooth'}); const f=document.getElementById('mieter'); if(f)f.focus(); }
 let KONTEN=[];
-function kontoLabel(k){var p=[k.bezeichnung,k.bank,k.iban].filter(Boolean);return p.join(' · ');}
+function objLabel(k){return (k.kennung||'')+(k.adresse?(' – '+k.adresse):'');}
+function kontoLabel(k){return objLabel(k).trim()+' · '+esc(k.iban);}
 function kontoById(id){return KONTEN.find(function(k){return k.id===id;});}
 function kontoSatz(k){
   if(!k) return 'kostenfrei auf ein vom Gläubiger benanntes Konto zu zahlen';
-  var parts=[];
-  if(k.iban) parts.push('<b>IBAN '+esc(k.iban)+'</b>');
-  if(k.bank) parts.push('bei '+esc(k.bank));
-  if(k.bic) parts.push('BIC '+esc(k.bic));
-  if(k.inhaber) parts.push('Kontoinhaber '+esc(k.inhaber));
-  return 'kostenfrei auf folgendes Konto des Gläubigers zu zahlen: '+parts.join(', ');
+  return 'kostenfrei auf das Mietkonto des Gläubigers zu zahlen: <b>IBAN '+esc(k.iban)+'</b>'+(objLabel(k).trim()?(' (Objekt '+esc(objLabel(k).trim())+')'):'');
+}
+function kontoChg(){
+  const k=kontoById((document.getElementById('konto')||{}).value);
+  const o=document.getElementById('objekt');
+  if(k&&o&&!o.value.trim()&&k.adresse){ o.value=k.adresse; }
 }
 async function loadKonten(){
-  const res=await _sb.from('bankverbindungen').select('id,bezeichnung,inhaber,iban,bic,bank').order('bezeichnung');
-  KONTEN=res.error?[]:(res.data||[]);
+  const res=await _sb.from('portfolio_immobilien').select('id,kennung,adresse,mietkonto').not('mietkonto','is',null).order('kennung');
+  KONTEN=(res.error?[]:(res.data||[])).filter(function(k){return (k.mietkonto||'').trim();}).map(function(k){return {id:k.id,kennung:k.kennung,adresse:k.adresse,iban:(k.mietkonto||'').trim()};});
   const sel=document.getElementById('konto'); if(!sel)return;
   sel.innerHTML='<option value="">— ohne IBAN (allgemein „vom Gläubiger benanntes Konto") —</option>'
-    +KONTEN.map(function(k){return '<option value="'+k.id+'">'+esc(kontoLabel(k))+'</option>';}).join('');
+    +KONTEN.map(function(k){return '<option value="'+k.id+'">'+kontoLabel(k)+'</option>';}).join('');
 }
 loadKonten();
 async function finalSave(){
@@ -185,7 +186,7 @@ async function finalSave(){
     basiszins:numDE(g('basis'))||null, zuschlag:numDE(g('zuschlag'))||null,
     start_datum:document.getElementById('erste').value||null, status:'laufend', sonderzahlungen:[],
     konto_iban:_k?(_k.iban||null):null,
-    konto_info:_k?[_k.bezeichnung,_k.bank,_k.inhaber].filter(Boolean).join(' · ')||null:null,
+    konto_info:_k?(objLabel(_k).trim()||null):null,
     notiz:'Gläubiger: '+g('glaeubiger')+(nachtrag?(' · Nachtrag bestehender Vereinbarung'+(urspr?(' vom '+urspr):'')+' · '+gezahlt+' Rate(n) bereits gezahlt'):'') };
   gen(); // Vorschau mit aktuellen Werten sicherstellen
   const info=document.getElementById('saveInfo'); info.textContent='Speichere …';
