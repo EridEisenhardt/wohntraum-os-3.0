@@ -191,16 +191,41 @@ function evaluateShop(){ renderShop(); var el=$('shopList'); if(el)el.scrollInto
 function katSelHtml(){return '<select class="zi-kat">'+LKAT.map(k=>'<option>'+esc(k)+'</option>').join('')+'</select>';}
 function renderMeals(){
   if(!MEALS.length){$('mealList').innerHTML='<div class="empty">Noch keine Mahlzeiten – oben anlegen.</div>';return;}
+  var eIn='font:inherit;font-size:12.5px;padding:4px 6px;border:1px solid var(--line);border-radius:6px;background:#fff';
   $('mealList').innerHTML=MEALS.map(function(m){
     var zs=ZUT[m.id]||[];
-    var zlist=zs.map(function(z){return '<div class="zut"><span class="zn">'+esc(z.name)+'</span><span style="color:var(--muted)">'+esc(z.menge||'')+' '+esc(z.einheit||'')+'</span><span class="badge">'+esc(z.kategorie||'')+'</span><input class="zi-ort" list="geschDL" value="'+esc(z.einkaufsort)+'" placeholder="Einkaufsort" onchange="updOrt(\''+z.id+'\',this.value)"><button class="abtn" onclick="delZutat(\''+z.id+'\')">&times;</button></div>';}).join('')||'<div class="empty" style="padding:4px 2px">Noch keine Zutaten.</div>';
-    return '<div class="meal"><div class="meal-hd"><span class="meal-nm">'+esc(m.name)+'</span><span class="badge">'+esc(m.kategorie)+'</span><span class="badge">'+(m.portionen||1)+' P</span>'
+    var zlist=zs.map(function(z){return '<div class="zut" style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin:4px 0">'
+      +'<input value="'+esc(z.name)+'" placeholder="Zutat" style="flex:1;min-width:120px;'+eIn+'" onchange="updZutat(\''+z.id+'\',\'name\',this.value)">'
+      +'<input value="'+esc(z.menge||'')+'" placeholder="Menge" style="width:64px;'+eIn+'" onchange="updZutat(\''+z.id+'\',\'menge\',this.value)">'
+      +'<input value="'+esc(z.einheit||'')+'" placeholder="Einheit" style="width:64px;'+eIn+'" onchange="updZutat(\''+z.id+'\',\'einheit\',this.value)">'
+      +'<select style="'+eIn+'" onchange="updZutat(\''+z.id+'\',\'kategorie\',this.value)">'+LKAT.map(function(k){return '<option'+(k===z.kategorie?' selected':'')+'>'+esc(k)+'</option>';}).join('')+'</select>'
+      +'<input class="zi-ort" list="geschDL" value="'+esc(z.einkaufsort)+'" placeholder="Einkaufsort" onchange="updOrt(\''+z.id+'\',this.value)">'
+      +'<button class="abtn" onclick="delZutat(\''+z.id+'\')">&times;</button></div>';}).join('')||'<div class="empty" style="padding:4px 2px">Noch keine Zutaten.</div>';
+    return '<div class="meal"><div class="meal-hd" style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">'
+      +'<input value="'+esc(m.name)+'" style="flex:1;min-width:150px;font-weight:700;'+eIn+'" onchange="updMeal(\''+m.id+'\',\'name\',this.value)">'
+      +'<select style="'+eIn+'" onchange="updMeal(\''+m.id+'\',\'kategorie\',this.value)">'+MKAT.map(function(k){return '<option'+(k===m.kategorie?' selected':'')+'>'+esc(k)+'</option>';}).join('')+'</select>'
+      +'<input type="number" min="1" value="'+(m.portionen||1)+'" title="Portionen" style="width:54px;'+eIn+'" onchange="updMeal(\''+m.id+'\',\'portionen\',this.value)"><span style="font-size:12px;color:var(--muted)">P</span>'
       +'<button class="abtn" onclick="delMeal(\''+m.id+'\')">&times;</button></div>'
       +'<details><summary>Zutaten ('+zs.length+')</summary>'+zlist
       +'<div class="zrow"><input class="zi-nm" type="text" placeholder="Zutat"><input class="zi-mg" type="text" placeholder="Menge"><input class="zi-eh" type="text" placeholder="Einheit">'+katSelHtml()
       +'<input class="zi-ort" list="geschDL" placeholder="Einkaufsort">'
       +'<button class="btn" style="padding:5px 10px" onclick="addZutat(\''+m.id+'\',this)">+</button></div></details></div>';
   }).join('');
+}
+async function updMeal(id,field,val){
+  var v=field==='portionen'?(parseInt(val,10)||1):(String(val).trim()||null);
+  if(field==='name'&&!v){toast('Name darf nicht leer sein');renderMeals();return;}
+  var res=await sb.from('essen_mahlzeiten').update({[field]:v}).eq('id',id);
+  if(res.error){toast('Fehler: '+res.error.message);return;}
+  var m=MEALS.find(x=>x.id===id); if(m)m[field]=v;
+  renderStd(); renderFree(); renderShop();
+}
+async function updZutat(id,field,val){
+  var v=String(val).trim()||null;
+  var res=await sb.from('essen_zutaten').update({[field]:v}).eq('id',id);
+  if(res.error){toast('Fehler: '+res.error.message);return;}
+  Object.keys(ZUT).forEach(function(k){ZUT[k].forEach(function(z){if(z.id===id)z[field]=v;});});
+  renderShop();
 }
 async function updOrt(id,val){
   var v=(val||'').trim()||null; await ensureShop(v);
