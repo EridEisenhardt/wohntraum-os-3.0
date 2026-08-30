@@ -40,7 +40,14 @@ body{background:var(--bg);color:var(--text);font-family:'Inter',system-ui,-apple
 .q textarea:focus,.q input:focus{outline:none;border-color:var(--accent)}
 </style></head><body>
 <div class="hdr"><div class="hdr-title">🎯 Zieleboard</div><div class="hdr-sub">Eric Privat · Zielentwicklung über mehrere Ebenen — Big 5 → 5 Jahre → Jahr → Quartal</div></div>
-<div class="wrap"><div id="filterBar" style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px"></div><div class="board" id="board"></div></div>
+<div class="wrap">
+  <details id="visionWrap" style="background:linear-gradient(180deg,#faf5ff,#fff);border:1px solid #e9d5ff;border-radius:14px;padding:12px 16px;margin-bottom:14px" open>
+    <summary style="cursor:pointer;font-size:15px;font-weight:700;color:#6d28d9;list-style:none">🌟 Mein Ideales Leben <span style="font-weight:500;font-size:12px;color:var(--muted)">– Vision (oberste Ebene über den Big 5)</span></summary>
+    <div id="visionGrid" style="display:grid;grid-template-columns:repeat(2,1fr);gap:12px;margin-top:12px"></div>
+  </details>
+  <div id="filterBar" style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px"></div>
+  <div class="board" id="board"></div>
+</div>
 <div class="toast" id="toast"></div>
 <script>
 const sb=window.supabase.createClient('https://jqzxctfqvcwbctpjksvg.supabase.co','eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpxenhjdGZxdmN3YmN0cGprc3ZnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODIxMzA0MzIsImV4cCI6MjA5NzcwNjQzMn0.RKIbZxJdusKWWPjBJqlxZ8e1m8So02UslOg55YRsn3o');
@@ -130,9 +137,30 @@ async function del(id){
   await sb.from('ziele_board').update({parent_id:null}).eq('parent_id',id);
   render();
 }
+// ——— Vision „Mein Ideales Leben" ———
+let VISION={};
+const VFELDER=[['ablauf','🔄 Ablauf & Routinen'],['tagesplan','🗓 Tagesplan'],['umfeld','👥 Umfeld'],['faehigkeiten','🧠 Fähigkeiten']];
+function renderVision(){
+  $('visionGrid').innerHTML=VFELDER.map(function(f){
+    var extra=f[0]==='tagesplan'?' <a href="/eric-privat/idealer-tag" target="_top" style="font-size:11px;color:var(--accent);text-decoration:none">→ Idealer Tag</a>':'';
+    return '<div style="display:flex;flex-direction:column;gap:4px"><label style="font-size:11px;font-weight:700;color:var(--dim)">'+f[1]+extra+'</label>'
+      +'<textarea rows="3" oninput="grow(this)" onchange="saveVision(\''+f[0]+'\',this.value)" style="font:inherit;font-size:13px;padding:7px 9px;border:1px solid var(--line);border-radius:8px;background:#fff;resize:none;overflow:hidden;min-height:60px">'+esc(VISION[f[0]])+'</textarea></div>';
+  }).join('');
+  document.querySelectorAll('#visionGrid textarea').forEach(grow);
+}
+async function saveVision(field,val){
+  VISION[field]=val;
+  var res=await sb.from('ideales_leben').update({[field]:val||null,updated_at:new Date().toISOString()}).eq('id',1);
+  if(res.error)toast('Fehler: '+res.error.message);
+}
 async function load(){
-  const res=await sb.from('ziele_board').select('*').order('ebene').order('pos');
-  ROWS=res.error?[]:(res.data||[]);render();
+  const [rb,rv]=await Promise.all([
+    sb.from('ziele_board').select('*').order('ebene').order('pos'),
+    sb.from('ideales_leben').select('*').eq('id',1).maybeSingle()
+  ]);
+  ROWS=rb.error?[]:(rb.data||[]);
+  VISION=(rv&&rv.data)?rv.data:{};
+  renderVision(); render();
 }
 load();
 </script>
