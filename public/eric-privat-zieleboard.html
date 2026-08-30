@@ -45,6 +45,7 @@ body{background:var(--bg);color:var(--text);font-family:'Inter',system-ui,-apple
     <summary style="cursor:pointer;font-size:15px;font-weight:700;color:#6d28d9;list-style:none">🌟 Mein Ideales Leben <span style="font-weight:500;font-size:12px;color:var(--muted)">– Vision (oberste Ebene über den Big 5)</span></summary>
     <div id="visionGrid" style="display:grid;grid-template-columns:repeat(2,1fr);gap:12px;margin-top:12px"></div>
   </details>
+  <div id="viewToggle" style="display:flex;gap:6px;margin-bottom:10px"></div>
   <div id="filterBar" style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px"></div>
   <div class="board" id="board"></div>
 </div>
@@ -59,7 +60,12 @@ const STATI=['offen','in Arbeit','erreicht','pausiert'];
 const BEREICHE=['Fitness & Gesundheit','Business','Vermögen','Reisen','Family & Friends','Zukunfts-Ich'];
 const BCOL={'Fitness & Gesundheit':'#1f7a4d','Business':'#185fa5','Vermögen':'#b45309','Reisen':'#0e7490','Family & Friends':'#be185d','Zukunfts-Ich':'#6d28d9'};
 const stCls=s=>'st-'+String(s||'offen').replace(/\s+/g,'');
-let ROWS=[], FBEREICH='';
+let ROWS=[], FBEREICH='', VIEW='board';
+function setView(v){VIEW=v;render();}
+function renderViewToggle(){
+  const b=(v,l)=>'<button onclick="setView(\''+v+'\')" style="font:inherit;font-size:12.5px;font-weight:600;padding:6px 13px;border-radius:8px;cursor:pointer;border:1px solid '+(VIEW===v?'var(--accent)':'var(--line)')+';background:'+(VIEW===v?'var(--accent)':'#fff')+';color:'+(VIEW===v?'#fff':'var(--text)')+'">'+l+'</button>';
+  $('viewToggle').innerHTML=b('board','▦ Board')+b('liste','☰ Liste');
+}
 function allEbene(e){return ROWS.filter(r=>r.ebene===e).sort((a,b)=>(a.pos||0)-(b.pos||0)||String(a.titel||'').localeCompare(String(b.titel||'')));}
 function ofEbene(e){return allEbene(e).filter(r=>!FBEREICH||r.bereich===FBEREICH);}
 function parentName(id){const p=ROWS.find(r=>r.id===id);return p?(p.titel||'(ohne Titel)'):'';}
@@ -71,7 +77,10 @@ function renderFilter(){
     +BEREICHE.map(b=>chip(b,b,BCOL[b],cnt[b])).join('');
 }
 function render(){
+  renderViewToggle();
   renderFilter();
+  if(VIEW==='liste'){ renderList(); return; }
+  $('board').style.display='';
   $('board').innerHTML=EBENEN.map(function(E){
     const e=E[0]; const list=ofEbene(e);
     const cards=list.map(function(r){
@@ -113,6 +122,33 @@ function render(){
       +'<button class="addbtn" onclick="add('+e+')">+ Ziel</button></div>';
   }).join('');
   document.querySelectorAll('#board textarea').forEach(grow);
+}
+const EBLBL={1:'Big 5 for Life',2:'Ziel in 5 Jahren',3:'Jahresziel',4:'Quartalsziel'};
+function renderList(){
+  const brd=$('board'); brd.style.display='block';
+  let rows='';
+  EBENEN.forEach(function(E){
+    const e=E[0]; const list=ofEbene(e); if(!list.length)return;
+    rows+='<tr class="grp"><td colspan="6">'+esc(E[1])+' · '+esc(E[2])+' <span style="color:var(--muted);font-weight:500">('+list.length+')</span></td></tr>';
+    list.forEach(function(r){
+      const bcol=BCOL[r.bereich]||'var(--line)';
+      const bsel='<select onchange="upd(\''+r.id+'\',\'bereich\',this.value)" style="border-color:'+bcol+'"><option value="">—</option>'+BEREICHE.map(b=>'<option'+((r.bereich||'')===b?' selected':'')+'>'+esc(b)+'</option>').join('')+'</select>';
+      let psel='<span style="color:var(--muted)">—</span>';
+      if(e>1){const opts=allEbene(e-1);psel='<select onchange="upd(\''+r.id+'\',\'parent_id\',this.value)"><option value="">—</option>'+opts.map(o=>'<option value="'+o.id+'"'+(o.id===r.parent_id?' selected':'')+'>'+esc(o.titel||'(ohne Titel)')+'</option>').join('')+'</select>';}
+      const ssel='<select onchange="upd(\''+r.id+'\',\'status\',this.value)">'+STATI.map(s=>'<option'+((r.status||'offen')===s?' selected':'')+'>'+s+'</option>').join('')+'</select>';
+      rows+='<tr style="border-left:4px solid '+bcol+'">'
+        +'<td><input value="'+esc(r.titel)+'" placeholder="Ziel …" onchange="upd(\''+r.id+'\',\'titel\',this.value)" style="width:100%;font:inherit;font-size:13px;font-weight:600;border:1px solid transparent;border-radius:6px;padding:5px 6px"></td>'
+        +'<td>'+bsel+'</td>'
+        +'<td>'+psel+'</td>'
+        +'<td>'+ssel+'</td>'
+        +'<td><input type="date" value="'+esc(r.bis_wann||'')+'" onchange="upd(\''+r.id+'\',\'bis_wann\',this.value)"></td>'
+        +'<td style="text-align:right"><button class="icobtn" title="Löschen" onclick="del(\''+r.id+'\')">🗑</button></td></tr>';
+    });
+    rows+='<tr><td colspan="6" style="padding:4px 8px"><button class="addbtn" style="margin:0" onclick="add('+e+')">+ Ziel in '+esc(E[2])+'</button></td></tr>';
+  });
+  brd.innerHTML='<div style="background:var(--surf);border:1px solid var(--line);border-radius:14px;overflow:auto">'
+    +'<table class="ltbl"><thead><tr><th>Ziel (HABEN)</th><th style="width:150px">Lebensbereich</th><th style="width:180px">Übergeordnet</th><th style="width:120px">Status</th><th style="width:140px">Bis wann</th><th style="width:40px"></th></tr></thead><tbody>'
+    +(rows||'<tr><td colspan="6" class="empty">Noch keine Ziele.</td></tr>')+'</tbody></table></div>';
 }
 function grow(el){el.style.height='auto';el.style.height=(el.scrollHeight+2)+'px';}
 async function add(ebene){
