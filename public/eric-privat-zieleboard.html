@@ -33,7 +33,7 @@ body{background:var(--bg);color:var(--text);font-family:'Inter',system-ui,-apple
 .empty{color:var(--muted);font-size:12px;padding:8px 4px;text-align:center}
 </style></head><body>
 <div class="hdr"><div class="hdr-title">🎯 Zieleboard</div><div class="hdr-sub">Eric Privat · Zielentwicklung über mehrere Ebenen — Big 5 → 5 Jahre → Jahr → Quartal</div></div>
-<div class="wrap"><div class="board" id="board"></div></div>
+<div class="wrap"><div id="filterBar" style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px"></div><div class="board" id="board"></div></div>
 <div class="toast" id="toast"></div>
 <script>
 const sb=window.supabase.createClient('https://jqzxctfqvcwbctpjksvg.supabase.co','eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpxenhjdGZxdmN3YmN0cGprc3ZnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODIxMzA0MzIsImV4cCI6MjA5NzcwNjQzMn0.RKIbZxJdusKWWPjBJqlxZ8e1m8So02UslOg55YRsn3o');
@@ -42,22 +42,37 @@ const esc=s=>(s==null?'':String(s)).replace(/&/g,'&amp;').replace(/</g,'&lt;').r
 function toast(m){const t=$('toast');t.textContent=m;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),1700);}
 const EBENEN=[[1,'Ebene 1','Big 5 for Life'],[2,'Ebene 2','Ziel in 5 Jahren'],[3,'Ebene 3','Jahresziel'],[4,'Ebene 4','Quartalsziel']];
 const STATI=['offen','in Arbeit','erreicht','pausiert'];
+const BEREICHE=['Fitness & Gesundheit','Business','Vermögen','Reisen','Family & Friends','Zukunfts-Ich'];
+const BCOL={'Fitness & Gesundheit':'#1f7a4d','Business':'#185fa5','Vermögen':'#b45309','Reisen':'#0e7490','Family & Friends':'#be185d','Zukunfts-Ich':'#6d28d9'};
 const stCls=s=>'st-'+String(s||'offen').replace(/\s+/g,'');
-let ROWS=[];
-function ofEbene(e){return ROWS.filter(r=>r.ebene===e).sort((a,b)=>(a.pos||0)-(b.pos||0)||String(a.titel||'').localeCompare(String(b.titel||'')));}
+let ROWS=[], FBEREICH='';
+function allEbene(e){return ROWS.filter(r=>r.ebene===e).sort((a,b)=>(a.pos||0)-(b.pos||0)||String(a.titel||'').localeCompare(String(b.titel||'')));}
+function ofEbene(e){return allEbene(e).filter(r=>!FBEREICH||r.bereich===FBEREICH);}
 function parentName(id){const p=ROWS.find(r=>r.id===id);return p?(p.titel||'(ohne Titel)'):'';}
+function setFilter(b){FBEREICH=(FBEREICH===b?'':b);render();}
+function renderFilter(){
+  const cnt={};BEREICHE.forEach(b=>cnt[b]=ROWS.filter(r=>r.bereich===b).length);
+  const chip=(val,label,col,n)=>'<button onclick="setFilter(\''+val.replace(/'/g,"\\'")+'\')" style="font:inherit;font-size:12px;font-weight:600;padding:5px 11px;border-radius:20px;cursor:pointer;border:1px solid '+(col||'var(--line)')+';background:'+(FBEREICH===val?(col||'#1c2024'):'#fff')+';color:'+(FBEREICH===val?'#fff':(col||'var(--text)'))+'">'+esc(label)+(n!=null?' ('+n+')':'')+'</button>';
+  $('filterBar').innerHTML='<button onclick="setFilter(\'\')" style="font:inherit;font-size:12px;font-weight:600;padding:5px 11px;border-radius:20px;cursor:pointer;border:1px solid var(--line);background:'+(FBEREICH===''?'#1c2024':'#fff')+';color:'+(FBEREICH===''?'#fff':'var(--text)')+'">Alle Bereiche</button>'
+    +BEREICHE.map(b=>chip(b,b,BCOL[b],cnt[b])).join('');
+}
 function render(){
+  renderFilter();
   $('board').innerHTML=EBENEN.map(function(E){
     const e=E[0]; const list=ofEbene(e);
     const cards=list.map(function(r){
       let par='';
       if(e>1){
-        const opts=ofEbene(e-1);
+        const opts=allEbene(e-1);
         par='<div class="meta"><span class="parent">↳ zu:</span><select onchange="upd(\''+r.id+'\',\'parent_id\',this.value)"><option value="">—</option>'
           +opts.map(o=>'<option value="'+o.id+'"'+(o.id===r.parent_id?' selected':'')+'>'+esc(o.titel||'(ohne Titel)')+'</option>').join('')+'</select></div>';
       }
-      return '<div class="card s-'+esc((r.status||'offen').replace(/\s+/g,''))+'">'
+      const bcol=BCOL[r.bereich]||'var(--line)';
+      const bsel='<select onchange="upd(\''+r.id+'\',\'bereich\',this.value)" style="border-color:'+bcol+'"><option value="">— Lebensbereich —</option>'
+        +BEREICHE.map(b=>'<option'+((r.bereich||'')===b?' selected':'')+'>'+esc(b)+'</option>').join('')+'</select>';
+      return '<div class="card s-'+esc((r.status||'offen').replace(/\s+/g,''))+'" style="border-left:4px solid '+bcol+'">'
         +'<textarea rows="1" placeholder="Ziel …" oninput="grow(this)" onchange="upd(\''+r.id+'\',\'titel\',this.value)">'+esc(r.titel)+'</textarea>'
+        +'<div class="meta">'+bsel+'</div>'
         +par
         +'<div class="meta"><select onchange="upd(\''+r.id+'\',\'status\',this.value)">'+STATI.map(s=>'<option'+((r.status||'offen')===s?' selected':'')+'>'+s+'</option>').join('')+'</select>'
         +'<span class="pill '+stCls(r.status)+'">'+esc(r.status||'offen')+'</span>'
@@ -73,16 +88,16 @@ function render(){
 function grow(el){el.style.height='auto';el.style.height=(el.scrollHeight+2)+'px';}
 async function add(ebene){
   const pos=ROWS.filter(r=>r.ebene===ebene).length+1;
-  const res=await sb.from('ziele_board').insert({ebene:ebene,titel:'',status:'offen',pos:pos}).select();
+  const res=await sb.from('ziele_board').insert({ebene:ebene,titel:'',status:'offen',bereich:FBEREICH||null,pos:pos}).select();
   if(res.error){toast(res.error.message);return;}
   ROWS.push(res.data[0]);render();
 }
 async function upd(id,field,val){
-  const v=(field==='parent_id')?(val||null):(field==='titel'?val:val);
-  const res=await sb.from('ziele_board').update({[field]:(v===''&&field!=='titel'?null:v)}).eq('id',id);
+  const v=(field==='titel')?val:(val||null);
+  const res=await sb.from('ziele_board').update({[field]:v}).eq('id',id);
   if(res.error){toast('Fehler: '+res.error.message);return;}
-  const r=ROWS.find(x=>x.id===id);if(r)r[field]=(v===''&&field!=='titel'?null:v);
-  if(field==='status'||field==='parent_id'||field==='titel')render();
+  const r=ROWS.find(x=>x.id===id);if(r)r[field]=v;
+  if(field==='status'||field==='parent_id'||field==='titel'||field==='bereich')render();
 }
 async function del(id){
   if(!confirm('Ziel löschen? Verknüpfte Unterziele bleiben erhalten (ohne Übergeordnetes).'))return;
