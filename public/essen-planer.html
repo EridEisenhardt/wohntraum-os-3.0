@@ -64,6 +64,7 @@ details>summary{cursor:pointer;font-size:12.5px;color:var(--muted);font-weight:6
     <div class="bar">
       <label style="font-size:12px;color:var(--dim);font-weight:600">Woche:</label>
       <input type="week" id="freeWeek" onchange="onWeekChange()">
+      <span id="weekRange" style="font-size:13px;font-weight:700;color:var(--dim)"></span>
       <button class="btn sec" onclick="copyStdToFree()">Aus StandardWoche &uuml;bernehmen</button>
       <button class="btn sec" onclick="clearFree()">Woche leeren</button>
       <button class="btn sec" onclick="exportICS()" title="Als Kalenderdatei (.ics) für iCloud/Apple Kalender herunterladen">&#128197; In Kalender (.ics)</button>
@@ -125,7 +126,7 @@ async function load(){
   GESCH=(e.data||[]).map(g=>g.name); renderDatalist();
   $('mKat').innerHTML=MKAT.map(k=>'<option>'+esc(k)+'</option>').join('');
   if(!$('freeWeek').value)$('freeWeek').value=isoWeek(new Date());
-  curWeek=$('freeWeek').value;
+  curWeek=$('freeWeek').value; updWeekRange();
   renderStd(); renderMeals();
   await loadFree();
 }
@@ -157,6 +158,15 @@ function isoWeekMonday(year,week){
   var s=new Date(Date.UTC(year,0,1+(week-1)*7)); var dow=s.getUTCDay();
   if(dow<=4) s.setUTCDate(s.getUTCDate()-((dow+6)%7)); else s.setUTCDate(s.getUTCDate()+(8-dow));
   return s;
+}
+function updWeekRange(){
+  var el=$('weekRange'); if(!el)return;
+  var m=String(curWeek||'').match(/^(\d{4})-W(\d{2})$/);
+  if(!m){el.textContent='';return;}
+  var mon=isoWeekMonday(parseInt(m[1],10),parseInt(m[2],10));
+  var su=new Date(mon); su.setUTCDate(mon.getUTCDate()+6);
+  var f=d=>('0'+d.getUTCDate()).slice(-2)+'.'+('0'+(d.getUTCMonth()+1)).slice(-2)+'.'+d.getUTCFullYear();
+  el.textContent='📅 '+f(mon)+' – '+f(su)+'  (KW '+m[2]+')';
 }
 function slotTime(slot){return ({fruehstueck:[8,0],mittag:[12,30],abend:[19,0]})[slot]||[12,0];}
 function addMin(t,min){var x=t[0]*60+t[1]+min;return [Math.floor(x/60)%24,x%60];}
@@ -199,7 +209,7 @@ async function clearStd(){
   await sb.from('essen_wochenplan').delete().gte('tag',0);
   STD={}; renderStd(); toast('StandardWoche geleert');
 }
-async function onWeekChange(){ curWeek=$('freeWeek').value; await loadFree(); }
+async function onWeekChange(){ curWeek=$('freeWeek').value; updWeekRange(); await loadFree(); }
 async function loadFree(){
   FREE={};
   if(curWeek){
