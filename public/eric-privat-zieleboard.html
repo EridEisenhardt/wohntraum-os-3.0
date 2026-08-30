@@ -53,6 +53,14 @@ body{background:var(--bg);color:var(--text);font-family:-apple-system,'Segoe UI'
 .col.haben textarea{font-weight:600}
 .col textarea.leer{background:#fafaf9}
 .col textarea:focus{border-color:var(--accent);outline:none}
+.steps{display:flex;flex-direction:column;gap:3px}
+.step{display:flex;gap:6px;align-items:flex-start}
+.step input[type=checkbox]{margin-top:5px;flex:none;cursor:pointer}
+.step textarea{flex:1;font:inherit;font-size:12.5px;border:1px solid transparent;border-radius:6px;padding:3px 5px;background:transparent;resize:none;overflow:hidden}
+.step textarea:hover{border-color:var(--line)}.step textarea:focus{border-color:var(--accent);background:#fff;outline:none}
+.step.done textarea{text-decoration:line-through;color:var(--muted)}
+.step .sx{background:none;border:none;color:var(--muted);cursor:pointer;font-size:11px;opacity:0}.step:hover .sx{opacity:1}.step .sx:hover{color:var(--rot)}
+.stepadd{margin-top:4px;font:inherit;font-size:12px;color:var(--muted);background:none;border:none;cursor:pointer;text-align:left;padding:2px 0}.stepadd:hover{color:var(--accent)}
 .foot{display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-top:9px}
 .boxes{display:flex;gap:5px;align-items:center;flex-wrap:wrap}
 .bx{width:18px;height:18px;border-radius:5px;border:1.5px solid var(--line);background:#fff;cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:11px;color:#fff}
@@ -95,8 +103,9 @@ function toast(m){const t=$('toast');t.textContent=m;t.classList.add('show');set
 function grow(el){el.style.height='auto';el.style.height=(el.scrollHeight+2)+'px';}
 const BOARDS=['Persönlich','Unternehmerisch'];
 const HORIZ=['5 Jahre','1 Jahr','Quartalsziel'];
-let ROWS=[], VISION={}, BOARD='Persönlich';
-function isRot(r){return !(r.tun&&r.tun.trim())||!(r.sein&&r.sein.trim())||!r.asana_projekt;}
+let ROWS=[], VISION={}, BOARD='Persönlich', STEPS={};
+function schritteVon(id){return (STEPS[id]||[]).slice().sort((a,b)=>(a.pos||0)-(b.pos||0));}
+function isRot(r){return schritteVon(r.id).length===0||!(r.sein&&r.sein.trim())||!r.asana_projekt;}
 
 // ---------- Big 5 ----------
 function renderBig5(){
@@ -151,7 +160,7 @@ function cardHtml(r){
     +'<div class="ctop">'+(grau?'<span class="tag grau">Wachstumsfeld</span>':'')+(rot?'<span class="tag rot">Handlungsbedarf</span>':'')+'<button class="x" title="Löschen" onclick="delCard(\''+r.id+'\')">🗑</button></div>'
     +'<div class="cols">'
       +'<div class="col haben"><div class="lbl">Ergebnis · HABEN</div>'+ta('haben','', 'Woran merke ich, dass es erreicht ist?')+'</div>'
-      +'<div class="col"><div class="lbl">Schritte · TUN'+(!(r.tun&&r.tun.trim())?' <span class="leer">(leer)</span>':'')+'</div>'+ta('tun','','Schritte stehen in Asana — darf leer bleiben')+'</div>'
+      +'<div class="col"><div class="lbl">Schritte · TUN'+(schritteVon(r.id).length===0?' <span class="leer">(leer)</span>':'')+'</div>'+schritteHtml(r.id)+'</div>'
       +'<div class="col"><div class="lbl">Intention · SEIN'+(!(r.sein&&r.sein.trim())?' <span class="leer">(leer)</span>':'')+'</div>'+ta('sein','','Wer muss ich dafür sein?')+'</div>'
     +'</div>'
     +'<div class="foot"><span class="boxes">'+boxes+'</span>'
@@ -191,9 +200,11 @@ function printJournal(){
         const tot=Math.max(0,r.boxes||0),done=Math.max(0,Math.min(r.boxes_done||0,tot));
         const erreicht=tot>0&&done>=tot;
         const prog=tot?(' <span class="prog">['+done+'/'+tot+']</span>'):'';
+        const st=schritteVon(r.id);
+        const tunCell=st.length?('<ul class="stl">'+st.map(s=>'<li>'+(s.erledigt?'☑':'☐')+' '+nl(s.text||'')+'</li>').join('')+'</ul>'):'<span class="blank">&nbsp;</span>';
         body+='<tr class="'+(erreicht?'done':'')+'">'
           +'<td class="haben">'+(erreicht?'✅ ':'')+'<b>'+esc2(r.haben)+'</b>'+prog+'</td>'
-          +'<td>'+cell(r.tun)+'</td>'
+          +'<td>'+tunCell+'</td>'
           +'<td>'+cell(r.sein)+'</td></tr>';
       });
       body+='</tbody></table>';
@@ -211,19 +222,34 @@ function printJournal(){
     +'table.pt td{font-size:12px;vertical-align:top;border:1px solid #ddd;padding:5px 6px;word-wrap:break-word}'
     +'table.pt td.haben{font-size:12.5px}'
     +'.blank{display:block;min-height:34px;border-bottom:1px dotted #bbb}'
+    +'ul.stl{margin:0;padding-left:2px;list-style:none}ul.stl li{font-size:11.5px;margin:2px 0}'
     +'tr.done td{background:#e6f6ec}tr.done .haben b{color:#0f7b57}'
     +'@media print{body{margin:0}tr.done td{-webkit-print-color-adjust:exact;print-color-adjust:exact}table.pt{page-break-inside:auto}tr{page-break-inside:avoid}}</style></head><body>'
     +'<h1>🎯 Meine Ziele</h1><div class="dt">Stand '+d+'</div>'+(body||'<p>Noch keine Ziele.</p>')
     +'<script>window.onload=function(){setTimeout(function(){window.print();},200);}<\/script></body></html>');
   w.document.close();
 }
+function schritteHtml(id){
+  const list=schritteVon(id);
+  const items=list.map(function(s){
+    return '<div class="step'+(s.erledigt?' done':'')+'"><input type="checkbox" '+(s.erledigt?'checked':'')+' onchange="updSchritt(\''+s.id+'\',\'erledigt\',this.checked)">'
+      +'<textarea rows="1" placeholder="Schritt …" oninput="grow(this)" onchange="updSchritt(\''+s.id+'\',\'text\',this.value)">'+esc(s.text)+'</textarea>'
+      +'<button class="sx" title="Löschen" onclick="delSchritt(\''+s.id+'\')">✕</button></div>';
+  }).join('');
+  return '<div class="steps">'+items+'</div><button class="stepadd" onclick="addSchritt(\''+id+'\')">+ Schritt</button>';
+}
+async function addSchritt(kid){const pos=schritteVon(kid).length+1;const res=await sb.from('zielschritte').insert({karte_id:kid,text:'',pos}).select();if(res.error){toast(res.error.message);return;}(STEPS[kid]=STEPS[kid]||[]).push(res.data[0]);renderBoard();}
+async function updSchritt(id,field,val){Object.keys(STEPS).forEach(k=>STEPS[k].forEach(s=>{if(s.id===id)s[field]=val;}));const res=await sb.from('zielschritte').update({[field]:val}).eq('id',id);if(res.error){toast(res.error.message);return;}if(field==='erledigt')renderBoard();}
+async function delSchritt(id){Object.keys(STEPS).forEach(k=>{STEPS[k]=STEPS[k].filter(s=>s.id!==id);});const res=await sb.from('zielschritte').delete().eq('id',id);if(res.error){toast(res.error.message);return;}renderBoard();}
 async function load(){
-  const [rz,rv]=await Promise.all([
+  const [rz,rv,rs]=await Promise.all([
     sb.from('zielkarten').select('*').order('pos'),
-    sb.from('ideales_leben').select('*').eq('id',1).maybeSingle()
+    sb.from('ideales_leben').select('*').eq('id',1).maybeSingle(),
+    sb.from('zielschritte').select('*').order('pos')
   ]);
   ROWS=rz.error?[]:(rz.data||[]);
   VISION=(rv&&rv.data)?rv.data:{};
+  STEPS={}; (rs.error?[]:(rs.data||[])).forEach(s=>{(STEPS[s.karte_id]=STEPS[s.karte_id]||[]).push(s);});
   renderBig5();renderIdeal();renderBoard();
 }
 load();
