@@ -67,6 +67,10 @@ body{background:var(--bg);color:var(--text);font-family:-apple-system,'Segoe UI'
 .bx.on{background:var(--gruen);border-color:var(--gruen)}
 .bxadd{font:inherit;font-size:13px;color:var(--muted);background:none;border:none;cursor:pointer;padding:0 3px}
 .chk{display:inline-flex;align-items:center;gap:5px;font-size:12px;color:var(--dim);cursor:pointer;user-select:none}
+.donebtn{margin-left:auto;font:inherit;font-size:12px;font-weight:600;color:var(--gruen);background:#fff;border:1px solid #bfe6ce;border-radius:7px;padding:4px 10px;cursor:pointer}
+.donebtn:hover{background:#e6f6ec}
+.donebtn.on{background:#e6f6ec;color:var(--dim);border-color:var(--line)}
+.card.cdone{background:#f7fdf9}.card.cdone .col.haben textarea{text-decoration:line-through;color:var(--dim)}
 .empty{color:var(--muted);padding:10px 2px;font-size:12.5px}
 .toast{position:fixed;bottom:22px;left:50%;transform:translateX(-50%);background:#37352f;color:#fff;padding:9px 16px;border-radius:8px;font-size:13px;opacity:0;pointer-events:none;transition:.2s;z-index:50}.toast.show{opacity:1}
 </style></head><body>
@@ -150,14 +154,15 @@ function renderBoard(){
   document.querySelectorAll('#boardArea textarea').forEach(grow);
 }
 function cardHtml(r){
-  const rot=isRot(r),grau=r.wachstumsfeld;
-  const bt=rot?'var(--rot)':(grau?'var(--grau)':'var(--line)');
+  const done=r.erledigt;
+  const rot=!done&&isRot(r),grau=r.wachstumsfeld;
+  const bt=done?'var(--gruen)':(rot?'var(--rot)':(grau?'var(--grau)':'var(--line)'));
   const tot=Math.max(0,r.boxes||0),done=Math.max(0,Math.min(r.boxes_done||0,tot));
   let boxes='';for(let i=1;i<=tot;i++){boxes+='<span class="bx'+(i<=done?' on':'')+'" onclick="setBoxes(\''+r.id+'\','+i+')">'+(i<=done?'✓':'')+'</span>';}
   boxes+='<button class="bxadd" title="+" onclick="addBox(\''+r.id+'\',1)">＋</button>'+(tot>0?'<button class="bxadd" title="−" onclick="addBox(\''+r.id+'\',-1)">－</button>':'');
   const ta=(f,cls,ph)=>'<textarea class="'+cls+(!(r[f]&&r[f].trim())?' leer':'')+'" rows="1" placeholder="'+ph+'" oninput="grow(this)" onchange="upd(\''+r.id+'\',\''+f+'\',this.value)">'+esc(r[f])+'</textarea>';
-  return '<div class="card"><div class="bt" style="background:'+bt+'"></div><div class="in">'
-    +'<div class="ctop">'+(grau?'<span class="tag grau">Wachstumsfeld</span>':'')+(rot?'<span class="tag rot">Handlungsbedarf</span>':'')+'<button class="x" title="Löschen" onclick="delCard(\''+r.id+'\')">🗑</button></div>'
+  return '<div class="card'+(done?' cdone':'')+'"><div class="bt" style="background:'+bt+'"></div><div class="in">'
+    +'<div class="ctop">'+(done?'<span class="tag" style="background:#e6f6ec;color:var(--gruen)">✓ Erledigt</span>':'')+(grau?'<span class="tag grau">Wachstumsfeld</span>':'')+(rot?'<span class="tag rot">Handlungsbedarf</span>':'')+'<button class="x" title="Löschen" onclick="delCard(\''+r.id+'\')">🗑</button></div>'
     +'<div class="cols">'
       +'<div class="col haben"><div class="lbl">Ergebnis · HABEN</div>'+ta('haben','', 'Woran merke ich, dass es erreicht ist?')+'</div>'
       +'<div class="col"><div class="lbl">Schritte · TUN'+(schritteVon(r.id).length===0?' <span class="leer">(leer)</span>':'')+'</div>'+schritteHtml(r.id)+'</div>'
@@ -166,6 +171,7 @@ function cardHtml(r){
     +'<div class="foot"><span class="boxes">'+boxes+'</span>'
       +'<label class="chk"><input type="checkbox" '+(grau?'checked':'')+' onchange="upd(\''+r.id+'\',\'wachstumsfeld\',this.checked)"> Wachstumsfeld</label>'
       +'<label class="chk"><input type="checkbox" '+(r.asana_projekt?'checked':'')+' onchange="upd(\''+r.id+'\',\'asana_projekt\',this.checked)"> Asana-Projekt</label>'
+      +'<button class="donebtn'+(done?' on':'')+'" onclick="toggleErledigt(\''+r.id+'\')">'+(done?'↩ Wieder öffnen':'✓ Ziel erledigt')+'</button>'
     +'</div></div></div>';
 }
 async function addCard(h){
@@ -180,6 +186,7 @@ async function upd(id,field,val){
   if(field==='haben'&&r.board==='Big 5 for Life')return;
   if(field==='wachstumsfeld'||field==='asana_projekt'||field==='tun'||field==='sein')renderBoard();
 }
+async function toggleErledigt(id){const r=ROWS.find(x=>x.id===id);if(!r)return;const nv=!r.erledigt;r.erledigt=nv;r.erledigt_at=nv?new Date().toISOString():null;await sb.from('zielkarten').update({erledigt:nv,erledigt_at:r.erledigt_at}).eq('id',id);renderBoard();toast(nv?'Ziel erledigt ✓':'Ziel wieder geöffnet');}
 async function setBoxes(id,n){const r=ROWS.find(x=>x.id===id);if(!r)return;const nv=(r.boxes_done===n)?n-1:n;r.boxes_done=nv;await sb.from('zielkarten').update({boxes_done:nv}).eq('id',id);renderBoard();}
 async function addBox(id,d){const r=ROWS.find(x=>x.id===id);if(!r)return;r.boxes=Math.max(0,(r.boxes||0)+d);if(r.boxes_done>r.boxes)r.boxes_done=r.boxes;await sb.from('zielkarten').update({boxes:r.boxes,boxes_done:r.boxes_done}).eq('id',id);renderBoard();}
 async function delCard(id){if(!confirm('Dieses Ziel löschen?'))return;const res=await sb.from('zielkarten').delete().eq('id',id);if(res.error){toast(res.error.message);return;}ROWS=ROWS.filter(x=>x.id!==id);renderBig5();renderBoard();}
@@ -198,7 +205,7 @@ function printJournal(){
       body+='<h3>'+esc2(h)+'</h3><table class="pt"><thead><tr><th style="width:40%">Ergebnis · HABEN</th><th style="width:30%">Schritte · TUN</th><th style="width:30%">Intention · SEIN</th></tr></thead><tbody>';
       list.forEach(function(r){
         const tot=Math.max(0,r.boxes||0),done=Math.max(0,Math.min(r.boxes_done||0,tot));
-        const erreicht=tot>0&&done>=tot;
+        const erreicht=!!r.erledigt||(tot>0&&done>=tot);
         const prog=tot?(' <span class="prog">['+done+'/'+tot+']</span>'):'';
         const st=schritteVon(r.id);
         const tunCell=st.length?('<ul class="stl">'+st.map(s=>'<li>'+(s.erledigt?'☑':'☐')+' '+nl(s.text||'')+'</li>').join('')+'</ul>'):'<span class="blank">&nbsp;</span>';
