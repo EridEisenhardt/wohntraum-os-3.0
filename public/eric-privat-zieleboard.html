@@ -74,6 +74,10 @@ function renderViewToggle(){
 function allEbene(e){return ROWS.filter(r=>r.ebene===e).sort((a,b)=>(a.pos||0)-(b.pos||0)||String(a.titel||'').localeCompare(String(b.titel||'')));}
 function ofEbene(e){return allEbene(e).filter(r=>!FBEREICH||r.bereich===FBEREICH);}
 function parentName(id){const p=ROWS.find(r=>r.id===id);return p?(p.titel||'(ohne Titel)'):'';}
+function pctErreicht(list){const t=list.length;if(!t)return null;const d=list.filter(r=>r.status==='erreicht').length;return {pct:Math.round(d/t*100),done:d,total:t};}
+function pctHtml(list){const p=pctErreicht(list);if(!p)return '';
+  return '<div style="margin-top:6px"><div style="height:6px;background:var(--surf);border:1px solid var(--line);border-radius:6px;overflow:hidden"><span style="display:block;height:100%;width:'+p.pct+'%;background:#1f7a4d"></span></div>'
+    +'<div style="font-size:10.5px;color:var(--muted);margin-top:2px">'+p.pct+'% erreicht · '+p.done+'/'+p.total+'</div></div>';}
 function setFilter(b){FBEREICH=(FBEREICH===b?'':b);render();}
 function renderFilter(){
   const cnt={};BEREICHE.forEach(b=>cnt[b]=ROWS.filter(r=>r.bereich===b).length);
@@ -122,7 +126,7 @@ function render(){
         +'</details>'
         +'</div>';
     }).join('')||'<div class="empty">Noch keine Ziele.</div>';
-    return '<div class="col"><div class="col-hd"><div class="e">'+esc(E[1])+'</div><div class="t">'+esc(E[2])+'</div></div>'
+    return '<div class="col"><div class="col-hd"><div class="e">'+esc(E[1])+'</div><div class="t">'+esc(E[2])+'</div>'+pctHtml(list)+'</div>'
       +'<div class="col-bd">'+cards+'</div>'
       +'<button class="addbtn" onclick="add('+e+')">+ Ziel</button></div>';
   }).join('');
@@ -134,15 +138,18 @@ function renderList(){
   let rows='';
   EBENEN.forEach(function(E){
     const e=E[0]; const list=ofEbene(e); if(!list.length)return;
-    rows+='<tr class="grp"><td colspan="6">'+esc(E[1])+' · '+esc(E[2])+' <span style="color:var(--muted);font-weight:500">('+list.length+')</span></td></tr>';
+    const p=pctErreicht(list);
+    rows+='<tr class="grp"><td colspan="6">'+esc(E[1])+' · '+esc(E[2])+' <span style="color:var(--muted);font-weight:500">('+list.length+')</span>'
+      +(p?' <span style="color:#1f7a4d;font-weight:700;margin-left:8px">'+p.pct+'% erreicht · '+p.done+'/'+p.total+'</span>':'')+'</td></tr>';
     list.forEach(function(r){
+      const done=r.status==='erreicht';
       const bcol=BCOL[r.bereich]||'var(--line)';
       const bsel='<select onchange="upd(\''+r.id+'\',\'bereich\',this.value)" style="border-color:'+bcol+'"><option value="">—</option>'+BEREICHE.map(b=>'<option'+((r.bereich||'')===b?' selected':'')+'>'+esc(b)+'</option>').join('')+'</select>';
       let psel='<span style="color:var(--muted)">—</span>';
       if(e>1){const opts=allEbene(e-1);psel='<select onchange="upd(\''+r.id+'\',\'parent_id\',this.value)"><option value="">—</option>'+opts.map(o=>'<option value="'+o.id+'"'+(o.id===r.parent_id?' selected':'')+'>'+esc(o.titel||'(ohne Titel)')+'</option>').join('')+'</select>';}
       const ssel='<select onchange="upd(\''+r.id+'\',\'status\',this.value)">'+STATI.map(s=>'<option'+((r.status||'offen')===s?' selected':'')+'>'+s+'</option>').join('')+'</select>';
-      rows+='<tr style="border-left:4px solid '+bcol+'">'
-        +'<td><input value="'+esc(r.titel)+'" placeholder="Ziel …" onchange="upd(\''+r.id+'\',\'titel\',this.value)" style="width:100%;font:inherit;font-size:13px;font-weight:600;border:1px solid transparent;border-radius:6px;padding:5px 6px"></td>'
+      rows+='<tr style="border-left:4px solid '+bcol+(done?';background:#f2fbf5':'')+'">'
+        +'<td><input value="'+esc(r.titel)+'" placeholder="Ziel …" onchange="upd(\''+r.id+'\',\'titel\',this.value)" style="width:100%;font:inherit;font-size:13px;font-weight:600;border:1px solid transparent;border-radius:6px;padding:5px 6px;background:transparent"></td>'
         +'<td>'+bsel+'</td>'
         +'<td>'+psel+'</td>'
         +'<td>'+ssel+'</td>'
