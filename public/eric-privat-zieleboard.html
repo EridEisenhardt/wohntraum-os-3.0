@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="de"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Zieleboard · Eric Privat</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+:root{--bg:#f6f7f9;--surf:#fff;--surf2:#f1f3f6;--line:#e6e8ec;--text:#1c2024;--muted:#6b7280;--dim:#4b5563;--accent:#6d28d9;--green:#1f7a4d;--red:#c0392b;--warn:#b45309}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--text);font-family:'Inter',system-ui,-apple-system,'Segoe UI',sans-serif;font-size:14px;line-height:1.5;min-height:100vh}
+.hdr{background:var(--surf);border-bottom:1px solid var(--line);padding:16px 24px;position:sticky;top:0;z-index:10}
+.hdr-title{font-size:18px;font-weight:700}.hdr-sub{font-size:12px;color:var(--muted);margin-top:2px}
+.wrap{padding:18px 20px 60px}
+.board{display:grid;grid-template-columns:repeat(4,minmax(240px,1fr));gap:14px;align-items:start}
+@media(max-width:1000px){.board{grid-template-columns:1fr 1fr}}
+@media(max-width:620px){.board{grid-template-columns:1fr}}
+.col{background:var(--surf2);border:1px solid var(--line);border-radius:14px;display:flex;flex-direction:column;min-height:120px}
+.col-hd{padding:11px 14px;border-bottom:1px solid var(--line);position:sticky;top:0}
+.col-hd .e{font-size:10px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);font-weight:700}
+.col-hd .t{font-size:14px;font-weight:700}
+.col-bd{padding:10px;display:flex;flex-direction:column;gap:10px}
+.card{background:var(--surf);border:1px solid var(--line);border-radius:11px;padding:10px 11px;display:flex;flex-direction:column;gap:7px}
+.card.s-erreicht{border-color:#bbf7d0;background:#f2fbf5}
+.card textarea{font:inherit;font-size:13.5px;font-weight:600;border:1px solid transparent;border-radius:7px;padding:5px 7px;background:transparent;resize:none;overflow:hidden;width:100%}
+.card textarea:hover{border-color:var(--line)}.card textarea:focus{border-color:var(--accent);background:#fff;outline:none}
+.card .meta{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+.card select{font:inherit;font-size:11.5px;padding:4px 6px;border:1px solid var(--line);border-radius:7px;background:#fff;color:var(--text)}
+.card .parent{font-size:11px;color:var(--muted)}
+.pill{font-size:10px;font-weight:700;padding:2px 8px;border-radius:12px}
+.st-offen{background:#eef0f3;color:var(--dim)}.st-inArbeit{background:#fdf1e0;color:var(--warn)}.st-erreicht{background:#e8f6ee;color:var(--green)}.st-pausiert{background:#f1f3f6;color:var(--muted)}
+.addbtn{margin:4px 10px 12px;font:inherit;font-size:12.5px;font-weight:600;padding:7px;border:1px dashed var(--line);border-radius:9px;background:transparent;color:var(--dim);cursor:pointer}
+.addbtn:hover{border-color:var(--accent);color:var(--accent)}
+.icobtn{background:none;border:none;color:var(--muted);cursor:pointer;font-size:14px;margin-left:auto}.icobtn:hover{color:var(--red)}
+.toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:#1c2024;color:#fff;padding:10px 16px;border-radius:8px;font-size:13px;opacity:0;pointer-events:none;transition:.2s;z-index:50}.toast.show{opacity:1}
+.empty{color:var(--muted);font-size:12px;padding:8px 4px;text-align:center}
+</style></head><body>
+<div class="hdr"><div class="hdr-title">🎯 Zieleboard</div><div class="hdr-sub">Eric Privat · Zielentwicklung über mehrere Ebenen — Big 5 → 5 Jahre → Jahr → Quartal</div></div>
+<div class="wrap"><div class="board" id="board"></div></div>
+<div class="toast" id="toast"></div>
+<script>
+const sb=window.supabase.createClient('https://jqzxctfqvcwbctpjksvg.supabase.co','eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpxenhjdGZxdmN3YmN0cGprc3ZnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODIxMzA0MzIsImV4cCI6MjA5NzcwNjQzMn0.RKIbZxJdusKWWPjBJqlxZ8e1m8So02UslOg55YRsn3o');
+const $=id=>document.getElementById(id);
+const esc=s=>(s==null?'':String(s)).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+function toast(m){const t=$('toast');t.textContent=m;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),1700);}
+const EBENEN=[[1,'Ebene 1','Big 5 for Life'],[2,'Ebene 2','Ziel in 5 Jahren'],[3,'Ebene 3','Jahresziel'],[4,'Ebene 4','Quartalsziel']];
+const STATI=['offen','in Arbeit','erreicht','pausiert'];
+const stCls=s=>'st-'+String(s||'offen').replace(/\s+/g,'');
+let ROWS=[];
+function ofEbene(e){return ROWS.filter(r=>r.ebene===e).sort((a,b)=>(a.pos||0)-(b.pos||0)||String(a.titel||'').localeCompare(String(b.titel||'')));}
+function parentName(id){const p=ROWS.find(r=>r.id===id);return p?(p.titel||'(ohne Titel)'):'';}
+function render(){
+  $('board').innerHTML=EBENEN.map(function(E){
+    const e=E[0]; const list=ofEbene(e);
+    const cards=list.map(function(r){
+      let par='';
+      if(e>1){
+        const opts=ofEbene(e-1);
+        par='<div class="meta"><span class="parent">↳ zu:</span><select onchange="upd(\''+r.id+'\',\'parent_id\',this.value)"><option value="">—</option>'
+          +opts.map(o=>'<option value="'+o.id+'"'+(o.id===r.parent_id?' selected':'')+'>'+esc(o.titel||'(ohne Titel)')+'</option>').join('')+'</select></div>';
+      }
+      return '<div class="card s-'+esc((r.status||'offen').replace(/\s+/g,''))+'">'
+        +'<textarea rows="1" placeholder="Ziel …" oninput="grow(this)" onchange="upd(\''+r.id+'\',\'titel\',this.value)">'+esc(r.titel)+'</textarea>'
+        +par
+        +'<div class="meta"><select onchange="upd(\''+r.id+'\',\'status\',this.value)">'+STATI.map(s=>'<option'+((r.status||'offen')===s?' selected':'')+'>'+s+'</option>').join('')+'</select>'
+        +'<span class="pill '+stCls(r.status)+'">'+esc(r.status||'offen')+'</span>'
+        +'<button class="icobtn" title="Löschen" onclick="del(\''+r.id+'\')">🗑</button></div>'
+        +'</div>';
+    }).join('')||'<div class="empty">Noch keine Ziele.</div>';
+    return '<div class="col"><div class="col-hd"><div class="e">'+esc(E[1])+'</div><div class="t">'+esc(E[2])+'</div></div>'
+      +'<div class="col-bd">'+cards+'</div>'
+      +'<button class="addbtn" onclick="add('+e+')">+ Ziel</button></div>';
+  }).join('');
+  document.querySelectorAll('#board textarea').forEach(grow);
+}
+function grow(el){el.style.height='auto';el.style.height=(el.scrollHeight+2)+'px';}
+async function add(ebene){
+  const pos=ROWS.filter(r=>r.ebene===ebene).length+1;
+  const res=await sb.from('ziele_board').insert({ebene:ebene,titel:'',status:'offen',pos:pos}).select();
+  if(res.error){toast(res.error.message);return;}
+  ROWS.push(res.data[0]);render();
+}
+async function upd(id,field,val){
+  const v=(field==='parent_id')?(val||null):(field==='titel'?val:val);
+  const res=await sb.from('ziele_board').update({[field]:(v===''&&field!=='titel'?null:v)}).eq('id',id);
+  if(res.error){toast('Fehler: '+res.error.message);return;}
+  const r=ROWS.find(x=>x.id===id);if(r)r[field]=(v===''&&field!=='titel'?null:v);
+  if(field==='status'||field==='parent_id'||field==='titel')render();
+}
+async function del(id){
+  if(!confirm('Ziel löschen? Verknüpfte Unterziele bleiben erhalten (ohne Übergeordnetes).'))return;
+  const res=await sb.from('ziele_board').delete().eq('id',id);
+  if(res.error){toast(res.error.message);return;}
+  ROWS=ROWS.filter(x=>x.id!==id);
+  ROWS.forEach(r=>{if(r.parent_id===id)r.parent_id=null;});
+  await sb.from('ziele_board').update({parent_id:null}).eq('parent_id',id);
+  render();
+}
+async function load(){
+  const res=await sb.from('ziele_board').select('*').order('ebene').order('pos');
+  ROWS=res.error?[]:(res.data||[]);render();
+}
+load();
+</script>
+</body></html>

@@ -116,6 +116,7 @@ export const NAV = [
     { href: '/personal/lohnkosten', icon: 'ti-coin-euro', label: 'Lohnkosten' },
   ] },
   { type: 'group', key: 'eric-privat', icon: 'ti-user-heart', label: 'Eric Privat', area: ['vertrieb', 'hv'], mod: 'privat', items: [
+    { href: '/eric-privat/zieleboard', icon: 'ti-target-arrow', label: 'Zieleboard' },
     { href: '/eric-privat/budgetplan', icon: 'ti-wallet', label: 'Budgetplan' },
     { href: '/eric-privat/idealer-tag', icon: 'ti-sun', label: 'Idealer Tag' },
     { href: '/eric-privat/entwicklung', icon: 'ti-stairs-up', label: 'Entwicklung' },
