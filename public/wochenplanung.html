@@ -239,7 +239,7 @@ select.cin.tagset{color:var(--accent);border-color:var(--accent);background:#eef
   <div class="toolbar" id="tagChips"></div>
   <div class="toolbar">
     <div id="bereichChips" style="display:flex;gap:8px;flex-wrap:wrap"></div>
-    <label class="chkbox"><input type="checkbox" id="hideDone" onchange="HIDE_DONE=this.checked;render()"> Erledigte ausblenden</label>
+    <button class="btn g" id="allBtn" onclick="toggleAll()" title="Standard: nur offene. Klicken zeigt auch Erledigte.">👁 Alles sehen</button>
     <span class="seg"><button id="vList" class="on" onclick="setView('list')">Liste</button><button id="vBoard" onclick="setView('board')">Board</button></span>
     <button class="btn g" onclick="carryOver()" title="Nicht erledigte aus Vorwoche übernehmen">↪ Übernehmen</button>
     <button class="btn g" onclick="openTickets()" title="Offene Tickets aus dem Ticketsystem in diese Woche übernehmen">🎫 Aus Tickets</button>
@@ -290,7 +290,8 @@ function fmtRange(jahr,kw){ const mo=mondayOf(jahr,kw); const su=new Date(mo); s
 
 let CUR=isoWeek(new Date());
 let ROWS=[], ZF={};
-let VIEW='list', F_BEREICH='', F_TAG='', HIDE_DONE=false;
+let VIEW='list', F_BEREICH='', F_TAG='', HIDE_DONE=true;
+function toggleAll(){ HIDE_DONE=!HIDE_DONE; const b=$('allBtn'); if(b)b.textContent=HIDE_DONE?'👁 Alles sehen':'✓ Nur offene'; render(); renderExtra(); }
 
 function shiftWeek(n){ const mo=mondayOf(CUR.jahr,CUR.kw); mo.setUTCDate(mo.getUTCDate()+n*7); CUR=isoWeek(new Date(mo.getUTCFullYear(),mo.getUTCMonth(),mo.getUTCDate())); load(); }
 function thisWeek(){ CUR=isoWeek(new Date()); load(); }
@@ -390,6 +391,7 @@ function subHtml(s){const sd=!!CHECKS['s_'+s.id];
 }
 function taskHtml(t){
   const done=!!CHECKS['t_'+t.id];
+  if(HIDE_DONE&&done)return '';
   const subs=subsOf(t.id).map(subHtml).join('');
   return '<div style="border-bottom:1px solid var(--bord2);padding:8px 2px">'
     +'<div style="display:flex;gap:10px;align-items:flex-start">'
@@ -591,14 +593,16 @@ function renderZiele(){
   $('zieleChips').innerHTML = z.length ? z.map(r=>`<span class="chip"><span class="cd"></span>${esc(r.aufgabe)}<button onclick="delRow('${r.id}')" title="Entfernen">×</button></span>`).join('') : '<span style="color:var(--muted);font-size:12.5px">Noch keine Jahresziele.</span>';
 }
 /* Routinezeitfenster */
+function routineDone(r){const sched=(r.wochentag||'').split(/[,\s]+/).filter(Boolean);const kept=(r.erledigt_tage||'').split(/[,\s]+/).filter(Boolean);return sched.length>0&&sched.every(d=>kept.includes(d));}
 function renderRoutine(){
-  const rz=ROWS.filter(r=>r.bereich==='routine').sort((a,b)=>{ const ta=(a.uhrzeit||''),tb=(b.uhrzeit||''); return ta.localeCompare(tb); });
-  $('rzCnt').textContent=rz.length+' Fenster';
+  const rzAll=ROWS.filter(r=>r.bereich==='routine').sort((a,b)=>{ const ta=(a.uhrzeit||''),tb=(b.uhrzeit||''); return ta.localeCompare(tb); });
   let tSched=0, tKept=0;
+  rzAll.forEach(r=>{const sched=(r.wochentag||'').split(/[,\s]+/).filter(Boolean);const kept=(r.erledigt_tage||'').split(/[,\s]+/).filter(Boolean);tSched+=sched.length;tKept+=kept.filter(d=>sched.includes(d)).length;});
+  const rz=HIDE_DONE?rzAll.filter(r=>!routineDone(r)):rzAll;
+  $('rzCnt').textContent=rzAll.length+' Fenster'+(HIDE_DONE&&rz.length!==rzAll.length?(' · '+(rzAll.length-rz.length)+' erledigt ausgeblendet'):'');
   $('rzList').innerHTML = rz.length ? rz.map(r=>{
     const sched=(r.wochentag||'').split(/[,\s]+/).filter(Boolean);
     const kept=(r.erledigt_tage||'').split(/[,\s]+/).filter(Boolean);
-    tSched+=sched.length; tKept+=kept.filter(d=>sched.includes(d)).length;
     const tg=TAGE.map(t=>{ const cls=kept.includes(t)?'kept':(sched.includes(t)?'on':''); const tip=kept.includes(t)?'eingehalten':(sched.includes(t)?'geplant':'nicht geplant'); return `<button class="${cls}" title="${tip}" onclick="cycleDay('${r.id}','${t}')">${t}</button>`; }).join('');
     return `<div class="rz">
       <div class="rztime"><input value="${esc(r.uhrzeit)}" placeholder="Zeit" onchange="updField('${r.id}','uhrzeit',this.value)"></div>
