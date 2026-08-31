@@ -111,6 +111,10 @@ select.cin{cursor:pointer}
 .wt td.bez{min-width:360px;width:40%}
 .stsel{font:inherit;font-size:12px;font-weight:600;border:1px solid var(--line);border-radius:20px;padding:4px 8px;cursor:pointer;background:var(--surf2)}
 .st-offen{color:var(--muted)}.st-in_arbeit{color:var(--accent)}.st-warten{color:var(--warn)}.st-erledigt{color:var(--ok)}
+.topbtn{background:none;border:none;cursor:pointer;font-size:16px;color:var(--muted);line-height:1;margin-top:1px;padding:0}
+.topbtn.on{color:#e0a500}
+tr.top3 td{background:#fffbe9}
+tr.top3.done td{background:#eef7ea}
 .pill{font-size:10px;font-weight:700;padding:2px 7px;border-radius:20px;color:#fff}
 .p-P1{background:var(--danger)}.p-P2{background:var(--warn)}.p-P3{background:var(--accent)}.p-P4{background:var(--muted)}
 select.cin.hasval{border-color:var(--line);background:var(--surf2);font-weight:700}
@@ -290,7 +294,7 @@ async function load(){
     const fd=d=>('0'+d.getUTCDate()).slice(-2)+'.'+('0'+(d.getUTCMonth()+1)).slice(-2)+'.'+d.getUTCFullYear();
     $('kwlbl').innerHTML='KW '+CUR.kw+' · '+CUR.jahr+'<div style="font-size:11px;font-weight:500;color:var(--dim);margin-top:1px">Mo '+fd(mo)+' – So '+fd(su)+'</div>';
     $('kwlbl').title='Montag '+fd(mo)+' bis Sonntag '+fd(su); }
-  const { data, error } = await sb.from('wochenplanung').select('id,bereich,pos,aufgabe,kategorie,prioritaet,wochentag,uhrzeit,ziel,erledigt_tage,uebernommen,status,notizen,ticket_id')
+  const { data, error } = await sb.from('wochenplanung').select('id,bereich,pos,aufgabe,kategorie,prioritaet,wochentag,uhrzeit,ziel,erledigt_tage,uebernommen,status,notizen,ticket_id,top3')
     .eq('jahr',CUR.jahr).eq('kw',CUR.kw).order('pos',{ascending:true}).order('created_at',{ascending:true});
   ROWS = error ? [] : (data||[]);
   if(error) toast('Fehler beim Laden: '+error.message);
@@ -476,6 +480,12 @@ async function updField(id, field, val){
     toast('Ticket im CRM auf „'+st+'" gesetzt');
   }
 }
+async function toggleTop3(id){
+  const r=ROWS.find(x=>x.id===id);if(!r)return;const nv=!r.top3;
+  if(nv){const cnt=ROWS.filter(x=>x.top3&&x.bereich!=='jahresziele').length; if(cnt>=3 && !confirm('Es sind bereits 3 Top-Aufgaben markiert. Trotzdem als weitere Top-Aufgabe markieren?'))return;}
+  r.top3=nv; const res=await sb.from('wochenplanung').update({top3:nv}).eq('id',id);
+  if(res.error){toast(res.error.message);return;} render();
+}
 async function delRow(id){
   const { error } = await sb.from('wochenplanung').delete().eq('id',id);
   if(error){ toast('Löschen fehlgeschlagen: '+error.message); return; }
@@ -618,8 +628,8 @@ function rowHtml(r){
   const tagOpts=TAGE.map(t=>`<option ${t===dayList(r)[0]?'selected':''}>${t}</option>`).join('');
   const ueber=r.uebernommen?`<span class="ueber" title="Aus Vorwoche übernommen">↪</span> `:'';
   const zl=ROWS.filter(x=>x.bereich==='jahresziele'&&x.aufgabe).map(x=>`<option value="${esc(x.aufgabe)}">`).join('');
-  return `<tr class="${r.status==='erledigt'?'done':''}">
-    <td class="bez"><div style="display:flex;gap:6px;align-items:flex-start">${ueber}<textarea class="ta" rows="1" placeholder="Bezeichnung…" oninput="autogrow(this)" onchange="updField('${r.id}','aufgabe',this.value)">${esc(r.aufgabe)}</textarea></div></td>
+  return `<tr class="${r.status==='erledigt'?'done':''}${r.top3?' top3':''}">
+    <td class="bez"><div style="display:flex;gap:6px;align-items:flex-start"><button class="topbtn${r.top3?' on':''}" title="Als Top 3 markieren" onclick="toggleTop3('${r.id}')">${r.top3?'★':'☆'}</button>${ueber}<textarea class="ta" rows="1" placeholder="Bezeichnung…" oninput="autogrow(this)" onchange="updField('${r.id}','aufgabe',this.value)">${esc(r.aufgabe)}</textarea></div></td>
     <td><select class="cin" onchange="updField('${r.id}','bereich',this.value)">${brOpts}</select></td>
     <td><select class="cin${r.prioritaet?' hasval prio-'+r.prioritaet:''}" onchange="updField('${r.id}','prioritaet',this.value)"><option value="">—</option>${prOpts}</select></td>
     <td><select class="cin${dayList(r)[0]?' hasval tagset':''}" onchange="updField('${r.id}','wochentag',this.value)"><option value="">—</option>${tagOpts}</select></td>
