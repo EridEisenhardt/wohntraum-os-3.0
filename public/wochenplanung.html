@@ -721,17 +721,46 @@ function weekProgress(){
   if(typeof extraActive==='function'&&extraActive()){ (ETASKS||[]).forEach(t=>{ total++; if(CHECKS&&CHECKS['t_'+t.id])done++; }); }
   return {total,done,pct: total?Math.round(done/total*100):0};
 }
+function computeBench(){
+  const keys={}; Object.keys(HISTWP).forEach(k=>keys[k]=1); Object.keys(HISTEX).forEach(k=>keys[k]=1); keys[CUR.jahr+'-'+CUR.kw]=1;
+  const weeks=Object.keys(keys).map(k=>{const p=k.split('-');return {jahr:+p[0],kw:+p[1],key:k};}).sort((a,b)=>a.jahr-b.jahr||a.kw-b.kw);
+  const etN=(ETASKS||[]).length;
+  const isCur=w=>w.jahr===CUR.jahr&&w.kw===CUR.kw;
+  function pctOf(w){
+    if(isCur(w)){ const cp=weekProgress(); return cp.total?cp.pct:null; }
+    const wp=HISTWP[w.key]||{total:0,done:0}; let total=wp.total,done=wp.done;
+    if(extraActiveFor(w.jahr,w.kw)){ const ex=HISTEX[w.key]; const ch=ex?ex.checks:{}; total+=etN; done+=Object.keys(ch||{}).filter(x=>x.indexOf('t_')===0 && ch[x]).length; }
+    return total?Math.round(done/total*100):null;
+  }
+  const data=weeks.map(w=>({w,pct:pctOf(w),cur:isCur(w)})).filter(d=>d.pct!==null).slice(-14);
+  const past=data.filter(d=>!d.cur);
+  const avgPast=past.length?Math.round(past.reduce((s,d)=>s+d.pct,0)/past.length):null;
+  const curD=data.find(d=>d.cur); const wp=weekProgress();
+  const curPct=curD?curD.pct:(wp.total?wp.pct:null);
+  return {data,avgPast,curPct};
+}
 function renderProgress(){
   const el=$('progChart'); if(!el)return; const p=weekProgress();
   const R=34,C=2*Math.PI*R, off=C*(1-p.pct/100);
   const col = p.pct>=80?'var(--ok)':(p.pct>=40?'var(--warn)':'var(--danger)');
+  const b=computeBench(); let cmp='';
+  if(b.avgPast!=null && b.curPct!=null){
+    const d=b.curPct-b.avgPast, up=d>=0;
+    cmp='<div style="margin-top:12px;padding:9px 12px;border:1px solid var(--line);border-radius:9px;background:var(--surf);font-size:12.5px;display:flex;gap:10px;flex-wrap:wrap;align-items:center">'
+      +'<span>Diese Woche <b>'+b.curPct+'%</b></span><span style="color:var(--muted)">·</span>'
+      +'<span>Dein Benchmark (Ø Vorwochen) <b>'+b.avgPast+'%</b></span><span style="color:var(--muted)">·</span>'
+      +'<span style="color:'+(up?'var(--ok)':'var(--danger)')+';font-weight:700">'+(up?'▲ +':'▼ −')+Math.abs(d)+' pp '+(up?'über':'unter')+' dem Schnitt</span></div>';
+  } else if(b.curPct!=null){
+    cmp='<div style="margin-top:12px;font-size:12px;color:var(--muted)">Noch keine Vorwochen als Benchmark — ab der 2. gefüllten Woche siehst du hier den Vergleich.</div>';
+  }
   el.innerHTML='<div style="display:flex;align-items:center;gap:18px;flex-wrap:wrap">'
    +'<svg width="88" height="88" viewBox="0 0 88 88" style="flex:none">'
    +'<circle cx="44" cy="44" r="'+R+'" fill="none" stroke="var(--line)" stroke-width="10"/>'
    +'<circle cx="44" cy="44" r="'+R+'" fill="none" stroke="'+col+'" stroke-width="10" stroke-linecap="round" stroke-dasharray="'+C.toFixed(1)+'" stroke-dashoffset="'+off.toFixed(1)+'" transform="rotate(-90 44 44)"/>'
    +'<text x="44" y="50" text-anchor="middle" font-size="19" font-weight="700" fill="var(--text)">'+p.pct+'%</text></svg>'
-   +'<div><div style="font-weight:700;font-size:15px">Umgesetzt diese Woche</div>'
-   +'<div style="color:var(--muted);font-size:12.5px;margin-top:2px">'+p.done+' von '+p.total+' Aufgaben erledigt (Aufgaben, Sport, Reflektion &amp; Vorausschau)</div></div></div>';
+   +'<div><div style="font-weight:700;font-size:15px">Umgesetzt diese Woche (KW '+CUR.kw+')</div>'
+   +'<div style="color:var(--muted);font-size:12.5px;margin-top:2px">'+p.done+' von '+p.total+' Aufgaben erledigt (Aufgaben, Sport, Reflektion &amp; Vorausschau)</div></div></div>'
+   +cmp;
   renderHistory();
 }
 let HISTWP={}, HISTEX={};
@@ -747,32 +776,23 @@ async function loadHistory(){
 }
 function renderHistory(){
   const el=$('benchChart'); if(!el)return;
-  const keys={}; Object.keys(HISTWP).forEach(k=>keys[k]=1); Object.keys(HISTEX).forEach(k=>keys[k]=1); keys[CUR.jahr+'-'+CUR.kw]=1;
-  const weeks=Object.keys(keys).map(k=>{const p=k.split('-');return {jahr:+p[0],kw:+p[1],key:k};}).sort((a,b)=>a.jahr-b.jahr||a.kw-b.kw);
-  const etN=(ETASKS||[]).length;
-  function pctOf(w){
-    if(w.jahr===CUR.jahr && w.kw===CUR.kw){ const cp=weekProgress(); return cp.total?cp.pct:null; }
-    const wp=HISTWP[w.key]||{total:0,done:0}; let total=wp.total,done=wp.done;
-    if(extraActiveFor(w.jahr,w.kw)){ const ex=HISTEX[w.key]; const ch=ex?ex.checks:{}; total+=etN; done+=Object.keys(ch||{}).filter(x=>x.indexOf('t_')===0 && ch[x]).length; }
-    return total?Math.round(done/total*100):null;
-  }
-  const data=weeks.map(w=>({w,pct:pctOf(w)})).filter(d=>d.pct!==null).slice(-14);
-  const valid=data.filter(d=>d.pct!==null);
-  const avg=valid.length?Math.round(valid.reduce((s,d)=>s+d.pct,0)/valid.length):0;
-  $('benchAvg').innerHTML=valid.length?('Ø Benchmark: <b style="color:var(--accent)">'+avg+'%</b> über '+valid.length+' Wochen'):'Noch keine Historie';
+  const b=computeBench(); const data=b.data;
+  const avg=b.avgPast!=null?b.avgPast:(data.length?Math.round(data.reduce((s,d)=>s+d.pct,0)/data.length):0);
+  $('benchAvg').innerHTML=b.avgPast!=null?('Ø Benchmark (Vorwochen): <b style="color:var(--accent)">'+b.avgPast+'%</b>'):'Noch keine Vorwochen';
   if(!data.length){el.innerHTML='<div style="font-size:12px;color:var(--muted)">Noch keine Daten.</div>';return;}
   const W=Math.max(data.length*46+10,300),H=150,base=120,top=14;
   const y=p=>base-(p/100)*(base-top);
   let bars='';
-  data.forEach((d,i)=>{const x=14+i*46;const cur=(d.w.jahr===CUR.jahr&&d.w.kw===CUR.kw);
+  data.forEach((d,i)=>{const x=14+i*46;const cur=d.cur;
     const col=cur?'var(--accent)':(d.pct>=avg?'var(--ok)':'#c9ccd1');
     bars+='<rect x="'+x+'" y="'+y(d.pct).toFixed(1)+'" width="30" height="'+(base-y(d.pct)).toFixed(1)+'" rx="4" fill="'+col+'"></rect>';
-    bars+='<text x="'+(x+15)+'" y="'+(y(d.pct)-4).toFixed(1)+'" text-anchor="middle" font-size="10" font-weight="700" fill="var(--text)">'+d.pct+'</text>';
-    bars+='<text x="'+(x+15)+'" y="'+(base+14)+'" text-anchor="middle" font-size="9" fill="var(--muted)">KW'+d.w.kw+'</text>';
+    bars+='<text x="'+(x+15)+'" y="'+(y(d.pct)-4).toFixed(1)+'" text-anchor="middle" font-size="10" font-weight="700" fill="'+(cur?'var(--accent)':'var(--text)')+'">'+d.pct+'</text>';
+    bars+='<text x="'+(x+15)+'" y="'+(base+14)+'" text-anchor="middle" font-size="9" font-weight="'+(cur?'700':'400')+'" fill="'+(cur?'var(--accent)':'var(--muted)')+'">KW'+d.w.kw+'</text>';
   });
-  const ay=y(avg);
-  const line='<line x1="8" y1="'+ay.toFixed(1)+'" x2="'+(W-4)+'" y2="'+ay.toFixed(1)+'" stroke="var(--accent)" stroke-width="1.5" stroke-dasharray="5 4"></line>'
-    +'<text x="'+(W-6)+'" y="'+(ay-4).toFixed(1)+'" text-anchor="end" font-size="9" fill="var(--accent)">Ø '+avg+'%</text>';
+  let line='';
+  if(b.avgPast!=null){const ay=y(avg);
+    line='<line x1="8" y1="'+ay.toFixed(1)+'" x2="'+(W-4)+'" y2="'+ay.toFixed(1)+'" stroke="var(--accent)" stroke-width="1.5" stroke-dasharray="5 4"></line>'
+      +'<text x="'+(W-6)+'" y="'+(ay-4).toFixed(1)+'" text-anchor="end" font-size="9" fill="var(--accent)">Ø '+avg+'%</text>';}
   el.innerHTML='<svg width="'+W+'" height="'+H+'" viewBox="0 0 '+W+' '+H+'">'+line+bars+'</svg>';
 }
 
