@@ -187,6 +187,12 @@ select.cin.tagset{color:var(--accent);border-color:var(--accent);background:#eef
     </div>
   </div>
 
+  <!-- Schnellzugriff / Links -->
+  <div class="sec"><div class="pad" style="padding-top:12px;padding-bottom:12px">
+    <div style="font-size:12px;font-weight:700;color:var(--dim);margin-bottom:6px">🔗 Schnellzugriff · Links (Asana, Wohntraum OS …)</div>
+    <div id="linksBar" style="display:flex;gap:8px;flex-wrap:wrap;align-items:center"></div>
+  </div></div>
+
   <!-- Fortschritt -->
   <div class="sec"><div class="pad" id="progChart" style="padding-top:14px;padding-bottom:14px"></div></div>
 
@@ -288,8 +294,41 @@ async function load(){
     .eq('jahr',CUR.jahr).eq('kw',CUR.kw).order('pos',{ascending:true}).order('created_at',{ascending:true});
   ROWS = error ? [] : (data||[]);
   if(error) toast('Fehler beim Laden: '+error.message);
-  render(); loadFragen(); loadExtra();
+  render(); loadFragen(); loadExtra(); loadLinks();
 }
+let LINKS=[];
+async function loadLinks(){
+  const res=await sb.from('wochen_links').select('*').order('pos');
+  LINKS=res.error?[]:(res.data||[]); renderLinks();
+}
+function renderLinks(){
+  const el=$('linksBar'); if(!el)return;
+  el.innerHTML=LINKS.map(function(l){
+    const intern=(l.url||'').charAt(0)==='/';
+    const tgt=intern?'_top':'_blank';
+    const ico=intern?'🏠':'↗';
+    return '<span style="display:inline-flex;align-items:center;gap:4px;border:1px solid var(--line);border-radius:20px;padding:3px 6px 3px 11px;background:#fff">'
+      +'<a href="'+esc(l.url||'#')+'" target="'+tgt+'"'+(intern?'':' rel="noopener"')+' style="color:var(--accent);text-decoration:none;font-weight:600;font-size:12.5px">'+ico+' '+esc(l.label||l.url||'Link')+'</a>'
+      +'<button onclick="editLink(\''+l.id+'\')" title="Bearbeiten" style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:11px">✎</button>'
+      +'<button onclick="delLink(\''+l.id+'\')" title="Löschen" style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:11px">✕</button></span>';
+  }).join('')+'<button onclick="addLink()" style="border:1px dashed var(--line);border-radius:20px;padding:5px 12px;background:none;color:var(--dim);cursor:pointer;font:inherit;font-weight:600;font-size:12.5px">+ Link</button>';
+}
+async function addLink(){
+  const label=prompt('Bezeichnung des Links:'); if(label===null)return;
+  const url=prompt('URL (Asana-Link, oder OS-Seite wie /finance/darlehen):'); if(!url||!url.trim())return;
+  const pos=LINKS.length+1;
+  const res=await sb.from('wochen_links').insert({label:(label||'').trim()||url.trim(),url:url.trim(),pos}).select();
+  if(res.error){toast(res.error.message);return;} LINKS.push(res.data[0]); renderLinks();
+}
+async function editLink(id){
+  const l=LINKS.find(x=>x.id===id); if(!l)return;
+  const label=prompt('Bezeichnung:',l.label||''); if(label===null)return;
+  const url=prompt('URL:',l.url||''); if(url===null)return;
+  l.label=(label||'').trim(); l.url=(url||'').trim();
+  const res=await sb.from('wochen_links').update({label:l.label,url:l.url}).eq('id',id);
+  if(res.error){toast(res.error.message);return;} renderLinks();
+}
+async function delLink(id){ if(!confirm('Link löschen?'))return; const res=await sb.from('wochen_links').delete().eq('id',id); if(res.error){toast(res.error.message);return;} LINKS=LINKS.filter(x=>x.id!==id); renderLinks(); }
 async function loadFragen(){
   const { data } = await sb.from('wochen_fragen').select('antwort1,antwort2,antwort3').eq('jahr',CUR.jahr).eq('kw',CUR.kw).maybeSingle();
   $('fa1').value=data?.antwort1||''; $('fa2').value=data?.antwort2||''; $('fa3').value=data?.antwort3||''; $('fragenSaved').textContent='';
