@@ -187,6 +187,9 @@ select.cin.tagset{color:var(--accent);border-color:var(--accent);background:#eef
     </div>
   </div>
 
+  <!-- Fortschritt -->
+  <div class="sec"><div class="pad" id="progChart" style="padding-top:14px;padding-bottom:14px"></div></div>
+
   <!-- Top 3 Fragen -->
   <div class="sec">
     <div class="sec-hd"><div class="t">Top 3 Fragen zur Wochenplanung</div><span class="prog" id="fragenSaved"></span></div>
@@ -355,6 +358,7 @@ function renderExtra(){
   const rd=rue.filter(t=>CHECKS['t_'+t.id]).length, vd=vor.filter(t=>CHECKS['t_'+t.id]).length;
   $('rueckCnt').textContent=rue.length+' Aufgaben'; $('vorausCnt').textContent=vor.length+' Aufgaben';
   $('rueckProg').textContent=rd+'/'+rue.length+' erledigt'; $('vorausProg').textContent=vd+'/'+vor.length+' erledigt';
+  if(typeof renderProgress==='function')renderProgress();
 }
 async function toggleCheck(key,val){
   if(val)CHECKS[key]=true; else delete CHECKS[key];
@@ -597,6 +601,25 @@ function render(){
   document.querySelectorAll('#work .ta').forEach(autogrow);
   const all=ROWS.filter(r=>r.bereich!=='jahresziele'); const done=all.filter(r=>r.status==='erledigt').length;
   $('foot').innerHTML=`In Supabase gespeichert · Woche wechseln oben · P1 = wichtigste Aufgabe · ${done}/${all.length} erledigt`;
+  renderProgress();
+}
+function weekProgress(){
+  let total=0,done=0;
+  ROWS.forEach(r=>{ if(r.bereich==='aufgabe'||r.bereich==='sport'){ total++; if(r.status==='erledigt')done++; } });
+  if(typeof extraActive==='function'&&extraActive()){ (ETASKS||[]).forEach(t=>{ total++; if(CHECKS&&CHECKS['t_'+t.id])done++; }); }
+  return {total,done,pct: total?Math.round(done/total*100):0};
+}
+function renderProgress(){
+  const el=$('progChart'); if(!el)return; const p=weekProgress();
+  const R=34,C=2*Math.PI*R, off=C*(1-p.pct/100);
+  const col = p.pct>=80?'var(--ok)':(p.pct>=40?'var(--warn)':'var(--danger)');
+  el.innerHTML='<div style="display:flex;align-items:center;gap:18px;flex-wrap:wrap">'
+   +'<svg width="88" height="88" viewBox="0 0 88 88" style="flex:none">'
+   +'<circle cx="44" cy="44" r="'+R+'" fill="none" stroke="var(--line)" stroke-width="10"/>'
+   +'<circle cx="44" cy="44" r="'+R+'" fill="none" stroke="'+col+'" stroke-width="10" stroke-linecap="round" stroke-dasharray="'+C.toFixed(1)+'" stroke-dashoffset="'+off.toFixed(1)+'" transform="rotate(-90 44 44)"/>'
+   +'<text x="44" y="50" text-anchor="middle" font-size="19" font-weight="700" fill="var(--text)">'+p.pct+'%</text></svg>'
+   +'<div><div style="font-weight:700;font-size:15px">Umgesetzt diese Woche</div>'
+   +'<div style="color:var(--muted);font-size:12.5px;margin-top:2px">'+p.done+' von '+p.total+' Aufgaben erledigt (Aufgaben, Sport, Reflektion &amp; Vorausschau)</div></div></div>';
 }
 
 (async()=>{
