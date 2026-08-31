@@ -304,7 +304,7 @@ async function saveFragen(){
 }
 
 const ASANA='https://app.asana.com/1/1206683226417804/task/';
-let ETASKS=[], ESUBS={};
+let ETASKS=[], ESUBS={}, ARCH=[], ARCHOPEN={rueck:false,voraus:false};
 const EXTRA_START={jahr:2026,kw:28};
 function extraActive(){ return CUR.jahr>EXTRA_START.jahr || (CUR.jahr===EXTRA_START.jahr && CUR.kw>=EXTRA_START.kw); }
 let CHECKS={};
@@ -318,7 +318,8 @@ async function loadExtra(){
     sb.from('wochenextra_subtasks').select('*').order('pos'),
     sb.from('wochen_extra').select('checks').eq('jahr',CUR.jahr).eq('kw',CUR.kw).maybeSingle()
   ]);
-  ETASKS=rt.error?[]:(rt.data||[]);
+  const allt=rt.error?[]:(rt.data||[]);
+  ETASKS=allt.filter(t=>!t.archiviert); ARCH=allt.filter(t=>t.archiviert);
   ESUBS={}; (rs.error?[]:(rs.data||[])).forEach(s=>{(ESUBS[s.task_id]=ESUBS[s.task_id]||[]).push(s);});
   if(rx&&rx.data&&rx.data.checks){ CHECKS=Object.assign({},rx.data.checks); }
   else {
@@ -353,8 +354,16 @@ function renderExtra(){
   if(!extraActive())return;
   const rue=ETASKS.filter(t=>t.bereich==='rueck'), vor=ETASKS.filter(t=>t.bereich==='voraus');
   const addBtn=b=>'<button onclick="addTask(\''+b+'\')" style="margin-top:9px;background:none;border:1px dashed var(--line);border-radius:8px;padding:7px 13px;color:var(--dim);cursor:pointer;font:inherit;font-weight:600;font-size:12.5px">+ Aufgabe</button>';
-  $('listRueck').innerHTML=rue.map(taskHtml).join('')+addBtn('rueck');
-  $('listVoraus').innerHTML=vor.map(taskHtml).join('')+addBtn('voraus');
+  const archN=b=>ARCH.filter(t=>t.bereich===b).length;
+  const archBtn=b=>'<button onclick="toggleArchiv(\''+b+'\')" style="margin:9px 0 0 8px;background:none;border:1px solid var(--line);border-radius:8px;padding:7px 13px;color:var(--dim);cursor:pointer;font:inherit;font-weight:600;font-size:12.5px">🗄 Archiv ('+archN(b)+')</button>';
+  const archPanel=b=>{ if(!ARCHOPEN[b])return ''; const list=ARCH.filter(t=>t.bereich===b);
+    const rows=list.map(t=>'<div style="display:flex;gap:8px;align-items:flex-start;border-bottom:1px solid var(--bord2);padding:6px 2px">'
+      +'<div style="flex:1"><div style="font-weight:600;font-size:13px">'+esc(t.titel||'(ohne Titel)')+'</div>'+(t.erklaerung?'<div style="font-size:11.5px;color:var(--muted);margin-top:2px">'+esc(t.erklaerung)+'</div>':'')+(subsOf(t.id).length?'<div style="font-size:11px;color:var(--muted);margin-top:2px">'+subsOf(t.id).length+' Unteraufgaben</div>':'')+'</div>'
+      +'<button onclick="reaktiviere(\''+t.id+'\')" style="background:#e3f4ea;color:var(--ok);border:1px solid #bfe3cd;border-radius:7px;padding:4px 9px;cursor:pointer;font:inherit;font-size:12px;font-weight:600;white-space:nowrap">↩ Reaktivieren</button>'
+      +'<button onclick="delTaskHard(\''+t.id+'\')" title="endgültig löschen" style="background:none;border:none;color:var(--muted);cursor:pointer">✕</button></div>').join('')||'<div style="font-size:12px;color:var(--muted);padding:6px 2px">Archiv leer.</div>';
+    return '<div style="margin-top:10px;border:1px solid var(--line);border-radius:10px;padding:8px 10px;background:var(--surf2)"><div style="font-size:11px;font-weight:700;text-transform:uppercase;color:var(--muted);margin-bottom:4px">🗄 Archiv</div>'+rows+'</div>'; };
+  $('listRueck').innerHTML=rue.map(taskHtml).join('')+addBtn('rueck')+archBtn('rueck')+archPanel('rueck');
+  $('listVoraus').innerHTML=vor.map(taskHtml).join('')+addBtn('voraus')+archBtn('voraus')+archPanel('voraus');
   const rd=rue.filter(t=>CHECKS['t_'+t.id]).length, vd=vor.filter(t=>CHECKS['t_'+t.id]).length;
   $('rueckCnt').textContent=rue.length+' Aufgaben'; $('vorausCnt').textContent=vor.length+' Aufgaben';
   $('rueckProg').textContent=rd+'/'+rue.length+' erledigt'; $('vorausProg').textContent=vd+'/'+vor.length+' erledigt';
@@ -372,7 +381,27 @@ async function addTask(bereich){
   if(res.error){toast(res.error.message);return;} ETASKS.push(res.data[0]); renderExtra();
 }
 async function updTask(id,field,val){const t=ETASKS.find(x=>x.id===id);if(t)t[field]=val;const r=await sb.from('wochenextra_tasks').update({[field]:(val===''?null:val)}).eq('id',id);if(r.error)toast(r.error.message);}
-async function delTask(id){if(!confirm('Aufgabe inkl. Unteraufgaben dauerhaft löschen?'))return;await sb.from('wochenextra_subtasks').delete().eq('task_id',id);await sb.from('wochenextra_tasks').delete().eq('id',id);ETASKS=ETASKS.filter(x=>x.id!==id);delete ESUBS[id];renderExtra();}
+async function delTask(id){
+  const t=ETASKS.find(x=>x.id===id);if(!t)return;
+  if(!confirm('Aufgabe ins Archiv verschieben? (mit Beschreibung & Unteraufgaben, jederzeit reaktivierbar)'))return;
+  t.archiviert=true; const r=await sb.from('wochenextra_tasks').update({archiviert:true}).eq('id',id);
+  if(r.error){toast(r.error.message);return;}
+  ETASKS=ETASKS.filter(x=>x.id!==id); ARCH.push(t); renderExtra(); toast('Ins Archiv verschoben');
+}
+function toggleArchiv(b){ARCHOPEN[b]=!ARCHOPEN[b];renderExtra();}
+async function reaktiviere(id){
+  const t=ARCH.find(x=>x.id===id);if(!t)return;
+  const r=await sb.from('wochenextra_tasks').update({archiviert:false}).eq('id',id);
+  if(r.error){toast(r.error.message);return;}
+  t.archiviert=false; ARCH=ARCH.filter(x=>x.id!==id); ETASKS.push(t); renderExtra(); toast('Reaktiviert ✓');
+}
+async function delTaskHard(id){
+  if(!confirm('Diese archivierte Aufgabe endgültig löschen?'))return;
+  await sb.from('wochenextra_subtasks').delete().eq('task_id',id);
+  const r=await sb.from('wochenextra_tasks').delete().eq('id',id);
+  if(r.error){toast(r.error.message);return;}
+  ARCH=ARCH.filter(x=>x.id!==id); delete ESUBS[id]; renderExtra();
+}
 async function addSub(tid){const pos=subsOf(tid).length+1;const res=await sb.from('wochenextra_subtasks').insert({task_id:tid,titel:'',pos}).select();if(res.error){toast(res.error.message);return;}(ESUBS[tid]=ESUBS[tid]||[]).push(res.data[0]);renderExtra();}
 async function updSub(id,val){Object.keys(ESUBS).forEach(k=>ESUBS[k].forEach(s=>{if(s.id===id)s.titel=val;}));const r=await sb.from('wochenextra_subtasks').update({titel:(val===''?null:val)}).eq('id',id);if(r.error)toast(r.error.message);}
 async function delSub(id){Object.keys(ESUBS).forEach(k=>{ESUBS[k]=ESUBS[k].filter(s=>s.id!==id);});const r=await sb.from('wochenextra_subtasks').delete().eq('id',id);if(r.error){toast(r.error.message);return;}renderExtra();}
