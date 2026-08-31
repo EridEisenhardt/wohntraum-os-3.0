@@ -201,6 +201,15 @@ select.cin.tagset{color:var(--accent);border-color:var(--accent);background:#eef
   <div class="sec"><div class="pad" style="padding-top:14px;padding-bottom:14px"><div id="progChart"></div>
     <div style="font-size:11.5px;color:var(--muted);margin-top:8px">⭐ Der Stern (★) markiert deine <b>Top 3 der Woche</b>.</div></div></div>
 
+  <!-- Benchmark historisch -->
+  <div class="sec"><div class="pad" style="padding-top:8px;padding-bottom:14px">
+    <div style="display:flex;justify-content:space-between;align-items:baseline;flex-wrap:wrap;gap:8px">
+      <div style="font-size:12px;font-weight:700;color:var(--dim)">📈 Umsetzung je Woche (Benchmark)</div>
+      <div id="benchAvg" style="font-size:12px;color:var(--muted)"></div>
+    </div>
+    <div id="benchChart" style="margin-top:8px;overflow-x:auto"></div>
+  </div></div>
+
   <!-- Top 3 Fragen -->
   <div class="sec">
     <div class="sec-hd"><div class="t">Top 3 Fragen zur Wochenplanung</div><span class="prog" id="fragenSaved"></span></div>
@@ -299,7 +308,7 @@ async function load(){
     .eq('jahr',CUR.jahr).eq('kw',CUR.kw).order('pos',{ascending:true}).order('created_at',{ascending:true});
   ROWS = error ? [] : (data||[]);
   if(error) toast('Fehler beim Laden: '+error.message);
-  render(); loadFragen(); loadExtra(); loadLinks();
+  render(); loadFragen(); loadExtra(); loadLinks(); loadHistory();
 }
 let LINKS=[];
 async function loadLinks(){
@@ -699,6 +708,48 @@ function renderProgress(){
    +'<text x="44" y="50" text-anchor="middle" font-size="19" font-weight="700" fill="var(--text)">'+p.pct+'%</text></svg>'
    +'<div><div style="font-weight:700;font-size:15px">Umgesetzt diese Woche</div>'
    +'<div style="color:var(--muted);font-size:12.5px;margin-top:2px">'+p.done+' von '+p.total+' Aufgaben erledigt (Aufgaben, Sport, Reflektion &amp; Vorausschau)</div></div></div>';
+  renderHistory();
+}
+let HISTWP={}, HISTEX={};
+function extraActiveFor(j,k){ return j>2026 || (j===2026 && k>=28); }
+async function loadHistory(){
+  const [rw,rx]=await Promise.all([
+    sb.from('wochenplanung').select('jahr,kw,bereich,status').in('bereich',['aufgabe','sport']),
+    sb.from('wochen_extra').select('jahr,kw,checks')
+  ]);
+  HISTWP={}; (rw.error?[]:(rw.data||[])).forEach(r=>{const key=r.jahr+'-'+r.kw;const a=HISTWP[key]||(HISTWP[key]={total:0,done:0,jahr:r.jahr,kw:r.kw});a.total++;if(r.status==='erledigt')a.done++;});
+  HISTEX={}; (rx.error?[]:(rx.data||[])).forEach(r=>{HISTEX[r.jahr+'-'+r.kw]={jahr:r.jahr,kw:r.kw,checks:r.checks||{}};});
+  renderHistory();
+}
+function renderHistory(){
+  const el=$('benchChart'); if(!el)return;
+  const keys={}; Object.keys(HISTWP).forEach(k=>keys[k]=1); Object.keys(HISTEX).forEach(k=>keys[k]=1); keys[CUR.jahr+'-'+CUR.kw]=1;
+  const weeks=Object.keys(keys).map(k=>{const p=k.split('-');return {jahr:+p[0],kw:+p[1],key:k};}).sort((a,b)=>a.jahr-b.jahr||a.kw-b.kw);
+  const etN=(ETASKS||[]).length;
+  function pctOf(w){
+    if(w.jahr===CUR.jahr && w.kw===CUR.kw){ const cp=weekProgress(); return cp.total?cp.pct:null; }
+    const wp=HISTWP[w.key]||{total:0,done:0}; let total=wp.total,done=wp.done;
+    if(extraActiveFor(w.jahr,w.kw)){ const ex=HISTEX[w.key]; const ch=ex?ex.checks:{}; total+=etN; done+=Object.keys(ch||{}).filter(x=>x.indexOf('t_')===0 && ch[x]).length; }
+    return total?Math.round(done/total*100):null;
+  }
+  const data=weeks.map(w=>({w,pct:pctOf(w)})).filter(d=>d.pct!==null).slice(-14);
+  const valid=data.filter(d=>d.pct!==null);
+  const avg=valid.length?Math.round(valid.reduce((s,d)=>s+d.pct,0)/valid.length):0;
+  $('benchAvg').innerHTML=valid.length?('Ø Benchmark: <b style="color:var(--accent)">'+avg+'%</b> über '+valid.length+' Wochen'):'Noch keine Historie';
+  if(!data.length){el.innerHTML='<div style="font-size:12px;color:var(--muted)">Noch keine Daten.</div>';return;}
+  const W=Math.max(data.length*46+10,300),H=150,base=120,top=14;
+  const y=p=>base-(p/100)*(base-top);
+  let bars='';
+  data.forEach((d,i)=>{const x=14+i*46;const cur=(d.w.jahr===CUR.jahr&&d.w.kw===CUR.kw);
+    const col=cur?'var(--accent)':(d.pct>=avg?'var(--ok)':'#c9ccd1');
+    bars+='<rect x="'+x+'" y="'+y(d.pct).toFixed(1)+'" width="30" height="'+(base-y(d.pct)).toFixed(1)+'" rx="4" fill="'+col+'"></rect>';
+    bars+='<text x="'+(x+15)+'" y="'+(y(d.pct)-4).toFixed(1)+'" text-anchor="middle" font-size="10" font-weight="700" fill="var(--text)">'+d.pct+'</text>';
+    bars+='<text x="'+(x+15)+'" y="'+(base+14)+'" text-anchor="middle" font-size="9" fill="var(--muted)">KW'+d.w.kw+'</text>';
+  });
+  const ay=y(avg);
+  const line='<line x1="8" y1="'+ay.toFixed(1)+'" x2="'+(W-4)+'" y2="'+ay.toFixed(1)+'" stroke="var(--accent)" stroke-width="1.5" stroke-dasharray="5 4"></line>'
+    +'<text x="'+(W-6)+'" y="'+(ay-4).toFixed(1)+'" text-anchor="end" font-size="9" fill="var(--accent)">Ø '+avg+'%</text>';
+  el.innerHTML='<svg width="'+W+'" height="'+H+'" viewBox="0 0 '+W+' '+H+'">'+line+bars+'</svg>';
 }
 
 (async()=>{
