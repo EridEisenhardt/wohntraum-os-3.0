@@ -222,6 +222,15 @@ export default function Sidebar({ user, demo, onLogout, role, perms }) {
   useEffect(() => { setSelectedCat(null); setQ('') }, [path])
   // Favoriten-Änderungen an die linke Favoritenleiste (FavRail) melden
   useEffect(() => { try { window.dispatchEvent(new CustomEvent('wt-favs', { detail: favs })) } catch (e) {} }, [favs])
+  // Favoriten-Änderungen von anderen Stellen (FavToggle/andere Tabs) übernehmen
+  useEffect(() => {
+    const apply = (arr) => setFavs((prev) => (JSON.stringify(prev) === JSON.stringify(arr) ? prev : arr))
+    const onCustom = (e) => apply(Array.isArray(e.detail) ? e.detail : [])
+    const onStorage = () => { try { const f = localStorage.getItem('sidebar_favs'); apply(f ? JSON.parse(f) : []) } catch (er) {} }
+    window.addEventListener('wt-favs', onCustom)
+    window.addEventListener('storage', onStorage)
+    return () => { window.removeEventListener('wt-favs', onCustom); window.removeEventListener('storage', onStorage) }
+  }, [])
 
   const isFav = (href) => favs.includes(href)
   const toggleFav = (href, e) => {

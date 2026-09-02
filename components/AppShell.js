@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react'
 import { supabase, supabaseConfigured } from '@/lib/supabaseClient'
 import Sidebar from './Sidebar'
 import FavRail from './FavRail'
+import FavToggle from './FavToggle'
 
 export default function AppShell({ children }) {
   const [session, setSession] = useState(null)
@@ -45,7 +46,7 @@ export default function AppShell({ children }) {
       <Sidebar user={user} demo={!supabaseConfigured} onLogout={() => supabase.auth.signOut()} role={role} perms={perms} />
       <div className="app-body">
         <FavRail />
-        <main className="main">{children}</main>
+        <main className="main"><FavToggle />{children}</main>
       </div>
     </div>
   )
