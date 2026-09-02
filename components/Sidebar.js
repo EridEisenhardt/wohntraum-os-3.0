@@ -11,6 +11,9 @@ export const NAV = [
     { href: '/gf-dashboard/kpi', icon: 'ti-gauge', label: 'KPI GF Kennzahlen' },
   ] },
   { type: 'link', href: '/beschluesse', icon: 'ti-clipboard-check', label: 'Beschlüsse', area: ['vertrieb', 'hv'], mod: 'dashboards' },
+  { type: 'group', key: 'cashflow', icon: 'ti-cash-banknote', label: 'Cashflow aller Gesellschaften und Immobilien', area: ['vertrieb', 'hv'], mod: 'dashboards', items: [
+    { href: '/finance/cashflow-uebersicht', icon: 'ti-cash-banknote', label: 'Cashflow-Übersicht (3 Ebenen)' },
+  ] },
   { type: 'group', key: 'buchhaltung', icon: 'ti-calculator', label: 'Buchhaltung', area: ['hv', 'backoffice'], mod: 'controlling', items: [
     { href: '/buchhaltung/wiederkehrende-zahlungen', icon: 'ti-repeat', label: 'Wiederkehrende Zahlungen' },
     { href: '/vermietung/zahlungsvereinbarung', icon: 'ti-file-dollar', label: 'Zahlungsvereinbarungsgenerator' },
@@ -93,7 +96,6 @@ export const NAV = [
     { href: '/finance/selbstauskunft', icon: 'ti-user-search', label: 'Selbstauskunft für die Bank' },
     { href: '/finance/reporting', icon: 'ti-report-analytics', label: 'Reporting für die Bank' },
     { href: '/portfolio', icon: 'ti-chart-dots-3', label: 'Portfolio-Report (Faktor · Cashflow)' },
-    { href: '/finance/cashflow-uebersicht', icon: 'ti-cash-banknote', label: 'Cashflow-Übersicht (3 Ebenen)' },
     { href: '/finance/steuer-bilanz', icon: 'ti-receipt-tax', label: 'Steuer und Bilanzunterlagen' },
     { href: '/finance/liquiditaetsplanung', icon: 'ti-wallet', label: 'Liquiditätsplanung' },
     { href: '/finance/monatswechsel', icon: 'ti-calendar-dollar', label: 'Monatswechsel (Finance)' },
@@ -170,7 +172,7 @@ export const GB_MAP = {
   buchhaltung: 'buchhaltung', controlling: 'buchhaltung', finance: 'buchhaltung', 'assetmgmt-bh': 'vertrieb', stammdaten: 'buchhaltung',
   hausverwaltung: 'hausverwaltung', prozesse: 'hausverwaltung',
   produktivitaet: 'gf', personal: 'gf', 'eric-privat': 'gf',
-  'gf-dashboard': 'gf', '/gf-dashboard': 'gf', '/beschluesse': 'gf', '/aktivitaeten': 'hausverwaltung', '/dokumente': 'buchhaltung', '/nutzer': 'gf',
+  'gf-dashboard': 'gf', cashflow: 'gf', '/gf-dashboard': 'gf', '/beschluesse': 'gf', '/aktivitaeten': 'hausverwaltung', '/dokumente': 'buchhaltung', '/nutzer': 'gf',
   '/hausmeisterdienst': 'hausmeisterdienst', '/haushaltshilfe': 'gf', '/jahresplaner': 'gf', '/persoenliche-assistenz': 'gf', '/ziele-entwicklung': 'gf',
   wissensdatenbank: 'wissen',
 }
