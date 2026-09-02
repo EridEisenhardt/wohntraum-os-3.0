@@ -80,6 +80,14 @@ h2 .dot{width:9px;height:9px;border-radius:3px;display:inline-block}
 </div>
 
 <div class="main" id="main">
+  <div class="cat" id="cfCard" style="padding:14px 18px 10px;margin-bottom:16px;border:2px solid var(--accent)">
+    <div style="display:flex;justify-content:space-between;align-items:baseline;gap:12px;flex-wrap:wrap">
+      <div style="font-size:13px;font-weight:700;color:var(--dim)">💶 Gesamt-Cashflow aller Gesellschaften — Monatsbasis · tägliche Entwicklung</div>
+      <div id="cfNow" style="font-size:22px;font-weight:800"></div>
+    </div>
+    <div id="cfSub" style="font-size:11.5px;color:var(--dim);margin:2px 0 8px"></div>
+    <div style="position:relative;height:240px"><canvas id="chCashflow"></canvas></div>
+  </div>
   <div class="loading" id="loading">Lädt aktuellen Statusbericht…</div>
   <div id="content" style="display:none">
     <h2><span class="dot" style="background:var(--accent)"></span>Überblick</h2>
@@ -125,6 +133,21 @@ const esc=s=>(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&g
 
 let METRICS=[], GPM=[];
 const $=id=>document.getElementById(id);
+let CFCHART=null;
+async function loadCashflow(){
+  const r=await sb.from('cashflow_tageswerte').select('datum,cf_monat,objekt_cf_pa,backoffice_pm').order('datum',{ascending:true});
+  const rows=r.error?[]:(r.data||[]);
+  const eur=n=>(n==null||isNaN(n))?'—':Math.round(n).toLocaleString('de-DE')+' €';
+  if(!rows.length){ $('cfNow').textContent='—'; $('cfSub').textContent='Noch keine Tageswerte erfasst (der tägliche Snapshot läuft ab morgen automatisch).'; return; }
+  const last=rows[rows.length-1];
+  $('cfNow').innerHTML='<span style="color:'+(last.cf_monat>=0?'var(--ok,#1a7f37)':'var(--red,#c0392b)')+'">'+eur(last.cf_monat)+' / Monat</span>';
+  $('cfSub').textContent='Stand '+last.datum+' · Immobilien-Cashflow '+eur(last.objekt_cf_pa)+' p.a. − Backoffice '+eur(last.backoffice_pm)+' / Monat · '+rows.length+' Tage erfasst';
+  if(!window.Chart) return;
+  if(CFCHART){ CFCHART.destroy(); CFCHART=null; }
+  const c=$('chCashflow'); if(!c) return;
+  CFCHART=new Chart(c,{ type:'line', data:{ labels:rows.map(x=>x.datum), datasets:[{ label:'Cashflow / Monat (€)', data:rows.map(x=>x.cf_monat), borderColor:'#2383e2', backgroundColor:'rgba(35,131,226,.12)', tension:.25, fill:true, pointRadius:rows.length>60?0:2 }] },
+    options:{ responsive:true, maintainAspectRatio:false, plugins:{ legend:{ display:false } }, scales:{ x:{ ticks:{ maxTicksLimit:10, color:'#57606a' }, grid:{ display:false } }, y:{ ticks:{ color:'#57606a', callback:v=>(v/1000).toFixed(0)+'k' }, grid:{ color:'#eceef1' } } } } });
+}
 async function load(){
   const { data, error } = await sb.from('gf_statusbericht').select('payload,generated_at').order('generated_at',{ascending:false}).limit(1);
   if(error){ document.getElementById('loading').textContent='Fehler beim Laden: '+error.message; return; }
@@ -326,6 +349,7 @@ function renderDeleg(p){
 }
 
 load();
+loadCashflow();
 </script>
 </body>
 </html>
