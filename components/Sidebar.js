@@ -8,11 +8,11 @@ export const NAV = [
   { type: 'link', href: '/tools', icon: 'ti-layout-grid', label: 'Alle Tools', area: 'common' },
   { type: 'group', key: 'gf-dashboard', icon: 'ti-chart-pie', label: 'GF-Dashboard', area: ['vertrieb', 'hv'], mod: 'dashboards', items: [
     { href: '/gf-dashboard', icon: 'ti-chart-pie', label: 'Übersicht' },
-    { href: '/gf-dashboard/kpi', icon: 'ti-gauge', label: 'KPI GF Kennzahlen' },
+    { href: '/gf-dashboard/kpi', icon: 'ti-gauge', label: 'KPI GF · Cashflow je Struktur' },
   ] },
   { type: 'link', href: '/beschluesse', icon: 'ti-clipboard-check', label: 'Beschlüsse', area: ['vertrieb', 'hv'], mod: 'dashboards' },
-  { type: 'group', key: 'cashflow', icon: 'ti-cash-banknote', label: 'Cashflow aller Gesellschaften und Immobilien', area: ['vertrieb', 'hv'], mod: 'dashboards', items: [
-    { href: '/finance/cashflow-uebersicht', icon: 'ti-cash-banknote', label: 'Cashflow-Übersicht (3 Ebenen)' },
+  { type: 'group', key: 'backoffice', icon: 'ti-building-warehouse', label: 'Backoffice-Kosten', area: ['vertrieb', 'hv'], mod: 'dashboards', items: [
+    { href: '/backoffice-kosten', icon: 'ti-cash-banknote', label: 'Backoffice-Kosten & Umlage je Wohneinheit' },
   ] },
   { type: 'group', key: 'buchhaltung', icon: 'ti-calculator', label: 'Buchhaltung', area: ['hv', 'backoffice'], mod: 'controlling', items: [
     { href: '/buchhaltung/wiederkehrende-zahlungen', icon: 'ti-repeat', label: 'Wiederkehrende Zahlungen' },
@@ -172,7 +172,7 @@ export const GB_MAP = {
   buchhaltung: 'buchhaltung', controlling: 'buchhaltung', finance: 'buchhaltung', 'assetmgmt-bh': 'vertrieb', stammdaten: 'buchhaltung',
   hausverwaltung: 'hausverwaltung', prozesse: 'hausverwaltung',
   produktivitaet: 'gf', personal: 'gf', 'eric-privat': 'gf',
-  'gf-dashboard': 'gf', cashflow: 'gf', '/gf-dashboard': 'gf', '/beschluesse': 'gf', '/aktivitaeten': 'hausverwaltung', '/dokumente': 'buchhaltung', '/nutzer': 'gf',
+  'gf-dashboard': 'gf', backoffice: 'gf', '/gf-dashboard': 'gf', '/beschluesse': 'gf', '/aktivitaeten': 'hausverwaltung', '/dokumente': 'buchhaltung', '/nutzer': 'gf',
   '/hausmeisterdienst': 'hausmeisterdienst', '/haushaltshilfe': 'gf', '/jahresplaner': 'gf', '/persoenliche-assistenz': 'gf', '/ziele-entwicklung': 'gf',
   wissensdatenbank: 'wissen',
 }

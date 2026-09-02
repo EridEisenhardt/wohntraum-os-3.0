@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="de"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Backoffice-Kosten · Umlage je Wohneinheit</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+:root{--bg:#fff;--surf:#fff;--surf2:#f7f7f5;--line:#e9e9e7;--text:#37352f;--muted:#9b9a97;--dim:#6b6a66;--accent:#2383e2;--rot:#c0392b}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--text);font-family:-apple-system,'Segoe UI',Inter,system-ui,sans-serif;font-size:14px;line-height:1.5;font-variant-numeric:tabular-nums}
+.hdr{padding:20px 28px 8px}
+.hdr-title{font-size:22px;font-weight:700}
+.hdr-sub{font-size:12.5px;color:var(--muted);margin-top:3px}
+.wrap{padding:12px 28px 70px;max-width:900px}
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;margin-bottom:20px}
+.kpi{border:1px solid var(--line);border-radius:12px;padding:13px 15px;background:var(--surf2)}
+.kpi .l{font-size:10.5px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);font-weight:700}
+.kpi .v{font-size:22px;font-weight:800;margin-top:3px}
+.kpi .s{font-size:11px;color:var(--muted);margin-top:1px}
+.kpi.hl{background:#eef3fb;border-color:#cfe0f7}
+.grp{margin-top:16px}
+.grp-h{font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--dim);margin-bottom:4px;display:flex;justify-content:space-between;align-items:baseline}
+.grp-h .sum{color:var(--text);font-weight:800}
+table{width:100%;border-collapse:collapse}
+td,th{padding:6px 8px;border-bottom:1px solid var(--line);text-align:left}
+input.bz{width:100%;border:1px solid transparent;border-radius:6px;padding:5px 7px;font:inherit;background:transparent}
+input.bz:hover{border-color:var(--line)}input:focus{outline:none;border-color:var(--accent);background:#fff}
+input.eur{width:130px;text-align:right;border:1px solid var(--line);border-radius:6px;padding:5px 7px;font:inherit;background:#fff}
+.eurcol{text-align:right;white-space:nowrap;width:150px}
+.x{background:none;border:none;color:var(--muted);cursor:pointer;font-size:13px}.x:hover{color:var(--rot)}
+.add{margin:4px 0 2px;background:none;border:none;color:var(--accent);cursor:pointer;font:inherit;font-size:12.5px;font-weight:600}
+.pa{color:var(--muted);font-size:11px}
+.note{font-size:11.5px;color:var(--muted);background:var(--surf2);border:1px solid var(--line);border-radius:9px;padding:10px 12px;margin-top:20px;line-height:1.55}
+.toast{position:fixed;bottom:22px;left:50%;transform:translateX(-50%);background:#37352f;color:#fff;padding:9px 16px;border-radius:8px;font-size:13px;opacity:0;pointer-events:none;transition:.2s;z-index:50}.toast.show{opacity:1}
+</style></head><body>
+<div class="hdr">
+  <div class="hdr-title">🏢 Backoffice-Kosten &amp; Umlage je Wohneinheit</div>
+  <div class="hdr-sub">Gehälter · Büro · Auto · Lager · Abokosten — Gesamtkosten und Umlage auf die Wohneinheiten</div>
+</div>
+<div class="wrap">
+  <div class="kpis" id="kpis"></div>
+  <div id="groups"></div>
+  <div class="note" id="note"></div>
+</div>
+<div class="toast" id="toast"></div>
+<script>
+const sb=window.supabase.createClient('https://jqzxctfqvcwbctpjksvg.supabase.co','eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpxenhjdGZxdmN3YmN0cGprc3ZnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODIxMzA0MzIsImV4cCI6MjA5NzcwNjQzMn0.RKIbZxJdusKWWPjBJqlxZ8e1m8So02UslOg55YRsn3o');
+const $=id=>document.getElementById(id);
+const esc=s=>(s==null?'':String(s)).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+const eur=n=>(n==null||isNaN(n))?'—':Math.round(n).toLocaleString('de-DE')+' €';
+const eur2=n=>(n==null||isNaN(n))?'—':n.toLocaleString('de-DE',{minimumFractionDigits:2,maximumFractionDigits:2})+' €';
+function toast(m){const t=$('toast');t.textContent=m;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),1400);}
+const KATS=['Gehalt','Büro','Auto','Lager','Abokosten'];
+let ROWS=[], WE=0;
+function num(v){const r=(v||'').toString().trim().replace(/\./g,'').replace(',','.');const n=r===''?null:Number(r);return (n!=null&&!isNaN(n))?n:null;}
+
+async function load(){
+  const [bk,ap]=await Promise.all([
+    sb.from('backoffice_kosten').select('*').order('pos',{ascending:true}).order('created_at',{ascending:true}),
+    sb.from('assetmgmt_portfolio').select('wohn_einheiten,status')
+  ]);
+  ROWS=bk.error?[]:(bk.data||[]);
+  WE=(ap.error?[]:(ap.data||[])).reduce((s,o)=>s+(Number(o.wohn_einheiten)||0),0);
+  render();
+}
+function katsInUse(){ const s=[...KATS]; ROWS.forEach(r=>{ if(!s.includes(r.kategorie))s.push(r.kategorie); }); return s; }
+function rowsOf(k){ return ROWS.filter(r=>r.kategorie===k); }
+function sumOf(k){ return rowsOf(k).reduce((s,r)=>s+(r.aktiv===false?0:(Number(r.betrag_monat)||0)),0); }
+function total(){ return ROWS.reduce((s,r)=>s+(r.aktiv===false?0:(Number(r.betrag_monat)||0)),0); }
+
+function render(){
+  const tm=total(), ta=tm*12;
+  const uM=WE?tm/WE:null, uA=WE?ta/WE:null;
+  $('kpis').innerHTML=
+    kpi('Gesamtkosten / Monat',eur(tm),'Backoffice gesamt')
+   +kpi('Gesamtkosten / Jahr',eur(ta),'× 12')
+   +kpi('Umlage je Wohneinheit / Monat',uM==null?'—':eur2(uM),WE+' Wohneinheiten',true)
+   +kpi('Umlage je Wohneinheit / Jahr',uA==null?'—':eur(uA),WE?('÷ '+WE+' WE'):'keine WE',true);
+  $('groups').innerHTML=katsInUse().map(k=>{
+    const rows=rowsOf(k);
+    const body=rows.map(r=>`<tr>
+      <td><input class="bz" value="${esc(r.bezeichnung)}" placeholder="Bezeichnung…" onchange="upd('${r.id}','bezeichnung',this.value)"></td>
+      <td class="eurcol"><input class="eur" value="${r.betrag_monat!=null?String(r.betrag_monat).replace('.',','):''}" placeholder="€ / Monat" onchange="updN('${r.id}',this.value)"> <span class="pa">${r.betrag_monat!=null?('· '+eur((Number(r.betrag_monat)||0)*12)+' p.a.'):''}</span></td>
+      <td style="width:30px"><button class="x" title="Zeile löschen" onclick="del('${r.id}')">✕</button></td>
+    </tr>`).join('');
+    return `<div class="grp"><div class="grp-h"><span>${esc(k)}</span><span class="sum">${eur(sumOf(k))} / Mon.</span></div>
+      <table><tbody>${body}</tbody></table>
+      <button class="add" onclick="addRow('${esc(k)}')">+ Position in ${esc(k)}</button></div>`;
+  }).join('')
+   +`<div style="margin-top:14px"><button class="add" onclick="addKat()">+ Neue Kostenart</button></div>`;
+  $('note').innerHTML='<b>Berechnung:</b> Umlage je Wohneinheit = Backoffice-Gesamtkosten ÷ Anzahl Wohneinheiten ('+WE+' aus dem Portfolio, alle Objekte). '
+    +'Beträge sind manuell pflegbar (brutto inkl. Arbeitgeberanteil bei Gehältern). Diese Gesamtkosten sind die Fixkosten-Basis für den Monats-Cashflow aller Gesellschaften.';
+}
+function kpi(l,v,s,hl){return '<div class="kpi'+(hl?' hl':'')+'"><div class="l">'+l+'</div><div class="v">'+v+'</div><div class="s">'+esc(s||'')+'</div></div>';}
+
+async function upd(id,field,val){const r=ROWS.find(x=>x.id===id);if(r)r[field]=val;const res=await sb.from('backoffice_kosten').update({[field]:(val===''?null:val)}).eq('id',id);if(res.error)toast(res.error.message);}
+async function updN(id,val){const n=num(val);const r=ROWS.find(x=>x.id===id);if(r)r.betrag_monat=n;const res=await sb.from('backoffice_kosten').update({betrag_monat:n}).eq('id',id);if(res.error){toast(res.error.message);return;}render();}
+async function addRow(k){const pos=(ROWS.reduce((m,r)=>Math.max(m,r.pos||0),0))+1;const res=await sb.from('backoffice_kosten').insert({kategorie:k,bezeichnung:'',pos}).select();if(res.error){toast(res.error.message);return;}ROWS.push(res.data[0]);render();}
+async function addKat(){const k=(prompt('Name der neuen Kostenart:')||'').trim();if(!k)return;await addRow(k);}
+async function del(id){const res=await sb.from('backoffice_kosten').delete().eq('id',id);if(res.error){toast(res.error.message);return;}ROWS=ROWS.filter(r=>r.id!==id);render();}
+load();
+</script>
+</body></html>
