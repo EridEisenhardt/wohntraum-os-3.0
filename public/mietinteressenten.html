@@ -143,7 +143,8 @@ const MILE=['','✅','⏳','⏸️','❌'];
 const MILE_TITLE={'✅':'erledigt','⏳':'in Arbeit','⏸️':'wartet','❌':'nein'};
 const MILEF=[['kostenuebernahme','Zusage Kostenübernahme'],['mietangebot_erhalten','Mietangebot erhalten'],['mietvertrag_unterschrieben','Mietvertrag unterschrieben'],['schluesseluebergabe_erfolgt','Schlüsselübergabe erfolgt'],['erste_mietzahlung','1. Mietzahlung']];
 function mileCell(r,field){const lbl=(field==='erste_mietzahlung'&&(r[field]||'')==='⏳')?'<span style="font-size:11px;color:var(--muted);margin-left:5px;white-space:nowrap">Auszahlung in Arbeit</span>':'';return `<td style="text-align:center;white-space:nowrap"><select class="inl" style="text-align:center" onchange="upd('${r.id}','${field}',this.value)">${MILE.map(o=>`<option value="${o}" ${o===(r[field]||'')?'selected':''}>${o===''?'—':o}</option>`).join('')}</select>${lbl}</td>`;}
-let ROWS=[], QUELLEN=[], QROWS=[], FSTAGE='', FTYP='', NOTES=[], HIST=[], FILES=[], NT_CUR=null;
+let ROWS=[], QUELLEN=[], QROWS=[], FSTAGE='', FTYP='', NOTES=[], HIST=[], FILES=[], NT_CUR=null, ME_NAME='';
+async function loadMe(){try{const{data:{user}}=await sb.auth.getUser();if(!user)return;const p=await sb.from('profiles').select('full_name,email').eq('id',user.id).maybeSingle();ME_NAME=(p.data&&(p.data.full_name||p.data.email))||user.email||'';}catch(e){}}
 const DBUCKET='mietinteressent-dateien';
 async function uploadFiles(inp){
   if(!NT_CUR||!inp.files||!inp.files.length)return;
@@ -213,16 +214,16 @@ function openNotes(id){NT_CUR=id;const r=ROWS.find(x=>x.id===id);$('ntTitle').te
 function closeNotes(){$('ov').classList.remove('show');NT_CUR=null;}
 function renderNotes(){
   const items=[];
-  NOTES.filter(n=>n.interessent_id===NT_CUR).forEach(n=>items.push({t:n.created_at,kind:'note',text:n.text,id:n.id}));
+  NOTES.filter(n=>n.interessent_id===NT_CUR).forEach(n=>items.push({t:n.created_at,kind:'note',text:n.text,id:n.id,autor:n.autor}));
   HIST.filter(h=>h.interessent_id===NT_CUR).forEach(h=>items.push({t:h.created_at,kind:h.aktion||'geändert',feld:h.feld,alt:h.alt,neu:h.neu}));
   items.sort((a,b)=>new Date(b.t)-new Date(a.t));
   $('ntList').innerHTML=items.length?items.map(it=>{
-    if(it.kind==='note')return `<div class="note"><span class="x" onclick="delNote('${it.id}')">✕</span><div class="ts">📝 Notiz · ${fmtDT(it.t)}</div><div class="tx">${esc(it.text)}</div></div>`;
+    if(it.kind==='note')return `<div class="note"><span class="x" onclick="delNote('${it.id}')">✕</span><div class="ts">📝 Notiz · ${fmtDT(it.t)}${it.autor?' · '+esc(it.autor):''}</div><div class="tx">${esc(it.text)}</div></div>`;
     if(it.kind==='erstellt')return `<div class="note" style="border-left-color:var(--green)"><div class="ts">➕ ${fmtDT(it.t)}</div><div class="tx">Lead angelegt</div></div>`;
     return `<div class="note" style="border-left-color:var(--muted);background:var(--surf)"><div class="ts">🔄 Änderung · ${fmtDT(it.t)}</div><div class="tx"><b>${esc(it.feld)}</b>: ${esc(it.alt||'—')} → ${esc(it.neu||'—')}</div></div>`;
   }).join(''):'<div class="empty" style="padding:14px">Noch keine Einträge.</div>';
 }
-async function addNote(){const t=$('ntInput').value.trim();if(!t){toast('Bitte Text eingeben');return;}const{data,error}=await sb.from('mietinteressent_notizen').insert({interessent_id:NT_CUR,text:t}).select();if(error){toast(error.message);return;}if(data&&data[0])NOTES.unshift(data[0]);$('ntInput').value='';renderNotes();render();}
+async function addNote(){const t=$('ntInput').value.trim();if(!t){toast('Bitte Text eingeben');return;}const{data,error}=await sb.from('mietinteressent_notizen').insert({interessent_id:NT_CUR,text:t,autor:ME_NAME||null}).select();if(error){toast(error.message);return;}if(data&&data[0])NOTES.unshift(data[0]);$('ntInput').value='';renderNotes();render();}
 async function delNote(nid){if(!confirm('Notiz löschen?'))return;await sb.from('mietinteressent_notizen').delete().eq('id',nid);NOTES=NOTES.filter(n=>n.id!==nid);renderNotes();render();}
 async function logHist(id,field,alt,neu){const rec={interessent_id:id,feld:(FLABEL[field]||field),alt:(alt==null||alt===''?null:String(alt)),neu:(neu==null||neu===''?null:String(neu)),aktion:'geändert'};const{data}=await sb.from('mietinteressent_historie').insert(rec).select();if(data&&data[0])HIST.unshift(data[0]);if(NT_CUR===id)renderNotes();}
 function opts(arr,sel){return arr.map(o=>`<option ${o===sel?'selected':''}>${esc(o)}</option>`).join('');}
@@ -279,7 +280,7 @@ async function load(){
   const{data,error}=await sb.from('mietinteressenten').select('*').order('eingang',{ascending:false,nullsFirst:false}).order('created_at',{ascending:false});
   if(error){$('tbl').innerHTML='<div class="empty">Fehler: '+esc(error.message)+'</div>';return;}
   ROWS=data||[];
-  const nd=await sb.from('mietinteressent_notizen').select('id,interessent_id,text,created_at').order('created_at',{ascending:false});
+  const nd=await sb.from('mietinteressent_notizen').select('id,interessent_id,text,autor,created_at').order('created_at',{ascending:false});
   NOTES=nd.data||[];
   const fd=await sb.from('mietinteressent_dateien').select('*').order('created_at',{ascending:false});
   FILES=fd.data||[];
@@ -438,5 +439,5 @@ function render(){
     +'</tbody></table>';
   if(!list.length)$('tbl').innerHTML='<div class="empty">Keine Leads in dieser Stufe.</div>';
 }
-(async()=>{const{data:{session}}=await sb.auth.getSession();if(!session){$('main').innerHTML='<div class="empty" style="padding:60px">Bitte zuerst im OS einloggen.</div>';return;}clearForm();load();})();
+(async()=>{const{data:{session}}=await sb.auth.getSession();if(!session){$('main').innerHTML='<div class="empty" style="padding:60px">Bitte zuerst im OS einloggen.</div>';return;}await loadMe();clearForm();load();})();
 </script></body></html>
