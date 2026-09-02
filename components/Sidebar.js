@@ -21,6 +21,7 @@ export const NAV = [
   ] },
   { type: 'group', key: 'hausverwaltung', icon: 'ti-home-cog', label: 'Hausverwaltung', area: ['hv', 'backoffice'], mod: 'dashboards', items: [
     { href: '/hausverwaltung/portfolio', icon: 'ti-building-community', label: 'Portfolio' },
+    { href: '/portfolio', icon: 'ti-chart-dots-3', label: 'Portfolio (Faktor · Cashflow)' },
     { href: '/hausverwaltung/mietermeldungen', icon: 'ti-message-report', label: 'Mietermeldungen' },
     { href: '/hausverwaltung/dienstleister', icon: 'ti-address-book', label: 'Firmen & Dienstleister' },
     { href: '/vermietung/zahlungsvereinbarung', icon: 'ti-file-dollar', label: 'Ratenzahlungsgenerator' },
@@ -91,7 +92,6 @@ export const NAV = [
     { href: '/finance/zinsberechnung', icon: 'ti-percentage', label: 'Zinsberechnung' },
     { href: '/finance/selbstauskunft', icon: 'ti-user-search', label: 'Selbstauskunft für die Bank' },
     { href: '/finance/reporting', icon: 'ti-report-analytics', label: 'Reporting für die Bank' },
-    { href: '/portfolio', icon: 'ti-chart-dots-3', label: 'Portfolio-Report (Faktor · Cashflow)' },
     { href: '/finance/steuer-bilanz', icon: 'ti-receipt-tax', label: 'Steuer und Bilanzunterlagen' },
     { href: '/finance/liquiditaetsplanung', icon: 'ti-wallet', label: 'Liquiditätsplanung' },
     { href: '/finance/monatswechsel', icon: 'ti-calendar-dollar', label: 'Monatswechsel (Finance)' },
