@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="de"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Cashflow-Übersicht · 3 Ebenen</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+:root{--bg:#ffffff;--surf:#fff;--surf2:#f7f7f5;--line:#e9e9e7;--text:#37352f;--muted:#9b9a97;--dim:#6b6a66;--accent:#2383e2;--gruen:#0f7b57;--rot:#c0392b}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--text);font-family:-apple-system,'Segoe UI',Inter,system-ui,sans-serif;font-size:14px;line-height:1.5;font-variant-numeric:tabular-nums}
+.hdr{padding:20px 28px 8px}
+.hdr-title{font-size:22px;font-weight:700}
+.hdr-sub{font-size:12.5px;color:var(--muted);margin-top:3px}
+.wrap{padding:10px 28px 70px;max-width:1100px}
+.sec{margin-top:22px}
+.sec-t{font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--dim);margin-bottom:8px;display:flex;align-items:center;gap:8px}
+.badge{display:inline-block;font-size:10px;font-weight:700;color:#fff;background:var(--accent);border-radius:5px;padding:1px 6px;vertical-align:middle}
+table{width:100%;border-collapse:collapse;font-size:13.5px}
+th,td{padding:9px 12px;text-align:right;border-bottom:1px solid var(--line)}
+th:first-child,td:first-child{text-align:left}
+th{font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.03em;color:var(--muted);background:var(--surf2)}
+.ov td{font-weight:600}
+.pos{color:var(--gruen)}.neg{color:var(--rot)}
+tr.tot td{font-weight:800;border-top:2px solid var(--text);background:var(--surf2)}
+.card{border:1px solid var(--line);border-radius:12px;margin-bottom:12px;overflow:hidden;background:#fff}
+.card-h{display:flex;align-items:center;gap:12px;padding:13px 16px;cursor:pointer;user-select:none}
+.card-h:hover{background:var(--surf2)}
+.card-h .nm{font-weight:700;font-size:15px;flex:1}
+.card-h .cf{font-weight:800;font-size:15px;white-space:nowrap}
+.chev{color:var(--muted);transition:transform .15s;font-size:12px}
+.card.open .chev{transform:rotate(90deg)}
+.card-b{display:none;border-top:1px solid var(--line);padding:6px 10px 12px}
+.card.open .card-b{display:block}
+.objrow{border:1px solid var(--line);border-radius:9px;margin:8px 4px;padding:10px 12px;background:var(--surf2)}
+.objrow .ot{font-weight:700;font-size:13.5px;margin-bottom:5px;display:flex;justify-content:space-between;gap:10px}
+.line{display:flex;justify-content:space-between;font-size:12.5px;padding:1px 0;color:var(--dim)}
+.line .v{font-variant-numeric:tabular-nums}
+.line.res{border-top:1px solid var(--line);margin-top:4px;padding-top:5px;font-weight:800;color:var(--text);font-size:13px}
+.empty{color:var(--muted);font-size:12.5px;padding:8px 4px}
+.note{font-size:11.5px;color:var(--muted);background:var(--surf2);border:1px solid var(--line);border-radius:9px;padding:10px 12px;margin-top:18px;line-height:1.55}
+.pill{font-size:10px;font-weight:700;border-radius:5px;padding:1px 6px;background:#eef3fb;color:var(--accent)}
+</style></head><body>
+<div class="hdr">
+  <div class="hdr-title">💶 Cashflow-Übersicht</div>
+  <div class="hdr-sub">Über 3 Ebenen: je Immobilie → je Gesellschaft → Gesamt · live aus Portfolio, Darlehen &amp; wiederkehrenden Zahlungen</div>
+</div>
+<div class="wrap">
+  <div class="sec">
+    <div class="sec-t"><span class="badge">Ebene I</span> Übersicht · Cashflow je Gesellschaft</div>
+    <div id="ov"></div>
+  </div>
+  <div class="sec">
+    <div class="sec-t"><span class="badge">Ebene II + III</span> Gesellschaften &amp; Immobilien (aufklappen)</div>
+    <div id="cards"></div>
+  </div>
+  <div class="note" id="note"></div>
+</div>
+<script>
+const sb=window.supabase.createClient('https://jqzxctfqvcwbctpjksvg.supabase.co','eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpxenhjdGZxdmN3YmN0cGprc3ZnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODIxMzA0MzIsImV4cCI6MjA5NzcwNjQzMn0.RKIbZxJdusKWWPjBJqlxZ8e1m8So02UslOg55YRsn3o');
+const $=id=>document.getElementById(id);
+const esc=s=>(s==null?'':String(s)).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+const eur=n=>(n==null||isNaN(n))?'—':Math.round(n).toLocaleString('de-DE')+' €';
+const cls=n=>n>=0?'pos':'neg';
+// Turnus → Faktor auf p.a.
+const TF={monatlich:12,zweimonatlich:6,vierteljaehrlich:4,halbjaehrlich:2,jaehrlich:1};
+const annual=(betrag,turnus)=>(Number(betrag)||0)*(TF[(turnus||'').toLowerCase()]||1);
+// Normalisierung von Gesellschaftsnamen (Varianten zusammenführen)
+const norm=s=>(s||'').toLowerCase().replace(/[()]/g,'').replace(/\s+/g,' ').trim();
+let OPEN={};
+
+function toggle(k){OPEN[k]=!OPEN[k];const c=document.querySelector('[data-k="'+CSS.escape(k)+'"]');if(c)c.classList.toggle('open',OPEN[k]);}
+
+async function load(){
+  const [ap,wz,fk]=await Promise.all([
+    sb.from('assetmgmt_portfolio').select('kennung,eigentuemer,status,kaltmiete_ist,kapitaldienst_eur'),
+    sb.from('wiederkehrende_zahlungen').select('objekt,gesellschaft,betrag,turnus,zweck,aktiv'),
+    sb.from('firmenkonten').select('gesellschaft')
+  ]);
+  const objs=(ap.error?[]:ap.data||[]);
+  const zah=(wz.error?[]:wz.data||[]).filter(z=>z.aktiv!==false);
+  const firmen=(fk.error?[]:fk.data||[]).map(f=>f.gesellschaft).filter(Boolean);
+
+  // Objektkürzel-Menge
+  const objByCode={}; objs.forEach(o=>{ objByCode[norm(o.kennung)]=o; });
+
+  // Firmen-Registry: name → {display, objs:[], objBetrieb:{}, firmakosten, objektCF}
+  const REG={};
+  const reg=(name)=>{ const k=norm(name); if(!REG[k])REG[k]={key:k,display:name,objs:[],firmakosten:0,firmaPos:[]}; return REG[k]; };
+
+  // Objekte den Gesellschaften zuordnen
+  objs.forEach(o=>{
+    const r=reg(o.eigentuemer||'(ohne Gesellschaft)');
+    const miete=Number(o.kaltmiete_ist)||0;
+    const bank=Number(o.kapitaldienst_eur)||0;
+    o._miete=miete; o._bank=bank; o._betrieb=0; o._pos=[];
+    r.objs.push(o);
+  });
+
+  // wiederkehrende Zahlungen: je Objekt (Betriebskosten) oder Firmenebene (Allgemeinkosten)
+  // Darlehens-/Kreditraten werden ausgeschlossen — die Bankrate kommt aus dem Portfolio (Kapitaldienst), sonst Doppelzählung.
+  const isLoan=z=>/darlehen|kredit|annuit|tilgung|bankrate/i.test(z.zweck||'');
+  zah.forEach(z=>{
+    if(isLoan(z)) return;
+    const a=annual(z.betrag,z.turnus);
+    if(!a) return;
+    const oc=norm(z.objekt);
+    const o=objByCode[oc];
+    if(o){ o._betrieb+=a; o._pos.push({z:z.zweck||z.objekt,a}); }
+    else {
+      // Firmenebene: nach gesellschaft, sonst nach objekt-Label
+      const r=reg(z.gesellschaft||z.objekt||'(ohne Gesellschaft)');
+      r.firmakosten+=a; r.firmaPos.push({z:z.zweck||z.objekt||'Allgemeinkosten',a});
+    }
+  });
+
+  // Firmen ohne Objekte/Kosten aus firmenkonten ergänzen
+  firmen.forEach(f=>reg(f));
+
+  // Ebene-II Kennzahlen
+  const rows=Object.values(REG).map(r=>{
+    r.objektCF=r.objs.reduce((s,o)=>s+(o._miete-o._betrieb-o._bank),0);
+    r.cf=r.objektCF-r.firmakosten;
+    r.miete=r.objs.reduce((s,o)=>s+o._miete,0);
+    r.betrieb=r.objs.reduce((s,o)=>s+o._betrieb,0);
+    r.bank=r.objs.reduce((s,o)=>s+o._bank,0);
+    return r;
+  }).sort((a,b)=>b.cf-a.cf);
+
+  renderOverview(rows);
+  renderCards(rows);
+  $('note').innerHTML='<b>Datenquellen &amp; Annahmen:</b> Miete = <b>Kaltmiete p.a.</b> aus Assetmanagement-Portfolio (nicht warm). '
+    +'Betriebs-/Nebenkosten je Objekt = aktive <b>wiederkehrende Zahlungen</b> (auf p.a. hochgerechnet nach Turnus), verknüpft über das Objektkürzel. '
+    +'Bankrate = <b>Kapitaldienst p.a.</b> (Zins + Tilgung) aus dem Portfolio. '
+    +'Firmenkosten (Allgemeinkosten / Umlage Hausverwaltung / Back-Office) liegen auf <b>Gesellschaftsebene</b> (wiederkehrende Zahlungen ohne Objektbezug) und werden vom Gesellschafts-Cashflow abgezogen. '
+    +'Gesellschafts-Cashflow = Σ Objekt-Cashflows − Firmenkosten. Personalkosten-Matrix und Gruppen-Fixkosten sind in dieser Version noch nicht enthalten.';
+}
+
+function renderOverview(rows){
+  let tCF=0,tOb=0,tFk=0;
+  const body=rows.map(r=>{ tCF+=r.cf; tOb+=r.objektCF; tFk+=r.firmakosten;
+    return '<tr class="ov"><td>'+esc(r.display)+(r.objs.length?' <span class="pill">'+r.objs.length+' Obj.</span>':'')+'</td>'
+      +'<td class="'+cls(r.objektCF)+'">'+eur(r.objektCF)+'</td>'
+      +'<td class="neg">'+(r.firmakosten?('−'+eur(r.firmakosten)):'—')+'</td>'
+      +'<td class="'+cls(r.cf)+'">'+eur(r.cf)+'</td></tr>';
+  }).join('');
+  $('ov').innerHTML='<table><thead><tr><th>Gesellschaft</th><th>Cashflow Immobilien p.a.</th><th>Firmenkosten p.a.</th><th>Cashflow gesamt p.a.</th></tr></thead><tbody>'
+    +body+'<tr class="tot"><td>Σ GESAMT</td><td class="'+cls(tOb)+'">'+eur(tOb)+'</td><td class="neg">'+(tFk?('−'+eur(tFk)):'—')+'</td><td class="'+cls(tCF)+'">'+eur(tCF)+'</td></tr></tbody></table>';
+}
+
+function objBlock(o){
+  const cf=o._miete-o._betrieb-o._bank;
+  return '<div class="objrow"><div class="ot"><span>'+esc(o.kennung)+(/verkauft/i.test(o.status||'')?' <span class="pill" style="background:#fdecec;color:#c0392b">verkauft</span>':'')+'</span><span class="'+cls(cf)+'">'+eur(cf)+'</span></div>'
+    +'<div class="line"><span>+ Miete (kalt) p.a.</span><span class="v">'+eur(o._miete)+'</span></div>'
+    +'<div class="line"><span>− Betriebs-/Nebenkosten p.a.</span><span class="v">'+(o._betrieb?('−'+eur(o._betrieb)):'0 €')+'</span></div>'
+    +'<div class="line"><span>− Bankrate p.a. (Zins + Tilgung)</span><span class="v">'+(o._bank?('−'+eur(o._bank)):'0 €')+'</span></div>'
+    +'<div class="line res"><span>= Cashflow-Ergebnis p.a.</span><span class="v '+cls(cf)+'">'+eur(cf)+'</span></div></div>';
+}
+
+function renderCards(rows){
+  $('cards').innerHTML=rows.map(r=>{
+    const open=!!OPEN[r.key];
+    let body='';
+    if(r.objs.length){
+      body+='<div style="padding:2px 6px 0"><div style="font-size:11px;font-weight:700;text-transform:uppercase;color:var(--muted);margin:4px 4px">Immobilien</div>'
+        +r.objs.slice().sort((a,b)=>(a.kennung||'').localeCompare(b.kennung||'')).map(objBlock).join('')+'</div>';
+    }
+    if(r.firmakosten){
+      const pos=r.firmaPos.slice().sort((a,b)=>b.a-a.a).slice(0,12).map(p=>'<div class="line"><span>− '+esc(p.z)+'</span><span class="v">−'+eur(p.a)+'</span></div>').join('');
+      body+='<div class="objrow"><div class="ot"><span>Firmenkosten (Allgemein / Umlage HV / Back-Office)</span><span class="neg">−'+eur(r.firmakosten)+'</span></div>'+pos+(r.firmaPos.length>12?'<div class="line" style="color:var(--muted)">… '+(r.firmaPos.length-12)+' weitere</div>':'')+'</div>';
+    }
+    if(!r.objs.length && !r.firmakosten) body='<div class="empty">Keine Immobilien und keine erfassten Kosten für diese Gesellschaft.</div>';
+    return '<div class="card'+(open?' open':'')+'" data-k="'+esc(r.key)+'">'
+      +'<div class="card-h" onclick="toggle(\''+r.key.replace(/'/g,"\\'")+'\')"><span class="chev">▶</span><span class="nm">'+esc(r.display)+(r.objs.length?' <span class="pill">'+r.objs.length+' Obj.</span>':'')+'</span><span class="cf '+cls(r.cf)+'">'+eur(r.cf)+' p.a.</span></div>'
+      +'<div class="card-b">'+body+'</div></div>';
+  }).join('');
+}
+load();
+</script>
+</body></html>

@@ -93,6 +93,7 @@ export const NAV = [
     { href: '/finance/selbstauskunft', icon: 'ti-user-search', label: 'Selbstauskunft für die Bank' },
     { href: '/finance/reporting', icon: 'ti-report-analytics', label: 'Reporting für die Bank' },
     { href: '/portfolio', icon: 'ti-chart-dots-3', label: 'Portfolio-Report (Faktor · Cashflow)' },
+    { href: '/finance/cashflow-uebersicht', icon: 'ti-cash-banknote', label: 'Cashflow-Übersicht (3 Ebenen)' },
     { href: '/finance/steuer-bilanz', icon: 'ti-receipt-tax', label: 'Steuer und Bilanzunterlagen' },
     { href: '/finance/liquiditaetsplanung', icon: 'ti-wallet', label: 'Liquiditätsplanung' },
     { href: '/finance/monatswechsel', icon: 'ti-calendar-dollar', label: 'Monatswechsel (Finance)' },
