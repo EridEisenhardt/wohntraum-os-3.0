@@ -301,6 +301,15 @@ export default function Sidebar({ user, demo, onLogout, role, perms }) {
     else if (n.type === 'group' && canSee(n)) { n.items.forEach((it) => { if (canSeeItem(n, it)) allLeaf.push({ href: it.href, label: it.label, icon: it.icon }) }) }
   })
   const favItems = favs.map((h) => allLeaf.find((x) => x.href === h)).filter(Boolean)
+  // Mitarbeiter-Rollen (nicht Admin): freigegebene Bereiche bilden sich automatisch in der Favoriten-/Übersicht ab
+  const isRestricted = !!role && role !== 'admin'
+  const favView = isRestricted ? [...favItems, ...allLeaf.filter((l) => !favs.includes(l.href))] : favItems
+  // freigegebene Bereiche an die linke Favoritenleiste (FavRail) melden
+  const freigKey = isRestricted ? allLeaf.map((l) => l.href).join('|') : ''
+  useEffect(() => {
+    try { window.dispatchEvent(new CustomEvent('wt-freigaben', { detail: { restricted: isRestricted, leaves: isRestricted ? allLeaf : [] } })) } catch (e) {}
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [freigKey, isRestricted])
 
   return (
     <header className="appnav">
@@ -357,9 +366,9 @@ export default function Sidebar({ user, demo, onLogout, role, perms }) {
       {/* Zeile 2: Favoriten (per Drag & Drop umsortierbar) */}
       {activeGb === 'fav' && (
         <nav className="catbar">
-          {favItems.length ? (
+          {favView.length ? (
             <>
-              {favItems.map((it) => (
+              {favView.map((it) => (
                 <Link
                   key={it.href}
                   href={it.href}
