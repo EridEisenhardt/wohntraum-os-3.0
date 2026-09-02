@@ -2,6 +2,7 @@
 <html lang="de"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Portfolio-Dashboard · LTV · Cashflow · Faktor · 5-Jahres-Projektion</title>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.5.0/dist/chart.umd.js" integrity="sha384-iU8HYtnGQ8Cy4zl7gbNMOhsDTTKX02BTXptVP/vqAWIaTfM7isw76iyZCsjL2eVi" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
 :root{color-scheme:light;
 --bg:#f6f8fa;--panel:#ffffff;--panel2:#f0f3f6;--line:#d8dee4;--txt:#1f2328;--muted:#57606a;--muted2:#8c959f;
@@ -118,6 +119,25 @@ const eur=n=>n==null?'—':Math.round(n).toLocaleString('de-DE')+' €';
 const pct=n=>n==null?'—':n.toFixed(1)+'%';
 const ENT={ee:{n:'EE privat',c:'var(--e-ee)'},rheinhessen:{n:'WTR Rheinhessen',c:'var(--e-rh)'}};
 let YEAR=0;
+// Restschuld zum Zinsbindungsende — live aus dem Darlehensregister (loans.rest_zinsbind), je Objekt
+const ZB={};
+const _sbZB=window.supabase.createClient('https://jqzxctfqvcwbctpjksvg.supabase.co','eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpxenhjdGZxdmN3YmN0cGprc3ZnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODIxMzA0MzIsImV4cCI6MjA5NzcwNjQzMn0.RKIbZxJdusKWWPjBJqlxZ8e1m8So02UslOg55YRsn3o');
+const _deDate=s=>{if(!s)return '';const p=String(s).slice(0,10).split('-');return p.length===3?p[2]+'.'+p[1]+'.'+p[0]:s;};
+async function loadZB(){
+ try{
+  const {data,error}=await _sbZB.from('loans').select('bez,zinsbind,rest_zinsbind,status');
+  if(error||!data)return;
+  const isDone=s=>/beendet|abgeschl|zur[üu]ckgef|storn/i.test(s||'');
+  data.forEach(d=>{
+   if(isDone(d.status))return;
+   const code=(d.bez||'').trim().toUpperCase(); if(!code)return;
+   const cur=ZB[code]||(ZB[code]={rest:null,datum:'',_iso:''});
+   if(d.rest_zinsbind!=null) cur.rest=(cur.rest||0)+Number(d.rest_zinsbind);
+   if(d.zinsbind && (!cur._iso || d.zinsbind<cur._iso)){cur._iso=d.zinsbind;cur.datum=_deDate(d.zinsbind);}
+  });
+ }catch(e){}
+}
+const zbSumFor=objs=>objs.reduce((s,o)=>s+((ZB[o.code]&&ZB[o.code].rest)||0),0);
 const YLAB=['IST',"Jahr 1","Jahr 2","Jahr 3","Jahr 4","Jahr 5"];
 
 document.getElementById('stamp').textContent='Stand 21.06.2026 · Restschuld lt. Darlehensregister · Marktwerte PriceHubble −10%';
@@ -169,6 +189,7 @@ function objRow(o){
   <td>${o.r2r?'—':eur(o.mw)}</td>
   <td>${y.wert10==null?'—':eur(y.wert10)}</td>
   <td>${eur(y.rest)}</td>
+  <td>${(ZB[o.code]&&ZB[o.code].rest!=null)?eur(ZB[o.code].rest)+(ZB[o.code].datum?`<div style="font-size:10px;color:var(--muted2)">${ZB[o.code].datum}</div>`:''):'—'}</td>
   <td>${eur(y.miete)}</td>
   <td>${eur(y.schuldendienst)}</td>
   <td style="color:${y.cashflow>=0?'var(--green)':'var(--red)'}">${eur(y.cashflow)}</td>
@@ -178,17 +199,19 @@ function objRow(o){
 }
 function buildTable(){
  document.getElementById('tabyear').textContent=YLAB[YEAR]==='IST'?'IST-Stand':YLAB[YEAR];
- const head=`<thead><tr><th>Objekt</th><th>Gesellschaft</th><th>Marktwert</th><th>Wert −10%</th><th>Restschuld</th><th>Miete p.a.</th><th>Schuldendienst</th><th>Cashflow</th><th>DSCR</th><th>Faktor<br><span style="font-weight:400;text-transform:none">Kredit÷Miete</span></th><th>Faktor %<br><span style="font-weight:400;text-transform:none">Miete÷Kredit</span></th></tr></thead>`;
+ const head=`<thead><tr><th>Objekt</th><th>Gesellschaft</th><th>Marktwert</th><th>Wert −10%</th><th>Restschuld</th><th>Restschuld z.<br><span style="font-weight:400;text-transform:none">Zinsbindungsende</span></th><th>Miete p.a.</th><th>Schuldendienst</th><th>Cashflow</th><th>DSCR</th><th>Faktor<br><span style="font-weight:400;text-transform:none">Kredit÷Miete</span></th><th>Faktor %<br><span style="font-weight:400;text-transform:none">Miete÷Kredit</span></th></tr></thead>`;
  let body='<tbody>';
  [['ee','EE privat'],['rheinhessen','WTR Rheinhessen']].forEach(([k,lab])=>{
   const objs=DATA.objects.filter(o=>o.entity===k);
   const a=DATA[k][YEAR];
-  body+=`<tr class="entrow"><td colspan="11" style="color:${ENT[k].c}">${lab}</td></tr>`;
+  body+=`<tr class="entrow"><td colspan="12" style="color:${ENT[k].c}">${lab}</td></tr>`;
   body+=objs.map(objRow).join('');
-  body+=`<tr><td style="text-align:right;color:var(--muted)" colspan="2">Σ ${lab}</td><td></td><td>${eur(a.wert10)}</td><td>${eur(a.rest)}</td><td>${eur(a.miete)}</td><td>${eur(a.schuldendienst)}</td><td style="color:var(--green)">${eur(a.cashflow)}</td><td><span class="badge ${dscrClass(a.dscr)}">${a.dscr.toFixed(2)}</span></td><td><span class="badge ${faktorClass(a.faktor)}">${a.faktor.toFixed(2)}</span></td><td>${a.faktor_pct!=null?a.faktor_pct.toFixed(1)+'%':'—'}</td></tr>`;
+  const zbSub=zbSumFor(objs);
+  body+=`<tr><td style="text-align:right;color:var(--muted)" colspan="2">Σ ${lab}</td><td></td><td>${eur(a.wert10)}</td><td>${eur(a.rest)}</td><td>${zbSub?eur(zbSub):'—'}</td><td>${eur(a.miete)}</td><td>${eur(a.schuldendienst)}</td><td style="color:var(--green)">${eur(a.cashflow)}</td><td><span class="badge ${dscrClass(a.dscr)}">${a.dscr.toFixed(2)}</span></td><td><span class="badge ${faktorClass(a.faktor)}">${a.faktor.toFixed(2)}</span></td><td>${a.faktor_pct!=null?a.faktor_pct.toFixed(1)+'%':'—'}</td></tr>`;
  });
  const t=DATA.total[YEAR];
- body+=`<tr class="totrow"><td colspan="3">PORTFOLIO GESAMT</td><td>${eur(t.wert10)}</td><td>${eur(t.rest)}</td><td>${eur(t.miete)}</td><td>${eur(t.schuldendienst)}</td><td style="color:var(--green)">${eur(t.cashflow)}</td><td><span class="badge ${dscrClass(t.dscr)}">${t.dscr.toFixed(2)}</span></td><td><span class="badge ${faktorClass(t.faktor)}">${t.faktor.toFixed(2)}</span></td><td>${t.faktor_pct!=null?t.faktor_pct.toFixed(1)+'%':'—'}</td></tr>`;
+ const zbTot=zbSumFor(DATA.objects);
+ body+=`<tr class="totrow"><td colspan="3">PORTFOLIO GESAMT</td><td>${eur(t.wert10)}</td><td>${eur(t.rest)}</td><td>${zbTot?eur(zbTot):'—'}</td><td>${eur(t.miete)}</td><td>${eur(t.schuldendienst)}</td><td style="color:var(--green)">${eur(t.cashflow)}</td><td><span class="badge ${dscrClass(t.dscr)}">${t.dscr.toFixed(2)}</span></td><td><span class="badge ${faktorClass(t.faktor)}">${t.faktor.toFixed(2)}</span></td><td>${t.faktor_pct!=null?t.faktor_pct.toFixed(1)+'%':'—'}</td></tr>`;
  body+='</tbody>';
  document.getElementById('objtbl').innerHTML=head+body;
 }
@@ -281,6 +304,6 @@ function exportXlsx(){
  XLSX.writeFile(wb,'Portfolio-Dashboard_LTV-Cashflow-Faktor.xlsx');
 }
 const r2=n=>n==null?'':Math.round(n*100)/100;
-function boot(){ if(typeof Chart==='undefined'){return setTimeout(boot,40);} init(); }
+function boot(){ if(typeof Chart==='undefined'){return setTimeout(boot,40);} init(); loadZB().then(()=>buildTable()); }
 boot();
 </script></body></html>
