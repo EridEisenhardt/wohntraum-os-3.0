@@ -62,6 +62,7 @@ export const NAV = [
   { type: 'link', href: '/aktivitaeten', icon: 'ti-checklist', label: 'Aktivitäten', area: 'hv', mod: 'aktivitaeten' },
   { type: 'group', key: 'ankauf', icon: 'ti-key', label: 'Ankauf', area: 'vertrieb', mod: 'ankauf', items: [
     { href: '/ankauf/akquise', icon: 'ti-map-search', label: 'Immobilien Akquise' },
+    { href: '/ankauf/verkauf', icon: 'ti-cash-banknote', label: 'Immobilien Verkauf (Pipeline)' },
   ] },
   { type: 'group', key: 'vermietung', icon: 'ti-home-search', label: 'Vermietung', area: 'vertrieb', mod: 'vermietung', items: [
     { href: '/vermietung/mietinteressenten', icon: 'ti-users-plus', label: 'Mietinteressenten' },

@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="de"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Immobilien Verkauf · Pipeline</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+:root{--bg:#fff;--surf:#fff;--surf2:#f7f7f5;--line:#e9e9e7;--text:#37352f;--muted:#9b9a97;--dim:#6b6a66;--accent:#2383e2;--sell:#0f7b57;--rot:#c0392b}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--text);font-family:-apple-system,'Segoe UI',Inter,system-ui,sans-serif;font-size:14px;line-height:1.5}
+.hdr{padding:20px 26px 8px}
+.hdr-title{font-size:22px;font-weight:700}
+.hdr-sub{font-size:12.5px;color:var(--muted);margin-top:3px}
+.wrap{padding:10px 26px 60px}
+.addbar{display:flex;gap:8px;flex-wrap:wrap;align-items:end;background:var(--surf2);border:1px solid var(--line);border-radius:12px;padding:12px 14px;margin-bottom:16px}
+.fld label{display:block;font-size:10.5px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);font-weight:700;margin-bottom:3px}
+.fld input,.fld select{font:inherit;font-size:13px;border:1px solid var(--line);border-radius:8px;padding:7px 9px;background:#fff}
+.btn{font:inherit;font-size:13px;font-weight:600;border:1px solid var(--accent);background:var(--accent);color:#fff;border-radius:8px;padding:8px 14px;cursor:pointer}
+.btn.g{background:#fff;color:var(--text);border-color:var(--line)}
+.chips{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px}
+.chip{font-size:12px;border:1px solid var(--line);border-radius:20px;padding:4px 11px;cursor:pointer;background:#fff}
+.chip.on{background:var(--accent);color:#fff;border-color:var(--accent)}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th,td{padding:8px 10px;border-bottom:1px solid var(--line);text-align:left;vertical-align:middle}
+th{font-size:10.5px;text-transform:uppercase;letter-spacing:.03em;color:var(--muted);background:var(--surf2)}
+tr.row:hover{background:var(--surf2);cursor:pointer}
+select.st{font:inherit;font-size:12px;border:1px solid var(--line);border-radius:6px;padding:4px 6px;background:#fff}
+.lnk{color:var(--accent);text-decoration:none;font-weight:600}
+.ov{position:fixed;inset:0;background:rgba(0,0,0,.4);display:none;align-items:stretch;justify-content:flex-end;z-index:50}
+.ov.show{display:flex}
+.dlg{background:#fff;width:100%;max-width:560px;height:100%;overflow-y:auto;box-shadow:-8px 0 30px rgba(0,0,0,.2)}
+.dlg-hd{display:flex;justify-content:space-between;align-items:center;padding:14px 18px;border-bottom:1px solid var(--line);position:sticky;top:0;background:#fff;z-index:2}
+.dlg-hd .t{font-weight:700;font-size:15px}
+.x{background:none;border:none;font-size:20px;color:var(--muted);cursor:pointer}
+.dlg-bd{padding:14px 18px}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.f{display:flex;flex-direction:column;gap:3px;margin-bottom:8px}
+.f label{font-size:10.5px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);font-weight:700}
+.f input,.f select,.f textarea{font:inherit;font-size:13px;border:1px solid var(--line);border-radius:8px;padding:7px 9px;background:#fff;width:100%}
+.secttl{font-size:11px;font-weight:700;text-transform:uppercase;color:var(--dim);margin:16px 0 6px;border-top:1px solid var(--line);padding-top:12px}
+.note{border:1px solid var(--line);border-radius:9px;padding:9px 11px;margin-bottom:8px;background:var(--surf2)}
+.note .ts{font-size:11px;color:var(--muted);margin-bottom:3px}
+.note .tx{font-size:13px;white-space:pre-wrap}
+.note .del{float:right;background:none;border:none;color:var(--muted);cursor:pointer}
+.toast{position:fixed;bottom:22px;left:50%;transform:translateX(-50%);background:#37352f;color:#fff;padding:9px 16px;border-radius:8px;font-size:13px;opacity:0;pointer-events:none;transition:.2s;z-index:80}.toast.show{opacity:1}
+.empty{color:var(--muted);font-size:13px;padding:20px 4px}
+</style></head><body>
+<div class="hdr">
+  <div class="hdr-title">💰 Immobilien Verkauf · Pipeline</div>
+  <div class="hdr-sub">Verkaufsvorgänge dokumentieren — Käuferkommunikation, Phasen &amp; Verlauf · Aufgaben in Asana, Dateien im Immobilienordner</div>
+</div>
+<div class="wrap">
+  <div class="addbar">
+    <div class="fld"><label>Objekt</label><input id="f_obj" placeholder="z. B. K7 · Dexheim"></div>
+    <div class="fld"><label>Käufer / Interessent</label><input id="f_kae" placeholder="Name"></div>
+    <button class="btn" onclick="add()">+ Verkauf-Vorgang</button>
+  </div>
+  <div class="chips" id="chips"></div>
+  <div id="tbl"></div>
+</div>
+<div class="ov" id="ov" onclick="if(event.target===this)close_()"><div class="dlg" id="dlg"></div></div>
+<div class="toast" id="toast"></div>
+<script>
+const sb=window.supabase.createClient('https://jqzxctfqvcwbctpjksvg.supabase.co','eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpxenhjdGZxdmN3YmN0cGprc3ZnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODIxMzA0MzIsImV4cCI6MjA5NzcwNjQzMn0.RKIbZxJdusKWWPjBJqlxZ8e1m8So02UslOg55YRsn3o');
+const $=id=>document.getElementById(id);
+const esc=s=>(s==null?'':String(s)).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+const eur=n=>(n==null||n===''||isNaN(n))?'—':Math.round(n).toLocaleString('de-DE')+' €';
+function toast(m){const t=$('toast');t.textContent=m;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),1500);}
+function fmtDT(s){if(!s)return '';const d=new Date(s);return d.toLocaleDateString('de-DE')+' '+d.toLocaleTimeString('de-DE',{hour:'2-digit',minute:'2-digit'});}
+const STAGES=['0 · Verkaufsentscheidung','1 · Exposé & Unterlagen','2 · Vermarktung','3 · Interessent / Besichtigung','4 · Kaufangebot','5 · Finanzierungsbestätigung','6 · Notartermin','7 · Beurkundet','8 · Nutzen-Lasten-Wechsel','9 · Abgeschlossen','X · Abgebrochen'];
+let ROWS=[], NOTES=[], CUR=null, FSTAGE='', ME='';
+function num(v){const r=(v||'').toString().trim().replace(/\./g,'').replace(',','.');const n=r===''?null:Number(r);return (n!=null&&!isNaN(n))?n:null;}
+
+async function loadMe(){try{const{data:{user}}=await sb.auth.getUser();if(!user)return;const p=await sb.from('profiles').select('full_name,email').eq('id',user.id).maybeSingle();ME=(p.data&&(p.data.full_name||p.data.email))||user.email||'';}catch(e){}}
+async function load(){
+  const r=await sb.from('immo_verkauf').select('*').order('pos',{ascending:true}).order('created_at',{ascending:false});
+  ROWS=r.error?[]:(r.data||[]);
+  const n=await sb.from('immo_verkauf_notizen').select('*').order('created_at',{ascending:false});
+  NOTES=n.error?[]:(n.data||[]);
+  render();
+}
+function noteCount(id){return NOTES.filter(x=>x.verkauf_id===id).length;}
+function render(){
+  const cnt={}; STAGES.forEach(s=>cnt[s]=0); ROWS.forEach(r=>{if(cnt[r.status]!=null)cnt[r.status]++;});
+  $('chips').innerHTML='<span class="chip '+(FSTAGE===''?'on':'')+'" onclick="setF(\'\')">Alle ('+ROWS.length+')</span>'
+    +STAGES.map(s=>'<span class="chip '+(FSTAGE===s?'on':'')+'" onclick="setF(\''+s.replace(/'/g,"\\'")+'\')">'+esc(s)+' ('+(cnt[s]||0)+')</span>').join('');
+  const list=FSTAGE?ROWS.filter(r=>r.status===FSTAGE):ROWS;
+  const stOpts=r=>STAGES.map(s=>'<option '+(s===r.status?'selected':'')+'>'+esc(s)+'</option>').join('');
+  $('tbl').innerHTML=list.length?('<table><thead><tr><th>Objekt</th><th>Käufer</th><th>Phase</th><th>Angebot</th><th>Asana</th><th>Ordner</th><th>Verlauf</th></tr></thead><tbody>'
+    +list.map(r=>'<tr class="row" onclick="open_(\''+r.id+'\')">'
+      +'<td><b>'+(esc(r.objekt)||'—')+'</b></td>'
+      +'<td>'+esc(r.kaeufer_name)+'</td>'
+      +'<td onclick="event.stopPropagation()"><select class="st" onchange="upd(\''+r.id+'\',\'status\',this.value)">'+stOpts(r)+'</select></td>'
+      +'<td>'+eur(r.kaufpreis_angebot)+'</td>'
+      +'<td onclick="event.stopPropagation()">'+(r.asana_url?'<a class="lnk" href="'+esc(r.asana_url)+'" target="_blank" rel="noopener">↗</a>':'—')+'</td>'
+      +'<td>'+(r.ordner_url?'📁':'—')+'</td>'
+      +'<td>'+(noteCount(r.id)?noteCount(r.id)+' 📝':'—')+'</td></tr>').join('')+'</tbody></table>')
+    :'<div class="empty">Keine Verkaufsvorgänge in dieser Auswahl.</div>';
+}
+function setF(s){FSTAGE=s;render();}
+async function add(){
+  const obj=$('f_obj').value.trim(), kae=$('f_kae').value.trim();
+  if(!obj&&!kae){toast('Objekt oder Käufer angeben');return;}
+  const pos=(ROWS.reduce((m,r)=>Math.max(m,r.pos||0),0))+1;
+  const res=await sb.from('immo_verkauf').insert({objekt:obj||null,kaeufer_name:kae||null,pos}).select();
+  if(res.error){toast(res.error.message);return;}
+  ROWS.unshift(res.data[0]); $('f_obj').value='';$('f_kae').value=''; render();
+}
+async function upd(id,field,val){const r=ROWS.find(x=>x.id===id);if(r)r[field]=val;const res=await sb.from('immo_verkauf').update({[field]:(val===''?null:val)}).eq('id',id);if(res.error){toast(res.error.message);return;}if(CUR===id)renderDlg();if(field==='status')render();}
+async function updN(id,field,val){const n=num(val);const r=ROWS.find(x=>x.id===id);if(r)r[field]=n;const res=await sb.from('immo_verkauf').update({[field]:n}).eq('id',id);if(res.error)toast(res.error.message);}
+async function delRow(id){if(!confirm('Verkaufsvorgang löschen?'))return;await sb.from('immo_verkauf').delete().eq('id',id);ROWS=ROWS.filter(r=>r.id!==id);close_();render();}
+
+function open_(id){CUR=id;$('ov').classList.add('show');renderDlg();}
+function close_(){$('ov').classList.remove('show');CUR=null;}
+function fInput(r,f,label,type){return '<div class="f"><label>'+label+'</label><input type="'+(type||'text')+'" value="'+esc(r[f])+'" onchange="'+(type==='num'?'updN':'upd')+'(\''+r.id+'\',\''+f+'\',this.value)"></div>';}
+function renderDlg(){
+  const r=ROWS.find(x=>x.id===CUR); if(!r)return;
+  const stOpts=STAGES.map(s=>'<option '+(s===r.status?'selected':'')+'>'+esc(s)+'</option>').join('');
+  const notes=NOTES.filter(n=>n.verkauf_id===r.id);
+  $('dlg').innerHTML=
+    '<div class="dlg-hd"><span class="t">'+ (esc(r.objekt)||'Verkaufsvorgang') +' → '+(esc(r.kaeufer_name)||'Käufer')+'</span><button class="x" onclick="close_()">✕</button></div>'
+   +'<div class="dlg-bd">'
+   +'<div class="f"><label>Phase</label><select onchange="upd(\''+r.id+'\',\'status\',this.value)">'+stOpts+'</select></div>'
+   +'<div class="grid2">'+fInput(r,'objekt','Objekt')+fInput(r,'verantwortlich','Verantwortlich')+'</div>'
+   +'<div class="grid2">'+fInput(r,'kaeufer_name','Käufer / Interessent')+fInput(r,'kaeufer_kontakt','Kontakt (Tel./E-Mail)')+'</div>'
+   +'<div class="grid2">'+fInput(r,'kaufpreis_angebot','Kaufpreis Angebot €','num')+fInput(r,'kaufpreis_final','Kaufpreis final €','num')+'</div>'
+   +'<div class="grid2">'+fInput(r,'notar','Notar')+fInput(r,'urkunde','Urkundennummer')+'</div>'
+   +'<div class="grid2">'+fInput(r,'datum_start','Start','date')+fInput(r,'ergebnis','Ergebnis')+'</div>'
+   +fInput(r,'asana_url','Asana-Link (Board/Aufgabe)','text')
+   +fInput(r,'ordner_url','Immobilienordner (Verkauf)','text')
+   +(r.asana_url?'<a class="lnk" href="'+esc(r.asana_url)+'" target="_blank" rel="noopener">→ Asana öffnen ↗</a>  ':'')
+   +(r.ordner_url&&/^https?:/i.test(r.ordner_url)?'<a class="lnk" href="'+esc(r.ordner_url)+'" target="_blank" rel="noopener">→ Ordner öffnen ↗</a>':(r.ordner_url?'<span style="color:var(--muted);font-size:12px">📁 '+esc(r.ordner_url)+'</span>':''))
+   +'<div class="secttl">Historie · Käuferkommunikation &amp; Absprachen</div>'
+   +'<div class="f"><textarea id="ntIn" rows="3" placeholder="Telefonnotiz, E-Mail-Zusammenfassung, Absprache … (Datum, Uhrzeit &amp; Verfasser werden gespeichert)"></textarea></div>'
+   +'<button class="btn" onclick="addNote()">+ Notiz speichern</button>'
+   +'<div style="margin-top:12px">'+(notes.length?notes.map(n=>'<div class="note"><button class="del" onclick="delNote(\''+n.id+'\')">✕</button><div class="ts">📝 '+fmtDT(n.created_at)+(n.autor?' · '+esc(n.autor):'')+'</div><div class="tx">'+esc(n.text)+'</div></div>').join(''):'<div class="empty">Noch keine Einträge.</div>')+'</div>'
+   +'<div style="margin-top:18px"><button class="btn g" style="color:var(--rot);border-color:#eecaca" onclick="delRow(\''+r.id+'\')">Vorgang löschen</button></div>'
+   +'</div>';
+}
+async function addNote(){
+  const t=($('ntIn').value||'').trim(); if(!t){toast('Bitte Text eingeben');return;}
+  const res=await sb.from('immo_verkauf_notizen').insert({verkauf_id:CUR,text:t,autor:ME||null}).select();
+  if(res.error){toast(res.error.message);return;}
+  NOTES.unshift(res.data[0]); renderDlg(); render();
+}
+async function delNote(id){if(!confirm('Notiz löschen?'))return;await sb.from('immo_verkauf_notizen').delete().eq('id',id);NOTES=NOTES.filter(n=>n.id!==id);renderDlg();render();}
+(async()=>{ await loadMe(); load(); })();
+</script>
+</body></html>
