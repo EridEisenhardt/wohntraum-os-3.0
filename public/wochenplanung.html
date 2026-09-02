@@ -319,7 +319,36 @@ async function load(){
     .eq('jahr',CUR.jahr).eq('kw',CUR.kw).order('pos',{ascending:true}).order('created_at',{ascending:true});
   ROWS = error ? [] : (data||[]);
   if(error) toast('Fehler beim Laden: '+error.message);
-  render(); loadFragen(); loadExtra(); loadLinks(); loadHistory();
+  render(); loadFragen(); loadExtra(); loadLinks(); loadHistory(); loadMSubs();
+}
+let MSUBS={};
+function msubsOf(id){ return (MSUBS[id]||[]).slice().sort((a,b)=>(a.pos||0)-(b.pos||0)); }
+async function loadMSubs(){
+  const ids=ROWS.map(r=>r.id); MSUBS={};
+  if(!ids.length){ render(); return; }
+  const res=await sb.from('wochenplanung_subtasks').select('*').in('aufgabe_id',ids);
+  (res.error?[]:(res.data||[])).forEach(s=>{ (MSUBS[s.aufgabe_id]=MSUBS[s.aufgabe_id]||[]).push(s); });
+  render();
+}
+let OPENSUB={};
+function toggleSub(id){ OPENSUB[id]=!OPENSUB[id]; render(); }
+async function addMSub(aid){
+  const pos=msubsOf(aid).length+1;
+  const res=await sb.from('wochenplanung_subtasks').insert({aufgabe_id:aid,titel:'',pos}).select();
+  if(res.error){toast(res.error.message);return;}
+  (MSUBS[aid]=MSUBS[aid]||[]).push(res.data[0]); OPENSUB[aid]=true; render();
+}
+async function updMSub(id,field,val){
+  Object.keys(MSUBS).forEach(k=>MSUBS[k].forEach(s=>{ if(s.id===id)s[field]=val; }));
+  const res=await sb.from('wochenplanung_subtasks').update({[field]:(val===''?null:val)}).eq('id',id);
+  if(res.error){toast(res.error.message);return;}
+  if(field==='erledigt')render();
+}
+async function delMSub(id){
+  Object.keys(MSUBS).forEach(k=>{ MSUBS[k]=MSUBS[k].filter(s=>s.id!==id); });
+  const res=await sb.from('wochenplanung_subtasks').delete().eq('id',id);
+  if(res.error){toast(res.error.message);return;}
+  render();
 }
 let LINKS=[];
 async function loadLinks(){
@@ -673,6 +702,12 @@ function renderBereichChips(){
   const opts=[['','Alle Bereiche'],['routine','Routine'],['aufgabe','Aufgaben'],['sport','Sport / Regeneration']];
   $('bereichChips').innerHTML=opts.map(o=>`<span class="bchip ${F_BEREICH===o[0]?'on':''}" onclick="F_BEREICH='${o[0]}';render()">${o[1]}</span>`).join('');
 }
+function subRowHtml(s){
+  return '<div style="display:flex;gap:8px;align-items:center;padding:2px 0">'
+    +'<input type="checkbox" '+(s.erledigt?'checked':'')+' onchange="updMSub(\''+s.id+'\',\'erledigt\',this.checked)">'
+    +'<input value="'+esc(s.titel)+'" placeholder="Unteraufgabe …" onchange="updMSub(\''+s.id+'\',\'titel\',this.value)" style="flex:1;border:1px solid var(--line);border-radius:6px;padding:4px 7px;font:inherit;font-size:12.5px;'+(s.erledigt?'text-decoration:line-through;color:var(--muted)':'')+'">'
+    +'<button onclick="delMSub(\''+s.id+'\')" title="Unteraufgabe löschen" style="background:none;border:none;color:var(--muted);cursor:pointer">✕</button></div>';
+}
 function rowHtml(r){
   const stOpts=STATI.map(s=>`<option value="${s[0]}" ${s[0]===r.status?'selected':''}>${s[1]}</option>`).join('');
   const brOpts=Object.keys(BEREICHE).map(k=>`<option value="${k}" ${k===r.bereich?'selected':''}>${BEREICHE[k].t}</option>`).join('');
@@ -680,8 +715,11 @@ function rowHtml(r){
   const tagOpts=TAGE.map(t=>`<option ${t===dayList(r)[0]?'selected':''}>${t}</option>`).join('');
   const ueber=r.uebernommen?`<span class="ueber" title="Aus Vorwoche übernommen">↪</span> `:'';
   const zl=ROWS.filter(x=>x.bereich==='jahresziele'&&x.aufgabe).map(x=>`<option value="${esc(x.aufgabe)}">`).join('');
+  const subs=msubsOf(r.id), sdone=subs.filter(s=>s.erledigt).length, subOpen=!!OPENSUB[r.id];
+  const subBtn=`<button title="Unteraufgaben" onclick="toggleSub('${r.id}')" style="background:none;border:none;cursor:pointer;color:var(--accent);font-size:12px;font-weight:700;white-space:nowrap;margin-top:3px">${subOpen?'▾':'▸'}${subs.length?' '+sdone+'/'+subs.length:' +'}</button>`;
+  const subRow=subOpen?`<tr class="subrow"><td></td><td colspan="8" style="padding:2px 9px 9px;background:var(--surf2)"><div style="font-size:10.5px;font-weight:700;text-transform:uppercase;color:var(--muted);margin:2px 0 4px">Unteraufgaben</div>${subs.map(subRowHtml).join('')}<button onclick="addMSub('${r.id}')" style="margin-top:3px;background:none;border:none;color:var(--accent);cursor:pointer;font:inherit;font-size:12px;font-weight:600">+ Unteraufgabe</button></td></tr>`:'';
   return `<tr class="${r.status==='erledigt'?'done':''}${r.top3?' top3':''}">
-    <td class="bez"><div style="display:flex;gap:6px;align-items:flex-start"><button class="topbtn${r.top3?' on':''}" title="Als Top 3 markieren" onclick="toggleTop3('${r.id}')">${r.top3?'★':'☆'}</button>${ueber}<textarea class="ta" rows="1" placeholder="Bezeichnung…" oninput="autogrow(this)" onchange="updField('${r.id}','aufgabe',this.value)">${esc(r.aufgabe)}</textarea></div></td>
+    <td class="bez"><div style="display:flex;gap:6px;align-items:flex-start"><button class="topbtn${r.top3?' on':''}" title="Als Top 3 markieren" onclick="toggleTop3('${r.id}')">${r.top3?'★':'☆'}</button>${ueber}<textarea class="ta" rows="1" placeholder="Bezeichnung…" oninput="autogrow(this)" onchange="updField('${r.id}','aufgabe',this.value)">${esc(r.aufgabe)}</textarea>${subBtn}</div></td>
     <td><select class="cin" onchange="updField('${r.id}','bereich',this.value)">${brOpts}</select></td>
     <td><select class="cin${r.prioritaet?' hasval prio-'+r.prioritaet:''}" onchange="updField('${r.id}','prioritaet',this.value)"><option value="">—</option>${prOpts}</select></td>
     <td><select class="cin${dayList(r)[0]?' hasval tagset':''}" onchange="updField('${r.id}','wochentag',this.value)"><option value="">—</option>${tagOpts}</select></td>
@@ -690,7 +728,7 @@ function rowHtml(r){
     <td><select class="stsel st-${r.status}" onchange="updField('${r.id}','status',this.value)">${stOpts}</select></td>
     <td><input class="cin" value="${esc(r.notizen)}" placeholder="Notiz" style="min-width:110px" onchange="updField('${r.id}','notizen',this.value)"></td>
     <td style="width:36px"><button class="abtn" onclick="delRow('${r.id}')">✕</button></td>
-  </tr><datalist id="ziellist">${zl}</datalist>`;
+  </tr>${subRow}<datalist id="ziellist">${zl}</datalist>`;
 }
 function listView(items){
   const head='<thead><tr><th>Bezeichnung</th><th>Bereich</th><th>Prio</th><th>Tag</th><th>Uhrzeit</th><th>Jahresziel</th><th>Status</th><th>Notiz</th><th></th></tr></thead>';
