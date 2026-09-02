@@ -5,6 +5,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Darlehensgenerator · Macher OS</title>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script>if(window.pdfjsLib)pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';</script>
 <style>
 :root{
   --bg:#f6f7f9;--surf:#fff;--surf2:#f1f3f6;--surf3:#e7ebf0;--line:#e6e8ec;--bord2:#eef0f3;
@@ -117,6 +119,12 @@ tr.sum td{border-top:2px solid var(--text);font-weight:700;background:#fafbfd}
           <option value="coinvest">🤝 Co-Investor-Darlehen</option>
         </select>
       </div>
+      <div style="border:1px dashed var(--intern,#2383e2);border-radius:10px;padding:12px 14px;margin-bottom:12px;background:#f5f9ff">
+        <div style="font-weight:700;font-size:13px;margin-bottom:2px">📄 Externen Vertrag hochladen (Bank / Co-Investor)</div>
+        <div style="font-size:11.5px;color:var(--muted,#6b7280);margin-bottom:8px">PDF hochladen → Daten werden bestmöglich ausgelesen und unten vorbefüllt. Bitte prüfen &amp; korrigieren, dann „Umsetzung → ins Register". Die Datei wird als Anlage gespeichert. Es wird zusätzlich unsere interne Darlehensnr. vergeben.</div>
+        <input id="extFile" type="file" accept="application/pdf" onchange="onExtFile(this)" style="font-size:12.5px">
+        <div id="extStatus" style="font-size:12px;margin-top:7px;color:var(--muted,#6b7280)"></div>
+      </div>
       <div class="frow">
         <div class="fg">
           <label>Bezeichnung / Zweck *</label>
@@ -127,6 +135,14 @@ tr.sum td{border-top:2px solid var(--text);font-weight:700;background:#fafbfd}
           <input id="dnr" type="text" placeholder="wird vergeben …" oninput="renderContract()" style="font-weight:700;color:var(--intern)">
           <div style="font-size:11px;color:var(--muted,#6b7280);margin-top:3px">Fortlaufend 3-stellig aus dem Register (Datenbank). Überschreibbar. <a href="/finance/darlehensregister" target="_top" style="color:var(--intern)">→ Register bearbeiten</a></div>
         </div>
+      </div>
+      <div class="frow">
+        <div class="fg">
+          <label>Bank-/Vertragsnummer (extern)</label>
+          <input id="dnrBank" type="text" placeholder="Original-Nr. aus dem hochgeladenen Vertrag">
+          <div style="font-size:11px;color:var(--muted,#6b7280);margin-top:3px">Wird neben unserer internen Nr. im Register gespeichert.</div>
+        </div>
+        <div class="fg"></div>
       </div>
       <div class="frow">
         <div class="fg">
@@ -269,9 +285,49 @@ async function reserveNextDnr(){
   return next;
 }
 
+// ——— Externen Vertrag hochladen & bestmöglich auslesen (Best-Effort) ———
+let EXT_FILE=null;
+async function pdfText(file){
+  const buf=await file.arrayBuffer();
+  const pdf=await pdfjsLib.getDocument({data:buf}).promise;
+  let txt='';
+  for(let i=1;i<=pdf.numPages;i++){ const pg=await pdf.getPage(i); const c=await pg.getTextContent(); txt+=c.items.map(it=>it.str).join(' ')+'\n'; }
+  return txt;
+}
+function gnum(s){ if(!s)return null; s=String(s).replace(/[^\d.,]/g,''); if(!s)return null;
+  if(s.indexOf(',')>-1){ s=s.replace(/\./g,'').replace(',','.'); } else if((s.match(/\./g)||[]).length>1){ s=s.replace(/\./g,''); }
+  const n=parseFloat(s); return isNaN(n)?null:n; }
+async function onExtFile(input){
+  const f=input.files&&input.files[0]; if(!f){ EXT_FILE=null; return; }
+  EXT_FILE=f; $('extStatus').textContent='Lese Vertrag …';
+  let txt='';
+  try{ txt=await pdfText(f); }catch(e){ $('extStatus').textContent='PDF-Text nicht lesbar (evtl. Scan/Bild). Datei wird beim Speichern angehängt — bitte Felder manuell ausfüllen.'; return; }
+  const t=(txt||'').replace(/\s+/g,' ');
+  const filled=[];
+  const setv=(id,val,lbl)=>{ if(val==null||val==='')return; const el=$(id); if(el){ el.value=val; if(lbl)filled.push(lbl); } };
+  let m=t.match(/(?:Darlehens(?:betrag|summe)|Nennbetrag|Betrag(?:\s+von)?|H(?:ö|oe)he[^0-9]{0,20})[^0-9]{0,15}((?:\d{1,3}(?:\.\d{3})+|\d+)(?:,\d{2})?)/i);
+  if(m){ const v=gnum(m[1]); if(v){ setv('betrag',v,'Betrag'); } }
+  m=t.match(/(?:Zinssatz|Nominalzins|Zins(?:es)?)[^0-9%]{0,15}(\d{1,2}(?:[.,]\d{1,3})?)\s*%/i);
+  if(m){ const v=gnum(m[1]); if(v!=null) setv('zins',v,'Zins'); }
+  m=t.match(/Tilgung[^0-9%]{0,15}(\d{1,2}(?:[.,]\d{1,2})?)\s*%/i);
+  if(m){ const v=gnum(m[1]); if(v!=null) setv('tilg',v,'Tilgung'); }
+  m=t.match(/(\d{2})\.(\d{2})\.(\d{4})/);
+  if(m){ setv('aus', m[3]+'-'+m[2]+'-'+m[1],'Datum'); }
+  m=t.match(/Laufzeit[^0-9]{0,15}(\d{1,3})\s*(Jahre?|Monate?)/i);
+  if(m){ const el=$('laufzeit'); if(el){ el.value=parseInt(m[1],10); const u=$('lzEinheit'); if(u) u.value=/monat/i.test(m[2])?'m':'j'; filled.push('Laufzeit'); } }
+  m=t.match(/Darlehensgeber[:\s]+([A-ZÄÖÜ][^,;]{2,60}?)(?:\s+Darlehensnehmer|,|;|\s{2,}|$)/i);
+  if(m) setv('geber', m[1].trim(),'Darlehensgeber');
+  m=t.match(/Darlehensnehmer[:\s]+([A-ZÄÖÜ][^,;]{2,60}?)(?:,|;|\s{2,}|$)/i);
+  if(m) setv('nehmer', m[1].trim(),'Darlehensnehmer');
+  m=t.match(/(?:Darlehens(?:konto)?nummer|Vertrags(?:konto)?nummer|Kontonummer|Darlehens-?Nr\.?|Vertrag(?:s)?[- ]?Nr\.?)[:\s]*([A-Za-z0-9\/\-\.]{4,30})/i);
+  if(m) setv('dnrBank', m[1].trim(),'Bank-/Vertragsnummer');
+  if(typeof calc==='function') calc();
+  $('extStatus').innerHTML= filled.length ? ('✓ Vorbefüllt: '+filled.join(', ')+' — <b>bitte prüfen &amp; korrigieren</b>. Datei wird beim Speichern angehängt.') : 'Kein Feld sicher erkannt (evtl. Scan). Datei wird angehängt — bitte manuell ausfüllen.';
+}
 function params(){
   return {
     typ:$('typ').value, bez:$('bez').value.trim(), geber:$('geber').value.trim(), nehmer:$('nehmer').value.trim(),
+    dnrBank:($('dnrBank')?$('dnrBank').value.trim():''),
     betrag:parseFloat($('betrag').value)||0, zins:parseFloat($('zins').value)||0,
     art:$('art').value, tilg:parseFloat($('tilg').value)||0,
     laufzeitMon: (($('lzEinheit').value==='m') ? (parseInt($('laufzeit').value)||0) : (parseInt($('laufzeit').value)||0)*12),
@@ -590,7 +646,7 @@ async function saveLoan(){
   const kd = p.art==='endfaellig' ? m.ratePeriod*(p.perJahr/12) : m.ratePeriod*(p.perJahr/12); // auf Monat normiert
   const rec={
     typ:p.typ, bez:p.bez, geber:p.geber, nehmer:p.nehmer,
-    dnr_intern: p.dnr||null,
+    dnr_intern: p.dnr||null, dnr_bank: p.dnrBank||null,
     betrag:p.betrag, aktuell:p.betrag, zins: p.art==='zinsfrei'?0:p.zins,
     tilg: p.art==='annuitaet'?p.tilg:0,
     kapitaldienst: Math.round(kd*100)/100,
@@ -616,13 +672,22 @@ async function saveLoan(){
     +'<table class="plan">'+$('planTbl').innerHTML+'</table>';
   const meta={dnr:p.dnr||null,bez:p.bez,geber:p.geber,nehmer:p.nehmer,betrag:p.betrag,zins:rec.zins,art:p.art,laufzeitMon:p.laufzeitMon,aus:p.aus};
   if(ins&&ins.id){
-    const {error:e2}=await sb.from('loan_dokumente').insert({loan_id:ins.id,vertrag_html:vertragHtml,plan_html:planHtml,meta});
+    let vertrag_pdf=null;
+    if(EXT_FILE){
+      try{
+        const path='vertraege/'+(p.dnr||'x')+'_'+Date.now()+'_'+EXT_FILE.name.replace(/[^a-zA-Z0-9._-]/g,'_');
+        const up=await sb.storage.from('darlehen').upload(path,EXT_FILE,{contentType:EXT_FILE.type||'application/pdf',upsert:true});
+        if(!up.error) vertrag_pdf=sb.storage.from('darlehen').getPublicUrl(path).data.publicUrl;
+      }catch(e){}
+    }
+    const {error:e2}=await sb.from('loan_dokumente').insert({loan_id:ins.id,vertrag_html:vertragHtml,plan_html:planHtml,vertrag_pdf,meta});
     if(e2){ toast('Darlehen gespeichert, Anlage fehlgeschlagen: '+e2.message); }
-    else { toast('Darlehen Nr. '+(p.dnr||'—')+' inkl. Vertrag & Tilgungsplan im Register ✓'); }
+    else { toast('Darlehen Nr. '+(p.dnr||'—')+(EXT_FILE?' inkl. hochgeladenem Vertrag':' inkl. Vertrag & Tilgungsplan')+' im Register ✓'); }
   } else {
     toast('Darlehen Nr. '+(p.dnr||'—')+' ins Register übernommen ✓');
   }
   closeReview();
+  EXT_FILE=null; if($('extFile'))$('extFile').value=''; if($('extStatus'))$('extStatus').textContent='';
   $('dnr').value=''; await reserveNextDnr();
 }
 
