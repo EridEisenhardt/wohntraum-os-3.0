@@ -76,6 +76,17 @@ a.pdf{font-size:12px;color:var(--accent);text-decoration:none}
   </div>
   <div id="list"></div>
 </div>
+<div id="briefOv" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:70;align-items:center;justify-content:center" onclick="if(event.target===this)closeBrief()">
+  <div style="background:#fff;border-radius:12px;width:100%;max-width:760px;max-height:92vh;display:flex;flex-direction:column;box-shadow:0 20px 60px rgba(0,0,0,.3)">
+    <div style="display:flex;justify-content:space-between;align-items:center;padding:13px 18px;border-bottom:1px solid var(--line)"><b id="briefTitle">Schreiben</b><span style="cursor:pointer;font-size:20px;color:var(--muted)" onclick="closeBrief()">✕</span></div>
+    <div style="padding:8px 18px 0"><div style="background:#fff8e1;border:1px solid #f0e0a8;color:#7a5c00;font-size:11.5px;padding:7px 10px;border-radius:7px">✏️ Text ist direkt editierbar — korrigiere bei Bedarf, dann „Bestätigen &amp; als PDF". <b>Mustertext</b>, später an eure Formulierung anpassen.</div></div>
+    <div id="briefBody" contenteditable="true" style="flex:1;overflow-y:auto;margin:12px 18px;padding:20px 24px;border:1px solid var(--line);border-radius:8px;font-family:Georgia,'Times New Roman',serif;line-height:1.55;font-size:14px;color:#111;outline:none"></div>
+    <div style="display:flex;justify-content:flex-end;gap:8px;padding:12px 18px;border-top:1px solid var(--line)">
+      <button class="btn" onclick="druckeBrief()">🖨 Vorschau / Drucken</button>
+      <button class="btn btn-accent" onclick="bestaetigeBrief()">✓ Bestätigen &amp; als PDF</button>
+    </div>
+  </div>
+</div>
 <div class="toast" id="toast"></div>
 <datalist id="statusDL"><option>laufend</option><option>abgeschlossen</option><option>gekündigt</option><option>Verzug</option><option>Inkasso</option><option>ausgesetzt</option><option>in Klärung</option><option>notariell</option></datalist>
 <script>
@@ -107,63 +118,65 @@ function listeHTML(list){
   return h+'</tbody></table></div>';
 }
 
-// ——— Schreiben (Erinnerung / Inkasso) aus der Vereinbarung erzeugen ———
-function briefFenster(titel, body){
-  const w=window.open('','_blank'); if(!w){toast('Popup blockiert – bitte erlauben');return;}
-  w.document.write('<html><head><meta charset="utf-8"><title>'+titel+'</title><style>'
-   +'body{font-family:Georgia,\'Times New Roman\',serif;max-width:720px;margin:32px auto;padding:0 26px;color:#111;line-height:1.55;font-size:14px}'
-   +'.abs{font-size:11px;color:#555;border-bottom:1px solid #ccc;padding-bottom:4px;margin-bottom:26px}'
-   +'.empf{margin-bottom:26px}.datum{text-align:right;margin-bottom:22px;font-size:12.5px}'
-   +'h1{font-size:16px;margin:0 0 14px}.muster{background:#fff8e1;border:1px solid #f0e0a8;color:#7a5c00;font-size:11px;padding:6px 9px;border-radius:6px;margin:18px 0}'
-   +'table.d{border-collapse:collapse;margin:14px 0;font-size:13px}table.d td{padding:3px 10px 3px 0;vertical-align:top}'
-   +'.sign{margin-top:40px}@media print{.noprint{display:none}}'
-   +'.btnp{background:#2383e2;color:#fff;border:none;border-radius:7px;padding:9px 16px;font-size:13px;cursor:pointer}</style></head><body>'
-   +'<div class="noprint" style="text-align:right;margin-bottom:10px"><button class="btnp" onclick="window.print()">🖨 Drucken / als PDF</button></div>'
-   +body+'</body></html>');
-  w.document.close();
-}
+// ——— Schreiben (Letzte Erinnerung / Inkasso) — editierbar, dann bestätigen & als PDF ———
+let BRIEF_ID=null, BRIEF_STUFE=1;
 function schreibenErstellen(id){
   const r=ROWS.find(x=>x.id===id); if(!r)return;
   const stufe=(r.mahnstufe||0)>=1 ? 2 : 1;
-  if(stufe===2 && !confirm('Es ist bereits eine Erinnerung verschickt. Jetzt das INKASSO-Schreiben erstellen und die Forderung an das Inkasso übergeben?')) return;
+  BRIEF_ID=id; BRIEF_STUFE=stufe;
   const heute=new Date().toLocaleDateString('de-DE');
   const vdat=r.start_datum?new Date(r.start_datum).toLocaleDateString('de-DE'):'—';
   const konto=esc(r.konto_info||r.konto_iban||'—');
   const empf='<div class="empf"><b>'+esc(r.mieter||'')+'</b><br>'+esc((r.objekt||'')+(r.wohnung?' · '+r.wohnung:''))+'</div>';
-  const daten='<table class="d">'
+  const daten='<table class="d"><tbody>'
     +'<tr><td>Ratenzahlungsvereinbarung vom:</td><td><b>'+vdat+'</b></td></tr>'
     +'<tr><td>Offene Forderung:</td><td><b>'+eur(Number(r.forderung)||0)+'</b></td></tr>'
     +'<tr><td>Vereinbarte Rate:</td><td><b>'+eur(Number(r.rate)||0)+' / Monat</b></td></tr>'
-    +'<tr><td>Zahlung auf Konto:</td><td>'+konto+'</td></tr></table>';
+    +'<tr><td>Zahlung auf Konto:</td><td>'+konto+'</td></tr></tbody></table>';
   const abs='<div class="abs">Wohn(T)raum Rheinhessen GmbH · [Absenderadresse – später anpassen]</div>';
-  const musterHinweis='<div class="muster noprint">⚠ MUSTERTEXT – bitte später an eure Formulierung/Rechtsstand anpassen.</div>';
-  let titel, body;
+  let body;
   if(stufe===1){
-    titel='Zahlungserinnerung';
     body=abs+'<div class="datum">'+heute+'</div>'+empf
-      +'<h1>Zahlungserinnerung zu Ihrer Ratenzahlungsvereinbarung</h1>'
-      +musterHinweis
+      +'<h1>Letzte Erinnerung vor Inkasso</h1>'
       +'<p>Sehr geehrte/r '+esc(r.mieter||'')+',</p>'
-      +'<p>im Rahmen der mit Ihnen getroffenen Ratenzahlungsvereinbarung ist eine fällige Rate nicht bei uns eingegangen. Wir möchten Sie hiermit <b>einmalig</b> daran erinnern und bitten Sie, den offenen Betrag umgehend, spätestens innerhalb von <b>7 Tagen</b>, auszugleichen.</p>'
+      +'<p>im Rahmen der mit Ihnen getroffenen Ratenzahlungsvereinbarung ist eine fällige Rate nicht bei uns eingegangen. Wir erinnern Sie hiermit <b>letztmalig</b> und bitten Sie, den offenen Betrag umgehend, spätestens innerhalb von <b>7 Tagen</b>, auszugleichen.</p>'
       +daten
-      +'<p>Sollte erneut eine Rate ausbleiben, geben wir die gesamte offene Forderung ohne weitere Ankündigung an ein Inkassounternehmen ab.</p>'
+      +'<p>Sollte die Zahlung erneut ausbleiben, geben wir die gesamte offene Forderung <b>ohne weitere Ankündigung an ein Inkassounternehmen</b> ab. Dabei entstehende Kosten gehen zu Ihren Lasten.</p>'
       +'<p>Bitte sehen Sie diese Erinnerung als gegenstandslos an, falls sich Ihre Zahlung mit diesem Schreiben überschnitten hat.</p>'
       +'<div class="sign"><p>Mit freundlichen Grüßen</p><p>Wohn(T)raum Rheinhessen GmbH</p></div>';
   } else {
-    titel='Übergabe an das Inkasso';
     body=abs+'<div class="datum">'+heute+'</div>'+empf
       +'<h1>Übergabe Ihrer offenen Forderung an das Inkasso</h1>'
-      +musterHinweis
       +'<p>Sehr geehrte/r '+esc(r.mieter||'')+',</p>'
-      +'<p>trotz unserer Zahlungserinnerung'+(r.letzte_mahnung?' vom '+new Date(r.letzte_mahnung).toLocaleDateString('de-DE'):'')+' ist erneut eine vereinbarte Rate ausgeblieben. Wir sehen uns daher gezwungen, die offene Forderung aus der nachstehenden Ratenzahlungsvereinbarung an unser Inkassounternehmen zu übergeben.</p>'
+      +'<p>trotz unserer letzten Erinnerung'+(r.letzte_mahnung?' vom '+new Date(r.letzte_mahnung).toLocaleDateString('de-DE'):'')+' ist erneut eine vereinbarte Rate ausgeblieben. Wir sehen uns daher gezwungen, die offene Forderung aus der nachstehenden Ratenzahlungsvereinbarung an unser Inkassounternehmen zu übergeben.</p>'
       +daten
       +'<p>Die weitere Kommunikation und Beitreibung erfolgt ab sofort über das beauftragte Inkassounternehmen. Zusätzlich entstehende Kosten gehen zu Ihren Lasten.</p>'
       +'<div class="sign"><p>Mit freundlichen Grüßen</p><p>Wohn(T)raum Rheinhessen GmbH</p></div>';
   }
-  briefFenster(titel, body);
+  $('briefTitle').textContent=stufe===1?'⚠ Letzte Erinnerung vor Inkasso':'→ Übergabe an das Inkasso';
+  $('briefBody').innerHTML=body;
+  $('briefOv').style.display='flex';
+}
+function closeBrief(){$('briefOv').style.display='none';BRIEF_ID=null;}
+function druckeBrief(){
+  const w=window.open('','_blank'); if(!w){toast('Popup blockiert – bitte erlauben');return;}
+  w.document.write('<html><head><meta charset="utf-8"><title>Schreiben</title><style>'
+   +'body{font-family:Georgia,\'Times New Roman\',serif;max-width:720px;margin:32px auto;padding:0 26px;color:#111;line-height:1.55;font-size:14px}'
+   +'.abs{font-size:11px;color:#555;border-bottom:1px solid #ccc;padding-bottom:4px;margin-bottom:26px}.empf{margin-bottom:26px}.datum{text-align:right;margin-bottom:22px;font-size:12.5px}'
+   +'h1{font-size:16px;margin:0 0 14px}table.d{border-collapse:collapse;margin:14px 0;font-size:13px}table.d td{padding:3px 10px 3px 0}.sign{margin-top:40px}'
+   +'</style></head><body>'+$('briefBody').innerHTML+'<script>window.onload=function(){setTimeout(function(){window.print();},200);}<\/script></body></html>');
+  w.document.close();
+}
+async function bestaetigeBrief(){
+  if(!BRIEF_ID)return;
+  const r=ROWS.find(x=>x.id===BRIEF_ID); if(!r){closeBrief();return;}
+  if(BRIEF_STUFE===2 && !confirm('Forderung an das Inkasso übergeben? Der Status wird auf „Inkasso" gesetzt.')) return;
+  druckeBrief();
   const heuteIso=new Date().toISOString().slice(0,10);
-  r.mahnstufe=stufe; r.letzte_mahnung=heuteIso; r.status=stufe===2?'Inkasso':'Verzug';
-  sb.from('zahlungsvereinbarungen').update({mahnstufe:stufe,letzte_mahnung:heuteIso,status:r.status}).eq('id',id).then(()=>render());
+  r.mahnstufe=BRIEF_STUFE; r.letzte_mahnung=heuteIso; r.status=BRIEF_STUFE===2?'Inkasso':'Verzug';
+  await sb.from('zahlungsvereinbarungen').update({mahnstufe:BRIEF_STUFE,letzte_mahnung:heuteIso,status:r.status}).eq('id',BRIEF_ID);
+  closeBrief(); render();
+  toast(BRIEF_STUFE===2?'Inkasso-Schreiben bestätigt · als PDF bereit':'Letzte Erinnerung bestätigt · als PDF bereit zum Versand');
 }
 
 // Zins-/Tilgungsplan mit optionalen Sonderzahlungen.
