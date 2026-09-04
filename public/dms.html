@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="de"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>DMS · Dokumentenverwaltung</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+:root{--bg:#fff;--surf:#fff;--surf2:#f7f7f5;--line:#e9e9e7;--text:#37352f;--muted:#9b9a97;--dim:#6b6a66;--accent:#2383e2;--rot:#c0392b;--gruen:#0f7b57}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--text);font-family:-apple-system,'Segoe UI',Inter,system-ui,sans-serif;font-size:14px;line-height:1.5}
+.hdr{padding:18px 24px 6px}
+.hdr-title{font-size:22px;font-weight:700}
+.hdr-sub{font-size:12.5px;color:var(--muted);margin-top:3px}
+.wrap{padding:10px 24px 70px}
+.card{border:1px solid var(--line);border-radius:12px;padding:14px 16px;margin-bottom:16px;background:var(--surf)}
+.card h2{font-size:13px;font-weight:700;text-transform:uppercase;letter-spacing:.03em;color:var(--dim);margin-bottom:10px}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px}
+label{font-size:11px;color:var(--muted);font-weight:600;display:block}
+input,select,textarea{font:inherit;font-size:13px;padding:7px 9px;border:1px solid var(--line);border-radius:8px;background:#fff;width:100%;margin-top:3px}
+.btn{font:inherit;font-size:13px;font-weight:600;border:1px solid var(--accent);background:var(--accent);color:#fff;border-radius:8px;padding:8px 14px;cursor:pointer}
+.btn.g{background:#fff;color:var(--text);border-color:var(--line)}
+.bar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:12px}
+.bar input,.bar select{width:auto;margin-top:0}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th,td{padding:8px 10px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}
+th{font-size:10.5px;text-transform:uppercase;letter-spacing:.03em;color:var(--muted);background:var(--surf2)}
+.tag{display:inline-block;font-size:10.5px;background:#eef3fb;color:var(--accent);border-radius:5px;padding:1px 6px;margin:1px 3px 1px 0}
+.kat{display:inline-block;font-size:10.5px;background:var(--surf2);border:1px solid var(--line);border-radius:5px;padding:1px 7px}
+.lnk{color:var(--accent);text-decoration:none;font-weight:600}
+.thumb{height:40px;border:1px solid var(--line);border-radius:5px;vertical-align:middle}
+.x{background:none;border:none;color:var(--muted);cursor:pointer;font-size:14px}.x:hover{color:var(--rot)}
+.empty{color:var(--muted);padding:20px 4px}
+.kpis{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px}
+.kpi{border:1px solid var(--line);border-radius:10px;padding:8px 13px;background:var(--surf2)}
+.kpi .l{font-size:10px;text-transform:uppercase;color:var(--muted);font-weight:700}.kpi .v{font-size:18px;font-weight:800}
+.toast{position:fixed;bottom:22px;left:50%;transform:translateX(-50%);background:#37352f;color:#fff;padding:9px 16px;border-radius:8px;font-size:13px;opacity:0;pointer-events:none;transition:.2s;z-index:60}.toast.show{opacity:1}
+.note{font-size:11.5px;color:var(--muted);background:var(--surf2);border:1px solid var(--line);border-radius:9px;padding:9px 12px;margin-top:14px}
+</style></head><body>
+<div class="hdr"><div class="hdr-title">🗄 DMS · Dokumentenverwaltung</div><div class="hdr-sub">Zentrale Ablage · nach Objekt, Gesellschaft, Kategorie &amp; Tags · Suche · (Google-Drive-Backup folgt)</div></div>
+<div class="wrap">
+  <div class="card">
+    <h2>Dokument hochladen</h2>
+    <div class="grid">
+      <div><label>Titel / Name</label><input id="u_name" placeholder="z. B. Kaufvertrag K7"></div>
+      <div><label>Kategorie</label><select id="u_kat"></select></div>
+      <div><label>Objekt</label><select id="u_obj"></select></div>
+      <div><label>Gesellschaft</label><select id="u_ges"></select></div>
+      <div><label>Datum</label><input id="u_datum" type="date"></div>
+      <div><label>Tags (Komma-getrennt)</label><input id="u_tags" placeholder="z. B. Notar, 2026"></div>
+    </div>
+    <div style="margin-top:8px"><label>Beschreibung</label><textarea id="u_besch" rows="2"></textarea></div>
+    <div style="margin-top:8px"><label>Datei(en) — PDF, Bild, Office …</label><input id="u_files" type="file" multiple></div>
+    <div style="margin-top:10px"><button class="btn" id="u_btn" onclick="uploadDocs()">⬆︎ Hochladen &amp; ablegen</button> <span id="u_msg" style="font-size:12px;color:var(--muted)"></span></div>
+  </div>
+
+  <div class="card">
+    <h2>Dokumente</h2>
+    <div class="kpis" id="kpis"></div>
+    <div class="bar">
+      <input id="q" placeholder="🔍 Name / Beschreibung / Tag…" oninput="render()">
+      <select id="fKat" onchange="render()"><option value="">Alle Kategorien</option></select>
+      <select id="fObj" onchange="render()"><option value="">Alle Objekte</option></select>
+      <select id="fGes" onchange="render()"><option value="">Alle Gesellschaften</option></select>
+      <span id="cnt" style="font-size:12px;color:var(--muted);margin-left:auto"></span>
+    </div>
+    <div id="list"></div>
+  </div>
+  <div class="note">Dateien liegen im OS-Speicher (Supabase). Der Dateipfad wird sauber gespeichert, damit die geplante <b>parallele Google-Drive-Sicherung</b> später ohne Umbau andocken kann.</div>
+</div>
+<div class="toast" id="toast"></div>
+<script>
+const sb=window.supabase.createClient('https://jqzxctfqvcwbctpjksvg.supabase.co','eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpxenhjdGZxdmN3YmN0cGprc3ZnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODIxMzA0MzIsImV4cCI6MjA5NzcwNjQzMn0.RKIbZxJdusKWWPjBJqlxZ8e1m8So02UslOg55YRsn3o');
+const $=id=>document.getElementById(id);
+const esc=s=>(s==null?'':String(s)).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+function toast(m){const t=$('toast');t.textContent=m;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),1800);}
+const KATS=['Vertrag','Rechnung','Grundbuch','Versicherung','Korrespondenz','Behörde / Amt','Steuer','Übergabeprotokoll','Foto / Bild','Sonstiges'];
+const GESELL=['Wohn(T)raum Rheinhessen GmbH','Eric Eisenhardt','Wohn(T)raum Kibo GmbH','Wohntraum Wonnegau GmbH','Anders MACHER GmbH','Fly with Aly GmbH','Eric Eisenhardt Immobilien','E&A Weinstrasse Wohninvest eGBR'];
+let ROWS=[], OBJ=[], ME='';
+function fmt(d){return d?new Date(d).toLocaleDateString('de-DE'):'';}
+function human(b){if(!b)return '';const u=['B','KB','MB','GB'];let i=0,n=Number(b);while(n>=1024&&i<3){n/=1024;i++;}return n.toFixed(n<10&&i>0?1:0)+' '+u[i];}
+function isImg(m){return (m||'').indexOf('image')===0;}
+
+async function loadMe(){try{const{data:{user}}=await sb.auth.getUser();if(!user)return;const p=await sb.from('profiles').select('full_name,email').eq('id',user.id).maybeSingle();ME=(p.data&&(p.data.full_name||p.data.email))||user.email||'';}catch(e){}}
+async function loadObjekte(){const r=await sb.from('portfolio_immobilien').select('kennung').order('kennung');OBJ=(r.error?[]:(r.data||[])).map(x=>x.kennung).filter(Boolean);}
+function fillSelects(){
+  $('u_kat').innerHTML=KATS.map(k=>'<option>'+esc(k)+'</option>').join('');
+  $('u_obj').innerHTML='<option value="">— Objekt —</option>'+OBJ.map(o=>'<option>'+esc(o)+'</option>').join('');
+  $('u_ges').innerHTML='<option value="">— Gesellschaft —</option>'+GESELL.map(g=>'<option>'+esc(g)+'</option>').join('');
+  $('fKat').innerHTML='<option value="">Alle Kategorien</option>'+KATS.map(k=>'<option>'+esc(k)+'</option>').join('');
+  $('fObj').innerHTML='<option value="">Alle Objekte</option>'+OBJ.map(o=>'<option>'+esc(o)+'</option>').join('');
+  $('fGes').innerHTML='<option value="">Alle Gesellschaften</option>'+GESELL.map(g=>'<option>'+esc(g)+'</option>').join('');
+}
+async function uploadDocs(){
+  const files=$('u_files').files;
+  if(!files||!files.length){toast('Bitte Datei(en) wählen');return;}
+  $('u_btn').disabled=true; $('u_msg').textContent='Lädt hoch …';
+  const kat=$('u_kat').value, obj=$('u_obj').value||null, ges=$('u_ges').value||null;
+  const datum=$('u_datum').value||null, besch=$('u_besch').value.trim()||null;
+  const tags=($('u_tags').value||'').split(',').map(s=>s.trim()).filter(Boolean);
+  const baseName=$('u_name').value.trim();
+  let ok=0;
+  for(const f of files){
+    if(f.size>50*1024*1024){toast(f.name+' zu groß (max 50 MB)');continue;}
+    const path='dms/'+(obj||'allgemein')+'/'+Date.now()+'_'+f.name.replace(/[^a-zA-Z0-9._-]/g,'_');
+    const up=await sb.storage.from('darlehen').upload(path,f,{upsert:true,contentType:f.type||'application/octet-stream'});
+    if(up.error){toast('Upload: '+up.error.message);continue;}
+    const url=sb.storage.from('darlehen').getPublicUrl(path).data.publicUrl;
+    const rec={name:baseName||f.name,kategorie:kat,objekt:obj,gesellschaft:ges,tags,beschreibung:besch,datum,url,pfad:path,mime:f.type||null,groesse:f.size,hochgeladen_von:ME||null};
+    const res=await sb.from('dms_dokumente').insert(rec).select();
+    if(!res.error&&res.data)ROWS.unshift(res.data[0]),ok++;
+  }
+  $('u_btn').disabled=false; $('u_msg').textContent='';
+  $('u_name').value='';$('u_tags').value='';$('u_besch').value='';$('u_files').value='';
+  render(); toast(ok+' Dokument(e) abgelegt ✓');
+}
+async function updDoc(id,field,val){const r=ROWS.find(x=>x.id===id);if(r)r[field]=val;const res=await sb.from('dms_dokumente').update({[field]:(val===''?null:val)}).eq('id',id);if(res.error)toast(res.error.message);}
+async function delDoc(id){if(!confirm('Dokument aus dem DMS löschen? (Datei bleibt im Speicher erhalten)'))return;const res=await sb.from('dms_dokumente').delete().eq('id',id);if(res.error){toast(res.error.message);return;}ROWS=ROWS.filter(x=>x.id!==id);render();}
+
+function render(){
+  const q=($('q').value||'').toLowerCase(), fk=$('fKat').value, fo=$('fObj').value, fg=$('fGes').value;
+  const list=ROWS.filter(r=>(!fk||r.kategorie===fk)&&(!fo||r.objekt===fo)&&(!fg||r.gesellschaft===fg)
+    &&(!q||((r.name||'')+' '+(r.beschreibung||'')+' '+((r.tags||[]).join(' '))).toLowerCase().includes(q)));
+  $('cnt').textContent=list.length+' von '+ROWS.length;
+  const katCnt={}; ROWS.forEach(r=>{katCnt[r.kategorie]=(katCnt[r.kategorie]||0)+1;});
+  $('kpis').innerHTML='<div class="kpi"><div class="l">Dokumente</div><div class="v">'+ROWS.length+'</div></div>'
+    +'<div class="kpi"><div class="l">Objekte belegt</div><div class="v">'+new Set(ROWS.map(r=>r.objekt).filter(Boolean)).size+'</div></div>'
+    +'<div class="kpi"><div class="l">Gesamtgröße</div><div class="v">'+human(ROWS.reduce((s,r)=>s+(Number(r.groesse)||0),0))+'</div></div>';
+  $('list').innerHTML=list.length?('<table><thead><tr><th>Dokument</th><th>Kategorie</th><th>Objekt</th><th>Gesellschaft</th><th>Datum</th><th>Größe</th><th></th></tr></thead><tbody>'
+    +list.map(r=>'<tr>'
+      +'<td>'+(isImg(r.mime)?'<a href="'+esc(r.url)+'" target="_blank" rel="noopener"><img class="thumb" src="'+esc(r.url)+'"></a> ':'')
+        +'<a class="lnk" href="'+esc(r.url)+'" target="_blank" rel="noopener">'+esc(r.name||'Datei')+'</a>'
+        +(r.beschreibung?'<div style="font-size:11.5px;color:var(--muted)">'+esc(r.beschreibung)+'</div>':'')
+        +((r.tags&&r.tags.length)?'<div>'+r.tags.map(t=>'<span class="tag">'+esc(t)+'</span>').join('')+'</div>':'')
+        +(r.hochgeladen_von?'<div style="font-size:10.5px;color:var(--muted)">von '+esc(r.hochgeladen_von)+'</div>':'')+'</td>'
+      +'<td><span class="kat">'+esc(r.kategorie||'—')+'</span></td>'
+      +'<td>'+esc(r.objekt||'—')+'</td>'
+      +'<td style="font-size:12px">'+esc(r.gesellschaft||'—')+'</td>'
+      +'<td style="white-space:nowrap">'+fmt(r.datum||r.created_at)+'</td>'
+      +'<td style="white-space:nowrap;font-size:12px;color:var(--muted)">'+human(r.groesse)+'</td>'
+      +'<td style="white-space:nowrap"><button class="x" title="Bearbeiten" onclick="editDoc(\''+r.id+'\')">✎</button> <button class="x" title="Löschen" onclick="delDoc(\''+r.id+'\')">✕</button></td>'
+    +'</tr>').join('')+'</tbody></table>')
+    :'<div class="empty">Keine Dokumente für diese Auswahl.</div>';
+}
+function editDoc(id){
+  const r=ROWS.find(x=>x.id===id); if(!r)return;
+  const name=prompt('Titel / Name:',r.name||''); if(name===null)return; updDoc(id,'name',name.trim());
+  const tags=prompt('Tags (Komma-getrennt):',(r.tags||[]).join(', '));
+  if(tags!==null){const arr=tags.split(',').map(s=>s.trim()).filter(Boolean);r.tags=arr;sb.from('dms_dokumente').update({tags:arr}).eq('id',id).then(()=>render());}
+  render();
+}
+(async()=>{ await loadMe(); await loadObjekte(); fillSelects(); $('u_datum').value=new Date().toISOString().slice(0,10);
+  const res=await sb.from('dms_dokumente').select('*').order('created_at',{ascending:false}); ROWS=res.error?[]:(res.data||[]); render();
+})();
+</script>
+</body></html>
