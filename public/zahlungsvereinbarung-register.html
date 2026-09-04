@@ -119,6 +119,7 @@ function listeHTML(list){
       +'<td>'+(sz?'<span style="cursor:pointer;color:var(--accent);font-weight:600" onclick="openDetail(\''+r.id+'\')" title="Sonderzahlungen bearbeiten">'+sz+' ✎</span>':'0')+'</td>'
       +'<td style="text-align:left">'+(r.pdf_url?'<a class="pdf" href="'+esc(r.pdf_url)+'" target="_blank">📄 PDF</a> ':'')+(r.asana_url?'<a class="pdf" href="'+esc(extUrl(r.asana_url))+'" target="_blank" rel="noopener">🗂 Asana öffnen ↗</a>':'')+'</td>'
       +'<td style="white-space:nowrap"><button class="btn" style="padding:4px 9px;font-size:12px" onclick="openDetail(\''+r.id+'\')" title="Bearbeiten">✎</button> '
+        +'<button class="btn" style="padding:4px 9px;font-size:12px" onclick="pdfVorgang(\''+r.id+'\')" title="Vorgang als PDF">⬇ PDF</button> '
         +'<button class="btn btn-accent" style="padding:4px 9px;font-size:12px" onclick="schreibenErstellen(\''+r.id+'\')">'+((r.mahnstufe||0)>=1?'→ Inkasso-Schreiben':'⚠ Letzte Erinnerung vor Inkasso')+'</button>'
         +((r.mahnstufe||0)?'<div style="font-size:10px;margin-top:2px;color:'+((r.mahnstufe||0)>=2?'var(--red)':'#9a6700')+'">'+((r.mahnstufe||0)>=2?'→ Inkasso übergeben':'Erinnerung verschickt')+(r.letzte_mahnung?' · '+r.letzte_mahnung:'')+'</div>':'')
       +'</td></tr>';}).join('');
@@ -328,8 +329,40 @@ function renderSonder(id){
   box.innerHTML=arr.map((s,i)=>{const art=s.art||'zinsen';return '<div class="sz"><input type="date" value="'+esc(s.datum)+'" onchange="updSonder(\''+id+'\','+i+',\'datum\',this.value)"><input inputmode="decimal" placeholder="Betrag €" value="'+esc(s.betrag)+'" style="width:110px" onchange="updSonder(\''+id+'\','+i+',\'betrag\',this.value)">'
     +'<select style="font:inherit;font-size:13px;padding:5px 8px;border:1px solid var(--line);border-radius:7px;background:var(--surf2)" onchange="updSonder(\''+id+'\','+i+',\'art\',this.value)"><option value="zinsen"'+(art==='zinsen'?' selected':'')+'>auf Zinsen (Standard)</option><option value="tilgung"'+(art==='tilgung'?' selected':'')+'>auf Hauptforderung (Tilgung)</option></select>'
     +'<button class="abtn" onclick="delSonder(\''+id+'\','+i+')">✕</button></div>';}).join('')
-    +'<button class="btn" style="padding:5px 10px;margin-top:4px" onclick="addSonder(\''+id+'\')">+ Sonderzahlung</button>'
-    +'<div style="font-size:11px;color:var(--muted);margin-top:6px">„auf Zinsen" (Standard): zusätzliche Zinszahlung, die Hauptforderung bleibt bestehen (keine Annuitäten-Reduzierung). „auf Tilgung": reduziert die Hauptforderung und verkürzt die Laufzeit.</div>';
+    +'<div style="display:flex;gap:8px;margin-top:4px"><button class="btn" style="padding:5px 10px" onclick="addSonder(\''+id+'\')">+ Sonderzahlung</button><button class="btn" style="padding:5px 10px" onclick="addZahlung(\''+id+'\')">+ Zahlung</button></div>'
+    +'<div style="font-size:11px;color:var(--muted);margin-top:6px">„auf Zinsen" (Standard): zusätzliche Zinszahlung, die Hauptforderung bleibt bestehen. „auf Tilgung": reduziert die Hauptforderung und verkürzt die Laufzeit.</div>'
+    +zahlungHTML(r);
+}
+function zahlungHTML(r){
+  const arr=r.zahlungen||[];
+  const sum=arr.reduce((s,z)=>s+(num(z.betrag)||0),0);
+  return '<div style="margin-top:12px;border-top:1px dashed var(--line);padding-top:8px"><div style="font-size:12px;font-weight:600;color:var(--dim);margin-bottom:4px">💶 Eingegangene Zahlungen des Schuldners (Rate = Zins + Tilgung)</div>'
+    +arr.map((z,i)=>'<div class="sz"><input type="date" value="'+esc(z.datum)+'" onchange="updZahlung(\''+r.id+'\','+i+',\'datum\',this.value)"><input inputmode="decimal" placeholder="Betrag €" value="'+esc(z.betrag)+'" style="width:110px" onchange="updZahlung(\''+r.id+'\','+i+',\'betrag\',this.value)"><button class="abtn" onclick="delZahlung(\''+r.id+'\','+i+')">✕</button></div>').join('')
+    +(arr.length?'<div style="font-size:12px;margin-top:4px">Summe eingegangen: <b>'+eur(sum)+'</b></div>':'<div style="font-size:11px;color:var(--muted)">Noch keine Zahlung erfasst – mit „+ Zahlung" eintragen.</div>')
+    +'</div>';
+}
+async function saveZahlung(id,arr){const r=ROWS.find(x=>x.id===id);if(r)r.zahlungen=arr;const res=await sb.from('zahlungsvereinbarungen').update({zahlungen:arr}).eq('id',id);if(res.error){toast(res.error.message);return;}renderKpis();}
+function addZahlung(id){const r=ROWS.find(x=>x.id===id);const arr=(r.zahlungen||[]).concat([{datum:new Date().toISOString().slice(0,10),betrag:''}]);saveZahlung(id,arr);renderSonder(id);}
+function updZahlung(id,idx,field,val){const r=ROWS.find(x=>x.id===id);const arr=(r.zahlungen||[]).slice();arr[idx]=Object.assign({},arr[idx],{[field]:val});saveZahlung(id,arr);if(field==='betrag')renderSonder(id);}
+function delZahlung(id,idx){const r=ROWS.find(x=>x.id===id);const arr=(r.zahlungen||[]).slice();arr.splice(idx,1);saveZahlung(id,arr);renderSonder(id);}
+function pdfVorgang(id){
+  const r=ROWS.find(x=>x.id===id);if(!r)return;const c=calcOf(r);
+  const eur2=v=>eur(v);
+  const vdat=r.start_datum?new Date(r.start_datum).toLocaleDateString('de-DE'):'—';
+  const zarr=r.zahlungen||[]; const zsum=zarr.reduce((s,z)=>s+(num(z.betrag)||0),0);
+  let planRows=''; if(c&&!c.withSz.fail){ planRows=c.withSz.rows.map(x=>'<tr><td>'+x.nr+'</td><td>'+x.datum.toLocaleDateString('de-DE',{month:'2-digit',year:'numeric'})+'</td><td>'+eur(x.zahlung)+'</td><td>'+eur(x.zins)+'</td><td>'+eur(x.tilg)+'</td><td>'+eur(x.rest)+'</td></tr>').join(''); }
+  const w=window.open('','_blank'); if(!w){toast('Popup blockiert');return;}
+  w.document.write('<html><head><meta charset="utf-8"><title>Ratenzahlungsvereinbarung '+esc(r.mieter||'')+'</title><style>body{font-family:Georgia,serif;max-width:760px;margin:28px auto;padding:0 24px;color:#111;font-size:13px}h1{font-size:17px}h2{font-size:13px;border-bottom:1px solid #999;padding-bottom:2px;margin:16px 0 6px}table{border-collapse:collapse;width:100%;font-size:12px}td,th{border:1px solid #ccc;padding:4px 7px;text-align:left}.kv td{border:none;padding:2px 8px 2px 0}@media print{.np{display:none}}</style></head><body>'
+   +'<div class="np" style="text-align:right"><button onclick="window.print()">🖨 Drucken / als PDF</button></div>'
+   +'<h1>Ratenzahlungsvereinbarung</h1>'
+   +'<table class="kv"><tr><td>Mieter:</td><td><b>'+esc(r.mieter||'')+'</b></td></tr><tr><td>Objekt / Wohnung:</td><td>'+esc((r.objekt||'')+(r.wohnung?' · '+r.wohnung:''))+'</td></tr>'
+   +'<tr><td>Vereinbarung vom:</td><td>'+vdat+'</td></tr><tr><td>Status:</td><td>'+esc(r.status||'')+'</td></tr>'
+   +'<tr><td>Offene Forderung:</td><td>'+eur(Number(r.forderung)||0)+'</td></tr><tr><td>Monatliche Rate:</td><td>'+eur(Number(r.rate)||0)+'</td></tr>'
+   +'<tr><td>Zinssatz p.a.:</td><td>'+((Number(r.basiszins)||0)+(Number(r.zuschlag)||0)).toLocaleString('de-DE')+' %</td></tr></table>'
+   +(planRows?'<h2>Zins- und Tilgungsplan</h2><table><thead><tr><th>Nr</th><th>Monat</th><th>Rate</th><th>Zins</th><th>Tilgung</th><th>Restschuld</th></tr></thead><tbody>'+planRows+'</tbody></table>':'')
+   +'<h2>Eingegangene Zahlungen des Schuldners</h2>'+(zarr.length?'<table><thead><tr><th>Datum</th><th>Betrag</th></tr></thead><tbody>'+zarr.map(z=>'<tr><td>'+esc(z.datum||'')+'</td><td>'+eur(num(z.betrag)||0)+'</td></tr>').join('')+'</tbody></table><p><b>Summe eingegangen: '+eur(zsum)+'</b></p>':'<p>Noch keine Zahlungen erfasst.</p>')
+   +'</body></html>');
+  w.document.close();
 }
 function card(r){
   const f=(lbl,field,val,typ,w)=>'<div class="fld"><label>'+lbl+'</label><input value="'+esc(val==null?'':val)+'" '+(typ==='n'?'inputmode="decimal"':'')+' onchange="save(\''+r.id+'\',\''+field+'\',this.value,\''+(typ||'')+'\')"></div>';
@@ -349,15 +382,14 @@ function card(r){
       +'<div class="fld" style="grid-column:span 2"><label>Asana-Aufgabe (Link)</label><input value="'+esc(r.asana_url||'')+'" placeholder="https://app.asana.com/…" onchange="save(\''+r.id+'\',\'asana_url\',this.value)"></div>'
       +f('Notiz','notiz',r.notiz)
     +'</div>'
-    +'<div class="sec"><h4>Eingegangene Zahlungen des Schuldners</h4><div id="zahlung_'+r.id+'"></div></div>'
-    +'<div class="sec"><h4>Sonderzahlungen (höher als die Rate – passt Zins &amp; Tilgung an)</h4><div id="sonder_'+r.id+'"></div></div>'
+    +'<div class="sec"><h4>Sonderzahlungen &amp; eingegangene Zahlungen</h4><div id="sonder_'+r.id+'"></div></div>'
     +'<div id="calc_'+r.id+'"></div>'
     +'</div>';
 }
 function renderKpis(){
-  let laufend=0,offen=0,zins=0;
-  ROWS.forEach(r=>{if(r.status==='laufend')laufend++;const c=calcOf(r);if(c&&!c.withSz.fail){offen+=Number(r.forderung)||0;zins+=c.withSz.totalZins;}});
-  $('kpis').innerHTML=[['Vereinbarungen',ROWS.length],['davon laufend',laufend],['Σ Forderungen',eur(offen)],['Σ Zinsen (Plan)',eur(Math.round(zins*100)/100)]]
+  let laufend=0,offen=0,zins=0,bezahlt=0;
+  ROWS.forEach(r=>{if(r.status==='laufend')laufend++;const c=calcOf(r);if(c&&!c.withSz.fail){offen+=Number(r.forderung)||0;zins+=c.withSz.totalZins;}(r.zahlungen||[]).forEach(z=>{bezahlt+=num(z.betrag)||0;});});
+  $('kpis').innerHTML=[['Vereinbarungen',ROWS.length],['davon laufend',laufend],['Σ Forderungen',eur(offen)],['Σ Zinsen (Plan)',eur(Math.round(zins*100)/100)],['∑ Bezahlte Forderungen',eur(Math.round(bezahlt*100)/100)]]
     .map(x=>'<div class="kpi"><div class="l">'+esc(x[0])+'</div><div class="v">'+x[1]+'</div></div>').join('');
 }
 function render(){
