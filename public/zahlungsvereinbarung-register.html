@@ -79,7 +79,13 @@ a.pdf{font-size:12px;color:var(--accent);text-decoration:none}
 <div id="briefOv" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:70;align-items:center;justify-content:center" onclick="if(event.target===this)closeBrief()">
   <div style="background:#fff;border-radius:12px;width:100%;max-width:760px;max-height:92vh;display:flex;flex-direction:column;box-shadow:0 20px 60px rgba(0,0,0,.3)">
     <div style="display:flex;justify-content:space-between;align-items:center;padding:13px 18px;border-bottom:1px solid var(--line)"><b id="briefTitle">Schreiben</b><span style="cursor:pointer;font-size:20px;color:var(--muted)" onclick="closeBrief()">✕</span></div>
-    <div style="padding:8px 18px 0"><div style="background:#fff8e1;border:1px solid #f0e0a8;color:#7a5c00;font-size:11.5px;padding:7px 10px;border-radius:7px">✏️ Text ist direkt editierbar — korrigiere bei Bedarf, dann „Bestätigen &amp; als PDF". <b>Mustertext</b>, später an eure Formulierung anpassen.</div></div>
+    <div style="padding:8px 18px 0"><div style="background:#fff8e1;border:1px solid #f0e0a8;color:#7a5c00;font-size:11.5px;padding:7px 10px;border-radius:7px">✏️ Erst Auswahl treffen, dann Text bei Bedarf editieren, dann „Bestätigen" bzw. „Drucken/PDF". <b>Mustertext</b>, später anpassen.</div></div>
+    <div style="padding:10px 18px 0;display:grid;grid-template-columns:1fr 1fr;gap:8px">
+      <label style="font-size:11px;color:var(--muted)">Absender / Empfänger<select id="briefAbsender" onchange="rebuildBrief()" style="width:100%;font:inherit;font-size:13px;padding:6px 8px;border:1px solid var(--line);border-radius:7px"><option value="wt">Wohn(T)raum Rheinhessen GmbH · Dalheimer Straße 70, 55238 Dexheim</option><option value="ee">Eric Eisenhardt · Dalheimer Straße 70, 55238 Dexheim</option></select></label>
+      <label style="font-size:11px;color:var(--muted)">Anrede<select id="briefAnrede" onchange="rebuildBrief()" style="width:100%;font:inherit;font-size:13px;padding:6px 8px;border:1px solid var(--line);border-radius:7px"><option value="herr">Sehr geehrter Herr</option><option value="frau">Sehr geehrte Frau</option><option value="familie">Sehr geehrte Familie</option><option value="neutral">Sehr geehrte(r)</option><option value="damen_herren">Sehr geehrte Damen und Herren</option></select></label>
+      <label style="font-size:11px;color:var(--muted)">Fälligkeitsdatum der offenen Rate<input id="briefFaellig" type="date" onchange="rebuildBrief()" style="width:100%;font:inherit;font-size:13px;padding:6px 8px;border:1px solid var(--line);border-radius:7px"></label>
+      <label style="font-size:11px;color:var(--muted)">Zahlungskonto (IBAN)<select id="briefKonto" onchange="rebuildBrief()" style="width:100%;font:inherit;font-size:13px;padding:6px 8px;border:1px solid var(--line);border-radius:7px"></select></label>
+    </div>
     <div id="briefBody" contenteditable="true" style="flex:1;overflow-y:auto;margin:12px 18px;padding:20px 24px;border:1px solid var(--line);border-radius:8px;font-family:Georgia,'Times New Roman',serif;line-height:1.55;font-size:14px;color:#111;outline:none"></div>
     <div style="display:flex;justify-content:flex-end;gap:8px;padding:12px 18px;border-top:1px solid var(--line)">
       <button class="btn" onclick="closeBrief()">◄ Zurück / Korrigieren</button>
@@ -121,51 +127,76 @@ function listeHTML(list){
 
 // ——— Schreiben (Letzte Erinnerung / Inkasso) — editierbar, dann bestätigen & als PDF ———
 let BRIEF_ID=null, BRIEF_STUFE=1;
+const ABS={ wt:{name:'Wohn(T)raum Rheinhessen GmbH',addr:'Dalheimer Straße 70, 55238 Dexheim'}, ee:{name:'Eric Eisenhardt',addr:'Dalheimer Straße 70, 55238 Dexheim'} };
+function anredeText(key,mieter){
+  const n=esc(mieter||'[Name des Mieters]');
+  if(key==='herr')return 'Sehr geehrter Herr '+n;
+  if(key==='frau')return 'Sehr geehrte Frau '+n;
+  if(key==='familie')return 'Sehr geehrte Familie '+n;
+  if(key==='damen_herren')return 'Sehr geehrte Damen und Herren';
+  return 'Sehr geehrte(r) '+n;
+}
 function schreibenErstellen(id){
   const r=ROWS.find(x=>x.id===id); if(!r)return;
   const stufe=(r.mahnstufe||0)>=1 ? 2 : 1;
   BRIEF_ID=id; BRIEF_STUFE=stufe;
+  // Konto-Dropdown füllen (Objekt · IBAN)
+  const kontoSel=$('briefKonto');
+  const objN=(r.objekt||'').toLowerCase().replace(/\s+/g,'');
+  let opts='<option value="">— IBAN wählen —</option>'+MIETKONTEN.map(k=>{const lbl=esc(k.kennung)+' · '+esc(k.mietkonto);const match=(k.kennung||'').toLowerCase().replace(/\s+/g,'')===objN;return '<option value="'+esc(k.mietkonto)+'" data-obj="'+esc(k.kennung)+'"'+(match?' selected':'')+'>'+lbl+'</option>';}).join('');
+  kontoSel.innerHTML=opts;
+  if(r.konto_iban && !MIETKONTEN.some(k=>k.mietkonto===r.konto_iban)){ kontoSel.insertAdjacentHTML('beforeend','<option value="'+esc(r.konto_iban)+'" selected>'+esc((r.objekt||'')+' · '+r.konto_iban)+'</option>'); }
+  // Defaults
+  $('briefAbsender').value='wt';
+  $('briefAnrede').value='neutral';
+  $('briefFaellig').value='';
+  $('briefOv').style.display='flex';
+  rebuildBrief();
+}
+function rebuildBrief(){
+  const r=ROWS.find(x=>x.id===BRIEF_ID); if(!r)return;
+  const stufe=BRIEF_STUFE;
+  const a=ABS[$('briefAbsender').value]||ABS.wt;
+  const anrede=anredeText($('briefAnrede').value, r.mieter);
   const heute=new Date().toLocaleDateString('de-DE');
   const vdat=r.start_datum?new Date(r.start_datum).toLocaleDateString('de-DE'):'—';
-  const konto=esc(r.konto_info||r.konto_iban||'—');
+  const faelligStr=$('briefFaellig').value?new Date($('briefFaellig').value).toLocaleDateString('de-DE'):'[Fälligkeitsdatum]';
+  const ibanSel=$('briefKonto'); const iban=ibanSel.value||'[IBAN]';
+  const objSel=ibanSel.options[ibanSel.selectedIndex]?(ibanSel.options[ibanSel.selectedIndex].getAttribute('data-obj')||''):'';
+  const frist=new Date(); frist.setDate(frist.getDate()+7); const fristStr=frist.toLocaleDateString('de-DE');
+  const vwz=esc(((r.objekt||'')+(r.wohnung?' · '+r.wohnung:'')+(r.mieter?' · '+r.mieter:'')).replace(/^ · /,'')||'[Mieter-Nr. / Objekt / Name]');
+  const absBlock='<div class="abs">'+esc(a.name)+' · '+esc(a.addr)+'</div>';
   const empf='<div class="empf"><b>'+esc(r.mieter||'')+'</b><br>'+esc((r.objekt||'')+(r.wohnung?' · '+r.wohnung:''))+'</div>';
   const daten='<table class="d"><tbody>'
     +'<tr><td>Ratenzahlungsvereinbarung vom:</td><td><b>'+vdat+'</b></td></tr>'
     +'<tr><td>Offene Forderung:</td><td><b>'+eur(Number(r.forderung)||0)+'</b></td></tr>'
-    +'<tr><td>Vereinbarte Rate:</td><td><b>'+eur(Number(r.rate)||0)+' / Monat</b></td></tr>'
-    +'<tr><td>Zahlung auf Konto:</td><td>'+konto+'</td></tr></tbody></table>';
-  const abs='<div class="abs">Wohn(T)raum Rheinhessen GmbH · [Absenderadresse – später anpassen]</div>';
-  const frist=new Date(); frist.setDate(frist.getDate()+7); const fristStr=frist.toLocaleDateString('de-DE');
-  const empfKonto=esc(r.konto_info||'[Name/Firma]');
-  const ibanStr=esc(r.konto_iban||'[IBAN]');
-  const vwz=esc(((r.objekt||'')+(r.wohnung?' · '+r.wohnung:'')+(r.mieter?' · '+r.mieter:'')).replace(/^ · /,'')||'[Mieter-Nr. / Objekt / Name]');
+    +'<tr><td>Vereinbarte Rate:</td><td><b>'+eur(Number(r.rate)||0)+' / Monat</b></td></tr></tbody></table>';
   let body;
   if(stufe===1){
-    body=abs+'<div class="datum">'+heute+'</div>'+empf
+    body=absBlock+'<div class="datum">'+heute+'</div>'+empf
       +'<h1>Letzte Erinnerung vor Inkasso</h1>'
-      +'<p>Sehr geehrte(r) Frau/Herr '+esc(r.mieter||'[Name des Mieters]')+',</p>'
+      +'<p>'+anrede+',</p>'
       +'<p>wie am <b>'+vdat+'</b> mit Ihnen vereinbart, sollten die bestehenden offenen Posten in Höhe von <b>'+eur(Number(r.forderung)||0)+'</b> in monatlichen Raten zu je <b>'+eur(Number(r.rate)||0)+'</b> beglichen werden.</p>'
-      +'<p>Leider müssen wir feststellen, dass die am [Fälligkeitsdatum] fällige Rate in Höhe von <b>'+eur(Number(r.rate)||0)+'</b> bislang nicht bei uns eingegangen ist.</p>'
+      +'<p>Leider müssen wir feststellen, dass die am <b>'+faelligStr+'</b> fällige Rate in Höhe von <b>'+eur(Number(r.rate)||0)+'</b> bislang nicht bei uns eingegangen ist.</p>'
       +'<p>Wir bitten Sie, den ausstehenden Betrag bis spätestens <b>'+fristStr+'</b> auf folgendes Konto zu überweisen:</p>'
       +'<table class="d"><tbody>'
-        +'<tr><td>Empfänger:</td><td>'+empfKonto+'</td></tr>'
-        +'<tr><td>IBAN:</td><td>'+ibanStr+'</td></tr>'
+        +'<tr><td>Empfänger:</td><td>'+esc(a.name)+'</td></tr>'
+        +'<tr><td>IBAN:</td><td>'+esc(iban)+(objSel?' ('+esc(objSel)+')':'')+'</td></tr>'
         +'<tr><td>Verwendungszweck:</td><td>'+vwz+'</td></tr></tbody></table>'
       +'<p>Wir weisen Sie ausdrücklich darauf hin, dass bei einem erneuten Ausbleiben einer vereinbarten Rate die gesamte Forderung ohne weitere Ankündigung an ein Inkassobüro übergeben wird. Dies kann für Sie mit zusätzlichen Kosten (Inkasso- und Mahngebühren) verbunden sein.</p>'
       +'<p>Sollten Sie den Betrag bereits beglichen haben, betrachten Sie dieses Schreiben bitte als gegenstandslos. Falls sich an Ihrer Zahlungsfähigkeit kurzfristig etwas geändert hat, sprechen Sie uns bitte umgehend an – gerne finden wir gemeinsam eine Lösung.</p>'
-      +'<div class="sign"><p>Mit freundlichen Grüßen</p><p>[Name / Firma / Hausverwaltung]</p></div>';
+      +'<div class="sign"><p>Mit freundlichen Grüßen</p><p>'+esc(a.name)+'</p></div>';
   } else {
-    body=abs+'<div class="datum">'+heute+'</div>'+empf
+    body=absBlock+'<div class="datum">'+heute+'</div>'+empf
       +'<h1>Übergabe Ihrer offenen Forderung an das Inkasso</h1>'
-      +'<p>Sehr geehrte/r '+esc(r.mieter||'')+',</p>'
+      +'<p>'+anrede+',</p>'
       +'<p>trotz unserer letzten Erinnerung'+(r.letzte_mahnung?' vom '+new Date(r.letzte_mahnung).toLocaleDateString('de-DE'):'')+' ist erneut eine vereinbarte Rate ausgeblieben. Wir sehen uns daher gezwungen, die offene Forderung aus der nachstehenden Ratenzahlungsvereinbarung an unser Inkassounternehmen zu übergeben.</p>'
       +daten
       +'<p>Die weitere Kommunikation und Beitreibung erfolgt ab sofort über das beauftragte Inkassounternehmen. Zusätzlich entstehende Kosten gehen zu Ihren Lasten.</p>'
-      +'<div class="sign"><p>Mit freundlichen Grüßen</p><p>Wohn(T)raum Rheinhessen GmbH</p></div>';
+      +'<div class="sign"><p>Mit freundlichen Grüßen</p><p>'+esc(a.name)+'</p></div>';
   }
   $('briefTitle').textContent=stufe===1?'⚠ Letzte Erinnerung vor Inkasso':'→ Übergabe an das Inkasso';
   $('briefBody').innerHTML=body;
-  $('briefOv').style.display='flex';
 }
 function closeBrief(){$('briefOv').style.display='none';BRIEF_ID=null;}
 function druckeBrief(){
@@ -337,7 +368,9 @@ function render(){
   list.forEach(r=>{renderSonder(r.id);renderCalc(r.id);});
   renderKpis();
 }
-async function load(){const res=await sb.from('zahlungsvereinbarungen').select('*').order('pos',{nullsFirst:false}).order('created_at',{ascending:false});ROWS=res.error?[]:(res.data||[]);render();}
+let MIETKONTEN=[];
+async function loadKonten(){const res=await sb.from('portfolio_immobilien').select('kennung,mietkonto').not('mietkonto','is',null).order('kennung');MIETKONTEN=(res.error?[]:(res.data||[])).filter(k=>k.mietkonto&&k.mietkonto.trim());}
+async function load(){await loadKonten();const res=await sb.from('zahlungsvereinbarungen').select('*').order('pos',{nullsFirst:false}).order('created_at',{ascending:false});ROWS=res.error?[]:(res.data||[]);render();}
 load();
 </script>
 </body></html>
