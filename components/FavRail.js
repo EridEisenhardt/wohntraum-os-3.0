@@ -31,9 +31,12 @@ export default function FavRail() {
 
   const favItems = favs.map((h) => byHref[h]).filter(Boolean)
   // Mitarbeiter-Rollen: freigegebene Bereiche automatisch als Übersicht ergänzen
-  const items = freig.restricted
+  const base = freig.restricted
     ? [...favItems, ...freig.leaves.filter((l) => !favs.includes(l.href))]
     : favItems
+  // Fester 1. Favorit für jeden Nutzer: Verbesserungsvorschläge
+  const PIN = { href: '/verbesserungen', label: 'Verbesserungsvorschläge', icon: 'ti-bulb' }
+  const items = [PIN, ...base.filter((x) => x.href !== '/verbesserungen')]
   const isActive = (h) => path === h || path.startsWith(h + '/')
 
   return (

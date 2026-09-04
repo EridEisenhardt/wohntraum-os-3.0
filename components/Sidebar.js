@@ -307,7 +307,9 @@ export default function Sidebar({ user, demo, onLogout, role, perms }) {
   const favItems = favs.map((h) => allLeaf.find((x) => x.href === h)).filter(Boolean)
   // Mitarbeiter-Rollen (nicht Admin): freigegebene Bereiche bilden sich automatisch in der Favoriten-/Übersicht ab
   const isRestricted = !!role && role !== 'admin'
-  const favView = isRestricted ? [...favItems, ...allLeaf.filter((l) => !favs.includes(l.href))] : favItems
+  const FAV_PIN = { href: '/verbesserungen', label: 'Verbesserungsvorschläge', icon: 'ti-bulb' }
+  const favBase = isRestricted ? [...favItems, ...allLeaf.filter((l) => !favs.includes(l.href))] : favItems
+  const favView = [FAV_PIN, ...favBase.filter((x) => x.href !== '/verbesserungen')]
   // freigegebene Bereiche an die linke Favoritenleiste (FavRail) melden
   const freigKey = isRestricted ? allLeaf.map((l) => l.href).join('|') : ''
   useEffect(() => {
