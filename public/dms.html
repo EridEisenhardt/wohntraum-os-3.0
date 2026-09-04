@@ -51,6 +51,14 @@ th{font-size:10.5px;text-transform:uppercase;letter-spacing:.03em;color:var(--mu
     <div style="margin-top:10px"><button class="btn" id="u_btn" onclick="uploadDocs()">⬆︎ Hochladen &amp; ablegen</button> <span id="u_msg" style="font-size:12px;color:var(--muted)"></span></div>
   </div>
 
+  <div class="card" style="border-color:#cfe0f7;background:#f5f9ff">
+    <h2>📥 Inbox — eingescannte / neue Dokumente</h2>
+    <div style="font-size:12px;color:var(--dim);margin-bottom:8px">Hier landen neue Scans/Dateien. Danach je Dokument <b>„🏷 Benennen &amp; ablegen"</b> — der Dateiname wird nach der Vorlage des Dokumentennamen-Generators gebildet und ins DMS übernommen.</div>
+    <input id="in_files" type="file" multiple onchange="uploadInbox()">
+    <span id="in_msg" style="font-size:12px;color:var(--muted);margin-left:8px"></span>
+    <div id="inbox" style="margin-top:10px"></div>
+  </div>
+
   <div class="card">
     <h2>Dokumente</h2>
     <div class="kpis" id="kpis"></div>
@@ -64,6 +72,22 @@ th{font-size:10.5px;text-transform:uppercase;letter-spacing:.03em;color:var(--mu
     <div id="list"></div>
   </div>
   <div class="note">Dateien liegen im OS-Speicher (Supabase). Der Dateipfad wird sauber gespeichert, damit die geplante <b>parallele Google-Drive-Sicherung</b> später ohne Umbau andocken kann.</div>
+</div>
+<div id="benOv" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:70;align-items:center;justify-content:center" onclick="if(event.target===this)closeBen()">
+  <div style="background:#fff;border-radius:12px;width:100%;max-width:560px;max-height:92vh;overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,.3)">
+    <div style="display:flex;justify-content:space-between;align-items:center;padding:14px 18px;border-bottom:1px solid var(--line)"><b>🏷 Dokument benennen &amp; ablegen</b><span style="cursor:pointer;font-size:20px;color:var(--muted)" onclick="closeBen()">✕</span></div>
+    <div style="padding:16px 18px">
+      <div id="ben_file" style="font-size:12px;color:var(--muted);margin-bottom:10px"></div>
+      <div class="grid">
+        <div><label>Kategorie / Rubrik</label><select id="ben_kat" onchange="benKatChg()"></select></div>
+        <div><label>Dokumententyp (Vorlage)</label><select id="ben_doc" onchange="benDocChg()"></select></div>
+      </div>
+      <div id="ben_hint" style="font-size:11px;color:var(--muted);margin:8px 0"></div>
+      <div id="ben_fields" class="grid"></div>
+      <div style="margin-top:10px"><label>Erzeugter Dateiname</label><div id="ben_name" style="background:#0b1220;color:#e6f0ea;border-radius:8px;padding:10px 12px;font-family:ui-monospace,Menlo,monospace;font-size:13px;word-break:break-all;margin-top:4px">—</div></div>
+    </div>
+    <div style="display:flex;justify-content:flex-end;gap:8px;padding:12px 18px;border-top:1px solid var(--line)"><button class="btn g" onclick="closeBen()">Abbrechen</button><button class="btn" onclick="ablegenBenannt()">✓ Benennen &amp; ins DMS ablegen</button></div>
+  </div>
 </div>
 <div class="toast" id="toast"></div>
 <script>
@@ -114,9 +138,76 @@ async function uploadDocs(){
 async function updDoc(id,field,val){const r=ROWS.find(x=>x.id===id);if(r)r[field]=val;const res=await sb.from('dms_dokumente').update({[field]:(val===''?null:val)}).eq('id',id);if(res.error)toast(res.error.message);}
 async function delDoc(id){if(!confirm('Dokument aus dem DMS löschen? (Datei bleibt im Speicher erhalten)'))return;const res=await sb.from('dms_dokumente').delete().eq('id',id);if(res.error){toast(res.error.message);return;}ROWS=ROWS.filter(x=>x.id!==id);render();}
 
+// ——— Inbox + Benennung nach Dokumentennamen-Generator ———
+const TOK={KOST:{l:'Objektkürzel',t:'text',ph:'z. B. Rh24'},OBJEKT:{l:'Objekt',t:'text',ph:'z. B. Rh24'},'YYYY-MM-DD':{l:'Datum',t:'date'},JAHR:{l:'Jahr',t:'text',ph:'JJJJ'},BANK:{l:'Bank',t:'text'},DLNR:{l:'Darlehensnummer',t:'text'},BETRAG:{l:'Betrag',t:'text'},NACHNAME:{l:'Nachname (GROSS)',t:'text'},VORNAME:{l:'Vorname',t:'text'},WE:{l:'Wohneinheit (GROSS)',t:'text'},LIEFERANT:{l:'Lieferant / Firma',t:'text'},RENR:{l:'Rechnungs-Nr',t:'text'},PROJEKTNR:{l:'Projektnummer',t:'text'},BEHOERDE:{l:'Behörde / Absender',t:'text'},THEMA:{l:'Thema',t:'text'},DOKUMENT:{l:'Bezeichnung',t:'text'}};
+let VOR=[], BEN=null, BENVALS={};
+function tokensOf(tpl){var o=[],re=/\{([A-Z0-9\-]+)\}/g,m;while((m=re.exec(tpl))){if(o.indexOf(m[1])<0)o.push(m[1]);}return o;}
+async function loadVorlagen(){const r=await sb.from('dokument_vorlagen').select('*').eq('aktiv',true).order('sort');VOR=r.error?[]:(r.data||[]);}
+async function uploadInbox(){
+  const files=$('in_files').files; if(!files||!files.length)return;
+  $('in_msg').textContent='Lädt hoch …';
+  let ok=0;
+  for(const f of files){
+    if(f.size>50*1024*1024){toast(f.name+' zu groß (max 50 MB)');continue;}
+    const path='dms/inbox/'+Date.now()+'_'+f.name.replace(/[^a-zA-Z0-9._-]/g,'_');
+    const up=await sb.storage.from('darlehen').upload(path,f,{upsert:true,contentType:f.type||'application/octet-stream'});
+    if(up.error){toast('Upload: '+up.error.message);continue;}
+    const url=sb.storage.from('darlehen').getPublicUrl(path).data.publicUrl;
+    const rec={name:f.name,status:'inbox',url,pfad:path,mime:f.type||null,groesse:f.size,hochgeladen_von:ME||null,datum:new Date().toISOString().slice(0,10)};
+    const res=await sb.from('dms_dokumente').insert(rec).select();
+    if(!res.error&&res.data)ROWS.unshift(res.data[0]),ok++;
+  }
+  $('in_msg').textContent=''; $('in_files').value='';
+  renderInbox(); render(); toast(ok+' Datei(en) in der Inbox ✓');
+}
+function renderInbox(){
+  const inb=ROWS.filter(r=>r.status==='inbox');
+  $('inbox').innerHTML=inb.length?('<table><thead><tr><th>Datei</th><th>Größe</th><th></th></tr></thead><tbody>'
+    +inb.map(r=>'<tr>'
+      +'<td>'+(isImg(r.mime)?'<a href="'+esc(r.url)+'" target="_blank" rel="noopener"><img class="thumb" src="'+esc(r.url)+'"></a> ':'')+'<a class="lnk" href="'+esc(r.url)+'" target="_blank" rel="noopener">'+esc(r.name||'Datei')+'</a></td>'
+      +'<td style="font-size:12px;color:var(--muted)">'+human(r.groesse)+'</td>'
+      +'<td style="white-space:nowrap"><button class="btn" style="padding:5px 10px;font-size:12px" onclick="openBen(\''+r.id+'\')">🏷 Benennen &amp; ablegen</button> <button class="x" onclick="delDoc(\''+r.id+'\')">✕</button></td>'
+    +'</tr>').join('')+'</tbody></table>')
+    :'<div style="font-size:12.5px;color:var(--muted)">Inbox leer — neue Scans/Dateien oben hochladen.</div>';
+}
+function openBen(id){BEN=id;BENVALS={};const cats=[...new Set(VOR.map(v=>v.kategorie).filter(Boolean))];
+  const r=ROWS.find(x=>x.id===id);$('ben_file').textContent='Datei: '+(r?r.name:'');
+  $('ben_kat').innerHTML=cats.map(c=>'<option>'+esc(c)+'</option>').join('');
+  benKatChg(); $('benOv').style.display='flex';
+}
+function closeBen(){$('benOv').style.display='none';BEN=null;}
+function benKatChg(){const kat=$('ben_kat').value;const list=VOR.filter(v=>v.kategorie===kat);
+  $('ben_doc').innerHTML=list.map(v=>'<option value="'+v.id+'">'+esc(v.dokument)+'</option>').join('');
+  benDocChg();
+}
+function curVor(){return VOR.find(v=>v.id===$('ben_doc').value);}
+function benDocChg(){const v=curVor();if(!v){$('ben_fields').innerHTML='';$('ben_name').textContent='—';$('ben_hint').textContent='';return;}
+  $('ben_hint').innerHTML='Vorlage: <code>'+esc(v.template)+'</code>'+(v.hinweis?' · '+esc(v.hinweis):'');
+  const toks=tokensOf(v.template);const today=new Date().toISOString().slice(0,10);
+  $('ben_fields').innerHTML=toks.map(k=>{const m=TOK[k]||{l:k,t:'text'};const val=BENVALS[k]!=null?BENVALS[k]:(m.t==='date'?today:'');
+    const tt=(k==='NACHNAME'||k==='WE')?'uppercase':(k==='VORNAME'?'capitalize':'');
+    return '<div><label>'+esc(m.l)+'</label><input id="bf_'+k+'" type="'+(m.t||'text')+'" value="'+esc(val)+'" placeholder="'+esc(m.ph||'')+'"'+(tt?' style="text-transform:'+tt+'"':'')+' oninput="benName()"></div>';}).join('');
+  benName();
+}
+function benName(){const v=curVor();if(!v)return '';const toks=tokensOf(v.template);let name=v.template;
+  toks.forEach(k=>{let raw=($('bf_'+k)?$('bf_'+k).value.trim():'');if(k==='NACHNAME'||k==='WE')raw=raw.toUpperCase();if(k==='VORNAME')raw=raw.replace(/(^|\s)(\S)/g,(_,a,b)=>a+b.toUpperCase());BENVALS[k]=raw;name=name.split('{'+k+'}').join(raw);});
+  name=name.replace(/_{2,}/g,'_').replace(/\s{2,}/g,' ').replace(/,\s*,/g,',').replace(/^[_\s,]+/,'').replace(/[_\s,]+$/,'');
+  if(v.bank_nr)name=v.bank_nr+'_'+name;
+  $('ben_name').textContent=name||'—';return name;
+}
+async function ablegenBenannt(){
+  const r=ROWS.find(x=>x.id===BEN);if(!r)return;const v=curVor();if(!v){toast('Bitte Vorlage wählen');return;}
+  const name=benName();if(!name||name==='—'){toast('Kein Name erzeugt');return;}
+  const objekt=BENVALS.OBJEKT||BENVALS.KOST||r.objekt||null;
+  const datum=BENVALS['YYYY-MM-DD']||r.datum||null;
+  const patch={name,kategorie:$('ben_kat').value,objekt,datum,status:'abgelegt'};
+  const res=await sb.from('dms_dokumente').update(patch).eq('id',BEN);
+  if(res.error){toast(res.error.message);return;}
+  Object.assign(r,patch); closeBen(); renderInbox(); render(); toast('Abgelegt als '+name+' ✓');
+}
 function render(){
   const q=($('q').value||'').toLowerCase(), fk=$('fKat').value, fo=$('fObj').value, fg=$('fGes').value;
-  const list=ROWS.filter(r=>(!fk||r.kategorie===fk)&&(!fo||r.objekt===fo)&&(!fg||r.gesellschaft===fg)
+  const list=ROWS.filter(r=>r.status!=='inbox'&&(!fk||r.kategorie===fk)&&(!fo||r.objekt===fo)&&(!fg||r.gesellschaft===fg)
     &&(!q||((r.name||'')+' '+(r.beschreibung||'')+' '+((r.tags||[]).join(' '))).toLowerCase().includes(q)));
   $('cnt').textContent=list.length+' von '+ROWS.length;
   const katCnt={}; ROWS.forEach(r=>{katCnt[r.kategorie]=(katCnt[r.kategorie]||0)+1;});
@@ -146,8 +237,8 @@ function editDoc(id){
   if(tags!==null){const arr=tags.split(',').map(s=>s.trim()).filter(Boolean);r.tags=arr;sb.from('dms_dokumente').update({tags:arr}).eq('id',id).then(()=>render());}
   render();
 }
-(async()=>{ await loadMe(); await loadObjekte(); fillSelects(); $('u_datum').value=new Date().toISOString().slice(0,10);
-  const res=await sb.from('dms_dokumente').select('*').order('created_at',{ascending:false}); ROWS=res.error?[]:(res.data||[]); render();
+(async()=>{ await loadMe(); await loadObjekte(); await loadVorlagen(); fillSelects(); $('u_datum').value=new Date().toISOString().slice(0,10);
+  const res=await sb.from('dms_dokumente').select('*').order('created_at',{ascending:false}); ROWS=res.error?[]:(res.data||[]); renderInbox(); render();
 })();
 </script>
 </body></html>
