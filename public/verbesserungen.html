@@ -42,6 +42,7 @@ body{background:var(--bg);color:var(--text);font-family:'Inter',system-ui,-apple
     <div class="fg"><label>Titel *</label><input id="titel" placeholder="Kurz &amp; knackig, z. B. „Filter im Darlehensregister"></div>
     <div class="fg"><label>Beschreibung</label><textarea id="beschreibung" placeholder="Was genau soll verbessert werden? Warum?"></textarea></div>
     <div class="fg"><label>Dein Name (optional)</label><input id="ersteller" placeholder="Name / Kürzel"></div>
+    <div class="fg"><label>Bilder / Screenshots / PDF (optional)</label><input id="files" type="file" accept="image/*,application/pdf" multiple></div>
     <button class="btn" id="submitBtn" onclick="submitW()">Abschicken</button>
   </div>
 
@@ -67,12 +68,35 @@ async function submitW(){
   if(!titel){toast('Bitte einen Titel eingeben');return;}
   $('submitBtn').disabled=true;
   const rec={titel,beschreibung:$('beschreibung').value.trim()||null,ersteller:$('ersteller').value.trim()||null,status:'offen'};
-  const res=await sb.from('verbesserungen').insert(rec);
+  const res=await sb.from('verbesserungen').insert(rec).select();
+  if(res.error){$('submitBtn').disabled=false;toast('Fehler: '+res.error.message);return;}
+  const row=res.data&&res.data[0];
+  const fl=$('files').files;
+  if(row&&fl&&fl.length){ const anh=await uploadTo(row.id,fl); if(anh.length) await sb.from('verbesserungen').update({anhaenge:anh}).eq('id',row.id); }
   $('submitBtn').disabled=false;
-  if(res.error){toast('Fehler: '+res.error.message);return;}
-  $('titel').value='';$('beschreibung').value='';
+  $('titel').value='';$('beschreibung').value='';$('files').value='';
   toast('Verbesserungswunsch aufgenommen ✓ (Status: offen)');
   load();
+}
+async function uploadTo(id,fileList){
+  const arr=[];
+  for(const f of fileList){
+    if(f.size>15*1024*1024){toast(f.name+' zu groß (max 15 MB)');continue;}
+    const path='verbesserungen/'+id+'_'+Date.now()+'_'+f.name.replace(/[^a-zA-Z0-9._-]/g,'_');
+    const up=await sb.storage.from('darlehen').upload(path,f,{upsert:true,contentType:f.type||'application/octet-stream'});
+    if(up.error){toast('Upload: '+up.error.message);continue;}
+    arr.push({url:sb.storage.from('darlehen').getPublicUrl(path).data.publicUrl,name:f.name,typ:f.type||''});
+  }
+  return arr;
+}
+async function addFiles(id,input){
+  const fl=input.files; if(!fl||!fl.length)return;
+  const r=ROWS.find(x=>x.id===id); const cur=(r&&r.anhaenge)||[];
+  const neu=await uploadTo(id,fl); if(!neu.length)return;
+  const all=cur.concat(neu);
+  const res=await sb.from('verbesserungen').update({anhaenge:all}).eq('id',id);
+  if(res.error){toast(res.error.message);return;}
+  if(r)r.anhaenge=all; render(); toast('Datei(en) angehängt ✓');
 }
 async function setStatus(id,val){
   const res=await sb.from('verbesserungen').update({status:val,updated_at:new Date().toISOString()}).eq('id',id);
@@ -90,9 +114,11 @@ function render(){
       <div class="body">
         <div class="t">${esc(r.titel)}</div>
         ${r.beschreibung?`<div class="d">${esc(r.beschreibung)}</div>`:''}
+        ${(r.anhaenge&&r.anhaenge.length)?`<div style="margin-top:6px">${r.anhaenge.map(a=>(a.typ&&a.typ.indexOf('image')===0)?`<a href="${esc(a.url)}" target="_blank" rel="noopener"><img src="${esc(a.url)}" style="height:56px;border:1px solid var(--line);border-radius:6px;margin:0 6px 4px 0;vertical-align:middle"></a>`:`<a href="${esc(a.url)}" target="_blank" rel="noopener" style="display:inline-block;margin:0 8px 4px 0;font-size:12px;color:var(--accent)">📄 ${esc(a.name||'Datei')}</a>`).join('')}</div>`:''}
         <div class="meta">${r.ersteller?esc(r.ersteller)+' · ':''}${fmt(r.created_at)}</div>
       </div>
       <span class="badge ${m[2]}">${m[1]}</span>
+      <label class="stsel" style="cursor:pointer" title="Bild/PDF anhängen">📎<input type="file" accept="image/*,application/pdf" multiple style="display:none" onchange="addFiles('${r.id}',this)"></label>
       <select class="stsel" onchange="setStatus('${r.id}',this.value)">
         ${STATUS.map(s=>`<option value="${s[0]}" ${r.status===s[0]?'selected':''}>${s[1]}</option>`).join('')}
       </select>
