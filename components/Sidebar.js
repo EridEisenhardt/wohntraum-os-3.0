@@ -86,6 +86,7 @@ export const NAV = [
     { href: '/produktivitaet/dokumentnamen', icon: 'ti-file-text', label: 'Dokumentennamen-Generator' },
     { href: '/produktivitaet/stundengehalt', icon: 'ti-clock-dollar', label: 'Stundengehalt' },
     { href: '/produktivitaet/gpm-tracker', icon: 'ti-target-arrow', label: 'GPM-Tracker' },
+    { href: '/produktivitaet/not-to-do', icon: 'ti-ban', label: 'Not-To-Do & Delegieren' },
   ] },
   { type: 'group', key: 'finance', icon: 'ti-cash', label: 'Finance', area: 'hv', mod: 'finance', items: [
     { href: '/finance/input', icon: 'ti-forms', label: 'Input' },
