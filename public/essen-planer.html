@@ -93,6 +93,17 @@ details>summary{cursor:pointer;font-size:12.5px;color:var(--muted);font-weight:6
     </div>
   </div>
 
+  <div class="card" style="margin-top:16px;border-color:#e3d9b8;background:#fdfbf2">
+    <h2>🃏 Jokergerichte &amp; Seminar-Verpflegung</h2>
+    <div style="font-size:12px;color:var(--muted);margin-bottom:10px">Backup, wenn unterwegs / kein Vorrat (kein Einkauf) — und Verpflegung für Seminare.</div>
+    <div class="addmeal">
+      <input type="text" id="jName" placeholder="z. B. Prep My Meal, Seminar-Catering Tag 1">
+      <input type="number" id="jPort" value="1" min="1" style="width:70px" title="Portionen">
+      <button class="btn" onclick="addJoker()">+ Joker anlegen</button>
+    </div>
+    <div id="jokerList"></div>
+  </div>
+
 </div>
 <div class="toast" id="toast"></div>
 <script>
@@ -241,9 +252,12 @@ async function clearFree(){
 function evaluateShop(){ renderShop(); var el=$('shopList'); if(el)el.scrollIntoView({behavior:'smooth',block:'center'}); toast('Einkaufsliste ausgewertet'); }
 function katSelHtml(){return '<select class="zi-kat">'+LKAT.map(k=>'<option>'+esc(k)+'</option>').join('')+'</select>';}
 function renderMeals(){
-  if(!MEALS.length){$('mealList').innerHTML='<div class="empty">Noch keine Mahlzeiten – oben anlegen.</div>';return;}
   var eIn='font:inherit;font-size:12.5px;padding:4px 6px;border:1px solid var(--line);border-radius:6px;background:#fff';
-  $('mealList').innerHTML=MEALS.map(function(m){
+  var normal=MEALS.filter(function(m){return m.kategorie!=='Joker';});
+  var joker=MEALS.filter(function(m){return m.kategorie==='Joker';});
+  $('mealList').innerHTML=normal.length?normal.map(mealCardHtml).join(''):'<div class="empty">Noch keine Mahlzeiten – oben anlegen.</div>';
+  if($('jokerList'))$('jokerList').innerHTML=joker.length?joker.map(mealCardHtml).join(''):'<div class="empty">Noch keine Joker/Seminar-Verpflegung – oben anlegen.</div>';
+  function mealCardHtml(m){
     var zs=ZUT[m.id]||[];
     var zlist=zs.map(function(z){return '<div class="zut" style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin:4px 0">'
       +'<input value="'+esc(z.name)+'" placeholder="Zutat" style="flex:1;min-width:120px;'+eIn+'" onchange="updZutat(\''+z.id+'\',\'name\',this.value)">'
@@ -261,7 +275,7 @@ function renderMeals(){
       +'<div class="zrow"><input class="zi-nm" type="text" placeholder="Zutat"><input class="zi-mg" type="text" placeholder="Menge"><input class="zi-eh" type="text" placeholder="Einheit">'+katSelHtml()
       +'<input class="zi-ort" list="geschDL" placeholder="Einkaufsort">'
       +'<button class="btn" style="padding:5px 10px" onclick="addZutat(\''+m.id+'\',this)">+</button></div></details></div>';
-  }).join('');
+  }
 }
 async function updMeal(id,field,val){
   var v=field==='portionen'?(parseInt(val,10)||1):(String(val).trim()||null);
@@ -291,6 +305,16 @@ async function addMeal(){
   if(res.error){toast('Fehler: '+res.error.message);return;}
   if(res.data&&res.data[0])MEALS.push(res.data[0]);
   $('mName').value=''; $('mPort').value='1';
+  MEALS.sort((a,b)=>(a.kategorie||'').localeCompare(b.kategorie||'')||(a.name||'').localeCompare(b.name||''));
+  renderMeals(); renderStd(); renderFree();
+}
+async function addJoker(){
+  var n=$('jName').value.trim(); if(!n){toast('Name eingeben');return;}
+  var rec={name:n,kategorie:'Joker',auswaerts:true,portionen:parseInt($('jPort').value,10)||1};
+  var res=await sb.from('essen_mahlzeiten').insert(rec).select();
+  if(res.error){toast('Fehler: '+res.error.message);return;}
+  if(res.data&&res.data[0])MEALS.push(res.data[0]);
+  $('jName').value=''; $('jPort').value='1';
   MEALS.sort((a,b)=>(a.kategorie||'').localeCompare(b.kategorie||'')||(a.name||'').localeCompare(b.name||''));
   renderMeals(); renderStd(); renderFree();
 }
