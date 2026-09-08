@@ -266,6 +266,7 @@ select.cin.tagset{color:var(--accent);border-color:var(--accent);background:#eef
     <span class="seg"><button id="vList" class="on" onclick="setView('list')">Liste</button><button id="vBoard" onclick="setView('board')">Board</button></span>
     <button class="btn g" onclick="carryOver()" title="Nicht erledigte Aufgaben & Routinen der Vorwoche übernehmen (als offen); erledigte bleiben zurück">↪ Übernehmen</button>
     <button class="btn g" onclick="openTickets()" title="Offene Tickets aus dem Ticketsystem in diese Woche übernehmen">🎫 Aus Tickets</button>
+    <button class="btn g" id="planBtn" onclick="toggleUnplanned()" title="Nur Aufgaben zeigen, die noch NICHT in der Tagesplanung Mo–Fr eingeteilt sind">🗓 Nur ungeplante</button>
     <button class="btn" onclick="addTask()">+ Neue Aufgabe</button>
   </div>
 
@@ -690,7 +691,7 @@ async function loadTages(){
   ]);
   TAGZF={}; (z.error?[]:(z.data||[])).forEach(r=>{TAGZF[r.tag+'|'+r.slot]=r;});
   TAGTT={}; (t.error?[]:(t.data||[])).forEach(r=>{TAGTT[r.tag+'|'+r.pos]=r;});
-  renderTagesplanung();
+  renderTagesplanung(); render();
 }
 function renderTagesplanung(){
   const grid=$('tagesGrid'); if(!grid)return;
@@ -808,7 +809,7 @@ function rowHtml(r){
   const subBtn=`<button title="Unteraufgaben" onclick="toggleSub('${r.id}')" style="background:none;border:none;cursor:pointer;color:var(--accent);font-size:12px;font-weight:700;white-space:nowrap;margin-top:3px">${subOpen?'▾':'▸'}${subs.length?' '+sdone+'/'+subs.length:' +'}</button>`;
   const subRow=subOpen?`<tr class="subrow"><td></td><td colspan="8" style="padding:2px 9px 9px;background:var(--surf2)"><div style="font-size:10.5px;font-weight:700;text-transform:uppercase;color:var(--muted);margin:2px 0 4px">Unteraufgaben</div>${subs.map(subRowHtml).join('')}<button onclick="addMSub('${r.id}')" style="margin-top:3px;background:none;border:none;color:var(--accent);cursor:pointer;font:inherit;font-size:12px;font-weight:600">+ Unteraufgabe</button></td></tr>`:'';
   return `<tr class="${r.status==='erledigt'?'done':''}${r.top3?' top3':''}">
-    <td class="bez"><div style="display:flex;gap:6px;align-items:flex-start"><button class="topbtn${r.top3?' on':''}" title="Als Top 3 markieren" onclick="toggleTop3('${r.id}')">${r.top3?'★':'☆'}</button>${ueber}<textarea class="ta" rows="1" placeholder="Bezeichnung…" oninput="autogrow(this)" onchange="updField('${r.id}','aufgabe',this.value)">${esc(r.aufgabe)}</textarea>${subBtn}</div></td>
+    <td class="bez"><div style="display:flex;gap:6px;align-items:flex-start"><button class="topbtn${r.top3?' on':''}" title="Als Top 3 markieren" onclick="toggleTop3('${r.id}')">${r.top3?'★':'☆'}</button>${ueber}<textarea class="ta" rows="1" placeholder="Bezeichnung…" oninput="autogrow(this)" onchange="updField('${r.id}','aufgabe',this.value)">${esc(r.aufgabe)}</textarea>${subBtn}${PLANNED.has(r.id)?'<span title="in Tagesplanung Mo–Fr eingeteilt" style="align-self:center;font-size:9.5px;font-weight:700;color:var(--accent);background:#eef3fb;border:1px solid #cfe0f7;border-radius:5px;padding:1px 6px;white-space:nowrap">🗓 eingeplant</span>':''}</div></td>
     <td><select class="cin" onchange="updField('${r.id}','bereich',this.value)">${brOpts}</select></td>
     <td><select class="cin${r.prioritaet?' hasval prio-'+r.prioritaet:''}" onchange="updField('${r.id}','prioritaet',this.value)"><option value="">—</option>${prOpts}</select></td>
     <td><select class="cin${dayList(r)[0]?' hasval tagset':''}" onchange="updField('${r.id}','wochentag',this.value)"><option value="">—</option>${tagOpts}</select></td>
@@ -851,9 +852,13 @@ function renderStats(){
     <div class="stbar"><div class="stfill" style="width:${p}%"></div></div>
     <div class="stlg"><span>✓ <b>${done}</b> erledigt</span><span style="color:#1b7c83">⏭ <b>${forts}</b> Fortsetzung n. KW</span><span>▷ <b>${inarb}</b> in Arbeit</span><span>⏸ <b>${warten}</b> warten</span><span style="color:#c47f17">⌛ <b>${wartenR}</b> warten auf Rückmeldung</span><span>○ <b>${offen}</b> offen</span></div>`;
 }
+let ONLY_UNPLANNED=false, PLANNED=new Set();
+function plannedSet(){ const s=new Set(); Object.values(TAGZF||{}).forEach(z=>{if(z.aufgabe_id)s.add(z.aufgabe_id);}); Object.values(TAGTT||{}).forEach(t=>{if(t.aufgabe_id)s.add(t.aufgabe_id);}); return s; }
+function toggleUnplanned(){ ONLY_UNPLANNED=!ONLY_UNPLANNED; const b=$('planBtn'); if(b){b.textContent=ONLY_UNPLANNED?'🗓 Alle Aufgaben':'🗓 Nur ungeplante'; b.classList.toggle('btn-accent',ONLY_UNPLANNED);} render(); }
 function render(){
+  PLANNED=plannedSet();
   renderZiele(); renderRoutine(); renderBereichChips(); renderTagChips(); renderStats();
-  const items=baseItems().filter(tagMatch);
+  const items=baseItems().filter(tagMatch).filter(r=>!ONLY_UNPLANNED || !PLANNED.has(r.id));
   $('work').innerHTML = VIEW==='list' ? listView(sortItems(items)) : boardView(items);
   document.querySelectorAll('#work .ta').forEach(autogrow);
   const all=ROWS.filter(r=>r.bereich!=='jahresziele'); const done=all.filter(r=>r.status==='erledigt').length;
