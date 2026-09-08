@@ -343,7 +343,7 @@ async function load(){
     .eq('jahr',CUR.jahr).eq('kw',CUR.kw).order('pos',{ascending:true}).order('created_at',{ascending:true});
   ROWS = error ? [] : (data||[]);
   if(error) toast('Fehler beim Laden: '+error.message);
-  render(); loadFragen(); loadExtra(); loadLinks(); loadHistory(); loadMSubs();
+  render(); loadFragen(); loadExtra(); loadLinks(); loadHistory(); loadMSubs(); loadTages();
 }
 let MSUBS={};
 function msubsOf(id){ return (MSUBS[id]||[]).slice().sort((a,b)=>(a.pos||0)-(b.pos||0)); }
@@ -677,6 +677,67 @@ async function carryOver(){
   toast(recs.length+' Aufgabe(n) übernommen ↪'); await load();
 }
 
+// ——— Tagesplanung Mo–Fr: Top 3 des Tages + Zeitfenster (90 Min) ———
+let TAGZF={}, TAGTT={};
+const TAG5=['Mo','Di','Mi','Do','Fr'];
+const DEF_TIMES=['07:00','08:30','10:00','11:30','13:00','14:30','16:00'];
+function endTime(hhmm){ const m=/^(\d{1,2}):(\d{2})$/.exec((hhmm||'').trim()); if(!m)return ''; let mins=(+m[1])*60+(+m[2])+90; mins=((mins%1440)+1440)%1440; const h=Math.floor(mins/60),mm=mins%60; return 'bis '+('0'+h).slice(-2)+':'+('0'+mm).slice(-2); }
+function matchAufgabe(text){ const tt=(text||'').trim().toLowerCase(); if(!tt)return null; const m=ROWS.find(r=>(r.bereich==='aufgabe'||r.bereich==='routine'||r.bereich==='sport')&&(r.aufgabe||'').trim().toLowerCase()===tt); return m?m.id:null; }
+async function loadTages(){
+  const [z,t]=await Promise.all([
+    sb.from('wochen_zeitfenster').select('*').eq('jahr',CUR.jahr).eq('kw',CUR.kw),
+    sb.from('tages_top3').select('*').eq('jahr',CUR.jahr).eq('kw',CUR.kw)
+  ]);
+  TAGZF={}; (z.error?[]:(z.data||[])).forEach(r=>{TAGZF[r.tag+'|'+r.slot]=r;});
+  TAGTT={}; (t.error?[]:(t.data||[])).forEach(r=>{TAGTT[r.tag+'|'+r.pos]=r;});
+  renderTagesplanung();
+}
+function renderTagesplanung(){
+  const grid=$('tagesGrid'); if(!grid)return;
+  const pool=[...new Set(ROWS.filter(r=>['aufgabe','routine','sport'].includes(r.bereich)&&(r.aufgabe||'').trim()).map(r=>r.aufgabe.trim()))];
+  if($('poolDL'))$('poolDL').innerHTML=pool.map(a=>'<option value="'+esc(a)+'">').join('');
+  const mo=mondayOf(CUR.jahr,CUR.kw);
+  grid.innerHTML=TAG5.map((tag,di)=>{
+    const d=new Date(mo); d.setUTCDate(mo.getUTCDate()+di);
+    const dstr=('0'+d.getUTCDate()).slice(-2)+'.'+('0'+(d.getUTCMonth()+1)).slice(-2)+'.';
+    const heute=(tag===TODAY_TAG&&isCurWeek());
+    let top3='';
+    for(let p=1;p<=3;p++){ const t=TAGTT[tag+'|'+p]||{};
+      top3+='<div class="tp-row'+(t.erledigt?' done':'')+'">'
+        +'<input type="checkbox" '+(t.erledigt?'checked':'')+' onchange="updTT(\''+tag+'\','+p+',\'erledigt\',this.checked)">'
+        +'<input class="txt" list="poolDL" value="'+esc(t.thema)+'" placeholder="Top '+p+'" onchange="updTT(\''+tag+'\','+p+',\'thema\',this.value)"></div>';
+    }
+    let zf='';
+    for(let s=0;s<7;s++){ const z=TAGZF[tag+'|'+s]||{}; const time=z.uhrzeit||DEF_TIMES[s]||'';
+      const eh=z.eingehalten; const ehIcon=eh===true?'✓':(eh===false?'✗':'○'); const ehCol=eh===true?'var(--ok)':(eh===false?'var(--danger)':'var(--muted)');
+      zf+='<div class="tp-row">'
+        +'<input class="zeit" value="'+esc(time)+'" onchange="updZF(\''+tag+'\','+s+',\'uhrzeit\',this.value)">'
+        +'<input class="txt" list="poolDL" value="'+esc(z.inhalt)+'" placeholder="Block '+(s+1)+'" onchange="updZF(\''+tag+'\','+s+',\'inhalt\',this.value)">'
+        +'<span class="zf-end">'+endTime(time)+'</span>'
+        +'<button class="eh" title="eingehalten? Klick wechselt (offen → ✓ → ✗)" style="color:'+ehCol+'" onclick="cycleEH(\''+tag+'\','+s+')">'+ehIcon+'</button></div>';
+    }
+    return '<div class="tag-col'+(heute?' heute':'')+'"><div class="tag-hd">'+tag+' · '+dstr+'</div>'
+      +'<div class="tp-lbl">Top 3 des Tages</div>'+top3
+      +'<div class="tp-lbl">Zeitfenster (90 Min)</div>'+zf+'</div>';
+  }).join('');
+}
+async function updZF(tag,slot,field,val){
+  const key=tag+'|'+slot; const cur=TAGZF[key]||{jahr:CUR.jahr,kw:CUR.kw,tag,slot,uhrzeit:DEF_TIMES[slot]||null,eingehalten:null};
+  cur[field]=val; if(field==='inhalt')cur.aufgabe_id=matchAufgabe(val); TAGZF[key]=cur;
+  const rec={jahr:CUR.jahr,kw:CUR.kw,tag,slot,uhrzeit:cur.uhrzeit||null,inhalt:cur.inhalt||null,eingehalten:(cur.eingehalten===undefined?null:cur.eingehalten),aufgabe_id:cur.aufgabe_id||null,updated_at:new Date().toISOString()};
+  const { error }=await sb.from('wochen_zeitfenster').upsert(rec,{onConflict:'jahr,kw,tag,slot'});
+  if(error){ toast('Speichern fehlgeschlagen: '+error.message); return; }
+  if(field==='uhrzeit'||field==='inhalt')renderTagesplanung();
+}
+function cycleEH(tag,slot){ const cur=TAGZF[tag+'|'+slot]||{}; const e=cur.eingehalten; const nx=(e===true?false:(e===false?null:true)); updZF(tag,slot,'eingehalten',nx); renderTagesplanung(); }
+async function updTT(tag,pos,field,val){
+  const key=tag+'|'+pos; const cur=TAGTT[key]||{jahr:CUR.jahr,kw:CUR.kw,tag,pos,erledigt:false};
+  cur[field]=val; if(field==='thema')cur.aufgabe_id=matchAufgabe(val); TAGTT[key]=cur;
+  const rec={jahr:CUR.jahr,kw:CUR.kw,tag,pos,thema:cur.thema||null,erledigt:!!cur.erledigt,aufgabe_id:cur.aufgabe_id||null,updated_at:new Date().toISOString()};
+  const { error }=await sb.from('tages_top3').upsert(rec,{onConflict:'jahr,kw,tag,pos'});
+  if(error){ toast('Speichern fehlgeschlagen: '+error.message); return; }
+  if(field==='erledigt')renderTagesplanung();
+}
 function pct(a,b){ return b? Math.round(a/b*100):0; }
 function dayList(r){ return (r.wochentag||'').split(/[,\s]+/).filter(Boolean); }
 function autogrow(el){ el.style.height='auto'; el.style.height=(el.scrollHeight)+'px'; }
