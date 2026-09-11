@@ -18,7 +18,10 @@ body{background:var(--bg);color:var(--text);font-family:'Inter',system-ui,-apple
 .btn.sec{background:var(--surf2);color:var(--text);border:1px solid var(--line)}
 .btn:hover{opacity:.93}
 .card{background:var(--surf);border:1px solid var(--line);border-radius:14px;padding:6px;margin-bottom:16px;overflow:hidden}
-.scroll{overflow:auto}
+.scroll{overflow:auto;max-height:calc(100vh - 250px)}
+.scroll.done{max-height:calc(100vh - 420px);min-height:140px}
+thead th{position:sticky;top:0;z-index:5;background:var(--surf);box-shadow:inset 0 -1px 0 var(--line)}
+.secttl{font-size:13.5px;font-weight:700;color:var(--muted);margin:24px 4px 8px;display:flex;align-items:center;gap:8px}
 table{width:100%;border-collapse:collapse;font-size:12.5px;min-width:1400px}
 th,td{padding:7px 8px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}
 th{position:sticky;top:0;background:var(--surf2);font-size:10px;text-transform:uppercase;color:var(--muted);font-weight:700;z-index:1}
@@ -42,6 +45,7 @@ td textarea.grow{overflow:hidden;min-height:28px}
 </div>
 <div class="wrap">
   <div class="kpis" id="kpis"></div>
+  <div class="secttl">📂 Offene Fälle (<span id="openCount">0</span>)</div>
   <div class="card"><div class="scroll">
     <table id="tbl"><thead><tr>
       <th style="width:42px">Nr.</th>
@@ -62,8 +66,30 @@ td textarea.grow{overflow:hidden;min-height:28px}
       <th style="width:36px"></th>
     </tr></thead><tbody id="body"></tbody></table>
   </div>
-  <div class="legend">Alle Felder direkt editierbar (Änderung wird automatisch gespeichert). Struktur & Einträge übernommen aus „ANWALT_GERICHT_INKASSO Fallübersicht".</div>
+  <div class="legend">Alle Felder direkt editierbar (Änderung wird automatisch gespeichert). Ein Fall mit Status „Erledigt" wandert automatisch ins Register unten.</div>
   </div>
+
+  <div class="secttl">✅ Register — abgeschlossene Fälle (<span id="doneCount">0</span>)</div>
+  <div class="card"><div class="scroll done">
+    <table><thead><tr>
+      <th style="width:42px">Nr.</th>
+      <th style="width:150px">Status</th>
+      <th style="width:180px">Dienstleister / Anwalt</th>
+      <th style="width:170px">Unser Az. (RA)</th>
+      <th style="width:140px">Az. Gegenseite</th>
+      <th style="width:140px">Az. Gericht</th>
+      <th style="width:210px">Schuldner Name</th>
+      <th style="width:100px">Kundennr.</th>
+      <th class="num" style="width:120px">Hauptforderung €</th>
+      <th class="num" style="width:110px">Streitwert €</th>
+      <th style="width:160px">Kategorie / Thema</th>
+      <th style="width:140px">Gericht</th>
+      <th style="width:300px">Letzter Status / Nächster Schritt</th>
+      <th style="width:150px">Asana</th>
+      <th style="width:160px">Unterlagenordner – digital</th>
+      <th style="width:36px"></th>
+    </tr></thead><tbody id="bodyDone"></tbody></table>
+  </div></div>
 </div>
 <div class="toast" id="toast"></div>
 <script>
@@ -106,15 +132,14 @@ function inp(r,f,ph){return '<textarea class="grow" rows="1" placeholder="'+(ph|
 function num(r,f){return '<input class="num" inputmode="decimal" value="'+(r[f]==null?'':r[f])+'" onchange="save(\''+r.id+'\',\''+f+'\',this.value)" style="text-align:right">';}
 function ta(r,f,ph){return '<textarea class="grow" rows="1" placeholder="'+(ph||'')+'" oninput="autoGrow(this)" onchange="save(\''+r.id+'\',\''+f+'\',this.value)">'+esc(r[f])+'</textarea>';}
 function autoGrow(el){el.style.height='auto';el.style.height=(el.scrollHeight+2)+'px';}
-function growAll(){document.querySelectorAll('#body textarea.grow').forEach(autoGrow);}
+function growAll(){document.querySelectorAll('#body textarea.grow,#bodyDone textarea.grow').forEach(autoGrow);}
 function linkCell(r,f,openLabel,ph){
   var v=r[f]||'';var href=esc(v);
   var open=v?('<a href="'+href+'" target="_blank" rel="noopener" class="pill" style="background:#eef4fb;color:#185fa5;text-decoration:none;white-space:nowrap;margin-bottom:3px;display:inline-block">'+openLabel+'</a>'):'';
   return open+'<input value="'+esc(v)+'" title="'+esc(v)+'" placeholder="'+(ph||'Link einfügen …')+'" onchange="save(\''+r.id+'\',\''+f+'\',this.value)">';
 }
-function render(){
-  const list=[...ROWS].sort((a,b)=>(a.lfd||0)-(b.lfd||0));
-  $('body').innerHTML=list.map(r=>'<tr>'
+function rowHtml(r){
+  return '<tr>'
     +'<td><span class="lfd">'+(r.lfd!=null?esc(r.lfd):'')+'</span></td>'
     +'<td>'+statusSel(r)+'<div style="margin-top:3px"><span class="pill" style="'+(SCOL[r.status]||'background:#e5e7eb;color:#374151')+'">'+esc(r.status||'—')+'</span></div></td>'
     +'<td>'+inp(r,'dienstleister','RA …')+'</td>'
@@ -131,7 +156,16 @@ function render(){
     +'<td>'+linkCell(r,'asana_url','↗ Asana','Asana-Aufgabe …')+'</td>'
     +'<td>'+linkCell(r,'ordner_url','📁 Ordner öffnen','Unterlagenordner (digital) – Link …')+'</td>'
     +'<td><button class="abtn" title="Löschen" onclick="del(\''+r.id+'\')">✕</button></td>'
-    +'</tr>').join('')||'<tr><td colspan="16" class="empty">Noch keine Fälle. Mit „+ Fall" anlegen.</td></tr>';
+    +'</tr>';
+}
+function render(){
+  const list=[...ROWS].sort((a,b)=>(a.lfd||0)-(b.lfd||0));
+  const done=list.filter(r=>(r.status||'')==='Erledigt');
+  const active=list.filter(r=>(r.status||'')!=='Erledigt');
+  $('body').innerHTML=active.map(rowHtml).join('')||'<tr><td colspan="16" class="empty">Keine offenen Fälle. Mit „+ Fall" anlegen.</td></tr>';
+  $('bodyDone').innerHTML=done.map(rowHtml).join('')||'<tr><td colspan="16" class="empty">Noch keine abgeschlossenen Fälle im Register.</td></tr>';
+  $('openCount').textContent=active.length;
+  $('doneCount').textContent=done.length;
   renderKpis();
   growAll();
 }
