@@ -18,11 +18,13 @@ export default function ContactForm({ initial, companies, profiles = [], onClose
     assigned_to: g(initial, 'assigned_to'),
     consent_status: g(initial, 'consent_status') || 'ausstehend',
     consent_date: g(initial, 'consent_date'), data_source: g(initial, 'data_source'),
-    marketing_opt_in: initial ? !!initial.marketing_opt_in : false
+    marketing_opt_in: initial ? !!initial.marketing_opt_in : false,
+    visitenkarte_url: g(initial, 'visitenkarte_url')
   })
   const [roles, setRoles] = useState((initial && initial.roles) || [])
   const [errors, setErrors] = useState({})
   const [busy, setBusy] = useState(false)
+  const [upBusy, setUpBusy] = useState(false)
   const [err, setErr] = useState(null)
   const up = (k, v) => setF((s) => ({ ...s, [k]: v }))
   const toggleRole = (r) => setRoles((s) => (s.includes(r) ? s.filter((x) => x !== r) : [...s, r]))
@@ -32,6 +34,21 @@ export default function ContactForm({ initial, companies, profiles = [], onClose
     window.addEventListener('keydown', h)
     return () => window.removeEventListener('keydown', h)
   }, [onClose])
+
+  async function uploadCard(e) {
+    const file = e.target.files && e.target.files[0]
+    if (!file) return
+    if (!supabase) { setErr('Supabase nicht verbunden — bitte einloggen.'); return }
+    setUpBusy(true); setErr(null)
+    const ext = (file.name.split('.').pop() || 'jpg').toLowerCase()
+    const path = 'vk_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8) + '.' + ext
+    const { error } = await supabase.storage.from('visitenkarten')
+      .upload(path, file, { upsert: true, contentType: file.type })
+    if (error) { setErr('Upload fehlgeschlagen: ' + error.message); setUpBusy(false); return }
+    const { data } = supabase.storage.from('visitenkarten').getPublicUrl(path)
+    up('visitenkarte_url', data.publicUrl)
+    setUpBusy(false)
+  }
 
   function validate() {
     const e = {}
@@ -147,6 +164,25 @@ export default function ContactForm({ initial, companies, profiles = [], onClose
             <div className="field"><label>Region</label>
               <input value={f.region} onChange={(e) => up('region', e.target.value)} />
             </div>
+          </div>
+
+          <div className="section">
+            <div className="section-title"><i className="ti ti-id" /> Visitenkarte</div>
+            {f.visitenkarte_url && (
+              <div style={{ marginBottom: 10 }}>
+                <a href={f.visitenkarte_url} target="_blank" rel="noopener">
+                  <img src={f.visitenkarte_url} alt="Visitenkarte" style={{ maxWidth: '100%', maxHeight: 240, borderRadius: 8, border: '1px solid var(--line)' }} />
+                </a>
+              </div>
+            )}
+            <div className="field">
+              <label>Bild der Visitenkarte {f.visitenkarte_url ? '(ersetzen)' : '(hochladen / abfotografieren)'}</label>
+              <input type="file" accept="image/*" capture="environment" onChange={uploadCard} disabled={upBusy} />
+              {upBusy && <div className="sub" style={{ marginTop: 4 }}>Lädt hoch…</div>}
+            </div>
+            {f.visitenkarte_url && (
+              <button type="button" className="btn-ghost" style={{ marginTop: 4 }} onClick={() => up('visitenkarte_url', '')}>Bild entfernen</button>
+            )}
           </div>
 
           <div className="section">
