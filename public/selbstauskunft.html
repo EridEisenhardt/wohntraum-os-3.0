@@ -128,12 +128,8 @@ table.num td:nth-child(2),table.num th:nth-child(2){text-align:right}
   <div class="tablewrap"><table class="mini" id="einktbl"></table></div>
 
   <h2><span class="dot" style="background:var(--warn)"></span>3 · Ausgaben</h2>
-  <div class="note">Monatliche Ausgaben je Position (3.1–3.8); 3.9 wird automatisch summiert. Werte editierbar, lokal im Browser gespeichert.</div>
+  <div class="note">Ausgaben-Positionen aus dem Budgetplan (Eric Privat), die dort auf <b>„Weitergabe Selbstauskunft: Ja"</b> gesetzt sind. Änderungen im Budgetplan werden hier automatisch übernommen; die Gesamtsumme wird automatisch gebildet.</div>
   <div class="tablewrap"><table class="mini" id="austbl"></table></div>
-
-  <h2><span class="dot" style="background:var(--dim)"></span>3b · Übernahme aus Budgetplan</h2>
-  <div class="note">Positionen aus dem Budgetplan (Eric Privat), die dort auf <b>„Weitergabe Selbstauskunft: Ja"</b> gesetzt sind. Änderungen im Budgetplan werden hier automatisch übernommen.</div>
-  <div class="tablewrap"><table class="mini" id="budgetSaTbl"></table></div>
 
   <h2><span class="dot" style="background:var(--accent)"></span>4 · Vermögen</h2>
   <div class="note">Vermögenswerte (Bestände in €); „Summe Vermögen" wird automatisch addiert. Werte editierbar, lokal im Browser gespeichert.</div>
@@ -487,20 +483,25 @@ const EXP=[
  ['pkv','3.8','Private Krankenversicherung'],
 ];
 function expLoad(){ try{ return JSON.parse(localStorage.getItem(EXPSTORE))||{}; }catch(e){ return {}; } }
-function renderExp(){
+// 3 · Ausgaben — Struktur von Abschnitt 3, Datenquelle Budgetplan (vormals 3b)
+async function renderExp(){
   const el=document.getElementById('austbl'); if(!el) return;
-  const d=expLoad(); const q=s=>(s==null?'':String(s)).replace(/"/g,'&quot;');
+  const head='<thead><tr><th style="width:42px">Nr.</th><th>Ausgabenart</th><th style="text-align:right">Betrag / Monat</th></tr></thead>';
+  const [rp,rsum]=await Promise.all([
+    sb.from('budget_eric').select('bezeichnung,betrag,weitergabe,weitergabe_an,art,pos').eq('weitergabe','Ja').eq('art','ausgabe').order('pos',{ascending:true}),
+    sb.from('budget_sa_summary').select('gruppe,art,betrag,aktiv').eq('aktiv',true)
+  ]);
+  const base=(rp.error||!rp.data)?[]:rp.data;
+  const sumRows=((rsum.error||!rsum.data)?[]:rsum.data).filter(s=>(s.art||'ausgabe')==='ausgabe')
+    .map(s=>({bezeichnung:(s.gruppe||'')+' (Zusammenfassung)',betrag:s.betrag}));
+  const data=base.concat(sumRows);
+  if(!data.length){ el.innerHTML=head+'<tbody><tr><td colspan="3" style="text-align:center;color:var(--muted);white-space:normal">Keine Ausgaben-Positionen mit „Weitergabe Selbstauskunft: Ja" im Budgetplan.</td></tr></tbody>'; return; }
   let sum=0;
-  const rows=EXP.map(f=>{
-    const val=(f[0] in d)? d[f[0]] : '';
-    sum+=incParse(val);
-    return `<tr><td style="width:42px;color:var(--muted)">${f[1]}</td><td>${f[2]}</td>
-      <td style="text-align:right"><input style="${FINL};text-align:right;max-width:160px" inputmode="decimal" value="${q(val)}" placeholder="€ / Monat" onchange="expSave('${f[0]}',this.value)"></td></tr>`;
-  }).join('');
-  el.innerHTML='<thead><tr><th style="width:42px">Nr.</th><th>Ausgabenart</th><th style="text-align:right">Betrag / Monat</th></tr></thead><tbody>'
-    + rows
-    + `<tr class="totrow"><td>3.9</td><td>Gesamte Ausgaben</td><td style="text-align:right">${incEUR(sum)}</td></tr>`
-    + '</tbody>';
+  const rows=data.map((r,idx)=>{const b=Number(r.betrag)||0;sum+=b;
+    return `<tr><td style="width:42px;color:var(--muted)">3.${idx+1}</td><td>${escH(r.bezeichnung)}</td><td style="text-align:right">${eur(b)}</td></tr>`;}).join('');
+  el.innerHTML=head+'<tbody>'+rows
+    +`<tr class="totrow"><td>3.${data.length+1}</td><td>Gesamte Ausgaben</td><td style="text-align:right">${eur(sum)}</td></tr>`
+    +'</tbody>';
 }
 function expSave(key,val){ const d=expLoad(); d[key]=val; localStorage.setItem(EXPSTORE,JSON.stringify(d)); renderExp(); }
 
@@ -640,7 +641,7 @@ async function loadBudgetSA(){
   if(aus.length) body+=rows(aus)+`<tr class="totrow"><td colspan="3">Summe Ausgaben (Weitergabe)</td><td>${eur(sum(aus))}</td><td>${eur(sum(aus)*12)}</td></tr>`;
   el.innerHTML=head+'<tbody>'+body+'</tbody>';
 }
-applyMarktwerte(); bewkInit(); weitere(); form(); loadBuergSA(); loadDarlehenSA(); loadFirm(); loadBau(); loadBudgetSA(); renderInc(); renderExp(); renderVerm(); renderGeno(); renderDepot(); sigInit();
+applyMarktwerte(); bewkInit(); weitere(); form(); loadBuergSA(); loadDarlehenSA(); loadFirm(); loadBau(); renderInc(); renderExp(); renderVerm(); renderGeno(); renderDepot(); sigInit();
 async function applyMarktwerte(){
   try{
     const [fin,mv,geb]=await Promise.all([
