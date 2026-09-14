@@ -73,7 +73,7 @@ function listeHTML(list){
 const TABS=[['','Alle'],['aktiv','Aktiv'],['done','Beendet'],['storno','Storniert']];
 function sortKey(r){const n=parseInt(String(r.dnr_intern||'').replace(/\D/g,''),10);return isNaN(n)?9e9:n;}
 async function load(){
-  const{data,error}=await sb.from('loans').select('id,dnr_intern,dnr_bank,bez,zweck,geber,nehmer,betrag,aktuell,zins,aus,laufzeit,zinsbind,rest_zinsbind,obj,status');
+  const{data,error}=await sb.from('loans').select('id,dnr_intern,dnr_bank,bez,zweck,geber,nehmer,betrag,aktuell,zins,kapitaldienst,aus,laufzeit,zinsbind,rest_zinsbind,obj,status');
   const{data:dk}=await sb.from('loan_dokumente').select('id,loan_id,vertrag_html,plan_html,vertrag_pdf,plan_pdf,created_at').order('created_at',{ascending:false});
   DOK={};(dk||[]).forEach(d=>{ if(!DOK[d.loan_id])DOK[d.loan_id]=d; });
   if(error){$('reg').innerHTML='<div class="empty">Fehler: '+esc(error.message)+'</div>';return;}
@@ -121,10 +121,33 @@ function render(){
      <td class="eur"><input style="width:62px;text-align:right" value="${r.zins!=null?String(r.zins).replace('.',','):''}" onchange="updN('${r.id}','zins',this.value)"></td>
      <td><input type="date" value="${r.zinsbind||''}" onchange="upd('${r.id}','zinsbind',this.value)"></td>
      <td><input type="date" value="${r.laufzeit||''}" onchange="upd('${r.id}','laufzeit',this.value)"></td>
-     <td class="eur"><input style="width:110px;text-align:right" placeholder="€" value="${r.rest_zinsbind!=null?String(r.rest_zinsbind).replace('.',','):''}" onchange="updN('${r.id}','rest_zinsbind',this.value)"></td>
+     <td class="eur">${restZbCell(r)}</td>
      <td>${anlageCell(r)}</td>
      <td><button class="lnk" style="color:var(--red,#c0392b);background:none;border:none;cursor:pointer;font-size:14px" title="Löschen" onclick="delLoan('${r.id}')">✕</button></td>
    </tr>`).join('')+'</tbody></table>';
+}
+// Restschuld zum Ende der Zinsbindung: manueller Wert hat Vorrang, sonst annuitätische Projektion
+// ab heutigem Saldo mit fixem Kapitaldienst (Zins + Tilgung), bis zum Zinsbindungsdatum.
+function restZbCalc(r){
+  const B0=(r.aktuell!=null&&r.aktuell>0)?Number(r.aktuell):Number(r.betrag);
+  if(!B0)return null;
+  if(!r.zinsbind)return null;                       // ohne Datum nicht berechenbar
+  const p=Number(r.kapitaldienst);
+  if(!p)return null;                                // ohne Kapitaldienst nicht berechenbar
+  const msMonth=365.25/12*86400000;
+  const n=(new Date(r.zinsbind)-new Date())/msMonth;
+  if(n<=0)return B0;                                // Zinsbindung erreicht → aktueller Stand
+  const i=(Number(r.zins)||0)/100/12;
+  let Bn; if(i===0){Bn=B0-p*n;} else {const g=Math.pow(1+i,n);Bn=B0*g-p*(g-1)/i;}
+  return Bn>0?Bn:0;
+}
+function restZbCell(r){
+  const manual=r.rest_zinsbind!=null;
+  const calc=manual?null:restZbCalc(r);
+  const val=manual?String(r.rest_zinsbind).replace('.',','):'';
+  const ph=calc!=null?Math.round(calc).toLocaleString('de-DE'):'€';
+  const hint=(!manual&&calc!=null)?'<div style="font-size:10px;color:var(--muted,#6b7280);margin-top:2px">'+eur(calc)+' · berechnet</div>':'';
+  return '<input style="width:110px;text-align:right" placeholder="'+ph+'" value="'+val+'" onchange="updN(\''+r.id+'\',\'rest_zinsbind\',this.value)">'+hint;
 }
 async function upd(id,field,val){var v=(val===''?null:val);var r=ROWS.find(x=>x.id===id);if(r)r[field]=v;const res=await sb.from('loans').update({[field]:v}).eq('id',id);if(res.error){toast('Fehler: '+res.error.message);return;}if(field==='dnr_intern')render();}
 async function updN(id,field,val){var raw=(val||'').trim().replace(/\./g,'').replace(',','.');var num=raw===''?null:Number(raw);if(num!=null&&isNaN(num)){toast('Ungültige Zahl');return;}var r=ROWS.find(x=>x.id===id);if(r)r[field]=num;const res=await sb.from('loans').update({[field]:num}).eq('id',id);if(res.error){toast('Fehler: '+res.error.message);return;}render();}
