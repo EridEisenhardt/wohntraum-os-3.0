@@ -129,6 +129,15 @@ tr:hover td{background:rgba(0,0,0,.022)}
 .exseg{font:inherit;font-size:12px;font-weight:600;padding:5px 12px;border:1px solid var(--border);border-radius:7px;background:var(--surf);color:var(--dim);cursor:pointer}
 .exseg.on{background:var(--accent);color:#fff;border-color:var(--accent)}
 .extot{font-size:12px;color:var(--muted);margin-top:10px}
+.exsplit{display:flex;gap:0;flex-wrap:wrap}
+.exleft{flex:1;min-width:300px}
+.exright{width:360px;max-width:100%;border-left:1px solid var(--border);background:var(--surf2)}
+@media(max-width:820px){.exright{width:100%;border-left:none;border-top:1px solid var(--border)}}
+.stress-row{display:flex;justify-content:space-between;align-items:center;font-size:12.5px;padding:4px 0}
+.stress-row .l{color:var(--dim)}
+.stress-row .v{font-family:'Inter',system-ui,-apple-system,'Segoe UI',sans-serif;font-variant-numeric:tabular-nums}
+.stress-in{width:58px;text-align:right;font-size:12px;padding:3px 6px;background:var(--surf);border:1px solid var(--border);border-radius:6px;color:var(--text)}
+.stress-res{display:flex;justify-content:space-between;align-items:center;margin-top:8px;padding-top:8px;border-top:1px solid var(--border);font-weight:700;font-size:14px}
 .panel-hdr{padding:13px 18px;border-bottom:1px solid var(--border);font-size:13px;font-weight:600;display:flex;align-items:center;gap:8px}
 /* Summary blocks */
 .sum-block{padding:14px 18px;border-bottom:1px solid var(--bord2)}
@@ -218,7 +227,10 @@ textarea{resize:vertical;min-height:60px}
   <!-- AUSLAUFENDE DARLEHEN -->
   <div class="panel" style="margin-bottom:14px">
     <div class="panel-hdr">📆 Auslaufende Darlehen — Übersicht je Jahr <span style="font-size:10px;font-weight:400;color:var(--muted);margin-left:4px">Anzahl &amp; Volumen (aktuelle Restschuld)</span></div>
-    <div id="expiryDash" style="padding:14px 16px"></div>
+    <div class="exsplit">
+      <div class="exleft" id="expiryDash" style="padding:14px 16px"></div>
+      <div class="exright" id="stressBox" style="padding:14px 16px"></div>
+    </div>
   </div>
   <!-- TOOLBAR -->
   <div class="toolbar">
@@ -965,9 +977,44 @@ function renderExpiry(){
   const totC=act.length,totV=act.reduce((s,d)=>s+(Number(d.aktuell!=null?d.aktuell:d.betrag)||0),0);
   el.innerHTML=seg+'<div class="exgrid">'+cards+'</div><div class="extot">Aktive Darlehen gesamt: <b>'+totC+'</b> · Volumen (Restschuld): <b>'+fmtE(totV)+'</b></div>';
 }
+// ══════ STRESSTEST 8er-Annuität ══════
+let MIETE_PA=0, STRESS_RATE=8, STRESS_BK=15;
+async function loadMiete(){
+  const { data, error } = await sb.from('mietvertraege').select('kaltmiete,status');
+  if(error||!data){ renderStress(); return; }
+  const akt=data.filter(m=>!/gekünd|beend|auszug|leerstand/i.test(m.status||''));
+  MIETE_PA=akt.reduce((s,m)=>s+(Number(m.kaltmiete)||0),0)*12;
+  renderStress();
+}
+function setStress(which,val){
+  const v=parseFloat(String(val).replace(',','.'));
+  if(which==='rate') STRESS_RATE=(isNaN(v)?8:v);
+  if(which==='bk')   STRESS_BK=(isNaN(v)?15:v);
+  renderStress();
+}
+function renderStress(){
+  const el=document.getElementById('stressBox'); if(!el) return;
+  const isDoneS=s=>/beendet|abgeschl|zurückgef/i.test(s||'');
+  const debt=DB.filter(d=>!isDoneS(d.status)).reduce((s,d)=>s+(Number(d.aktuell!=null?d.aktuell:d.betrag)||0),0);
+  const bk=MIETE_PA*(STRESS_BK/100);
+  const netto=MIETE_PA-bk;
+  const rate=debt*(STRESS_RATE/100);
+  const erg=netto-rate;
+  const col=erg>=0?'var(--ok)':'var(--danger)';
+  el.innerHTML=`
+    <div style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.03em;color:var(--dim);margin-bottom:8px">⚠️ Stresstest — Annuität nach Zinsbindung</div>
+    <div style="font-size:11px;color:var(--muted);margin-bottom:10px">Szenario: nach Auslauf der Zinsbindung refinanzieren alle Darlehen zu einer <b>${STRESS_RATE}%-Annuität</b>. Reichen die Mieten (abzügl. Betriebskosten) zur Deckung?</div>
+    <div class="stress-row"><span class="l">Mieteinnahmen p.a. (kalt)</span><span class="v">${fmtE(MIETE_PA)}</span></div>
+    <div class="stress-row"><span class="l">− Betriebskosten <input class="stress-in" value="${STRESS_BK}" onchange="setStress('bk',this.value)">%</span><span class="v">− ${fmtE(bk)}</span></div>
+    <div class="stress-row" style="border-top:1px dashed var(--border);padding-top:6px"><span class="l">= Nettomiete p.a.</span><span class="v">${fmtE(netto)}</span></div>
+    <div class="stress-row"><span class="l">− Bankrate <input class="stress-in" value="${STRESS_RATE}" onchange="setStress('rate',this.value)">% auf ${fmtE(debt)}</span><span class="v">− ${fmtE(rate)}</span></div>
+    <div class="stress-res"><span>Ergebnis p.a.</span><span style="color:${col}">${erg>=0?'+ ':'− '}${fmtE(Math.abs(erg))}</span></div>
+    <div style="font-size:10.5px;color:var(--muted);margin-top:6px;text-align:right">${erg>=0?'✓ Deckung gegeben':'✗ Unterdeckung — Refinanzierungsrisiko'} · ${fmtE(erg/12)} /Mo</div>`;
+}
 function render(){
   renderKPI();
   renderExpiry();
+  renderStress();
   renderTabs();
   document.getElementById('tableArea').innerHTML = renderTable();
   renderSum();
@@ -976,7 +1023,7 @@ function render(){
 (async()=>{
   const { data:{ session } } = await sb.auth.getSession();
   if(!session){ renderKPI(); renderTabs(); document.getElementById('tableArea').innerHTML='<div class="twrap"><div class="empty"><div class="empty-ico">\uD83D\uDD12</div>Bitte zuerst im OS einloggen.</div></div>'; return; }
-  loadDB(); loadBuerg();
+  loadDB(); loadBuerg(); loadMiete();
 })();
 </script>
 </body>
