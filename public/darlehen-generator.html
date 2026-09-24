@@ -116,9 +116,10 @@ tr.sum td{border-top:2px solid var(--text);font-weight:700;background:#fafbfd}
       </div>
       <div class="fg">
         <label>Darlehenstyp *</label>
-        <select id="typ" onchange="calc()">
+        <select id="typ" onchange="typChg()">
           <option value="intern">🔄 Internes Darlehen (zwischen Gesellschaften)</option>
           <option value="coinvest">🤝 Co-Investor-Darlehen</option>
+          <option value="bank">🏦 Bankdarlehen (Annuitätendarlehen)</option>
         </select>
       </div>
       <div style="border:1px dashed var(--intern,#2383e2);border-radius:10px;padding:12px 14px;margin-bottom:12px;background:#f5f9ff">
@@ -436,9 +437,26 @@ function calc(){
   renderKpis(p,MODEL);
   renderPlan(p,MODEL);
   renderContract();
-  $('internHint').textContent = p.typ==='intern'
-    ? 'Hinweis: Bei konzerninternen Darlehen Fremdvergleichsgrundsatz (§ 1 AStG) beachten – marktüblicher Zins.'
-    : 'Hinweis: Co-Investor-Darlehen – ggf. Nachrangabrede und qualifizierter Rangrücktritt prüfen.';
+  $('internHint').textContent = p.typ==='bank'
+    ? 'Hinweis: Bankdarlehen als Annuitätendarlehen – marktübliche Konditionen (Zinsbindung, anfängliche Tilgung, Besicherung durch Grundschuld). Bitte an das Bankangebot anpassen.'
+    : (p.typ==='intern'
+      ? 'Hinweis: Bei konzerninternen Darlehen Fremdvergleichsgrundsatz (§ 1 AStG) beachten – marktüblicher Zins.'
+      : 'Hinweis: Co-Investor-Darlehen – ggf. Nachrangabrede und qualifizierter Rangrücktritt prüfen.');
+}
+// Beim Wechsel auf Bankdarlehen die banküblichen Konditionen vorbelegen (Annuität)
+function typChg(){
+  const t=$('typ').value;
+  if(t==='bank'){
+    const setIf=(id,val)=>{const el=$(id);if(el)el.value=val;};
+    setIf('art','annuitaet');
+    setIf('zins','4.00');        // marktüblicher Sollzins p.a.
+    setIf('tilg','2.00');        // anfängliche Tilgung p.a.
+    setIf('methode','30E/360');  // banküblich (deutsche kaufmännische Methode)
+    setIf('zahlweise','12');     // monatliche Rate
+    setIf('laufzeit','10');      // Zinsbindung
+    const lz=$('lzEinheit'); if(lz) lz.value='j';
+  }
+  calc();
 }
 
 function lzText(p){
@@ -476,15 +494,15 @@ function renderContract(){
   const p=params(), m=MODEL||computeSchedule(p);
   const perWort={12:'monatlich',4:'vierteljährlich',1:'jährlich'}[p.perJahr];
   const endIso = p.aus ? addMonths(p.aus, p.laufzeitMon||0) : '';
-  const typLbl = p.typ==='intern' ? 'Gesellschafter-/Konzerndarlehen' : 'Co-Investor-Darlehen';
-  const pill = p.typ==='intern' ? '<span class="pill p-intern">Intern</span>' : '<span class="pill p-co">Co-Investor</span>';
+  const typLbl = p.typ==='intern' ? 'Gesellschafter-/Konzerndarlehen' : (p.typ==='bank' ? 'Bankdarlehen (Annuitätendarlehen)' : 'Co-Investor-Darlehen');
+  const pill = p.typ==='intern' ? '<span class="pill p-intern">Intern</span>' : (p.typ==='bank' ? '<span class="pill" style="background:rgba(24,95,165,.1);color:var(--accent)">Bank</span>' : '<span class="pill p-co">Co-Investor</span>');
   let rueck;
   if(p.art==='annuitaet') rueck=`Das Darlehen wird in ${perWort}en, gleichbleibenden Raten von ${eur2(m.ratePeriod)} (Annuität, enthält Zins und Tilgung) zurückgeführt. Die anfängliche Tilgung beträgt ${numD(p.tilg)} % p.a.`;
   else if(p.art==='tilgung') rueck=`Das Darlehen wird in gleichbleibenden Tilgungsraten zuzüglich der jeweils fälligen Zinsen ${perWort} zurückgeführt (fallende Gesamtrate, anfänglich ${eur2(m.ratePeriod)}).`;
   else if(p.art==='zinsfrei') rueck=`Während der Laufzeit sind weder Zins- noch Tilgungsleistungen zu erbringen. Die Rückzahlung des gesamten Darlehensbetrags in Höhe von ${eur(p.betrag)} erfolgt in einer Summe spätestens am Ende der Laufzeit. Vorzeitige Teil- oder Vollrückzahlungen sind jederzeit möglich.`;
   else rueck=`Während der Laufzeit sind ausschließlich die Zinsen ${perWort} zu zahlen (${eur2(m.ratePeriod)}). Die Rückzahlung des gesamten Darlehensbetrags erfolgt in einer Summe am Ende der Laufzeit.`;
   const dnrTxt = p.dnr ? `<span class="pill" style="background:rgba(124,58,237,.1);color:var(--intern)">Interne Darlehensnr. ${p.dnr}</span>` : '';
-  const sicher = p.sicher ? p.sicher : (p.typ==='coinvest' ? 'Nachrangdarlehen mit qualifiziertem Rangrücktritt; im Übrigen keine gesonderten Sicherheiten.' : 'Keine gesonderten Sicherheiten vereinbart.');
+  const sicher = p.sicher ? p.sicher : (p.typ==='coinvest' ? 'Nachrangdarlehen mit qualifiziertem Rangrücktritt; im Übrigen keine gesonderten Sicherheiten.' : (p.typ==='bank' ? 'Besicherung durch Grundschuld auf dem finanzierten Objekt.' : 'Keine gesonderten Sicherheiten vereinbart.'));
   const zuLine = kontoLine(kontoDetail($('zuKonto')?$('zuKonto').value:''));
   const vonLine = kontoLine(kontoDetail($('vonKonto')?$('vonKonto').value:''));
   const vzParts=[]; if(p.dnr)vzParts.push('Darlehen '+p.dnr); if(p.bez)vzParts.push(p.bez); if(p.zweck)vzParts.push(p.zweck);
