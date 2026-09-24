@@ -190,7 +190,8 @@ tr.sum td{border-top:2px solid var(--text);font-weight:700;background:#fafbfd}
         </select>
       </div>
       <div class="frow">
-        <div class="fg" id="tilgWrap"><label>Anfängliche Tilgung % p.a.</label><input id="tilg" type="number" min="0" step="0.01" value="2.00" oninput="calc()"></div>
+        <div class="fg" id="tilgWrap"><label>Anfängliche Tilgung % p.a.</label><input id="tilg" type="number" min="0" step="0.01" value="2.00" oninput="rateSrc('tilg')"></div>
+        <div class="fg" id="rateWrap" style="display:none"><label>Feste Rate / Monat (€) — optional</label><input id="rateMonat" type="number" min="0" step="1" placeholder="leer = aus Tilgung %" oninput="rateSrc('rate')"><div style="font-size:11px;color:var(--muted,#6b7280);margin-top:3px">Wird ein Betrag eingetragen, ergibt sich die anfängliche Tilgung daraus.</div></div>
         <div class="fg" id="lzWrap"><label id="lzLbl">Laufzeit</label>
           <div style="display:flex;gap:6px">
             <input id="laufzeit" type="number" min="1" step="1" value="10" oninput="calc()" style="flex:1;min-width:80px;color:var(--text);background:#fff;font-size:14px;font-weight:600">
@@ -338,12 +339,26 @@ async function onExtFile(input){
   if(typeof calc==='function') calc();
   $('extStatus').innerHTML= filled.length ? ('✓ Vorbefüllt: '+filled.join(', ')+' — <b>bitte prüfen &amp; korrigieren</b>. Datei wird beim Speichern angehängt.') : 'Kein Feld sicher erkannt (evtl. Scan). Datei wird angehängt — bitte manuell ausfüllen.';
 }
+// Wenn eine feste Monatsrate eingetragen ist, ergibt sich die anfängliche Tilgung daraus; sonst aus dem Tilgungsfeld.
+function computeTilg(){
+  const rm=parseFloat($('rateMonat')?$('rateMonat').value:'')||0;
+  const betrag=parseFloat($('betrag').value)||0;
+  const zins=parseFloat($('zins').value)||0;
+  if(rm>0 && betrag>0){ return (rm*12/betrag*100)-zins; }
+  return parseFloat($('tilg').value)||0;
+}
+// beim Tippen jeweils das andere Feld leeren, damit klar ist welche Quelle gilt
+function rateSrc(src){
+  if(src==='rate'){ const t=$('tilg'); if(t && ($('rateMonat').value||'').trim()!=='') t.value=''; }
+  else { const r=$('rateMonat'); if(r && ($('tilg').value||'').trim()!=='') r.value=''; }
+  calc();
+}
 function params(){
   return {
     typ:$('typ').value, bez:$('bez').value.trim(), geber:$('geber').value.trim(), nehmer:$('nehmer').value.trim(),
     dnrBank:($('dnrBank')?$('dnrBank').value.trim():''),
     betrag:parseFloat($('betrag').value)||0, zins:parseFloat($('zins').value)||0,
-    art:$('art').value, tilg:parseFloat($('tilg').value)||0,
+    art:$('art').value, tilg:computeTilg(),
     laufzeitMon: ($('typ').value==='bank')
       ? monthsBetween(($('aus')?$('aus').value:''), ($('zbDate')?$('zbDate').value:''))
       : (($('lzEinheit').value==='m') ? (parseInt($('laufzeit').value)||0) : (parseInt($('laufzeit').value)||0)*12),
@@ -447,6 +462,7 @@ function computeSchedule(p){
 function calc(){
   const p=params();
   $('tilgWrap').style.display = p.art==='annuitaet' ? 'flex' : 'none';
+  if($('rateWrap')) $('rateWrap').style.display = p.art==='annuitaet' ? 'flex' : 'none';
   const tilgLabel = $('tilgWrap').querySelector('label');
   const isBank = p.typ==='bank';
   if($('bankDates')) $('bankDates').style.display = isBank ? 'flex' : 'none';
