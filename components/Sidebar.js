@@ -182,11 +182,11 @@ export const gbOf = (n) => (n.type === 'group' ? GB_MAP[n.key] : GB_MAP[n.href])
 
 export default function Sidebar({ user, demo, onLogout, role, perms }) {
   const path = usePathname()
-  const [selectedGb, setSelectedGb] = useState(null)
-  const [selectedCat, setSelectedCat] = useState(null)
   const [q, setQ] = useState('')
   const [favs, setFavs] = useState([])
   const [dragFav, setDragFav] = useState(null)
+  const [favOpen, setFavOpen] = useState(true)
+  const [openCats, setOpenCats] = useState(() => new Set())
   const isAdmin = role === 'admin'
 
   const has = (key) => !!(perms && Object.prototype.hasOwnProperty.call(perms, key))
@@ -222,10 +222,11 @@ export default function Sidebar({ user, demo, onLogout, role, perms }) {
   }
 
   useEffect(() => {
-    try { const g = localStorage.getItem('sidebar_gb'); if (g) setSelectedGb(g) } catch (e) {}
     try { const f = localStorage.getItem('sidebar_favs'); if (f) setFavs(JSON.parse(f)) } catch (e) {}
+    try { const fo = localStorage.getItem('sidebar_fav_open'); if (fo != null) setFavOpen(fo !== '0') } catch (e) {}
+    try { const oc = localStorage.getItem('sidebar_open_cats'); if (oc) setOpenCats(new Set(JSON.parse(oc))) } catch (e) {}
   }, [])
-  useEffect(() => { setSelectedCat(null); setQ('') }, [path])
+  useEffect(() => { setQ('') }, [path])
   // Favoriten-Änderungen an die linke Favoritenleiste (FavRail) melden
   useEffect(() => { try { window.dispatchEvent(new CustomEvent('wt-favs', { detail: favs })) } catch (e) {} }, [favs])
   // Favoriten-Änderungen von anderen Stellen (FavToggle/andere Tabs) übernehmen
@@ -261,20 +262,13 @@ export default function Sidebar({ user, demo, onLogout, role, perms }) {
   }
 
   const isActive = (item) => item.exact ? path === item.href : (path === item.href || path.startsWith(item.href + '/'))
-  const chooseGb = (g) => {
-    setSelectedGb((prev) => {
-      const next = prev === g ? null : g
-      try { localStorage.setItem('sidebar_gb', next || '') } catch (e) {}
-      return next
-    })
-    setSelectedCat(null)
-  }
-  const selectGb = (g) => {
-    setSelectedGb(g)
-    try { localStorage.setItem('sidebar_gb', g || '') } catch (e) {}
-    setSelectedCat(null)
-  }
-  const toggleCat = (key) => setSelectedCat((prev) => (prev === key ? null : key))
+  const toggleFavOpen = () => setFavOpen((v) => { const n = !v; try { localStorage.setItem('sidebar_fav_open', n ? '1' : '0') } catch (e) {} return n })
+  const toggleCat = (key) => setOpenCats((prev) => {
+    const next = new Set(prev)
+    if (next.has(key)) next.delete(key); else next.add(key)
+    try { localStorage.setItem('sidebar_open_cats', JSON.stringify([...next])) } catch (e) {}
+    return next
+  })
 
   const email = user && user.email ? user.email : null
   const initials = email ? email.slice(0, 2).toUpperCase() : 'EE'
@@ -287,18 +281,9 @@ export default function Sidebar({ user, demo, onLogout, role, perms }) {
   const ql = q.trim().toLowerCase()
   const results = ql ? flatSearch.filter((x) => (x.label + ' ' + x.group).toLowerCase().includes(ql)) : []
 
-  // Aktive Ableitung aus dem aktuellen Pfad
+  // Aktive Gruppe/Link aus dem aktuellen Pfad
   const activeGroupPath = NAV.find((n) => n.type === 'group' && canSee(n) && n.items.some(isActive))
-  const activeLinkPath = NAV.find((n) => n.type === 'link' && isActive(n))
-  const bereichGb = path && path.startsWith('/bereich/') ? path.split('/')[2] : null
-  const derivedGb = bereichGb || (activeGroupPath ? gbOf(activeGroupPath) : (activeLinkPath ? gbOf(activeLinkPath) : null))
-  const activeGb = selectedGb || derivedGb || null
-
-  const catItems = NAV.filter((n) => canSee(n) && gbOf(n) === activeGb)
-  const activeCat = selectedCat
-    ? catItems.find((n) => n.type === 'group' && n.key === selectedCat)
-    : (activeGroupPath && gbOf(activeGroupPath) === activeGb ? activeGroupPath : null)
-  const subItems = activeCat && activeCat.type === 'group' ? activeCat.items.filter((it) => canSeeItem(activeCat, it)) : []
+  const activeGroupKey = activeGroupPath ? activeGroupPath.key : null
 
   // Favoriten
   const allLeaf = []
@@ -307,136 +292,113 @@ export default function Sidebar({ user, demo, onLogout, role, perms }) {
     else if (n.type === 'group' && canSee(n)) { n.items.forEach((it) => { if (canSeeItem(n, it)) allLeaf.push({ href: it.href, label: it.label, icon: it.icon }) }) }
   })
   const favItems = favs.map((h) => allLeaf.find((x) => x.href === h)).filter(Boolean)
-  // Mitarbeiter-Rollen (nicht Admin): freigegebene Bereiche bilden sich automatisch in der Favoriten-/Übersicht ab
   const isRestricted = !!role && role !== 'admin'
   const FAV_PIN = { href: '/verbesserungen', label: 'Verbesserungsvorschläge', icon: 'ti-bulb' }
-  const favBase = isRestricted ? [...favItems, ...allLeaf.filter((l) => !favs.includes(l.href))] : favItems
-  const favView = [FAV_PIN, ...favBase.filter((x) => x.href !== '/verbesserungen')]
-  // freigegebene Bereiche an die linke Favoritenleiste (FavRail) melden
-  const freigKey = isRestricted ? allLeaf.map((l) => l.href).join('|') : ''
-  useEffect(() => {
-    try { window.dispatchEvent(new CustomEvent('wt-freigaben', { detail: { restricted: isRestricted, leaves: isRestricted ? allLeaf : [] } })) } catch (e) {}
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [freigKey, isRestricted])
+  const favView = [FAV_PIN, ...favItems.filter((x) => x.href !== '/verbesserungen')]
+
+  const visibleNav = NAV.filter((n) => canSee(n))
+  const catOpen = (n) => openCats.has(n.key) || n.key === activeGroupKey
 
   return (
-    <header className="appnav">
-      <div className="topbar-top">
-        <Link href="/" className="brand" style={{ textDecoration: 'none', color: 'inherit', padding: 0, gap: 10 }} title="Zum Cockpit">
+    <aside className="sbx">
+      <div className="sbx-brand-row">
+        <Link href="/" className="sbx-brand" title="Zum Cockpit">
           <div className="logo">W</div>
           <div><div className="name">Wohntraum</div><div className="sub">Rheinhessen OS</div></div>
         </Link>
-        <div className="tb-search">
-          <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="🔍 Thema suchen…" />
-          {ql && (
-            <>
-              <div className="tb-backdrop" onClick={() => setQ('')} />
-              <div className="sresults">
-                {results.length ? results.map((x) => (
-                  <Link key={x.href} href={x.href} className={isActive(x) ? 'active' : ''} onClick={() => setQ('')}>
-                    <i className={'ti ' + x.icon} /> {x.label}{x.group && <span style={{ marginLeft: 'auto', fontSize: 10.5, color: 'var(--hint)' }}>{x.group}</span>}
-                  </Link>
-                )) : <div style={{ padding: '10px 12px', color: 'var(--hint)', fontStyle: 'italic', fontSize: 13 }}>Kein Treffer für „{q}"</div>}
-              </div>
-            </>
-          )}
-        </div>
-        <div className="tb-me">
-          <Link href="/tools" className="nav-mini" title="Alle Tools"><i className="ti ti-layout-grid" /></Link>
-          <Link href="/konto" className="nav-mini" title="Mein Konto"><i className="ti ti-user-cog" /></Link>
-          <div className="av" title={email || 'Demo-Modus'}>{initials}</div>
-          {!demo && <button className="logoutbtn" title="Abmelden" onClick={onLogout} style={{ marginLeft: 0 }}><i className="ti ti-logout" /></button>}
-        </div>
+        {!demo && <button className="sbx-logout" title="Abmelden" onClick={onLogout}><i className="ti ti-logout" /></button>}
       </div>
 
-      {/* Zeile 1: Geschäftsbereich */}
-      <nav className="gbbar">
-        {GESCHAEFTE.map((g) => {
-          if (g.href) return (
-            <Link key={g.v} href={g.href} className={'gb' + (path === g.href ? ' active' : '')}>
-              <i className={'ti ' + g.icon} /> {g.label}
-            </Link>
+      <div className="sbx-search">
+        <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="🔍 Thema suchen…" />
+        {ql && (
+          <div className="sbx-results">
+            {results.length ? results.map((x) => (
+              <Link key={x.href} href={x.href} className={isActive(x) ? 'active' : ''} onClick={() => setQ('')}>
+                <i className={'ti ' + x.icon} /> {x.label}{x.group && <span className="grp">{x.group}</span>}
+              </Link>
+            )) : <div className="sbx-noresult">Kein Treffer für „{q}"</div>}
+          </div>
+        )}
+      </div>
+
+      {/* Favoriten – ganz oben, ein-/ausklappbar, per Drag & Drop umsortierbar */}
+      <div className="sbx-sec">
+        <button className="sbx-sechd" onClick={toggleFavOpen} title={favOpen ? 'Favoriten einklappen' : 'Favoriten ausklappen'}>
+          <i className="ti ti-star" style={{ color: '#f5c518' }} /> <span>Favoriten</span>
+          <i className={'ti ' + (favOpen ? 'ti-chevron-down' : 'ti-chevron-right')} style={{ marginLeft: 'auto', fontSize: 15 }} />
+        </button>
+        {favOpen && (
+          <div className="sbx-favlist">
+            {favView.length ? favView.map((it) => (
+              <div key={it.href} className="sbx-favrow"
+                draggable
+                onDragStart={(e) => { setDragFav(it.href); e.dataTransfer.effectAllowed = 'move' }}
+                onDragEnd={() => setDragFav(null)}
+                onDragOver={(e) => { if (dragFav && dragFav !== it.href) e.preventDefault() }}
+                onDrop={(e) => { e.preventDefault(); moveFavBefore(dragFav, it.href); setDragFav(null) }}
+                style={{ opacity: dragFav === it.href ? 0.4 : 1 }}
+              >
+                <i className="ti ti-grip-vertical grip" title="Ziehen zum Umsortieren" />
+                <Link href={it.href} className={'sbx-link' + (isActive(it) ? ' active' : '')} onClick={() => setQ('')}>
+                  <i className={'ti ' + it.icon} /> <span>{it.label}</span>
+                </Link>
+                {it.href !== '/verbesserungen' && (
+                  <span className="sbx-star on" onClick={(e) => toggleFav(it.href, e)} title="Aus Favoriten entfernen">★</span>
+                )}
+              </div>
+            )) : <div className="sbx-empty">Noch keine Favoriten – Stern ☆ neben einer Unterkategorie antippen.</div>}
+            {dragFav && (
+              <div className="sbx-dropend"
+                onDragOver={(e) => e.preventDefault()}
+                onDrop={(e) => { e.preventDefault(); moveFavBefore(dragFav, null); setDragFav(null) }}
+                title="Ans Ende verschieben">ans Ende</div>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* Alle Kategorien & Unterkategorien */}
+      <nav className="sbx-nav">
+        {visibleNav.map((n) => {
+          if (n.type === 'link') return (
+            <div key={n.href} className="sbx-linkrow">
+              <Link href={n.href} className={'sbx-link' + (isActive(n) ? ' active' : '')}>
+                <i className={'ti ' + n.icon} /> <span>{n.label}</span>
+              </Link>
+              {n.mod && <span className={'sbx-star' + (isFav(n.href) ? ' on' : '')} onClick={(e) => toggleFav(n.href, e)} title={isFav(n.href) ? 'Aus Favoriten entfernen' : 'Zu Favoriten hinzufügen'}>{isFav(n.href) ? '★' : '☆'}</span>}
+            </div>
           )
-          if (g.v === 'fav') return (
-            <button key={g.v} className={'gb' + (activeGb === g.v ? ' active' : '')} onClick={() => chooseGb(g.v)}>
-              <i className={'ti ' + g.icon} /> {g.label}
-            </button>
-          )
-          const bereichPath = '/bereich/' + g.v
+          const vis = n.items.filter((it) => canSeeItem(n, it))
+          if (!vis.length) return null
+          const open = catOpen(n)
           return (
-            <Link key={g.v} href={bereichPath} className={'gb' + (activeGb === g.v ? ' active' : '')} onClick={() => selectGb(g.v)}>
-              <i className={'ti ' + g.icon} /> {g.label}
-            </Link>
+            <div key={n.key} className="sbx-cat">
+              <button className={'sbx-catbtn' + (n.key === activeGroupKey ? ' active' : '')} onClick={() => toggleCat(n.key)}>
+                <i className={'ti ' + n.icon} /> <span>{n.label}</span>
+                <i className={'ti ' + (open ? 'ti-chevron-down' : 'ti-chevron-right')} style={{ marginLeft: 'auto', fontSize: 14, opacity: 0.7 }} />
+              </button>
+              {open && (
+                <div className="sbx-sub">
+                  {vis.map((it) => (
+                    <div key={it.href} className="sbx-subrow">
+                      <Link href={it.href} className={'sbx-link' + (isActive(it) ? ' active' : '')}>
+                        <i className={'ti ' + it.icon} /> <span>{it.label}</span>
+                      </Link>
+                      <span className={'sbx-star' + (isFav(it.href) ? ' on' : '')} onClick={(e) => toggleFav(it.href, e)} title={isFav(it.href) ? 'Aus Favoriten entfernen' : 'Zu Favoriten hinzufügen'}>{isFav(it.href) ? '★' : '☆'}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
           )
         })}
       </nav>
 
-      {/* Zeile 2: Favoriten (per Drag & Drop umsortierbar) */}
-      {activeGb === 'fav' && (
-        <nav className="catbar">
-          {favView.length ? (
-            <>
-              {favView.map((it) => (
-                <Link
-                  key={it.href}
-                  href={it.href}
-                  className={'cat' + (isActive(it) ? ' active' : '')}
-                  draggable
-                  onDragStart={(e) => { setDragFav(it.href); e.dataTransfer.effectAllowed = 'move' }}
-                  onDragEnd={() => setDragFav(null)}
-                  onDragOver={(e) => { if (dragFav && dragFav !== it.href) e.preventDefault() }}
-                  onDrop={(e) => { e.preventDefault(); moveFavBefore(dragFav, it.href); setDragFav(null) }}
-                  title="Ziehen zum Umsortieren"
-                  style={{ cursor: 'grab', opacity: dragFav === it.href ? 0.4 : 1 }}
-                >
-                  <i className="ti ti-grip-vertical" style={{ opacity: 0.45, fontSize: 13, marginRight: 1 }} /> <i className={'ti ' + it.icon} /> {it.label}
-                </Link>
-              ))}
-              {dragFav && (
-                <span
-                  onDragOver={(e) => e.preventDefault()}
-                  onDrop={(e) => { e.preventDefault(); moveFavBefore(dragFav, null); setDragFav(null) }}
-                  title="Ans Ende verschieben"
-                  style={{ minWidth: 40, alignSelf: 'stretch', borderRadius: 8, border: '1px dashed var(--muted)', opacity: 0.55, margin: '4px 0' }}
-                />
-              )}
-            </>
-          ) : <span style={{ padding: '10px 14px', color: 'var(--muted)', fontSize: 12.5 }}>Noch keine Favoriten – Stern ☆ in der Unterkategorie antippen.</span>}
-        </nav>
-      )}
-
-      {/* Zeile 2: Kategorie */}
-      {activeGb && activeGb !== 'fav' && catItems.length > 0 && (
-        <nav className="catbar">
-          {catItems.map((n) => {
-            if (n.type === 'link') return (
-              <Link key={n.href} href={n.href} className={'cat' + (isActive(n) ? ' active' : '')}>
-                <i className={'ti ' + n.icon} /> {n.label}
-              </Link>
-            )
-            const catActive = activeCat && activeCat.key === n.key
-            return (
-              <button key={n.key} className={'cat' + (catActive ? ' active' : '')} onClick={() => toggleCat(n.key)}>
-                <i className={'ti ' + n.icon} /> {n.label}
-              </button>
-            )
-          })}
-        </nav>
-      )}
-
-      {/* Zeile 3: Unterkategorie */}
-      {subItems.length > 0 && (
-        <nav className="subpanel">
-          {subItems.map((it) => (
-            <span key={it.href} className="subwrap">
-              <Link href={it.href} className={isActive(it) ? 'active' : ''}>
-                <i className={'ti ' + it.icon} /> {it.label}
-              </Link>
-              <span className="favstar2" onClick={(e) => toggleFav(it.href, e)} title={isFav(it.href) ? 'Aus Favoriten entfernen' : 'Zu Favoriten hinzufügen'} style={{ color: isFav(it.href) ? '#f5c518' : 'rgba(255,255,255,.55)' }}>{isFav(it.href) ? '★' : '☆'}</span>
-            </span>
-          ))}
-        </nav>
-      )}
-    </header>
+      <div className="sbx-foot">
+        <div className="av" title={email || 'Demo-Modus'}>{initials}</div>
+        <div className="sbx-me">{email || 'Demo-Modus'}</div>
+      </div>
+    </aside>
   )
 }
