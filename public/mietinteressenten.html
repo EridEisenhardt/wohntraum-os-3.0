@@ -99,9 +99,11 @@ select.inl.st{font-weight:700;color:var(--accent);border-color:var(--line);backg
   </div>
   <div class="viewtoggle"><button id="vListe" class="on" onclick="setView('liste')">Liste</button><button id="vBoard" onclick="setView('board')">Kanban-Board</button><button onclick="exportCRM()" title="Gefilterte Leads als CSV für den CRM-Import herunterladen">⬇ CRM Export</button></div>
   <div class="chips" id="stageChips"></div>
-  <div class="card"><div class="card-hd"><span>Leads</span><span class="crumb">Meilensteine: ✅ erledigt · ⏸️ warten · ❌ nicht erfolgt &nbsp;·&nbsp; <span id="cnt"></span></span></div>
+  <div class="card"><div class="card-hd"><span>1 · Interessenten</span><span class="crumb">Meilensteine: ✅ erledigt · ⏸️ warten · ❌ nicht erfolgt &nbsp;·&nbsp; <span id="cnt"></span></span></div>
     <div class="tablewrap" id="tbl"><div class="empty" id="loading">Lädt…</div></div></div>
-  <div class="card"><div class="card-hd"><span>🗄 Lead-Register (Archiv)</span><span class="crumb">erledigte Leads · zum Reaktivieren „↩︎" klicken · <span id="archCnt"></span></span></div>
+  <div class="card"><div class="card-hd"><span>2 · 🏠 Mieter — Warten auf 1. Mietzahlung</span><span class="crumb">Interessenten, die Mieter geworden sind (Status 12) · <span id="mieterCnt"></span></span></div>
+    <div class="tablewrap" id="mieterReg"></div></div>
+  <div class="card"><div class="card-hd"><span>3 · 🗄 Lead-Register (Archiv)</span><span class="crumb">erledigte Leads · zum Reaktivieren „↩︎" klicken · <span id="archCnt"></span></span></div>
     <div class="tablewrap" id="archReg"></div></div>
 </div>
 <div class="ov" id="ov" onclick="if(event.target===this)closeNotes()">
@@ -309,7 +311,8 @@ function renderChips(){
 let VIEW='liste', DRAG=null;
 function typToggle(){const on=$('f_typ').value==='umzug';document.querySelectorAll('.umzugfld').forEach(e=>e.style.display=on?'':'none');}
 function setTyp(t){FTYP=t;$('tAlle').classList.toggle('on',t==='');$('tNeu').classList.toggle('on',t==='neu');$('tUmzug').classList.toggle('on',t==='umzug');FSTAGE='';render();}
-function baseRows(){var a=ROWS.filter(r=>!r.archiviert);return FTYP?a.filter(r=>(r.typ||'neu')===FTYP):a;}
+function isMieter(r){return String(r.status||'').startsWith('12');}
+function baseRows(){var a=ROWS.filter(r=>!r.archiviert&&!isMieter(r));return FTYP?a.filter(r=>(r.typ||'neu')===FTYP):a;}
 function setView(v){VIEW=v;$('vListe').classList.toggle('on',v==='liste');$('vBoard').classList.toggle('on',v==='board');render();}
 function dragStart(ev,id){DRAG=id;ev.dataTransfer.effectAllowed='move';}
 function allowDrop(ev,el){ev.preventDefault();if(el)el.classList.add('over');}
@@ -358,6 +361,22 @@ async function archiv(id,val){
   var res=await sb.from('mietinteressenten').update({archiviert:val}).eq('id',id);
   if(res.error){toast('Fehler: '+res.error.message);return;}
   toast(val?'Ins Lead-Register verschoben':'Lead reaktiviert');
+}
+function renderMieter(){
+  var el=$('mieterReg'); if(!el)return;
+  var list=ROWS.filter(function(r){return !r.archiviert&&isMieter(r);}).sort(function(a,b){return (b.nummer||0)-(a.nummer||0);});
+  if($('mieterCnt'))$('mieterCnt').textContent=list.length+' Mieter';
+  if(!list.length){el.innerHTML='<div class="empty" style="padding:14px">Noch keine Mieter im Status „12 · Warten auf 1. Mietzahlung".</div>';return;}
+  el.innerHTML='<table><thead><tr><th title="Als erledigt ins Archiv">✓</th><th>Nr</th><th>Name</th><th>Vorname</th><th>Zielort/Wohnung</th><th>Mietzahlung</th><th>Einzug ab</th><th>Kontakt</th><th>Status</th><th>1. Mietzahlung</th><th>Notizen</th></tr></thead><tbody>'
+    +list.map(function(r){return '<tr style="cursor:pointer" onclick="rowOpen(event,\''+r.id+'\')">'
+      +'<td style="text-align:center"><button class="abtn" title="Als erledigt ins Lead-Register" onclick="event.stopPropagation();archiv(\''+r.id+'\',true)" style="font-size:15px;color:var(--green,#1f7a4d)">✓</button></td>'
+      +'<td class="nrcell">'+(r.nummer!=null?r.nummer:'—')+'</td>'
+      +'<td>'+esc(r.name||'')+'</td><td>'+esc(r.vorname||'')+'</td>'
+      +'<td>'+esc(r.zielort||'')+'</td><td>'+esc(r.zahlungsart||'')+'</td><td>'+esc(r.einzug_ab||'')+'</td><td>'+esc(r.kontakt||'')+'</td>'
+      +'<td><select class="inl st" onchange="upd(\''+r.id+'\',\'status\',this.value)">'+opts(STAGES,r.status)+'</select></td>'
+      +mileCell(r,'erste_mietzahlung')
+      +'<td><button class="ntbtn" onclick="event.stopPropagation();openNotes(\''+r.id+'\')">📄 Öffnen</button></td></tr>';}).join('')
+    +'</tbody></table>';
 }
 function renderArchive(){
   var el=$('archReg'); if(!el)return;
@@ -409,6 +428,7 @@ function lHead(){
 }
 function render(){
   renderChips();
+  renderMieter();
   renderArchive();
   $('stageChips').style.display=VIEW==='board'?'none':'flex';
   const BR=baseRows();
