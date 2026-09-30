@@ -147,9 +147,9 @@ input.cell:hover{border-color:var(--line)} input.cell:focus{border-color:var(--b
   /* Blöcke nicht über den Seitenrand zerschneiden */
   p,li,.note,.legend,.gm-sub,.gm-card,.ceo-box,.ep-netcard,.ep-ms,.ep-intro,.bmc .b,.b,.bbox,.pd-chart,.kpi,.toc a,.sign .box,tr{page-break-inside:avoid;break-inside:avoid}
   /* Vermögens- & Beleihungsübersicht: breite Tabelle auf Seitenbreite zwingen (kein Abschneiden) */
-  #tblObj{min-width:0!important;width:100%!important;table-layout:fixed;font-size:6.6pt!important}
-  #tblObj th,#tblObj td{padding:2px 2px!important;white-space:normal!important;word-break:break-word;overflow-wrap:anywhere;text-align:right}
-  #tblObj th:first-child,#tblObj td:first-child{text-align:left}
+  #tblObj,#tblLoan{min-width:0!important;width:100%!important;table-layout:fixed;font-size:6.6pt!important}
+  #tblObj th,#tblObj td,#tblLoan th,#tblLoan td{padding:2px 2px!important;white-space:normal!important;word-break:break-word;overflow-wrap:anywhere;text-align:right}
+  #tblObj th:first-child,#tblObj td:first-child,#tblLoan th:first-child,#tblLoan td:first-child{text-align:left}
   #tblObj input{font-size:6.6pt!important;width:100%!important;padding:0!important;text-align:right}
 }
 /* WTR-OS-A4 (Reporting/Selbstauskunft auf A4-Breite begrenzt) */
@@ -347,7 +347,15 @@ input.cell:hover{border-color:var(--line)} input.cell:focus{border-color:var(--b
       </tr></thead>
       <tbody id="loanBody"></tbody>
     </table>
-    <div class="legend">Quelle: geschlossenes, durchnummeriertes Darlehensregister der Gruppe. Kontokorrentlinie nur bei Inanspruchnahme verzinst.</div>
+    <div class="legend">Quelle: geschlossenes, durchnummeriertes Darlehensregister der Gruppe. Kontokorrentlinie nur bei Inanspruchnahme verzinst. „Restschuld z. Zinsbindungsende" = annuitätische Fortschreibung (Restschuld, Zins, Rate) bis zum Zinsbindungsdatum.</div>
+
+    <!-- B0 Stresstest 8er-Annuität -->
+    <h2><span class="n" style="width:auto;padding:0 7px;font-size:11px">B★</span>Stresstest — Anschlussfinanzierung mit 8 %-Annuität</h2>
+    <div class="gm-sub">Szenario: Nach Auslauf der Zinsbindung refinanzieren <b>alle</b> Darlehen zu einer <b>8 %-Annuität</b> (Zins + Tilgung). Geprüft wird, ob die Nettomieten (Jahresmiete abzüglich <b>15 % Betriebskosten</b>) den erhöhten Kapitaldienst decken.</div>
+    <table class="mini" id="tblStress" style="max-width:560px">
+      <tbody id="stressBody"></tbody>
+    </table>
+    <div class="legend">Konservativer Test auf die gesamte verzinsliche Restschuld. Positiver Wert = Deckung, negativer Wert = Unterdeckung / Refinanzierungsrisiko.</div>
 
     <!-- B1 Verbindlichkeiten mit Vorjahresvergleich -->
     <h2><span class="n" style="width:auto;padding:0 7px;font-size:11px">B1</span>Verbindlichkeiten &amp; Liquidität (Vorjahresvergleich)</h2>
@@ -592,6 +600,38 @@ function zauslaufFor(code){
   const parse=s=>{const m=/(\d{2})\.(\d{2})\.(\d{4})/.exec(s);return m?new Date(+m[3],+m[2]-1,+m[1]).getTime():Infinity;};
   ds.sort((a,b)=>parse(a)-parse(b));
   return ds.join(' / ');
+}
+// Restschuld eines Darlehens zum Ende der Zinsbindung (annuitätische Fortschreibung ab heute)
+function restZbLoan(l){
+  const B0=Number(l[4])||0; if(!B0)return 0;
+  const p=Number(l[6])||0; const i=(Number(l[5])||0)/100/12;
+  const m=/(\d{2})\.(\d{2})\.(\d{4})/.exec(String(l[7]||'')); if(!m)return B0; // variabel / kein Datum → akt. Stand
+  const end=new Date(+m[3],+m[2]-1,+m[1]); const msMonth=365.25/12*86400000;
+  const n=(end-new Date())/msMonth; if(n<=0||!p)return B0;
+  let Bn; if(i===0){Bn=B0-p*n;} else {const g=Math.pow(1+i,n); Bn=B0*g-p*(g-1)/i;}
+  return Bn>0?Bn:0;
+}
+// Stresstest 8 %-Annuität: Nettomiete (−15 % BK) vs. 8 % auf Gesamt-Restschuld
+let STRESS_RATE=8, STRESS_BK=15;
+function setStress(which,val){const v=parseFloat(String(val).replace(',','.'));if(which==='rate')STRESS_RATE=isNaN(v)?8:v;if(which==='bk')STRESS_BK=isNaN(v)?15:v;renderStresstest();}
+let _stressDebt=0;
+function renderStresstest(debt){
+  if(debt!=null)_stressDebt=debt;
+  const el=document.getElementById('stressBody'); if(!el)return;
+  const miete=PORT.miete||0;
+  const bk=miete*(STRESS_BK/100);
+  const netto=miete-bk;
+  const rate=_stressDebt*(STRESS_RATE/100);
+  const erg=netto-rate;
+  const col=erg>=0?'var(--green,#1f7a4d)':'#c0392b';
+  const inp=(id,v)=>`<input value="${v}" onchange="setStress('${id}',this.value)" style="width:46px;text-align:right;font:inherit;font-size:12px;padding:2px 5px;border:1px solid var(--line);border-radius:6px"> %`;
+  el.innerHTML=
+    `<tr><td>Jahresnettomiete (Soll)</td><td style="text-align:right">${fmt(miete)}</td></tr>`+
+    `<tr><td>− Betriebskosten ${inp('bk',STRESS_BK)}</td><td style="text-align:right">− ${fmt(bk)}</td></tr>`+
+    `<tr style="border-top:1px solid var(--line)"><td>= Nettomiete p.a.</td><td style="text-align:right"><b>${fmt(netto)}</b></td></tr>`+
+    `<tr><td>− Bankrate ${inp('rate',STRESS_RATE)}-Annuität auf ${fmt(_stressDebt)}</td><td style="text-align:right">− ${fmt(rate)}</td></tr>`+
+    `<tr style="border-top:2px solid var(--brand)"><td style="font-weight:700">Ergebnis p.a.</td><td style="text-align:right;font-weight:700;color:${col}">${erg>=0?'+ ':'− '}${fmt(Math.abs(erg))}</td></tr>`+
+    `<tr><td style="color:var(--muted);font-size:11px">${erg>=0?'✓ Deckung gegeben':'✗ Unterdeckung — Refinanzierungsrisiko'}</td><td style="text-align:right;color:var(--muted);font-size:11px">${fmt(erg/12)} /Mo</td></tr>`;
 }
 function render(){
   // object table
