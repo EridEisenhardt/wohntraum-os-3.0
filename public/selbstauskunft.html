@@ -562,12 +562,25 @@ function renderDepot(){
   el.innerHTML='<thead><tr><th>Bank</th><th>Depot-Nr.</th><th>Wertpapier</th><th style="text-align:right">Stück</th><th style="text-align:right">Kurswert je Stück (€)</th><th style="text-align:right">Gesamtwert (€)</th></tr></thead><tbody>'
     + rows + `<tr class="totrow"><td colspan="5">Summe Wertpapierdepot</td><td style="text-align:right">${incEUR(sum)}</td></tr></tbody>`;
 }
+// Kontoguthaben aus der Vermögensbilanz (Tabelle kontostaende) – privat (Eric Eisenhardt = GLS/ee)
+let KONTO_EE=0;
+async function loadKontostaende(){
+  const { data, error } = await sb.from('kontostaende').select('gesellschaft,saldo');
+  if(error||!data) return;
+  KONTO_EE = data.filter(k=>(k.gesellschaft||'')==='ee').reduce((s,k)=>s+(Number(k.saldo)||0),0);
+  renderVerm();
+}
 function vermLoad(){ try{ return JSON.parse(localStorage.getItem(VERMSTORE))||{}; }catch(e){ return {}; } }
 function renderVerm(){
   const el=document.getElementById('vermtbl'); if(!el) return;
   const d=vermLoad(); const q=s=>(s==null?'':String(s)).replace(/"/g,'&quot;');
   let sum=0;
   const rows=VERM.map(f=>{
+    if(f[0]==='guthaben'){
+      sum+=KONTO_EE;
+      return `<tr><td style="width:42px;color:var(--muted)">${f[1]}</td><td>${f[2]} <span style="font-size:10.5px;color:var(--muted)">(aus Vermögensbilanz)</span></td>
+        <td style="text-align:right;font-weight:600">${incEUR(KONTO_EE)}</td></tr>`;
+    }
     const val=(f[0] in d)? d[f[0]] : (f[3]!=null?f[3]:'');
     sum+=incParse(val);
     return `<tr><td style="width:42px;color:var(--muted)">${f[1]}</td><td>${f[2]}</td>
@@ -643,7 +656,7 @@ async function loadBudgetSA(){
   if(aus.length) body+=rows(aus)+`<tr class="totrow"><td colspan="3">Summe Ausgaben (Weitergabe)</td><td>${eur(sum(aus))}</td><td>${eur(sum(aus)*12)}</td></tr>`;
   el.innerHTML=head+'<tbody>'+body+'</tbody>';
 }
-applyMarktwerte(); bewkInit(); weitere(); form(); loadBuergSA(); loadDarlehenSA(); loadFirm(); loadBau(); renderInc(); renderExp(); renderVerm(); renderGeno(); renderDepot(); sigInit();
+applyMarktwerte(); bewkInit(); weitere(); form(); loadBuergSA(); loadDarlehenSA(); loadFirm(); loadBau(); renderInc(); renderExp(); renderVerm(); loadKontostaende(); renderGeno(); renderDepot(); sigInit();
 async function applyMarktwerte(){
   try{
     const [fin,mv,geb]=await Promise.all([
