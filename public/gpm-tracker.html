@@ -130,6 +130,9 @@ async function load(){
 }
 let URLAUB=new Set();
 async function loadUrlaub(){const{data}=await sb.from('gpm_urlaub').select('woche');URLAUB=new Set((data||[]).map(r=>r.woche));}
+function wkCounts(){const c={};ROWS.forEach(r=>{const w=isoWeekKey(r.datum);if(w)c[w]=(c[w]||0)+1;});return c;}
+// Urlaub = manuell markiert ODER Woche mit ≤5 Einträgen (ab KW04, außer laufende Woche)
+function isUrlaubWeek(w,c){if(!w)return false;if(URLAUB.has(w))return true;const cur=isoWeekKey(new Date().toISOString().slice(0,10));if(w===cur)return false;const wn=parseInt((w.split('-W')[1]||'0'),10);c=c||wkCounts();return wn>=4 && (c[w]||0)<=5;}
 async function urlaubDialog(){
   const cur=Array.from(URLAUB).sort();
   const v=(prompt('Urlaubswochen (aus der Wertung genommen):\n'+(cur.length?cur.join(', '):'—')+'\n\nDatum (JJJJ-MM-TT) einer Woche eingeben zum Hinzufügen bzw. Entfernen:',new Date().toISOString().slice(0,10))||'').trim();
@@ -161,11 +164,12 @@ function renderDash(){
   const catHtml=cats.map(c=>`<div class="catrow"><span class="nm">${esc(c)}</span><span class="bar"><span class="fill" style="width:${catCnt[c]/maxc*100}%;background:${CATCOL[c]||'#888'}"></span></span><span class="n">${catCnt[c]}</span></div>`).join('')||'<div class="empty">Keine Daten</div>';
   // Gesamt-Benchmark über den ganzen Zeitraum
   const ds=ROWS.map(r=>r.datum).filter(Boolean).sort();
-  const ROWSW=ROWS.filter(r=>!(r.datum&&URLAUB.has(isoWeekKey(r.datum)))); // Urlaubswochen aus der Wertung
-  let weeks=1, spanTxt='';
-  if(ds.length){const d1=new Date(ds[0]+'T00:00:00'),d2=new Date(ds[ds.length-1]+'T00:00:00');const totalW=Math.max(1,Math.floor((d2-d1)/6048e5)+1);
-    const k1=isoWeekKey(ds[0]),k2=isoWeekKey(ds[ds.length-1]);let urlIn=0;URLAUB.forEach(w=>{if(w>=k1&&w<=k2)urlIn++;});
-    weeks=Math.max(1,totalW-urlIn);spanTxt=ds[0]+' – '+ds[ds.length-1]+' · '+weeks+' Wochen'+(urlIn?' (−'+urlIn+' Urlaub)':'');}
+  const WC=wkCounts();
+  const ROWSW=ROWS.filter(r=>{const w=isoWeekKey(r.datum);return w&&!isUrlaubWeek(w,WC);}); // Urlaubswochen (manuell + ≤5 Einträge) aus der Wertung
+  const activeWeeks=Object.keys(WC).filter(w=>!isUrlaubWeek(w,WC));
+  const urlExcl=Object.keys(WC).filter(w=>isUrlaubWeek(w,WC)).length;
+  let weeks=Math.max(1,activeWeeks.length), spanTxt='';
+  if(ds.length){spanTxt=ds[0]+' – '+ds[ds.length-1]+' · '+weeks+' aktive Wochen'+(urlExcl?' (−'+urlExcl+' Urlaub)':'');}
   const gN=ROWSW.filter(r=>r.gruppe==='geld').length, sN=ROWSW.filter(r=>r.gruppe==='systeme').length;
   const de1=x=>x.toLocaleString('de-DE',{minimumFractionDigits:1,maximumFractionDigits:1});
   const bRow=(lbl,n,col)=>`<div class="catrow"><span class="nm" style="color:${col};font-weight:700">${lbl}</span><span style="flex:1;font-size:12.5px"><b>${n}</b> Einträge · Ø <b>${de1(n/weeks)}</b>/Woche · Ø <b>${de1(n/weeks/5)}</b>/Werktag</span></div>`;
@@ -202,7 +206,7 @@ function renderBench(){
   while(cur<=endMon&&guard<520){weeks.push(isoWeekKey(cur.toISOString().slice(0,10)));cur.setDate(cur.getDate()+7);guard++;}
   const curWk=isoWeekKey(new Date().toISOString().slice(0,10));
   if(curWk&&weeks.indexOf(curWk)<0)weeks.push(curWk);
-  weeks=weeks.filter(w=>!URLAUB.has(w)); // Urlaubswochen aus dem Chart nehmen
+  const WCB=wkCounts(); weeks=weeks.filter(w=>!isUrlaubWeek(w,WCB)); // Urlaub (manuell + ≤5 Einträge, ab KW04) aus dem Chart nehmen
   const gW={},sW={};weeks.forEach(w=>{gW[w]=0;sW[w]=0;});
   ROWS.forEach(r=>{const w=isoWeekKey(r.datum);if(w==null)return;if(gW[w]==null)return;if(r.gruppe==='systeme')sW[w]++;else gW[w]++;});
   const gV=weeks.map(w=>+(gW[w]/5).toFixed(1)),sV=weeks.map(w=>+(sW[w]/5).toFixed(1));
@@ -229,7 +233,7 @@ function renderBench(){
     options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{labels:{boxWidth:12,font:{size:10}}}},scales:{y:{beginAtZero:true,ticks:{font:{size:9}},title:{display:true,text:'pro Werktag',font:{size:9}}},y1:{position:'right',beginAtZero:true,grid:{drawOnChartArea:false},ticks:{font:{size:9},precision:0,stepSize:1},title:{display:true,text:'Einträge/Woche',font:{size:9}}},x:{ticks:{font:{size:9}}}}}});
   const avg=arr=>arr.length?(arr.slice(-4).reduce((a,b)=>a+b,0)/4).toFixed(1):'0';
   $('benchAvg').innerHTML='Ø 4 Wochen — <b>Gesamt: '+avg(tV)+'</b>/Werktag · Geld produzierend: <b>'+avg(gV)+'</b>/Werktag · Systeme: <b>'+avg(sV)+'</b>/Werktag'
-    +'<br>Gestrichelt = laufender Durchschnitt (Benchmark-Entwicklung). Wochenpunkt <span style="color:#1f7a4d;font-weight:700">grün</span> = über, <span style="color:#c0392b;font-weight:700">rot</span> = unter dem Durchschnitt.';
+    +'<br>Gestrichelt = laufender Durchschnitt (Benchmark-Entwicklung). Wochenpunkt <span style="color:#1f7a4d;font-weight:700">grün</span> = über, <span style="color:#c0392b;font-weight:700">rot</span> = unter dem Durchschnitt. <span style="color:#b07b4f">Wochen mit ≤5 Einträgen gelten als Urlaub und sind ausgeblendet.</span>';
 }
 
 function catOptions(mode){let cats;if(mode==='geld')cats=GELD;else if(mode==='systeme')cats=SYS;else cats=GELD.concat(SYS);
