@@ -26,6 +26,9 @@ th,td{padding:7px 9px;text-align:left;border-bottom:1px solid var(--bord2);white
 th{font-size:10px;text-transform:uppercase;color:var(--muted);font-weight:700;background:var(--surf2)}
 tbody tr.res-absage td{background:#fbf4f4}
 tbody tr.res-warte td{background:#fef9ec}
+tbody tr.notfall td{background:#fdecea!important;box-shadow:inset 3px 0 0 #c0392b}
+.notfallbadge{display:inline-block;margin-left:6px;font-size:10px;font-weight:700;color:#fff;background:#c0392b;border-radius:10px;padding:1px 7px;white-space:nowrap}
+.kbcard.notfall{border:1.5px solid #c0392b;box-shadow:0 0 0 2px #c0392b22}
 input.inl,select.inl{border:1px solid transparent;background:transparent;font:inherit;font-size:12.5px;border-radius:5px;padding:4px 6px;max-width:100%}
 input.inl:hover,select.inl:hover{border-color:var(--line)}input.inl:focus,select.inl:focus{outline:none;border-color:var(--accent);background:var(--surf2)}
 select.inl.st{font-weight:700;color:var(--accent);border-color:var(--line);background:var(--surf2)}
@@ -345,8 +348,8 @@ function exportCRM(){
 function boardView(){
   const BR=baseRows();
   return '<div class="kb">'+STAGES.map(s=>{const list=BR.filter(r=>r.status===s);const se=esc(s).replace(/'/g,"\\'");
-    const cards=list.map(r=>`<div class="kbcard" draggable="true" ondragstart="dragStart(event,'${r.id}')">
-      <div class="kbt opennm" onclick="openNotes('${r.id}')" title="Onepager öffnen"><span class="nrbadge">#${r.nummer!=null?r.nummer:'?'}</span> ${esc(r.name||r.kontakt||'—')}</div>
+    const cards=list.map(r=>`<div class="kbcard${r.notfall?' notfall':''}" draggable="true" ondragstart="dragStart(event,'${r.id}')">
+      <div class="kbt opennm" onclick="openNotes('${r.id}')" title="Onepager öffnen"><span class="nrbadge">#${r.nummer!=null?r.nummer:'?'}</span> ${esc(r.name||r.kontakt||'—')}${r.notfall?' <span class="notfallbadge" title="Notfall">🚨</span>':''}</div>
       <div class="kbm">${r.quelle?esc(r.quelle):'—'}${r.personen?' · '+r.personen+' P':''}${r.einzug_ab?' · Einzug '+esc(r.einzug_ab):''}</div>
       ${r.zahlungsart?`<span class="kbtag">${esc(r.zahlungsart)}</span>`:''}${r.ergebnis?`<span class="kbtag warn">${esc(r.ergebnis)}</span>`:''}
       <div><button class="kbnote" onclick="openNotes('${r.id}')">📄 Öffnen${noteCount(r.id)?' · '+noteCount(r.id)+'📝':''}</button></div>
@@ -354,6 +357,13 @@ function boardView(){
     return `<div class="kbcol" ondragover="allowDrop(event,this)" ondragleave="dragLeave(this)" ondrop="drop(event,'${se}',this)">
       <div class="kbcolhd"><span style="color:var(--text)">${esc(s)}</span><span>${list.length}</span></div>
       <div class="kbcolbd">${cards||'<div class="kbnil">—</div>'}</div></div>`;}).join('')+'</div>';
+}
+async function toggleNotfall(id){
+  var r=ROWS.find(x=>x.id===id); const nv=!(r&&r.notfall); if(r)r.notfall=nv;
+  render();
+  var res=await sb.from('mietinteressenten').update({notfall:nv}).eq('id',id);
+  if(res.error){toast('Fehler: '+res.error.message);return;}
+  toast(nv?'Als Notfall markiert 🚨':'Notfall aufgehoben');
 }
 async function archiv(id,val){
   var r=ROWS.find(x=>x.id===id); if(r)r.archiviert=val;
@@ -438,11 +448,11 @@ function render(){
   if(!BR.length){$('tbl').innerHTML='<div class="empty">Keine Einträge in dieser Ansicht — oben erfassen.</div>';return;}
   const qOpts=(sel)=>'<option value="">—</option>'+QUELLEN.map(q=>`<option ${q===sel?'selected':''}>${esc(q)}</option>`).join('');
   $('tbl').innerHTML='<table>'+lHead()+'<tbody>'
-    +list.map(r=>{const cls=(r.ergebnis&&/Absage/.test(r.ergebnis))?'res-absage':((r.ergebnis==='Warteliste'||r.status==='A · Warteliste')?'res-warte':'');
-      return `<tr class="${cls}" style="cursor:pointer" onclick="rowOpen(event,'${r.id}')">
-        <td style="text-align:center"><button class="abtn" title="Als erledigt ins Lead-Register" onclick="event.stopPropagation();archiv('${r.id}',true)" style="font-size:15px;color:var(--green,#1f7a4d)">✓</button></td>
+    +list.map(r=>{const cls=(r.notfall?'notfall ':'')+((r.ergebnis&&/Absage/.test(r.ergebnis))?'res-absage':((r.ergebnis==='Warteliste'||r.status==='A · Warteliste')?'res-warte':''));
+      return `<tr class="${cls.trim()}" style="cursor:pointer" onclick="rowOpen(event,'${r.id}')">
+        <td style="text-align:center;white-space:nowrap"><button class="abtn" title="${r.notfall?'Notfall aufheben':'Als Notfall markieren'}" onclick="event.stopPropagation();toggleNotfall('${r.id}')" style="font-size:15px;color:${r.notfall?'#c0392b':'var(--muted,#9aa1ab)'}">${r.notfall?'🚨':'⚐'}</button> <button class="abtn" title="Als erledigt ins Lead-Register" onclick="event.stopPropagation();archiv('${r.id}',true)" style="font-size:15px;color:var(--green,#1f7a4d)">✓</button></td>
         <td class="nrcell">${r.nummer!=null?r.nummer:'—'}</td>
-        <td><input class="inl" style="min-width:120px" value="${esc(r.name)}" placeholder="Nachname" onchange="upd('${r.id}','name',this.value)">${r.typ==='umzug'?'<span class="umzugbadge" title="'+esc(r.aktuelles_objekt||'Bestandsmieter mit Umzugswunsch')+'">↔ Umzug</span>':''}</td>
+        <td><input class="inl" style="min-width:120px" value="${esc(r.name)}" placeholder="Nachname" onchange="upd('${r.id}','name',this.value)">${r.notfall?'<span class="notfallbadge" title="Notfall">🚨 Notfall</span>':''}${r.typ==='umzug'?'<span class="umzugbadge" title="'+esc(r.aktuelles_objekt||'Bestandsmieter mit Umzugswunsch')+'">↔ Umzug</span>':''}</td>
         <td><input class="inl" style="min-width:110px" value="${esc(r.vorname)}" placeholder="Vorname" onchange="upd('${r.id}','vorname',this.value)"></td>
         <td><select class="inl st" onchange="upd('${r.id}','status',this.value)">${opts(STAGES,r.status)}</select></td>
         <td><input class="inl" style="min-width:140px" value="${esc(r.zielort)}" placeholder="Zielort / Wohnung" onchange="upd('${r.id}','zielort',this.value)"></td>
