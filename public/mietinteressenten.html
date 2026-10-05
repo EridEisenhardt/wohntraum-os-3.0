@@ -114,6 +114,12 @@ select.inl.st{font-weight:700;color:var(--accent);border-color:var(--line);backg
     <div class="dlg-hd"><span id="ntTitle">Mietinteressent</span><span class="abtn" onclick="closeNotes()">✕</span></div>
     <div class="dlg-bd">
       <div id="opInfo" class="opgrid"></div>
+      <div class="secttl">🏠 Freie Wohnungen · kommt in Frage</div>
+      <div id="ntWohnungen"></div>
+      <div class="secttl" id="ntTodoHd">Zu klären · To-dos</div>
+      <div id="ntTodos"></div>
+      <div class="secttl">🔗 Asana-Aufgabe</div>
+      <div id="ntAsana"></div>
       <div class="secttl">Dateien &amp; Anhänge (PDF / Bilder)</div>
       <div id="ntFiles"></div>
       <div class="secttl">Historie · Verlauf &amp; Notizen</div>
@@ -151,6 +157,7 @@ const MILE_TITLE={'✅':'erledigt','⏳':'in Arbeit','⏸️':'wartet','❌':'ne
 const MILEF=[['kostenuebernahme','Zusage Kostenübernahme'],['mietangebot_erhalten','Mietangebot erhalten'],['mietvertrag_unterschrieben','Mietvertrag unterschrieben'],['schluesseluebergabe_erfolgt','Schlüsselübergabe erfolgt'],['erste_mietzahlung','1. Mietzahlung']];
 function mileCell(r,field){const lbl=(field==='erste_mietzahlung'&&(r[field]||'')==='⏳')?'<span style="font-size:11px;color:var(--muted);margin-left:5px;white-space:nowrap">Auszahlung in Arbeit</span>':'';return `<td style="text-align:center;white-space:nowrap"><select class="inl" style="text-align:center" onchange="upd('${r.id}','${field}',this.value)">${MILE.map(o=>`<option value="${o}" ${o===(r[field]||'')?'selected':''}>${o===''?'—':o}</option>`).join('')}</select>${lbl}</td>`;}
 let ROWS=[], QUELLEN=[], QROWS=[], FSTAGE='', FTYP='', NOTES=[], HIST=[], FILES=[], NT_CUR=null, ME_NAME='';
+let VWOHN=[], IWOHN=[], ITODO=[], IASANA=[];
 async function loadMe(){try{const{data:{user}}=await sb.auth.getUser();if(!user)return;const p=await sb.from('profiles').select('full_name,email').eq('id',user.id).maybeSingle();ME_NAME=(p.data&&(p.data.full_name||p.data.email))||user.email||'';}catch(e){}}
 const DBUCKET='mietinteressent-dateien';
 async function uploadFiles(inp){
@@ -217,7 +224,7 @@ async function opUpd(field,val){
 }
 function leadTitle(r){return 'Mietinteressent #'+((r&&r.nummer!=null)?r.nummer:'?')+' · '+((r&&(r.name||r.kontakt))||'Lead');}
 function rowOpen(ev,id){if(ev.target.closest('input,select,textarea,button,a,label,option'))return;openNotes(id);}
-function openNotes(id){NT_CUR=id;const r=ROWS.find(x=>x.id===id);$('ntTitle').textContent=leadTitle(r);$('ntInput').value='';renderLeadInfo();renderNotes();renderFiles();$('ov').classList.add('show');setTimeout(()=>$('ntInput').focus(),50);}
+function openNotes(id){NT_CUR=id;const r=ROWS.find(x=>x.id===id);$('ntTitle').textContent=leadTitle(r);$('ntInput').value='';renderLeadInfo();renderWohnungen();renderITodos();renderAsana();renderNotes();renderFiles();$('ov').classList.add('show');setTimeout(()=>$('ntInput').focus(),50);}
 function closeNotes(){$('ov').classList.remove('show');NT_CUR=null;}
 function renderNotes(){
   const items=[];
@@ -293,8 +300,61 @@ async function load(){
   FILES=fd.data||[];
   const hd=await sb.from('mietinteressent_historie').select('id,interessent_id,feld,alt,neu,aktion,created_at').order('created_at',{ascending:false});
   HIST=hd.data||[];
+  const[vw,iw,it,ia]=await Promise.all([
+    sb.from('wohnungsvermietung').select('id,gebaeude,einheit,status,warmmiete,vermietet,einzug').order('gebaeude').order('einheit'),
+    sb.from('mietinteressent_wohnungen').select('*'),
+    sb.from('mietinteressent_todos').select('*').order('created_at',{ascending:true}),
+    sb.from('mietinteressent_asana').select('*').order('created_at',{ascending:true})
+  ]);
+  VWOHN=(vw.data||[]).filter(w=>!w.vermietet&&!/Erledigt/i.test(w.status||''));
+  IWOHN=iw.data||[]; ITODO=it.data||[]; IASANA=ia.data||[];
   render();
 }
+function vwLabel(w){return [w.gebaeude,w.einheit].filter(Boolean).join(' · ')||'Einheit';}
+// ——— Freie Wohnungen je Interessent ———
+function renderWohnungen(){const id=NT_CUR;const list=IWOHN.filter(x=>x.interessent_id===id);
+  const used=new Set(list.map(x=>x.vermietung_id));
+  const avail=VWOHN.filter(w=>!used.has(w.id));
+  const stMark={passt:'✅ passt',abgelehnt:'❌ passt nicht',offen:'• offen'};
+  const items=list.map(x=>`<div style="display:flex;gap:7px;align-items:center;padding:3px 0;border-bottom:1px solid var(--line,#eee)">
+    <span style="flex:1;font-size:12.5px;${x.status==='abgelehnt'?'text-decoration:line-through;color:var(--muted)':''}">🏠 ${esc(x.label||'')}</span>
+    <button class="abtn" title="passt" onclick="setWohnStatus('${x.id}','passt')" style="color:${x.status==='passt'?'#1f7a4d':'#9aa1ab'}">✅</button>
+    <button class="abtn" title="passt nicht" onclick="setWohnStatus('${x.id}','abgelehnt')" style="color:${x.status==='abgelehnt'?'#c0392b':'#9aa1ab'}">❌</button>
+    <button class="abtn" title="entfernen" onclick="delWohn('${x.id}')" style="color:#9aa1ab">🗑</button></div>`).join('')||'<span style="color:var(--muted);font-size:11.5px">noch keine Wohnungen ausgewählt</span>';
+  $('ntWohnungen').innerHTML=`<div style="margin-bottom:6px">${items}</div>
+    <div style="display:flex;gap:6px"><select id="wohnPick" class="inl" style="flex:1;font-size:12.5px">
+      <option value="">${avail.length?'+ Freie Wohnung auswählen …':'keine freien Wohnungen im Vermietungsprozess'}</option>
+      ${avail.map(w=>`<option value="${w.id}">${esc(vwLabel(w))}${w.status?' — '+esc(w.status):''}${w.warmmiete?' · '+Math.round(w.warmmiete)+' € warm':''}</option>`).join('')}
+    </select><button class="btn sec" style="font-size:12px" onclick="addWohn()">+ Hinzufügen</button></div>`;
+}
+async function addWohn(){const sel=$('wohnPick');const vid=sel.value;if(!vid)return;const w=VWOHN.find(x=>x.id===vid);const rec={interessent_id:NT_CUR,vermietung_id:vid,label:vwLabel(w),status:'offen'};const{data,error}=await sb.from('mietinteressent_wohnungen').insert(rec).select();if(error){toast('Fehler: '+error.message);return;}if(data&&data[0])IWOHN.push(data[0]);renderWohnungen();}
+async function setWohnStatus(id,st){const x=IWOHN.find(w=>w.id===id);if(!x)return;const nv=x.status===st?'offen':st;x.status=nv;renderWohnungen();const{error}=await sb.from('mietinteressent_wohnungen').update({status:nv}).eq('id',id);if(error)toast('Fehler: '+error.message);}
+async function delWohn(id){await sb.from('mietinteressent_wohnungen').delete().eq('id',id);IWOHN=IWOHN.filter(w=>w.id!==id);renderWohnungen();}
+// ——— Todos je Interessent ———
+function renderITodos(){const id=NT_CUR;const list=ITODO.filter(x=>x.interessent_id===id);const done=list.filter(t=>t.done).length;
+  const items=list.map(t=>`<div style="display:flex;gap:7px;align-items:flex-start;padding:2px 0">
+    <input type="checkbox" ${t.done?'checked':''} onchange="toggleITodo('${t.id}')" style="margin-top:2px;cursor:pointer;width:15px;height:15px;flex:0 0 auto">
+    <span style="flex:1;font-size:12.5px;${t.done?'text-decoration:line-through;color:var(--muted)':''}">${esc(t.text)}</span>
+    <b style="cursor:pointer;color:#c0392b" onclick="delITodo('${t.id}')">×</b></div>`).join('')||'<span style="color:var(--muted);font-size:11.5px">noch keine To-dos</span>';
+  $('ntTodoHd').textContent='Zu klären · To-dos'+(list.length?` (${done}/${list.length})`:'');
+  $('ntTodos').innerHTML=`<div style="margin-bottom:6px">${items}</div>
+    <div style="display:flex;gap:6px"><input id="itodoNew" class="inl" style="flex:1;font-size:12.5px" placeholder="Neue Aufgabe zu klären …" onkeydown="if(event.key==='Enter')addITodo()"><button class="btn sec" style="font-size:12px" onclick="addITodo()">+</button></div>`;
+}
+async function addITodo(){const el=$('itodoNew');const t=(el.value||'').trim();if(!t)return;const{data,error}=await sb.from('mietinteressent_todos').insert({interessent_id:NT_CUR,text:t,done:false}).select();if(error){toast('Fehler: '+error.message);return;}if(data&&data[0])ITODO.push(data[0]);renderITodos();}
+async function toggleITodo(id){const t=ITODO.find(x=>x.id===id);if(!t)return;const nv=!t.done;t.done=nv;renderITodos();const{error}=await sb.from('mietinteressent_todos').update({done:nv}).eq('id',id);if(error){t.done=!nv;renderITodos();toast('Fehler: '+error.message);}}
+async function delITodo(id){await sb.from('mietinteressent_todos').delete().eq('id',id);ITODO=ITODO.filter(x=>x.id!==id);renderITodos();}
+// ——— Asana-Verlinkung je Interessent ———
+function renderAsana(){const id=NT_CUR;const list=IASANA.filter(x=>x.interessent_id===id);
+  const items=list.map(a=>`<div style="display:flex;gap:7px;align-items:center;padding:2px 0">
+    <a href="${esc(a.url)}" target="_blank" rel="noopener" style="flex:1;font-size:12.5px;color:#185fa5;text-decoration:none">🔗 ${esc(a.label||a.url)}</a>
+    <b style="cursor:pointer;color:#c0392b" onclick="delAsana('${a.id}')">×</b></div>`).join('')||'<span style="color:var(--muted);font-size:11.5px">keine Asana-Aufgabe verlinkt</span>';
+  $('ntAsana').innerHTML=`<div style="margin-bottom:6px">${items}</div>
+    <div style="display:flex;gap:6px;flex-wrap:wrap"><input id="asanaUrl" class="inl" style="flex:2;min-width:160px;font-size:12.5px" placeholder="Asana-Link (URL) …">
+    <input id="asanaLbl" class="inl" style="flex:1;min-width:110px;font-size:12.5px" placeholder="Bezeichnung (optional)">
+    <button class="btn sec" style="font-size:12px" onclick="addAsana()">+ Verlinken</button></div>`;
+}
+async function addAsana(){const url=($('asanaUrl').value||'').trim();if(!url){toast('Bitte Asana-Link einfügen');return;}const lbl=($('asanaLbl').value||'').trim()||null;const{data,error}=await sb.from('mietinteressent_asana').insert({interessent_id:NT_CUR,url,label:lbl}).select();if(error){toast('Fehler: '+error.message);return;}if(data&&data[0])IASANA.push(data[0]);renderAsana();}
+async function delAsana(id){await sb.from('mietinteressent_asana').delete().eq('id',id);IASANA=IASANA.filter(a=>a.id!==id);renderAsana();}
 async function save(){
   const row={name:$('f_name').value.trim()||null,vorname:$('f_vorname').value.trim()||null,kontakt:$('f_kontakt').value.trim()||null,eingang:$('f_eingang').value||null,quelle:$('f_quelle').value||null,personen:$('f_personen').value?parseInt($('f_personen').value,10):null,einzug_ab:$('f_einzug').value.trim()||null,zahlungsart:$('f_zahlart').value||null,typ:$('f_typ').value||'neu',aktuelles_objekt:$('f_aktobj').value.trim()||null,umzug_grund:$('f_ugrund').value.trim()||null,status:STAGES[0]};
   if(!row.name&&!row.kontakt){toast('Bitte Name oder Kontakt angeben');return;}
