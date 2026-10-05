@@ -29,7 +29,7 @@ th,td{padding:10px 12px;text-align:right;border-bottom:1px solid var(--line);whi
 th{font-size:10.5px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);font-weight:700;background:var(--surf2);position:sticky;top:0;z-index:1;cursor:pointer;user-select:none}
 th:hover{color:var(--text)}
 th.so::after{content:' ▾';color:var(--accent2)} th.sa::after{content:' ▴';color:var(--accent2)}
-th:nth-child(1),th:nth-child(2),td:nth-child(1),td:nth-child(2){text-align:left}
+th:nth-child(1),th:nth-child(2),th:nth-child(3),td:nth-child(1),td:nth-child(2),td:nth-child(3){text-align:left}
 td:nth-child(1){color:var(--muted);font-weight:700;width:34px}
 .oname{font-weight:700}.omut{font-size:11px;color:var(--muted)}
 .kz{font-size:10.5px;font-weight:700;color:var(--accent);background:#efeafe;padding:1px 7px;border-radius:5px;margin-right:5px}
@@ -91,10 +91,13 @@ const pct=n=>(n==null||isNaN(n)?'—':n.toFixed(1).replace('.',',')+' %');
 function toast(m){const t=$('toast');t.textContent=m;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),1800);}
 // Darlehen-Kürzel -> Nahaus h_id_text (nur Bankdarlehen mit Kapitaldienst)
 const CODEMAP={KW30:'H8',U6:'H12',E4:'H2',S58:'H11',H44:'H6',S16:'H5',K28:'H4',K6:'H7',M8:'H9',K7:'H13',R6:'H15',V11:null,A14:'H1',K10:'H1'};
+// Interne Objektkennung je Nahaus-Objekt (Fallback = Nahaus-Kürzel H.., z.B. H3)
+const KUERZEL={H1:'A14',H2:'E4',H4:'K28',H5:'S16',H6:'H44',H7:'K6',H8:'KW30',H9:'M8',H11:'S58',H12:'U6',H13:'K7',H15:'R6'};
 let OBJ=[],MIET=[],LOANS=[],KENN={},ROWS=[],sortKey='gewinn',sortDir=-1,editId=null;
 const COLS=[
  ['rank','#',r=>r._rank,'t'],
- ['name','Objekt',r=>`<span class="kz">${esc(r.h_id_text)}</span><span class="oname">${esc(r.name||'')}</span><div class="omut">${esc(r.ort||'')} · ${esc(r.eigentuemer||'')}</div>`,'t'],
+ ['kennung','Kennung',r=>`<span class="kz">${esc(r.kennung)}</span>`,'t'],
+ ['name','Objekt',r=>`<span class="oname">${esc(r.name||'')}</span><div class="omut">${esc(r.ort||'')} · ${esc(r.eigentuemer||'')}</div>`,'t'],
  ['einheiten','Wohneinheiten',r=>r.einheiten,'n'],
  ['auslastung','Auslastung',r=>auslHtml(r),'n'],
  ['umsatz','Umsatz p.a.',r=>eur(r.umsatz),'n'],
@@ -145,7 +148,7 @@ function compute(){
     const bewirt=(Number(kn.betriebskosten_jahr||0)+Number(kn.heizkosten_jahr||0)+Number(kn.reparaturen_jahr||0));
     const gewinn=umsatz-bankrate-bewirt;
     const einh=o.einheiten_gesamt||0;
-    return {id:o.id,h_id_text:o.h_id_text,name:o.name,ort:o.ort,eigentuemer:o.eigentuemer,
+    return {id:o.id,h_id_text:o.h_id_text,kennung:KUERZEL[o.h_id_text]||o.h_id_text,name:o.name,ort:o.ort,eigentuemer:o.eigentuemer,
       einheiten:einh,
       auslastung:einh?(o.einheiten_vermietet||0)/einh*100:0,
       umsatz,bankrate,bankAuto:!!(lm[o.h_id_text]),bewirt,
@@ -159,7 +162,7 @@ function buildFilters(){
   $('eig').innerHTML='<option value="">Alle Eigentümer</option>'+e.map(x=>`<option>${esc(x)}</option>`).join('');
 }
 function buildHead(){$('hrow').innerHTML=COLS.map(c=>`<th data-k="${c[0]}" onclick="setSort('${c[0]}')">${c[1]}</th>`).join('');}
-function setSort(k){if(k==='rank'||k==='name')return;if(sortKey===k)sortDir*=-1;else{sortKey=k;sortDir=-1;}render();}
+function setSort(k){if(k==='rank'||k==='name'||k==='kennung')return;if(sortKey===k)sortDir*=-1;else{sortKey=k;sortDir=-1;}render();}
 function filtered(){
   const q=$('q').value.trim().toLowerCase(),eg=$('eig').value;
   let r=ROWS.filter(x=>{if(eg&&x.eigentuemer!==eg)return false;if(q){const h=[x.name,x.ort,x.h_id_text,x.eigentuemer].join(' ').toLowerCase();if(!h.includes(q))return false;}return true;});
@@ -170,12 +173,12 @@ function render(){
   const rows=filtered();
   $('cnt').textContent=rows.length+' von '+ROWS.length+' Objekten';
   document.querySelectorAll('#hrow th').forEach(th=>{th.classList.remove('so','sa');if(th.dataset.k===sortKey)th.classList.add(sortDir<0?'so':'sa');});
-  $('tb').innerHTML=rows.map(r=>'<tr>'+COLS.map(c=>`<td>${c[2](r)}</td>`).join('')+'</tr>').join('')||`<tr><td colspan="12" style="text-align:center;color:var(--muted);padding:24px">Keine Objekte.</td></tr>`;
+  $('tb').innerHTML=rows.map(r=>'<tr>'+COLS.map(c=>`<td>${c[2](r)}</td>`).join('')+'</tr>').join('')||`<tr><td colspan="13" style="text-align:center;color:var(--muted);padding:24px">Keine Objekte.</td></tr>`;
   // totals
   const S=rows.reduce((a,r)=>{a.einh+=r.einheiten;a.ums+=r.umsatz;a.bank+=r.bankrate;a.bew+=r.bewirt;a.gew+=r.gewinn;return a;},{einh:0,ums:0,bank:0,bew:0,gew:0});
   const avgAusl=rows.length?rows.reduce((a,r)=>a+r.auslastung,0)/rows.length:0;
   const avgRend=S.ums?S.gew/S.ums*100:0;
-  const tf=[`Σ`,`${rows.length} Objekte`,S.einh,pct(avgAusl),eur(S.ums),eur(S.bank),eur(S.bew),'',`<b class="${S.gew>=0?'good':'bad'}">${eur(S.gew/12)}</b>`,`<b class="${S.gew>=0?'good':'bad'}">${eur(S.gew)}</b>`,'',`<b>${pct(avgRend)}</b>`];
+  const tf=[`Σ`,'',`${rows.length} Objekte`,S.einh,pct(avgAusl),eur(S.ums),eur(S.bank),eur(S.bew),'',`<b class="${S.gew>=0?'good':'bad'}">${eur(S.gew/12)}</b>`,`<b class="${S.gew>=0?'good':'bad'}">${eur(S.gew)}</b>`,'',`<b>${pct(avgRend)}</b>`];
   $('tf').innerHTML=tf.map(v=>`<td>${v}</td>`).join('');
   renderKpis(S,avgAusl,avgRend,rows.length);
 }
