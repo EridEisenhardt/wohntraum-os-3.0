@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="de"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Vermietungsvorgänge</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+:root{--bg:#f6f7f9;--surf:#fff;--surf2:#f1f3f6;--surf3:#e7ebf0;--line:#e6e8ec;--bord2:#eef0f3;--text:#1c2024;--muted:#6b7280;--dim:#4b5563;--accent:#6d4ef0;--green:#0f9d6b;--amber:#b45309;--red:#d64550}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--text);font-family:'Inter',system-ui,-apple-system,'Segoe UI',sans-serif;font-size:14px;line-height:1.5}
+.wrap{max-width:1160px;margin:0 auto;padding:22px 24px 60px}
+.top{display:flex;justify-content:space-between;align-items:flex-start;gap:14px;flex-wrap:wrap;margin-bottom:16px}
+h1{font-size:23px;font-weight:800;display:flex;align-items:center;gap:9px}
+.sub{font-size:12.5px;color:var(--muted);margin-top:4px;max-width:720px}
+.tabs{display:flex;gap:7px}
+.tabs a{font-size:12.5px;font-weight:600;padding:7px 13px;border-radius:9px;border:1px solid var(--line);background:var(--surf);color:var(--dim);text-decoration:none}
+.tabs a.on{background:var(--accent);color:#fff;border-color:transparent}
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:11px;margin-bottom:16px}
+.kpi{background:var(--surf);border:1px solid var(--line);border-radius:12px;padding:13px 15px}
+.kpi .l{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;font-weight:700}
+.kpi .v{font-size:23px;font-weight:800;margin-top:4px}
+.bar{display:flex;gap:10px;align-items:center;margin-bottom:14px;flex-wrap:wrap}
+.bar input{font:inherit;font-size:13px;padding:8px 11px;border:1px solid var(--line);border-radius:9px;background:var(--surf);min-width:260px;flex:1}
+.chk{font-size:12.5px;color:var(--dim);display:flex;gap:6px;align-items:center;cursor:pointer;user-select:none}
+.count{font-size:12px;color:var(--muted)}
+.sec{background:var(--surf);border:1px solid var(--line);border-radius:12px;margin-bottom:14px;overflow:hidden}
+.sec-hd{padding:10px 15px;border-bottom:1px solid var(--line);font-size:12.5px;font-weight:700;display:flex;justify-content:space-between;align-items:center;background:var(--surf2)}
+.sec-hd .cnt{font-size:11px;font-weight:700;color:#fff;background:var(--accent);border-radius:20px;padding:1px 9px}
+.row{display:flex;align-items:center;gap:11px;padding:10px 15px;border-bottom:1px solid var(--bord2);font-size:13px}
+.row:last-child{border-bottom:none}
+.objtag{flex-shrink:0;font-size:11px;font-weight:700;background:var(--surf2);border:1px solid var(--line);color:var(--dim);border-radius:6px;padding:2px 8px;min-width:50px;text-align:center}
+.row .tx{flex:1;min-width:0}
+.row .tx .auf{font-weight:600}
+.row .tx .nm{font-size:11.5px;color:var(--muted);margin-top:1px}
+.nm .in{color:var(--green);font-weight:600}.nm .out{color:var(--amber);font-weight:600}
+.row .who{flex-shrink:0;font-size:11px;color:var(--muted);min-width:90px;text-align:right}
+.row a.asana{flex-shrink:0;font-size:11px;color:var(--accent);text-decoration:none;font-weight:600}
+.badge-done{font-size:10px;font-weight:700;color:#fff;background:var(--green);border-radius:20px;padding:1px 8px}
+.empty,.loading{text-align:center;padding:46px 20px;color:var(--muted)}
+.foot{font-size:11px;color:var(--muted);margin-top:18px;border-top:1px solid var(--line);padding-top:12px;line-height:1.6}
+.wrap,.main{max-width:none!important}
+</style></head><body>
+<div class="wrap">
+  <div class="top">
+    <div><h1 id="h1">Vorgänge</h1><div class="sub" id="sub"></div></div>
+    <div class="tabs">
+      <a href="/vermietung/einzuege" target="_top" data-m="einzug">⬇️ Einzüge</a>
+      <a href="/vermietung/mieteruebergaben" target="_top" data-m="uebergabe">🔑 Mieterübergaben</a>
+      <a href="/vermietung/auszuege" target="_top" data-m="auszug">⬆️ Auszüge</a>
+    </div>
+  </div>
+  <div class="kpis" id="kpis"></div>
+  <div class="bar">
+    <input id="q" placeholder="🔍 Objekt, Einheit, Mieter suchen …" oninput="render()">
+    <label class="chk"><input type="checkbox" id="all" onchange="render()"> Alle anzeigen (inkl. nicht passend/erledigt)</label>
+    <span class="count" id="cnt"></span>
+  </div>
+  <div id="loading" class="loading">Lädt …</div>
+  <div id="sections"></div>
+  <div class="foot" id="foot"></div>
+</div>
+<script>
+const sb=window.supabase.createClient('https://jqzxctfqvcwbctpjksvg.supabase.co','eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpxenhjdGZxdmN3YmN0cGprc3ZnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODIxMzA0MzIsImV4cCI6MjA5NzcwNjQzMn0.RKIbZxJdusKWWPjBJqlxZ8e1m8So02UslOg55YRsn3o');
+const esc=s=>(s==null?'':String(s)).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+const mode=new URLSearchParams(location.search).get('typ')||'einzug';
+const objOf=n=>{const m=(n||'').match(/^([A-Za-zÄÖÜ]{1,4}\d+)/);return m?m[1]:'—';};
+const einzugName=a=>{const m=(a||'').match(/(?:Einzug|Nachmieter|Reserviert)\s*:?\.?\s*([A-Za-zÄÖÜäöüß][A-Za-zÄÖÜäöüß.\- ]{1,28})/i);return m?m[1].trim().replace(/\s*(und|&|;|\-).*$/,'').trim():'';};
+const auszugName=a=>{const m=(a||'').match(/(?:Auszug|Kündigung)\s*:?\.?\s*([A-Za-zÄÖÜäöüß][A-Za-zÄÖÜäöüß.\- ]{1,28})/i);return m?m[1].trim().replace(/\s*(und|&|;|\bEinzug\b|\-).*$/i,'').trim():'';};
+const phaseNum=s=>{const m=(s||'').match(/^(\d+(?:\.\d+)?)/);return m?parseFloat(m[1]):(/erledigt/i.test(s)?99:50);};
+const MODES={
+  einzug:{t:'Einzüge',ic:'⬇️',sub:'Anstehende Einzüge aus der Vermietungs-Pipeline (neuer Mieter zieht ein). Quelle: Asana-Board „3000 – Prozess der Vermietungen".',
+    match:r=>!r.erledigt},
+  uebergabe:{t:'Mieterübergaben',ic:'🔑',sub:'Vorgänge in der Übergabe-/Backoffice-Phase – hier stehen Schlüsselübergabe und Nacharbeit an.',
+    match:r=>!r.erledigt && phaseNum(r.status)>=4},
+  auszug:{t:'Auszüge',ic:'⬆️',sub:'Auszüge bzw. eingegangene Kündigungen aus der Vermietungs-Pipeline (Vormieter zieht aus).',
+    match:r=>!r.erledigt && (auszugName(r.aufgabe)!=='' || phaseNum(r.status)<2)}
+};
+let ROWS=[];
+async function load(){
+  const cfg=MODES[mode];
+  document.getElementById('h1').innerHTML=cfg.ic+' '+cfg.t;
+  document.getElementById('sub').textContent=cfg.sub;
+  document.title=cfg.t;
+  document.querySelectorAll('.tabs a').forEach(a=>a.classList.toggle('on',a.dataset.m===mode));
+  const {data,error}=await sb.from('vermietungen').select('aufgabe,status,sort,zugewiesen,asana_url,updated_at,erledigt').order('sort',{ascending:true}).order('aufgabe',{ascending:true});
+  if(error){document.getElementById('loading').textContent='Fehler: '+error.message;return;}
+  ROWS=data||[];
+  const stand=ROWS.map(r=>r.updated_at).filter(Boolean).sort().pop();
+  document.getElementById('foot').innerHTML='Quelle: Tabelle <b>vermietungen</b> (Asana-Board „3000 – Prozess der Vermietungen"). '+(stand?'Stand '+new Date(stand).toLocaleDateString('de-DE'):'')+' · Namen werden aus dem Aufgabentext erkannt; „Alle anzeigen" blendet die Phasen-Zuordnung aus.';
+  render();
+}
+function render(){
+  const cfg=MODES[mode],q=document.getElementById('q').value.trim().toLowerCase(),showAll=document.getElementById('all').checked;
+  let rows=ROWS.filter(r=>showAll||cfg.match(r));
+  if(q)rows=rows.filter(r=>[r.aufgabe,r.status,r.zugewiesen].join(' ').toLowerCase().includes(q));
+  document.getElementById('loading').style.display='none';
+  document.getElementById('cnt').textContent=rows.length+' Vorgänge';
+  // KPIs: gesamt + top phasen
+  const byP={};rows.forEach(r=>{(byP[r.status]=byP[r.status]||[]).push(r);});
+  const phases=Object.keys(byP).sort((a,b)=>phaseNum(a)-phaseNum(b));
+  const kc=[['Vorgänge',rows.length],['Objekte',new Set(rows.map(r=>objOf(r.aufgabe))).size]];
+  phases.slice(0,4).forEach(p=>kc.push([p.replace(/^\d+\.?\d*\s*/,'').slice(0,22),byP[p].length]));
+  document.getElementById('kpis').innerHTML=kc.slice(0,6).map(a=>`<div class="kpi"><div class="l">${esc(a[0])}</div><div class="v">${a[1]}</div></div>`).join('');
+  document.getElementById('sections').innerHTML=phases.map(p=>{
+    const list=byP[p];
+    return `<div class="sec"><div class="sec-hd"><span>${esc(p)}</span><span class="cnt">${list.length}</span></div>`+
+     list.map(r=>{const inN=einzugName(r.aufgabe),outN=auszugName(r.aufgabe);let nm='';
+       if(mode==='auszug'&&outN)nm=`<span class="out">↑ ${esc(outN)}</span>`;
+       else if(mode==='einzug'&&inN)nm=`<span class="in">↓ ${esc(inN)}</span>`;
+       else{const parts=[];if(outN)parts.push(`<span class="out">↑ ${esc(outN)}</span>`);if(inN)parts.push(`<span class="in">↓ ${esc(inN)}</span>`);nm=parts.join(' → ');}
+       return `<div class="row"><span class="objtag">${esc(objOf(r.aufgabe))}</span>
+        <div class="tx"><div class="auf">${esc(r.aufgabe)}</div>${nm?`<div class="nm">${nm}</div>`:''}</div>
+        <span class="who">${r.erledigt?'<span class="badge-done">Erledigt</span>':(r.zugewiesen?esc(r.zugewiesen):'—')}</span>
+        ${r.asana_url?`<a class="asana" href="${esc(r.asana_url)}" target="_blank" rel="noopener">↗ Asana</a>`:''}</div>`;}).join('')+
+     `</div>`;
+  }).join('')||`<div class="empty">Keine Vorgänge in dieser Rubrik.${!showAll?' Aktiviere „Alle anzeigen", um alle Pipeline-Einträge zu sehen.':''}</div>`;
+}
+load();
+</script></body></html>
