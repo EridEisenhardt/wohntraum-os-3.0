@@ -294,11 +294,25 @@ async function vhDrop(ev,monat,kat){
 }
 
 const STAGES=['1 · Eingang der Kündigung','2 · Kalkulation der neuen Wohnung','3 · Einheit in Vermietung','4 · Mietvertrag erstellen & unterschreiben','5 · Schlüsselübergabe','6 · 1. Mietzahlung','7 · Nacharbeit Backoffice / HV','8 · Erledigt','A · Warteliste','B · Renovierung / Sanierung','C · Leerstand'];
-let ROWS=[],GEB=[],KENN={},EINH=[],INT=[],VL=[],NOTIZ=[],FSTAGE='',HIDE_DONE=false;
+let ROWS=[],GEB=[],KENN={},EINH=[],INT=[],VL=[],NOTIZ=[],TODO=[],FSTAGE='',HIDE_DONE=false;
 function kenn(name){var k=KENN[name];return k?k+' · ':'';}
 function fmtDT(ts){try{return new Date(ts).toLocaleString('de-DE',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'})+' Uhr';}catch(e){return ts;}}
 async function addNotiz(vid,el){const t=(el.value||'').trim();if(!t)return;const{data,error}=await sb.from('vermietung_notizen').insert({vermietung_id:vid,text:t}).select();if(error){toast('Fehler: '+error.message);return;}if(data&&data[0])NOTIZ.unshift(data[0]);el.value='';render();}
 async function delNotiz(id){if(!confirm('Notiz löschen?'))return;await sb.from('vermietung_notizen').delete().eq('id',id);NOTIZ=NOTIZ.filter(n=>n.id!==id);render();}
+async function addTodo(vid,el){const t=(el.value||'').trim();if(!t)return;const{data,error}=await sb.from('vermietung_todos').insert({vermietung_id:vid,text:t,done:false}).select();if(error){toast('Fehler: '+error.message);return;}if(data&&data[0])TODO.push(data[0]);el.value='';render();}
+async function toggleTodo(id){const t=TODO.find(x=>x.id===id);if(!t)return;const nv=!t.done;t.done=nv;render();const{error}=await sb.from('vermietung_todos').update({done:nv}).eq('id',id);if(error){t.done=!nv;render();toast('Fehler: '+error.message);}}
+async function delTodo(id){await sb.from('vermietung_todos').delete().eq('id',id);TODO=TODO.filter(x=>x.id!==id);render();}
+function todoBlock(vid){const list=TODO.filter(t=>t.vermietung_id===vid);
+  const done=list.filter(t=>t.done).length;
+  const items=list.map(t=>`<div style="display:flex;gap:7px;align-items:flex-start;padding:2px 0">
+    <input type="checkbox" ${t.done?'checked':''} onchange="toggleTodo('${t.id}')" style="margin-top:2px;cursor:pointer;width:15px;height:15px;flex:0 0 auto">
+    <span style="flex:1;font-size:12px;${t.done?'text-decoration:line-through;color:var(--muted)':''}">${esc(t.text)}</span>
+    <b style="cursor:pointer;color:#c0392b" onclick="delTodo('${t.id}')">×</b></div>`).join('')||'<span style="color:var(--muted);font-size:11px">noch keine To-dos</span>';
+  return `<div class="wc-row" style="grid-template-columns:110px 1fr;align-items:start"><label>To-dos${list.length?` <span style="color:var(--muted);font-weight:400">${done}/${list.length}</span>`:''}</label><div>
+    <div style="margin-bottom:5px">${items}</div>
+    <div style="display:flex;gap:5px"><input class="inl" type="text" placeholder="Neues To-do …" style="flex:1" onkeydown="if(event.key==='Enter'){addTodo('${vid}',this);}">
+    <button class="btn sec" style="font-size:12px" onclick="addTodo('${vid}',this.previousElementSibling)">+</button></div>
+  </div></div>`;}
 function notizBlock(vid){const list=NOTIZ.filter(n=>n.vermietung_id===vid);
   const items=list.map(n=>`<div style="border-left:2px solid var(--line);padding:2px 0 4px 8px;margin-bottom:4px"><div style="font-size:10.5px;color:var(--muted)">${fmtDT(n.created_at)} <b style="cursor:pointer;color:#c0392b;float:right" onclick="delNotiz('${n.id}')">×</b></div><div style="font-size:12px;white-space:pre-wrap">${esc(n.text)}</div></div>`).join('')||'<span style="color:var(--muted);font-size:11px">noch keine Notizen</span>';
   return `<div class="wc-row" style="grid-template-columns:110px 1fr;align-items:start"><label>Notizen</label><div>
@@ -315,14 +329,15 @@ function unitsOf(g){return EINH.filter(e=>e.gebaeude===g).map(e=>e.name);}
 function fillEinheit(){/* Einheit wird jetzt manuell eingetragen */}
 function clearForm(){['f_grund','f_ziel','f_einzug','f_auszug','f_vormieter'].forEach(id=>$(id).value='');$('msg').textContent='';}
 async function loadRefs(){
-  const[g,e,i,v,nz]=await Promise.all([
+  const[g,e,i,v,nz,td]=await Promise.all([
     sb.from('gebaeude').select('name,kennung').order('pos').order('name'),
     sb.from('wohneinheiten').select('gebaeude,name').order('name'),
     sb.from('mietinteressenten').select('id,name,status').order('created_at',{ascending:false}),
     sb.from('vermietung_leads').select('id,vermietung_id,interessent_id'),
-    sb.from('vermietung_notizen').select('*').order('created_at',{ascending:false})
+    sb.from('vermietung_notizen').select('*').order('created_at',{ascending:false}),
+    sb.from('vermietung_todos').select('*').order('created_at',{ascending:true})
   ]);
-  GEB=(g.data||[]).map(r=>r.name);KENN={};(g.data||[]).forEach(r=>{KENN[r.name]=r.kennung||'';});EINH=e.data||[];INT=i.data||[];VL=v.data||[];NOTIZ=nz.data||[];
+  GEB=(g.data||[]).map(r=>r.name);KENN={};(g.data||[]).forEach(r=>{KENN[r.name]=r.kennung||'';});EINH=e.data||[];INT=i.data||[];VL=v.data||[];NOTIZ=nz.data||[];TODO=td.data||[];
   $('f_geb').innerHTML='<option value="">—</option>'+GEB.map(x=>`<option value="${esc(x)}">${KENN[x]?esc(KENN[x])+' · ':''}${esc(x)}</option>`).join('');
   if($('fObj'))$('fObj').innerHTML='<option value="">Alle Objekte</option>'+GEB.map(x=>`<option value="${esc(x)}"${x===FOBJ?' selected':''}>${KENN[x]?esc(KENN[x])+' · ':''}${esc(x)}</option>`).join('');
   $('f_status').innerHTML=optlist(STAGES,STAGES[0]);
@@ -504,6 +519,7 @@ function render(){
       </div></div>
       <div class="wc-row"><label>Reserviert</label><select class="inl" onchange="upd('${r.id}','reserviert_id',this.value)">${intOpts(r.reserviert_id)}</select></div>
       <div class="wc-row"><label>Mietvertrag &amp; Einzug</label><select class="inl" onchange="upd('${r.id}','finaler_mieter_id',this.value)">${intOpts(r.finaler_mieter_id)}</select></div>
+      ${todoBlock(r.id)}
       ${notizBlock(r.id)}
     </div>`;}).join('')+'</div>';
 }
