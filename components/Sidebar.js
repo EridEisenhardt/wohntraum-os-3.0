@@ -26,6 +26,7 @@ export const NAV = [
     { href: '/hausverwaltung/portfolio', icon: 'ti-building-community', label: 'Portfolio' },
     { href: '/hausverwaltung/objekte', icon: 'ti-building-skyscraper', label: 'Objekte' },
     { href: '/hausverwaltung/einheiten', icon: 'ti-home', label: 'Einheiten' },
+    { href: '/hausverwaltung/rangliste', icon: 'ti-trophy', label: 'Rangliste Objekte' },
     { href: '/portfolio', icon: 'ti-chart-dots-3', label: 'Portfolio (Faktor · Cashflow)' },
     { href: '/hausverwaltung/mietermeldungen', icon: 'ti-message-report', label: 'Mietermeldungen' },
     { href: '/hausverwaltung/dienstleister', icon: 'ti-address-book', label: 'Firmen & Dienstleister' },
