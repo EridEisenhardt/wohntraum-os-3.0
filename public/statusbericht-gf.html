@@ -98,6 +98,7 @@ h2 .dot{width:9px;height:9px;border-radius:3px;display:inline-block}
     <h2><span class="dot" style="background:var(--danger)"></span>Offene Posten (Nahaus)</h2>
     <div class="note">Offene Forderungen aus Nahaus — laufende &amp; beendete Mietverhältnisse. Tagesstand des letzten Abgleichs. Vollständige Auflistung am Ende des Berichts.</div>
     <div class="kpis" id="opKpis"></div>
+    <div class="cat" style="padding:12px 16px 8px;margin-top:14px"><div style="font-size:12px;font-weight:600;color:var(--dim);margin-bottom:6px">📈 Entwicklung offene Posten pro Tag</div><div style="position:relative;height:260px"><canvas id="chOP"></canvas></div></div>
 
     <h2><span class="dot" style="background:var(--accent)"></span>Entwicklung offener Vorgänge</h2>
     <div class="note">Mails im Postfach sowie fällige &amp; überfällige Aufgaben in Asana und Todoist — täglich fortgeschrieben.</div>
@@ -371,6 +372,7 @@ async function loadOffenePosten(){
   // oben: nur der eine Wert (Tagesstand)
   const heute=new Date().toLocaleDateString('de-DE');
   $('opKpis').innerHTML=`<div class="kpi"><div class="l">Offene Posten gesamt · Stand ${heute}</div><div class="v" style="color:var(--danger)">${eur(sum(rows))}</div><div class="h">laufend ${eur(sum(laufend))} · beendet ${eur(sum(beendet))} · ${rows.length} Verträge</div></div>`;
+  drawOPChart();
   // unten: Auflistung aller Posten, nach Betrag sortiert
   const all=rows.slice().sort((a,b)=>Number(b.total_op)-Number(a.total_op));
   $('opListe').innerHTML='<table style="width:100%;border-collapse:collapse;font-size:12.5px"><thead><tr>'+
@@ -383,6 +385,21 @@ async function loadOffenePosten(){
       <td style="padding:7px 14px;text-align:right;font-weight:700;color:var(--danger);border-bottom:1px solid var(--bord2)">${eur(Number(x.total_op))}</td></tr>`).join('')+
     `<tr><td colspan="5" style="padding:9px 14px;text-align:right;font-weight:700;border-top:2px solid var(--line)">Summe</td><td style="padding:9px 14px;text-align:right;font-weight:800;color:var(--danger);border-top:2px solid var(--line)">${eur(sum(rows))}</td></tr>`+
     '</tbody></table>';
+}
+let OPCHART=null;
+async function drawOPChart(){
+  if(!window.Chart)return;
+  const r=await sb.from('offene_posten_tageswerte').select('datum,summe,summe_laufend,summe_beendet').order('datum',{ascending:true});
+  const rows=r.error?[]:(r.data||[]);
+  const cv=$('chOP'); if(!cv||!rows.length)return;
+  const labels=rows.map(x=>{const p=x.datum.split('-');return p[2]+'.'+p[1]+'.';});
+  const ds=(lbl,key,col,w)=>({label:lbl,data:rows.map(x=>Number(x[key]||0)),borderColor:col,backgroundColor:col+'22',borderWidth:w,tension:.25,pointRadius:rows.length<=2?4:2,fill:key==='summe'});
+  if(OPCHART)OPCHART.destroy();
+  OPCHART=new Chart(cv.getContext('2d'),{type:'line',
+    data:{labels,datasets:[ds('Gesamt','summe','#c62828',2.5),ds('laufend','summe_laufend','#185fa5',1.5),ds('beendet','summe_beendet','#b45309',1.5)]},
+    options:{responsive:true,maintainAspectRatio:false,interaction:{mode:'index',intersect:false},
+      plugins:{legend:{labels:{boxWidth:12,font:{size:11}}},tooltip:{callbacks:{label:c=>c.dataset.label+': '+Math.round(c.parsed.y).toLocaleString('de-DE')+' €'}}},
+      scales:{y:{ticks:{callback:v=>Math.round(v/1000)+'k €'}}}}});
 }
 </script>
 </body>
