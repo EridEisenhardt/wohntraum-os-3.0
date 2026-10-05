@@ -95,6 +95,20 @@ h2 .dot{width:9px;height:9px;border-radius:3px;display:inline-block}
     <h2><span class="dot" style="background:var(--accent)"></span>Überblick</h2>
     <div class="kpis" id="kpis"></div>
 
+    <h2><span class="dot" style="background:var(--danger)"></span>Offene Posten (Nahaus) · bestehende &amp; beendete Mietverträge</h2>
+    <div class="note">Offene Forderungen je Objekt aus Nahaus — laufende und bereits beendete Mietverhältnisse. Momentaufnahme des letzten Abgleichs.</div>
+    <div class="kpis" id="opKpis"></div>
+    <div class="grid" style="margin-top:14px">
+      <div class="cat" style="padding:0;overflow:hidden">
+        <div style="font-size:12px;font-weight:600;color:var(--dim);padding:11px 14px;border-bottom:1px solid var(--line)">🏢 Je Objekt</div>
+        <div id="opByObjekt"></div>
+      </div>
+      <div class="cat" style="padding:0;overflow:hidden">
+        <div style="font-size:12px;font-weight:600;color:var(--dim);padding:11px 14px;border-bottom:1px solid var(--line)">⚠️ Beendete Verträge mit offenen Posten</div>
+        <div id="opBeendet"></div>
+      </div>
+    </div>
+
     <h2><span class="dot" style="background:var(--accent)"></span>Entwicklung offener Vorgänge</h2>
     <div class="note">Mails im Postfach sowie fällige &amp; überfällige Aufgaben in Asana und Todoist — täglich fortgeschrieben.</div>
     <div class="kpis" id="metricKpis"></div>
@@ -352,6 +366,41 @@ function renderDeleg(p){
 
 load();
 loadCashflow();
+loadOffenePosten();
+async function loadOffenePosten(){
+  const eur=n=>(n==null||isNaN(n))?'—':Math.round(n).toLocaleString('de-DE')+' €';
+  const r=await sb.from('nahaus_offene_posten').select('h_id_text,unit_label,mieter_namen,is_current,total_op,op_count');
+  const rows=(r.error?[]:(r.data||[])).filter(x=>Number(x.total_op)>0);
+  if(!rows.length){ if($('opKpis'))$('opKpis').innerHTML='<div class="kpi"><div class="l">Offene Posten</div><div class="v">—</div><div class="h">keine Daten</div></div>'; return; }
+  const sum=a=>a.reduce((s,x)=>s+Number(x.total_op||0),0);
+  const laufend=rows.filter(x=>x.is_current), beendet=rows.filter(x=>!x.is_current);
+  $('opKpis').innerHTML=[
+    ['Offene Posten gesamt',eur(sum(rows)),rows.length+' Verträge'],
+    ['davon laufende Verträge',eur(sum(laufend)),laufend.length+' Verträge'],
+    ['davon beendete Verträge',eur(sum(beendet)),beendet.length+' Verträge'],
+    ['Positionen gesamt',rows.reduce((s,x)=>s+(x.op_count||0),0),'offene Posten']
+  ].map(a=>`<div class="kpi"><div class="l">${esc(a[0])}</div><div class="v">${a[1]}</div><div class="h">${esc(String(a[2]))}</div></div>`).join('');
+  // je Objekt
+  const byO={};
+  rows.forEach(x=>{const k=x.h_id_text||'—';byO[k]=byO[k]||{l:0,b:0,n:0};if(x.is_current)byO[k].l+=Number(x.total_op);else byO[k].b+=Number(x.total_op);byO[k].n++;});
+  const objs=Object.entries(byO).map(([k,v])=>({k,...v,t:v.l+v.b})).sort((a,b)=>b.t-a.t);
+  $('opByObjekt').innerHTML='<table style="width:100%;border-collapse:collapse;font-size:12.5px"><thead><tr>'+
+    ['Objekt','laufend','beendet','gesamt','Verträge'].map((h,i)=>`<th style="text-align:${i?'right':'left'};padding:7px 14px;color:var(--muted);font-size:10.5px;text-transform:uppercase;border-bottom:1px solid var(--line)">${h}</th>`).join('')+'</tr></thead><tbody>'+
+    objs.map(o=>`<tr><td style="padding:7px 14px;font-weight:700;border-bottom:1px solid var(--bord2)">${esc(o.k)}</td>
+      <td style="padding:7px 14px;text-align:right;border-bottom:1px solid var(--bord2)">${o.l?eur(o.l):'—'}</td>
+      <td style="padding:7px 14px;text-align:right;color:var(--danger);border-bottom:1px solid var(--bord2)">${o.b?eur(o.b):'—'}</td>
+      <td style="padding:7px 14px;text-align:right;font-weight:700;border-bottom:1px solid var(--bord2)">${eur(o.t)}</td>
+      <td style="padding:7px 14px;text-align:right;color:var(--muted);border-bottom:1px solid var(--bord2)">${o.n}</td></tr>`).join('')+'</tbody></table>';
+  // beendete detail
+  const bd=beendet.sort((a,b)=>Number(b.total_op)-Number(a.total_op));
+  $('opBeendet').innerHTML=bd.length?('<table style="width:100%;border-collapse:collapse;font-size:12.5px"><thead><tr>'+
+    ['Objekt','Einheit','Vormieter','Betrag'].map((h,i)=>`<th style="text-align:${i>2?'right':'left'};padding:7px 14px;color:var(--muted);font-size:10.5px;text-transform:uppercase;border-bottom:1px solid var(--line)">${h}</th>`).join('')+'</tr></thead><tbody>'+
+    bd.map(x=>`<tr><td style="padding:7px 14px;font-weight:700;border-bottom:1px solid var(--bord2)">${esc(x.h_id_text||'—')}</td>
+      <td style="padding:7px 14px;border-bottom:1px solid var(--bord2)">${esc(x.unit_label||'—')}</td>
+      <td style="padding:7px 14px;border-bottom:1px solid var(--bord2)">${esc(x.mieter_namen||'—')}</td>
+      <td style="padding:7px 14px;text-align:right;font-weight:700;color:var(--danger);border-bottom:1px solid var(--bord2)">${eur(Number(x.total_op))}</td></tr>`).join('')+'</tbody></table>'):
+    '<div style="padding:18px 14px;color:var(--muted);font-size:12.5px">Keine beendeten Verträge mit offenen Posten. 🎉</div>';
+}
 </script>
 </body>
 </html>
