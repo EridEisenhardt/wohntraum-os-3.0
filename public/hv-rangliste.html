@@ -107,11 +107,13 @@ const COLS=[
  ['cashflow','Cashflow /Monat',r=>`<b class="${r.cashflow>=0?'good':'bad'}">${eur(r.cashflow)}</b>`,'n'],
  ['gewinn','Gewinn p.a.',r=>`<b class="${r.gewinn>=0?'good':'bad'}">${eur(r.gewinn)}</b>`,'n'],
  ['umsatzWhg','Umsatz/Whg·Monat',r=>eur(r.umsatzWhg),'n'],
- ['rendite','Rendite %',r=>`<b class="${r.rendite>=0?'good':'bad'}">${pct(r.rendite)}</b>`,'n']
+ ['rendite','Rendite %',r=>`<b class="${r.rendite>=0?'good':'bad'}">${pct(r.rendite)}</b>`,'n'],
+ ['op','Offene Posten',r=>opHtml(r),'n']
 ];
 function auslHtml(r){const p=r.auslastung;const c=p>=100?'var(--green)':p>=75?'#9ecb3a':'var(--amber)';return `${pct(p)}<span class="bausbar"><i style="width:${Math.min(100,p)}%;background:${c}"></i></span>`;}
 function bankHtml(r){const ov=KENN[r.id]&&KENN[r.id].bankrate_override!=null;return `<span class="edit ${ov?'':''}" onclick="openModal('${r.id}')">${eur(r.bankrate)}</span>${ov?'':(r.bankAuto?'':' <span class="est" title="kein Darlehen zugeordnet">•</span>')}`;}
 function bewirtHtml(r){const has=r.bewirt>0;return `<span class="edit ${has?'':'est'}" onclick="openModal('${r.id}')">${has?eur(r.bewirt):'eintragen ✎'}</span>`;}
+function opHtml(r){if(r.op==null)return '—';if(r.op<=0)return `<span class="good">0 €</span>`;return `<b class="bad">${eur(r.op)}</b>${r.opCount?`<span class="omut"> · ${r.opCount} Pos.</span>`:''}`;}
 
 async function load(){
   const [o,m,l,k]=await Promise.all([
@@ -154,7 +156,8 @@ function compute(){
       umsatz,bankrate,bankAuto:!!(lm[o.h_id_text]),bewirt,
       kaltm2:(kaltM&&o.wohnflaeche)?kaltM/Number(o.wohnflaeche):null,
       gewinn,cashflow:gewinn/12,umsatzWhg:einh?warmM/einh:0,
-      rendite:umsatz?gewinn/umsatz*100:null};
+      rendite:umsatz?gewinn/umsatz*100:null,
+      op:o.offene_posten!=null?Number(o.offene_posten):null,opCount:o.offene_posten_anzahl||0};
   });
 }
 function buildFilters(){
@@ -173,17 +176,17 @@ function render(){
   const rows=filtered();
   $('cnt').textContent=rows.length+' von '+ROWS.length+' Objekten';
   document.querySelectorAll('#hrow th').forEach(th=>{th.classList.remove('so','sa');if(th.dataset.k===sortKey)th.classList.add(sortDir<0?'so':'sa');});
-  $('tb').innerHTML=rows.map(r=>'<tr>'+COLS.map(c=>`<td>${c[2](r)}</td>`).join('')+'</tr>').join('')||`<tr><td colspan="13" style="text-align:center;color:var(--muted);padding:24px">Keine Objekte.</td></tr>`;
+  $('tb').innerHTML=rows.map(r=>'<tr>'+COLS.map(c=>`<td>${c[2](r)}</td>`).join('')+'</tr>').join('')||`<tr><td colspan="14" style="text-align:center;color:var(--muted);padding:24px">Keine Objekte.</td></tr>`;
   // totals
-  const S=rows.reduce((a,r)=>{a.einh+=r.einheiten;a.ums+=r.umsatz;a.bank+=r.bankrate;a.bew+=r.bewirt;a.gew+=r.gewinn;return a;},{einh:0,ums:0,bank:0,bew:0,gew:0});
+  const S=rows.reduce((a,r)=>{a.einh+=r.einheiten;a.ums+=r.umsatz;a.bank+=r.bankrate;a.bew+=r.bewirt;a.gew+=r.gewinn;a.op+=(r.op||0);return a;},{einh:0,ums:0,bank:0,bew:0,gew:0,op:0});
   const avgAusl=rows.length?rows.reduce((a,r)=>a+r.auslastung,0)/rows.length:0;
   const avgRend=S.ums?S.gew/S.ums*100:0;
-  const tf=[`Σ`,'',`${rows.length} Objekte`,S.einh,pct(avgAusl),eur(S.ums),eur(S.bank),eur(S.bew),'',`<b class="${S.gew>=0?'good':'bad'}">${eur(S.gew/12)}</b>`,`<b class="${S.gew>=0?'good':'bad'}">${eur(S.gew)}</b>`,'',`<b>${pct(avgRend)}</b>`];
+  const tf=[`Σ`,'',`${rows.length} Objekte`,S.einh,pct(avgAusl),eur(S.ums),eur(S.bank),eur(S.bew),'',`<b class="${S.gew>=0?'good':'bad'}">${eur(S.gew/12)}</b>`,`<b class="${S.gew>=0?'good':'bad'}">${eur(S.gew)}</b>`,'',`<b>${pct(avgRend)}</b>`,`<b class="${S.op>0?'bad':'good'}">${eur(S.op)}</b>`];
   $('tf').innerHTML=tf.map(v=>`<td>${v}</td>`).join('');
   renderKpis(S,avgAusl,avgRend,rows.length);
 }
 function renderKpis(S,avgAusl,avgRend,n){
-  const k=[['Objekte',n,''],['Wohneinheiten',S.einh,''],['Ø Auslastung',pct(avgAusl),'green'],['Umsatz p.a.',eur(S.ums),'gold'],['Bankrate p.a.',eur(S.bank),''],['Gewinn p.a.',eur(S.gew),S.gew>=0?'green':'red'],['Ø Gewinnmarge',pct(avgRend),'gold']];
+  const k=[['Objekte',n,''],['Wohneinheiten',S.einh,''],['Ø Auslastung',pct(avgAusl),'green'],['Umsatz p.a.',eur(S.ums),'gold'],['Bankrate p.a.',eur(S.bank),''],['Gewinn p.a.',eur(S.gew),S.gew>=0?'green':'red'],['Ø Gewinnmarge',pct(avgRend),'gold'],['Offene Posten',eur(S.op),S.op>0?'red':'green']];
   $('kpis').innerHTML=k.map(([l,v,c])=>`<div class="kpi ${c||''}"><div class="l">${l}</div><div class="v">${v}</div></div>`).join('');
 }
 function openModal(id){editId=id;const o=ROWS.find(x=>x.id===id),kn=KENN[id]||{};
