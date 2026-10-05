@@ -160,7 +160,7 @@ table.num td:nth-child(2),table.num th:nth-child(2){text-align:right}
   </table></div>
 
   <h2><span class="dot" style="background:var(--accent)"></span>7 · Bausparverträge</h2>
-  <div class="note">Bausparkasse, Vertragsnummer, Bausparsumme, aktuelles Guthaben, monatlicher Sparbeitrag und Status — pflegbar, in Supabase gespeichert.</div>
+  <div class="note">Bausparkasse, Vertragsnummer, Bausparsumme, aktuelles Guthaben, Bauspardarlehen (Kreditkonto, negativ), Saldo, monatlicher Sparbeitrag und Status — pflegbar, in Supabase gespeichert. Saldo = Guthaben + Bauspardarlehen.</div>
   <div class="tablewrap"><table class="mini" id="bautbl"></table></div>
   <div style="margin-top:8px"><button class="btn" onclick="addBau()">+ Bausparvertrag hinzufügen</button></div>
 
@@ -383,28 +383,33 @@ let BAU=[];
 const eurBau=n=>(n==null||n==='')?'':new Intl.NumberFormat('de-DE',{style:'currency',currency:'EUR',maximumFractionDigits:0}).format(Number(n));
 async function loadBau(){
   const el=document.getElementById('bautbl'); if(!el) return;
-  const { data, error } = await sb.from('bausparvertraege').select('id,bausparkasse,vertragsnr,bausparsumme,guthaben,sparrate,status,pos').order('pos',{ascending:true}).order('created_at',{ascending:true});
+  const { data, error } = await sb.from('bausparvertraege').select('id,bausparkasse,vertragsnr,bausparsumme,guthaben,darlehen,sparrate,status,pos').order('pos',{ascending:true}).order('created_at',{ascending:true});
   BAU = error ? [] : (data||[]);
   renderBau();
 }
 function renderBau(){
   const el=document.getElementById('bautbl'); if(!el) return;
-  const cols=['Bausparkasse','Vertragsnummer','Bausparsumme','Guthaben','Sparrate / Monat','Status',''];
-  const head='<thead><tr>'+cols.map((h,i)=>`<th style="text-align:${i>=2&&i<=4?'right':'left'}${i===0?';min-width:160px':''}">${h}</th>`).join('')+'</tr></thead>';
-  if(!BAU.length){ el.innerHTML=head+'<tbody><tr><td colspan="7" style="text-align:center;color:var(--muted)">Keine Bausparverträge — „+ Bausparvertrag hinzufügen".</td></tr></tbody>'; return; }
+  const cols=['Bausparkasse','Vertragsnummer','Bausparsumme','Guthaben','Bauspardarlehen','Saldo','Sparrate / Monat','Status',''];
+  const head='<thead><tr>'+cols.map((h,i)=>`<th style="text-align:${i>=2&&i<=6?'right':'left'}${i===0?';min-width:160px':''}">${h}</th>`).join('')+'</tr></thead>';
+  if(!BAU.length){ el.innerHTML=head+'<tbody><tr><td colspan="9" style="text-align:center;color:var(--muted)">Keine Bausparverträge — „+ Bausparvertrag hinzufügen".</td></tr></tbody>'; return; }
   const v=s=>(s==null?'':String(s)).replace(/"/g,'&quot;');
   const sumBsp=BAU.reduce((s,b)=>s+(Number(b.bausparsumme)||0),0);
   const sumGut=BAU.reduce((s,b)=>s+(Number(b.guthaben)||0),0);
-  el.innerHTML=head+'<tbody>'+BAU.map(b=>`<tr>
+  const sumDar=BAU.reduce((s,b)=>s+(Number(b.darlehen)||0),0);
+  const sumSaldo=sumGut+sumDar;
+  const redIf=n=>Number(n)<0?'color:#c0392b':'';
+  el.innerHTML=head+'<tbody>'+BAU.map(b=>{const saldo=(Number(b.guthaben)||0)+(Number(b.darlehen)||0);return `<tr>
     <td><input style="${FINL};font-weight:600" value="${v(b.bausparkasse)}" placeholder="Bausparkasse" onchange="updBau('${b.id}','bausparkasse',this.value)"></td>
     <td><input style="${FINL}" value="${v(b.vertragsnr)}" placeholder="Vertragsnr." onchange="updBau('${b.id}','vertragsnr',this.value)"></td>
     <td><input style="${FINL};text-align:right" inputmode="decimal" value="${v(b.bausparsumme)}" placeholder="€" onchange="updBauNum('${b.id}','bausparsumme',this.value)"></td>
     <td><input style="${FINL};text-align:right" inputmode="decimal" value="${v(b.guthaben)}" placeholder="€" onchange="updBauNum('${b.id}','guthaben',this.value)"></td>
+    <td><input style="${FINL};text-align:right;${redIf(b.darlehen)}" inputmode="decimal" value="${v(b.darlehen)}" placeholder="z. B. -7000" onchange="updBauNum('${b.id}','darlehen',this.value)"></td>
+    <td style="text-align:right;font-weight:600;${redIf(saldo)}">${(b.guthaben!=null||b.darlehen!=null)?eurBau(saldo):''}</td>
     <td><input style="${FINL};text-align:right" inputmode="decimal" value="${v(b.sparrate)}" placeholder="€" onchange="updBauNum('${b.id}','sparrate',this.value)"></td>
     <td><input style="${FINL}" value="${v(b.status)}" placeholder="z. B. Sparphase" onchange="updBau('${b.id}','status',this.value)"></td>
     <td style="text-align:center"><button class="btn" style="padding:3px 8px;font-size:11px" onclick="delBau('${b.id}')">✕</button></td>
-  </tr>`).join('')
-  +`<tr class="totrow"><td>Summe (${BAU.length})</td><td></td><td style="text-align:right">${eurBau(sumBsp)}</td><td style="text-align:right">${eurBau(sumGut)}</td><td colspan="3"></td></tr>`
+  </tr>`;}).join('')
+  +`<tr class="totrow"><td>Summe (${BAU.length})</td><td></td><td style="text-align:right">${eurBau(sumBsp)}</td><td style="text-align:right">${eurBau(sumGut)}</td><td style="text-align:right;${redIf(sumDar)}">${eurBau(sumDar)}</td><td style="text-align:right;${redIf(sumSaldo)}">${eurBau(sumSaldo)}</td><td colspan="3"></td></tr>`
   +'</tbody>';
 }
 async function addBau(){
