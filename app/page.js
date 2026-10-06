@@ -97,11 +97,6 @@ export default function Cockpit() {
         </div>
       </div>
 
-      <div role="alert" style={{ display: 'flex', alignItems: 'center', gap: 12, background: '#fdecec', border: '1px solid #f3b4b4', color: '#a32020', borderRadius: 12, padding: '12px 16px', marginBottom: 16, fontSize: 14.5 }}>
-        <i className="ti ti-alert-triangle" style={{ fontSize: 22 }} />
-        <span><strong>Notruf:</strong> Ginho braucht Hundefutter!</span>
-      </div>
-
       <div className="kpis">
         <div className="kpi"><div className="label">Kontakte</div><div className="val">{counts.contacts}</div></div>
         <div className="kpi"><div className="label">Firmen</div><div className="val">{counts.companies}</div></div>

@@ -193,6 +193,8 @@ export default function Sidebar({ user, demo, onLogout, role, perms }) {
   const [dragFav, setDragFav] = useState(null)
   const [favOpen, setFavOpen] = useState(true)
   const [openCats, setOpenCats] = useState(() => new Set())
+  const [catOrder, setCatOrder] = useState([])
+  const [dragCat, setDragCat] = useState(null)
   const isAdmin = role === 'admin'
 
   const has = (key) => !!(perms && Object.prototype.hasOwnProperty.call(perms, key))
@@ -231,6 +233,7 @@ export default function Sidebar({ user, demo, onLogout, role, perms }) {
     try { const f = localStorage.getItem('sidebar_favs'); if (f) setFavs(JSON.parse(f)) } catch (e) {}
     try { const fo = localStorage.getItem('sidebar_fav_open'); if (fo != null) setFavOpen(fo !== '0') } catch (e) {}
     try { const oc = localStorage.getItem('sidebar_open_cats'); if (oc) setOpenCats(new Set(JSON.parse(oc))) } catch (e) {}
+    try { const co = localStorage.getItem('sidebar_cat_order'); if (co) setCatOrder(JSON.parse(co)) } catch (e) {}
   }, [])
   useEffect(() => { setQ('') }, [path])
   // Favoriten-Änderungen an die linke Favoritenleiste (FavRail) melden
@@ -302,7 +305,34 @@ export default function Sidebar({ user, demo, onLogout, role, perms }) {
   const FAV_PIN = { href: '/verbesserungen', label: 'Verbesserungsvorschläge', icon: 'ti-bulb' }
   const favView = [FAV_PIN, ...favItems.filter((x) => x.href !== '/verbesserungen')]
 
-  const visibleNav = NAV.filter((n) => canSee(n))
+  // Hauptkategorien: eigene Reihenfolge (per Drag & Drop, im Browser gespeichert)
+  const navId = (n) => (n.type === 'group' ? 'cat:' + n.key : 'lnk:' + n.href)
+  const navRank = (n, i) => { const r = catOrder.indexOf(navId(n)); return r < 0 ? 1000 + i : r }
+  const visibleNav = NAV.map((n, i) => ({ n, r: navRank(n, i) })).sort((a, b) => a.r - b.r).map((x) => x.n).filter((n) => canSee(n))
+  // 'dragged' vor 'target' einfügen (target=null → ans Ende)
+  const moveCatBefore = (dragged, target) => {
+    if (!dragged || dragged === target) return
+    const all = NAV.map((n, i) => ({ id: navId(n), r: navRank(n, i) })).sort((a, b) => a.r - b.r).map((x) => x.id)
+    const arr = all.filter((id) => id !== dragged)
+    const to = target == null ? -1 : arr.indexOf(target)
+    if (to < 0) arr.push(dragged); else arr.splice(to, 0, dragged)
+    setCatOrder(arr)
+    try { localStorage.setItem('sidebar_cat_order', JSON.stringify(arr)) } catch (e) {}
+  }
+  const resetCatOrder = () => { setCatOrder([]); try { localStorage.removeItem('sidebar_cat_order') } catch (e) {} }
+  const dragProps = (n) => {
+    const id = navId(n)
+    return {
+      draggable: true,
+      onDragStart: (e) => { setDragCat(id); e.dataTransfer.effectAllowed = 'move'; try { e.dataTransfer.setData('text/plain', id) } catch (er) {} },
+      onDragEnd: () => setDragCat(null),
+      onDragOver: (e) => { if (dragCat && dragCat !== id) e.preventDefault() },
+      onDrop: (e) => { e.preventDefault(); moveCatBefore(dragCat, id); setDragCat(null) },
+      style: { opacity: dragCat === id ? 0.4 : 1 },
+      className: 'sbx-dragcat' + (dragCat && dragCat !== id ? ' droptarget' : ''),
+      title: 'Ziehen zum Umsortieren',
+    }
+  }
   const catOpen = (n) => openCats.has(n.key) || n.key === activeGroupKey
 
   return (
@@ -368,19 +398,24 @@ export default function Sidebar({ user, demo, onLogout, role, perms }) {
       <nav className="sbx-nav">
         {visibleNav.map((n) => {
           if (n.type === 'link') return (
-            <div key={n.href} className="sbx-linkrow">
+            <div key={n.href} {...dragProps(n)}>
+            <div className="sbx-linkrow">
+              <i className="ti ti-grip-vertical grip" />
               <Link href={n.href} className={'sbx-link' + (isActive(n) ? ' active' : '')}>
                 <i className={'ti ' + n.icon} /> <span>{n.label}</span>
               </Link>
               {n.mod && <span className={'sbx-star' + (isFav(n.href) ? ' on' : '')} onClick={(e) => toggleFav(n.href, e)} title={isFav(n.href) ? 'Aus Favoriten entfernen' : 'Zu Favoriten hinzufügen'}>{isFav(n.href) ? '★' : '☆'}</span>}
+            </div>
             </div>
           )
           const vis = n.items.filter((it) => canSeeItem(n, it))
           if (!vis.length) return null
           const open = catOpen(n)
           return (
-            <div key={n.key} className="sbx-cat">
+            <div key={n.key} {...dragProps(n)}>
+            <div className="sbx-cat">
               <button className={'sbx-catbtn' + (n.key === activeGroupKey ? ' active' : '')} onClick={() => toggleCat(n.key)}>
+                <i className="ti ti-grip-vertical grip" />
                 <i className={'ti ' + n.icon} /> <span>{n.label}</span>
                 <i className={'ti ' + (open ? 'ti-chevron-down' : 'ti-chevron-right')} style={{ marginLeft: 'auto', fontSize: 14, opacity: 0.7 }} />
               </button>
@@ -397,8 +432,20 @@ export default function Sidebar({ user, demo, onLogout, role, perms }) {
                 </div>
               )}
             </div>
+            </div>
           )
         })}
+        {dragCat && (
+          <div className="sbx-dropend"
+            onDragOver={(e) => e.preventDefault()}
+            onDrop={(e) => { e.preventDefault(); moveCatBefore(dragCat, null); setDragCat(null) }}
+            title="Ans Ende verschieben">ans Ende</div>
+        )}
+        {catOrder.length > 0 && !dragCat && (
+          <button className="sbx-resetorder" onClick={resetCatOrder} title="Ursprüngliche Reihenfolge der Kategorien wiederherstellen">
+            <i className="ti ti-arrow-back-up" /> Reihenfolge zurücksetzen
+          </button>
+        )}
       </nav>
 
       <div className="sbx-foot">
