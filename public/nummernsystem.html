@@ -1,6 +1,7 @@
 <!DOCTYPE html>
 <html lang="de"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Nummernsystem · Wohntraum OS</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
 :root{--bg:#f6f7f9;--surf:#ffffff;--surf2:#f1f3f6;--line:#e4e7ec;--text:#1c2230;--muted:#6b7280;--dim:#4b5563;--accent:#6d4ef0;--code:#b4245a}
 *{box-sizing:border-box;margin:0;padding:0}
@@ -22,6 +23,18 @@ code{font-family:'SF Mono',ui-monospace,Menlo,Consolas,monospace;font-size:12px;
 .notes h2{font-size:13px;text-transform:uppercase;letter-spacing:.05em;color:var(--accent);font-weight:800;margin-bottom:10px}
 .notes p{font-size:13px;color:var(--dim);margin:8px 0}
 .notes b{color:var(--text)}
+.reg h2{font-size:17px;color:#b07d1a;margin:30px 0 4px;font-weight:800}
+.regbar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:12px 0}
+.rtab{font:inherit;font-size:12.5px;font-weight:600;padding:5px 11px;border:1px solid var(--line);border-radius:16px;background:var(--surf);color:var(--dim);cursor:pointer}
+.rtab.on{background:var(--accent);color:#fff;border-color:var(--accent)}
+.rtab .c{opacity:.7;font-weight:700;margin-left:3px}
+.addbtn{font:inherit;font-size:12.5px;font-weight:700;padding:6px 11px;border:1px solid var(--accent);border-radius:8px;background:var(--accent);color:#fff;cursor:pointer}
+.addbtn:hover{filter:brightness(1.05)}
+#regtbl input,#regtbl select{width:100%;font:inherit;font-size:12.5px;padding:5px 6px;border:1px solid transparent;border-radius:6px;background:transparent;color:inherit}
+#regtbl input:hover,#regtbl select:hover{border-color:var(--line)}
+#regtbl input:focus,#regtbl select:focus{outline:none;border-color:var(--accent);background:var(--surf)}
+#regtbl input.vnr2{font-weight:800;color:var(--accent)}
+.xbtn{border:none;background:transparent;color:#c0392b;cursor:pointer;font-size:14px}
 .wrap,.main,.layout,main{max-width:none!important}
 </style></head><body>
 <div class="wrap">
@@ -29,35 +42,41 @@ code{font-family:'SF Mono',ui-monospace,Menlo,Consolas,monospace;font-size:12px;
   <div class="sub">Pro Kategorie ein eigener Zähler (Präfix + fortlaufende Nummer), kein globaler Zähler über alle Typen. Die Nummer bleibt über den gesamten Prozess/Eskalationsverlauf gleich; Fortschritt/Eskalation läuft über ein separates Statusfeld. Claude-Chats/-Projekte tragen dieselbe ID im Titelformat „[PRÄFIX-NNN] Kurzbezeichnung".</div>
 
   <div class="scroll"><table><thead><tr>
-    <th>Präfix</th><th>Thema</th><th>Nummerierung im OS – Ist-Zustand</th><th>Beispiel</th><th>Vorschlag Beschriftung in Claude</th>
+    <th>Präfix</th><th>Thema</th><th>Geführt im OS (Board / Liste)</th><th>Nummerierung im OS – Ist-Zustand</th><th>Beispiel</th><th>Vorschlag Beschriftung in Claude</th>
   </tr></thead><tbody>
     <tr>
       <td class="pfx">DL-</td><td>Darlehen</td>
+      <td>Finance → <b>Darlehensregister / Darlehens-Management</b> (<code>loans</code>) · fortlaufend</td>
       <td><code>loans.ref</code>, automatisch per DB-Sequenz vergeben</td>
       <td class="bsp">DL-012</td><td class="q">„DL-012 Café Modernisierung"</td>
     </tr>
     <tr>
       <td class="pfx">AQ-</td><td>Ankaufprojekte</td>
+      <td>Ankauf → <b>Immobilien Akquise</b> (<code>akquise_objekte</code>) · fortlaufend</td>
       <td><code>akquise_objekte.nummer</code>, durchlaufend 1–10, manuell, eine Nummer über alle Stufen (<code>stufe</code>-Feld trägt den Fortschritt)</td>
       <td class="bsp">AQ-006</td><td class="q">„AQ-006 MFH Gillot Marktplatz"</td>
     </tr>
     <tr>
       <td class="pfx">RF-</td><td>Rechtsfälle (vormals „Gerichtsverfahren")</td>
+      <td>Hausverwaltung → <b>Gericht-Anwalt-Inkasso</b> (<code>gerichtsfaelle</code>) · fortlaufend geführtes OS-Board</td>
       <td><code>gerichtsfaelle.lfd</code>, durchlaufend 1–11, manuell, eine Nummer über Inkasso–Anwalt–Klage (<code>status</code>-Feld trägt die Eskalationsstufe)</td>
       <td class="bsp">RF-008</td><td class="q">„RF-008 Rechtsfall M8 Wasserschaden"</td>
     </tr>
     <tr>
       <td class="pfx">VK-</td><td>Verkaufsprojekte</td>
+      <td>Ankauf → <b>Immobilien Verkauf (Pipeline)</b> (<code>immo_verkauf</code>) · zusätzlich im Projekt-Register unten</td>
       <td>kein Nummernfeld vorhanden (<code>immo_verkauf</code> / <code>immo_anverkauf</code>) — müsste neu angelegt werden, analog zu AQ-</td>
       <td class="bsp">VK-001 <span class="neu">neu</span></td><td class="q">„VK-001 Verkauf [Objekt]"</td>
     </tr>
     <tr>
       <td class="pfx">GF-</td><td>operative GF-/Firmenprojekte</td>
+      <td>GF-Dashboard (<code>gf_projects</code>) · zusätzlich im Projekt-Register unten</td>
       <td>kein Nummernfeld vorhanden (<code>gf_projects</code>) — aktuell viele sehr unterschiedliche Themen ohne ID</td>
       <td class="bsp">GF-003 <span class="neu">neu</span></td><td class="q">„GF-003 Offboarding Mustafa Frotan"</td>
     </tr>
     <tr>
       <td class="pfx">PRJ-</td><td>eigene / persönliche Projekte</td>
+      <td>bisher Cowork „Projekt-Cockpit" (außerhalb OS) · künftig im Projekt-Register unten</td>
       <td>keine Datenbanktabelle — lebt aktuell nur als Cowork-Artefakt „Projekt-Cockpit"; die „#1, #2"-Zählung für Claude-Projekte existiert außerhalb des OS</td>
       <td class="bsp">PRJ-002 <span class="neu">neu</span></td><td class="q">„PRJ-002 GROW – Think Big"</td>
     </tr>
@@ -69,5 +88,49 @@ code{font-family:'SF Mono',ui-monospace,Menlo,Consolas,monospace;font-size:12px;
     <p><b>Noch nicht umgesetzt:</b> VK- und GF- haben noch keine Nummernfelder und keine DB-Sequenz; PRJ- hat noch gar keine Datenbanktabelle.</p>
     <p><b>Chat-Verknüpfung fehlt:</b> Kein Feld verknüpft bisher einen Datensatz mit einem Claude-Chat/einer Session — dafür bräuchte es ein neues Feld (z. B. <code>chat_link</code>) in jeder der genannten Tabellen.</p>
   </div>
+
+  <div class="reg">
+    <h2>Projekt-Register</h2>
+    <div class="sub">Hier trägst du Ankauf- (AQ), Verkaufs- (VK), GF- und persönliche Projekte (PRJ) ein. Nummern werden je Typ fortlaufend vergeben (z. B. VK-001). Der Link kann auf Asana, einen Ordner oder einen Claude-Chat zeigen.</div>
+    <div class="regbar">
+      <div class="tabs" id="regtabs" style="display:flex;gap:6px;flex-wrap:wrap"></div>
+      <span style="margin-left:auto;display:flex;gap:6px;flex-wrap:wrap">
+        <button class="addbtn" onclick="addProj('AQ')">+ AQ</button>
+        <button class="addbtn" onclick="addProj('VK')">+ VK</button>
+        <button class="addbtn" onclick="addProj('GF')">+ GF</button>
+        <button class="addbtn" onclick="addProj('PRJ')">+ PRJ</button>
+      </span>
+    </div>
+    <div class="scroll"><table id="regtbl"><thead><tr>
+      <th style="width:92px">Nummer</th><th style="width:70px">Typ</th><th>Titel / Bezeichnung</th><th style="width:150px">Status</th><th style="width:220px">Link</th><th style="width:34px"></th>
+    </tr></thead><tbody id="regbody"></tbody></table></div>
+  </div>
 </div>
+<script>
+const sb=window.supabase.createClient('https://jqzxctfqvcwbctpjksvg.supabase.co','eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpxenhjdGZxdmN3YmN0cGprc3ZnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODIxMzA0MzIsImV4cCI6MjA5NzcwNjQzMn0.RKIbZxJdusKWWPjBJqlxZ8e1m8So02UslOg55YRsn3o');
+const esc=s=>(s==null?'':String(s)).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+const PFX={AQ:'AQ-',VK:'VK-',GF:'GF-',PRJ:'PRJ-'};
+const STAT=['Idee','In Prüfung','Aktiv','Pausiert','Abgeschlossen','Verworfen'];
+let PROJ=[], REGFILTER='';
+async function loadProj(){const r=await sb.from('os_projekte').select('*');PROJ=r.error?[]:(r.data||[]);renderReg();}
+function nextNummer(typ){const nums=PROJ.filter(p=>p.typ===typ).map(p=>{const m=(p.nummer||'').match(/(\d+)\s*$/);return m?parseInt(m[1],10):0;});const n=(nums.length?Math.max.apply(null,nums):0)+1;return PFX[typ]+String(n).padStart(3,'0');}
+async function addProj(typ){const pos=(PROJ.length?Math.max.apply(null,PROJ.map(p=>p.pos||0)):0)+1;const rec={typ,nummer:nextNummer(typ),titel:null,status:'Idee',pos};const{data,error}=await sb.from('os_projekte').insert(rec).select();if(error){alert('Fehler: '+error.message);return;}if(data&&data[0])PROJ.push(data[0]);REGFILTER='';renderReg();}
+async function saveProj(id,f,v){const nv=(typeof v==='string'&&v.trim()==='')?null:v;const{error}=await sb.from('os_projekte').update({[f]:nv}).eq('id',id);if(!error){const p=PROJ.find(x=>x.id===id);if(p)p[f]=nv;}}
+async function delProj(id){if(!confirm('Eintrag löschen?'))return;await sb.from('os_projekte').delete().eq('id',id);PROJ=PROJ.filter(p=>p.id!==id);renderReg();}
+function setRegFilter(t){REGFILTER=t;renderReg();}
+function renderReg(){
+  const tabs=[['','Alle'],['AQ','AQ'],['VK','VK'],['GF','GF'],['PRJ','PRJ']];
+  document.getElementById('regtabs').innerHTML=tabs.map(t=>'<button class="rtab'+(REGFILTER===t[0]?' on':'')+'" onclick="setRegFilter(\''+t[0]+'\')">'+t[1]+' <span class="c">'+(t[0]?PROJ.filter(p=>p.typ===t[0]).length:PROJ.length)+'</span></button>').join('');
+  const list=PROJ.filter(p=>!REGFILTER||p.typ===REGFILTER).sort((a,b)=>(a.typ||'').localeCompare(b.typ||'')||(a.nummer||'').localeCompare(b.nummer||'','de'));
+  document.getElementById('regbody').innerHTML=list.map(p=>'<tr>'
+    +'<td><input class="vnr2" value="'+esc(p.nummer||'')+'" onchange="saveProj(\''+p.id+'\',\'nummer\',this.value)"></td>'
+    +'<td><select onchange="saveProj(\''+p.id+'\',\'typ\',this.value)">'+['AQ','VK','GF','PRJ'].map(x=>'<option'+(x===p.typ?' selected':'')+'>'+x+'</option>').join('')+'</select></td>'
+    +'<td><input value="'+esc(p.titel||'')+'" placeholder="Bezeichnung …" onchange="saveProj(\''+p.id+'\',\'titel\',this.value)"></td>'
+    +'<td><select onchange="saveProj(\''+p.id+'\',\'status\',this.value)">'+STAT.map(s=>'<option'+(s===(p.status||'')?' selected':'')+'>'+s+'</option>').join('')+'</select></td>'
+    +'<td><input value="'+esc(p.link||'')+'" placeholder="Asana / Ordner / Chat-Link …" onchange="saveProj(\''+p.id+'\',\'link\',this.value)"></td>'
+    +'<td style="text-align:center"><button class="xbtn" title="Löschen" onclick="delProj(\''+p.id+'\')">✕</button></td></tr>').join('')
+    ||'<tr><td colspan="6" style="text-align:center;color:var(--muted);padding:18px">Noch keine Einträge – oben mit „+ AQ/VK/GF/PRJ" anlegen.</td></tr>';
+}
+loadProj();
+</script>
 </body></html>
