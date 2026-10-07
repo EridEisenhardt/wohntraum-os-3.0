@@ -114,6 +114,7 @@ export const NAV = [
   { type: 'link', href: '/dms', icon: 'ti-folders', label: 'DMS · Dokumentenverwaltung', area: 'common', mod: 'dokumente' },
   { type: 'group', key: 'wissensdatenbank', icon: 'ti-book', label: 'Wissensdatenbank', area: ['vertrieb', 'hv', 'backoffice'], mod: 'dashboards', items: [
     { href: '/wissensdatenbank', icon: 'ti-school', label: 'Schulungsplattform' },
+    { href: '/wissensdatenbank/nummernsystem', icon: 'ti-hash', label: 'Nummernsystem' },
   ] },
   { type: 'group', key: 'stammdaten', icon: 'ti-database', label: 'Stammdaten', area: 'hv', mod: 'dokumente', items: [
     { href: '/stammdaten/kontakte', icon: 'ti-users', label: 'Kontakte' },
