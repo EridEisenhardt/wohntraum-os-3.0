@@ -20,9 +20,11 @@ body{background:var(--bg);color:var(--text);font-family:'Inter',system-ui,-apple
 .pill{display:inline-block;padding:2px 9px;border-radius:20px;font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.03em}
 .p-typ{background:#ede9fe;color:#5b21b6}
 .p-st-Aktiv{background:#dcfce7;color:#166534}.p-st-Geplant{background:#fef9c3;color:#854d0e}.p-st-Abgeschlossen{background:#dbeafe;color:#1e40af}
-.title{font-size:15px;font-weight:700}
+.title{font-size:15px;font-weight:700;cursor:pointer}
+.title:hover{color:#5b21b6;text-decoration:underline}
 .meta{font-size:12px;color:var(--muted)}
-.desc{font-size:13px;color:var(--dim)}
+.desc{font-size:13px;color:var(--dim);display:-webkit-box;-webkit-line-clamp:4;-webkit-box-orient:vertical;overflow:hidden;cursor:pointer}
+.dovtext{white-space:pre-wrap;font-size:13.5px;line-height:1.55}
 .row{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:2px}
 .open{display:inline-flex;align-items:center;gap:6px;background:var(--accent);color:#fff;text-decoration:none;font-size:12.5px;font-weight:600;padding:6px 11px;border-radius:8px}
 .icobtn{background:none;border:none;color:var(--muted);cursor:pointer;font-size:14px}.icobtn:hover{color:#c0392b}
@@ -61,7 +63,7 @@ body{background:var(--bg);color:var(--text);font-family:'Inter',system-ui,-apple
   <div class="dlg-bd">
     <div class="fld"><label>Titel</label><input id="m_titel" placeholder="z. B. DRME Akademie"></div>
     <div class="fld"><label>Typ</label><select id="m_typ">
-      <option>Schulungsplattform</option><option>Videokurs</option><option>Plattform</option><option>Vorlage</option><option>Dokumentation</option><option>Asana</option><option>Sonstiges</option>
+      <option>Schulungsplattform</option><option>Videokurs</option><option>Plattform</option><option>Konzept</option><option>Vorlage</option><option>Dokumentation</option><option>Asana</option><option>Sonstiges</option>
     </select></div>
     <div class="fld"><label>Anbieter</label><input id="m_anbieter" placeholder="z. B. DRME"></div>
     <div class="fld"><label>Thema / Bereich</label><input id="m_thema" placeholder="z. B. Provisionsgeber Strom- & Gasverträge"></div>
@@ -72,13 +74,19 @@ body{background:var(--bg);color:var(--text);font-family:'Inter',system-ui,-apple
   </div>
   <div class="dlg-ft"><button class="btn sec" onclick="closeDlg()">Abbrechen</button><button class="btn" onclick="saveDlg()">Speichern</button></div>
 </div></div>
+
+<div class="ov" id="dov" onclick="if(event.target===this)closeDetail()"><div class="dlg">
+  <div class="dlg-hd"><span id="dovTitle">Eintrag</span><span class="icobtn" onclick="closeDetail()">✕</span></div>
+  <div class="dlg-bd" id="dovBody"></div>
+  <div class="dlg-ft"><button class="btn sec" onclick="closeDetail()">Schließen</button><button class="btn" onclick="editFromDetail()">✎ Bearbeiten</button></div>
+</div></div>
 <div class="toast" id="toast"></div>
 <script>
 const sb=window.supabase.createClient('https://jqzxctfqvcwbctpjksvg.supabase.co','eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpxenhjdGZxdmN3YmN0cGprc3ZnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODIxMzA0MzIsImV4cCI6MjA5NzcwNjQzMn0.RKIbZxJdusKWWPjBJqlxZ8e1m8So02UslOg55YRsn3o');
 const $=id=>document.getElementById(id);
 const esc=s=>(s==null?'':String(s)).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 function toast(m){const t=$('toast');t.textContent=m;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),1800);}
-let ROWS=[], EDIT=null;
+let ROWS=[], EDIT=null, DETAIL_ID=null;
 function typeOpts(){const ts=[...new Set(ROWS.map(r=>r.typ).filter(Boolean))].sort();$('fTyp').innerHTML='<option value="">Alle Typen</option>'+ts.map(t=>'<option'+($('fTyp').value===t?' selected':'')+'>'+esc(t)+'</option>').join('');}
 function render(){
   const q=($('q').value||'').toLowerCase(),ft=$('fTyp').value,fs=$('fStatus').value;
@@ -89,12 +97,13 @@ function render(){
     const fp=(r.fortschritt!=null&&!isNaN(r.fortschritt))?Math.max(0,Math.min(100,r.fortschritt)):null;
     return '<div class="card">'
       +'<div class="top"><span class="pill p-typ">'+esc(r.typ||'—')+'</span><span class="pill p-st-'+esc(r.status||'Aktiv')+'">'+esc(r.status||'Aktiv')+'</span></div>'
-      +'<div class="title">'+esc(r.titel||'(ohne Titel)')+'</div>'
+      +'<div class="title" title="Details öffnen" onclick="openDetail(\''+r.id+'\')">'+esc(r.titel||'(ohne Titel)')+'</div>'
       +'<div class="meta">'+[r.anbieter,r.thema].filter(Boolean).map(esc).join(' · ')+'</div>'
-      +(r.beschreibung?'<div class="desc">'+esc(r.beschreibung)+'</div>':'')
+      +(r.beschreibung?'<div class="desc" title="Details öffnen" onclick="openDetail(\''+r.id+'\')">'+esc(r.beschreibung)+'</div>':'')
       +(fp!=null?'<div class="prog"><span style="width:'+fp+'%"></span></div><div class="meta">'+fp+'% abgeschlossen</div>':'')
       +'<div class="row" style="margin-top:auto">'
         +(r.url?'<a class="open" href="'+esc(r.url)+'" target="_blank" rel="noopener">▶ Öffnen</a>':'')
+        +'<button class="btn sec" style="padding:6px 11px;font-size:12.5px" onclick="openDetail(\''+r.id+'\')">▸ Details</button>'
         +'<button class="btn sec" style="padding:6px 11px;font-size:12.5px" onclick="openEdit(\''+r.id+'\')">✎ Bearbeiten</button>'
         +'<button class="icobtn" title="Löschen" onclick="del(\''+r.id+'\')" style="margin-left:auto">🗑</button>'
       +'</div></div>';
@@ -103,6 +112,20 @@ function render(){
 function openNew(){EDIT=null;$('dlgTitle').textContent='Neuer Eintrag';['titel','anbieter','thema','url','beschreibung','fortschritt'].forEach(k=>$('m_'+k).value='');$('m_typ').value='Schulungsplattform';$('m_status').value='Aktiv';$('ov').classList.add('show');}
 function openEdit(id){const r=ROWS.find(x=>x.id===id);if(!r)return;EDIT=id;$('dlgTitle').textContent='Eintrag bearbeiten';$('m_titel').value=r.titel||'';$('m_typ').value=r.typ||'Plattform';$('m_anbieter').value=r.anbieter||'';$('m_thema').value=r.thema||'';$('m_url').value=r.url||'';$('m_beschreibung').value=r.beschreibung||'';$('m_status').value=r.status||'Aktiv';$('m_fortschritt').value=(r.fortschritt==null?'':r.fortschritt);$('ov').classList.add('show');}
 function closeDlg(){$('ov').classList.remove('show');}
+function openDetail(id){const r=ROWS.find(x=>x.id===id);if(!r)return;DETAIL_ID=id;
+  $('dovTitle').textContent=r.titel||'(ohne Titel)';
+  const meta=[r.anbieter,r.thema].filter(Boolean).map(esc).join(' · ');
+  const fp=(r.fortschritt!=null&&!isNaN(r.fortschritt))?Math.max(0,Math.min(100,r.fortschritt)):null;
+  $('dovBody').innerHTML=
+    '<div class="top" style="margin-bottom:8px"><span class="pill p-typ">'+esc(r.typ||'—')+'</span><span class="pill p-st-'+esc(r.status||'Aktiv')+'">'+esc(r.status||'Aktiv')+'</span></div>'
+    +(meta?'<div class="meta" style="margin-bottom:10px">'+meta+'</div>':'')
+    +(r.url?'<div style="margin-bottom:10px"><a class="open" href="'+esc(r.url)+'" target="_blank" rel="noopener">▶ Öffnen</a></div>':'')
+    +'<div class="dovtext">'+esc(r.beschreibung||'—')+'</div>'
+    +(fp!=null?'<div class="prog" style="margin-top:12px"><span style="width:'+fp+'%"></span></div><div class="meta" style="margin-top:4px">'+fp+'% abgeschlossen</div>':'');
+  $('dov').classList.add('show');
+}
+function closeDetail(){$('dov').classList.remove('show');}
+function editFromDetail(){closeDetail();if(DETAIL_ID)openEdit(DETAIL_ID);}
 async function saveDlg(){
   const row={titel:$('m_titel').value.trim()||null,typ:$('m_typ').value,anbieter:$('m_anbieter').value.trim()||null,thema:$('m_thema').value.trim()||null,url:$('m_url').value.trim()||null,beschreibung:$('m_beschreibung').value.trim()||null,status:$('m_status').value,fortschritt:$('m_fortschritt').value===''?null:parseInt($('m_fortschritt').value,10)};
   if(!row.titel){toast('Bitte Titel angeben');return;}
