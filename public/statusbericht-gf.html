@@ -111,9 +111,9 @@ h2 .dot{width:9px;height:9px;border-radius:3px;display:inline-block}
       <div class="cat" style="padding:12px 16px 8px;grid-column:1/-1"><div style="font-size:12px;font-weight:600;color:var(--dim);margin-bottom:6px">🗂 Alle Eric zugewiesenen Asana-Aufgaben (offen, unabhängig von Fälligkeit)</div><div style="position:relative;height:260px"><canvas id="chGesamt"></canvas></div></div>
     </div>
 
-    <h2><span class="dot" style="background:var(--danger)"></span>Alle fälligen &amp; überfälligen Aufgaben</h2>
-    <div class="note" id="catNote"></div>
-    <div class="grid" id="cats"></div>
+    <h2><span class="dot" style="background:var(--ok)"></span>Erledigte Asana-Aufgaben pro Tag</h2>
+    <div class="note" id="erlNote">Je Tag abgeschlossene Asana-Aufgaben.</div>
+    <div class="cat" style="padding:12px 16px 8px"><div style="position:relative;height:300px"><canvas id="chErledigt"></canvas></div></div>
 
     <h2><span class="dot" style="background:var(--warn)"></span>Offene Vorgänge aus dem Mailpostfach</h2>
     <div class="mailtbl" id="mails"></div>
@@ -265,21 +265,6 @@ function render(p, gen){
   ].map(a=>`<div class="kpi ${a[0]}"><div class="l">${a[2]}</div><div class="v">${a[1]}</div><div class="h">${a[3]}</div></div>`).join('');
 
   renderMetrics(p);
-  document.getElementById('catNote').textContent='Vollständige Liste aller fälligen und überfälligen Aufgaben (Asana + Todoist), gruppiert nach Bereich.';
-  document.getElementById('cats').innerHTML=(p.categories||[]).map(c=>{
-    const col=c.color||'#185fa5';
-    const cname=c.name||c.title||c.bereich||'—';
-    const items=c.items||[];
-    const rows=items.map(it=>{ const task=it.task||it.name||it.content||''; const due=it.due||it.due_on||null; const src=it.source||it.project||it.projekt||'';
-      return `<div class="row">
-        <span class="due ${dueClass(due)}">${dueLabel(due)}</span>
-        <div class="tx">${esc(task)}<div class="src">${esc(src)}${due?' · '+fmtD(due):''}</div></div>
-      </div>`; }).join('');
-    return `<div class="cat">
-      <div class="cat-hd" style="border-left:4px solid ${col}"><span>${esc(cname)}</span><span class="cnt" style="background:${col}">${items.length}</span></div>
-      ${rows}
-    </div>`;
-  }).join('');
 
   const mails=p.mails||[];
   const total = (METRICS.length && METRICS[METRICS.length-1].mail_count!=null) ? METRICS[METRICS.length-1].mail_count : (k.mail_total!=null?k.mail_total:null);
@@ -362,6 +347,31 @@ function renderDeleg(p){
 load();
 loadCashflow();
 loadOffenePosten();
+loadErledigt();
+let ERLCHART=null;
+async function loadErledigt(){
+  if(!window.Chart)return;
+  const r=await sb.from('asana_erledigt_tageswerte').select('datum,anzahl').order('datum',{ascending:true});
+  const data=r.error?[]:(r.data||[]);
+  const cv=document.getElementById('chErledigt'); if(!cv) return;
+  if(!data.length){ if(document.getElementById('erlNote'))document.getElementById('erlNote').textContent='Noch keine Daten.'; return; }
+  // letzte 60 Tage als durchgehende Achse, fehlende Tage = 0
+  const map={}; data.forEach(x=>{map[x.datum]=Number(x.anzahl)||0;});
+  const end=new Date(data[data.length-1].datum+'T00:00:00');
+  const days=[]; const d=new Date(end); d.setDate(d.getDate()-59);
+  for(let i=0;i<60;i++){ const iso=d.toISOString().slice(0,10); days.push(iso); d.setDate(d.getDate()+1); }
+  const labels=days.map(iso=>{const p=iso.split('-');return p[2]+'.'+p[1]+'.';});
+  const vals=days.map(iso=>map[iso]||0);
+  const ges=data.reduce((s,x)=>s+(Number(x.anzahl)||0),0);
+  const sum60=vals.reduce((a,b)=>a+b,0);
+  if(document.getElementById('erlNote'))document.getElementById('erlNote').textContent='Je Tag abgeschlossene Asana-Aufgaben · letzte 60 Tage: '+sum60+' · erfasst gesamt: '+ges;
+  if(ERLCHART)ERLCHART.destroy();
+  ERLCHART=new Chart(cv.getContext('2d'),{type:'bar',
+    data:{labels,datasets:[{label:'Erledigte Asana-Aufgaben',data:vals,backgroundColor:'#1a7f37',borderRadius:2,maxBarThickness:14}]},
+    options:{responsive:true,maintainAspectRatio:false,
+      plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>c.parsed.y+' erledigt'}}},
+      scales:{y:{beginAtZero:true,ticks:{precision:0}},x:{ticks:{maxRotation:90,minRotation:90,autoSkip:true,maxTicksLimit:20,font:{size:9}}}}}});
+}
 async function loadOffenePosten(){
   const eur=n=>(n==null||isNaN(n))?'—':Math.round(n).toLocaleString('de-DE')+' €';
   const r=await sb.from('nahaus_offene_posten').select('h_id_text,unit_label,mieter_namen,is_current,total_op,op_count');
