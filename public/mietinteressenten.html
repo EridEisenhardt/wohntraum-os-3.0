@@ -28,6 +28,10 @@ tbody tr.res-absage td{background:#fbf4f4}
 tbody tr.res-warte td{background:#fef9ec}
 tbody tr.notfall td{background:#fdecea!important;box-shadow:inset 3px 0 0 #c0392b}
 .notfallbadge{display:inline-block;margin-left:6px;font-size:10px;font-weight:700;color:#fff;background:#c0392b;border-radius:10px;padding:1px 7px;white-space:nowrap}
+tbody tr.zahl-unklar td{background:#fff7e6!important;box-shadow:inset 3px 0 0 #e0a33a}
+tbody tr.notfall.zahl-unklar td{background:#fdecea!important}
+.zalarm{display:inline-block;margin-top:3px;font-size:10px;font-weight:700;color:#fff;background:#c0392b;border-radius:6px;padding:1px 7px;white-space:nowrap}
+.opalarm{grid-column:1/-1;background:#fdecea;border:1px solid #e0b4b4;color:#c0392b;font-weight:700;font-size:13px;padding:10px 12px;border-radius:9px;margin-bottom:6px}
 .kbcard.notfall{border:1.5px solid #c0392b;box-shadow:0 0 0 2px #c0392b22}
 input.inl,select.inl{border:1px solid transparent;background:transparent;font:inherit;font-size:12.5px;border-radius:5px;padding:4px 6px;max-width:100%}
 input.inl:hover,select.inl:hover{border-color:var(--line)}input.inl:focus,select.inl:focus{outline:none;border-color:var(--accent);background:var(--surf2)}
@@ -198,6 +202,7 @@ const typLabel=t=>t==='umzug'?'Umzugswunsch':'Neu';
 const FLABEL={name:'Name',vorname:'Vorname',kontakt:'Kontakt',eingang:'Lead-Eingang',quelle:'Leadquelle',personen:'Personenanzahl',einzug_ab:'Einzug ab',zahlungsart:'Mietzahlung',ergebnis:'Ergebnis',status:'Status',selbstauskunft_vorhanden:'Selbstauskunft vorhanden',freigabe_schluessel:'Freigabe Schlüsselübergabe',typ:'Art',aktuelles_objekt:'Aktuelles Objekt',umzug_grund:'Umzugsgrund',kostenuebernahme:'Zusage Kostenübernahme',mietangebot_erhalten:'Mietangebot erhalten',mietvertrag_unterschrieben:'Mietvertrag unterschrieben',schluesseluebergabe_erfolgt:'Schlüsselübergabe erfolgt',erste_mietzahlung:'1. Mietzahlung'};
 function fmtDT(ts){try{return new Date(ts).toLocaleString('de-DE',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'})+' Uhr';}catch(e){return ts;}}
 function noteCount(id){return NOTES.filter(n=>n.interessent_id===id).length;}
+function zahlUnklar(r){return !r.zahlungsart || r.zahlungsart==='noch nicht geklärt';}
 function fmtDate(d){if(!d)return '';const p=String(d).split('-');return p.length===3?p[2]+'.'+p[1]+'.'+p[0]:d;}
 function opTxt(r,f,type){return `<input class="opi" type="${type||'text'}" value="${esc(r[f])}" onchange="opUpd('${f}',this.value)">`;}
 function opSel(r,f,arr,leer){return `<select class="opi" onchange="opUpd('${f}',this.value)">${(leer?['']:[]).concat(arr).map(o=>`<option value="${esc(o)}" ${String(o)===String(r[f]||'')?'selected':''}>${o===''?'—':esc(o)}</option>`).join('')}</select>`;}
@@ -205,6 +210,7 @@ function renderLeadInfo(){const r=ROWS.find(x=>x.id===NT_CUR);if(!r){$('opInfo')
   const F=(l,inp)=>`<div class="opf"><div class="opl">${l}</div><div class="opv">${inp}</div></div>`;
   const mile=f=>`<select class="opi" style="text-align:center" onchange="opUpd('${f}',this.value)">${MILE.map(o=>`<option value="${o}" ${o===(r[f]||'')?'selected':''}>${o===''?'—':o}</option>`).join('')}</select>`;
   $('opInfo').innerHTML=
+    (zahlUnklar(r)?'<div class="opalarm">🚨 Art der Mietzahlung noch nicht geklärt – bitte dringend klären! (eine der wichtigsten Angaben)</div>':'')+
     F('Name',opTxt(r,'name'))+F('Vorname',opTxt(r,'vorname'))+F('Kontakt',opTxt(r,'kontakt'))+
     F('Lead-Eingang',opTxt(r,'eingang','date'))+F('Leadquelle',opSel(r,'quelle',QUELLEN,true))+
     F('Status',opSel(r,'status',STAGES,false))+F('Personenanzahl',opTxt(r,'personen','number'))+
@@ -511,7 +517,7 @@ function render(){
   if(!BR.length){$('tbl').innerHTML='<div class="empty">Keine Einträge in dieser Ansicht — oben erfassen.</div>';return;}
   const qOpts=(sel)=>'<option value="">—</option>'+QUELLEN.map(q=>`<option ${q===sel?'selected':''}>${esc(q)}</option>`).join('');
   $('tbl').innerHTML='<table>'+lHead()+'<tbody>'
-    +list.map(r=>{const cls=(r.notfall?'notfall ':'')+((r.ergebnis&&/Absage/.test(r.ergebnis))?'res-absage':((r.ergebnis==='Warteliste'||r.status==='A · Warteliste')?'res-warte':''));
+    +list.map(r=>{const cls=(r.notfall?'notfall ':'')+(zahlUnklar(r)?'zahl-unklar ':'')+((r.ergebnis&&/Absage/.test(r.ergebnis))?'res-absage':((r.ergebnis==='Warteliste'||r.status==='A · Warteliste')?'res-warte':''));
       return `<tr class="${cls.trim()}" style="cursor:pointer" onclick="rowOpen(event,'${r.id}')">
         <td style="text-align:center;white-space:nowrap"><button class="abtn" title="${r.notfall?'Notfall aufheben':'Als Notfall markieren'}" onclick="event.stopPropagation();toggleNotfall('${r.id}')" style="font-size:15px;color:${r.notfall?'#c0392b':'var(--muted,#9aa1ab)'}">${r.notfall?'🚨':'⚐'}</button> <button class="abtn" title="Als erledigt ins Lead-Register" onclick="event.stopPropagation();archiv('${r.id}',true)" style="font-size:15px;color:var(--green,#1f7a4d)">✓</button></td>
         <td class="nrcell">${r.nummer!=null?r.nummer:'—'}</td>
@@ -519,7 +525,7 @@ function render(){
         <td><input class="inl" style="min-width:110px" value="${esc(r.vorname)}" placeholder="Vorname" onchange="upd('${r.id}','vorname',this.value)"></td>
         <td><select class="inl st" onchange="upd('${r.id}','status',this.value)">${opts(STAGES,r.status)}</select></td>
         <td><input class="inl" style="min-width:140px" value="${esc(r.zielort)}" placeholder="Zielort / Wohnung" onchange="upd('${r.id}','zielort',this.value)"></td>
-        <td><select class="inl" onchange="upd('${r.id}','zahlungsart',this.value)"><option value="">—</option>${opts(ZAHLART,r.zahlungsart)}</select></td>
+        <td><select class="inl" onchange="upd('${r.id}','zahlungsart',this.value)"><option value="">—</option>${opts(ZAHLART,r.zahlungsart)}</select>${zahlUnklar(r)?'<div class="zalarm">🚨 Zahlungsart klären</div>':''}</td>
         <td><input class="inl" style="min-width:130px" value="${esc(r.kontakt)}" placeholder="Kontakt" onchange="upd('${r.id}','kontakt',this.value)"></td>
         <td><input class="inl" type="date" value="${r.eingang||''}" onchange="upd('${r.id}','eingang',this.value)"></td>
         <td><select class="inl" onchange="upd('${r.id}','quelle',this.value)">${qOpts(r.quelle)}</select></td>
