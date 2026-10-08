@@ -107,7 +107,7 @@ function toast(m){const t=$('toast');t.textContent=m;t.classList.add('show');set
 const eur=n=>(n==null||n===''||isNaN(n))?'—':Number(n).toLocaleString('de-DE',{minimumFractionDigits:2,maximumFractionDigits:2})+' €';
 const STATI=['Kündigungsphase','Anwalt','Klage in Vorbereitung','Klage bei Gericht','Klage bei Amtsgericht','Klage bei Landgericht','Inkasso','Vergleich','Ruht','Erledigt'];
 const SCOL={'Kündigungsphase':'background:#fef3c7;color:#92400e','Anwalt':'background:#dbeafe;color:#1e40af','Klage in Vorbereitung':'background:#e0e7ff;color:#3730a3','Klage bei Gericht':'background:#fee2e2;color:#991b1b','Klage bei Amtsgericht':'background:#fee2e2;color:#991b1b','Klage bei Landgericht':'background:#fecaca;color:#7f1d1d','Inkasso':'background:#ffedd5;color:#9a3412','Vergleich':'background:#dcfce7;color:#166534','Ruht':'background:#e5e7eb;color:#374151','Erledigt':'background:#dcfce7;color:#166534'};
-let ROWS=[];
+let ROWS=[], FIRMEN=[];
 const NUMF=['hauptforderung','streitwert'];
 async function save(id,field,val){
   let v=(val==null||String(val).trim()==='')?null:val;
@@ -141,18 +141,45 @@ function num(r,f){return '<input class="num" inputmode="decimal" value="'+(r[f]=
 function ta(r,f,ph){return '<textarea class="grow" rows="1" placeholder="'+(ph||'')+'" oninput="autoGrow(this)" onchange="save(\''+r.id+'\',\''+f+'\',this.value)">'+esc(r[f])+'</textarea>';}
 function autoGrow(el){el.style.height='auto';el.style.height=(el.scrollHeight+2)+'px';}
 function growAll(){document.querySelectorAll('#body textarea.grow,#bodyDone textarea.grow').forEach(autoGrow);}
-function linkCell(r,f,openLabel,ph){
-  var v=r[f]||'';var href=esc(v);
-  var open=v?('<a href="'+href+'" target="_blank" rel="noopener" class="pill" style="background:#eef4fb;color:#185fa5;text-decoration:none;white-space:nowrap;margin-bottom:3px;display:inline-block">'+openLabel+'</a>'):'';
-  return open+'<input value="'+esc(v)+'" title="'+esc(v)+'" placeholder="'+(ph||'Link einfügen …')+'" onchange="save(\''+r.id+'\',\''+f+'\',this.value)">';
+function dienstleisterCell(r){
+  var cur=r.dienstleister_id||'';
+  var hasCustom=r.dienstleister&&!FIRMEN.some(function(f){return f.id===r.dienstleister_id;});
+  var opts='<option value="">— Keiner —</option>';
+  if(hasCustom){opts+='<option value="__keep__" selected>'+esc(r.dienstleister)+' (nicht im CRM)</option>';}
+  opts+=FIRMEN.map(function(f){return '<option value="'+f.id+'"'+(f.id===cur?' selected':'')+'>'+esc(f.name||'')+'</option>';}).join('');
+  var link=r.dienstleister_id?'<a class="pill" href="/hausverwaltung/dienstleister?firma='+r.dienstleister_id+'" target="_top" title="Im CRM öffnen (Kontaktdaten)" style="background:#eef4fb;color:#185fa5;text-decoration:none;white-space:nowrap;margin-top:3px;display:inline-block">↗ Firma / Kontakt im CRM</a>':'';
+  return '<select onchange="saveDienstleister(\''+r.id+'\',this.value)">'+opts+'</select>'+link;
 }
+async function saveDienstleister(id,val){
+  if(val==='__keep__')return;
+  var patch;
+  if(val===''){patch={dienstleister_id:null,dienstleister:null};}
+  else{var f=FIRMEN.find(function(x){return x.id===val;});patch={dienstleister_id:val,dienstleister:f?f.name:null};}
+  patch.updated_at=new Date().toISOString();
+  var res=await sb.from('gerichtsfaelle').update(patch).eq('id',id);
+  if(res.error){toast('Fehler: '+res.error.message);return;}
+  var r=ROWS.find(function(x){return x.id===id;});if(r){r.dienstleister_id=patch.dienstleister_id;r.dienstleister=patch.dienstleister;}
+  render();
+}
+function linkCell(r,f,openLabel,ph){
+  var v=r[f]||'';
+  if(v){
+    return '<div style="display:flex;gap:5px;align-items:center;flex-wrap:wrap">'
+      +'<a href="'+esc(v)+'" target="_blank" rel="noopener" class="pill" title="Öffnen: '+esc(v)+'" style="background:#eef4fb;color:#185fa5;text-decoration:none;white-space:nowrap">'+openLabel+'</a>'
+      +'<button class="abtn" title="Link ändern / entfernen" onclick="editLink(\''+r.id+'\',\''+f+'\')" style="border:none;background:transparent;cursor:pointer;color:#9aa1ab;font-size:13px">✎</button>'
+      +'</div>';
+  }
+  return '<input value="" placeholder="'+(ph||'Link einfügen …')+'" onchange="saveLink(\''+r.id+'\',\''+f+'\',this.value)">';
+}
+function saveLink(id,f,v){ save(id,f,v).then(function(){render();}); }
+function editLink(id,f){ var r=ROWS.find(function(x){return x.id===id;})||{}; var nv=prompt('Link (leer lassen = entfernen):', r[f]||''); if(nv===null)return; save(id,f,nv.trim()).then(function(){render();}); }
 function rowHtml(r){
   return '<tr>'
     +'<td><input class="vnr" value="'+esc(r.vorgangsnr||('RF-'+String(r.lfd||'').padStart(3,"0")))+'" title="Vorgangsnummer – editierbar (z. B. RF-008)" onchange="save(\''+r.id+'\',\'vorgangsnr\',this.value)"></td>'
     +'<td><select onchange="save(\''+r.id+'\',\'bearbeiter\',this.value)">'+BEARBEITER.map(function(b){return '<option'+(b===(r.bearbeiter||'Keiner')?' selected':'')+'>'+esc(b)+'</option>';}).join('')+'</select></td>'
     +'<td>'+statusSel(r)+'<div style="margin-top:3px"><span class="pill" style="'+(SCOL[r.status]||'background:#e5e7eb;color:#374151')+'">'+esc(r.status||'—')+'</span></div></td>'
     +'<td>'+ta(r,'ergebnis','Ergebnis manuell eintragen …')+'</td>'
-    +'<td>'+inp(r,'dienstleister','RA …')+'</td>'
+    +'<td>'+dienstleisterCell(r)+'</td>'
     +'<td>'+inp(r,'az_ra')+'</td>'
     +'<td>'+inp(r,'az_gegen')+'</td>'
     +'<td>'+inp(r,'az_gericht')+'</td>'
@@ -205,6 +232,8 @@ function exportCsv(){
   toast('CSV heruntergeladen ✓');
 }
 async function load(){
+  const fr=await sb.from('hv_firmen').select('id,name').order('name');
+  FIRMEN=fr.error?[]:(fr.data||[]);
   const res=await sb.from('gerichtsfaelle').select('*').order('lfd');
   ROWS=res.error?[]:(res.data||[]);render();
 }
