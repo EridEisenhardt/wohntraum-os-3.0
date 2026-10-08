@@ -65,6 +65,13 @@ export default function AbrechnungPage({ params }) {
     if (error) { alert('Löschen fehlgeschlagen: ' + error.message); return }
     load()
   }
+  async function delAbrechnung() {
+    if (!window.confirm('Leeren Entwurf „' + abr.kennung + ' ' + abr.jahr + '“ wirklich löschen?')) return
+    const { data, error } = await supabase.from('bk_abrechnungen').delete().eq('id', id).select('id')
+    if (error) { alert('Löschen fehlgeschlagen: ' + error.message); return }
+    if (!data || !data.length) { alert('Löschen nicht möglich: Es können nur leere Entwürfe gelöscht werden (ohne Einheiten, Mieter, Kostenarten und Kosten).'); return }
+    window.location.href = '/betriebskosten'
+  }
   async function ins(table, row) {
     const { error } = await supabase.from(table).insert(row)
     if (error) { alert('Anlegen fehlgeschlagen: ' + error.message); return }
@@ -91,6 +98,9 @@ export default function AbrechnungPage({ params }) {
             style={{ font: 'inherit', fontSize: 13.5, padding: '7px 10px', borderRadius: 8, border: '1px solid ' + s.color, color: s.color, fontWeight: 600, background: 'var(--surface)' }}>
             {STATUS.map((x) => <option key={x.v} value={x.v}>{x.label}</option>)}
           </select>
+          {abr.status === 'entwurf' && !ein.length && !mvs.length && !kas.length && !kosten.length && (
+            <button className="btn btn-ghost" onClick={delAbrechnung} title="Nur leere Entwürfe können gelöscht werden"><i className="ti ti-trash" /> Entwurf löschen</button>
+          )}
         </div>
       </div>
       {error && <p className="err">Supabase: {error}</p>}

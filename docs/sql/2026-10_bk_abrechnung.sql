@@ -151,3 +151,16 @@ begin
     end if;
   end loop;
 end $$;
+
+-- Nachtrag 08.10.2026: Leere Entwürfe dürfen alle angemeldeten Nutzer löschen,
+-- Abrechnungen mit Daten weiterhin nur Admins.
+alter policy bk_abrechnungen_del on public.bk_abrechnungen using (
+  exists (select 1 from public.profiles p where p.id = (select auth.uid()) and p.role = 'admin')
+  or (
+    status = 'entwurf'
+    and not exists (select 1 from public.bk_einheiten x where x.abrechnung_id = bk_abrechnungen.id)
+    and not exists (select 1 from public.bk_mietverhaeltnisse x where x.abrechnung_id = bk_abrechnungen.id)
+    and not exists (select 1 from public.bk_kostenarten x where x.abrechnung_id = bk_abrechnungen.id)
+    and not exists (select 1 from public.bk_kosten x where x.abrechnung_id = bk_abrechnungen.id)
+  )
+);
