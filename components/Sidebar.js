@@ -25,6 +25,7 @@ export const NAV = [
   { type: 'group', key: 'hausverwaltung', icon: 'ti-home-cog', label: 'Hausverwaltung', area: ['hv', 'backoffice'], mod: 'dashboards', items: [
     { href: '/hausverwaltung/portfolio', icon: 'ti-building-community', label: 'Portfolio' },
     { href: '/hausverwaltung/objekte', icon: 'ti-building-skyscraper', label: 'Objekte' },
+    { href: '/betriebskosten', icon: 'ti-receipt-2', label: 'Betriebskostenabrechnung' },
     { href: '/hausverwaltung/einheiten', icon: 'ti-home', label: 'Einheiten' },
     { href: '/hausverwaltung/rangliste', icon: 'ti-trophy', label: 'Rangliste Objekte' },
     { href: '/portfolio', icon: 'ti-chart-dots-3', label: 'Portfolio (Faktor · Cashflow)' },
