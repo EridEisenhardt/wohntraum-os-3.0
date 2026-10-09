@@ -63,7 +63,12 @@ td input:focus{outline:none;border-color:var(--accent);background:#fff}
 
   <div class="sec noprint"><h2>Eckdaten <span class="saved" id="savedMsg"></span></h2>
     <div class="grid">
-      <div class="fld"><label>Name des Mieters</label><input id="f_name_mieter" oninput="save('name_mieter',this.value)"></div>
+      <div class="fld" style="grid-column:1/-1"><label>Name des Mieters (aus Mietinteressenten wählen oder manuell eingeben)</label>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <select id="f_mieter_sel" style="flex:1;min-width:190px" onchange="selectMieter(this.value)"></select>
+          <input id="f_name_mieter" style="flex:1;min-width:190px" placeholder="… oder manuell eingeben" oninput="saveNameManual(this.value)">
+        </div>
+      </div>
       <div class="fld"><label>Anzahl Personen</label><input id="f_personen" type="number" min="0" oninput="save('personen',this.value)"></div>
       <div class="fld"><label>Einzugstermin</label><input id="f_einzug" oninput="save('einzug',this.value)" placeholder="z. B. 01.11.2026 / sofort"></div>
       <div class="fld"><label>Änderung der Miete (Datum)</label><input id="f_aenderung_datum" type="date" oninput="save('aenderung_datum',this.value)"></div>
@@ -113,19 +118,42 @@ const REF=[
  ['Alzey-Worms / Eich','€/m²',10.14,9.50,9.24,8.84,8.18],['','Gesamt',507,570,739.20,795.60,858.90],
  ['Mainz-Bingen / Oppenheim','Gesamt',660,740,900,1020,1200]
 ];
-let KALK={}, VROW=null, KENN={};
+let KALK={}, VROW=null, KENN={}, INT=[];
+function intLabel(i){return [i.vorname,i.name].filter(Boolean).join(' ').trim()||'(ohne Name)';}
+function mieterOptions(){return '<option value="">— aus Mietinteressenten wählen —</option>'+INT.slice().sort(function(a,b){return intLabel(a).localeCompare(intLabel(b),'de');}).map(function(i){return '<option value="'+i.id+'"'+(i.id===KALK.mieter_id?' selected':'')+'>'+esc(intLabel(i))+'</option>';}).join('');}
+async function selectMieter(id){
+  if(!id){return;}
+  var i=INT.find(function(x){return x.id===id;}); if(!i)return;
+  KALK.mieter_id=id; KALK.name_mieter=intLabel(i); if(i.personen!=null)KALK.personen=i.personen;
+  if($('f_name_mieter'))$('f_name_mieter').value=KALK.name_mieter;
+  if($('f_personen'))$('f_personen').value=(KALK.personen==null?'':KALK.personen);
+  render();
+  await sb.from('wohnung_kalkulation').update({mieter_id:id,name_mieter:KALK.name_mieter,personen:KALK.personen,updated_at:new Date().toISOString()}).eq('vermietung_id',vid);
+  $('savedMsg').textContent='gespeichert ✓';setTimeout(function(){$('savedMsg').textContent='';},1500);
+}
+async function saveNameManual(v){
+  KALK.name_mieter=(v===''?null:v); KALK.mieter_id=null;
+  if($('f_mieter_sel'))$('f_mieter_sel').value='';
+  render();
+  clearTimeout(T);T=setTimeout(async function(){
+    await sb.from('wohnung_kalkulation').update({name_mieter:KALK.name_mieter,mieter_id:null,updated_at:new Date().toISOString()}).eq('vermietung_id',vid);
+    $('savedMsg').textContent='gespeichert ✓';setTimeout(function(){$('savedMsg').textContent='';},1500);
+  },400);
+}
 
 async function load(){
   if(!vid){document.body.innerHTML='<div style="padding:40px">Keine Wohnung angegeben (vid fehlt).</div>';return;}
   const g=await sb.from('gebaeude').select('name,kennung'); (g.data||[]).forEach(x=>{KENN[x.name]=x.kennung||'';});
+  const il=await sb.from('mietinteressenten').select('id,name,vorname,personen'); INT=il.data||[];
   const v=await sb.from('wohnungsvermietung').select('*').eq('id',vid).maybeSingle(); VROW=v.data||null;
   let k=await sb.from('wohnung_kalkulation').select('*').eq('vermietung_id',vid).maybeSingle();
   if(!k.data){
     // Vorbelegen aus Vermietung
-    let mieter='';
-    if(VROW&&VROW.finaler_mieter_id){const mi=await sb.from('mietinteressenten').select('name,vorname,personen').eq('id',VROW.finaler_mieter_id).maybeSingle();if(mi.data)mieter=[mi.data.vorname,mi.data.name].filter(Boolean).join(' ');}
+    var mieterId=VROW?(VROW.finaler_mieter_id||VROW.reserviert_id||null):null;
+    var mi=mieterId?INT.find(function(x){return x.id===mieterId;}):null;
+    var mieter=mi?intLabel(mi):'';
     const kenn=VROW?(KENN[VROW.gebaeude]||''):'';
-    const rec={vermietung_id:vid,name_mieter:mieter||null,gebaeude:VROW?VROW.gebaeude:null,wohnung:VROW?VROW.einheit:null,einzug:VROW?VROW.einzug:null,iban_miete:OBJ_IBAN[kenn]||null,iban_kaution:IBAN_KAUTION_DEFAULT};
+    const rec={vermietung_id:vid,mieter_id:mieterId,name_mieter:mieter||null,personen:mi?mi.personen:null,gebaeude:VROW?VROW.gebaeude:null,wohnung:VROW?VROW.einheit:null,einzug:VROW?VROW.einzug:null,iban_miete:OBJ_IBAN[kenn]||null,iban_kaution:IBAN_KAUTION_DEFAULT};
     const ins=await sb.from('wohnung_kalkulation').insert(rec).select(); k={data:ins.data&&ins.data[0]};
   }
   KALK=k.data||{};
@@ -135,6 +163,7 @@ async function load(){
 }
 function fillForm(){
   ['name_mieter','personen','einzug','aenderung_datum','gebaeude','wohnung','lage','wfl','mieterzielgruppe','ausstattung','iban_miete','iban_kaution'].forEach(f=>{if($('f_'+f))$('f_'+f).value=(KALK[f]==null?'':KALK[f]);});
+  if($('f_mieter_sel'))$('f_mieter_sel').innerHTML=mieterOptions();
 }
 function buildCalc(){
   $('calcBody').innerHTML=LINES.map(function(L){
