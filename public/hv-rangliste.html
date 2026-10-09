@@ -61,6 +61,7 @@ tfoot td{font-weight:800;background:var(--surf2);border-top:2px solid var(--line
 .secthd .dot{width:11px;height:11px;border-radius:3px;display:inline-block}
 .secthd .dot.soll{background:var(--accent,#6d4ef0)}.secthd .dot.ist{background:#b45309}
 #tbl2 .istrow td{opacity:.95}
+.ninp{width:110px;font:inherit;font-size:13px;text-align:right;padding:4px 7px;border:1px solid var(--line);border-radius:7px;background:var(--surf);color:var(--text)}
 </style></head><body>
 <div class="wrap">
   <div class="top">
@@ -79,6 +80,9 @@ tfoot td{font-weight:800;background:var(--surf2);border-top:2px solid var(--line
   <div class="secthd" style="margin-top:28px"><span class="dot ist"></span><h2>IST · tatsächliche Werte</h2><span class="secsub">in Arbeit – Datenquelle wird noch erarbeitet</span></div>
   <div class="scroll"><table id="tbl2"><thead><tr id="hrow2"></tr></thead><tbody id="tb2"></tbody><tfoot><tr id="tf2"></tr></tfoot></table></div>
 
+  <div class="secthd" style="margin-top:28px"><span class="dot" style="background:#0f9d6b"></span><h2>Investition &amp; Kapital</h2><span class="secsub">Kaufpreis, GIK (Kaufpreis + Posten) und Eigenkapital je Objekt – editierbar, Basis der Renditen</span></div>
+  <div class="scroll"><table id="tbl3"><thead><tr id="hrow3"></tr></thead><tbody id="tb3"></tbody><tfoot><tr id="tf3"></tr></tfoot></table></div>
+
   <div class="legend" id="legend"></div>
 </div>
 
@@ -90,6 +94,18 @@ tfoot td{font-weight:800;background:var(--surf2);border-top:2px solid var(--line
   <div class="mrow"><label>Bankrate / Jahr (Override)</label><input id="m_bank" type="number" step="100" placeholder="auto aus Darlehen"></div>
   <div class="mrow"><label>Notiz</label><input id="m_notiz" type="text" style="width:220px;text-align:left" placeholder="optional"></div>
   <div class="mact"><button class="btn" onclick="closeModal()">Abbrechen</button><button class="btn primary" onclick="saveModal()">Speichern</button></div>
+</div></div>
+<div class="ov" id="ovGik"><div class="modal" style="min-width:440px">
+  <h3 id="gtitle">GIK-Posten</h3><div class="ms" id="gsub"></div>
+  <div id="glist" style="margin:10px 0"></div>
+  <div style="display:grid;grid-template-columns:1fr 1.4fr 1.2fr .9fr auto;gap:6px;align-items:end">
+    <div><label style="font-size:10px;color:var(--muted)">Datum</label><input id="g_datum" type="date" style="width:100%"></div>
+    <div><label style="font-size:10px;color:var(--muted)">Thema</label><input id="g_thema" type="text" placeholder="z. B. Notar" style="width:100%"></div>
+    <div><label style="font-size:10px;color:var(--muted)">Firma</label><input id="g_firma" type="text" placeholder="optional" style="width:100%"></div>
+    <div><label style="font-size:10px;color:var(--muted)">Betrag €</label><input id="g_betrag" type="number" step="100" style="width:100%"></div>
+    <button class="btn primary" onclick="addGik()">+</button>
+  </div>
+  <div class="mact" style="margin-top:14px"><button class="btn" onclick="closeGik()">Schließen</button></div>
 </div></div>
 <div class="toast" id="toast"></div>
 <script>
@@ -106,7 +122,7 @@ const CODEMAP={KW30:'H8',U6:'H12',E4:'H2',S58:'H11',H44:'H6',S16:'H5',K28:'H4',K
 const KUERZEL={H1:'A14',H2:'E4',H4:'K28',H5:'S16',H6:'H44',H7:'K6',H8:'KW30',H9:'M8',H11:'S58',H12:'U6',H13:'K7',H15:'R6'};
 let OBJ=[],MIET=[],LOANS=[],KENN={},ROWS=[],sortKey='gewinn',sortDir=-1,editId=null;
 let FIX_JE_EINHEIT=257; // Hausverwaltungskosten-Umlage je Einheit/Monat (aus gf_kpi_werte)
-let GIKBYOBJ={};
+let GIKBYOBJ={},GIKROWS={},gikModalObj=null;
 const COLS=[
  ['rank','#',r=>r._rank,'t'],
  ['kennung','Kennung',r=>`<span class="kz">${esc(r.kennung)}</span>`,'t'],
@@ -144,8 +160,8 @@ async function load(){
   ]);
   OBJ=o.data||[];MIET=m.data||[];LOANS=(l.error?[]:(l.data||[]));(k.data||[]).forEach(x=>KENN[x.object_id]=x);
   if(cfg&&cfg.data&&cfg.data.wert!=null&&!isNaN(Number(cfg.data.wert)))FIX_JE_EINHEIT=Number(cfg.data.wert);
-  const gik=await sb.from('objekt_gik_posten').select('object_id,betrag');
-  GIKBYOBJ={};(gik.data||[]).forEach(p=>{GIKBYOBJ[p.object_id]=(GIKBYOBJ[p.object_id]||0)+Number(p.betrag||0);});
+  const gik=await sb.from('objekt_gik_posten').select('*').order('datum',{ascending:true});
+  GIKBYOBJ={};GIKROWS={};(gik.data||[]).forEach(p=>{GIKBYOBJ[p.object_id]=(GIKBYOBJ[p.object_id]||0)+Number(p.betrag||0);(GIKROWS[p.object_id]=GIKROWS[p.object_id]||[]).push(p);});
   compute();buildFilters();buildHead();render();
 }
 function loanMonatByObj(){
@@ -213,6 +229,58 @@ function buildHead(){
   const IST_LBL={umsatz:'Umsatz p.a.'};
   $('hrow2').innerHTML=COLS.map(c=>`<th>${IST_LBL[c[0]]||c[1]}</th>`).join('');
 }
+/* ---------- Investition & Kapital (editierbar) ---------- */
+const INVCOLS=['Objekt','Kaufpreis','GIK-Posten','GIK gesamt','Eigenkapital'];
+function renderInvest3(rows){
+  document.getElementById('hrow3').innerHTML=INVCOLS.map((c,i)=>`<th class="${i>0?'r':''}">${c}</th>`).join('');
+  document.getElementById('tb3').innerHTML=rows.map(r=>{
+    const n=(GIKROWS[r.id]||[]).length;
+    return `<tr>
+      <td><span class="kz">${esc(r.kennung)}</span> <span class="oname">${esc(r.name||'')}</span></td>
+      <td class="r"><input class="ninp" type="number" step="1000" value="${r.kaufpreis!=null?r.kaufpreis:''}" placeholder="0" onchange="saveInv('${r.id}','kaufpreis',this.value)"></td>
+      <td class="r"><button class="btn" style="font-size:12px;padding:4px 10px" onclick="openGik('${r.id}')">${n?n+' Posten':'+ Posten'} · ${eur(GIKBYOBJ[r.id]||0)}</button></td>
+      <td class="r"><b>${eur(r.gik)}</b></td>
+      <td class="r"><input class="ninp" type="number" step="1000" value="${r.eigenkapital!=null?r.eigenkapital:''}" placeholder="0" onchange="saveInv('${r.id}','eigenkapital',this.value)"></td>
+    </tr>`;}).join('')||`<tr><td colspan="5" style="text-align:center;color:var(--muted);padding:24px">Keine Objekte.</td></tr>`;
+  const S=rows.reduce((a,r)=>{a.k+=(r.kaufpreis||0);a.g+=(r.gik||0);a.e+=(r.eigenkapital||0);return a;},{k:0,g:0,e:0});
+  document.getElementById('tf3').innerHTML=`<td><b>Σ</b></td><td class="r"><b>${eur(S.k)}</b></td><td></td><td class="r"><b>${eur(S.g)}</b></td><td class="r"><b>${eur(S.e)}</b></td>`;
+}
+async function saveInv(oid,col,val){
+  const n=val===''?null:Number(val);
+  const {error}=await sb.from('nahaus_objekte').update({[col]:n}).eq('id',oid);
+  if(error){toast('Fehler: '+error.message);return;}
+  const o=OBJ.find(x=>x.id===oid);if(o)o[col]=n;
+  compute();render();toast('Gespeichert ✓');
+}
+function openGik(oid){gikModalObj=oid;renderGikList();document.getElementById('ovGik').classList.add('show');
+  const o=OBJ.find(x=>x.id===oid);document.getElementById('gsub').textContent=(o?(KUERZEL[o.h_id_text]||o.h_id_text)+' · '+(o.name||''):'');}
+function closeGik(){document.getElementById('ovGik').classList.remove('show');gikModalObj=null;}
+function renderGikList(){
+  const list=GIKROWS[gikModalObj]||[];
+  document.getElementById('glist').innerHTML=list.length?('<table style="width:100%;border-collapse:collapse;font-size:12.5px">'+list.map(p=>`<tr>
+    <td style="padding:4px 6px;border-bottom:1px solid var(--line)">${p.datum?new Date(p.datum).toLocaleDateString('de-DE'):'—'}</td>
+    <td style="padding:4px 6px;border-bottom:1px solid var(--line)">${esc(p.thema||'—')}</td>
+    <td style="padding:4px 6px;border-bottom:1px solid var(--line)">${esc(p.firma||'')}</td>
+    <td style="padding:4px 6px;border-bottom:1px solid var(--line);text-align:right;font-weight:600">${eur(p.betrag)}</td>
+    <td style="padding:4px 6px;border-bottom:1px solid var(--line);text-align:right"><span style="cursor:pointer;color:var(--red)" onclick="delGik('${p.id}')">🗑</span></td></tr>`).join('')+'</table>'):'<div style="color:var(--muted);font-size:12.5px">Noch keine Posten.</div>';
+}
+async function addGik(){
+  const oid=gikModalObj;const datum=document.getElementById('g_datum').value;
+  const thema=document.getElementById('g_thema').value.trim();const firma=document.getElementById('g_firma').value.trim();
+  const betrag=document.getElementById('g_betrag').value;
+  if(!thema&&!betrag){toast('Thema oder Betrag angeben');return;}
+  const rec={object_id:oid,datum:datum||null,thema:thema||null,firma:firma||null,betrag:betrag?Number(betrag):null};
+  const {data,error}=await sb.from('objekt_gik_posten').insert(rec).select().maybeSingle();
+  if(error){toast('Fehler: '+error.message);return;}
+  (GIKROWS[oid]=GIKROWS[oid]||[]).push(data);GIKBYOBJ[oid]=(GIKBYOBJ[oid]||0)+Number(data.betrag||0);
+  document.getElementById('g_datum').value='';document.getElementById('g_thema').value='';document.getElementById('g_firma').value='';document.getElementById('g_betrag').value='';
+  renderGikList();compute();render();
+}
+async function delGik(pid){
+  await sb.from('objekt_gik_posten').delete().eq('id',pid);
+  for(const k in GIKROWS){const i=GIKROWS[k].findIndex(p=>p.id===pid);if(i>=0){GIKBYOBJ[k]-=Number(GIKROWS[k][i].betrag||0);GIKROWS[k].splice(i,1);break;}}
+  renderGikList();compute();render();
+}
 // IST-Spalten: Stammdaten + IST-Umsatz (Warmmiete-Umsatz) + IST-Rendite; übrige Geldwerte noch offen
 const IST_KNOWN=new Set(['rank','kennung','name','einheiten']);
 function renderIst(rows){
@@ -251,6 +319,7 @@ function render(){
   const tf=[`Σ`,'',`${rows.length} Objekte`,S.einh,pct(avgAusl),eur(S.ums),eur(S.bank),eur(S.bew),`<b class="${S.gew>=0?'good':'bad'}">${eur(S.gew/12)}</b>`,'',`<b class="${S.gew>=0?'good':'bad'}">${eur(S.gew)}</b>`,'',`<b>${pct(avgRend)}</b>`,`<b class="${S.op>0?'bad':'good'}">${eur(S.op)}</b>`,pf(S.ums,S.kauf),pf(S.ums,S.gik),pf(S.ums,S.ek)];
   $('tf').innerHTML=tf.map(v=>`<td>${v}</td>`).join('');
   renderIst(rows);
+  renderInvest3(rows);
   renderKpis(S,avgAusl,avgRend,rows.length);
 }
 function renderKpis(S,avgAusl,avgRend,n){
