@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="de"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Bericht · Offene Mieten</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
+<style>
+:root{--bg:#f6f7f9;--surf:#fff;--surf2:#f1f3f6;--line:#e4e7ec;--text:#1c2230;--muted:#6b7280;--dim:#4b5563;--accent:#6d4ef0;--green:#0f9d6b;--red:#c0392b;--amber:#b45309;--gold:#b07d1a}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--text);font-family:'Inter',system-ui,-apple-system,'Segoe UI',sans-serif;font-size:14px;line-height:1.5}
+.wrap{max-width:1100px;margin:0 auto;padding:22px 24px 60px}
+h1{font-size:23px;font-weight:800;color:var(--gold)}
+.sub{font-size:12.5px;color:var(--muted);margin:5px 0 16px;max-width:820px}
+h2{font-size:14px;font-weight:700;margin:24px 0 10px;display:flex;align-items:center;gap:8px}
+h2 .dot{width:9px;height:9px;border-radius:3px;display:inline-block}
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:11px}
+.kpi{background:var(--surf);border:1px solid var(--line);border-radius:12px;padding:13px 15px}
+.kpi .l{font-size:10px;text-transform:uppercase;color:var(--muted);font-weight:700}
+.kpi .v{font-size:21px;font-weight:800;margin-top:4px}
+.kpi.red .v{color:var(--red)} .kpi.gold .v{color:var(--gold)}
+.card{background:var(--surf);border:1px solid var(--line);border-radius:12px;padding:14px 16px;margin-top:12px}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th,td{padding:8px 13px;border-bottom:1px solid var(--line);text-align:left}
+th{font-size:10.5px;text-transform:uppercase;color:var(--muted);font-weight:700}
+th.r,td.r{text-align:right}
+.money{font-weight:700;white-space:nowrap;color:var(--red)}
+.bar{height:7px;background:var(--surf2);border-radius:99px;overflow:hidden;min-width:80px}
+.bar>i{display:block;height:100%;background:var(--red)}
+.foot{font-size:11.5px;color:var(--muted);margin-top:14px}
+a.more{font-size:12.5px;color:var(--accent);text-decoration:none;font-weight:600}
+.wrap,.main{max-width:none!important}
+</style></head><body>
+<div class="wrap">
+  <h1>Bericht · Offene Mieten</h1>
+  <div class="sub">Aktueller Status der offenen Mieten aus Nahaus und deren Entwicklung über die Zeit. Quelle: Nahaus-Offene-Posten, täglich nach Supabase gespiegelt.</div>
+
+  <h2><span class="dot" style="background:var(--red)"></span>Aktueller Status (Nahaus)</h2>
+  <div class="kpis" id="kpis"></div>
+  <div class="card"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px"><b style="font-size:13px">Offene Mieten je Objekt</b><a class="more" href="/hausverwaltung/offene-mieten" target="_top">↗ Details & Filter</a></div><div id="byObj"></div></div>
+
+  <h2><span class="dot" style="background:var(--accent)"></span>Entwicklung der offenen Mieten</h2>
+  <div class="card"><div style="position:relative;height:300px"><canvas id="chTrend"></canvas></div>
+    <div class="foot" id="trendNote"></div></div>
+</div>
+<script>
+const sb=window.supabase.createClient('https://jqzxctfqvcwbctpjksvg.supabase.co','eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpxenhjdGZxdmN3YmN0cGprc3ZnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODIxMzA0MzIsImV4cCI6MjA5NzcwNjQzMn0.RKIbZxJdusKWWPjBJqlxZ8e1m8So02UslOg55YRsn3o');
+const esc=s=>(s==null?'':String(s)).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+const eur=n=>(n==null||isNaN(n))?'—':new Intl.NumberFormat('de-DE',{style:'currency',currency:'EUR',maximumFractionDigits:0}).format(n);
+let CH=null;
+async function load(){
+  const [op,obj,tw]=await Promise.all([
+    sb.from('nahaus_offene_posten').select('h_id_text,mieter_namen,is_current,total_op'),
+    sb.from('nahaus_objekte').select('h_id_text,name'),
+    sb.from('offene_posten_tageswerte').select('datum,summe,summe_laufend,summe_beendet').order('datum',{ascending:true})
+  ]);
+  const OBJN={}; (obj.data||[]).forEach(x=>{OBJN[x.h_id_text]=x.name;});
+  const rows=(op.error?[]:(op.data||[])).filter(x=>Number(x.total_op)>0);
+  const sum=a=>a.reduce((s,x)=>s+Number(x.total_op||0),0);
+  const laufend=rows.filter(x=>x.is_current), beendet=rows.filter(x=>!x.is_current);
+  document.getElementById('kpis').innerHTML=[
+    ['Offene Mieten gesamt',eur(sum(rows)),'red'],['davon laufend',eur(sum(laufend)),''],['davon beendet',eur(sum(beendet)),'red'],
+    ['Betroffene Mieter',new Set(rows.map(x=>x.mieter_namen).filter(Boolean)).size,''],['Mietverhältnisse',rows.length,'']
+  ].map(k=>`<div class="kpi ${k[2]}"><div class="l">${k[0]}</div><div class="v">${k[1]}</div></div>`).join('');
+  // je Objekt
+  const byO={}; rows.forEach(x=>{const k=x.h_id_text||'—';byO[k]=(byO[k]||0)+Number(x.total_op||0);});
+  const list=Object.entries(byO).map(([k,v])=>({k,v})).sort((a,b)=>b.v-a.v);
+  const max=list.length?list[0].v:1;
+  document.getElementById('byObj').innerHTML='<table><thead><tr><th>Objekt</th><th>Verteilung</th><th class="r">Offen</th></tr></thead><tbody>'+
+    list.map(o=>`<tr><td><b>${esc(o.k)}</b>${OBJN[o.k]?' · '+esc(OBJN[o.k]):''}</td><td><div class="bar"><i style="width:${Math.round(o.v/max*100)}%"></i></div></td><td class="r money">${eur(o.v)}</td></tr>`).join('')+
+    `<tr><td colspan="2" style="text-align:right;font-weight:800;border-top:2px solid var(--line)">Σ</td><td class="r money" style="border-top:2px solid var(--line)">${eur(sum(rows))}</td></tr></tbody></table>';
+  // Trend
+  const tdata=tw.error?[]:(tw.data||[]);
+  const cv=document.getElementById('chTrend');
+  if(!tdata.length){document.getElementById('trendNote').textContent='Noch keine Verlaufsdaten – der tägliche Offene-Posten-Sync baut die Entwicklung auf.';return;}
+  const labels=tdata.map(x=>{const p=x.datum.split('-');return p[2]+'.'+p[1]+'.';});
+  const ds=(lbl,key,col,w,fill)=>({label:lbl,data:tdata.map(x=>Number(x[key]||0)),borderColor:col,backgroundColor:col+'22',borderWidth:w,tension:.25,pointRadius:tdata.length<=2?4:2,fill:!!fill});
+  if(CH)CH.destroy();
+  CH=new Chart(cv.getContext('2d'),{type:'line',data:{labels,datasets:[ds('Gesamt','summe','#c0392b',2.5,true),ds('laufend','summe_laufend','#64748b',1.5,false),ds('beendet','summe_beendet','#b45309',1.5,false)]},
+    options:{responsive:true,maintainAspectRatio:false,interaction:{mode:'index',intersect:false},plugins:{legend:{labels:{boxWidth:12,font:{size:11}}},tooltip:{callbacks:{label:c=>c.dataset.label+': '+Math.round(c.parsed.y).toLocaleString('de-DE')+' €'}}},scales:{y:{ticks:{callback:v=>Math.round(v/1000)+'k €'}}}}});
+  document.getElementById('trendNote').textContent='Tageswerte seit '+tdata[0].datum+' · '+tdata.length+' Messpunkte.';
+}
+load();
+</script></body></html>
