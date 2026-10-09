@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html lang="de"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Mietkostenkalkulation & Mietangebot</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+:root{--bg:#f6f7f9;--surf:#fff;--surf2:#f1f3f6;--line:#e4e7ec;--text:#1c2230;--muted:#6b7280;--dim:#4b5563;--accent:#185fa5;--gold:#b07d1a;--green:#0f9d6b;--red:#c0392b;--yellow:#fff7cc}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--text);font-family:'Inter',system-ui,-apple-system,'Segoe UI',sans-serif;font-size:14px;line-height:1.5}
+.wrap{max-width:1000px;margin:0 auto;padding:20px 24px 70px}
+.top{display:flex;justify-content:space-between;align-items:flex-start;gap:14px;flex-wrap:wrap;margin-bottom:14px}
+h1{font-size:22px;font-weight:800;color:var(--gold)}
+.sub{font-size:12.5px;color:var(--muted);margin-top:3px}
+.btn{font:inherit;font-size:13px;font-weight:600;padding:8px 14px;border-radius:9px;border:1px solid var(--line);background:var(--surf);color:var(--text);cursor:pointer}
+.btn.primary{background:var(--accent);color:#fff;border-color:var(--accent)}
+.btn:hover{filter:brightness(.98)}
+.sec{background:var(--surf);border:1px solid var(--line);border-radius:13px;padding:16px 18px;margin-bottom:16px}
+.sec h2{font-size:12px;text-transform:uppercase;letter-spacing:.05em;color:var(--accent);font-weight:800;margin-bottom:12px}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px}
+.fld label{font-size:11px;color:var(--muted);font-weight:600;display:block;margin-bottom:3px}
+.fld input,.fld select,.fld textarea{width:100%;font:inherit;font-size:13px;padding:7px 9px;border:1px solid var(--line);border-radius:8px;background:var(--surf2)}
+.fld input.yellow{background:var(--yellow)}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th,td{padding:6px 9px;border-bottom:1px solid var(--line);text-align:right}
+th:first-child,td:first-child,th.l,td.l{text-align:left}
+th{font-size:10.5px;text-transform:uppercase;color:var(--muted);font-weight:700;background:var(--surf2)}
+td input{width:100%;font:inherit;font-size:13px;padding:4px 6px;border:1px solid transparent;border-radius:6px;background:var(--yellow);text-align:right}
+td input:focus{outline:none;border-color:var(--accent);background:#fff}
+.grp td{background:#eef4fb;font-weight:700;color:#0b3b6f;font-size:11px;text-transform:uppercase}
+.sumrow td{font-weight:800;border-top:2px solid var(--line);background:var(--surf2)}
+.calc{color:var(--muted)}
+.kpi{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-top:12px}
+.kpi .b{background:var(--surf2);border:1px solid var(--line);border-radius:10px;padding:10px 12px}
+.kpi .l{font-size:10px;text-transform:uppercase;color:var(--muted);font-weight:700}
+.kpi .v{font-size:18px;font-weight:800;margin-top:3px}
+.ref table td,.ref table th{font-size:11.5px;padding:4px 7px}
+/* Mietangebot (Druck) */
+.angebot{background:#fff;border:1px solid var(--line);border-radius:13px;padding:26px 30px}
+.angebot .ah{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:2px solid var(--accent);padding-bottom:10px;margin-bottom:14px}
+.angebot h2{font-size:20px;color:var(--text)}
+.angebot .meta{font-size:12px;color:var(--muted)}
+.angebot .kv{display:grid;grid-template-columns:200px 1fr;gap:4px 12px;font-size:13px;margin-bottom:14px}
+.angebot .kv .k{color:var(--muted)}
+.angebot table{font-size:13px}
+.angebot .tot td{font-weight:800;border-top:2px solid var(--text)}
+.saved{font-size:11.5px;color:var(--green);margin-left:8px}
+@media print{
+  body{background:#fff}
+  .noprint{display:none!important}
+  .wrap{max-width:none;padding:0}
+  .angebot{border:none;border-radius:0;padding:0}
+  @page{size:A4;margin:16mm}
+}
+.wrap,.main{max-width:none!important}
+</style></head><body>
+<div class="wrap">
+  <div class="top noprint">
+    <div><h1>Mietkostenkalkulation &amp; Mietangebot</h1><div class="sub" id="sub">Kalkulation der neuen Wohnung · für Vorlage bei Jobcenter / Sozialamt</div></div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap">
+      <a class="btn" id="backBtn" href="/vermietung/wohnungsvermietung" target="_top">← Wohnungsvermietung</a>
+      <button class="btn primary" onclick="window.print()">🖨 Mietangebot drucken / PDF</button>
+    </div>
+  </div>
+
+  <div class="sec noprint"><h2>Eckdaten <span class="saved" id="savedMsg"></span></h2>
+    <div class="grid">
+      <div class="fld"><label>Name des Mieters</label><input id="f_name_mieter" oninput="save('name_mieter',this.value)"></div>
+      <div class="fld"><label>Anzahl Personen</label><input id="f_personen" type="number" min="0" oninput="save('personen',this.value)"></div>
+      <div class="fld"><label>Einzugstermin</label><input id="f_einzug" oninput="save('einzug',this.value)" placeholder="z. B. 01.11.2026 / sofort"></div>
+      <div class="fld"><label>Änderung der Miete (Datum)</label><input id="f_aenderung_datum" type="date" oninput="save('aenderung_datum',this.value)"></div>
+      <div class="fld"><label>Gebäude</label><input id="f_gebaeude" oninput="save('gebaeude',this.value)"></div>
+      <div class="fld"><label>Wohnung / Einheit</label><input id="f_wohnung" oninput="save('wohnung',this.value)"></div>
+      <div class="fld"><label>Lage</label><input id="f_lage" oninput="save('lage',this.value)" placeholder="z. B. DG – Hinterhaus"></div>
+      <div class="fld"><label>Wohnfläche m²</label><input id="f_wfl" class="yellow" type="number" step="0.01" oninput="save('wfl',this.value)"></div>
+      <div class="fld"><label>Mieterzielgruppe</label><input id="f_mieterzielgruppe" oninput="save('mieterzielgruppe',this.value)" placeholder="z. B. Sozialmieter"></div>
+      <div class="fld" style="grid-column:1/-1"><label>Ausstattungsmerkmale</label><input id="f_ausstattung" oninput="save('ausstattung',this.value)"></div>
+      <div class="fld"><label>Kontoverbindung Miete (IBAN)</label><input id="f_iban_miete" oninput="save('iban_miete',this.value)"></div>
+      <div class="fld"><label>Kontoverbindung Kaution (IBAN)</label><input id="f_iban_kaution" oninput="save('iban_kaution',this.value)"></div>
+    </div>
+  </div>
+
+  <div class="sec noprint"><h2>Mietkostenkalkulation (gelbe Felder = Miete neu)</h2>
+    <table><thead><tr><th class="l">Was?</th><th>Miete alt</th><th>Miete neu</th><th>Veränderung</th><th>Wertsteigerung ×12</th><th>Erhöhung %</th></tr></thead>
+      <tbody id="calcBody"></tbody>
+      <tfoot><tr class="sumrow"><td class="l">SUMME</td><td id="s_alt"></td><td id="s_neu"></td><td id="s_ver"></td><td id="s_wert"></td><td></td></tr></tfoot>
+    </table>
+    <div class="kpi" id="calcKpis"></div>
+  </div>
+
+  <div class="sec noprint ref"><h2>Richtwerte Bruttokaltmiete (Jobcenter / Sozialamt) · €/m² bzw. Gesamt</h2>
+    <div style="overflow:auto"><table><thead><tr><th class="l">Region</th><th class="l">Basis</th><th>1 P. · bis 50 m²</th><th>2 P. · 50–60</th><th>3 P. · 60–80</th><th>4 P. · 80–90</th><th>5 P. · 90–105</th></tr></thead>
+      <tbody id="refBody"></tbody></table></div>
+    <div class="sub" style="margin-top:6px">Richtwerte als Orientierung (aus der Vorlage). Je weitere Person ca. +136,35 € (bzw. +122,70 €). Warmmiete incl. Heizung ≈ Bruttokaltmiete + ~100 €.</div>
+  </div>
+
+  <!-- ===== MIETANGEBOT (druckbar) ===== -->
+  <div class="angebot" id="angebot"></div>
+</div>
+<script>
+const sb=window.supabase.createClient('https://jqzxctfqvcwbctpjksvg.supabase.co','eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpxenhjdGZxdmN3YmN0cGprc3ZnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODIxMzA0MzIsImV4cCI6MjA5NzcwNjQzMn0.RKIbZxJdusKWWPjBJqlxZ8e1m8So02UslOg55YRsn3o');
+const $=id=>document.getElementById(id);
+const esc=s=>(s==null?'':String(s)).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+const eur=n=>(n==null||isNaN(n))?'—':new Intl.NumberFormat('de-DE',{style:'currency',currency:'EUR',maximumFractionDigits:2}).format(n);
+const eur0=n=>(n==null||isNaN(n))?'—':new Intl.NumberFormat('de-DE',{style:'currency',currency:'EUR',maximumFractionDigits:0}).format(n);
+const num=v=>{if(v==null||v==='')return null;const n=parseFloat(String(v).replace(/\./g,'').replace(',','.'));return isNaN(n)?null:n;};
+const vid=new URLSearchParams(location.search).get('vid');
+const LINES=[['kaltmiete','Kaltmiete','jc'],['betriebskosten','Betriebskosten','jc'],['heizung','Heizung','jc'],['strom','Strom','mieter'],['wlan','WLAN','mieter'],['garage','Garage / Stellplatz','mieter'],['moeblierung','Möblierung (bei Apartment)','mieter'],['ebk','Einbauküche (EBK)','mieter'],['hausmeister','Hausmeisterjob – Gutschrift','mieter']];
+const OBJ_IBAN={A14:'DE52 4306 0967 6037 6931 02',E4:'DE25 4306 0967 6037 6931 03',H44:'DE87 1203 0000 1068 3430 84',K6:'DE85 1203 0000 1055 9413 79',K7:'DE65 1203 0000 1068 3430 92',K28:'DE95 4306 0967 6037 6931 04',KW30:'DE43 1203 0000 1068 3431 00',M8:'DE19 1203 0000 1055 9414 03',R6:'DE41 4306 0967 6037 6931 06',S16:'DE68 4306 0967 6037 6931 05',S58:'DE93 1203 0000 1055 9414 29',U6:'DE12 1203 0000 1068 3430 76',B20:'DE60 5005 0201 1243 2302 13'};
+const IBAN_KAUTION_DEFAULT='EE – DE44 5509 1200 0062 0838 08';
+const REF=[
+ ['Alzey-Worms / Westhofen','€/m²',10.65,9.17,8.57,8.80,9.09],['','Gesamt',538,628.80,784.80,845.10,954.45],
+ ['Alzey-Worms / Gundersheim','€/m²',10.65,9.17,8.57,8.80,9.09],['','Gesamt',538,628.80,784.80,845.10,954.45],
+ ['Alzey-Land / Wörrstadt / Stadt Alzey','€/m²',10.14,9.50,9.24,8.84,8.18],['','Gesamt',565.50,585,728.80,841.50,1012.20],
+ ['Alzey-Worms / Eich','€/m²',10.14,9.50,9.24,8.84,8.18],['','Gesamt',507,570,739.20,795.60,858.90],
+ ['Mainz-Bingen / Oppenheim','Gesamt',660,740,900,1020,1200]
+];
+let KALK={}, VROW=null, KENN={};
+
+async function load(){
+  if(!vid){document.body.innerHTML='<div style="padding:40px">Keine Wohnung angegeben (vid fehlt).</div>';return;}
+  const g=await sb.from('gebaeude').select('name,kennung'); (g.data||[]).forEach(x=>{KENN[x.name]=x.kennung||'';});
+  const v=await sb.from('wohnungsvermietung').select('*').eq('id',vid).maybeSingle(); VROW=v.data||null;
+  let k=await sb.from('wohnung_kalkulation').select('*').eq('vermietung_id',vid).maybeSingle();
+  if(!k.data){
+    // Vorbelegen aus Vermietung
+    let mieter='';
+    if(VROW&&VROW.finaler_mieter_id){const mi=await sb.from('mietinteressenten').select('name,vorname,personen').eq('id',VROW.finaler_mieter_id).maybeSingle();if(mi.data)mieter=[mi.data.vorname,mi.data.name].filter(Boolean).join(' ');}
+    const kenn=VROW?(KENN[VROW.gebaeude]||''):'';
+    const rec={vermietung_id:vid,name_mieter:mieter||null,gebaeude:VROW?VROW.gebaeude:null,wohnung:VROW?VROW.einheit:null,einzug:VROW?VROW.einzug:null,iban_miete:OBJ_IBAN[kenn]||null,iban_kaution:IBAN_KAUTION_DEFAULT};
+    const ins=await sb.from('wohnung_kalkulation').insert(rec).select(); k={data:ins.data&&ins.data[0]};
+  }
+  KALK=k.data||{};
+  fillForm(); buildCalc(); buildRef(); render();
+  if($('backBtn'))$('backBtn').href='/vermietung/wohnungsvermietung';
+  $('sub').textContent=(KALK.gebaeude||'')+(KALK.wohnung?' · '+KALK.wohnung:'')+' · Kalkulation für Jobcenter / Sozialamt';
+}
+function fillForm(){
+  ['name_mieter','personen','einzug','aenderung_datum','gebaeude','wohnung','lage','wfl','mieterzielgruppe','ausstattung','iban_miete','iban_kaution'].forEach(f=>{if($('f_'+f))$('f_'+f).value=(KALK[f]==null?'':KALK[f]);});
+}
+function buildCalc(){
+  $('calcBody').innerHTML=LINES.map(function(L){
+    var grp=L[2]==='jc'?'':'';
+    return '<tr><td class="l">'+esc(L[1])+(L[2]==='jc'?' <span class="calc" style="font-size:10px">(JC/Amt)</span>':'')+'</td>'
+      +'<td><input value="'+(KALK[L[0]+'_alt']==null?'':KALK[L[0]+'_alt'])+'" style="background:#f1f3f6" oninput="save(\''+L[0]+'_alt\',this.value)"></td>'
+      +'<td><input value="'+(KALK[L[0]+'_neu']==null?'':KALK[L[0]+'_neu'])+'" oninput="save(\''+L[0]+'_neu\',this.value)"></td>'
+      +'<td class="calc" id="v_'+L[0]+'"></td><td class="calc" id="w_'+L[0]+'"></td><td class="calc" id="p_'+L[0]+'"></td></tr>';
+  }).join('');
+}
+function buildRef(){
+  $('refBody').innerHTML=REF.map(function(r){
+    var isGesamt=r[1]!=='€/m²';
+    return '<tr'+(r[0]?' style="border-top:1px solid var(--line)"':'')+'><td class="l">'+esc(r[0])+'</td><td class="l">'+esc(r[1])+'</td>'
+      +r.slice(2).map(function(x){return '<td>'+(isGesamt?eur0(x):(x.toFixed?x.toFixed(2).replace('.',',')+' €':x))+'</td>';}).join('')+'</tr>';
+  }).join('');
+}
+function val(f){return num(KALK[f]);}
+function sumBy(suf){return LINES.reduce(function(s,L){return s+(val(L[0]+suf)||0);},0);}
+function render(){
+  // Zeilenwerte
+  LINES.forEach(function(L){
+    var a=val(L[0]+'_alt')||0,n=val(L[0]+'_neu')||0,v=n-a;
+    if($('v_'+L[0]))$('v_'+L[0]).textContent=v?eur(v):'';
+    if($('w_'+L[0]))$('w_'+L[0]).textContent=(L[0]==='kaltmiete'&&v)?eur(v*12*12):'';
+    if($('p_'+L[0]))$('p_'+L[0]).textContent=(a&&v)?(Math.round(v/a*100)+' %'):'';
+  });
+  var sAlt=sumBy('_alt'),sNeu=sumBy('_neu'),sVer=sNeu-sAlt;
+  $('s_alt').textContent=eur(sAlt);$('s_neu').textContent=eur(sNeu);$('s_ver').textContent=eur(sVer);
+  var kAlt=val('kaltmiete_alt')||0,kNeu=val('kaltmiete_neu')||0;
+  $('s_wert').textContent=eur((kNeu-kAlt)*12*12);
+  var wfl=val('wfl');
+  var brutto=(kNeu+(val('betriebskosten_neu')||0));
+  var kaution=val('kaution')!=null?val('kaution'):kNeu*3;
+  $('calcKpis').innerHTML=[
+    ['Gesamtmiete (Warmmiete)',eur(sNeu)],
+    ['Bruttokaltmiete',eur(brutto)],
+    ['Kaltmiete €/m²',wfl?eur(kNeu/wfl):'—'],
+    ['Bruttokaltmiete €/m²',wfl?eur(brutto/wfl):'—'],
+    ['Warmmiete €/m²',wfl?eur(sNeu/wfl):'—'],
+    ['Kaution (3× Kaltmiete)',eur(kaution)]
+  ].map(function(k){return '<div class="b"><div class="l">'+k[0]+'</div><div class="v">'+k[1]+'</div></div>';}).join('');
+  renderAngebot(sNeu,kaution,brutto);
+}
+function renderAngebot(sNeu,kaution,brutto){
+  var ort=(KALK.gebaeude||'').split(',').slice(-1)[0].trim()||'Bad Kreuznach';
+  var kv=function(k,v){return '<div class="k">'+esc(k)+'</div><div>'+esc(v||'—')+'</div>';};
+  var lineRows=LINES.map(function(L){var n=val(L[0]+'_neu');return '<tr><td class="l">'+esc(L[1])+'</td><td>'+(n!=null?eur(n):'—')+'</td></tr>';}).join('');
+  $('angebot').innerHTML=
+   '<div class="ah"><div><h2>Mietangebot</h2><div class="meta">Wohn(t)raum Rheinhessen · zur Vorlage bei Jobcenter / Sozialamt</div></div>'
+   +'<div class="meta" style="text-align:right">'+esc(ort)+', den '+new Date().toLocaleDateString('de-DE')+'</div></div>'
+   +'<div class="kv">'
+     +kv('Gebäude',KALK.gebaeude)+kv('Einheit / Wohnung',KALK.wohnung)+kv('Lage',KALK.lage)
+     +kv('Wohnfläche',KALK.wfl?(KALK.wfl+' m²'):'')+kv('Ausstattung',KALK.ausstattung)
+     +kv('Name, Vorname',KALK.name_mieter)+kv('Personenanzahl',KALK.personen)+kv('Mietbeginn',KALK.einzug)
+   +'</div>'
+   +'<table><thead><tr><th class="l">Position</th><th>Betrag / Monat</th></tr></thead><tbody>'+lineRows
+     +'<tr class="tot"><td class="l">Gesamtmiete (Warmmiete)</td><td>'+eur(sNeu)+'</td></tr>'
+     +'<tr><td class="l">Kaution (einmalig)</td><td>'+eur(kaution)+'</td></tr>'
+   +'</tbody></table>'
+   +'<div class="kv" style="margin-top:14px">'
+     +kv('Kontoverbindung Miete',KALK.iban_miete)+kv('Kontoverbindung Kaution',KALK.iban_kaution)
+   +'</div>'
+   +'<div class="meta" style="margin-top:22px">Dieses Mietangebot dient der Vorlage bei Jobcenter / Sozialamt. Die Kosten der Unterkunft (Kaltmiete, Betriebskosten, Heizung) werden gesondert ausgewiesen.</div>';
+}
+let T=null;
+async function save(f,v){
+  var isNum=/_alt$|_neu$|^wfl$|^kaution$|^personen$/.test(f);
+  KALK[f]= isNum ? (v===''?null:num(v)) : (v===''?null:v);
+  render();
+  clearTimeout(T);
+  T=setTimeout(async function(){
+    var patch={}; patch[f]=KALK[f]; patch.updated_at=new Date().toISOString();
+    var res=await sb.from('wohnung_kalkulation').update(patch).eq('vermietung_id',vid);
+    $('savedMsg').textContent=res.error?('Fehler: '+res.error.message):'gespeichert ✓';
+    setTimeout(function(){$('savedMsg').textContent='';},1500);
+  },400);
+}
+load();
+</script></body></html>
