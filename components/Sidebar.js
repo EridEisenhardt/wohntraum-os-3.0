@@ -6,6 +6,7 @@ import { useState, useEffect } from 'react'
 export const NAV = [
   { type: 'link', href: '/', icon: 'ti-layout-dashboard', label: 'Cockpit', exact: true, area: 'common' },
   { type: 'link', href: '/tools', icon: 'ti-layout-grid', label: 'Alle Tools', area: 'common' },
+  { type: 'link', href: '/playbook', icon: 'ti-book-2', label: 'Playbook', area: 'common' },
   { type: 'group', key: 'gf-dashboard', icon: 'ti-chart-pie', label: 'GF-Dashboard', area: ['vertrieb', 'hv'], mod: 'dashboards', items: [
     { href: '/gf-dashboard', icon: 'ti-chart-pie', label: 'Übersicht' },
     { href: '/gf-dashboard/kpi', icon: 'ti-gauge', label: 'KPI GF · Cashflow je Struktur' },
