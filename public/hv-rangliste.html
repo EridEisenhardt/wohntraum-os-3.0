@@ -148,8 +148,19 @@ function loanMonatByObj(){
   });
   return map;
 }
+// Σ aktuelle Darlehenshöhe (Restschuld, loans.aktuell) je Objekt — mehrere Darlehen werden summiert
+function loanAktuellByObj(){
+  const map={};
+  LOANS.filter(x=>x.status==='Aktiv'&&x.aktuell).forEach(x=>{
+    const code=String(x.bez||'').trim().split(/\s+/)[0].toUpperCase();
+    const h=CODEMAP[code];if(!h)return;
+    map[h]=(map[h]||0)+Number(x.aktuell);
+  });
+  return map;
+}
 function compute(){
   const lm=loanMonatByObj();
+  const la=loanAktuellByObj();
   const warmByObj={},kaltByObj={};
   MIET.filter(x=>x.is_rented).forEach(x=>{
     warmByObj[x.property_id]=(warmByObj[x.property_id]||0)+Number(x.warmmiete||x.kaltmiete||0);
@@ -157,20 +168,24 @@ function compute(){
   });
   ROWS=OBJ.map(o=>{
     const warmM=warmByObj[o.id]||0,kaltM=kaltByObj[o.id]||0;
-    const umsatz=warmM*12;
+    const jahresKalt=kaltM*12;      // SOLL-Umsatz = Jahreskaltmiete (Ausgangswert)
+    const umsatzIst=warmM*12;       // IST-Umsatz = tatsächlicher Warmmiete-Umsatz
+    const umsatz=jahresKalt;        // SOLL-Basis für Gewinn/KPIs
     const kn=KENN[o.id]||{};
     const bankAuto=(lm[o.h_id_text]||0)*12;
     const bankrate=kn.bankrate_override!=null?Number(kn.bankrate_override):bankAuto;
     const einh=o.einheiten_gesamt||0;
     const bewirt=FIX_JE_EINHEIT*12*einh; // Hausverwaltungskosten-Umlage: fixer Betrag je Einheit × 12
     const gewinn=umsatz-bankrate-bewirt;
+    const darlehen=la[o.h_id_text]||0;   // Σ aktuelles Darlehen (Restschuld)
     return {id:o.id,h_id_text:o.h_id_text,kennung:KUERZEL[o.h_id_text]||o.h_id_text,name:o.name,ort:o.ort,eigentuemer:o.eigentuemer,
       einheiten:einh,
       auslastung:einh?(o.einheiten_vermietet||0)/einh*100:0,
-      umsatz,bankrate,bankAuto:!!(lm[o.h_id_text]),bewirt,
+      umsatz,umsatzIst,jahresKalt,darlehen,bankrate,bankAuto:!!(lm[o.h_id_text]),bewirt,
       kaltm2:(kaltM&&o.wohnflaeche)?kaltM/Number(o.wohnflaeche):null,
       gewinn,cashflow:gewinn/12,umsatzWhg:einh?warmM/einh:0,
-      rendite:umsatz?gewinn/umsatz*100:null,
+      rendite:darlehen?jahresKalt/darlehen*100:null, // Rendite = Jahreskaltmiete ÷ aktuelles Darlehen
+      renditeIst:darlehen?umsatzIst/darlehen*100:null,
       op:o.offene_posten!=null?Number(o.offene_posten):null,opCount:o.offene_posten_anzahl||0};
   });
 }
@@ -182,15 +197,22 @@ function buildHead(){
   $('hrow').innerHTML=COLS.map(c=>`<th data-k="${c[0]}" onclick="setSort('${c[0]}')">${c[1]}</th>`).join('');
   $('hrow2').innerHTML=COLS.map(c=>`<th>${c[1]}</th>`).join('');
 }
-// IST-Spalten: nur bekannte Stammdaten füllen, Geldwerte als Platzhalter bis IST-Quelle steht
+// IST-Spalten: Stammdaten + IST-Umsatz (Warmmiete-Umsatz) + IST-Rendite; übrige Geldwerte noch offen
 const IST_KNOWN=new Set(['rank','kennung','name','einheiten']);
 function renderIst(rows){
   $('tb2').innerHTML=rows.map(r=>'<tr class="istrow">'+COLS.map(c=>{
     if(c[0]==='auslastung')return '<td>'+auslHtml(r)+'</td>';
+    if(c[0]==='umsatz')return `<td>${eur(r.umsatzIst)}</td>`;
+    if(c[0]==='rendite')return `<td><b class="${r.renditeIst>=0?'good':'bad'}">${pct(r.renditeIst)}</b></td>`;
     if(IST_KNOWN.has(c[0]))return `<td>${c[2](r)}</td>`;
     return '<td><span class="est">—</span></td>';
   }).join('')+'</tr>').join('')||`<tr><td colspan="14" style="text-align:center;color:var(--muted);padding:24px">Keine Objekte.</td></tr>`;
-  $('tf2').innerHTML=COLS.map(c=>c[0]==='kennung'?'<td><b>Σ IST</b></td>':'<td></td>').join('');
+  const sumIst=rows.reduce((a,r)=>a+(r.umsatzIst||0),0);
+  $('tf2').innerHTML=COLS.map(c=>{
+    if(c[0]==='kennung')return '<td><b>Σ IST</b></td>';
+    if(c[0]==='umsatz')return `<td><b>${eur(sumIst)}</b></td>`;
+    return '<td></td>';
+  }).join('');
 }
 function setSort(k){if(k==='rank'||k==='name'||k==='kennung')return;if(sortKey===k)sortDir*=-1;else{sortKey=k;sortDir=-1;}render();}
 function filtered(){
@@ -231,7 +253,7 @@ async function saveModal(){
   if(error){toast('Fehler: '+error.message);return;}
   KENN[editId]=rec;compute();render();closeModal();toast('Gespeichert ✓');
 }
-$('legend').innerHTML='<b>Berechnung:</b> Umsatz = Warmmiete der aktuell vermieteten Einheiten × 12. · Bankrate = Kapitaldienst der zugeordneten Darlehen × 12 (überschreibbar). · Bewirtschaftung = fixe Hausverwaltungskosten-Umlage je Einheit × Wohneinheiten × 12 (zentral gepflegt). · Gewinn = Umsatz − Bankrate − Bewirtschaftung. · Rendite = Gewinnmarge = Gewinn ÷ Umsatz. · Kaltmiete/m² = Kaltmiete-Monat ÷ Wohnfläche. · Umsatz/Whg·Monat = Warmmiete-Monat ÷ Wohneinheiten. · <span class="est">✎</span> = Wert in Wohntraum OS eintragen.';
+$('legend').innerHTML='<b>Berechnung:</b> <b>SOLL-Umsatz</b> = Jahreskaltmiete (Kaltmiete der aktuell vermieteten Einheiten × 12, Ausgangswert). · <b>IST-Umsatz</b> = tatsächlicher Warmmiete-Umsatz × 12. · Bankrate = Kapitaldienst der zugeordneten Darlehen × 12 (überschreibbar). · Bewirtschaftung = fixe Hausverwaltungskosten-Umlage je Einheit × Wohneinheiten × 12 (zentral gepflegt). · Gewinn = SOLL-Umsatz − Bankrate − Bewirtschaftung. · <b>Rendite = Jahreskaltmiete ÷ aktuelles Darlehen</b> (Σ Restschuld aller aktiven Darlehen des Hauses) in %. · Kaltmiete/m² = Kaltmiete-Monat ÷ Wohnfläche. · <span class="est">—</span> = IST-Wert wird noch erarbeitet.';
 $('ov').addEventListener('click',e=>{if(e.target.id==='ov')closeModal();});
 load();
 </script></body></html>
