@@ -89,19 +89,23 @@ const eur=n=>(n==null||isNaN(n))?'—':new Intl.NumberFormat('de-DE',{style:'cur
 const dfmt=d=>d?new Date(d).toLocaleDateString('de-DE'):'—';
 const KAT={APARTMENT:'Wohnung',RESIDENTIAL_UNIT:'Wohnung',COMMERCIAL:'Gewerbe',COMMERCIAL_UNIT:'Gewerbe',GARAGE:'Garage',PARKING:'Stellplatz',PARKING_SPACE:'Stellplatz',OUTDOOR_PARKING:'Stellplatz',OFFICE:'Büro',STORAGE:'Lager'};
 const id=new URLSearchParams(location.search).get('id');
-let OB={},UNITS=[],CURMAP={},NOTES=[],BET=[],mapDone=false;
+let OB={},UNITS=[],CURMAP={},NOTES=[],BET=[],FIRMEN=[],KONTAKTE=[],mapDone=false;
 async function load(){
   if(!id){document.getElementById('title').textContent='Kein Objekt angegeben';return;}
   const {data:ob}=await sb.from('nahaus_objekte').select('*').eq('id',id).maybeSingle();
   if(!ob){document.getElementById('title').textContent='Objekt nicht gefunden';return;}
   OB=ob;
-  const [{data:un},{data:nz},{data:bt}]=await Promise.all([
+  const [{data:un},{data:nz},{data:bt},{data:fi},{data:ko}]=await Promise.all([
     sb.from('nahaus_einheiten').select('*').eq('property_id',id),
     sb.from('nahaus_objekt_notizen').select('*').eq('object_id',id).order('created_at',{ascending:false}),
-    sb.from('nahaus_objekt_beteiligte').select('*').eq('object_id',id)
+    sb.from('nahaus_objekt_beteiligte').select('*').eq('object_id',id),
+    sb.from('hv_firmen').select('id,name,branche,telefon,website'),
+    sb.from('hv_kontakte').select('id,firma_id,vorname,name,position,telefon,email')
   ]);
   UNITS=(un||[]).sort((a,b)=>String(a.w_id_text||a.label||'').localeCompare(String(b.w_id_text||b.label||''),'de'));
   NOTES=nz||[];BET=bt||[];
+  FIRMEN=(fi||[]).sort((a,b)=>String(a.name||'').localeCompare(String(b.name||''),'de'));
+  KONTAKTE=(ko||[]).sort((a,b)=>String(a.name||'').localeCompare(String(b.name||''),'de'));
   const uids=UNITS.map(u=>u.id);
   if(uids.length){const {data:mv}=await sb.from('nahaus_mietverhaeltnisse').select('unit_id,is_current,is_rented,mieter_namen,kaltmiete,warmmiete').in('unit_id',uids).eq('is_current',true);
     (mv||[]).forEach(m=>{CURMAP[m.unit_id]=m;});}
@@ -186,16 +190,22 @@ async function uploadEnergie(inp){
 async function delEnergieFile(){if(!confirm('Energieausweis-Datei entfernen?'))return;
   await sb.from('nahaus_objekte').update({energieausweis_url:null}).eq('id',id);OB.energieausweis_url=null;renderFristen();}
 async function saveFrist(v){await sb.from('nahaus_objekte').update({energieausweis_gueltig_bis:v||null}).eq('id',id);OB.energieausweis_gueltig_bis=v||null;renderFristen();}
+function betOptions(sel){
+  const fo=FIRMEN.map(f=>`<option value="f:${f.id}"${sel==='f:'+f.id?' selected':''}>🏢 ${esc(f.name||'(ohne Name)')}${f.branche?' · '+esc(f.branche):''}</option>`).join('');
+  const ko=KONTAKTE.map(k=>{const nm=[k.vorname,k.name].filter(Boolean).join(' ')||'(ohne Name)';return `<option value="k:${k.id}"${sel==='k:'+k.id?' selected':''}>👤 ${esc(nm)}${k.position?' · '+esc(k.position):''}</option>`;}).join('');
+  return `<option value="">— Kontakt wählen…</option><optgroup label="Firmen">${fo}</optgroup><optgroup label="Kontakte">${ko}</optgroup>`;
+}
 function renderBet(){
-  const seed=[];
   const byRole=r=>BET.filter(b=>b.rolle===r);
   function card(role,lbl,fallbackNm,fallbackCt){
     const rows=byRole(role);
+    const sel=rows.length?(rows[0].firma_id?('f:'+rows[0].firma_id):(rows[0].kontakt_id?('k:'+rows[0].kontakt_id):'')):'';
     let body;
-    if(rows.length)body=rows.map(b=>`<div><div class="nm">${esc(b.name||'—')}</div>${b.sub?`<div style="font-size:11.5px;color:var(--muted)">${esc(b.sub)}</div>`:''}${[b.tel,b.email].filter(Boolean).map(x=>`<div class="ct">${esc(x)}</div>`).join('')}</div>`).join('<hr style="border:none;border-top:1px solid var(--line);margin:8px 0">');
+    if(rows.length)body=rows.map(b=>`<div><div class="nm">${esc(b.name||'—')}</div>${b.sub?`<div style="font-size:11.5px;color:var(--muted)">${esc(b.sub)}</div>`:''}${[b.tel,b.email].filter(Boolean).map(x=>`<div class="ct">${esc(x)}</div>`).join('')} <button class="del" style="background:none;border:0;color:var(--red);cursor:pointer;font-size:11px;padding:0;margin-top:4px" onclick="clearBet('${role}')">entfernen</button></div>`).join('');
     else if(fallbackNm)body=`<div class="nm">${esc(fallbackNm)}</div>${fallbackCt?`<div class="ct">${esc(fallbackCt)}</div>`:''}`;
     else body=`<div class="ct" style="font-style:italic">— nicht zugeordnet</div>`;
-    return `<div class="person"><div class="rl">${lbl}</div>${body}</div>`;
+    return `<div class="person"><div class="rl">${lbl}</div>${body}
+      <select class="estat" style="width:100%;margin-top:9px;font-size:12px" onchange="setBet('${role}',this.value)">${betOptions(sel)}</select></div>`;
   }
   document.getElementById('bet').innerHTML=
     card('vermieter','Eigentümer / Vermieter',OB.eigentuemer,'')+
@@ -203,6 +213,16 @@ function renderBet(){
     card('hausverwalter','Hausverwalter','','')+
     card('objekthausmeister','Objekthausmeister','','');
 }
+async function setBet(role,val){
+  if(!val){return clearBet(role);}
+  let rec={object_id:id,rolle:role};
+  if(val.startsWith('f:')){const f=FIRMEN.find(x=>x.id===val.slice(2));if(!f)return;rec.firma_id=f.id;rec.kontakt_id=null;rec.name=f.name;rec.sub=f.branche||null;rec.tel=f.telefon||null;rec.email=null;}
+  else{const k=KONTAKTE.find(x=>x.id===val.slice(2));if(!k)return;rec.kontakt_id=k.id;rec.firma_id=k.firma_id||null;rec.name=[k.vorname,k.name].filter(Boolean).join(' ');rec.sub=k.position||null;rec.tel=k.telefon||null;rec.email=k.email||null;}
+  await sb.from('nahaus_objekt_beteiligte').delete().eq('object_id',id).eq('rolle',role);
+  const {data}=await sb.from('nahaus_objekt_beteiligte').insert(rec).select().maybeSingle();
+  BET=BET.filter(b=>b.rolle!==role);if(data)BET.push(data);renderBet();
+}
+async function clearBet(role){await sb.from('nahaus_objekt_beteiligte').delete().eq('object_id',id).eq('rolle',role);BET=BET.filter(b=>b.rolle!==role);renderBet();}
 function renderNotes(){
   const el=document.getElementById('notes');
   el.innerHTML=NOTES.length?NOTES.map(n=>`<div class="note"><div class="nt">${esc(n.text).replace(/\n/g,'<br>')}</div><div class="nmeta">${dfmt(n.created_at)} <button class="del" onclick="delNote('${n.id}')">löschen</button></div></div>`).join(''):'<div class="empty">Noch keine Notizen.</div>';
