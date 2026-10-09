@@ -79,7 +79,11 @@ h1{font-size:28px;font-weight:800;line-height:1.1;color:#fff}
 .mile:last-child{border-bottom:none}
 .mile .dot{width:16px;height:16px;border-radius:50%;flex:0 0 auto;border:2px dashed var(--line)}
 .mile.done .dot{background:var(--green);border-color:var(--green);border-style:solid}
-.mile .dt{margin-left:auto;color:var(--muted);font-size:11px}.mile.done .dt{color:var(--green)}
+.mile .mlbl{cursor:pointer}
+.mile .mdate{margin-left:auto;font:inherit;font-size:11.5px;padding:3px 6px;border:1px solid var(--line);border-radius:6px;background:var(--surf);color:var(--text)}
+.mile .dt{color:var(--muted);font-size:11px;min-width:52px;text-align:right}.mile.done .dt{color:var(--green)}
+.vkopt{background:var(--surf2);border:1px dashed var(--line);border-radius:12px;padding:22px 18px;display:flex;flex-direction:column;align-items:flex-start;gap:8px;justify-content:center}
+.vkicon{font-size:22px}.vktxt{font-weight:800;font-size:16px}.vksub{font-size:12.5px;color:var(--muted)}
 .stellbox{background:var(--surf2);border:1px solid var(--line);border-radius:12px;padding:13px 16px;margin-top:12px}
 .sbtl{font-size:10.5px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);font-weight:700}
 .sbnum{font-size:11.5px;color:var(--muted);font-weight:700}
@@ -261,29 +265,45 @@ async function setBet(role,val){
   BET=BET.filter(b=>b.rolle!==role);if(data)BET.push(data);renderBet();
 }
 async function clearBet(role){await sb.from('nahaus_objekt_beteiligte').delete().eq('object_id',id).eq('rolle',role);BET=BET.filter(b=>b.rolle!==role);renderBet();}
-const MILES=[['m_kaufvertrag','Kaufvertrag'],['m_zahlung','Zahlung Kaufpreis'],['m_uebergabe','Übergabe Nutzen/Lasten'],['m_grundbuch','Eintragung Grundbuch']];
+const MILES=[['m_kaufvertrag','Kaufvertrag','d_kaufvertrag'],['m_zahlung','Zahlung Kaufpreis','d_zahlung'],['m_uebergabe','Übergabe Nutzen/Lasten','d_uebergabe'],['m_grundbuch','Eintragung Grundbuch','d_grundbuch']];
 function txCard(typ,lbl,icon,parties){
   const t=TX[typ]||{};
-  const rows=MILES.map(m=>`<div class="mile ${t[m[0]]?'done':''}" onclick="toggleMile('${typ}','${m[0]}')"><span class="dot"></span>${m[1]}<span class="dt">${t[m[0]]?'erledigt':'offen'}</span></div>`).join('');
+  const rows=MILES.map(m=>`<div class="mile ${t[m[0]]?'done':''}"><span class="dot" onclick="toggleMile('${typ}','${m[0]}')"></span><span class="mlbl" onclick="toggleMile('${typ}','${m[0]}')">${m[1]}</span>
+    <input type="date" class="mdate" value="${esc(t[m[2]]||'')}" onchange="setMileDate('${typ}','${m[0]}','${m[2]}',this.value)">
+    <span class="dt">${t[m[0]]?'erledigt':'offen'}</span></div>`).join('');
   const pbtns=parties.map(p=>{const val=t[p[1]];return `<button class="ghost sm" onclick="setParty('${typ}','${p[1]}')">${val?'✓ '+esc(val):'+ '+p[0]}</button>`;}).join('');
   const anyDone=MILES.some(m=>t[m[0]]);
   return `<div class="txc"><div class="txh"><div class="txicon ${typ}">${icon}</div><div class="txttl">${lbl}</div><span class="pill" style="background:${anyDone?'var(--accent)':'#9aa0ad'}">${anyDone?'in Arbeit':'offen'}</span></div>
     <div class="pbtns">${pbtns}</div>${rows}</div>`;
 }
 function renderTransakt(){
-  const done=['ankauf','verkauf'].reduce((s,ty)=>s+MILES.filter(m=>(TX[ty]||{})[m[0]]).length,0);
-  document.getElementById('milebar').innerHTML='▬'.repeat(8).split('').map((_,i)=>`<span class="mb ${i<done?'on':''}"></span>`).join('')+`<span class="milecount">${done}/8 Meilensteine</span>`;
+  const showV=verkaufHasData();
+  const total=showV?8:4;
+  const done=(['ankauf'].concat(showV?['verkauf']:[])).reduce((s,ty)=>s+MILES.filter(m=>(TX[ty]||{})[m[0]]).length,0);
+  document.getElementById('milebar').innerHTML='▬'.repeat(total).split('').map((_,i)=>`<span class="mb ${i<done?'on':''}"></span>`).join('')+`<span class="milecount">${done}/${total} Meilensteine</span>`;
   const stell=UNITS.filter(s=>/PARK/.test(s.kategorie_typ||''));
   const stellBlock=stell.length?`<div class="stellbox"><div class="vhd"><span class="sbtl">Stellplätze im Verkauf</span><span class="sbnum">${stell.length} von ${stell.length}</span></div>
     ${stell.map(s=>`<div class="stellrow"><span class="sdot"></span><b>${esc(s.w_id_text||s.label||'')}</b> ${esc(KAT[s.kategorie_typ]||'Stellplatz')}<span class="dt">geht mit</span></div>`).join('')}</div>`:'';
+  const verkaufCol=showV
+    ? `<div>${txCard('verkauf','Verkauf','💎',[['Käufer wählen','partner'],['Verkaufsmakler wählen','makler'],['Notar wählen','notar']])}${stellBlock}</div>`
+    : `<div class="vkopt"><div class="vkicon">💎</div><div class="vktxt">Verkauf</div><div class="vksub">Nur anlegen, wenn dieses Objekt verkauft werden soll.</div><button class="ghost" onclick="startVerkauf()">+ Verkauf anlegen</button></div>`;
   document.getElementById('transakt').innerHTML=
-    txCard('ankauf','Ankauf','🏠',[['Verkäufer wählen','partner'],['Notar wählen','notar']])+
-    `<div>${txCard('verkauf','Verkauf','💎',[['Käufer wählen','partner'],['Verkaufsmakler wählen','makler'],['Notar wählen','notar']])}${stellBlock}</div>`;
+    txCard('ankauf','Ankauf','🏠',[['Verkäufer wählen','partner'],['Notar wählen','notar']])+verkaufCol;
 }
 async function toggleMile(typ,col){
   const cur=TX[typ]||{object_id:id,typ};const nv=!cur[col];
   const {data}=await sb.from('nahaus_objekt_transaktion').upsert({object_id:id,typ,[col]:nv},{onConflict:'object_id,typ'}).select().maybeSingle();
   TX[typ]=data||Object.assign(cur,{[col]:nv});renderTransakt();}
+async function setMileDate(typ,mcol,dcol,val){
+  const cur=TX[typ]||{object_id:id,typ};
+  const payload={object_id:id,typ,[dcol]:val||null};
+  if(val)payload[mcol]=true;                 // Datum gesetzt ⇒ Meilenstein erledigt
+  const {data}=await sb.from('nahaus_objekt_transaktion').upsert(payload,{onConflict:'object_id,typ'}).select().maybeSingle();
+  TX[typ]=data||Object.assign(cur,payload);renderTransakt();}
+async function startVerkauf(){
+  const {data}=await sb.from('nahaus_objekt_transaktion').upsert({object_id:id,typ:'verkauf'},{onConflict:'object_id,typ'}).select().maybeSingle();
+  TX.verkauf=data||{object_id:id,typ:'verkauf',_open:true};TX.verkauf._open=true;renderTransakt();}
+function verkaufHasData(){const t=TX.verkauf;if(!t)return false;return MILES.some(m=>t[m[0]]||t[m[2]])||t.partner||t.makler||t.notar||t._open;}
 async function setParty(typ,col){const cur=TX[typ]||{};const val=prompt('Name:',cur[col]||'');if(val===null)return;
   const {data}=await sb.from('nahaus_objekt_transaktion').upsert({object_id:id,typ,[col]:val.trim()||null},{onConflict:'object_id,typ'}).select().maybeSingle();
   TX[typ]=data||Object.assign(cur,{[col]:val});renderTransakt();}
