@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="de"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Leerstand · Einheiten</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+:root{--bg:#f6f7f9;--surf:#fff;--surf2:#f1f3f6;--line:#e4e7ec;--text:#1c2230;--muted:#6b7280;--accent:#6d4ef0;--green:#0f9d6b;--red:#c0392b;--amber:#b45309}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--text);font-family:'Inter',system-ui,-apple-system,'Segoe UI',sans-serif;font-size:14px;line-height:1.5}
+.wrap{max-width:1150px;margin:0 auto;padding:22px 24px 60px}
+h1{font-size:22px;font-weight:800}
+.sub{font-size:12.5px;color:var(--muted);margin:5px 0 16px;max-width:820px}
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:11px;margin-bottom:16px}
+.kpi{background:var(--surf);border:1px solid var(--line);border-radius:12px;padding:13px 15px}
+.kpi .l{font-size:10px;text-transform:uppercase;color:var(--muted);font-weight:700}
+.kpi .v{font-size:21px;font-weight:800;margin-top:4px}
+.kpi.red .v{color:var(--red)}.kpi.green .v{color:var(--green)}.kpi.amber .v{color:var(--amber)}
+.bar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:14px}
+.bar input,.bar select{font:inherit;font-size:12.5px;padding:8px 10px;border:1px solid var(--line);border-radius:9px;background:var(--surf)}
+.bar label{font-size:12.5px;color:var(--muted);display:flex;align-items:center;gap:6px}
+.count{font-size:12px;color:var(--muted)}
+.scroll{overflow:auto;background:var(--surf);border:1px solid var(--line);border-radius:13px}
+table{width:100%;border-collapse:collapse;font-size:13px;min-width:720px}
+th,td{padding:9px 13px;border-bottom:1px solid var(--line);text-align:left}
+th{font-size:10.5px;text-transform:uppercase;color:var(--muted);font-weight:700;cursor:pointer}
+th.r,td.r{text-align:right}
+tr.u{cursor:pointer}tr.u:hover{background:var(--surf2)}
+.pill{font-size:10.5px;font-weight:700;padding:2px 9px;border-radius:999px;color:#fff}
+.kz{font-weight:800}
+.foot{font-size:11.5px;color:var(--muted);margin-top:12px}
+</style></head><body>
+<div class="wrap">
+  <h1>🔑 Leerstand · nicht vermietete Einheiten</h1>
+  <div class="sub">Alle Einheiten ohne laufenden, vermieteten Mietvertrag – über das gesamte Portfolio. Quelle: Nahaus (Einheiten & Mietverhältnisse), täglich nach Supabase gespiegelt.</div>
+  <div class="kpis" id="kpis"></div>
+  <div class="bar">
+    <input id="q" placeholder="🔍 Objekt / Einheit suchen …" oninput="render()">
+    <select id="fObj" onchange="render()"><option value="">Alle Objekte</option></select>
+    <select id="fKat" onchange="render()"><option value="">Alle Kategorien</option></select>
+    <label><input type="checkbox" id="onlyWohn" onchange="render()"> nur Wohnungen</label>
+    <label><input type="checkbox" id="showAll" onchange="render()"> auch vermietete zeigen</label>
+    <span class="count" id="cnt"></span>
+  </div>
+  <div class="scroll"><table><thead><tr id="hrow"></tr></thead><tbody id="tb"></tbody></table></div>
+  <div class="foot" id="note"></div>
+</div>
+<script>
+const sb=window.supabase.createClient('https://jqzxctfqvcwbctpjksvg.supabase.co','eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpxenhjdGZxdmN3YmN0cGprc3ZnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODIxMzA0MzIsImV4cCI6MjA5NzcwNjQzMn0.RKIbZxJdusKWWPjBJqlxZ8e1m8So02UslOg55YRsn3o');
+const esc=s=>(s==null?'':String(s)).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+const dfmt=d=>d?new Date(d).toLocaleDateString('de-DE'):'—';
+const KAT={APARTMENT:'Wohnung',RESIDENTIAL_UNIT:'Wohnung',COMMERCIAL:'Gewerbe',COMMERCIAL_UNIT:'Gewerbe',GARAGE:'Garage',PARKING:'Stellplatz',PARKING_SPACE:'Stellplatz',OUTDOOR_PARKING:'Stellplatz',OFFICE:'Büro',STORAGE:'Lager'};
+const COLS=[['kennung','Objekt'],['einheit','Einheit'],['kat','Kategorie'],['flaeche','m²'],['zimmer','Zi.'],['status','Status'],['frei_seit','frei seit'],['letzter','letzter Mieter']];
+let UNITS=[],sortKey='kennung',sortDir=1;
+async function load(){
+  const [{data:un},{data:ob},{data:mv}]=await Promise.all([
+    sb.from('nahaus_einheiten').select('id,property_id,w_id_text,label,kategorie_typ,flaeche,zimmer'),
+    sb.from('nahaus_objekte').select('id,h_id_text,name').eq('geloescht',false),
+    sb.from('nahaus_mietverhaeltnisse').select('unit_id,is_current,is_rented,end_date,start_date,mieter_namen')
+  ]);
+  const OBJ={};(ob||[]).forEach(o=>{OBJ[o.id]={kz:o.h_id_text,name:o.name};});
+  const MV={};(mv||[]).forEach(m=>{(MV[m.unit_id]=MV[m.unit_id]||[]).push(m);});
+  UNITS=(un||[]).map(u=>{
+    const list=MV[u.id]||[];
+    const cur=list.find(x=>x.is_current&&x.is_rented);
+    const rented=!!cur;
+    const ended=list.filter(x=>!x.is_current||!x.is_rented).map(x=>x.end_date).filter(Boolean).sort();
+    const letzter=list.slice().sort((a,b)=>String(b.end_date||b.start_date||'').localeCompare(String(a.end_date||a.start_date||'')))[0];
+    const o=OBJ[u.property_id]||{};
+    return {id:u.id,property_id:u.property_id,kz:o.kz||'',oname:o.name||'',
+      einheit:u.label||u.w_id_text||'',wid:u.w_id_text||'',kat:u.kategorie_typ||'',
+      flaeche:u.flaeche!=null?Number(u.flaeche):null,zimmer:u.zimmer!=null?Number(u.zimmer):null,
+      rented, frei_seit: rented?null:(ended.length?ended[ended.length-1]:null),
+      letzterMieter: rented?null:((letzter&&letzter.mieter_namen)||null)};
+  });
+  // Filter befüllen
+  const objs=[...new Set(UNITS.map(u=>u.kz).filter(Boolean))].sort();
+  document.getElementById('fObj').innerHTML='<option value="">Alle Objekte</option>'+objs.map(k=>`<option value="${esc(k)}">${esc(k)}</option>`).join('');
+  const kats=[...new Set(UNITS.map(u=>KAT[u.kat]||u.kat).filter(Boolean))].sort();
+  document.getElementById('fKat').innerHTML='<option value="">Alle Kategorien</option>'+kats.map(k=>`<option value="${esc(k)}">${esc(k)}</option>`).join('');
+  document.getElementById('hrow').innerHTML=COLS.map(c=>`<th onclick="setSort('${c[0]}')">${c[1]}</th>`).join('');
+  render();
+}
+function setSort(k){if(sortKey===k)sortDir*=-1;else{sortKey=k;sortDir=1;}render();}
+function render(){
+  const q=document.getElementById('q').value.trim().toLowerCase();
+  const fo=document.getElementById('fObj').value, fk=document.getElementById('fKat').value;
+  const onlyWohn=document.getElementById('onlyWohn').checked, showAll=document.getElementById('showAll').checked;
+  let rows=UNITS.filter(u=>{
+    if(!showAll&&u.rented)return false;
+    if(onlyWohn&&!/Wohnung/.test(KAT[u.kat]||''))return false;
+    if(fo&&u.kz!==fo)return false;
+    if(fk&&(KAT[u.kat]||u.kat)!==fk)return false;
+    if(q){const h=[u.kz,u.oname,u.einheit,u.wid].join(' ').toLowerCase();if(!h.includes(q))return false;}
+    return true;
+  });
+  rows.sort((a,b)=>{let va,vb;
+    if(sortKey==='flaeche'||sortKey==='zimmer'){va=a[sortKey]||0;vb=b[sortKey]||0;return (va-vb)*sortDir;}
+    if(sortKey==='frei_seit'){va=a.frei_seit||'';vb=b.frei_seit||'';return String(va).localeCompare(String(vb))*sortDir;}
+    if(sortKey==='status'){va=a.rented?1:0;vb=b.rented?1:0;return (va-vb)*sortDir;}
+    if(sortKey==='einheit')return String(a.einheit).localeCompare(String(b.einheit),'de')*sortDir;
+    if(sortKey==='kat')return String(KAT[a.kat]||a.kat).localeCompare(String(KAT[b.kat]||b.kat),'de')*sortDir;
+    return (String(a.kz).localeCompare(String(b.kz),'de')||String(a.einheit).localeCompare(String(b.einheit),'de'))*sortDir;
+  });
+  document.getElementById('tb').innerHTML=rows.map(u=>`<tr class="u" onclick="location.href='/hausverwaltung/einheit?id=${encodeURIComponent(u.id)}'">
+    <td><span class="kz">${esc(u.kz)}</span>${u.oname?`<div style="font-size:11px;color:var(--muted)">${esc(u.oname)}</div>`:''}</td>
+    <td>${esc(u.einheit)}</td>
+    <td>${esc(KAT[u.kat]||u.kat||'—')}</td>
+    <td class="r">${u.flaeche!=null?u.flaeche+' m²':'—'}</td>
+    <td class="r">${u.zimmer!=null?u.zimmer:'—'}</td>
+    <td>${u.rented?'<span class="pill" style="background:var(--green)">vermietet</span>':'<span class="pill" style="background:var(--amber)">leerstehend</span>'}</td>
+    <td>${u.rented?'—':dfmt(u.frei_seit)}</td>
+    <td>${esc(u.letzterMieter||'—')}</td>
+  </tr>`).join('')||`<tr><td colspan="8" style="text-align:center;color:var(--muted);padding:26px">Keine leerstehenden Einheiten in dieser Auswahl. 🎉</td></tr>`;
+  document.getElementById('cnt').textContent=rows.length+' Einträge';
+  // KPIs (gesamt, Wohnungen-Basis unabhängig vom Filter)
+  const wohn=UNITS.filter(u=>/Wohnung/.test(KAT[u.kat]||''));
+  const leerW=wohn.filter(u=>!u.rented).length;
+  const leerAll=UNITS.filter(u=>!u.rented).length;
+  const quote=wohn.length?(leerW/wohn.length*100):0;
+  document.getElementById('kpis').innerHTML=[
+    ['Einheiten gesamt',UNITS.length,''],['Wohnungen',wohn.length,''],
+    ['Leerstand Wohnungen',leerW,leerW?'amber':'green'],['Leerstand gesamt',leerAll,leerAll?'amber':'green'],
+    ['Leerstandsquote (Whg)',quote.toFixed(1).replace('.',',')+' %',quote>0?'red':'green']
+  ].map(k=>`<div class="kpi ${k[2]}"><div class="l">${k[0]}</div><div class="v">${k[1]}</div></div>`).join('');
+  document.getElementById('note').textContent='Leerstehend = kein laufender, vermieteter Mietvertrag in Nahaus. Klick auf eine Zeile öffnet die Einheit.';
+}
+load();
+</script></body></html>

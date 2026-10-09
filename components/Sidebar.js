@@ -27,6 +27,7 @@ export const NAV = [
     { href: '/hausverwaltung/objekte', icon: 'ti-building-skyscraper', label: 'Objekte' },
     { href: '/betriebskosten', icon: 'ti-receipt-2', label: 'Betriebskostenabrechnung' },
     { href: '/hausverwaltung/einheiten', icon: 'ti-home', label: 'Einheiten' },
+    { href: '/hausverwaltung/leerstand', icon: 'ti-key', label: 'Leerstand' },
     { href: '/hausverwaltung/rangliste', icon: 'ti-trophy', label: 'Rangliste Objekte' },
     { href: '/hausverwaltung/offene-mieten', icon: 'ti-cash-off', label: 'Offene Mieten' },
     { href: '/portfolio', icon: 'ti-chart-dots-3', label: 'Portfolio (Faktor · Cashflow)' },
