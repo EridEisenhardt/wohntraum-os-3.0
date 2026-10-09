@@ -61,6 +61,29 @@ h1{font-size:28px;font-weight:800;line-height:1.1;color:#fff}
 .note .nmeta{font-size:11px;color:var(--muted);margin-top:6px;display:flex;align-items:center;gap:10px}
 .note .del{background:none;border:0;color:var(--red);cursor:pointer;font-size:11px;padding:0}
 #map{height:300px;border:1px solid var(--line);border-radius:12px}
+.row2tx{display:grid;grid-template-columns:1fr 1fr;gap:18px}
+@media(max-width:820px){.row2tx{grid-template-columns:1fr}}
+.ghost.sm{background:var(--surf);color:var(--text);border:1px solid var(--line);padding:5px 11px;font-size:12px;margin:0 6px 6px 0}
+.milebar{display:flex;align-items:center;gap:4px}
+.milebar .mb{width:16px;height:5px;border-radius:3px;background:var(--line)}.milebar .mb.on{background:var(--accent)}
+.milecount{font-size:11.5px;color:var(--muted);font-weight:700;margin-left:8px}
+.txc{background:var(--surf2);border:1px solid var(--line);border-radius:12px;padding:15px 16px}
+.txh{display:flex;align-items:center;gap:10px;margin-bottom:12px}
+.txicon{width:30px;height:30px;border-radius:9px;display:flex;align-items:center;justify-content:center;font-size:15px;background:var(--surf)}
+.txicon.ankauf{background:#0f9d6b22}.txicon.verkauf{background:#8266ff22}
+.txttl{font-weight:800;font-size:16px;margin-right:auto}
+.pbtns{margin-bottom:10px}
+.mile{display:flex;align-items:center;gap:9px;padding:7px 0;font-size:13.5px;cursor:pointer;border-bottom:1px solid var(--line)}
+.mile:last-child{border-bottom:none}
+.mile .dot{width:16px;height:16px;border-radius:50%;flex:0 0 auto;border:2px dashed var(--line)}
+.mile.done .dot{background:var(--green);border-color:var(--green);border-style:solid}
+.mile .dt{margin-left:auto;color:var(--muted);font-size:11px}.mile.done .dt{color:var(--green)}
+.stellbox{background:var(--surf2);border:1px solid var(--line);border-radius:12px;padding:13px 16px;margin-top:12px}
+.sbtl{font-size:10.5px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);font-weight:700}
+.sbnum{font-size:11.5px;color:var(--muted);font-weight:700}
+.stellrow{display:flex;align-items:center;gap:8px;font-size:13px;padding:6px 0}
+.sdot{width:7px;height:7px;border-radius:50%;background:var(--accent2)}
+.stellrow .dt{margin-left:auto;color:var(--muted);font-size:11.5px}
 </style></head><body>
 <div class="hero" id="hero"><div class="back" onclick="history.length>1?history.back():location.href='/hausverwaltung/objekte'">← Objekte</div>
   <div class="in"><div class="badges" id="badges"></div><h1 id="title">Objekt lädt…</h1><div class="adr" id="adr"></div></div></div>
@@ -75,6 +98,9 @@ h1{font-size:28px;font-weight:800;line-height:1.1;color:#fff}
   <div class="sec"><h2>📅 Anstehende Termine &amp; Fristen</h2><div id="fristen"></div></div>
 
   <div class="sec"><h2>🤝 Beteiligte</h2><div class="cards3" id="bet"></div></div>
+
+  <div class="sec"><div class="vhd"><h2 style="margin:0">📅 Termine &amp; Transaktion</h2><div class="milebar" id="milebar"></div></div>
+    <div class="row2tx" id="transakt"></div></div>
 
   <div class="sec"><h2>📝 Notizen</h2>
     <div class="noteadd"><textarea id="noteInput" rows="2" placeholder="Notiz zum Objekt hinzufügen…"></textarea><button onclick="addNote()">+ Hinzufügen</button></div>
@@ -111,7 +137,7 @@ async function load(){
   const uids=UNITS.map(u=>u.id);
   if(uids.length){const {data:mv}=await sb.from('nahaus_mietverhaeltnisse').select('unit_id,is_current,is_rented,mieter_namen,kaltmiete,warmmiete').in('unit_id',uids).eq('is_current',true);
     (mv||[]).forEach(m=>{CURMAP[m.unit_id]=m;});}
-  renderHero();renderKpis();renderUnits();renderStamm();renderFristen();renderBet();renderNotes();renderLage();
+  renderHero();renderKpis();renderUnits();renderStamm();renderFristen();renderBet();renderTransakt();renderNotes();renderLage();
 }
 function renderHero(){
   if(OB.bild_url)document.getElementById('hero').style.backgroundImage=`url('${OB.bild_url}')`;
@@ -225,6 +251,32 @@ async function setBet(role,val){
   BET=BET.filter(b=>b.rolle!==role);if(data)BET.push(data);renderBet();
 }
 async function clearBet(role){await sb.from('nahaus_objekt_beteiligte').delete().eq('object_id',id).eq('rolle',role);BET=BET.filter(b=>b.rolle!==role);renderBet();}
+const MILES=[['m_kaufvertrag','Kaufvertrag'],['m_zahlung','Zahlung Kaufpreis'],['m_uebergabe','Übergabe Nutzen/Lasten'],['m_grundbuch','Eintragung Grundbuch']];
+function txCard(typ,lbl,icon,parties){
+  const t=TX[typ]||{};
+  const rows=MILES.map(m=>`<div class="mile ${t[m[0]]?'done':''}" onclick="toggleMile('${typ}','${m[0]}')"><span class="dot"></span>${m[1]}<span class="dt">${t[m[0]]?'erledigt':'offen'}</span></div>`).join('');
+  const pbtns=parties.map(p=>{const val=t[p[1]];return `<button class="ghost sm" onclick="setParty('${typ}','${p[1]}')">${val?'✓ '+esc(val):'+ '+p[0]}</button>`;}).join('');
+  const anyDone=MILES.some(m=>t[m[0]]);
+  return `<div class="txc"><div class="txh"><div class="txicon ${typ}">${icon}</div><div class="txttl">${lbl}</div><span class="pill" style="background:${anyDone?'var(--accent)':'#9aa0ad'}">${anyDone?'in Arbeit':'offen'}</span></div>
+    <div class="pbtns">${pbtns}</div>${rows}</div>`;
+}
+function renderTransakt(){
+  const done=['ankauf','verkauf'].reduce((s,ty)=>s+MILES.filter(m=>(TX[ty]||{})[m[0]]).length,0);
+  document.getElementById('milebar').innerHTML='▬'.repeat(8).split('').map((_,i)=>`<span class="mb ${i<done?'on':''}"></span>`).join('')+`<span class="milecount">${done}/8 Meilensteine</span>`;
+  const stell=UNITS.filter(s=>/PARK/.test(s.kategorie_typ||''));
+  const stellBlock=stell.length?`<div class="stellbox"><div class="vhd"><span class="sbtl">Stellplätze im Verkauf</span><span class="sbnum">${stell.length} von ${stell.length}</span></div>
+    ${stell.map(s=>`<div class="stellrow"><span class="sdot"></span><b>${esc(s.w_id_text||s.label||'')}</b> ${esc(KAT[s.kategorie_typ]||'Stellplatz')}<span class="dt">geht mit</span></div>`).join('')}</div>`:'';
+  document.getElementById('transakt').innerHTML=
+    txCard('ankauf','Ankauf','🏠',[['Verkäufer wählen','partner'],['Notar wählen','notar']])+
+    `<div>${txCard('verkauf','Verkauf','💎',[['Käufer wählen','partner'],['Verkaufsmakler wählen','makler'],['Notar wählen','notar']])}${stellBlock}</div>`;
+}
+async function toggleMile(typ,col){
+  const cur=TX[typ]||{object_id:id,typ};const nv=!cur[col];
+  const {data}=await sb.from('nahaus_objekt_transaktion').upsert({object_id:id,typ,[col]:nv},{onConflict:'object_id,typ'}).select().maybeSingle();
+  TX[typ]=data||Object.assign(cur,{[col]:nv});renderTransakt();}
+async function setParty(typ,col){const cur=TX[typ]||{};const val=prompt('Name:',cur[col]||'');if(val===null)return;
+  const {data}=await sb.from('nahaus_objekt_transaktion').upsert({object_id:id,typ,[col]:val.trim()||null},{onConflict:'object_id,typ'}).select().maybeSingle();
+  TX[typ]=data||Object.assign(cur,{[col]:val});renderTransakt();}
 function renderNotes(){
   const el=document.getElementById('notes');
   el.innerHTML=NOTES.length?NOTES.map(n=>`<div class="note"><div class="nt">${esc(n.text).replace(/\n/g,'<br>')}</div><div class="nmeta">${dfmt(n.created_at)} <button class="del" onclick="delNote('${n.id}')">löschen</button></div></div>`).join(''):'<div class="empty">Noch keine Notizen.</div>';
