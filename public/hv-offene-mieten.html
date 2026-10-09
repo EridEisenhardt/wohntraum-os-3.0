@@ -18,6 +18,7 @@ h1{font-size:23px;font-weight:800;color:var(--gold)}
 .bar input,.bar select{font:inherit;font-size:12.5px;padding:8px 10px;border:1px solid var(--line);border-radius:9px;background:var(--surf)}
 .statuswrap{display:flex;align-items:center;gap:4px;flex-wrap:wrap}
 .ssel{font:inherit;font-size:11.5px;padding:3px 6px;border:1px solid var(--line);border-radius:7px;background:var(--surf);color:var(--muted)}
+.wtag{background:#b45309;color:#fff}
 .zvn{flex-basis:100%;margin-top:4px}
 .zvn input{font:inherit;font-size:11.5px;padding:4px 7px;border:1px solid var(--line);border-radius:7px;width:100%;max-width:220px}
 .bar input.q{min-width:240px;flex:1}
@@ -48,7 +49,7 @@ tfoot td{font-weight:800;background:var(--surf2);border-top:2px solid var(--line
   <div class="bar">
     <input class="q" id="q" placeholder="🔍 Mieter / Objekt / Einheit suchen …" oninput="render()">
     <select id="fObj" onchange="render()"><option value="">Alle Objekte</option></select>
-    <select id="fStatus" onchange="render()"><option value="">Laufend &amp; beendet</option><option value="laufend">nur laufend</option><option value="beendet">nur beendet</option><option value="inkasso">nur Inkasso</option><option value="zahlungsvereinbarung">nur Zahlungsvereinbarung</option><option value="offen_ohne">ohne Status</option></select>
+    <select id="fStatus" onchange="render()"><option value="">Laufend &amp; beendet</option><option value="laufend">nur laufend</option><option value="beendet">nur beendet</option><option value="inkasso">nur Inkasso</option><option value="zahlungsvereinbarung">nur Zahlungsvereinbarung</option><option value="warten">nur „Warten auf 1. Miete"</option><option value="offen_ohne">ohne Status</option></select>
     <label>ab <input id="fMin" type="number" value="0" min="0" step="50" style="width:80px" oninput="render()"> €</label>
     <span class="count" id="cnt"></span>
   </div>
@@ -60,7 +61,20 @@ tfoot td{font-weight:800;background:var(--surf2);border-top:2px solid var(--line
 const sb=window.supabase.createClient('https://jqzxctfqvcwbctpjksvg.supabase.co','eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpxenhjdGZxdmN3YmN0cGprc3ZnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODIxMzA0MzIsImV4cCI6MjA5NzcwNjQzMn0.RKIbZxJdusKWWPjBJqlxZ8e1m8So02UslOg55YRsn3o');
 const esc=s=>(s==null?'':String(s)).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 const eur=n=>(n==null||isNaN(n))?'—':new Intl.NumberFormat('de-DE',{style:'currency',currency:'EUR',maximumFractionDigits:0}).format(n);
-let ROWS=[], OBJN={}, STAT={}, sortKey='total_op', sortDir=-1;
+let ROWS=[], OBJN={}, STAT={}, WARTEN=[], sortKey='total_op', sortDir=-1;
+const norm=s=>(s==null?'':String(s)).toLowerCase().replace(/[äàâ]/g,'a').replace(/[öó]/g,'o').replace(/[üú]/g,'u').replace(/ß/g,'ss').replace(/[^a-z0-9 ]/g,' ').replace(/\s+/g,' ').trim();
+function wartenMatch(mieterName){
+  const mt=new Set(norm(mieterName).split(' ').filter(t=>t.length>=2));
+  if(!mt.size)return null;
+  return WARTEN.find(w=>{
+    const need=w.tokens.filter(t=>t.length>=2);
+    if(!need.length)return false;
+    const last=need[need.length-1];
+    if(!mt.has(last))return false;                      // Nachname muss passen
+    if(need.length>1){const fn=need[0];return mt.has(fn)||[...mt].some(t=>t[0]===fn[0]&&t!==last);}
+    return true;
+  })||null;
+}
 const SLBL={inkasso:['Inkasso','var(--red)'],zahlungsvereinbarung:['Zahlungsvereinbarung','#0f9d6b']};
 const COLS=[['h_id_text','Objekt','t'],['unit_label','Einheit','t'],['mieter_namen','Mieter','t'],['is_current','Status','t'],['op_count','Pos.','n'],['total_op','Offener Betrag','n']];
 async function load(){
@@ -72,7 +86,7 @@ async function load(){
   (o.data||[]).forEach(x=>{OBJN[x.h_id_text]=x.name;});
   (s.data||[]).forEach(x=>{STAT[x.period_id]={status:x.status||(x.inkasso?'inkasso':''),notiz:x.notiz||''};});
   ROWS=(r.error?[]:(r.data||[])).filter(x=>Number(x.total_op)>0);
-  renderWartend();
+  await renderWartend();
   const objs=[...new Set(ROWS.map(x=>x.h_id_text).filter(Boolean))].sort();
   document.getElementById('fObj').innerHTML='<option value="">Alle Objekte</option>'+objs.map(h=>`<option value="${h}">${esc(h)}${OBJN[h]?' · '+esc(OBJN[h]):''}</option>`).join('');
   document.getElementById('hrow').innerHTML=COLS.map(c=>`<th class="${c[2]==='n'?'r':''}" onclick="setSort('${c[0]}')">${c[1]}</th>`).join('');
@@ -88,7 +102,9 @@ function statusCell(r){
      <option value="inkasso"${s.status==='inkasso'?' selected':''}>Inkasso</option>
      <option value="zahlungsvereinbarung"${s.status==='zahlungsvereinbarung'?' selected':''}>Zahlungsvereinbarung</option></select>`;
   const note=s.status==='zahlungsvereinbarung'?`<div class="zvn"><input value="${esc(s.notiz||'')}" placeholder="Vereinbarung (z. B. 100 €/Mon.)" onchange="saveNotiz('${pid}',this.value)"></div>`:'';
-  return `<div class="statuswrap">${auto}${badge}${sel}${note}</div>`;
+  const w=wartenMatch(r.mieter_namen);
+  const wtag=w?`<span class="pill wtag" title="Noch in der Wohnungsvermietung im Status '12 · Warten auf 1. Mietzahlung'">⏳ Warten auf 1. Miete</span>`:'';
+  return `<div class="statuswrap">${auto}${badge}${wtag}${sel}${note}</div>`;
 }
 async function saveStatus(pid,val){
   const prev=STAT[pid]||{};STAT[pid]={status:val,notiz:val==='zahlungsvereinbarung'?prev.notiz||'':''};
@@ -108,6 +124,7 @@ function render(){
     if(fs==='beendet'&&r.is_current)return false;
     if(fs==='inkasso'&&st!=='inkasso')return false;
     if(fs==='zahlungsvereinbarung'&&st!=='zahlungsvereinbarung')return false;
+    if(fs==='warten'&&!wartenMatch(r.mieter_namen))return false;
     if(fs==='offen_ohne'&&st)return false;
     if(Number(r.total_op)<fmin)return false;
     if(q){const h=[r.h_id_text,OBJN[r.h_id_text],r.unit_label,r.mieter_namen].join(' ').toLowerCase();if(!h.includes(q))return false;}
@@ -133,9 +150,10 @@ function render(){
   const sBeen=all.filter(r=>!r.is_current).reduce((s,r)=>s+Number(r.total_op||0),0);
   const sInk=all.filter(r=>(STAT[r.period_id]||{}).status==='inkasso').reduce((s,r)=>s+Number(r.total_op||0),0);
   const sZv=all.filter(r=>(STAT[r.period_id]||{}).status==='zahlungsvereinbarung').reduce((s,r)=>s+Number(r.total_op||0),0);
+  const nWart=all.filter(r=>wartenMatch(r.mieter_namen)).length;
   document.getElementById('kpis').innerHTML=[
     ['Offene Mieten gesamt',eur(sAll),'red'],['davon laufende Verträge',eur(sLauf),''],['davon beendete Verträge',eur(sBeen),'red'],
-    ['in Inkasso',eur(sInk),'red'],['mit Zahlungsvereinbarung',eur(sZv),''],['Betroffene Mieter',new Set(all.map(r=>r.mieter_namen).filter(Boolean)).size,'']
+    ['in Inkasso',eur(sInk),'red'],['mit Zahlungsvereinbarung',eur(sZv),''],['⏳ Warten auf 1. Miete',nWart,''],['Betroffene Mieter',new Set(all.map(r=>r.mieter_namen).filter(Boolean)).size,'']
   ].map(k=>`<div class="kpi ${k[2]}"><div class="l">${k[0]}</div><div class="v">${k[1]}</div></div>`).join('');
   document.getElementById('note').textContent='Quelle: Nahaus (offene Posten je Mietverhältnis), gespiegelt nach Supabase. Momentaufnahme – wird über den täglichen Offene-Posten-Sync aktualisiert.';
 }
@@ -149,6 +167,7 @@ async function renderWartend(){
     const vertragOhneZahlung = (r.mietvertrag_unterschrieben==='✅') && (r.erste_mietzahlung!=='✅');
     return warten||vertragOhneZahlung;
   }).sort((a,b)=>String(a.status||'').localeCompare(String(b.status||''),'de'));
+  WARTEN=list.map(r=>({id:r.id,tokens:norm([r.vorname,r.name].filter(Boolean).join(' ')).split(' ').filter(Boolean),label:[r.vorname,r.name].filter(Boolean).join(' ').trim()}));
   el.innerHTML=list.map(r=>{const nm=[r.vorname,r.name].filter(Boolean).join(' ').trim()||'(ohne Name)';return `<tr>
     <td><b>${esc(nm)}</b></td>
     <td>${esc(r.zielort||'—')}</td>
