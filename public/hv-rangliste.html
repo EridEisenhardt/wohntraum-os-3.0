@@ -105,6 +105,7 @@ tfoot td{font-weight:800;background:var(--surf2);border-top:2px solid var(--line
     <div><label style="font-size:10px;color:var(--muted)">Betrag €</label><input id="g_betrag" type="number" step="100" style="width:100%"></div>
     <button class="btn primary" onclick="addGik()">+</button>
   </div>
+  <label style="display:flex;align-items:center;gap:7px;margin-top:8px;font-size:12.5px;cursor:pointer"><input type="checkbox" id="g_ek"> aus Eigenkapital bezahlt</label>
   <div class="mact" style="margin-top:14px"><button class="btn" onclick="closeGik()">Schließen</button></div>
 </div></div>
 <div class="toast" id="toast"></div>
@@ -257,24 +258,34 @@ function openGik(oid){gikModalObj=oid;renderGikList();document.getElementById('o
 function closeGik(){document.getElementById('ovGik').classList.remove('show');gikModalObj=null;}
 function renderGikList(){
   const list=GIKROWS[gikModalObj]||[];
-  document.getElementById('glist').innerHTML=list.length?('<table style="width:100%;border-collapse:collapse;font-size:12.5px">'+list.map(p=>`<tr>
+  const ekSum=list.filter(p=>p.aus_eigenkapital).reduce((s,p)=>s+Number(p.betrag||0),0);
+  document.getElementById('glist').innerHTML=(list.length?('<table style="width:100%;border-collapse:collapse;font-size:12.5px"><thead><tr style="color:var(--muted);font-size:10px;text-transform:uppercase"><th style="text-align:left;padding:3px 6px">Datum</th><th style="text-align:left;padding:3px 6px">Thema</th><th style="text-align:left;padding:3px 6px">Firma</th><th style="text-align:right;padding:3px 6px">Betrag</th><th style="text-align:center;padding:3px 6px" title="aus Eigenkapital bezahlt">aus EK</th><th></th></tr></thead><tbody>'+list.map(p=>`<tr>
     <td style="padding:4px 6px;border-bottom:1px solid var(--line)">${p.datum?new Date(p.datum).toLocaleDateString('de-DE'):'—'}</td>
     <td style="padding:4px 6px;border-bottom:1px solid var(--line)">${esc(p.thema||'—')}</td>
     <td style="padding:4px 6px;border-bottom:1px solid var(--line)">${esc(p.firma||'')}</td>
     <td style="padding:4px 6px;border-bottom:1px solid var(--line);text-align:right;font-weight:600">${eur(p.betrag)}</td>
-    <td style="padding:4px 6px;border-bottom:1px solid var(--line);text-align:right"><span style="cursor:pointer;color:var(--red)" onclick="delGik('${p.id}')">🗑</span></td></tr>`).join('')+'</table>'):'<div style="color:var(--muted);font-size:12.5px">Noch keine Posten.</div>';
+    <td style="padding:4px 6px;border-bottom:1px solid var(--line);text-align:center"><input type="checkbox" ${p.aus_eigenkapital?'checked':''} onchange="toggleGikEk('${p.id}',this.checked)"></td>
+    <td style="padding:4px 6px;border-bottom:1px solid var(--line);text-align:right"><span style="cursor:pointer;color:var(--red)" onclick="delGik('${p.id}')">🗑</span></td></tr>`).join('')+'</tbody></table>'):'<div style="color:var(--muted);font-size:12.5px">Noch keine Posten.</div>')
+    +(ekSum?`<div style="font-size:11.5px;color:var(--muted);margin-top:6px">davon aus Eigenkapital bezahlt: <b>${eur(ekSum)}</b></div>`:'');
 }
 async function addGik(){
   const oid=gikModalObj;const datum=document.getElementById('g_datum').value;
   const thema=document.getElementById('g_thema').value.trim();const firma=document.getElementById('g_firma').value.trim();
   const betrag=document.getElementById('g_betrag').value;
   if(!thema&&!betrag){toast('Thema oder Betrag angeben');return;}
-  const rec={object_id:oid,datum:datum||null,thema:thema||null,firma:firma||null,betrag:betrag?Number(betrag):null};
+  const ek=document.getElementById('g_ek').checked;
+  const rec={object_id:oid,datum:datum||null,thema:thema||null,firma:firma||null,betrag:betrag?Number(betrag):null,aus_eigenkapital:ek};
   const {data,error}=await sb.from('objekt_gik_posten').insert(rec).select().maybeSingle();
   if(error){toast('Fehler: '+error.message);return;}
   (GIKROWS[oid]=GIKROWS[oid]||[]).push(data);GIKBYOBJ[oid]=(GIKBYOBJ[oid]||0)+Number(data.betrag||0);
-  document.getElementById('g_datum').value='';document.getElementById('g_thema').value='';document.getElementById('g_firma').value='';document.getElementById('g_betrag').value='';
+  document.getElementById('g_datum').value='';document.getElementById('g_thema').value='';document.getElementById('g_firma').value='';document.getElementById('g_betrag').value='';document.getElementById('g_ek').checked=false;
   renderGikList();compute();render();
+}
+async function toggleGikEk(pid,val){
+  const {error}=await sb.from('objekt_gik_posten').update({aus_eigenkapital:val}).eq('id',pid);
+  if(error){toast('Fehler: '+error.message);return;}
+  for(const k in GIKROWS){const p=GIKROWS[k].find(x=>x.id===pid);if(p){p.aus_eigenkapital=val;break;}}
+  renderGikList();
 }
 async function delGik(pid){
   await sb.from('objekt_gik_posten').delete().eq('id',pid);
