@@ -62,6 +62,7 @@ tfoot td{font-weight:800;background:var(--surf2);border-top:2px solid var(--line
 .secthd .dot.soll{background:var(--accent,#6d4ef0)}.secthd .dot.ist{background:#b45309}
 #tbl2 .istrow td{opacity:.95}
 .ninp{width:110px;font:inherit;font-size:13px;text-align:right;padding:4px 7px;border:1px solid var(--line);border-radius:7px;background:var(--surf);color:var(--text)}
+.omut2{font-size:10.5px;color:var(--muted);margin-top:3px;white-space:nowrap}
 </style></head><body>
 <div class="wrap">
   <div class="top">
@@ -105,7 +106,11 @@ tfoot td{font-weight:800;background:var(--surf2);border-top:2px solid var(--line
     <div><label style="font-size:10px;color:var(--muted)">Betrag €</label><input id="g_betrag" type="number" step="100" style="width:100%"></div>
     <button class="btn primary" onclick="addGik()">+</button>
   </div>
-  <label style="display:flex;align-items:center;gap:7px;margin-top:8px;font-size:12.5px;cursor:pointer"><input type="checkbox" id="g_ek"> aus Eigenkapital bezahlt</label>
+  <div style="display:flex;gap:18px;align-items:center;margin-top:8px;flex-wrap:wrap">
+    <label style="display:flex;align-items:center;gap:6px;font-size:12.5px">Spalte:
+      <select id="g_kat" style="font-size:12.5px;padding:3px 6px;border:1px solid var(--line);border-radius:6px"><option value="gik">GIK</option><option value="nebenkosten">Nebenkosten</option></select></label>
+    <label style="display:flex;align-items:center;gap:7px;font-size:12.5px;cursor:pointer"><input type="checkbox" id="g_ek"> aus Eigenkapital bezahlt</label>
+  </div>
   <div class="mact" style="margin-top:14px"><button class="btn" onclick="closeGik()">Schließen</button></div>
 </div></div>
 <div class="toast" id="toast"></div>
@@ -207,18 +212,25 @@ function compute(){
     const kaufpreis=o.kaufpreis!=null?Number(o.kaufpreis):null;
     const kaufnebenkosten=o.kaufnebenkosten!=null?Number(o.kaufnebenkosten):null;
     const eigenkapital=o.eigenkapital!=null?Number(o.eigenkapital):null;
-    const gik=(kaufpreis||0)+(kaufnebenkosten||0)+(GIKBYOBJ[o.id]||0)||null; // GIK = Kaufpreis + Kaufnebenkosten + Σ GIK-Posten
+    const pl=GIKROWS[o.id]||[];
+    const nbPost=pl.filter(p=>p.kategorie==='nebenkosten').reduce((s,p)=>s+Number(p.betrag||0),0);
+    const gikPost=pl.filter(p=>p.kategorie!=='nebenkosten').reduce((s,p)=>s+Number(p.betrag||0),0);
+    const ekPost=pl.filter(p=>p.aus_eigenkapital).reduce((s,p)=>s+Number(p.betrag||0),0);
+    const nebenGesamt=(kaufnebenkosten||0)+nbPost;              // Kaufnebenkosten inkl. Nebenkosten-Posten
+    const ekGesamt=(eigenkapital||0)+ekPost;                    // Eigenkapital inkl. aus-EK-Posten
+    const gik=((kaufpreis||0)+nebenGesamt+gikPost)||null;       // GIK = Kaufpreis + Kaufnebenkosten + GIK-Posten
     return {id:o.id,h_id_text:o.h_id_text,kennung:KUERZEL[o.h_id_text]||o.h_id_text,name:o.name,ort:o.ort,eigentuemer:o.eigentuemer,
       einheiten:einh,
       auslastung:einh?(o.einheiten_vermietet||0)/einh*100:0,
       umsatz,umsatzIst,jahresKalt,darlehen,kaufpreis,kaufnebenkosten,eigenkapital,gik,bankrate,bankAuto:!!(lm[o.h_id_text]),bewirt,
+      nbPost,gikPost,ekPost,nebenGesamt,ekGesamt,
       kaltm2:(kaltM&&o.wohnflaeche)?kaltM/Number(o.wohnflaeche):null,
       gewinn,cashflow:gewinn/12,umsatzWhg:einh?warmM/einh:0,
       rendite:darlehen?jahresKalt/darlehen*100:null, // Rendite = Jahreskaltmiete ÷ aktuelles Darlehen
       renditeIst:darlehen?umsatzIst/darlehen*100:null,
       rendKauf:kaufpreis?jahresKalt/kaufpreis*100:null,
       rendGik:gik?jahresKalt/gik*100:null,
-      rendEk:eigenkapital?jahresKalt/eigenkapital*100:null,
+      rendEk:ekGesamt?jahresKalt/ekGesamt*100:null,
       op:o.offene_posten!=null?Number(o.offene_posten):null,opCount:o.offene_posten_anzahl||0};
   });
 }
@@ -240,13 +252,13 @@ function renderInvest3(rows){
     return `<tr>
       <td><span class="kz">${esc(r.kennung)}</span> <span class="oname">${esc(r.name||'')}</span></td>
       <td class="r"><input class="ninp" type="number" step="1000" value="${r.kaufpreis!=null?r.kaufpreis:''}" placeholder="0" onchange="saveInv('${r.id}','kaufpreis',this.value)"></td>
-      <td class="r"><input class="ninp" type="number" step="500" value="${r.kaufnebenkosten!=null?r.kaufnebenkosten:''}" placeholder="0" onchange="saveInv('${r.id}','kaufnebenkosten',this.value)"></td>
-      <td class="r"><button class="btn" style="font-size:12px;padding:4px 10px" onclick="openGik('${r.id}')">${n?n+' Posten':'+ Posten'} · ${eur(GIKBYOBJ[r.id]||0)}</button></td>
+      <td class="r"><input class="ninp" type="number" step="500" value="${r.kaufnebenkosten!=null?r.kaufnebenkosten:''}" placeholder="0" onchange="saveInv('${r.id}','kaufnebenkosten',this.value)">${r.nbPost?`<div class="omut2">+ ${eur(r.nbPost)} Posten = <b>${eur(r.nebenGesamt)}</b></div>`:''}</td>
+      <td class="r"><button class="btn" style="font-size:12px;padding:4px 10px" onclick="openGik('${r.id}')">${n?n+' Posten':'+ Posten'} · ${eur(r.gikPost)}</button></td>
       <td class="r"><b>${eur(r.gik)}</b></td>
-      <td class="r"><input class="ninp" type="number" step="1000" value="${r.eigenkapital!=null?r.eigenkapital:''}" placeholder="0" onchange="saveInv('${r.id}','eigenkapital',this.value)"></td>
+      <td class="r"><input class="ninp" type="number" step="1000" value="${r.eigenkapital!=null?r.eigenkapital:''}" placeholder="0" onchange="saveInv('${r.id}','eigenkapital',this.value)">${r.ekPost?`<div class="omut2">+ ${eur(r.ekPost)} aus EK = <b>${eur(r.ekGesamt)}</b></div>`:''}</td>
     </tr>`;}).join('')||`<tr><td colspan="6" style="text-align:center;color:var(--muted);padding:24px">Keine Objekte.</td></tr>`;
-  const S=rows.reduce((a,r)=>{a.k+=(r.kaufpreis||0);a.nk+=(r.kaufnebenkosten||0);a.g+=(r.gik||0);a.e+=(r.eigenkapital||0);return a;},{k:0,nk:0,g:0,e:0});
-  document.getElementById('tf3').innerHTML=`<td><b>Σ</b></td><td class="r"><b>${eur(S.k)}</b></td><td class="r"><b>${eur(S.nk)}</b></td><td></td><td class="r"><b>${eur(S.g)}</b></td><td class="r"><b>${eur(S.e)}</b></td>`;
+  const S=rows.reduce((a,r)=>{a.k+=(r.kaufpreis||0);a.nk+=(r.nebenGesamt||0);a.gp+=(r.gikPost||0);a.g+=(r.gik||0);a.e+=(r.ekGesamt||0);return a;},{k:0,nk:0,gp:0,g:0,e:0});
+  document.getElementById('tf3').innerHTML=`<td><b>Σ</b></td><td class="r"><b>${eur(S.k)}</b></td><td class="r"><b>${eur(S.nk)}</b></td><td class="r"><b>${eur(S.gp)}</b></td><td class="r"><b>${eur(S.g)}</b></td><td class="r"><b>${eur(S.e)}</b></td>`;
 }
 async function saveInv(oid,col,val){
   const n=val===''?null:Number(val);
@@ -261,14 +273,16 @@ function closeGik(){document.getElementById('ovGik').classList.remove('show');gi
 function renderGikList(){
   const list=GIKROWS[gikModalObj]||[];
   const ekSum=list.filter(p=>p.aus_eigenkapital).reduce((s,p)=>s+Number(p.betrag||0),0);
-  document.getElementById('glist').innerHTML=(list.length?('<table style="width:100%;border-collapse:collapse;font-size:12.5px"><thead><tr style="color:var(--muted);font-size:10px;text-transform:uppercase"><th style="text-align:left;padding:3px 6px">Datum</th><th style="text-align:left;padding:3px 6px">Thema</th><th style="text-align:left;padding:3px 6px">Firma</th><th style="text-align:right;padding:3px 6px">Betrag</th><th style="text-align:center;padding:3px 6px" title="aus Eigenkapital bezahlt">aus EK</th><th></th></tr></thead><tbody>'+list.map(p=>`<tr>
-    <td style="padding:4px 6px;border-bottom:1px solid var(--line)">${p.datum?new Date(p.datum).toLocaleDateString('de-DE'):'—'}</td>
+  const katSel=(p)=>`<select onchange="toggleGikKat('${p.id}',this.value)" style="font-size:11.5px;padding:2px 4px;border:1px solid var(--line);border-radius:6px;background:var(--surf)"><option value="gik"${p.kategorie!=='nebenkosten'?' selected':''}>GIK</option><option value="nebenkosten"${p.kategorie==='nebenkosten'?' selected':''}>Nebenkosten</option></select>`;
+  document.getElementById('glist').innerHTML=(list.length?('<table style="width:100%;border-collapse:collapse;font-size:12.5px"><thead><tr style="color:var(--muted);font-size:10px;text-transform:uppercase"><th style="text-align:left;padding:3px 6px">Datum</th><th style="text-align:left;padding:3px 6px">Thema</th><th style="text-align:left;padding:3px 6px">Firma</th><th style="text-align:right;padding:3px 6px">Betrag</th><th style="text-align:left;padding:3px 6px">Spalte</th><th style="text-align:center;padding:3px 6px" title="aus Eigenkapital bezahlt">aus EK</th><th></th></tr></thead><tbody>'+list.map(p=>`<tr>
+    <td style="padding:4px 6px;border-bottom:1px solid var(--line);white-space:nowrap">${p.datum?new Date(p.datum).toLocaleDateString('de-DE'):'—'}</td>
     <td style="padding:4px 6px;border-bottom:1px solid var(--line)">${esc(p.thema||'—')}</td>
     <td style="padding:4px 6px;border-bottom:1px solid var(--line)">${esc(p.firma||'')}</td>
-    <td style="padding:4px 6px;border-bottom:1px solid var(--line);text-align:right;font-weight:600">${eur(p.betrag)}</td>
+    <td style="padding:4px 6px;border-bottom:1px solid var(--line);text-align:right;font-weight:600;white-space:nowrap">${eur(p.betrag)}</td>
+    <td style="padding:4px 6px;border-bottom:1px solid var(--line)">${katSel(p)}</td>
     <td style="padding:4px 6px;border-bottom:1px solid var(--line);text-align:center"><input type="checkbox" ${p.aus_eigenkapital?'checked':''} onchange="toggleGikEk('${p.id}',this.checked)"></td>
     <td style="padding:4px 6px;border-bottom:1px solid var(--line);text-align:right"><span style="cursor:pointer;color:var(--red)" onclick="delGik('${p.id}')">🗑</span></td></tr>`).join('')+'</tbody></table>'):'<div style="color:var(--muted);font-size:12.5px">Noch keine Posten.</div>')
-    +(ekSum?`<div style="font-size:11.5px;color:var(--muted);margin-top:6px">davon aus Eigenkapital bezahlt: <b>${eur(ekSum)}</b></div>`:'');
+    +(ekSum?`<div style="font-size:11.5px;color:var(--muted);margin-top:6px">davon aus Eigenkapital bezahlt: <b>${eur(ekSum)}</b> (fließt ins Eigenkapital des Objekts)</div>`:'');
 }
 async function addGik(){
   const oid=gikModalObj;const datum=document.getElementById('g_datum').value;
@@ -276,7 +290,8 @@ async function addGik(){
   const betrag=document.getElementById('g_betrag').value;
   if(!thema&&!betrag){toast('Thema oder Betrag angeben');return;}
   const ek=document.getElementById('g_ek').checked;
-  const rec={object_id:oid,datum:datum||null,thema:thema||null,firma:firma||null,betrag:betrag?Number(betrag):null,aus_eigenkapital:ek};
+  const kat=document.getElementById('g_kat').value||'gik';
+  const rec={object_id:oid,datum:datum||null,thema:thema||null,firma:firma||null,betrag:betrag?Number(betrag):null,aus_eigenkapital:ek,kategorie:kat};
   const {data,error}=await sb.from('objekt_gik_posten').insert(rec).select().maybeSingle();
   if(error){toast('Fehler: '+error.message);return;}
   (GIKROWS[oid]=GIKROWS[oid]||[]).push(data);GIKBYOBJ[oid]=(GIKBYOBJ[oid]||0)+Number(data.betrag||0);
@@ -287,7 +302,13 @@ async function toggleGikEk(pid,val){
   const {error}=await sb.from('objekt_gik_posten').update({aus_eigenkapital:val}).eq('id',pid);
   if(error){toast('Fehler: '+error.message);return;}
   for(const k in GIKROWS){const p=GIKROWS[k].find(x=>x.id===pid);if(p){p.aus_eigenkapital=val;break;}}
-  renderGikList();
+  renderGikList();compute();render();
+}
+async function toggleGikKat(pid,val){
+  const {error}=await sb.from('objekt_gik_posten').update({kategorie:val}).eq('id',pid);
+  if(error){toast('Fehler: '+error.message);return;}
+  for(const k in GIKROWS){const p=GIKROWS[k].find(x=>x.id===pid);if(p){p.kategorie=val;break;}}
+  renderGikList();compute();render();
 }
 async function delGik(pid){
   await sb.from('objekt_gik_posten').delete().eq('id',pid);
