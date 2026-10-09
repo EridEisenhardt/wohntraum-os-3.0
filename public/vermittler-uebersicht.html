@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="de"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Vermittler-Übersicht</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+:root{--bg:#f6f7f9;--surf:#fff;--surf2:#f1f3f6;--line:#e4e7ec;--text:#1c2230;--muted:#6b7280;--dim:#4b5563;--accent:#6d4ef0;--green:#0f9d6b;--gold:#b07d1a}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--text);font-family:'Inter',system-ui,-apple-system,'Segoe UI',sans-serif;font-size:14px;line-height:1.5}
+.wrap{max-width:1040px;margin:0 auto;padding:22px 24px 60px}
+h1{font-size:23px;font-weight:800;color:var(--gold)}
+.sub{font-size:12.5px;color:var(--muted);margin:5px 0 16px;max-width:760px}
+.bar{display:flex;gap:10px;align-items:center;margin-bottom:14px;flex-wrap:wrap}
+.bar input{font:inherit;font-size:13px;padding:8px 11px;border:1px solid var(--line);border-radius:9px;background:var(--surf);min-width:240px;flex:1}
+.bar label{font-size:12.5px;color:var(--dim);display:flex;gap:6px;align-items:center;cursor:pointer}
+.count{font-size:12px;color:var(--muted)}
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:11px;margin-bottom:16px}
+.kpi{background:var(--surf);border:1px solid var(--line);border-radius:12px;padding:13px 15px}
+.kpi .l{font-size:10px;text-transform:uppercase;color:var(--muted);font-weight:700}
+.kpi .v{font-size:22px;font-weight:800;margin-top:4px}
+.vcard{background:var(--surf);border:1px solid var(--line);border-radius:13px;margin-bottom:12px;overflow:hidden}
+.vhd{display:flex;align-items:center;gap:10px;padding:12px 15px;cursor:pointer;background:var(--surf2)}
+.vhd .nm{font-weight:700;font-size:15px}
+.vhd .cnt{font-size:11px;font-weight:700;color:#fff;background:var(--accent);border-radius:20px;padding:2px 10px}
+.vhd .crm{margin-left:auto;font-size:12px;color:var(--accent);text-decoration:none;font-weight:600}
+.vhd .arrow{color:var(--muted);font-size:12px;margin-left:8px}
+.vbody{display:none}
+.vbody.open{display:block}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th,td{padding:8px 15px;border-bottom:1px solid var(--line);text-align:left}
+th{font-size:10.5px;text-transform:uppercase;color:var(--muted);font-weight:700}
+tr:last-child td{border-bottom:none}
+.pill{font-size:10.5px;font-weight:700;padding:1px 8px;border-radius:999px;background:#ece9fb;color:#5b21b6;white-space:nowrap}
+a.lnk{color:var(--accent);text-decoration:none}
+.empty{text-align:center;color:var(--muted);padding:40px}
+.wrap,.main{max-width:none!important}
+</style></head><body>
+<div class="wrap">
+  <h1>Vermittler-Übersicht</h1>
+  <div class="sub">Welche Mietinteressenten über welchen Kontakt (Leadquelle / Vermittler) gekommen sind. Gruppiert nach Vermittler, nach Anzahl sortiert. Klick auf einen Vermittler mit CRM-Kontakt öffnet dessen Kontaktkarte.</div>
+  <div class="kpis" id="kpis"></div>
+  <div class="bar">
+    <input id="q" placeholder="🔍 Vermittler oder Interessent suchen …" oninput="render()">
+    <label><input type="checkbox" id="hideArch" checked onchange="render()"> Archivierte (Status 13) ausblenden</label>
+    <span class="count" id="cnt"></span>
+  </div>
+  <div id="list"></div>
+</div>
+<script>
+const sb=window.supabase.createClient('https://jqzxctfqvcwbctpjksvg.supabase.co','eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpxenhjdGZxdmN3YmN0cGprc3ZnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODIxMzA0MzIsImV4cCI6MjA5NzcwNjQzMn0.RKIbZxJdusKWWPjBJqlxZ8e1m8So02UslOg55YRsn3o');
+const esc=s=>(s==null?'':String(s)).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+let ROWS=[], CRM={}, OPEN={};
+async function load(){
+  const [mi,ck]=await Promise.all([
+    sb.from('mietinteressenten').select('id,name,vorname,quelle,status,einzug_ab,personen,created_at'),
+    sb.from('crm_kontakte').select('id,name,vorname')
+  ]);
+  ROWS=mi.data||[];
+  (ck.data||[]).forEach(k=>{const lbl=[k.vorname,k.name].filter(Boolean).join(' ').trim().toLowerCase();if(lbl)CRM[lbl]=k.id;});
+  render();
+}
+function iname(r){return [r.vorname,r.name].filter(Boolean).join(' ').trim()||'(ohne Name)';}
+function render(){
+  const q=document.getElementById('q').value.trim().toLowerCase();
+  const hideArch=document.getElementById('hideArch').checked;
+  let rows=ROWS.filter(r=>!(hideArch&&String(r.status||'').startsWith('13')));
+  // gruppieren nach Vermittler (quelle)
+  const groups={};
+  rows.forEach(r=>{const v=(r.quelle&&r.quelle.trim())?r.quelle.trim():'(ohne Vermittler)';(groups[v]=groups[v]||[]).push(r);});
+  let entries=Object.entries(groups).map(([v,list])=>({v,list})).sort((a,b)=>b.list.length-a.list.length||a.v.localeCompare(b.v,'de'));
+  if(q)entries=entries.filter(e=>e.v.toLowerCase().includes(q)||e.list.some(r=>iname(r).toLowerCase().includes(q)));
+  // KPIs
+  const totVerm=entries.filter(e=>e.v!=='(ohne Vermittler)').length;
+  const totInt=rows.length;
+  const ohne=(groups['(ohne Vermittler)']||[]).length;
+  const top=entries.length&&entries[0].v!=='(ohne Vermittler)'?entries[0]:entries.find(e=>e.v!=='(ohne Vermittler)');
+  document.getElementById('kpis').innerHTML=[
+    ['Vermittler',totVerm],['Interessenten gesamt',totInt],['ohne Vermittler',ohne],['Top-Vermittler',top?esc(top.v)+' ('+top.list.length+')':'—']
+  ].map(k=>`<div class="kpi"><div class="l">${k[0]}</div><div class="v" style="font-size:${String(k[1]).length>8?'15px':'22px'}">${k[1]}</div></div>`).join('');
+  document.getElementById('cnt').textContent=entries.length+' Vermittler';
+  document.getElementById('list').innerHTML=entries.map((e,idx)=>{
+    const crmId=CRM[e.v.toLowerCase()];
+    const op=OPEN[e.v]!==undefined?OPEN[e.v]:(idx<3);
+    const rowsHtml=e.list.slice().sort((a,b)=>iname(a).localeCompare(iname(b),'de')).map(r=>`<tr>
+      <td><a class="lnk" href="/vermietung/mietinteressenten?open=${r.id}" target="_top">${esc(iname(r))} ↗</a></td>
+      <td>${r.status?`<span class="pill">${esc(r.status)}</span>`:'—'}</td>
+      <td>${esc(r.einzug_ab||'—')}</td>
+      <td>${r.personen!=null?esc(r.personen)+' P':'—'}</td>
+    </tr>`).join('');
+    return `<div class="vcard">
+      <div class="vhd" onclick="toggle('${esc(e.v).replace(/'/g,"\\'")}')">
+        <span class="nm">${esc(e.v)}</span><span class="cnt">${e.list.length}</span>
+        ${crmId?`<a class="crm" href="/crm?kontakt=${crmId}" target="_top" onclick="event.stopPropagation()">↗ CRM-Kontakt</a>`:'<span style="margin-left:auto"></span>'}
+        <span class="arrow">${op?'▾':'▸'}</span>
+      </div>
+      <div class="vbody${op?' open':''}"><table><thead><tr><th>Interessent</th><th>Status</th><th>Einzug ab</th><th>Pers.</th></tr></thead><tbody>${rowsHtml}</tbody></table></div>
+    </div>`;
+  }).join('')||'<div class="empty">Keine Einträge.</div>';
+}
+function toggle(v){OPEN[v]=!(OPEN[v]!==undefined?OPEN[v]:false);render();}
+load();
+</script></body></html>
