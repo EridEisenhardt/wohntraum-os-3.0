@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="de"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Offene Mieten</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+:root{--bg:#f6f7f9;--surf:#fff;--surf2:#f1f3f6;--line:#e4e7ec;--text:#1c2230;--muted:#6b7280;--dim:#4b5563;--accent:#6d4ef0;--green:#0f9d6b;--red:#c0392b;--amber:#b45309;--gold:#b07d1a}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--text);font-family:'Inter',system-ui,-apple-system,'Segoe UI',sans-serif;font-size:14px;line-height:1.5}
+.wrap{max-width:1180px;margin:0 auto;padding:22px 24px 60px}
+h1{font-size:23px;font-weight:800;color:var(--gold)}
+.sub{font-size:12.5px;color:var(--muted);margin:5px 0 16px;max-width:820px}
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:11px;margin-bottom:16px}
+.kpi{background:var(--surf);border:1px solid var(--line);border-radius:12px;padding:13px 15px}
+.kpi .l{font-size:10px;text-transform:uppercase;color:var(--muted);font-weight:700}
+.kpi .v{font-size:21px;font-weight:800;margin-top:4px}
+.kpi.red .v{color:var(--red)} .kpi.gold .v{color:var(--gold)}
+.bar{display:flex;gap:10px;align-items:center;margin-bottom:14px;flex-wrap:wrap}
+.bar input,.bar select{font:inherit;font-size:12.5px;padding:8px 10px;border:1px solid var(--line);border-radius:9px;background:var(--surf)}
+.bar input.q{min-width:240px;flex:1}
+.bar label{font-size:12.5px;color:var(--dim);display:flex;gap:6px;align-items:center}
+.count{font-size:12px;color:var(--muted)}
+.scroll{overflow:auto;border:1px solid var(--line);border-radius:12px;background:var(--surf)}
+table{width:100%;border-collapse:collapse;font-size:13px;min-width:720px}
+th,td{padding:9px 13px;border-bottom:1px solid var(--line);text-align:left}
+th{font-size:10.5px;text-transform:uppercase;color:var(--muted);font-weight:700;background:var(--surf2);position:sticky;top:0;cursor:pointer}
+th.r,td.r{text-align:right}
+tr:hover{background:var(--surf2)}
+.pill{font-size:10.5px;font-weight:700;padding:1px 8px;border-radius:999px;color:#fff}
+.money{font-weight:700;white-space:nowrap}
+tfoot td{font-weight:800;background:var(--surf2);border-top:2px solid var(--line);position:sticky;bottom:0}
+.wrap,.main{max-width:none!important}
+.foot{font-size:11.5px;color:var(--muted);margin-top:12px}
+</style></head><body>
+<div class="wrap">
+  <h1>Offene Mieten</h1>
+  <div class="sub">Offene Forderungen aus Nahaus je Mietverhältnis – welcher Mieter wie viel offen hat, nach Objekt filterbar. Momentaufnahme des letzten Nahaus-Abgleichs.</div>
+  <div class="kpis" id="kpis"></div>
+  <div class="bar">
+    <input class="q" id="q" placeholder="🔍 Mieter / Objekt / Einheit suchen …" oninput="render()">
+    <select id="fObj" onchange="render()"><option value="">Alle Objekte</option></select>
+    <select id="fStatus" onchange="render()"><option value="">Laufend &amp; beendet</option><option value="laufend">nur laufend</option><option value="beendet">nur beendet</option></select>
+    <label>ab <input id="fMin" type="number" value="0" min="0" step="50" style="width:80px" oninput="render()"> €</label>
+    <span class="count" id="cnt"></span>
+  </div>
+  <div class="scroll"><table id="tbl"><thead><tr id="hrow"></tr></thead><tbody id="body"></tbody><tfoot><tr id="foot"></tr></tfoot></table></div>
+  <div class="foot" id="note"></div>
+
+  <h1 style="font-size:18px;margin:26px 0 4px">⏳ Neue Mietverträge – 1. Mietzahlung ausstehend</h1>
+  <div class="sub">Mieter mit unterschriebenem Mietvertrag, deren erste Mietzahlung noch nicht eingegangen ist (aus den Mietinteressenten). Diese tauchen noch nicht als offene Nahaus-Posten auf, sind aber zu beobachten.</div>
+  <div class="scroll"><table style="min-width:560px"><thead><tr><th>Mieter</th><th>Zielort / Wohnung</th><th>Einzug ab</th><th>Status</th><th></th></tr></thead><tbody id="wartend"></tbody></table></div>
+</div>
+<script>
+const sb=window.supabase.createClient('https://jqzxctfqvcwbctpjksvg.supabase.co','eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpxenhjdGZxdmN3YmN0cGprc3ZnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODIxMzA0MzIsImV4cCI6MjA5NzcwNjQzMn0.RKIbZxJdusKWWPjBJqlxZ8e1m8So02UslOg55YRsn3o');
+const esc=s=>(s==null?'':String(s)).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+const eur=n=>(n==null||isNaN(n))?'—':new Intl.NumberFormat('de-DE',{style:'currency',currency:'EUR',maximumFractionDigits:0}).format(n);
+let ROWS=[], OBJN={}, sortKey='total_op', sortDir=-1;
+const COLS=[['h_id_text','Objekt','t'],['unit_label','Einheit','t'],['mieter_namen','Mieter','t'],['is_current','Status','t'],['op_count','Pos.','n'],['total_op','Offener Betrag','n']];
+async function load(){
+  const [r,o]=await Promise.all([
+    sb.from('nahaus_offene_posten').select('*'),
+    sb.from('nahaus_objekte').select('h_id_text,name')
+  ]);
+  (o.data||[]).forEach(x=>{OBJN[x.h_id_text]=x.name;});
+  ROWS=(r.error?[]:(r.data||[])).filter(x=>Number(x.total_op)>0);
+  renderWartend();
+  const objs=[...new Set(ROWS.map(x=>x.h_id_text).filter(Boolean))].sort();
+  document.getElementById('fObj').innerHTML='<option value="">Alle Objekte</option>'+objs.map(h=>`<option value="${h}">${esc(h)}${OBJN[h]?' · '+esc(OBJN[h]):''}</option>`).join('');
+  document.getElementById('hrow').innerHTML=COLS.map(c=>`<th class="${c[2]==='n'?'r':''}" onclick="setSort('${c[0]}')">${c[1]}</th>`).join('');
+  render();
+}
+function setSort(k){if(sortKey===k)sortDir*=-1;else{sortKey=k;sortDir=(k==='total_op'||k==='op_count')?-1:1;}render();}
+function render(){
+  const q=document.getElementById('q').value.trim().toLowerCase();
+  const fo=document.getElementById('fObj').value, fs=document.getElementById('fStatus').value;
+  const fmin=parseFloat(document.getElementById('fMin').value)||0;
+  let rows=ROWS.filter(r=>{
+    if(fo&&r.h_id_text!==fo)return false;
+    if(fs==='laufend'&&!r.is_current)return false;
+    if(fs==='beendet'&&r.is_current)return false;
+    if(Number(r.total_op)<fmin)return false;
+    if(q){const h=[r.h_id_text,OBJN[r.h_id_text],r.unit_label,r.mieter_namen].join(' ').toLowerCase();if(!h.includes(q))return false;}
+    return true;
+  });
+  rows.sort((a,b)=>{let va=a[sortKey],vb=b[sortKey];if(sortKey==='total_op'||sortKey==='op_count'){va=Number(va)||0;vb=Number(vb)||0;return (va-vb)*sortDir;}return String(va||'').localeCompare(String(vb||''),'de')*sortDir;});
+  document.getElementById('body').innerHTML=rows.map(r=>`<tr>
+    <td><b>${esc(r.h_id_text||'—')}</b>${OBJN[r.h_id_text]?'<div style="font-size:11px;color:var(--muted)">'+esc(OBJN[r.h_id_text])+'</div>':''}</td>
+    <td>${esc(r.unit_label||'—')}</td>
+    <td>${esc(r.mieter_namen||'—')}</td>
+    <td>${r.is_current?'<span class="pill" style="background:#64748b">laufend</span>':'<span class="pill" style="background:var(--red)">beendet</span>'}</td>
+    <td class="r">${r.op_count||0}</td>
+    <td class="r money" style="color:var(--red)">${eur(Number(r.total_op))}</td>
+  </tr>`).join('')||`<tr><td colspan="6" style="text-align:center;color:var(--muted);padding:26px">Keine offenen Mieten in dieser Auswahl. 🎉</td></tr>`;
+  const sum=rows.reduce((s,r)=>s+Number(r.total_op||0),0);
+  const pos=rows.reduce((s,r)=>s+(r.op_count||0),0);
+  const mieter=new Set(rows.map(r=>r.mieter_namen).filter(Boolean)).size;
+  document.getElementById('foot').innerHTML=`<td colspan="3">Σ ${rows.length} Mietverhältnisse · ${mieter} Mieter</td><td></td><td class="r">${pos}</td><td class="r money" style="color:var(--red)">${eur(sum)}</td>`;
+  document.getElementById('cnt').textContent=rows.length+' Einträge';
+  // KPIs (gesamt, unabhängig vom Filter)
+  const all=ROWS, sAll=all.reduce((s,r)=>s+Number(r.total_op||0),0);
+  const sLauf=all.filter(r=>r.is_current).reduce((s,r)=>s+Number(r.total_op||0),0);
+  const sBeen=all.filter(r=>!r.is_current).reduce((s,r)=>s+Number(r.total_op||0),0);
+  document.getElementById('kpis').innerHTML=[
+    ['Offene Mieten gesamt',eur(sAll),'red'],['davon laufende Verträge',eur(sLauf),''],['davon beendete Verträge',eur(sBeen),'red'],['Betroffene Mieter',new Set(all.map(r=>r.mieter_namen).filter(Boolean)).size,'']
+  ].map(k=>`<div class="kpi ${k[2]}"><div class="l">${k[0]}</div><div class="v">${k[1]}</div></div>`).join('');
+  document.getElementById('note').textContent='Quelle: Nahaus (offene Posten je Mietverhältnis), gespiegelt nach Supabase. Momentaufnahme – wird über den täglichen Offene-Posten-Sync aktualisiert.';
+}
+async function renderWartend(){
+  const el=document.getElementById('wartend'); if(!el) return;
+  const mi=await sb.from('mietinteressenten').select('id,name,vorname,zielort,einzug_ab,status,mietvertrag_unterschrieben,erste_mietzahlung');
+  let list=(mi.data||[]).filter(r=>{
+    const st=String(r.status||'');
+    if(st.startsWith('13')) return false; // erledigt/archiv
+    const warten=st.startsWith('12'); // 12 · Warten auf 1. Mietzahlung
+    const vertragOhneZahlung = (r.mietvertrag_unterschrieben==='✅') && (r.erste_mietzahlung!=='✅');
+    return warten||vertragOhneZahlung;
+  }).sort((a,b)=>String(a.status||'').localeCompare(String(b.status||''),'de'));
+  el.innerHTML=list.map(r=>{const nm=[r.vorname,r.name].filter(Boolean).join(' ').trim()||'(ohne Name)';return `<tr>
+    <td><b>${esc(nm)}</b></td>
+    <td>${esc(r.zielort||'—')}</td>
+    <td>${esc(r.einzug_ab||'—')}</td>
+    <td><span class="pill" style="background:var(--amber)">${esc(r.status||'—')}</span></td>
+    <td><a href="/vermietung/mietinteressenten?open=${r.id}" target="_top" style="color:var(--accent);text-decoration:none;font-weight:600">↗ öffnen</a></td>
+  </tr>`;}).join('')||'<tr><td colspan="5" style="text-align:center;color:var(--muted);padding:22px">Keine offenen 1. Mietzahlungen. 🎉</td></tr>';
+}
+load();
+</script></body></html>

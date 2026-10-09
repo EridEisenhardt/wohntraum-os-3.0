@@ -28,6 +28,7 @@ export const NAV = [
     { href: '/betriebskosten', icon: 'ti-receipt-2', label: 'Betriebskostenabrechnung' },
     { href: '/hausverwaltung/einheiten', icon: 'ti-home', label: 'Einheiten' },
     { href: '/hausverwaltung/rangliste', icon: 'ti-trophy', label: 'Rangliste Objekte' },
+    { href: '/hausverwaltung/offene-mieten', icon: 'ti-cash-off', label: 'Offene Mieten' },
     { href: '/portfolio', icon: 'ti-chart-dots-3', label: 'Portfolio (Faktor · Cashflow)' },
     { href: '/hausverwaltung/mietermeldungen', icon: 'ti-message-report', label: 'Mietermeldungen' },
     { href: '/hausverwaltung/dienstleister', icon: 'ti-address-book', label: 'Firmen & Dienstleister' },
