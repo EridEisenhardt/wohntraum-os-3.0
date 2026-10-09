@@ -37,6 +37,12 @@ tr.tot td{font-weight:800;border-top:2px solid var(--text);background:var(--surf
 .empty{color:var(--muted);font-size:12.5px;padding:8px 4px}
 .note{font-size:11.5px;color:var(--muted);background:var(--surf2);border:1px solid var(--line);border-radius:9px;padding:10px 12px;margin-top:18px;line-height:1.55}
 .pill{font-size:10px;font-weight:700;border-radius:5px;padding:1px 6px;background:#eef3fb;color:var(--accent)}
+.dbtab{width:100%;border-collapse:collapse;font-size:12.5px;min-width:820px}
+.dbtab th,.dbtab td{padding:8px 10px;border-bottom:1px solid var(--line);text-align:left;white-space:nowrap}
+.dbtab th{font-size:10px;text-transform:uppercase;color:var(--muted);font-weight:700}
+.dbtab th.r,.dbtab td.r{text-align:right}
+.dbtab tr.r1 td{background:var(--surf2)}
+.dbtab tr.r3 td{background:#f2effe;font-weight:600}
 /* WTR-OS-FULLWIDTH */
 .wrap,.main,.layout,main{max-width:none!important;margin-left:0!important;margin-right:0!important}
 </style></head><body>
@@ -45,6 +51,10 @@ tr.tot td{font-weight:800;border-top:2px solid var(--text);background:var(--surf
   <div class="hdr-sub">Über 3 Ebenen: je Immobilie → je Gesellschaft → Gesamt · live aus Portfolio, Darlehen &amp; wiederkehrenden Zahlungen</div>
 </div>
 <div class="wrap">
+  <div class="sec">
+    <div class="sec-t"><span class="badge">Deckungsbeitrag</span> Verwaltungskosten je Wohnung (Back-Office-Umlage)</div>
+    <div id="db"></div>
+  </div>
   <div class="sec">
     <div class="sec-t"><span class="badge">Ebene I</span> Übersicht · Cashflow je Gesellschaft</div>
     <div id="ov"></div>
@@ -126,6 +136,7 @@ async function load(){
     return r;
   }).sort((a,b)=>b.cf-a.cf);
 
+  renderDeckungsbeitrag();
   renderOverview(rows);
   renderCards(rows);
   $('note').innerHTML='<b>Datenquellen &amp; Annahmen:</b> Miete = <b>Kaltmiete p.a.</b> aus Assetmanagement-Portfolio (nicht warm). '
@@ -135,6 +146,35 @@ async function load(){
     +'Gesellschafts-Cashflow = Σ Objekt-Cashflows − Firmenkosten. Personalkosten-Matrix und Gruppen-Fixkosten sind in dieser Version noch nicht enthalten.';
 }
 
+const MON=['Jan','Feb','Mär','Apr','Mai','Jun','Jul','Aug','Sep','Okt','Nov','Dez'];
+const eur2=n=>(n==null||isNaN(n))?'—':n.toLocaleString('de-DE',{minimumFractionDigits:2,maximumFractionDigits:2})+' €';
+async function renderDeckungsbeitrag(){
+  const {data,error}=await sb.from('gf_backoffice_umlage').select('*').order('monat',{ascending:true});
+  const box=$('db');
+  if(error||!data||!data.length){box.innerHTML='<div class="note">Noch keine Verwaltungskosten-Werte hinterlegt.</div>';return;}
+  const byM={};data.forEach(r=>{byM[new Date(r.monat).getMonth()]=r;});
+  const abg=data.filter(r=>r.abgeschlossen!==false);
+  const einh=(abg[0]&&abg[0].einheiten_gesamt)||80;
+  const jahrGes=data.reduce((s,r)=>s+Number(r.kosten_gesamt||r.kosten_backoffice||0),0);
+  const jahrUmgelegt=data.reduce((s,r)=>s+Number(r.kosten_backoffice||(r.kosten_je_einheit*einh)||0),0);
+  const avgMonatUmgelegt=abg.length?abg.reduce((s,r)=>s+Number(r.kosten_backoffice||(r.kosten_je_einheit*einh)||0),0)/abg.length:0;
+  const avgJeEinheit=abg.length?abg.reduce((s,r)=>s+Number(r.kosten_je_einheit||0),0)/abg.length:0;
+  const cell=(i,fn)=>{const r=byM[i];return `<td class="r">${r?fn(r):'·'}</td>`;};
+  box.innerHTML=`<div style="overflow:auto"><table class="dbtab">
+    <thead><tr><th>Position</th>${MON.map(m=>`<th class="r">${m}</th>`).join('')}<th class="r">Ø/Monat</th><th class="r">Jahr</th></tr></thead>
+    <tbody>
+    <tr class="r1"><td><b>1 · Verwaltungskosten (umgelegt)</b></td>
+      ${MON.map((_,i)=>cell(i,r=>eur(Number(r.kosten_backoffice||r.kosten_je_einheit*einh)))).join('')}
+      <td class="r"><b>${eur(avgMonatUmgelegt)}</b></td><td class="r"><b>${eur(jahrUmgelegt)}</b></td></tr>
+    <tr class="r2"><td>2 · Anzahl Einheiten (Teiler)</td>
+      ${MON.map((_,i)=>cell(i,r=>r.einheiten_gesamt||einh)).join('')}
+      <td class="r">${einh}</td><td class="r">${einh}</td></tr>
+    <tr class="r3"><td><b>3 · Deckungsbeitrag je Einheit &amp; Monat</b></td>
+      ${MON.map((_,i)=>cell(i,r=>eur2(Number(r.kosten_je_einheit)))).join('')}
+      <td class="r"><b>${eur2(avgJeEinheit)}</b></td><td class="r"><b>${eur2(avgJeEinheit*12)}</b></td></tr>
+    </tbody></table></div>
+    <div class="note" style="margin-top:10px"><b>Deckungsbeitrag je Wohnung:</b> die Verwaltungskosten (Back-Office), die jede Einheit pro Monat trägt — Ø <b>${eur2(avgJeEinheit)}</b> (${abg.length} abgeschlossene Monate, ${einh} Einheiten, Garagen ausgenommen). Verwaltungskosten gesamt Jahr: ${eur(jahrGes)}. Quelle: Verwaltungskosten-Artefakt, gespeichert in gf_backoffice_umlage.</div>`;
+}
 function renderOverview(rows){
   let tCF=0,tOb=0,tFk=0;
   const body=rows.map(r=>{ tCF+=r.cf; tOb+=r.objektCF; tFk+=r.firmakosten;
