@@ -118,6 +118,8 @@ select.inl.st{font-weight:700;color:var(--accent);border-color:var(--line);backg
     <div class="dlg-hd"><span id="ntTitle">Mietinteressent</span><span class="abtn" onclick="closeNotes()">✕</span></div>
     <div class="dlg-bd">
       <div id="opInfo" class="opgrid"></div>
+      <div class="secttl">🎯 Zielwohnung (endgültig)</div>
+      <div id="ntZielwohnung"></div>
       <div class="secttl">🏠 Freie Wohnungen · kommt in Frage</div>
       <div id="ntWohnungen"></div>
       <div class="secttl" id="ntTodoHd">Zu klären · To-dos</div>
@@ -230,7 +232,7 @@ async function opUpd(field,val){
 }
 function leadTitle(r){return 'Mietinteressent #'+((r&&r.nummer!=null)?r.nummer:'?')+' · '+((r&&(r.name||r.kontakt))||'Lead');}
 function rowOpen(ev,id){if(ev.target.closest('input,select,textarea,button,a,label,option'))return;openNotes(id);}
-function openNotes(id){NT_CUR=id;const r=ROWS.find(x=>x.id===id);$('ntTitle').textContent=leadTitle(r);$('ntInput').value='';renderLeadInfo();renderWohnungen();renderITodos();renderAsana();renderNotes();renderFiles();$('ov').classList.add('show');setTimeout(()=>$('ntInput').focus(),50);}
+function openNotes(id){NT_CUR=id;const r=ROWS.find(x=>x.id===id);$('ntTitle').textContent=leadTitle(r);$('ntInput').value='';renderLeadInfo();renderZielwohnung();renderWohnungen();renderITodos();renderAsana();renderNotes();renderFiles();$('ov').classList.add('show');setTimeout(()=>$('ntInput').focus(),50);}
 function closeNotes(){$('ov').classList.remove('show');NT_CUR=null;}
 function renderNotes(){
   const items=[];
@@ -325,6 +327,33 @@ async function load(){
 let OPENED_PARAM=false;
 function maybeOpenParam(){if(OPENED_PARAM)return;const id=new URLSearchParams(location.search).get('open');if(id&&ROWS.find(x=>x.id===id)){OPENED_PARAM=true;openNotes(id);}}
 function vwLabel(w){return [w.gebaeude,w.einheit].filter(Boolean).join(' · ')||'Einheit';}
+// ——— Zielwohnung (endgültig) je Interessent ———
+function renderZielwohnung(){
+  const r=ROWS.find(x=>x.id===NT_CUR)||{};
+  // Auswahl: priorisiert als "passt" markierte Wohnungen, sonst alle freien + schon gewählte
+  const shortlist=IWOHN.filter(x=>x.interessent_id===NT_CUR);
+  const opts=[];const seen=new Set();
+  shortlist.forEach(x=>{if(!seen.has(x.vermietung_id)){seen.add(x.vermietung_id);opts.push({id:x.vermietung_id,label:x.label,tag:x.status==='passt'?' ✅':''});}});
+  VWOHN.forEach(w=>{if(!seen.has(w.id)){seen.add(w.id);opts.push({id:w.id,label:vwLabel(w),tag:''});}});
+  const cur=r.zielwohnung_id||'';
+  const curLabel=r.zielwohnung_label||'';
+  const sel=`<select id="zielPick" class="inl" style="flex:1;font-size:12.5px" onchange="saveZielwohnung(this.value)">
+    <option value="">${opts.length?'Zielwohnung wählen …':'keine Wohnungen verfügbar'}</option>
+    ${opts.map(o=>`<option value="${o.id}"${o.id===cur?' selected':''}>${esc(o.label)}${o.tag}</option>`).join('')}
+    ${(cur&&!opts.some(o=>o.id===cur))?`<option value="${cur}" selected>${esc(curLabel||'ausgewählt')}</option>`:''}
+  </select>`;
+  const badge=cur?`<span style="font-size:12.5px;font-weight:700;color:#1f7a4d">🎯 ${esc(curLabel||'ausgewählt')}</span> <button class="abtn" title="Zielwohnung entfernen" onclick="saveZielwohnung('')" style="color:#9aa1ab">🗑</button>`:`<span style="color:var(--muted);font-size:11.5px">noch keine Zielwohnung festgelegt</span>`;
+  $('ntZielwohnung').innerHTML=`<div style="margin-bottom:6px">${badge}</div><div style="display:flex;gap:6px">${sel}</div>`;
+}
+async function saveZielwohnung(vid){
+  const r=ROWS.find(x=>x.id===NT_CUR);if(!r)return;
+  let label=null;
+  if(vid){const fromList=IWOHN.find(x=>x.vermietung_id===vid&&x.interessent_id===NT_CUR);const w=VWOHN.find(x=>x.id===vid);label=fromList?fromList.label:(w?vwLabel(w):null);}
+  r.zielwohnung_id=vid||null;r.zielwohnung_label=label;
+  const{error}=await sb.from('mietinteressenten').update({zielwohnung_id:vid||null,zielwohnung_label:label}).eq('id',NT_CUR);
+  if(error){toast('Fehler: '+error.message);return;}
+  renderZielwohnung();render();
+}
 // ——— Freie Wohnungen je Interessent ———
 function renderWohnungen(){const id=NT_CUR;const list=IWOHN.filter(x=>x.interessent_id===id);
   const used=new Set(list.map(x=>x.vermietung_id));
