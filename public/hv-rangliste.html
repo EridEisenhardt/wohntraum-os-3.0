@@ -112,11 +112,11 @@ const COLS=[
  ['name','Objekt',r=>`<span class="oname">${esc(r.name||'')}</span><div class="omut">${esc(r.ort||'')} · ${esc(r.eigentuemer||'')}</div>`,'t'],
  ['einheiten','Wohneinheiten',r=>r.einheiten,'n'],
  ['auslastung','Auslastung',r=>auslHtml(r),'n'],
- ['umsatz','Umsatz p.a.',r=>eur(r.umsatz),'n'],
+ ['umsatz','Kaltmiete p.a.',r=>eur(r.umsatz),'n'],
  ['bankrate','Bankrate p.a.',r=>bankHtml(r),'n'],
  ['bewirt','Bewirtschaftung p.a.',r=>bewirtHtml(r),'n'],
- ['kaltm2','Kaltmiete /m²',r=>r.kaltm2?eur2(r.kaltm2):'—','n'],
  ['cashflow','Cashflow /Monat',r=>`<b class="${r.cashflow>=0?'good':'bad'}">${eur(r.cashflow)}</b>`,'n'],
+ ['kaltm2','Kaltmiete /m²',r=>r.kaltm2?eur2(r.kaltm2):'—','n'],
  ['gewinn','Gewinn p.a.',r=>`<b class="${r.gewinn>=0?'good':'bad'}">${eur(r.gewinn)}</b>`,'n'],
  ['umsatzWhg','Umsatz/Whg·Monat',r=>eur(r.umsatzWhg),'n'],
  ['rendite','Rendite %',r=>`<b class="${r.rendite>=0?'good':'bad'}">${pct(r.rendite)}</b>`,'n'],
@@ -195,7 +195,8 @@ function buildFilters(){
 }
 function buildHead(){
   $('hrow').innerHTML=COLS.map(c=>`<th data-k="${c[0]}" onclick="setSort('${c[0]}')">${c[1]}</th>`).join('');
-  $('hrow2').innerHTML=COLS.map(c=>`<th>${c[1]}</th>`).join('');
+  const IST_LBL={umsatz:'Umsatz p.a.'};
+  $('hrow2').innerHTML=COLS.map(c=>`<th>${IST_LBL[c[0]]||c[1]}</th>`).join('');
 }
 // IST-Spalten: Stammdaten + IST-Umsatz (Warmmiete-Umsatz) + IST-Rendite; übrige Geldwerte noch offen
 const IST_KNOWN=new Set(['rank','kennung','name','einheiten']);
@@ -227,16 +228,16 @@ function render(){
   document.querySelectorAll('#hrow th').forEach(th=>{th.classList.remove('so','sa');if(th.dataset.k===sortKey)th.classList.add(sortDir<0?'so':'sa');});
   $('tb').innerHTML=rows.map(r=>'<tr>'+COLS.map(c=>`<td>${c[2](r)}</td>`).join('')+'</tr>').join('')||`<tr><td colspan="14" style="text-align:center;color:var(--muted);padding:24px">Keine Objekte.</td></tr>`;
   // totals
-  const S=rows.reduce((a,r)=>{a.einh+=r.einheiten;a.ums+=r.umsatz;a.bank+=r.bankrate;a.bew+=r.bewirt;a.gew+=r.gewinn;a.op+=(r.op||0);return a;},{einh:0,ums:0,bank:0,bew:0,gew:0,op:0});
+  const S=rows.reduce((a,r)=>{a.einh+=r.einheiten;a.ums+=r.umsatz;a.bank+=r.bankrate;a.bew+=r.bewirt;a.gew+=r.gewinn;a.dar+=(r.darlehen||0);a.op+=(r.op||0);return a;},{einh:0,ums:0,bank:0,bew:0,gew:0,dar:0,op:0});
   const avgAusl=rows.length?rows.reduce((a,r)=>a+r.auslastung,0)/rows.length:0;
-  const avgRend=S.ums?S.gew/S.ums*100:0;
-  const tf=[`Σ`,'',`${rows.length} Objekte`,S.einh,pct(avgAusl),eur(S.ums),eur(S.bank),eur(S.bew),'',`<b class="${S.gew>=0?'good':'bad'}">${eur(S.gew/12)}</b>`,`<b class="${S.gew>=0?'good':'bad'}">${eur(S.gew)}</b>`,'',`<b>${pct(avgRend)}</b>`,`<b class="${S.op>0?'bad':'good'}">${eur(S.op)}</b>`];
+  const avgRend=S.dar?S.ums/S.dar*100:0; // Σ Jahreskaltmiete ÷ Σ aktuelles Darlehen
+  const tf=[`Σ`,'',`${rows.length} Objekte`,S.einh,pct(avgAusl),eur(S.ums),eur(S.bank),eur(S.bew),`<b class="${S.gew>=0?'good':'bad'}">${eur(S.gew/12)}</b>`,'',`<b class="${S.gew>=0?'good':'bad'}">${eur(S.gew)}</b>`,'',`<b>${pct(avgRend)}</b>`,`<b class="${S.op>0?'bad':'good'}">${eur(S.op)}</b>`];
   $('tf').innerHTML=tf.map(v=>`<td>${v}</td>`).join('');
   renderIst(rows);
   renderKpis(S,avgAusl,avgRend,rows.length);
 }
 function renderKpis(S,avgAusl,avgRend,n){
-  const k=[['Objekte',n,''],['Wohneinheiten',S.einh,''],['Ø Auslastung',pct(avgAusl),'green'],['Umsatz p.a.',eur(S.ums),'gold'],['Bankrate p.a.',eur(S.bank),''],['Gewinn p.a.',eur(S.gew),S.gew>=0?'green':'red'],['Ø Gewinnmarge',pct(avgRend),'gold'],['Offene Posten',eur(S.op),S.op>0?'red':'green']];
+  const k=[['Objekte',n,''],['Wohneinheiten',S.einh,''],['Ø Auslastung',pct(avgAusl),'green'],['Kaltmiete p.a.',eur(S.ums),'gold'],['Bankrate p.a.',eur(S.bank),''],['Gewinn p.a.',eur(S.gew),S.gew>=0?'green':'red'],['Ø Rendite (Kaltmiete/Darlehen)',pct(avgRend),'gold'],['Offene Posten',eur(S.op),S.op>0?'red':'green']];
   $('kpis').innerHTML=k.map(([l,v,c])=>`<div class="kpi ${c||''}"><div class="l">${l}</div><div class="v">${v}</div></div>`).join('');
 }
 function openModal(id){editId=id;const o=ROWS.find(x=>x.id===id),kn=KENN[id]||{};
