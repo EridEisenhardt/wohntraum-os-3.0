@@ -43,6 +43,17 @@ th,td{padding:9px 11px;text-align:left;border-bottom:1px solid var(--line)}
 th{font-size:10.5px;text-transform:uppercase;color:var(--muted);font-weight:700}
 .pill{font-size:10.5px;font-weight:700;padding:2px 9px;border-radius:999px;color:#fff}
 .empty{color:var(--muted);font-size:13px;padding:18px;text-align:center;background:var(--surf2);border:1px dashed var(--line);border-radius:11px}
+.frist{display:flex;align-items:center;gap:14px;flex-wrap:wrap;background:var(--surf2);border:1px solid var(--line);border-radius:11px;padding:12px 15px}
+.frist .fl{font-weight:600;font-size:13.5px;min-width:200px}
+.frist input[type=date]{border:1px solid var(--line);border-radius:8px;padding:6px 9px;font:inherit;background:var(--surf)}
+.noteadd{display:flex;gap:10px;margin-bottom:14px}
+.noteadd textarea{flex:1;border:1px solid var(--line);border-radius:10px;padding:9px 11px;font:inherit;resize:vertical}
+.noteadd button,.noteH button{background:var(--accent);color:#fff;border:0;border-radius:9px;padding:0 16px;font-weight:700;cursor:pointer;white-space:nowrap}
+.notes{display:flex;flex-direction:column;gap:10px}
+.note{background:var(--surf2);border:1px solid var(--line);border-radius:11px;padding:11px 14px}
+.note .nt{font-size:13.5px;line-height:1.5}
+.note .nmeta{font-size:11px;color:var(--muted);margin-top:6px;display:flex;align-items:center;gap:10px}
+.note .del{background:none;border:0;color:var(--red,#c0392b);cursor:pointer;font-size:11px;padding:0}
 .money{font-weight:700} .right{text-align:right}
 #map{height:320px;border:1px solid var(--line);border-radius:12px}
 .hide{display:none!important}
@@ -70,7 +81,7 @@ const dfmt=d=>d?new Date(d).toLocaleDateString('de-DE'):'—';
 const KAT={APARTMENT:'Wohnung',RESIDENTIAL_UNIT:'Wohnung',COMMERCIAL:'Gewerbe',COMMERCIAL_UNIT:'Gewerbe',GARAGE:'Garage',PARKING:'Stellplatz',PARKING_SPACE:'Stellplatz',OUTDOOR_PARKING:'Stellplatz',OFFICE:'Büro',STORAGE:'Lager'};
 const ZTYP={ELECTRICITY:'⚡ Strom',GAS:'🔥 Gas',WATER_COLD:'💧 Kaltwasser',WATER_HOT:'🚿 Warmwasser',WATER:'💧 Wasser',HEATING:'🔥 Heizung',HEAT:'🔥 Wärme',DISTRICT_HEATING:'🔥 Fernwärme'};
 const id=new URLSearchParams(location.search).get('id');
-let U,OB,CUR,HIST=[],METERS=[],mapDone=false,activeTab='ueber';
+let U,OB,CUR,HIST=[],METERS=[],NOTES=[],mapDone=false,activeTab='ueber';
 const TABS=[['ueber','Übersicht'],['fotos','Ausstattung & Fotos'],['pipeline','Pipeline'],['mieter','Mieter'],['zaehler','Zähler'],['schluessel','Schlüssel'],['vorgaenge','Vorgänge'],['dok','Dokumente'],['finanzen','Finanzen'],['lage','Lage']];
 
 async function load(){
@@ -78,13 +89,14 @@ async function load(){
   const {data:u}=await sb.from('nahaus_einheiten').select('*').eq('id',id).maybeSingle();
   if(!u){document.getElementById('title').textContent='Einheit nicht gefunden';return;}
   U=u;
-  const [{data:ob},{data:per},{data:mt}]=await Promise.all([
+  const [{data:ob},{data:per},{data:mt},{data:nz}]=await Promise.all([
     sb.from('nahaus_objekte').select('*').eq('id',u.property_id).maybeSingle(),
     sb.from('nahaus_mietverhaeltnisse').select('*').eq('unit_id',u.id),
-    sb.from('nahaus_zaehler').select('*').or('unit_id.eq.'+u.id+',property_id.eq.'+u.property_id)
+    sb.from('nahaus_zaehler').select('*').or('unit_id.eq.'+u.id+',property_id.eq.'+u.property_id),
+    sb.from('nahaus_objekt_notizen').select('*').eq('object_id',u.property_id).order('created_at',{ascending:false})
   ]);
   OB=ob||{};HIST=(per||[]).sort((a,b)=>(b.start_date||'').localeCompare(a.start_date||''));
-  CUR=HIST.find(p=>p.is_current)||null;METERS=mt||[];
+  CUR=HIST.find(p=>p.is_current)||null;METERS=mt||[];NOTES=nz||[];
   renderHero();renderTabs();show('ueber');
 }
 function renderHero(){
@@ -122,8 +134,30 @@ function tUeber(){
      <div class="ct">Kaltmiete ${eur(CUR.kaltmiete)} · Warmmiete ${eur(CUR.warmmiete)} · Kaution ${eur(CUR.kaution)}</div></div>`:
     `<div class="empty">Aktuell leerstehend — kein laufender Mietvertrag.</div>`}</div>`;
   const bet=betSec();
-  return stamm+`<div class="row2">${mieter}${bet}</div>`;
+  return fristenSec()+stamm+`<div class="row2">${mieter}${bet}</div>`+notizenSec();
 }
+function fristenSec(){
+  const g=OB.energieausweis_gueltig_bis||'';
+  let warn='';
+  if(g){const days=Math.round((new Date(g)-new Date())/86400000);
+    warn=days<0?`<span class="pill" style="background:var(--red)">abgelaufen</span>`:(days<180?`<span class="pill" style="background:var(--amber)">in ${days} Tagen</span>`:`<span class="pill" style="background:var(--green)">gültig</span>`);}
+  return `<div class="sec"><h2>📅 Anstehende Termine &amp; Fristen</h2>
+    <div class="frist"><div class="fl">Energieausweis gültig bis</div>
+      <input type="date" value="${esc(g)}" onchange="saveFrist('energieausweis_gueltig_bis',this.value)">
+      <div class="fw">${warn||'<span style="color:var(--muted);font-size:12px">kein Datum hinterlegt</span>'}</div></div>
+  </div>`;
+}
+async function saveFrist(col,val){await sb.from('nahaus_objekte').update({[col]:val||null}).eq('id',OB.id);OB[col]=val||null;show('ueber');}
+function notizenSec(){
+  const list=NOTES.length?NOTES.map(n=>`<div class="note"><div class="nt">${esc(n.text).replace(/\n/g,'<br>')}</div><div class="nmeta">${dfmt(n.created_at)} <button class="del" onclick="delNote('${n.id}')">löschen</button></div></div>`).join(''):'<div class="empty">Noch keine Notizen.</div>';
+  return `<div class="sec"><h2>📝 Notizen</h2>
+    <div class="noteadd"><textarea id="noteInput" rows="2" placeholder="Notiz zum Objekt hinzufügen…"></textarea><button onclick="addNote()">+ Hinzufügen</button></div>
+    <div class="notes">${list}</div></div>`;
+}
+async function addNote(){const el=document.getElementById('noteInput');const t=(el.value||'').trim();if(!t)return;
+  const {data}=await sb.from('nahaus_objekt_notizen').insert({object_id:OB.id,text:t}).select().maybeSingle();
+  if(data)NOTES.unshift(data);show('ueber');}
+async function delNote(nid){await sb.from('nahaus_objekt_notizen').delete().eq('id',nid);NOTES=NOTES.filter(n=>n.id!==nid);show('ueber');}
 function betSec(){
   return `<div class="sec"><h2>🤝 Beteiligte</h2><div class="cards3">
     <div class="person"><div class="rl">Eigentümer</div><div class="nm">${esc(OB.eigentuemer||'—')}</div></div>
