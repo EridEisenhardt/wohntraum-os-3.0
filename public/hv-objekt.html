@@ -74,7 +74,10 @@ h1{font-size:28px;font-weight:800;line-height:1.1;color:#fff}
 .txicon{width:30px;height:30px;border-radius:9px;display:flex;align-items:center;justify-content:center;font-size:15px;background:var(--surf)}
 .txicon.ankauf{background:#0f9d6b22}.txicon.verkauf{background:#8266ff22}
 .txttl{font-weight:800;font-size:16px;margin-right:auto}
-.pbtns{margin-bottom:10px}
+.pbtns{margin-bottom:10px;display:flex;flex-wrap:wrap;gap:8px}
+.pwrap{display:flex;flex-direction:column;gap:2px}
+.pwrap .plbl{font-size:10px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);font-weight:700}
+.psel{font-size:12px;min-width:150px}
 .mile{display:flex;align-items:center;gap:9px;padding:7px 0;font-size:13.5px;cursor:pointer;border-bottom:1px solid var(--line)}
 .mile:last-child{border-bottom:none}
 .mile .dot{width:16px;height:16px;border-radius:50%;flex:0 0 auto;border:2px dashed var(--line)}
@@ -99,6 +102,8 @@ h1{font-size:28px;font-weight:800;line-height:1.1;color:#fff}
   <div class="sec"><div class="vhd"><h2 style="margin:0">🏘 Einheiten / Wohnungen</h2><span style="font-size:12px;color:var(--muted)" id="ucount"></span></div>
     <div class="units" id="units"></div></div>
 
+  <div class="sec"><h2>💰 Investition &amp; Kapital</h2><div id="invest"></div></div>
+
   <div class="sec"><h2>🏠 Stammdaten Objekt</h2><div class="grid" id="stamm"></div></div>
 
   <div class="sec"><h2>📅 Anstehende Termine &amp; Fristen</h2><div id="fristen"></div></div>
@@ -121,7 +126,7 @@ const eur=n=>(n==null||isNaN(n))?'—':new Intl.NumberFormat('de-DE',{style:'cur
 const dfmt=d=>d?new Date(d).toLocaleDateString('de-DE'):'—';
 const KAT={APARTMENT:'Wohnung',RESIDENTIAL_UNIT:'Wohnung',COMMERCIAL:'Gewerbe',COMMERCIAL_UNIT:'Gewerbe',GARAGE:'Garage',PARKING:'Stellplatz',PARKING_SPACE:'Stellplatz',OUTDOOR_PARKING:'Stellplatz',OFFICE:'Büro',STORAGE:'Lager'};
 const id=new URLSearchParams(location.search).get('id');
-let OB={},UNITS=[],CURMAP={},NOTES=[],BET=[],FIRMEN=[],KONTAKTE=[],TX={},mapDone=false;
+let OB={},UNITS=[],CURMAP={},NOTES=[],BET=[],FIRMEN=[],KONTAKTE=[],TX={},CRMF=[],CRMK=[],GIK=[],mapDone=false;
 async function load(){
   if(!id){document.getElementById('title').textContent='Kein Objekt angegeben';return;}
   const {data:ob}=await sb.from('nahaus_objekte').select('*').eq('id',id).maybeSingle();
@@ -134,8 +139,16 @@ async function load(){
     sb.from('hv_firmen').select('id,name,branche,telefon,website'),
     sb.from('hv_kontakte').select('id,firma_id,vorname,name,position,telefon,email')
   ]);
-  const {data:tx}=await sb.from('nahaus_objekt_transaktion').select('*').eq('object_id',id);
+  const [{data:tx},{data:cf},{data:ck},{data:gik}]=await Promise.all([
+    sb.from('nahaus_objekt_transaktion').select('*').eq('object_id',id),
+    sb.from('crm_firmen').select('id,name,branche'),
+    sb.from('crm_kontakte').select('id,vorname,name,position'),
+    sb.from('objekt_gik_posten').select('*').eq('object_id',id).order('datum',{ascending:true})
+  ]);
   TX={};(tx||[]).forEach(r=>{TX[r.typ]=r;});
+  CRMF=(cf||[]).sort((a,b)=>String(a.name||'').localeCompare(String(b.name||''),'de'));
+  CRMK=(ck||[]).sort((a,b)=>String(a.name||'').localeCompare(String(b.name||''),'de'));
+  GIK=gik||[];
   UNITS=(un||[]).sort((a,b)=>String(a.w_id_text||a.label||'').localeCompare(String(b.w_id_text||b.label||''),'de'));
   NOTES=nz||[];BET=bt||[];
   FIRMEN=(fi||[]).sort((a,b)=>String(a.name||'').localeCompare(String(b.name||''),'de'));
@@ -143,7 +156,7 @@ async function load(){
   const uids=UNITS.map(u=>u.id);
   if(uids.length){const {data:mv}=await sb.from('nahaus_mietverhaeltnisse').select('unit_id,is_current,is_rented,mieter_namen,kaltmiete,warmmiete,start_date').in('unit_id',uids).eq('is_current',true);
     (mv||[]).forEach(m=>{CURMAP[m.unit_id]=m;});}
-  renderHero();renderKpis();renderUnits();renderStamm();renderFristen();renderBet();renderTransakt();renderNotes();renderLage();
+  renderHero();renderKpis();renderUnits();renderInvest();renderStamm();renderFristen();renderBet();renderTransakt();renderNotes();renderLage();
 }
 function renderHero(){
   if(OB.bild_url)document.getElementById('hero').style.backgroundImage=`url('${OB.bild_url}')`;
@@ -184,6 +197,44 @@ function renderUnits(){
   }).join('');
 }
 function fld(l,v){return `<div class="fld"><div class="l">${l}</div><div class="v">${v==null||v===''?'—':v}</div></div>`;}
+/* ---------- Investition & Kapital (Kaufpreis, GIK, Eigenkapital) ---------- */
+function gikSumme(){return GIK.reduce((s,p)=>s+Number(p.betrag||0),0);}
+function gikGesamt(){return Number(OB.kaufpreis||0)+gikSumme();}
+function renderInvest(){
+  const posten=GIK.length
+    ? `<table style="width:100%;border-collapse:collapse;font-size:13px;margin-top:8px"><thead><tr>
+        <th style="text-align:left;padding:6px 8px;border-bottom:1px solid var(--line);font-size:10.5px;text-transform:uppercase;color:var(--muted)">Datum</th>
+        <th style="text-align:left;padding:6px 8px;border-bottom:1px solid var(--line);font-size:10.5px;text-transform:uppercase;color:var(--muted)">Thema</th>
+        <th style="text-align:left;padding:6px 8px;border-bottom:1px solid var(--line);font-size:10.5px;text-transform:uppercase;color:var(--muted)">Firma</th>
+        <th style="text-align:right;padding:6px 8px;border-bottom:1px solid var(--line);font-size:10.5px;text-transform:uppercase;color:var(--muted)">Betrag</th><th></th></tr></thead><tbody>
+      ${GIK.map(p=>`<tr><td style="padding:6px 8px;border-bottom:1px solid var(--line)">${dfmt(p.datum)}</td>
+        <td style="padding:6px 8px;border-bottom:1px solid var(--line)">${esc(p.thema||'—')}</td>
+        <td style="padding:6px 8px;border-bottom:1px solid var(--line)">${esc(p.firma||'—')}</td>
+        <td style="padding:6px 8px;border-bottom:1px solid var(--line);text-align:right;font-weight:600">${eur(p.betrag)}</td>
+        <td style="padding:6px 8px;border-bottom:1px solid var(--line);text-align:right"><button class="del" style="background:none;border:0;color:var(--red);cursor:pointer" onclick="delGik('${p.id}')">🗑</button></td></tr>`).join('')}
+      </tbody></table>`
+    : '<div class="empty" style="margin-top:8px">Noch keine GIK-Posten (Kaufnebenkosten, Renovierung/Sanierung …).</div>';
+  document.getElementById('invest').innerHTML=`
+    <div class="grid">
+      <div class="fld"><div class="l">Kaufpreis</div><input class="einp" type="number" step="1000" value="${OB.kaufpreis!=null?OB.kaufpreis:''}" placeholder="0 €" onchange="saveNum('kaufpreis',this.value)"></div>
+      <div class="fld"><div class="l">Eigenkapital im Objekt</div><input class="einp" type="number" step="1000" value="${OB.eigenkapital!=null?OB.eigenkapital:''}" placeholder="0 €" onchange="saveNum('eigenkapital',this.value)"></div>
+      <div class="fld"><div class="l">GIK gesamt</div><div class="v">${eur(gikGesamt())}</div></div>
+    </div>
+    <div class="vhd" style="margin-top:16px"><h2 style="margin:0;font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:var(--accent2);font-weight:800">🧾 GIK-Posten (Kaufnebenkosten / Renovierung / Sanierung)</h2><button class="ghost acc" onclick="addGik()">+ Posten hinzufügen</button></div>
+    ${posten}
+    <div style="font-size:11.5px;color:var(--muted);margin-top:8px">GIK gesamt = Kaufpreis (${eur(OB.kaufpreis)}) + Σ GIK-Posten (${eur(gikSumme())}).</div>`;
+}
+async function saveNum(col,val){const n=val===''?null:Number(val);await sb.from('nahaus_objekte').update({[col]:n}).eq('id',id);OB[col]=n;renderInvest();renderKpis();}
+async function addGik(){
+  const datum=prompt('Datum (JJJJ-MM-TT):','');
+  const thema=prompt('Thema (z. B. Notar, Grunderwerbsteuer, Renovierung):','');if(thema===null)return;
+  const firma=prompt('Firma (optional):','')||null;
+  const betrag=prompt('Betrag in €:','');if(betrag===null)return;
+  const rec={object_id:id,datum:(datum&&/^\d{4}-\d{2}-\d{2}$/.test(datum))?datum:null,thema:(thema||'').trim()||null,firma:firma,betrag:betrag?Number(betrag):null};
+  const {data}=await sb.from('objekt_gik_posten').insert(rec).select().maybeSingle();
+  if(data){GIK.push(data);GIK.sort((a,b)=>String(a.datum||'').localeCompare(String(b.datum||'')));}renderInvest();
+}
+async function delGik(gid){await sb.from('objekt_gik_posten').delete().eq('id',gid);GIK=GIK.filter(p=>p.id!==gid);renderInvest();}
 function renderStamm(){
   const tot=OB.einheiten_gesamt||UNITS.length;
   document.getElementById('stamm').innerHTML=[
@@ -271,7 +322,10 @@ function txCard(typ,lbl,icon,parties){
   const rows=MILES.map(m=>`<div class="mile ${t[m[0]]?'done':''}"><span class="dot" onclick="toggleMile('${typ}','${m[0]}')"></span><span class="mlbl" onclick="toggleMile('${typ}','${m[0]}')">${m[1]}</span>
     <input type="date" class="mdate" value="${esc(t[m[2]]||'')}" onchange="setMileDate('${typ}','${m[0]}','${m[2]}',this.value)">
     <span class="dt">${t[m[0]]?'erledigt':'offen'}</span></div>`).join('');
-  const pbtns=parties.map(p=>{const val=t[p[1]];return `<button class="ghost sm" onclick="setParty('${typ}','${p[1]}')">${val?'✓ '+esc(val):'+ '+p[0]}</button>`;}).join('');
+  const pbtns=parties.map(p=>{const val=t[p[1]];
+    return `<label class="pwrap"><span class="plbl">${esc(p[0].replace(' wählen',''))}</span>
+      <select class="estat psel" onchange="setPartyCrm('${typ}','${p[1]}',this.value)">${crmPartyOptions(val)}</select></label>`;
+  }).join('');
   const anyDone=MILES.some(m=>t[m[0]]);
   return `<div class="txc"><div class="txh"><div class="txicon ${typ}">${icon}</div><div class="txttl">${lbl}</div><span class="pill" style="background:${anyDone?'var(--accent)':'#9aa0ad'}">${anyDone?'in Arbeit':'offen'}</span></div>
     <div class="pbtns">${pbtns}</div>${rows}</div>`;
@@ -304,8 +358,14 @@ async function startVerkauf(){
   const {data}=await sb.from('nahaus_objekt_transaktion').upsert({object_id:id,typ:'verkauf'},{onConflict:'object_id,typ'}).select().maybeSingle();
   TX.verkauf=data||{object_id:id,typ:'verkauf',_open:true};TX.verkauf._open=true;renderTransakt();}
 function verkaufHasData(){const t=TX.verkauf;if(!t)return false;return MILES.some(m=>t[m[0]]||t[m[2]])||t.partner||t.makler||t.notar||t._open;}
-async function setParty(typ,col){const cur=TX[typ]||{};const val=prompt('Name:',cur[col]||'');if(val===null)return;
-  const {data}=await sb.from('nahaus_objekt_transaktion').upsert({object_id:id,typ,[col]:val.trim()||null},{onConflict:'object_id,typ'}).select().maybeSingle();
+function crmPartyOptions(sel){
+  const fo=CRMF.map(f=>`<option value="${esc(f.name)}"${sel===f.name?' selected':''}>🏢 ${esc(f.name||'(ohne Name)')}${f.branche?' · '+esc(f.branche):''}</option>`).join('');
+  const ko=CRMK.map(k=>{const nm=[k.vorname,k.name].filter(Boolean).join(' ')||'(ohne Name)';return `<option value="${esc(nm)}"${sel===nm?' selected':''}>👤 ${esc(nm)}${k.position?' · '+esc(k.position):''}</option>`;}).join('');
+  const extra=(sel&&!CRMF.some(f=>f.name===sel)&&!CRMK.some(k=>[k.vorname,k.name].filter(Boolean).join(' ')===sel))?`<option value="${esc(sel)}" selected>${esc(sel)}</option>`:'';
+  return `<option value="">— aus CRM wählen…</option>${extra}<optgroup label="Firmen (CRM)">${fo}</optgroup><optgroup label="Kontakte (CRM)">${ko}</optgroup>`;
+}
+async function setPartyCrm(typ,col,val){const cur=TX[typ]||{};
+  const {data}=await sb.from('nahaus_objekt_transaktion').upsert({object_id:id,typ,[col]:val||null},{onConflict:'object_id,typ'}).select().maybeSingle();
   TX[typ]=data||Object.assign(cur,{[col]:val});renderTransakt();}
 function renderNotes(){
   const el=document.getElementById('notes');
