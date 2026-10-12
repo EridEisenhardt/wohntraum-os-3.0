@@ -168,6 +168,12 @@ tr.mut td{opacity:.55}
 a.btnlink{display:inline-block;padding:5px 10px;border:1px solid var(--line);border-radius:8px;text-decoration:none;color:inherit;font-size:13px}
 th.sortable{cursor:pointer;user-select:none;white-space:nowrap}th.sortable:hover,th.sortable.on{color:var(--accent)}
 details.sec>summary.ch{cursor:pointer;list-style:none;margin-bottom:0}details.sec>summary.ch::-webkit-details-marker{display:none}details.sec>summary.ch::before{content:'▸';margin-right:8px;color:var(--muted,#888)}details.sec[open]>summary.ch::before{content:'▾'}details.sec[open]>summary.ch{margin-bottom:8px}details.sec>summary.ch{justify-content:flex-start}details.sec>summary.ch .sub{margin-left:auto}
+.dhead{display:flex;gap:16px;align-items:flex-start;flex:1}.dhead>div:last-child{flex:1}
+.ampel{display:flex;flex-direction:column;gap:5px;background:#2b2f36;border-radius:10px;padding:7px 6px;flex:none}
+.ampel .al{width:18px;height:18px;border-radius:50%;background:#555b63;opacity:.45}
+.ampel .al.on{opacity:1}
+.hgrid{display:grid;grid-template-columns:repeat(4,max-content);gap:4px 36px;margin:8px 0 4px}
+.hf{display:flex;flex-direction:column}.hf span{font-size:11px;color:var(--muted,#888);text-transform:uppercase;letter-spacing:.03em}.hf b{font-size:14px;font-weight:600}
 .cards{display:grid;grid-template-columns:1fr;gap:12px;margin-bottom:14px}
 .cards .card{margin:0}
 .ch{font-weight:700;display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:8px}
@@ -863,6 +869,8 @@ function sortVal(x,k){ const mk=ed(x.mk); switch(k){ case 'obj': return String(x
 function listSort(a,b){ const k=M.sk||'saldo', d=M.sd||-1; const va=sortVal(a,k), vb=sortVal(b,k); let c=typeof va==='number'?va-vb:String(va).localeCompare(String(vb),'de',{numeric:true,sensitivity:'base'}); if(!c) c=String(a.mk.obj).localeCompare(String(b.mk.obj),'de',{numeric:true})||uName(a.mk.einheit).localeCompare(uName(b.mk.einheit),'de',{numeric:true}); else c*=d; return c; }
 const AMPEL={gruen:['#1d9a5b','zuverlässig'],gelb:['#e0a400','beobachten'],rot:['#d0362b','kritisch']};
 const ampel=x=>{ const a=ed(x.mk).ampel; return a&&AMPEL[a]?a:x.ampelAuto; };
+/* Ampel mit drei Lichtern: das zutreffende leuchtet, die anderen sind grau */
+const ampelLight=a=>'<div class="ampel" title="Mieterranking: '+AMPEL[a][1]+'">'+['rot','gelb','gruen'].map(k=>'<span class="al'+(k===a?' on':'')+'" style="'+(k===a?'background:'+AMPEL[k][0]+';box-shadow:0 0 8px '+AMPEL[k][0]:'')+'"></span>').join('')+'</div>';
 const ampelDot=(a,big)=>'<span class="adot'+(big?' big':'')+'" style="background:'+AMPEL[a][0]+'" title="Mieterranking: '+AMPEL[a][1]+'"></span>';
 function saveEdit(pid,patch,msg){ EDIT=Object.assign({},EDIT,{[pid]:Object.assign({},EDIT[pid]||{},patch)}); calc=null; render(); saveStamm('mietkonten-edit',{e:EDIT}).then(()=>msg&&toast(msg)); }
 /* ---------- Sollstellungslauf ---------- */
@@ -970,7 +978,10 @@ function solAssign(pid,key,sid,b){ const x=calc&&calc.res[pid]; if(!x) return; c
   return mkWriteTx(r.doc,r.ix,a.length?{op:{pid,a},m:1,k:'miete',s:'',ka:'',o:mk.obj||'',u:mk.unit||''}:{op:null}); }
 function renderDash(x){ const mk=ed(x.mk), sn=STN[x.status], a=ampel(x), K=mk.kontakte||[];
   const st=stufeAt(x.mk,curM)||{}; const kv=(l,v)=>'<div class="kvr"><span>'+l+'</span><b>'+v+'</b></div>';
-  let h='<div class="dtop"><div><div class="dname">'+ampelDot(a,1)+' '+esc(mk.mieter||'–')+'</div><div class="sub">'+esc(mk.obj+' · '+uName(mk.einheit))+' · '+esc(dmy(mk.von))+(mk.bis?' – '+esc(dmy(mk.bis)):' – laufend')+(mk.ref?' · Verwendungszweck: '+esc(mk.ref):'')+'</div></div><button data-close="1" title="Schließen (Esc)">Schließen</button></div>';
+  const adr=(ADR[x.mk.obj]||'|').split('|'), auszug=x.mk.bis?dmy(x.mk.bis):'–', fi=(l,v)=>'<div class="hf"><span>'+l+'</span><b>'+v+'</b></div>';
+  let h='<div class="dtop"><div class="dhead">'+ampelLight(a)+'<div><div class="dname">'+esc(mk.mieter||'–')+'</div><div class="sub">Mieterranking: '+esc(AMPEL[a][1])+(mk.ampel?' (manuell)':' (automatisch)')+'</div>'
+    +'<div class="hgrid">'+fi('Kürzel',esc(x.mk.obj+' '+uName(x.mk.einheit)))+fi('Adresse',esc(adr[0]+(x.mk.einheit&&!/efh/i.test(x.mk.einheit)?', '+uName(x.mk.einheit):'')+(adr[1]?', '+adr[1]:'')))+fi('Einzug',esc(dmy(x.mk.von)||'–'))+fi('Auszug',esc(auszug)+(x.mk.bis&&x.mk.bis>=today?' <span class="pill mid">gekündigt</span>':''))+'</div>'
+    +(mk.ref?'<div class="sub">Verwendungszweck: '+esc(mk.ref)+'</div>':'')+'</div></div><button data-close="1" title="Schließen (Esc)">Schließen</button></div>';
   h+='<div class="cards">';
   /* Mieterinformationen */
   h+='<div class="card"><div class="ch">Mieterinformationen'+(editOpen?'':'<button class="ghost small" data-edit="1">Bearbeiten</button>')+'</div>';
