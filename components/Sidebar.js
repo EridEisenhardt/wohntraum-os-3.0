@@ -16,6 +16,7 @@ export const NAV = [
     { href: '/backoffice-kosten', icon: 'ti-cash-banknote', label: 'Backoffice-Kosten & Umlage je Wohneinheit' },
   ] },
   { type: 'group', key: 'buchhaltung', icon: 'ti-calculator', label: 'Buchhaltung', area: ['hv', 'backoffice'], mod: 'controlling', items: [
+    { href: '/buchhaltung/buchungen', icon: 'ti-arrows-exchange', label: 'Buchungen' },
     { href: '/vermietung/zahlungsvereinbarung', icon: 'ti-file-dollar', label: 'Ratenzahlung erstellen' },
     { href: '/vermietung/zahlungsvereinbarung-register', icon: 'ti-receipt-2', label: 'Ratenzahlungen' },
     { href: '/mahnprozess/generator', icon: 'ti-file-invoice', label: 'Mahnungen & Register' },

@@ -1,0 +1,690 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Buchungen – Wohntraum OS</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script>window.OS_APP='oc';</script>
+<script src="/os-docstore.js"></script>
+<style>
+:root{
+  --bg:#f3f5f8;--card:#ffffff;--ink:#18202c;--muted:#5f6b7a;--line:#e0e5eb;--soft:#eef1f5;
+  --accent:#2f5d8a;--accent-ink:#ffffff;--accent-soft:#e3ecf5;
+  --pos:#1d7a4c;--pos-bg:#e5f4ec;--neg:#b42318;--neg-bg:#fcebe9;--warn:#946200;--warn-bg:#fff4d6;--chip:#edf1f6;
+  --f-ui:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#11151b;--card:#1a1f28;--ink:#e5e9ef;--muted:#97a1af;--line:#2b323e;--soft:#222935;
+    --accent:#72a6d8;--accent-ink:#0d1117;--accent-soft:#1f2c3b;
+    --pos:#5cc98e;--pos-bg:#15301f;--neg:#f07b70;--neg-bg:#3a1c19;--warn:#e7b949;--warn-bg:#342e18;--chip:#252c38;color-scheme:dark;
+  }
+}
+*{box-sizing:border-box}
+html,body{height:100%}
+body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.45 var(--f-ui);display:flex;flex-direction:column;overflow:hidden}
+header{display:flex;gap:12px;align-items:center;justify-content:space-between;padding:12px 16px 0;flex-wrap:wrap}
+h1{font-size:19px;margin:0}
+.sub{color:var(--muted);font-size:12px}
+.nav{display:flex;align-items:center;gap:6px}
+.nav .y{font-weight:700;font-size:15px;min-width:44px;text-align:center}
+button,select,input,textarea{font:inherit;color:var(--ink)}
+button{border:1px solid var(--line);background:var(--card);border-radius:8px;padding:6px 10px;cursor:pointer}
+button:hover{border-color:var(--accent)}
+button:disabled{opacity:.45;cursor:default}
+button.primary{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+button.ghost{border-color:transparent;background:transparent;color:var(--muted);padding:3px 6px}
+button.small{font-size:12px;padding:3px 8px}
+select,input[type=text],input[type=search],textarea{background:var(--soft);border:1px solid var(--line);border-radius:6px;padding:5px 7px;min-width:0}
+textarea{width:100%;resize:vertical}
+.tabs{display:flex;gap:2px;border-bottom:1px solid var(--line);padding:0 16px;margin-top:8px}
+.tabs button{border:none;border-bottom:2px solid transparent;border-radius:0;background:none;padding:8px 12px;color:var(--muted)}
+.tabs button.on{color:var(--ink);border-bottom-color:var(--accent);font-weight:600}
+#view{flex:1;min-height:0;overflow:auto}
+.pad{padding:14px 16px;max-width:1200px}
+.loading,.empty{padding:40px 16px;text-align:center;color:var(--muted)}
+/* Drei Spalten wie in einer Belegbuchhaltung */
+.grid3{display:grid;grid-template-columns:230px minmax(380px,1fr) minmax(360px,440px);height:100%;min-height:0}
+.knav{border-right:1px solid var(--line);overflow:auto;padding:10px 8px;background:var(--card)}
+.nav-h{font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);padding:2px 8px 6px}
+.nav-g{font-size:12px;font-weight:700;color:var(--muted);padding:10px 8px 4px}
+.kn{display:flex;width:100%;justify-content:space-between;gap:6px;border:none;background:none;text-align:left;padding:5px 8px;border-radius:6px;font-size:13px}
+.kn span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.kn b{background:var(--warn-bg);color:var(--warn);border-radius:999px;padding:0 7px;font-size:11px;min-width:20px;text-align:center}
+.kn i{color:var(--pos);font-style:normal;font-size:12px}
+.kn.on{background:var(--accent-soft);font-weight:600}
+.mid{display:flex;flex-direction:column;min-height:0;border-right:1px solid var(--line)}
+.tbar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;padding:10px 12px;border-bottom:1px solid var(--line);background:var(--card)}
+.tbar input[type=search]{flex:1;min-width:160px}
+.seg{display:flex;border:1px solid var(--line);border-radius:8px;overflow:hidden}
+.seg button{border:none;border-radius:0;padding:5px 10px;font-size:13px;background:var(--card)}
+.seg button+button{border-left:1px solid var(--line)}
+.seg button.on{background:var(--accent);color:var(--accent-ink)}
+.seg button span{font-size:11px;opacity:.8}
+.lsum{padding:6px 12px;font-size:12px;color:var(--muted);border-bottom:1px solid var(--line)}
+.list{overflow:auto;flex:1;min-height:0}
+.lgrp{position:sticky;top:0;background:var(--soft);font-size:12px;font-weight:700;color:var(--muted);padding:4px 12px;z-index:1}
+.row{display:grid;grid-template-columns:10px 46px 1fr auto;grid-template-rows:auto auto;gap:0 10px;width:100%;text-align:left;border:none;border-bottom:1px solid var(--line);border-radius:0;background:var(--card);padding:8px 12px;align-items:center}
+.row:hover{background:var(--accent-soft)}
+.row.sel{background:var(--accent-soft);box-shadow:inset 3px 0 0 var(--accent)}
+.row .dot{width:9px;height:9px;border-radius:50%;grid-row:span 2}
+.dot.o{background:var(--warn)}.dot.b{background:transparent;border:2px solid var(--warn)}.dot.z{background:var(--pos)}
+.row .rd{font-size:12px;color:var(--muted);grid-row:span 2;font-variant-numeric:tabular-nums}
+.row .rt{min-width:0;grid-column:3;grid-row:1}
+.row .rt b{display:block;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.row .rt small{display:block;color:var(--muted);font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.row .ra{grid-column:4;grid-row:1;text-align:right;font-weight:700;font-variant-numeric:tabular-nums;white-space:nowrap}
+.row .rz{grid-column:3/5;grid-row:2;font-size:11px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pos{color:var(--pos)}.neg{color:var(--neg)}
+.det{overflow:auto;padding:12px;min-height:0}
+.dhead{display:flex;justify-content:space-between;gap:10px;align-items:flex-start;margin-bottom:6px}
+.dn{font-size:16px;font-weight:700;overflow-wrap:anywhere}
+.da{font-size:22px;font-weight:800;font-variant-numeric:tabular-nums;white-space:nowrap}
+.dnav{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:10px 12px;margin-bottom:10px}
+.lab{font-size:12px;font-weight:700;color:var(--muted);margin-bottom:6px;display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+.zweck{overflow-wrap:anywhere;font-size:13px}
+.frm{display:grid;gap:8px}
+.frm label{display:grid;gap:3px;font-size:12px;color:var(--muted)}
+.frm select{width:100%;font-size:14px;padding:6px 8px}
+.acts{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-top:10px}
+.pill{display:inline-block;font-size:11px;padding:1px 8px;border-radius:999px;font-weight:600;white-space:nowrap}
+.pill.ok{background:var(--pos-bg);color:var(--pos)}.pill.mid{background:var(--warn-bg);color:var(--warn)}.pill.src{background:var(--chip);color:var(--muted);font-weight:500}
+.spl{margin-top:10px;padding:10px;border-radius:10px;background:var(--soft)}
+.sprow{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px;padding-bottom:8px;border-bottom:1px solid var(--line)}
+.sprow select{max-width:160px}
+input.num{width:96px;text-align:right;font-variant-numeric:tabular-nums}
+table.sp{width:100%;border-collapse:collapse;font-size:13px}
+table.sp td{padding:4px 0;border-bottom:1px dashed var(--line)}
+td.n{text-align:right;font-variant-numeric:tabular-nums}
+.bel{display:flex;justify-content:space-between;align-items:center;font-size:13px;padding:3px 0}
+.bel a{color:var(--accent);text-decoration:none;overflow-wrap:anywhere}
+.bdrop{display:block;border:2px dashed var(--line);border-radius:10px;padding:14px;text-align:center;color:var(--muted);font-size:13px;cursor:pointer;margin-top:6px}
+.bdrop.over,.drop.over{border-color:var(--accent);background:var(--accent-soft)}
+.prev{margin-top:8px}
+.prev iframe{width:100%;height:520px;border:1px solid var(--line);border-radius:8px;background:#fff}
+.prev img{width:100%;border:1px solid var(--line);border-radius:8px}
+/* Import und Regeln (übernommen aus dem Objekt-Controlling) */
+.note{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:10px 14px;color:var(--muted);font-size:13px;margin-bottom:12px}
+.note b{color:var(--ink)}
+.drop{display:block;border:2px dashed var(--line);border-radius:14px;background:var(--card);padding:26px 16px;text-align:center;color:var(--muted);cursor:pointer}
+.drop b{color:var(--ink);font-size:15px;display:block;margin-bottom:4px}
+.fcard{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px 14px;margin-top:10px;display:grid;gap:8px}
+.fcard .row:hover{background:none}
+.fcard .row{display:flex;flex-wrap:wrap;gap:8px;align-items:center;border:none;padding:0;background:none}
+h2{font-size:15px;margin:22px 0 8px}
+.tablewrap{overflow-x:auto;background:var(--card);border:1px solid var(--line);border-radius:12px}
+table{border-collapse:collapse;width:100%;font-size:13px}
+th,td{padding:6px 8px;border-bottom:1px solid var(--line);text-align:left;white-space:nowrap}
+th{background:var(--soft);font-weight:600;font-size:12px;color:var(--muted)}
+th.n{text-align:right}
+.mut{color:var(--muted)}
+.toast{position:fixed;left:50%;bottom:18px;transform:translateX(-50%);background:var(--ink);color:var(--bg);padding:8px 14px;border-radius:8px;font-size:13px;opacity:0;transition:opacity .2s;pointer-events:none;max-width:90vw;z-index:9}
+.toast.on{opacity:1}
+@media (max-width:1100px){ .grid3{grid-template-columns:190px 1fr} .det{grid-column:1/-1;border-top:1px solid var(--line)} body{overflow:auto} .grid3{height:auto} .list{max-height:60vh} }
+@media (max-width:640px){ .grid3{grid-template-columns:1fr} .knav{display:none} }
+</style>
+</head>
+<body>
+<header>
+  <div><h1>Buchungen</h1><div class="sub">Kontoumsätze zuordnen, Belege anhängen · gleiche Daten wie das Objekt-Controlling</div></div>
+  <div class="nav"><button id="yprev" aria-label="Vorjahr">‹</button><div class="y" id="ylabel">–</div><button id="ynext" aria-label="Folgejahr">›</button></div>
+</header>
+<div class="tabs" id="tabs">
+  <button data-tab="liste" class="on">Buchungen</button>
+  <button data-tab="import">Kontoauszüge importieren</button>
+  <button data-tab="regeln">Regeln</button>
+</div>
+<div id="view"><div class="loading">Lade Daten …</div></div>
+<div class="toast" id="toast" role="status"></div>
+<script>
+(function(){
+const MS=['Jan','Feb','Mär','Apr','Mai','Jun','Jul','Aug','Sep','Okt','Nov','Dez'];
+const MON=['Januar','Februar','März','April','Mai','Juni','Juli','August','September','Oktober','November','Dezember'];
+const KATS=[['miete','Mieteinnahme'],['sonst_ein','Sonstige Einnahme'],['bk','Betriebskosten'],['inst','Instandhaltung'],['umbau','Umbau'],['darl','Darlehen'],['obj_sonst','Sonstige Objektkosten'],['verw','Verwaltung'],['intern','Umbuchung intern'],['ruecklast','Rücklastschrift (hebt sich auf)'],['ignore','Nicht relevant'],['','– ungeklärt –']];
+const KATN=Object.fromEntries(KATS);
+const SUBS_UM=[['lizenzen','Software / IT / Lizenzen'],['personal','Personal Verwaltung'],['gf','Geschäftsführung – Immobilienverwaltung'],['buchhaltung','Buchhaltung / Steuerberatung laufend'],['buero','Büro / Miete / Nebenkosten'],['buerobedarf','Bürobedarf / Porto / Druckkosten'],['telefon','Telefon / Internet / Kommunikation'],['bank','Bank- und Zahlungsverkehrskosten'],['objverw','Miet- und Objektverwaltung'],['forderung','Forderungsmanagement / Mahnwesen'],['bkverw','Betriebskostenverwaltung'],['vermietung','Vermietung / Inserate / Besichtigungen'],['objbetreuung','Objektbetreuung / Kontrollen / Fahrten'],['recht','Rechts- und Gerichtskosten objektbezogen'],['versicherung','Versicherungen Verwaltung'],['kfz','KFZ']];
+/* nicht umgelegt */
+const SUBS_NO=[['recht_sonst','Rechtskosten nicht objektbezogen'],['steuern','Steuern der Gesellschaft'],['spende','Spenden'],['fortbildung','Fortbildung / Fachliteratur Immobilienverwaltung'],['eeprivat','EE Privat'],['kauf','Kauf & Verkauf Immobilie'],['sonstige','Sonstige (nicht umgelegt)']];
+const SUBS=SUBS_UM.concat(SUBS_NO);
+const SUB_ALIAS={storno:'bank',leasing:'lizenzen'}; /* alte Arten */
+const subNorm=x=>SUB_ALIAS[x]||x;
+const SUBN=Object.fromEntries(SUBS);
+const POOLS=['EE-Allgemein','WT-Allgemein','KiBo-Allgemein','EE-Instandhaltung','WT-Instandhaltung'];
+const COSTK=['bk','inst','darl','obj_sonst'];
+const fmt=new Intl.NumberFormat('de-DE',{style:'currency',currency:'EUR'});
+const fmt0=new Intl.NumberFormat('de-DE',{style:'currency',currency:'EUR',maximumFractionDigits:0});
+const fnum=new Intl.NumberFormat('de-DE',{minimumFractionDigits:2,maximumFractionDigits:2});
+const eur=v=>fmt.format(v||0), eur0=v=>fmt0.format(Math.round(v||0));
+const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+/* Daten aus der Datenbank sind schreibgeschützt – immer mit einer Kopie arbeiten */
+const clone=o=>o==null?o:JSON.parse(JSON.stringify(o));
+const r2=v=>Math.round((v||0)*100)/100;
+const $=id=>document.getElementById(id);
+function parseNum(s){ if(s==null) return null; s=String(s).trim().replace(/\s|€|EUR/g,''); if(s==='') return null;
+  let neg=false; if(/-$/.test(s)){neg=true;s=s.slice(0,-1);}
+  if(s.includes(',')) s=s.replace(/\./g,'').replace(',','.'); const v=Number(s); return isFinite(v)?(neg?-v:v):NaN; }
+function store(k,v){try{ if(v===undefined) return localStorage.getItem(k); localStorage.setItem(k,v);}catch(e){return null;}}
+function toast(t){const el=$('toast');el.textContent=t;el.classList.add('on');clearTimeout(toast._t);toast._t=setTimeout(()=>el.classList.remove('on'),3000);}
+const norm=s=>String(s||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/ß/g,'ss').replace(/[^a-z0-9]+/g,' ').trim();
+
+/* ---------- Zustand ---------- */
+let db=null, downloads=null, canWrite=true, dbState='wait';
+let nhMap={}, nhStand='', vsMap={}; let unitCostOpen=store('oc_ucost')==='1', objCostOpen=store('oc_ocost')==='1', ovVerwOpen=store('oc_ovv')==='1', ovCostOpen=store('oc_ovc')==='1';
+let vors={items:[]}, vFilter='offen', objekte=[], konten=[], regeln=[], einst={}, buch={}, plan=[], loaded={o:0,k:0,r:0,e:0,b:0};
+let year=new Date().getFullYear(), month=null; // null = ganzes Jahr
+let tab=store('oc_tab')||'uebersicht', selObj=store('oc_obj')||'', bFilter={status:'alle',konto:'',q:'',sub:'',obj:'',sort:''};
+let pending=[]; // geparste, noch nicht importierte Dateien
+let ruleOpen=null; const touched=new Set();
+let kFilter={m:'',konto:'',ges:'',dir:'',ab:'',q:''}; try{ const kf=JSON.parse(store('oc_kf')||'null'); if(kf&&typeof kf==='object') kFilter=Object.assign(kFilter,kf); }catch(e){}
+function setKF(k,v){ kFilter[k]=v; store('oc_kf',JSON.stringify(kFilter)); render(); }
+/* Suche und Betrag filtern die Zeilen direkt, ohne die Seite neu aufzubauen – so bleibt das Eingabefeld beim Tippen ungestört */
+function applyKF(){ const info=$('kf-info'); if(!info) return; const q=norm(kFilter.q), ab=parseNum(kFilter.ab);
+  let n=0, sum=0, grp=null, gn=0; const fin=()=>{ if(grp){ grp.hidden=!gn; const x=grp.querySelector('.gn'); if(x) x.textContent=gn?' · '+gn+' offen':''; } };
+  document.querySelectorAll('#view tr.grp, #view tr.tx').forEach(tr=>{ if(tr.classList.contains('grp')){ fin(); grp=tr; gn=0; return; }
+    const b=Number(tr.dataset.b), ok=(!q||tr.dataset.q.includes(q))&&(!(ab>0)||Math.abs(b)>=ab); tr.hidden=!ok;
+    if(ok&&tr.dataset.open==='1'){ n++; sum+=b; gn++; } }); fin();
+  info.textContent=info.dataset.pre+' · '+n+' von '+info.dataset.all+' offenen Buchungen · Summe '+eur(sum);
+  const em=$('kf-empty'); if(em) em.hidden=n>0||!!document.querySelector('#view tr.tx:not([hidden])');
+  const rs=$('kf-reset'); if(rs) rs.hidden=!(kFilter.konto||kFilter.ges||kFilter.dir||kFilter.q||kFilter.ab); }
+{const y=Number(store('oc_year')); if(y>2000&&y<2100) year=y; const m=store('oc_month'); if(m!==null&&m!==''&&!isNaN(Number(m))) month=Number(m);}
+
+const chains={};
+function queue(path,fn){chains[path]=(chains[path]||Promise.resolve()).then(fn).catch(e=>{console.error(e);
+  toast(e&&e.code==='permission_denied'?'Nur Lesezugriff – Änderungen werden nicht gespeichert.':'Speichern fehlgeschlagen: '+(e&&e.message||e));});return chains[path];}
+function saveStamm(name,data){ if(!db||!canWrite){toast('Nur Lesezugriff.');return Promise.resolve();} return queue('stamm/'+name,()=>db.doc('stamm/'+name).set(data)); }
+
+/* ---------- Klassifizierung ---------- */
+const objKz=()=>new Set(objekte.map(o=>o.kz));
+function kontoTyp(k){ if(!k) return 'mix'; const o=k.obj||''; if(o==='__aus') return 'aus'; if(/-Allgemein$/.test(o)) return 'allg'; if(/-Instandhaltung$/.test(o)) return 'inst'; if(objKz().has(o)) return 'obj'; return 'mix'; }
+let unitIdx=null;
+function buildUnitIdx(){ unitIdx=[]; for(const o of objekte){ for(const e of (o.einheiten||[])){
+  const toks=[]; const ref=norm(e.ref); if(ref.length>=6 && !/^miete\b/.test(ref)) toks.push(ref);
+  for(const nm of String(e.mieter||'').split(',')){ const w=norm(nm).split(' ').filter(x=>x.length>=4 && x!=='undefined' && x!=='herr' && x!=='frau'); if(w.length&&!w.includes('eisenhardt')) toks.push(w[w.length-1]); } /* eigener Name (Eric Eisenhardt) nie als Mieter-Erkennung – sonst landen Geldtransits als Miete */
+  unitIdx.push({obj:o.kz,id:e.id,toks}); } } }
+function matchUnit(text,objs){ if(!unitIdx) buildUnitIdx(); const t=' '+norm(text)+' ';
+  for(const u of unitIdx){ if(objs && !objs.includes(u.obj)) continue; for(const tk of u.toks){ if(t.includes(' '+tk+' ')||(tk.includes(' ')&&t.includes(tk))) return u; } } return null; }
+/* Mieter-Erkennung inkl. ehemaliger Mieter 2026 (Einheit.alt = [{mieter, ref, von, bis, ibans}]) */
+const SHARED_IBAN=new Set(['DE94760000000076001601']); /* Bundesagentur für Arbeit – zahlt für viele Mieter */
+let tenIdx=null;
+const dnum=s=>s?Date.parse(s)/864e5:null;
+function inWin(d,von,bis,pre,post){ const x=dnum(d); if(von&&x<dnum(von)-pre) return false; if(bis&&x>dnum(bis)+post) return false; return true; }
+function nameToks(names){ const out=[]; for(const nm of String(names||'').split(',')){ const w=norm(nm).split(' ').filter(x=>x.length>=3&&!['herr','frau','undefined','unbekannt'].includes(x)); if(w.length) out.push(w); } return out; }
+function buildTenIdx(){ tenIdx={full:[],short:{},iban:[],alt:[],cur:[]};
+  for(const o of objekte){ for(const e of (o.einheiten||[])){
+    const add=(ref,von,bis,alt)=>{ const r=norm(ref); const m=r.match(/^(h\d+ w\d+)\b/); if(!m) return;
+      if(r.length>m[1].length+2) tenIdx.full.push({obj:o.kz,id:e.id,tok:r,von,bis,alt});
+      (tenIdx.short[m[1]]=tenIdx.short[m[1]]||[]).push({obj:o.kz,id:e.id}); };
+    add(e.ref,null,null,false);
+    for(const w of nameToks(e.mieter)) if(w.length>=2&&!w.includes('eisenhardt')) tenIdx.cur.push({obj:o.kz,id:e.id,w});
+    for(const a of (e.alt||[])){ add(a.ref,a.von,a.bis,true);
+      for(const ib of (a.ibans||[])) if(ib&&!SHARED_IBAN.has(ib)) tenIdx.iban.push({obj:o.kz,id:e.id,ib,von:a.von,bis:a.bis});
+      for(const w of nameToks(a.mieter)) tenIdx.alt.push({obj:o.kz,id:e.id,w,von:a.von,bis:a.bis}); } } } }
+function matchTenant(tx,kObj,typ){ if(!tenIdx) buildTenIdx(); const t=' '+norm(tx.n+' '+tx.z)+' ';
+  /* 1. vollständige Nahaus-Referenz (z. B. „H9/W6 Foller“) – gilt kontoübergreifend */
+  for(const u of tenIdx.full){ if(u.alt&&!inWin(tx.d,u.von,u.bis,31,60)) continue; if(t.includes(' '+u.tok+' ')) return {obj:u.obj,id:u.id,alt:u.alt}; }
+  /* 2. IBAN eines ehemaligen Mieters */
+  if(tx.i&&Math.abs(tx.b)>=50){ for(const u of tenIdx.iban){ if(u.ib===tx.i&&inWin(tx.d,u.von,u.bis,31,60)) return {obj:u.obj,id:u.id,alt:true}; } }
+  /* 3. kurze Referenz „H1/W1“ */
+  const m=t.match(/ (h\d+ w\d+) /); if(m&&tenIdx.short[m[1]]){ const l=tenIdx.short[m[1]], objs=[...new Set(l.map(x=>x.obj))]; if(objs.length===1) return {obj:objs[0],id:new Set(l.map(x=>x.id)).size===1?l[0].id:'',alt:false}; }
+  if(typ!=='obj'&&typ!=='mix') return null; /* auf Sammelkonten nur über Referenz/IBAN */
+  /* 4. Name – aktuelle Mieter des Kontos, dann ehemalige (Zeitraum, ab 100 €) */
+  const objs=kObj?[kObj]:null; const u0=matchUnit(tx.n+' '+tx.z,objs); if(u0) return {obj:u0.obj,id:u0.id,alt:false};
+  if(Math.abs(tx.b)>=100){ for(const u of tenIdx.alt){ if(objs&&!objs.includes(u.obj)) continue; if(!inWin(tx.d,u.von,u.bis,31,60)) continue; const ln=u.w[u.w.length-1]; if(ln.length>=4&&t.includes(' '+ln+' ')) return {obj:u.obj,id:u.id,alt:true}; } }
+  /* 5. Vor- und Nachname eines aktuellen Mieters in einem anderen Objekt (z. B. nach Umzug) */
+  for(const u of tenIdx.cur){ if(u.w.every(x=>t.includes(' '+x+' '))) return {obj:u.obj,id:u.id,alt:false}; }
+  return null; }
+const BANKFEE_RE=/^(abschluss per |\*\*endsaldo\*\*|abschluss · |entgeltabschluss · |stornorechnung · stornorechnung zur abrechnung|stornorechnung zur abrechnung|rechnung · rechnung loeschung)/i;
+function isBankFee(tx){ const z=String(tx.z||'').trim(); if(BANKFEE_RE.test(z)) return true;
+  return /^dkb ag$/i.test(String(tx.n||'').trim())&&/^abrechnung \d\d\.\d\d\.\d{4}/i.test(z); }
+let ownIban=null;
+function ruleHit(text,m){ const n=norm(m); if(!n) return false; /* endet das Muster auf eine Ziffer (z. B. „B20“), muss danach ein Wortende folgen */ return /[0-9]$/.test(n)?(' '+text+' ').includes(' '+n+' '):(' '+text).includes(' '+n); }
+function planHit(obj,b){ if(!obj||b>=0) return null; const a=Math.abs(b); return plan.find(p=>p.obj===obj&&Math.abs(p.betrag-a)<0.005)||null; }
+/* Objektkürzel im Verwendungszweck erkennen, z. B. „K28“, „EEK28U001“, „WT-S58“ */
+let objRe=null;
+/* Objektadresse im Verwendungszweck (z. B. „Kraemerstrasse 28“, „In den Kirchgaerten 7“) – hat Vorrang vor Kürzel und Konto */
+let addrRe=null;
+function streetStem(st){ let x=norm(st).replace(/ /g,'').replace(/(strasse|str)$/,''); return x.replace(/ae|oe|ue/g,m=>m[0]).replace(/[aou]/g,m=>'('+m+'|'+m+'e)?'); }
+function buildAddrRe(){ addrRe=[]; for(const o of objekte){ const m=String(o.adresse||o.name||'').split(',')[0].match(/^(.*?)\s*(\d+)\s*[a-z]?$/i); if(!m) continue;
+  const hasStr=/str(\.|asse|aße)?$/i.test(m[1].trim()); const stem=streetStem(m[1]); if(stem.length<4) continue;
+  addrRe.push({kz:o.kz,re:new RegExp(stem+(hasStr?'(str|strasse)':'')+(o.kz==='U6'?'(4)?':'')+m[2]+'(?![0-9])')}); } }
+function objByAddr(text){ if(!addrRe) buildAddrRe(); const c=norm(text).replace(/ /g,''); for(const a of addrRe){ if(a.re.test(c)) return a.kz; } return ''; }
+function objInText(text){ const ad=objByAddr(text); if(ad) return ad; if(!objRe){ const ks=objekte.map(o=>o.kz.toLowerCase()).sort((a,b)=>b.length-a.length); objRe=ks.length?new RegExp('(?:^|[^a-z0-9]|ee|wt)('+ks.join('|')+')(?![0-9])'):null; }
+  if(!objRe) return ''; const m=(' '+text).match(objRe); if(!m) return ''; const o=objekte.find(x=>x.kz.toLowerCase()===m[1]); return o?o.kz:''; }
+function classify(tx,k){
+  if(tx.m) return {obj:tx.o||'',kat:tx.k||'',sub:tx.s||'',unit:tx.u||'',src:tx.q==='beleg'?'Beleg':'manuell'};
+  const typ=kontoTyp(k), kObj=typ==='obj'?k.obj:'';
+  if(typ==='aus') return {obj:'',kat:'ignore',sub:'',unit:'',src:'Konto ausgeschlossen'};
+  /* Bankgebühren: Kontoabschluss, Entgeltabschluss, Endsaldo, DKB-Abrechnung → Objektkonto: sonstige Objektkosten; sonst Verwaltung › Bankgebühren */
+  if(isBankFee(tx)) return typ==='obj'?{obj:k.obj,kat:'obj_sonst',sub:'',unit:'',src:'Bankgebühr'}:{obj:'',kat:'verw',sub:'bank',unit:'',src:'Bankgebühr'};
+  if(!ownIban) ownIban=new Set(konten.map(x=>x.iban).filter(Boolean));
+  const text=norm((tx.n||'')+' '+(tx.z||''));
+  /* Vorrang-Regeln gelten auch für Überweisungen zwischen eigenen Konten (z. B. Kostenweitergabe K28 → S16) */
+  const dirOK=r=>!(r.dir==='ein'&&tx.b<=0)&&!(r.dir==='aus'&&tx.b>=0)&&!(r.betrag&&Math.abs(Math.abs(tx.b)-r.betrag)>0.005);
+  const hit=r=>r.iban?(tx.i===r.iban):r.nurBetrag?!!r.betrag:ruleHit(text,r.muster); /* nurBetrag: nur der Betrag entscheidet */ /* Regel mit IBAN: Gegenkonto entscheidet (z. B. Darlehenskonto) */
+  for(const r of regeln){ if(!r.vor||!r.muster||!dirOK(r)||!hit(r)) continue;
+    return {obj:(r.iban&&objInText(text))||r.obj||kObj,kat:r.kat,sub:r.sub||'',unit:'',src:r.iban?'Darlehenskonto':'Regel',rule:r.id}; }
+  if(tx.i && ownIban.has(tx.i)) return {obj:kObj,kat:'intern',sub:'',unit:'',src:'eigenes Konto'};
+  /* Zahlungen zwischen den eigenen Gesellschaften = Geldtransit */
+  const cp=norm(tx.n); if(/^(wohn t raum|wohntraum|anders macher|andersmacher)\b/.test(cp)) return {obj:kObj,kat:'intern',sub:'',unit:'',src:'eigene Gesellschaft'};
+  /* Eingang eines Mieters hat Vorrang vor allen Regeln */
+  if(tx.b>0){ const u0=matchTenant(tx,kObj,typ); if(u0) return {obj:u0.obj,kat:'miete',sub:'',unit:u0.id||'',src:u0.alt?'ehem. Mieter erkannt':'Mieter erkannt'}; }
+  for(const r of regeln){ if(!r.muster||!dirOK(r)) continue;
+    if(r.scope==='allgemein'&&typ!=='allg') continue; if(r.scope==='objekt'&&typ==='allg') continue;
+    if(tx.b>0 && r.kat==='verw' && r.dir!=='beide') continue; /* Verwaltungsregeln nie auf Eingänge anwenden */
+    if(hit(r)){ let obj=r.obj||(r.kat==='verw'?'':(objInText(text)||kObj)); let unit='';
+      if(r.kat==='miete'){const u=matchUnit(tx.n+' '+tx.z,obj?[obj]:null); if(u){unit=u.id; obj=obj||u.obj;}}
+      return {obj,kat:r.kat,sub:r.sub||'',unit,src:'Regel',rule:r.id}; } }
+  /* Eingänge = Mieten */
+  if(tx.b>0 && (typ==='allg'||typ==='inst')) return {obj:'',kat:'',sub:'',unit:'',src:'auto'}; /* Eingang auf Sammelkonto: selbst klären */
+  if(tx.b>0){ const u=matchUnit(tx.n+' '+tx.z,kObj?[kObj]:null); return {obj:kObj||(u?u.obj:''),kat:'miete',sub:'',unit:u?u.id:'',src:'auto'}; }
+  /* Ausgänge: Fixkosten-Plan (Betrag passt) */
+  const pk=typ==='obj'?kObj:(typ==='allg'?k.obj:''); const ph=planHit(pk,tx.b);
+  if(ph) return {obj:ph.kat==='verw'?'':kObj,kat:ph.kat,sub:ph.sub||'',unit:'',src:'Fixkosten: '+ph.pos};
+  const oT=objInText(text);
+  if(typ==='inst') return {obj:oT,kat:'inst',sub:'',unit:'',src:oT?'Objekt im Text':'auto'};
+  return {obj:oT||kObj,kat:'',sub:'',unit:'',src:'auto'};
+}
+function isOpen(c){ if(c.kat==='') return true; if(c.kat==='sonst_ein'&&c.obj==='__ges') return false; if(['miete','sonst_ein','bk','inst','umbau','darl','obj_sonst'].includes(c.kat) && !objKz().has(c.obj)) return true; if(c.kat==='verw'&&!c.sub) return true; return false; }
+
+/* alle Buchungen eines Jahres, klassifiziert (Cache) */
+let cache=null;
+function invalidate(){cache=null;unitIdx=null;tenIdx=null;ownIban=null;objRe=null;addrRe=null;}
+function allTx(){
+  if(cache&&cache.year===year) return cache.list;
+  const kmap=Object.fromEntries(konten.map(k=>[k.key||k.iban,k]));
+  const list=[];
+  for(const id in buch){ const d=buch[id]; if(!d||!d.monat||Number(d.monat.slice(0,4))!==year) continue; const k=kmap[d.konto];
+    (d.tx||[]).forEach((tx,ix)=>{ const mm=Number(d.monat.slice(5,7))-1;
+      /* Mietzahlungen laut Nahaus (Abgleich je Bankumsatz) haben Vorrang */
+      const nh=tx.h&&nhMap[tx.h];
+      if(nh){ if(Array.isArray(nh.sp)){ nh.sp.forEach((p,pi)=>list.push({doc:id,ix,tx:Object.assign({},tx,{b:Number(p.b)||0,z:(tx.z||'')+' · Teil '+(pi+1)+'/'+nh.sp.length+': '+eur(tx.b)+(p.t?' ('+p.t+')':'')}),k,kkey:d.konto,m:mm,split:true,nh:true,
+          c:{obj:p.o||'',kat:p.k||'',sub:'',unit:p.u||'',src:'Nahaus'+(p.t?' · '+p.t:'')}})); return; }
+        list.push({doc:id,ix,tx,k,kkey:d.konto,m:mm,nh:true,c:{obj:nh.o||'',kat:nh.k||'miete',sub:'',unit:nh.u||'',src:'Nahaus'+(nh.t?' · '+nh.t:'')}}); return; }
+      if(Array.isArray(tx.sp)&&tx.sp.length){ tx.sp.forEach((p,pi)=>list.push({doc:id,ix,tx:Object.assign({},tx,{b:Number(p.b)||0,z:(tx.z||'')+' · Teil '+(pi+1)+'/'+tx.sp.length+': '+eur(tx.b)+(p.t?' ('+p.t+')':'')}),k,kkey:d.konto,m:mm,split:true,
+        c:{obj:p.o||'',kat:p.k||'',sub:p.s||'',unit:p.u||'',src:'aufgeteilt'}})); return; }
+      const c=classify(tx,k); list.push({doc:id,ix,tx,k,kkey:d.konto,m:mm,c}); }); }
+  list.sort((a,b)=>a.tx.d<b.tx.d?-1:a.tx.d>b.tx.d?1:0);
+  for(const r of list){ if(r.c.kat==='verw'){ let sb=subNorm(r.c.sub); const ov=r.tx.h&&vsMap[r.tx.h]; if(ov&&(!sb||sb==='sonstige'||!r.tx.m)) sb=ov; /* Zuordnung aus der Verwaltungskosten-Liste; eigene Auswahl (außer „Sonstige“) hat Vorrang */ if(sb!==r.c.sub) r.c=Object.assign({},r.c,{sub:sb}); } }
+  markReturns(list); markReturnFees(list);
+  cache={year,list}; return list;
+}
+/* Rücklastschriften: Abbuchung + Wiedergutschrift (gleicher Betrag, gleiches Konto, max. 10 Tage) heben sich auf.
+   Gezählt wird nur die tatsächlich gezahlte (spätere) Abbuchung. */
+const RL_KW=/wiedergutschrift|rueckueberweisung|ruecklastschrift|nicht erreichbar/;
+function rlCore(z){ z=String(z||''); const i=z.indexOf(' · '); if(i>=0) z=z.slice(i+3); return norm(z).replace(/ /g,''); }
+function rlOwn(n){ const x=norm(n); return !x.replace(/ /g,'') || /eisenhardt|wohn ?t ?raum|anders ?macher/.test(x); }
+function markReturns(list){
+  const day=s=>Date.parse(s)/864e5, used=new Set();
+  for(const c of list){ const ct=c.tx; if(ct.b<=0||ct.rlx||c.split||c.nh||c.kkey===MANKEY) continue;
+    const cz=rlCore(ct.z), kw=RL_KW.test(norm(ct.z)), cn=norm(ct.n).slice(0,8);
+    let best=null, bd=99;
+    for(const t of list){ const tt=t.tx; if(tt.b>=0||tt.rlx||t.split||used.has(t)||t.kkey!==c.kkey||Math.abs(tt.b+ct.b)>0.004) continue;
+      const dd=day(ct.d)-day(tt.d); if(dd<0||dd>10||dd>=bd) continue;
+      const tz=rlCore(tt.z);
+      if(!kw && /geldtransit/.test(norm(tt.z))) continue;
+      const cpOK=(ct.i&&ct.i===tt.i)||(cn&&cn===norm(tt.n).slice(0,8))||rlOwn(ct.n);
+      const ok=(cz&&cz===tz&&cpOK)||(kw&&(/nicht erreichbar/.test(norm(ct.z))||(cz.length>=8&&(tz.includes(cz.slice(0,20))||cz.includes(tz.slice(0,20))))));
+      if(ok){best=t;bd=dd;} }
+    if(best){ used.add(best); used.add(c); best.c0=best.c;
+      best.c={obj:'',kat:'ruecklast',sub:'',unit:'',src:'Rücklastschrift ⇄ '+ct.d.split('-').reverse().join('.'),pair:c};
+      c.c={obj:'',kat:'ruecklast',sub:'',unit:'',src:'Rücklastschrift ⇄ '+best.tx.d.split('-').reverse().join('.'),pair:best}; } }
+}
+/* Gebühr für eine zurückgegebene Lastschrift („Rechnung Rueckgabe Lastschrift ueber 84,60 EUR …“) = Verwaltung › Stornokosten,
+   Objekt der zurückgegebenen Lastschrift (sonst Objekt des Kontos, sonst Umlage). Manuelle Zuordnung hat Vorrang. */
+function markReturnFees(list){
+  const day=s=>Date.parse(s)/864e5;
+  for(const r of list){ const t=r.tx; if(t.b>=0||t.m||r.split) continue;
+    const m=String(t.z||'').match(/R(?:ue|ü)ckgabe Lastschrift (?:ueber|über) ([\d.]+,\d{2}) ?EUR/i)||String(t.z||'').match(/R(?:ue|ü)cklastschrift.{0,20}?([\d.]+,\d{2}) ?EUR/i);
+    if(!m||Math.abs(t.b)>50) continue; const amt=parseNum(m[1]);
+    let best=null, bd=99;
+    for(const x of list){ if(x===r||x.kkey!==r.kkey||x.tx.b>=0||Math.abs(Math.abs(x.tx.b)-amt)>0.004) continue; const dd=Math.abs(day(t.d)-day(x.tx.d)); if(dd<=10&&dd<bd){best=x;bd=dd;} }
+    const src=best?(best.c0||best.c):null; let obj=src&&objKz().has(src.obj)?src.obj:'';
+    if(!obj&&best) obj=objInText(norm((best.tx.n||'')+' '+(best.tx.z||'')));
+    if(!obj&&r.k&&kontoTyp(r.k)==='obj') obj=r.k.obj;
+    r.c={obj,kat:'verw',sub:'bank',unit:'',src:'Stornogebühr'+(best?' ⇄ '+best.tx.d.split('-').reverse().join('.'):'')}; } }
+function monthsWithData(){ const s=new Set(); for(const id in buch){const d=buch[id]; if(d&&d.monat&&Number(d.monat.slice(0,4))===year) s.add(Number(d.monat.slice(5,7))-1);} return s; }
+function sortedUnits(o){ const key=l=>String(l||'').replace(/\s+/g,'').toLowerCase(); const grp=l=>/^we|^efh/i.test(String(l||'').trim())?0:1;
+  return (o.einheiten||[]).map((e,ei)=>({e,ei})).sort((a,b)=>grp(a.e.label)-grp(b.e.label)||key(a.e.label).localeCompare(key(b.e.label),'de',{numeric:true})); }
+function kontoSort(a,b){ const isO=k=>objKz().has(k.obj)||objekte.some(o=>String(k.name||'').startsWith(o.kz+' ')||String(k.name||'')===o.kz||String(k.name||'').startsWith(o.kz+'/'))||/^Rh24\b/.test(k.name||'');
+  const ga=isO(a)?0:1, gb=isO(b)?0:1; if(ga!==gb) return ga-gb; return String(a.name).localeCompare(String(b.name),'de',{numeric:true,sensitivity:'base'}); }
+function kontoName(key){ if(key===MANKEY) return 'Kosten ohne Auszug'; const k=konten.find(x=>(x.key||x.iban)===key); return k?k.name:key; }
+function objOptions(cur,withPools){ const opts=['<option value="">– kein Objekt –</option>'];
+  for(const o of objekte) opts.push('<option value="'+esc(o.kz)+'"'+(o.kz===cur?' selected':'')+'>'+esc(o.kz)+'</option>');
+  if(withPools){ for(const p of POOLS) opts.push('<option value="'+p+'"'+(p===cur?' selected':'')+'>'+p+'</option>'); opts.push('<option value="__aus"'+(cur==='__aus'?' selected':'')+'>ausgeschlossen (Objekt nicht in der Aufstellung)</option>'); }
+  return opts.join(''); }
+const MANKEY='MANUELL';
+function setTx(id,field,val){
+  if(!db||!canWrite){toast('Nur Lesezugriff.');return;}
+  const [doc,ix]=id.split('|'); const d=buch[doc]; if(!d) return; const r=allTx().find(x=>x.doc===doc&&x.ix===Number(ix)); if(!r) return;
+  const c=Object.assign({},r.c,{[field==='k'?'kat':field==='s'?'sub':field==='o'?'obj':'unit']:val});
+  if(field==='k'){ if(val!=='verw') c.sub=''; if(val!=='miete') c.unit=''; if(val==='verw'&&!objKz().has(c.obj)) c.obj=''; }
+  if(field==='o') c.unit='';
+  const wasRl=r.c.kat==='ruecklast'&&r.c.pair&&field==='k'&&val!=='ruecklast';
+  const tx=d.tx.slice(); tx[Number(ix)]=Object.assign({},tx[Number(ix)],{m:1,o:c.obj||'',k:c.kat||'',s:c.sub||'',u:c.unit||''},wasRl?{rlx:1}:{});
+  d.tx=tx;
+  if(wasRl){ const p=r.c.pair, pd=buch[p.doc]; if(pd){ const ptx=pd.tx.slice(); ptx[p.ix]=Object.assign({},ptx[p.ix],{rlx:1}); pd.tx=ptx;
+      if(p.doc!==doc) queue('buchungen/'+p.doc,()=>db.doc('buchungen/'+p.doc).update({tx:ptx})); } }
+  invalidate(); render();
+  queue('buchungen/'+doc,()=>db.doc('buchungen/'+doc).update({tx:d.tx}));
+}
+function renderImport(){
+  let h='<div class="note">So geht’s: Im Online-Banking den Umsatz-Export als <b>CSV</b> herunterladen (DKB, GLS, Sparkasse, 1822direkt …) und hier hineinziehen – gern mehrere Dateien auf einmal. Bereits importierte Buchungen werden erkannt und nicht doppelt gezählt.</div>';
+  h+='<label class="drop" id="drop" for="file"><b>CSV-Kontoauszüge hierher ziehen</b>oder klicken, um Dateien auszuwählen<input type="file" id="file" accept=".csv,.txt,text/csv" multiple hidden></label>';
+  pending.forEach((p,i)=>{ h+='<div class="fcard"><div class="row"><b>'+esc(p.file)+'</b><span class="sub">'+(p.err?'':p.tx.length+' Buchungen · '+esc(p.von)+' – '+esc(p.bis)+(p.iban?' · Konto '+esc(p.iban):''))+'</span></div>';
+    if(p.err){ h+='<div class="neg">'+esc(p.err)+'</div><div class="row"><button class="small" data-pdrop="'+i+'">Entfernen</button></div></div>'; return; }
+    const known=p.konto?konten.find(k=>(k.key||k.iban)===p.konto):null;
+    h+='<div class="row"><label for="pk-'+i+'">Konto</label><select id="pk-'+i+'" data-pk="'+i+'"><option value="">– Konto wählen –</option>'+konten.map(k=>'<option value="'+esc(k.key||k.iban)+'"'+((k.key||k.iban)===p.konto?' selected':'')+'>'+esc(k.name+' · '+(k.obj||'gemischt'))+'</option>').join('')+'<option value="__neu"'+(p.konto==='__neu'?' selected':'')+'>+ neues Konto anlegen</option></select>'+(known?'<span class="pill ok">erkannt</span>':'')+'</div>';
+    if(p.konto==='__neu') h+='<div class="row"><input type="text" id="pn-'+i+'" placeholder="Kontoname, z. B. DKB KiBo-Allgemein" style="width:240px" value="'+esc(p.nName||'')+'"><select id="pg-'+i+'"><option>EE</option><option>WT</option><option>KiBo</option></select><select id="po-'+i+'">'+objOptions('',true).replace('– kein Objekt –','gemischt (je Buchung)')+'</select></div>';
+    h+='<div class="row"><button class="primary" data-pimp="'+i+'">Importieren</button><button class="ghost" data-pdrop="'+i+'">Verwerfen</button></div></div>'; });
+  const docs=Object.values(buch).filter(d=>d&&d.monat);
+  if(docs.length){ const by={}; for(const d of docs){ (by[d.konto]=by[d.konto]||new Set()).add(d.monat); }
+    h+='<h2>Bereits importiert</h2><div class="tablewrap"><table><thead><tr><th>Konto</th><th>Zuordnung</th>'+MS.map(m=>'<th class="n">'+m+'</th>').join('')+'</tr></thead><tbody>';
+    for(const k of Object.keys(by).sort((a,b)=>kontoName(a).localeCompare(kontoName(b)))){ const ko=konten.find(x=>(x.key||x.iban)===k);
+      h+='<tr><td>'+esc(kontoName(k))+'</td><td>'+esc(ko?(ko.obj||'gemischt'):'?')+'</td>'+MS.map((m,i)=>{const key=year+'-'+String(i+1).padStart(2,'0'); const d=buch[k+'_'+key]; return '<td class="n">'+(d?'<span class="pos">'+(d.tx||[]).length+'</span>':'<span class="mut">·</span>')+'</td>';}).join('')+'</tr>'; }
+    h+='</tbody></table></div><div class="sub" style="margin-top:6px">Zahl = Anzahl Buchungen im Monat ('+year+'). So siehst du, welche Auszüge noch fehlen.</div>'; }
+  return h;
+}
+async function readText(file){ const buf=await file.arrayBuffer(); try{ return new TextDecoder('utf-8',{fatal:true}).decode(buf).replace(/^\uFEFF/,''); }catch(e){ return new TextDecoder('windows-1252').decode(buf); } }
+function splitCSV(text,delim){ const rows=[]; let row=[], cur='', q=false;
+  for(let i=0;i<text.length;i++){ const ch=text[i];
+    if(q){ if(ch==='"'){ if(text[i+1]==='"'){cur+='"';i++;} else q=false; } else cur+=ch; }
+    else if(ch==='"') q=true; else if(ch===delim){row.push(cur);cur='';} else if(ch==='\n'||ch==='\r'){ if(ch==='\r'&&text[i+1]==='\n') i++; row.push(cur); rows.push(row); row=[]; cur=''; } else cur+=ch; }
+  if(cur!==''||row.length){row.push(cur);rows.push(row);} return rows; }
+function parseDate(s){ s=String(s||'').trim(); let m=s.match(/^(\d{1,2})\.(\d{1,2})\.(\d{2,4})$/); if(m){ let y=Number(m[3]); if(y<100) y+=2000; return y+'-'+String(m[2]).padStart(2,'0')+'-'+String(m[1]).padStart(2,'0'); }
+  m=s.match(/^(\d{4})-(\d{2})-(\d{2})/); if(m) return m[1]+'-'+m[2]+'-'+m[3]; return null; }
+function parseBank(text,fname){
+  const first=text.split(/\r?\n/).slice(0,40).join('\n'); const delim=(first.match(/;/g)||[]).length>=(first.match(/,/g)||[]).length?';':(first.includes('\t')?'\t':',');
+  const rows=splitCSV(text,delim).map(r=>r.map(c=>c.trim()));
+  let hi=-1; for(let i=0;i<Math.min(rows.length,40);i++){ const l=rows[i].map(c=>c.toLowerCase()); if(l.some(c=>/buchungstag|buchungsdatum|^datum$|valuta|wertstellung/.test(c)) && l.some(c=>/betrag|umsatz|soll|haben/.test(c))){hi=i;break;} }
+  if(hi<0) throw new Error('Keine Kopfzeile mit Datum und Betrag gefunden – ist das ein CSV-Umsatzexport?');
+  const H=rows[hi].map(c=>c.toLowerCase());
+  const find=(...res)=>{ for(const re of res){ const i=H.findIndex(c=>re.test(c)); if(i>=0) return i; } return -1; };
+  const cDate=find(/^buchungstag$/,/^buchungsdatum$/,/buchungstag/,/buchungsdatum/,/^datum$/,/wertstellung/,/valuta/);
+  const cAmt=find(/^betrag( \(€\)| \(eur\)|)$/,/^betrag/,/^umsatz$/);
+  const cSoll=find(/^soll/), cHaben=find(/^haben/), cSH=find(/^s\/h$/);
+  const cName=find(/beg(ue|ü)nstigter\/zahlungspflichtiger/,/name zahlungsbeteiligter/,/^empf(ae|ä)nger/,/^auftraggeber/,/^name$/,/zahlungsempf/);
+  const cPfl=find(/zahlungspflichtige/), cEmpf=find(/zahlungsempf(ä|ae)nger/);
+  const cZweck=H.map((c,i)=>/verwendungszweck|^buchungsdetails|^beschreibung/.test(c)?i:-1).filter(i=>i>=0);
+  const cText=find(/^buchungstext$/,/^umsatztyp$/,/^umsatzart$/);
+  const cIban=find(/iban zahlungsbeteiligter/,/^kontonummer\/iban$/,/^iban$/,/gegen.*iban/,/^kontonummer$/);
+  const cOwn=find(/^auftragskonto$/,/iban auftragskonto/);
+  let iban=null; const pre=rows.slice(0,hi).flat().join(' ').replace(/\s/g,''); const mi=pre.match(/DE\d{20}/); if(mi) iban=mi[0];
+  if(cDate<0||(cAmt<0&&cSoll<0)) throw new Error('Spalten für Datum oder Betrag nicht erkannt.');
+  const tx=[]; const seen={};
+  for(let i=hi+1;i<rows.length;i++){ const r=rows[i]; if(r.length<3) continue; const d=parseDate(r[cDate]); if(!d) continue;
+    let b; if(cAmt>=0){ b=parseNum(r[cAmt]); if(cSH>=0&&b!=null&&/^s/i.test(r[cSH]||'')) b=-Math.abs(b); } else { b=(parseNum(r[cHaben])||0)-Math.abs(parseNum(r[cSoll])||0); }
+    if(b==null||isNaN(b)) continue;
+    if(cOwn>=0&&!iban){ const o=String(r[cOwn]).replace(/\s/g,''); if(/^DE\d{20}$/.test(o)) iban=o; }
+    let n=''; if(cPfl>=0&&cEmpf>=0) n=b<0?r[cEmpf]:r[cPfl]; else if(cName>=0) n=r[cName];
+    const z=[cText>=0?r[cText]:'',...cZweck.map(c=>r[c])].filter(Boolean).join(' · ').replace(/\s+/g,' ').slice(0,300);
+    const ib=cIban>=0?String(r[cIban]||'').replace(/\s/g,'').toUpperCase():'';
+    const base=d+'|'+b.toFixed(2)+'|'+norm(n).slice(0,30)+'|'+norm(z).slice(0,60); seen[base]=(seen[base]||0)+1;
+    tx.push({h:hashStr(base+'#'+seen[base]),d,b:r2(b),n:String(n||'').slice(0,120),z,i:/^[A-Z]{2}\d{2}/.test(ib)?ib:''}); }
+  if(!tx.length) throw new Error('Keine Buchungen in der Datei gefunden.');
+  tx.sort((a,b)=>a.d<b.d?-1:1);
+  return {file:fname,tx,iban,von:tx[0].d.split('-').reverse().join('.'),bis:tx[tx.length-1].d.split('-').reverse().join('.')};
+}
+function hashStr(s){ let h1=0x811c9dc5,h2=0x1b873593; for(let i=0;i<s.length;i++){const c=s.charCodeAt(i); h1=Math.imul(h1^c,16777619); h2=Math.imul(h2^c,2246822507);} return (h1>>>0).toString(36)+(h2>>>0).toString(36); }
+async function handleFiles(files){
+  for(const f of files){ try{ const t=await readText(f); const p=parseBank(t,f.name); const k=p.iban?konten.find(x=>x.iban===p.iban):null; p.konto=k?(k.key||k.iban):(p.iban?'__neu':''); pending.push(p);}catch(e){ pending.push({file:f.name,err:e.message||String(e)}); } }
+  tab='import'; render();
+}
+async function doImport(i){
+  const p=pending[i]; if(!p||!db||!canWrite){toast('Nur Lesezugriff.');return;}
+  let key=p.konto;
+  if(!key){toast('Bitte zuerst das Konto wählen.');return;}
+  if(key==='__neu'){ const name=($('pn-'+i).value||'').trim(); if(!name){toast('Bitte einen Kontonamen eingeben.');return;}
+    key=p.iban||('K-'+norm(name).replace(/ /g,'-').slice(0,40)); const nk={key,iban:p.iban||'',name,ges:$('pg-'+i).value,obj:$('po-'+i).value};
+    konten=konten.filter(k=>(k.key||k.iban)!==key).concat([nk]).sort(kontoSort); await saveStamm('konten',{konten}); }
+  const byM={}; for(const t of p.tx){ (byM[t.d.slice(0,7)]=byM[t.d.slice(0,7)]||[]).push(t); }
+  let neu=0, dup=0;
+  for(const mk of Object.keys(byM)){ const id=key+'_'+mk; const old=buch[id]; const have=new Set(((old&&old.tx)||[]).map(t=>t.h));
+    const add=byM[mk].filter(t=>{ if(have.has(t.h)){dup++;return false;} neu++; return true; }); if(!add.length) continue;
+    const tx=((old&&old.tx)||[]).concat(add).sort((a,b)=>a.d<b.d?-1:1);
+    await queue('buchungen/'+id,()=>old?db.doc('buchungen/'+id).update({tx}):db.doc('buchungen/'+id).set({konto:key,monat:mk,tx})); }
+  pending.splice(i,1); invalidate(); render(); toast(neu+' Buchungen importiert'+(dup?', '+dup+' waren schon vorhanden':'')+'.');
+}
+/* ================= Buchungen (Belegbuchhaltung im Stil von BuchhaltungsButler) =================
+   Gleiche Daten wie „Objekt-Controlling“ (os_docs, app 'oc'): jede Zuordnung zählt dort sofort mit. */
+tab='liste';
+const ST_KEY='bu_state';
+let U={status:'offen',konto:'',q:'',sel:'',m:''}; try{ const s=JSON.parse(store(ST_KEY)||'null'); if(s) U=Object.assign(U,s,{q:''}); }catch(e){}
+const saveU=()=>store(ST_KEY,JSON.stringify({status:U.status,konto:U.konto,m:U.m}));
+let splitDraft=null, ruleDraft=null, sb=null, urlCache={};
+const BELEG_KATS=['bk','inst','umbau','obj_sonst','verw'];
+function umlageSubs(){ return new Set(SUBS_UM.map(x=>x[0])); }
+function cls(v){return v>=0?'pos':'neg';}
+const dmy=d=>String(d||'').split('-').reverse().join('.');
+const kontoOf=key=>konten.find(x=>(x.key||x.iban)===key)||null;
+
+function writeTx(doc,ix,patch){
+  if(!db||!canWrite){toast('Nur Lesezugriff.');return Promise.resolve();}
+  const d=buch[doc]; if(!d) return Promise.resolve(); const tx=d.tx.slice(); tx[ix]=Object.assign({},tx[ix],patch); d.tx=tx; invalidate(); render();
+  return queue('buchungen/'+doc,()=>db.doc('buchungen/'+doc).update({tx:d.tx}));
+}
+
+/* Buchungen als Einträge: aufgeteilte Zahlungen werden zu einer Zeile zusammengefasst */
+function items(){
+  const map=new Map();
+  for(const r of allTx()){ if(r.kkey===MANKEY) continue; const id=r.doc+'|'+r.ix; let it=map.get(id);
+    if(!it){ const orig=(buch[r.doc].tx||[])[r.ix]||r.tx; it={id,doc:r.doc,ix:r.ix,tx:orig,k:r.k,kkey:r.kkey,m:r.m,parts:[],nh:!!r.nh,split:!!r.split}; map.set(id,it); }
+    it.parts.push(r); }
+  const out=[...map.values()];
+  for(const it of out){ it.c=it.parts[0].c; it.open=it.parts.some(p=>isOpen(p.c)); it.bel=(it.tx.bl||[]).length;
+    it.needBeleg=it.tx.b<0&&!it.open&&it.parts.some(p=>BELEG_KATS.includes(p.c.kat)&&!(p.c.kat==='verw'&&p.c.sub==='bank'))&&!it.bel; }
+  return out.sort((a,b)=>a.tx.d<b.tx.d?1:a.tx.d>b.tx.d?-1:0);
+}
+function filtered(all){ const q=norm(U.q);
+  return all.filter(it=>(!U.konto||it.kkey===U.konto)&&(U.m===''||it.m===Number(U.m))
+    &&(U.status==='alle'||(U.status==='offen'&&it.open)||(U.status==='beleg'&&it.needBeleg)||(U.status==='zug'&&!it.open))
+    &&(!q||norm(it.tx.n+' '+it.tx.z+' '+fnum.format(Math.abs(it.tx.b))+' '+(it.c.obj||'')).includes(q))); }
+
+function zuordText(it){ if(it.split) return 'aufgeteilt in '+it.parts.length;
+  const c=it.c; if(isOpen(c)) return c.kat?(KATN[c.kat]+' · Objekt fehlt'):'nicht zugeordnet';
+  let t=KATN[c.kat]||c.kat; if(c.kat==='verw') t+=c.sub?' · '+(SUBN[c.sub]||c.sub):''; if(c.obj&&c.obj!=='__ges') t=c.obj+' · '+t; if(c.obj==='__ges') t+=' · Gesellschaft'; if(c.kat==='verw'&&!c.obj&&umlageSubs().has(c.sub)) t+=' · Umlage'; return t; }
+
+/* ---------- Render ---------- */
+function render(){
+  const ready=loaded.o&&loaded.k&&loaded.r&&loaded.e&&loaded.b;
+  $('ylabel').textContent=year;
+  document.querySelectorAll('#tabs button').forEach(b=>b.classList.toggle('on',b.dataset.tab===tab));
+  if(!ready){ $('view').innerHTML='<div class="loading">'+(dbState==='none'?'Bitte im Wohntraum OS einloggen.':'Lade Daten …')+'</div>'; return; }
+  const f=document.activeElement, fid=f&&f.id, fv=fid?f.value:null, ss=f&&f.selectionStart;
+  $('view').innerHTML=tab==='import'?'<div class="pad">'+renderImport()+'</div>':tab==='regeln'?'<div class="pad">'+renderRegeln()+'</div>':renderListe();
+  if(fid){ const el=$(fid); if(el&&(el.tagName==='INPUT'||el.tagName==='TEXTAREA')){ el.focus({preventScroll:true}); if(fv!=null) el.value=fv; try{ if(ss!=null) el.setSelectionRange(ss,ss); }catch(_){} } }
+  const s=document.querySelector('.row.sel'); if(s&&render.scrollSel){ s.scrollIntoView({block:'nearest'}); render.scrollSel=false; }
+  if(tab==='liste') loadPreview();
+}
+function renderListe(){
+  const all=items(), list=filtered(all);
+  const cnt=k=>all.filter(it=>(!U.konto||it.kkey===U.konto)&&(U.m===''||it.m===Number(U.m))&&(k==='offen'?it.open:k==='beleg'?it.needBeleg:k==='zug'?!it.open:true)).length;
+  if(U.sel&&!all.find(x=>x.id===U.sel)) U.sel='';
+  if(!U.sel&&list.length) U.sel=list[0].id;
+  /* linke Spalte: Konten */
+  const byG={}; for(const it of all){ if(U.m!==''&&it.m!==Number(U.m)) continue; const g=(it.k&&it.k.ges)||'?'; (byG[g]=byG[g]||{}); const o=byG[g][it.kkey]=byG[g][it.kkey]||{n:0,open:0}; o.n++; if(it.open) o.open++; }
+  let nav='<div class="nav-h">Konten</div><button class="kn'+(U.konto===''?' on':'')+'" data-konto=""><span>Alle Konten</span>'+((n=>n?'<b>'+n+'</b>':'<i>✓</i>')(all.filter(i=>i.open&&(U.m===''||i.m===Number(U.m))).length))+'</button>';
+  for(const g of ['EE','WT','KiBo',...Object.keys(byG).filter(x=>!['EE','WT','KiBo'].includes(x))]){ if(!byG[g]) continue;
+    nav+='<div class="nav-g">'+esc(g)+'</div>';
+    for(const k of Object.keys(byG[g]).sort((a,b)=>kontoName(a).localeCompare(kontoName(b),'de',{numeric:true}))){ const o=byG[g][k];
+      nav+='<button class="kn'+(U.konto===k?' on':'')+'" data-konto="'+esc(k)+'" title="'+esc((kontoOf(k)||{}).iban||'')+'"><span>'+esc(kontoName(k))+'</span>'+(o.open?'<b>'+o.open+'</b>':'<i>✓</i>')+'</button>'; } }
+  /* Mitte: Liste */
+  const sum=list.reduce((a,it)=>a+it.tx.b,0);
+  let mid='<div class="tbar"><div class="seg">'+[['offen','Offen'],['beleg','Beleg fehlt'],['zug','Zugeordnet'],['alle','Alle']].map(([k,l])=>'<button data-st="'+k+'" class="'+(U.status===k?'on':'')+'">'+l+' <span>'+cnt(k)+'</span></button>').join('')+'</div>'
+    +'<select id="u-m" aria-label="Monat"><option value="">ganzes Jahr</option>'+MON.map((x,i)=>'<option value="'+i+'"'+(U.m!==''&&Number(U.m)===i?' selected':'')+'>'+x+'</option>').join('')+'</select>'
+    +'<input type="search" id="u-q" placeholder="Suchen: Name, Zweck, Betrag, Objekt" value="'+esc(U.q)+'" autocomplete="off"></div>';
+  mid+='<div class="lsum">'+list.length+' Buchungen · Summe <b class="'+cls(sum)+'">'+eur(sum)+'</b></div><div class="list" id="list">';
+  if(!list.length) mid+='<div class="empty">'+(U.status==='offen'?'🎉 Keine offenen Buchungen – alles zugeordnet.':U.status==='beleg'?'Zu allen zugeordneten Ausgaben ist ein Beleg hinterlegt.':'Keine Buchungen für diesen Filter.')+'</div>';
+  let lastD='';
+  for(const it of list.slice(0,600)){ const mk=it.tx.d.slice(0,7); if(mk!==lastD){ lastD=mk; mid+='<div class="lgrp">'+MON[Number(mk.slice(5,7))-1]+' '+mk.slice(0,4)+'</div>'; }
+    mid+='<button class="row'+(it.id===U.sel?' sel':'')+'" data-sel="'+esc(it.id)+'"><span class="dot '+(it.open?'o':it.needBeleg?'b':'z')+'" title="'+(it.open?'offen':it.needBeleg?'Beleg fehlt':'zugeordnet')+'"></span>'
+      +'<span class="rd">'+esc(dmy(it.tx.d).slice(0,6))+'</span><span class="rt"><b>'+esc(it.tx.n||'–')+'</b><small>'+esc(it.tx.z||'')+'</small></span>'
+      +'<span class="rz">'+esc(zuordText(it))+(it.bel?' <span title="Beleg vorhanden">📎</span>':'')+'</span><span class="ra '+cls(it.tx.b)+'">'+eur(it.tx.b)+'</span></button>'; }
+  if(list.length>600) mid+='<div class="empty">Es werden die neuesten 600 gezeigt – bitte Monat oder Konto wählen.</div>';
+  mid+='</div>';
+  const it=all.find(x=>x.id===U.sel);
+  return '<div class="grid3"><aside class="knav">'+nav+'</aside><section class="mid">'+mid+'</section><section class="det" id="det">'+(it?renderDetail(it,list):'<div class="empty">Links eine Buchung auswählen.</div>')+'</section></div>';
+}
+function selOpts(list,cur,ph){ return (ph!=null?'<option value="">'+esc(ph)+'</option>':'')+list.map(([k,l])=>'<option value="'+esc(k)+'"'+(k===cur?' selected':'')+'>'+esc(l)+'</option>').join(''); }
+function objSel(id,cur,kat,sub){ const ph=kat==='verw'?'alle Objekte (Umlage)':'– Objekt wählen –';
+  let o='<option value="">'+ph+'</option>'+objekte.map(x=>'<option value="'+esc(x.kz)+'"'+(x.kz===cur?' selected':'')+'>'+esc(x.kz+' – '+String(x.name||'').split(',')[0])+'</option>').join('');
+  if(kat==='sonst_ein'||(kat==='verw'&&sub==='kauf')) o+='<option value="__ges"'+(cur==='__ges'?' selected':'')+'>Gesellschaft (kein Objekt)</option>';
+  return '<select id="'+id+'">'+o+'</select>'; }
+function unitSel(id,obj,cur){ const o=objekte.find(x=>x.kz===obj); if(!o) return '';
+  return '<select id="'+id+'"><option value="">– Einheit –</option>'+sortedUnits(o).map(x=>x.e).map(e=>'<option value="'+esc(e.id)+'"'+(e.id===cur?' selected':'')+'>'+esc(e.label+(e.mieter?' · '+e.mieter.split(',')[0]:''))+'</option>').join('')+'</select>'; }
+function renderDetail(it,list){
+  const t=it.tx, c=it.c, k=it.k, ro=!canWrite||it.nh;
+  const pos=list.findIndex(x=>x.id===it.id);
+  let h='<div class="dhead"><div><div class="dn">'+esc(t.n||'–')+'</div><div class="sub">'+esc(dmy(t.d))+' · '+esc(kontoName(it.kkey))+(k&&k.ges?' · '+esc(k.ges):'')+'</div></div><div class="da '+cls(t.b)+'">'+eur(t.b)+'</div></div>';
+  h+='<div class="dnav"><button class="ghost small" data-step="-1"'+(pos>0?'':' disabled')+'>‹ vorherige</button><span class="sub">'+(pos+1)+' / '+list.length+'</span><button class="ghost small" data-step="1"'+(pos>=0&&pos<list.length-1?'':' disabled')+'>nächste ›</button></div>';
+  h+='<div class="card"><div class="lab">Verwendungszweck</div><div class="zweck">'+esc(t.z||'–')+'</div>'+(t.i?'<div class="sub" style="margin-top:6px">IBAN '+esc(t.i)+'</div>':'')+'</div>';
+  /* Zuordnung */
+  h+='<div class="card"><div class="lab">Zuordnung '+(it.open?'<span class="pill mid">offen</span>':'<span class="pill ok">zugeordnet</span>')+' <span class="pill src" title="Woher kommt die Zuordnung?">'+esc(String(it.split?'aufgeteilt':c.src||'').slice(0,40))+'</span></div>';
+  if(it.nh) h+='<div class="sub">Diese Mietzahlung ist in Nahaus abgeglichen – die Zuordnung kommt von dort.</div>';
+  if(!it.split){
+    h+='<div class="frm"><label>Kategorie<select id="z-k"'+(ro?' disabled':'')+'>'+selOpts(KATS,c.kat)+'</select></label>';
+    if(c.kat==='verw') h+='<label>Verwaltungsart<select id="z-s"'+(ro?' disabled':'')+'><option value="">– Art wählen –</option><optgroup label="wird umgelegt">'+selOpts(SUBS_UM,c.sub)+'</optgroup><optgroup label="nicht umgelegt">'+selOpts(SUBS_NO,c.sub)+'</optgroup></select></label>';
+    if(c.kat&&!['intern','ignore','ruecklast'].includes(c.kat)) h+='<label>Objekt'+objSel('z-o',c.obj,c.kat,c.sub).replace('<select','<select'+(ro?' disabled':''))+'</label>';
+    if(c.kat==='miete'&&c.obj) h+='<label>Einheit / Mieter'+unitSel('z-u',c.obj,c.unit).replace('<select','<select'+(ro?' disabled':''))+'</label>';
+    h+='</div>';
+  } else {
+    h+='<table class="sp"><tbody>'+it.parts.map(p=>'<tr><td>'+esc(zuordText({c:p.c,parts:[p]}))+'</td><td class="n '+cls(p.tx.b)+'">'+eur(p.tx.b)+'</td></tr>').join('')+'</tbody></table>';
+  }
+  if(!ro) h+='<div class="acts">'+(it.open?'':'<button class="primary" data-next="1">✓ Erledigt – nächste</button>')+'<button data-split="1">'+(it.split?'Aufteilung ändern':'Aufteilen')+'</button>'+(it.split?'':'<button data-mkrule="1" title="Künftige Buchungen dieser Art automatisch so zuordnen">Als Regel merken</button>')+'</div>';
+  if(splitDraft&&splitDraft.id===it.id) h+=renderSplit(it);
+  if(ruleDraft&&ruleDraft.id===it.id) h+=renderRule(it);
+  h+='</div>';
+  /* Belege */
+  const bl=t.bl||[];
+  h+='<div class="card"><div class="lab">Belege '+(bl.length?'<span class="pill ok">'+bl.length+'</span>':it.needBeleg?'<span class="pill mid">fehlt</span>':'')+'</div>';
+  h+=bl.map((b,i)=>'<div class="bel"><a href="#" data-bopen="'+i+'">📄 '+esc(b.n)+'</a>'+(ro?'':'<button class="ghost small" data-bdel="'+i+'">entfernen</button>')+'</div>').join('');
+  if(!canWrite) {} else h+='<label class="bdrop" id="bdrop" for="bfile">Beleg hierher ziehen oder klicken (PDF, JPG, PNG)<input type="file" id="bfile" accept=".pdf,image/*" multiple hidden></label>';
+  if(bl.length) h+='<div class="prev" id="prev"><div class="sub">Lade Vorschau …</div></div>';
+  h+='</div>';
+  /* Notiz */
+  h+='<div class="card"><div class="lab">Notiz</div><textarea id="z-nt" rows="2" placeholder="z. B. Rückfrage an Firma, Rechnung angefordert …"'+(canWrite?'':' disabled')+'>'+esc(t.nt||'')+'</textarea></div>';
+  return h;
+}
+function renderSplit(it){ const D=splitDraft; const rest=r2(it.tx.b-D.parts.reduce((a,p)=>a+(parseNum(p.b)||0),0));
+  let h='<div class="spl"><div class="lab">Aufteilen auf mehrere Objekte / Kategorien</div>';
+  D.parts.forEach((p,i)=>{ h+='<div class="sprow"><input type="text" inputmode="decimal" id="sp-b-'+i+'" class="num" value="'+esc(p.b)+'" placeholder="Betrag">'
+    +'<select id="sp-k-'+i+'">'+selOpts(KATS.filter(x=>x[0]),p.k)+'</select>'
+    +(p.k==='verw'?'<select id="sp-s-'+i+'"><option value="">– Art –</option>'+selOpts(SUBS,p.s)+'</select>':'')
+    +objSel('sp-o-'+i,p.o,p.k,p.s)+(p.k==='miete'&&p.o?unitSel('sp-u-'+i,p.o,p.u):'')
+    +'<input type="text" id="sp-t-'+i+'" value="'+esc(p.t||'')+'" placeholder="Text (optional)"><button class="ghost small" data-spdel="'+i+'">✕</button></div>'; });
+  h+='<div class="acts"><button class="small" data-spadd="1">+ Zeile</button><span class="sub">Rest: <b class="'+(Math.abs(rest)<0.005?'pos':'neg')+'">'+eur(rest)+'</b></span></div>';
+  h+='<div class="acts"><button class="primary small" data-spsave="1">Aufteilung speichern</button>'+(it.split?'<button class="small" data-spclear="1">Aufteilung aufheben</button>':'')+'<button class="ghost small" data-spcancel="1">Abbrechen</button></div></div>';
+  return h; }
+function renderRule(it){ const D=ruleDraft;
+  return '<div class="spl"><div class="lab">Regel: Buchungen, deren Name oder Verwendungszweck mit diesem Begriff beginnt, automatisch so zuordnen</div><div class="sprow">'
+    +'<input type="text" id="rf-m" value="'+esc(D.m)+'" placeholder="Suchbegriff (mind. 3 Zeichen)">'
+    +'<select id="rf-sc"><option value="alle"'+(D.sc==='alle'?' selected':'')+'>alle Konten</option><option value="allgemein"'+(D.sc==='allgemein'?' selected':'')+'>nur Allgemein-Konten</option><option value="objekt"'+(D.sc==='objekt'?' selected':'')+'>nur Objekt-Konten</option></select>'
+    +'<select id="rf-o"><option value="">Objekt des Kontos</option>'+objekte.map(o=>'<option value="'+esc(o.kz)+'"'+(o.kz===D.o?' selected':'')+'>'+esc(o.kz)+'</option>').join('')+'</select></div>'
+    +'<div class="sub">Kategorie: <b>'+esc(KATN[it.c.kat]||'–')+'</b>'+(it.c.kat==='verw'?' · '+esc(SUBN[it.c.sub]||'ohne Art'):'')+' (wie oben gewählt)</div>'
+    +'<div class="acts"><button class="primary small" data-rsave="1">Regel speichern</button><button class="ghost small" data-rcancel="1">Abbrechen</button></div></div>'; }
+function renderRegeln(){
+  let h='<div class="note"><b>Zuordnungsregeln</b> – die erste passende Regel gilt. Gleiche Regeln wie im Objekt-Controlling. Neue Regeln legst du am schnellsten in der Buchung mit „Als Regel merken“ an.</div><div class="tablewrap"><table><thead><tr><th>Suchbegriff</th><th>Kategorie</th><th>Art</th><th>Objekt</th><th>Gilt für</th><th></th></tr></thead><tbody>';
+  regeln.forEach((r,i)=>{ h+='<tr><td><b>'+esc(r.muster||(r.iban?'IBAN '+r.iban:''))+'</b></td><td>'+esc(KATN[r.kat]||r.kat)+'</td><td>'+esc(SUBN[r.sub]||'')+'</td><td>'+esc(r.obj==='__ges'?'Gesellschaft':r.obj||(r.kat==='verw'?'Umlage':'Objekt des Kontos'))+'</td><td>'+({alle:'alle Konten',allgemein:'Allgemein-Konten',objekt:'Objekt-Konten'}[r.scope]||'alle Konten')+(r.dir==='ein'?' · nur Eingänge':r.dir==='aus'?' · nur Ausgänge':'')+(r.betrag?' · nur '+eur(r.betrag):'')+'</td><td>'+(canWrite?'<button class="ghost small" data-rup="'+i+'"'+(i?'':' disabled')+'>↑</button><button class="ghost small" data-rdel="'+i+'">Löschen</button>':'')+'</td></tr>'; });
+  return h+'</tbody></table></div>'; }
+
+/* ---------- Belege ---------- */
+async function signedUrl(p){ if(urlCache[p]&&urlCache[p].t>Date.now()-50*60e3) return urlCache[p].u;
+  const {data,error}=await sb.storage.from('belege').createSignedUrl(p,3600); if(error) throw error; urlCache[p]={u:data.signedUrl,t:Date.now()}; return data.signedUrl; }
+let prevKey='';
+async function loadPreview(){ const el=$('prev'); if(!el) { prevKey=''; return; } const it=items().find(x=>x.id===U.sel); const b=it&&(it.tx.bl||[])[0]; if(!b) return;
+  try{ const u=await signedUrl(b.p); if(!$('prev')) return; $('prev').innerHTML=/\.pdf$/i.test(b.n)?'<iframe src="'+esc(u)+'#view=FitH" title="Beleg"></iframe>':'<img src="'+esc(u)+'" alt="Beleg">'; }catch(e){ el.innerHTML='<div class="sub">Vorschau nicht möglich: '+esc(e.message||e)+'</div>'; } }
+async function uploadBelege(files){
+  const it=items().find(x=>x.id===U.sel); if(!it||!sb) return; if(!canWrite){toast('Nur Lesezugriff.');return;}
+  const bl=(it.tx.bl||[]).slice();
+  for(const f of files){ if(!/\.(pdf|jpe?g|png|heic|webp)$/i.test(f.name)){ toast(f.name+': nur PDF oder Bild'); continue; }
+    const safe=f.name.normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/[^A-Za-z0-9._-]+/g,'_');
+    const p=it.tx.d.slice(0,4)+'/'+it.kkey.replace(/[^A-Za-z0-9_-]/g,'_')+'/'+it.tx.d+'_'+(it.tx.h||it.ix)+'_'+Date.now().toString(36)+'_'+safe;
+    toast('Lade '+f.name+' hoch …');
+    const {error}=await sb.storage.from('belege').upload(p,f,{contentType:f.type||undefined}); if(error){ toast('Upload fehlgeschlagen: '+error.message); continue; }
+    bl.push({p,n:f.name,am:new Date().toISOString().slice(0,10)}); }
+  const list=filtered(items()), i=list.findIndex(x=>x.id===it.id), nx=U.status==='beleg'?(list[i+1]||list[i-1]):null;
+  await writeTx(it.doc,it.ix,{bl}); toast('Beleg gespeichert.'+(nx?' Weiter zur nächsten Buchung ohne Beleg.':'')); if(nx){ U.sel=nx.id; render.scrollSel=true; render(); } }
+
+/* ---------- Ereignisse ---------- */
+function step(n){ const list=filtered(items()); const i=list.findIndex(x=>x.id===U.sel); const nx=list[i+n]; if(nx){ U.sel=nx.id; splitDraft=null; ruleDraft=null; render.scrollSel=true; render(); } }
+function nextOpen(){ const list=filtered(items()); const i=list.findIndex(x=>x.id===U.sel); const nx=list.slice(i+1).find(x=>x.open)||list.find(x=>x.open&&x.id!==U.sel)||list[i+1];
+  if(nx){ U.sel=nx.id; splitDraft=null; ruleDraft=null; render.scrollSel=true; render(); } }
+document.addEventListener('click',async e=>{
+  const t=e.target.closest('button,a[data-bopen]'); if(!t) return;
+  if(t.id==='yprev'||t.id==='ynext'){ year+=t.id==='yprev'?-1:1; store('oc_year',year); U.sel=''; invalidate(); render(); return; }
+  if(t.dataset.tab){ tab=t.dataset.tab; render(); return; }
+  if(t.dataset.konto!==undefined){ U.konto=t.dataset.konto; U.sel=''; saveU(); render(); return; }
+  if(t.dataset.st){ U.status=t.dataset.st; U.sel=''; saveU(); render(); return; }
+  if(t.dataset.sel){ U.sel=t.dataset.sel; splitDraft=null; ruleDraft=null; render(); return; }
+  if(t.dataset.step){ step(Number(t.dataset.step)); return; }
+  if(t.dataset.next){ nextOpen(); return; }
+  const it=items().find(x=>x.id===U.sel);
+  if(t.dataset.bopen!==undefined){ e.preventDefault(); const b=(it.tx.bl||[])[Number(t.dataset.bopen)]; try{ window.open(await signedUrl(b.p),'_blank'); }catch(err){ toast('Öffnen fehlgeschlagen'); } return; }
+  if(t.dataset.bdel!==undefined){ if(t.dataset.sure!=='1'){t.dataset.sure='1';t.textContent='wirklich?';return;} const bl=(it.tx.bl||[]).slice(); const [g]=bl.splice(Number(t.dataset.bdel),1); await writeTx(it.doc,it.ix,{bl}); if(g&&sb) sb.storage.from('belege').remove([g.p]); return; }
+  if(t.dataset.split){ splitDraft={id:it.id,parts:(it.split?it.tx.sp.map(p=>({b:fnum.format(p.b),k:p.k||'',s:p.s||'',o:p.o||'',u:p.u||'',t:p.t||''})):[{b:fnum.format(it.tx.b),k:it.c.kat||'',s:it.c.sub||'',o:it.c.obj||'',u:it.c.unit||'',t:''},{b:'',k:it.c.kat||'bk',s:'',o:'',u:'',t:''}])}; ruleDraft=null; render(); return; }
+  if(t.dataset.spadd){ splitDraft.parts.push({b:'',k:splitDraft.parts[0].k||'bk',s:'',o:'',u:'',t:''}); render(); return; }
+  if(t.dataset.spdel!==undefined){ splitDraft.parts.splice(Number(t.dataset.spdel),1); render(); return; }
+  if(t.dataset.spcancel){ splitDraft=null; render(); return; }
+  if(t.dataset.spclear){ splitDraft=null; await writeTx(it.doc,it.ix,{sp:[]}); toast('Aufteilung aufgehoben.'); return; }
+  if(t.dataset.spsave){ const P=splitDraft.parts.map(p=>({b:r2(parseNum(p.b)),k:p.k,s:p.k==='verw'?p.s:'',o:p.o,u:p.k==='miete'?p.u:'',t:(p.t||'').trim()}));
+    if(P.length<2||P.some(p=>!p.b||isNaN(p.b))){ toast('Bitte mindestens zwei Zeilen mit Betrag.'); return; }
+    if(Math.abs(r2(P.reduce((a,p)=>a+p.b,0))-it.tx.b)>0.005){ toast('Die Teile müssen zusammen '+eur(it.tx.b)+' ergeben.'); return; }
+    splitDraft=null; await writeTx(it.doc,it.ix,{sp:P}); toast('Aufteilung gespeichert.'); return; }
+  if(t.dataset.mkrule){ if(!it.c.kat){ toast('Bitte zuerst die Kategorie wählen.'); return; } ruleDraft={id:it.id,m:it.tx.n||'',sc:kontoTyp(it.k)==='allg'?'allgemein':'alle',o:kontoTyp(it.k)==='obj'?'':it.c.obj&&it.c.obj!=='__ges'?it.c.obj:''}; splitDraft=null; render(); return; }
+  if(t.dataset.rcancel){ ruleDraft=null; render(); return; }
+  if(t.dataset.rsave){ const m=($('rf-m').value||'').trim(); if(m.length<3){toast('Der Suchbegriff braucht mindestens 3 Zeichen.');return;}
+    const r={id:'r'+Date.now().toString(36),muster:m,kat:it.c.kat,sub:it.c.kat==='verw'?it.c.sub:'',obj:$('rf-o').value,scope:$('rf-sc').value};
+    regeln=[r].concat(regeln); ruleDraft=null; invalidate(); saveStamm('regeln',{regeln}).then(()=>toast('Regel gespeichert – gilt ab sofort für alle passenden Buchungen.')); render(); return; }
+  if(t.dataset.rdel!==undefined){ const i=Number(t.dataset.rdel); if(t.dataset.sure!=='1'){t.dataset.sure='1';t.textContent='Wirklich?';return;} regeln=regeln.filter((_,j)=>j!==i); invalidate(); saveStamm('regeln',{regeln}); render(); return; }
+  if(t.dataset.rup!==undefined){ const i=Number(t.dataset.rup); if(i<1) return; const a=regeln.slice(); [a[i-1],a[i]]=[a[i],a[i-1]]; regeln=a; invalidate(); saveStamm('regeln',{regeln}); render(); return; }
+  if(t.dataset.pimp!==undefined){ doImport(Number(t.dataset.pimp)); return; }
+  if(t.dataset.pdrop!==undefined){ pending.splice(Number(t.dataset.pdrop),1); render(); return; }
+});
+document.addEventListener('change',e=>{ const t=e.target;
+  if(t.id==='file'){ handleFiles([...t.files]); t.value=''; return; }
+  if(t.id==='bfile'){ uploadBelege([...t.files]); t.value=''; return; }
+  if(t.id==='u-m'){ U.m=t.value; U.sel=''; saveU(); render(); return; }
+  if(t.dataset.pk!==undefined){ const p=pending[Number(t.dataset.pk)]; p.konto=t.value; render(); return; }
+  const it=items().find(x=>x.id===U.sel);
+  if(it&&/^z-[ksou]$/.test(t.id)){ setTx(it.id,t.id.slice(2),t.value); return; }
+  if(it&&t.id==='z-nt'){ writeTx(it.doc,it.ix,{nt:t.value.trim()}); return; }
+  if(splitDraft){ const m=t.id.match(/^sp-([bksout])-(\d+)$/); if(m){ const p=splitDraft.parts[Number(m[2])]; p[m[1]]=t.value; if(m[1]==='k'){ if(t.value!=='verw') p.s=''; if(t.value!=='miete') p.u=''; } if(m[1]==='o') p.u=''; if(['k','o','s'].includes(m[1])) render(); return; } }
+});
+document.addEventListener('input',e=>{ const t=e.target;
+  if(t.id==='u-q'){ U.q=t.value; clearTimeout(window.__qt); window.__qt=setTimeout(render,180); return; }
+  if(splitDraft){ const m=t.id.match(/^sp-([bt])-(\d+)$/); if(m){ splitDraft.parts[Number(m[2])][m[1]]=t.value; } } });
+document.addEventListener('keydown',e=>{ const a=document.activeElement; const typing=a&&(a.tagName==='INPUT'||a.tagName==='TEXTAREA'||a.tagName==='SELECT');
+  if(e.key==='Enter'&&a&&a.matches('input[type=text]')){ a.blur(); return; }
+  if(typing||tab!=='liste') return;
+  if(e.key==='ArrowDown'||e.key==='j'){ e.preventDefault(); step(1); } else if(e.key==='ArrowUp'||e.key==='k'){ e.preventDefault(); step(-1); } });
+['dragenter','dragover'].forEach(ev=>document.addEventListener(ev,e=>{ if(e.dataTransfer&&[...(e.dataTransfer.types||[])].includes('Files')){ e.preventDefault(); const d=e.target.closest&&e.target.closest('#bdrop,#drop'); document.querySelectorAll('.over').forEach(x=>x!==d&&x.classList.remove('over')); if(d) d.classList.add('over'); } }));
+document.addEventListener('dragleave',e=>{ const d=e.target.closest&&e.target.closest('#bdrop,#drop'); if(d) d.classList.remove('over'); });
+document.addEventListener('drop',e=>{ if(!e.dataTransfer||!e.dataTransfer.files.length) return; e.preventDefault(); document.querySelectorAll('.over').forEach(x=>x.classList.remove('over'));
+  const files=[...e.dataTransfer.files]; const onBeleg=e.target.closest&&e.target.closest('#bdrop,#det');
+  if(onBeleg&&tab==='liste') uploadBelege(files); else if(files.every(f=>/\.(csv|txt)$/i.test(f.name))) handleFiles(files); else if(tab==='liste') uploadBelege(files); });
+let pendingRender=false;
+function editing(){ const a=document.activeElement; return !!(a&&$('view').contains(a)&&(a.matches('input[type=text],textarea')||(a.tagName==='SELECT'))&&a.id!=='u-q'); }
+function softRender(){ if(editing()){ pendingRender=true; return; } render(); }
+document.addEventListener('focusout',()=>{ if(!pendingRender) return; setTimeout(()=>{ if(!editing()){ pendingRender=false; render(); } },0); });
+
+/* ---------- Start ---------- */
+render();
+(async()=>{
+  try{ db=await claude.use('db'); }catch(e){ db=null; }
+  if(!db){ dbState='none'; render(); return; }
+  sb=window.osSupabase||null;
+  const done=(k)=>{loaded[k]=1; invalidate(); softRender();};
+  db.doc('stamm/objekte').onSnapshot(s=>{ const d=s.exists?clone(s.data()):{}; objekte=d.objekte||[]; done('o'); },()=>done('o'));
+  db.doc('stamm/konten').onSnapshot(s=>{ konten=(s.exists?clone(s.data()).konten:null)||[]; done('k'); },()=>done('k'));
+  db.doc('stamm/regeln').onSnapshot(s=>{ regeln=(s.exists?clone(s.data()).regeln:null)||[]; done('r'); },()=>done('r'));
+  db.doc('stamm/fixkosten').onSnapshot(s=>{ plan=(s.exists?clone(s.data()).plan:null)||[]; invalidate(); softRender(); },()=>{});
+  db.doc('stamm/verwsub').onSnapshot(s=>{ vsMap=(s.exists?clone(s.data()).map:null)||{}; invalidate(); softRender(); },()=>{});
+  db.doc('stamm/nahaus').onSnapshot(s=>{ const d=s.exists?clone(s.data()):{}; nhMap=d.map||{}; nhStand=d.stand||''; invalidate(); softRender(); },()=>{});
+  db.doc('stamm/einstellungen').onSnapshot(s=>{ einst=s.exists?clone(s.data()):{}; done('e'); },()=>done('e'));
+  db.collection('buchungen').onSnapshot(q=>{ const m={}; q.docs.forEach(d=>{m[d.id]=clone(d.data());}); buch=m; done('b'); },e=>{toast('Buchungen nicht lesbar: '+e.message); done('b');});
+})();
+})();
+</script>
+</body>
+</html>
