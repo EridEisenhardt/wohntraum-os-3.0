@@ -75,18 +75,20 @@ let LPARSE=null;
 async function pdfLines(file){
   const pdf=await pdfjsLib.getDocument({data:await file.arrayBuffer()}).promise; const out=[];
   for(let i=1;i<=pdf.numPages;i++){ const tc=await (await pdf.getPage(i)).getTextContent(); const rows={};
-    tc.items.forEach(it=>{ if(!it.str||!it.str.trim())return; const y=Math.round(it.transform[5]/2)*2; (rows[y]=rows[y]||[]).push({x:it.transform[4],s:it.str}); });
-    Object.keys(rows).map(Number).sort((a,b)=>b-a).forEach(y=>out.push(rows[y].sort((a,b)=>a.x-b.x).map(o=>o.s).join(' ').replace(/\s+/g,' ').trim()));
+    tc.items.forEach(it=>{ if(!it.str||!it.str.trim())return; const y=Math.round(it.transform[5]/2)*2; (rows[y]=rows[y]||[]).push({x:it.transform[4],w:it.width||0,s:it.str}); });
+    Object.keys(rows).map(Number).sort((a,b)=>b-a).forEach(y=>{ const it=rows[y].sort((a,b)=>a.x-b.x); let line='', end=null;
+      it.forEach(o=>{ const gap=end==null?99:o.x-end; line+=(line&&gap>1.2?' ':'')+o.s; end=o.x+o.w; });
+      out.push(line.replace(/\s+/g,' ').trim()); });
     out.push('<<PAGE>>'); }
   return out;
 }
 function parseLohn(L){
   const txt=L.join('\n'); const r={firma:null,monat:null,jahr:null,personen:{},namen:{},sachbezug:0,zahlungen:[],lohnsteuer:0,ueberweisungen:{}};
   const snd=txt.match(/([^*\n]{5,}?)\*[^*\n]+\*\d{5}\s/); const sd=snd?snd[1]:'';
-  r.firma=/kibo/i.test(sd)?'Wohntraum Kibo GmbH':/rheinhessen/i.test(sd)?'Wohn(T)raum Rheinhessen GmbH':/eisenhardt/i.test(sd)?'Eric Eisenhardt':null;
-  const mm=txt.match(/für\s+(Januar|Februar|März|April|Mai|Juni|Juli|August|September|Oktober|November|Dezember)\s+(\d{4})/i);
+  r.firma=/kibo/i.test(sd)?'Wohntraum Kibo GmbH':(/eisenhardt/i.test(sd)&&!/wohn/i.test(sd))?'Eric Eisenhardt':/wohn|rh?einhessen|reinhessen/i.test(sd)?'Wohn(T)raum Rheinhessen GmbH':null;
+  const mm=txt.match(/(?:für|im)\s+(Januar|Februar|März|April|Mai|Juni|Juli|August|September|Oktober|November|Dezember)\s+(\d{4})/i);
   if(mm){ r.monat=MONL.indexOf(mm[1].toLowerCase())+1; r.jahr=+mm[2]; }
-  let pnr=null, sec='', wantName=false;
+  let pnr=null, sec='', wantName=false, kk=null; const bn=[];
   const AMT=/^\d{1,3}(?:\.\d{3})*,\d{2}$/;
   const lastAmt=l=>{ const t=l.split(' ').filter(x=>AMT.test(x)); return t.length?amt(t[t.length-1]):null; };
   L.forEach(l=>{
@@ -94,18 +96,24 @@ function parseLohn(L){
     let m=l.match(/\*Pers\.-Nr\.\s*0*(\d+)\*/); if(m){ pnr=m[1]; wantName=true; return; }
     if(wantName&&pnr&&/^[A-ZÄÖÜ][A-Za-zÄÖÜäöüß'-]+(\s+[A-ZÄÖÜ][A-Za-zÄÖÜäöüß'-]+)+$/.test(l)){ r.namen[pnr]=r.namen[pnr]||l; wantName=false; }
     if(/Personalkostenübersicht/.test(l)) sec='pk';
-    if(/DÜ-Protokoll Überweisungen/.test(l)) sec='ue';
+    const ls=l.replace(/\s/g,'');   // gesperrt gedruckte Seiten (B e i t r a g …) ohne Leerzeichen prüfen
+    if(/Beitragsnachweis/.test(ls)) sec='bn';
+    if(sec==='bn'){ const k=l.match(/^KK-Nr\.\s*\d+\s+(.+?)\s+KK-Betriebs/)||ls.match(/^KK-Nr\.\d+(.+?)KK-Betriebs/); if(k) kk=k[1].trim();
+      if(kk&&/zuzahlenderBetrag/.test(ls)){ const a=ls.match(/(\d{1,3}(?:\.\d{3})*,\d{2})$/); if(a){ bn.push({empf:kk.replace(/([a-zäöüß])([A-ZÄÖÜ])/g,'$1 $2'),betrag:amt(a[1])}); kk=null; } } }
+    if(/DÜ-Protokoll Überweisungen|SEPA Abstimmliste/.test(l)) sec='ue';
     if(/Übersicht Zahlungen/.test(l)) sec='za';
     if(sec==='pk'){ m=l.match(/^0*(\d{1,5})\s+([A-Za-zÄÖÜäöüß' -]+),\s*([A-Za-zÄÖÜäöüß' -]+?)\s+[\d.]/); if(m) r.namen[m[1]]=(m[3].trim()+' '+m[2].trim()); }
-    if(sec==='ue'){ m=l.match(/^0*(\d{1,5})\s+([^,\d]+),\s*([^\d]+?)\s+DE\d/); const a=lastAmt(l); if(m&&a!=null){ r.ueberweisungen[m[1]]=a; r.namen[m[1]]=r.namen[m[1]]||(m[3].trim()+' '+m[2].trim()); } }
-    if(sec==='za'){ m=l.match(/^(\d{3,4})\s+(.+?)\s+(Lastschrift|DÜ|Überweisung|Scheck)\s*(.*?)\s*([\d.]+,\d{2})\s*$/);
+    if(sec==='ue'){ const a=lastAmt(l); m=l.match(/^0*(\d{1,5})\s+([^,\d]+),\s*([^\d]+?)\s+DE\d/)||l.match(/^0*(\d{1,5})\s+([A-Za-zÄÖÜäöüß'-]+)\s+([A-Za-zÄÖÜäöüß' -]+?)\s+DE\d/);
+      if(m&&a!=null){ r.ueberweisungen[m[1]]=a; r.namen[m[1]]=r.namen[m[1]]||(m[3].trim()+' '+m[2].trim()); } }
+    if(sec==='za'){ const fm=l.match(/Fälligkeit bis:\s*(\d{2})\.(\d{2})\.(\d{4})/); if(fm&&r._lst){ r.lstFaellig={tag:fm[1]+'.'+fm[2]+'.'+fm[3],monat:+fm[2],jahr:+fm[3]}; r._lst=false; } }
+    if(sec==='za'&&!/^Lohn- und Gehalt|^G e s a m t|Fälligkeit|\*\s*$/.test(l)){ m=l.match(/^(?:\d{3,4}\s+)?(.+?)\s+(Lastschrift|DÜ|Überweisung|Scheck|Bar\/Einzug)\s*(.*?)\s*([\d.]+,\d{2})\s*$/); if(m) m=[m[0],'',m[1],m[2],m[3],m[4]];
       if(m){ const emp=m[2].replace(/\s+\d{5}\s+.*$/,'').trim(), vz=m[4]||''; const b=lastAmt(l);
-        if(/LSt|Finanz|FA\s/i.test(emp+' '+vz)){ r.lohnsteuer+=b; r._lst=true; } else { r.zahlungen.push({empf:emp,betrag:b}); r._lst=false; } return; }
-      const fm=l.match(/Fälligkeit bis:\s*(\d{2})\.(\d{2})\.(\d{4})/); if(fm&&r._lst){ r.lstFaellig={tag:fm[1]+'.'+fm[2]+'.'+fm[3],monat:+fm[2],jahr:+fm[3]}; r._lst=false; } }
+        if(/LSt|Finanz|FA\s/i.test(emp+' '+vz)){ r.lohnsteuer+=b; r._lst=true; } else { r.zahlungen.push({empf:emp,betrag:b}); r._lst=false; } return; } }
     if(/^Konto\s+DE\d/.test(l)&&pnr){ const a=lastAmt(l); if(a!=null) r.personen[pnr]=a; }
     m=l.match(/9994\s+Sachbezug\s+([\d.]+,\d{2})-/); if(m) r.sachbezug+=amt(m[1]);
   });
   Object.assign(r.personen, r.ueberweisungen);
+  if(!r.zahlungen.length&&bn.length) r.zahlungen=bn;
   return r;
 }
 function findRow(u,label){ const n=norm(label), nt=n.split(' ');
