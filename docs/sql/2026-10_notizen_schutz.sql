@@ -28,3 +28,21 @@ begin
   return new;
 end $$;
 alter policy mieterakten_delete on storage.objects using (bucket_id = 'mieterakten' and (position('/Notizen/' in name) = 0 or owner_id = auth.uid()::text));
+
+-- Änderung 12.10.2026: Verfasser darf eigene Notizen bearbeiten und löschen; Verfasser und Datum bleiben fest
+create or replace function public.os_docs_notizen_schutz() returns trigger language plpgsql as $$
+declare ist_verfasser boolean;
+begin
+  if old.app = 'oc' and old.pfad like 'notizen/%' then
+    ist_verfasser := coalesce(old.data->>'uid','') = coalesce(auth.uid()::text,'-')
+      or lower(coalesce(old.data->>'mail', old.data->>'by', '')) = lower(coalesce(auth.jwt()->>'email','-'));
+    if not ist_verfasser then
+      raise exception 'Notizen können nur vom Verfasser bearbeitet oder gelöscht werden';
+    end if;
+    if tg_op = 'UPDATE' and (coalesce(new.data->>'uid','') <> coalesce(old.data->>'uid','') or coalesce(new.data->>'d','') <> coalesce(old.data->>'d','') or new.pfad <> old.pfad) then
+      raise exception 'Verfasser und Datum einer Notiz können nicht geändert werden';
+    end if;
+  end if;
+  if tg_op = 'DELETE' then return old; end if;
+  return new;
+end $$;
