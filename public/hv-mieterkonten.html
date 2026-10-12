@@ -521,7 +521,8 @@ async function doImport(i){
 }
 /* ================= Mieterkonten =================
    Soll: Sollstellungen aus Nahaus (inkl. Kaution, Mahngebühren, BK-Nachzahlungen), fehlende Monatsmieten werden aus dem Mietvertrag ergänzt.
-   Ist: Mieteingänge aus den Kontoauszügen im OS (Kategorie Mieteinnahme + Einheit). Für Zeiträume ohne Kontoauszüge im OS: Zahlungen laut Nahaus. */
+   Ist: Mieteingänge aus den Kontoauszügen im OS (Kategorie Mieteinnahme + Einheit). Für Zeiträume ohne Kontoauszüge im OS: Zahlungen laut Nahaus.
+   Übernahme-Stichtag (mk.ueb): bis zu diesem Tag gelten Sollstellungen und Zahlungen 1 zu 1 aus Nahaus (inkl. Zuordnung zu den Posten); danach rechnet das OS mit den Kontoauszügen. */
 /* Einheitliche Einheitenbezeichnung im OS: WE1, WE1.2, WE4.3, WE1 Zi5, Garage1 */
 function uName(s){ s=String(s||'').trim(); let m=s.match(/^we\s*(\d+)(?:\s*[.\s]\s*(\d+)(?!\d))?(.*)$/i);
   if(m){ const rest=m[3].replace(/zi\s*(\d+)/gi,'Zi$1').replace(/\s+/g,' ').trim(); return 'WE'+m[1]+(m[2]?'.'+m[2]:'')+(rest?' '+rest:''); }
@@ -532,7 +533,7 @@ const dmy=x=>String(x||'').split('-').reverse().join('.');
 const START='2025-01';
 let MK={}, M={f:'',ges:'',obj:'',st:'alle',q:'',sel:''}; try{ const s=JSON.parse(store('mk_state')||'null'); if(s){ if(s.sv!==2){ delete s.sk; delete s.sd; } M=Object.assign(M,s,{q:''}); } }catch(e){}
 const saveM=()=>store('mk_state',JSON.stringify({ges:M.ges,obj:M.obj,st:M.st,sel:M.sel,sk:M.sk,sd:M.sd,sv:2}));
-let MAHN={}; let SL={}, slAuto=false, loadedSL=false, ZV=[], ZVload=false, DOCS={}, docOpen={}, pend=null, mkStand='', loadedMK=false, calc=null, EDIT={}, ZUORD={}, editOpen=false, modal=false, showDone=false;
+let MAHN={}; let SL={}, slAuto=false, loadedSL=false, ZV=[], ZVload=false, DOCS={}, docOpen={}, pend=null, mkStand='', mkUeb='', loadedMK=false, calc=null, EDIT={}, ZUORD={}, editOpen=false, modal=false, showDone=false;
 const ed=mk=>Object.assign({},mk,EDIT[mk.pid]||{});
 const today=new Date().toISOString().slice(0,10), curM=today.slice(0,7);
 const addM=(m,n)=>{ const [y,mm]=m.split('-').map(Number); const d=new Date(y,mm-1+n,1); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0'); };
@@ -558,7 +559,7 @@ function bankIst(){
   for(const y of [...ys].sort()){ year=y; invalidate(); for(const r of allTx()){ if(r.c.kat==='miete'&&r.c.unit&&r.tx.b) out.push(r); } }
   year=y0; invalidate(); return out;
 }
-function compute(opt){ opt=opt||{}; const ZMAP={};
+function compute(opt){ opt=opt||{}; const ZMAP={}, BU={};
   let first='9999-99'; for(const id in buch){ const d=buch[id]; if(d&&d.monat&&d.konto!==MANKEY&&d.monat<first) first=d.monat; }
   /* Stichtag: letzte Buchung in den Kontoauszügen (spätere Sollstellungen sind noch nicht überfällig) */
   let stich=''; for(const id in buch){ const d=buch[id]; if(!d||d.konto===MANKEY) continue; for(const t of d.tx||[]) if(t.d>stich) stich=t.d; } if(!stich||stich>today) stich=today;
@@ -581,7 +582,7 @@ function compute(opt){ opt=opt||{}; const ZMAP={};
         if(inside) sc+=1; else if(near) sc+=0.5; else if(sc<3||(c.bis&&dnum2(d)>dnum2(c.bis)+400)) continue;
         if(sc>bs){ bs=sc; best=c; } }
       mk=best; if(!mk) continue; }
-    ZMAP[key]=mk.pid; const kaut=/kaution/.test(norm(r.tx.z+' '+r.tx.n));
+    ZMAP[key]=mk.pid; if(mk.ueb&&d<=mk.ueb){ (BU[mk.pid]=BU[mk.pid]||[]).push({d,b:r.tx.b,n:r.tx.n||''}); continue; } const kaut=/kaution/.test(norm(r.tx.z+' '+r.tx.n));
     if(!res[mk.pid]) continue; const base={d,t:(r.tx.n||'')+(r.tx.z?' · '+r.tx.z:''),pn:r.tx.n||'',src:'Bank · '+kontoName(r.kkey),key,doc:r.doc,ix:r.ix,tb:r.tx.b,unit:r.c.unit,man:!!OP||ZUORD[key]!==undefined,zm:zielMonat(r.tx)};
     if(OP){ const kids=new Set((mk.soll||[]).filter(q=>q.art==='KAUTION').map(q=>q.id)); const aK=(OP.a||[]).filter(a=>kids.has(a.id)), aN=(OP.a||[]).filter(a=>!kids.has(a.id)); const kb=r2(aK.reduce((s2,a)=>s2+(Number(a.b)||0),0));
       if(kb>0) res[mk.pid].rows.push(Object.assign({},base,{h:Math.min(kb,r.tx.b),k:true,alloc:aK,teilK:1}));
@@ -598,12 +599,13 @@ function compute(opt){ opt=opt||{}; const ZMAP={};
     const mieteMonate=new Set();
     /* Sollstellungen aus dem OS (Sollstellungslauf am 25. für den Folgemonat) – ersetzen die Nahaus-Monatsmiete dieses Monats */
     const osM=new Set();
-    for(const m of Object.keys(SL).sort()){ const p=(SL[m].posten||{})[mk.pid]; if(!p||m<START) continue; osM.add(m); mieteMonate.add(m);
+    const U=mk.ueb||'';
+    for(const m of Object.keys(SL).sort()){ const p=(SL[m].posten||{})[mk.pid]; if(!p||m<START||(U&&m+'-01'<=U)) continue; osM.add(m); mieteMonate.add(m);
       x.rows.push({id:'os:'+m,d:m+'-01',t:'Miete '+m.slice(5)+'/'+m.slice(0,4),s:p.b,h:0,src:'Sollstellung OS · erstellt '+dmy(SL[m].erstellt),art:'WARM_MIETE',fut:(m+'-01')>today,teile:p}); }
     const bisF=addM(curM,2)+'-01'; for(const s of mk.soll||[]){ const m=s.m||(s.d||'').slice(0,7); const sd=s.d||m+'-01'; if(m<START||sd>bisF) continue; if(s.art==='WARM_MIETE'&&osM.has(m)) continue; const fu=sd>today; if(s.art==='WARM_MIETE'&&!fu) mieteMonate.add(m);
       x.rows.push({id:s.id,d:s.d||m+'-01',t:(s.t||ART[s.art]||s.art),s:s.b>0?s.b:0,h:s.b<0?-s.b:0,src:s.src==='AUTO_SOLL'?'Nahaus (automatisch)':s.src==='TRANSACTION_ASSIGNMENT'?'Nahaus (aus Zahlung)':'Nahaus',k:s.art==='KAUTION',art:s.art,fut:fu}); }
     /* Mahngebühren und Mahnhistorie aus den Mahnläufen im OS */
-    x.mahn=[]; for(const k of Object.keys(MAHN).sort()){ const L=MAHN[k]; for(const p of Object.values(L.posten||{})){ if(p.pid!==mk.pid||p.storno) continue; x.mahn.push({d:L.datum,stufe:p.stufe,nr:p.nr,b:p.betrag,frist:L.frist,zinsBis:p.zinsBis||''});
+    x.mahn=[]; for(const k of Object.keys(MAHN).sort()){ const L=MAHN[k]; for(const p of Object.values(L.posten||{})){ if(p.pid!==mk.pid||p.storno||(U&&L.datum<=U)) continue; x.mahn.push({d:L.datum,stufe:p.stufe,nr:p.nr,b:p.betrag,frist:L.frist,zinsBis:p.zinsBis||''});
       if(p.zinsen>0) x.rows.push({id:'mz:'+p.nr,d:L.datum,t:'Verzugszinsen '+dmy(p.zinsVon)+' – '+dmy(p.zinsBis)+' ('+p.nr+')',s:p.zinsen,h:0,src:'Mahnlauf OS',art:'INTEREST_EXPENSES'});
       if(p.gebuehr>0) x.rows.push({id:'mg:'+p.nr,d:L.datum,t:'Mahngebühr '+p.stufe+' '+p.nr,s:p.gebuehr,h:0,src:'Mahnlauf OS',art:'DUNNING_FEES'}); } }
     /* fehlende Monatsmieten aus dem Mietvertrag ergänzen */
@@ -612,10 +614,12 @@ function compute(opt){ opt=opt||{}; const ZMAP={};
     const nhMiete=(mk.soll||[]).filter(s=>s.art==='WARM_MIETE').map(s=>s.m||(s.d||'').slice(0,7)).sort(); const nhErst=nhMiete[0]||'';
     const nachf=(byUnit[mk.unit]||[]).filter(o=>o.pid!==mk.pid&&(o.von||'')>(mk.von||'')).map(o=>(o.von||'').slice(0,7)).sort()[0]||'';
     const ab=first>START?first:START; for(let m=von<ab?ab:von; m+'-01'<=today&&m<=bis; m=addM(m,1)){ if(mieteMonate.has(m)) continue; const st=stufeAt(mk,m); if(!st) continue;
-      if((mk.von||'')>='2026-01-01'&&nhErst&&m<nhErst) continue; if(nachf&&m>=nachf) continue;
+      if((mk.von||'')>='2026-01-01'&&nhErst&&m<nhErst) continue; if(nachf&&m>=nachf) continue; if(U&&m+'-01'<=U) continue;
       x.rows.push({id:'erg:'+m,d:m+'-01',t:'Miete '+m.slice(5)+'/'+m.slice(0,4),s:st.total,h:0,src:'ergänzt aus Mietvertrag',e:1,art:'WARM_MIETE'}); x.erg=(x.erg||0)+1; }
     /* Nahaus-Zahlungen für Zeiträume ohne Kontoauszüge im OS */
-    for(const p of mk.nhIst||[]){ const m=(p.d||'').slice(0,7); if(m<START||m>=first) continue; x.rows.push({d:p.d,t:p.t||'Zahlung',pn:'',h:p.b,s:0,src:'Zahlung laut Nahaus',k:kautIds.has(p.bk)}); }
+    for(const p of mk.nhIst||[]){ const m=(p.d||'').slice(0,7); if(m<START) continue; const uebP=U&&p.d<=U; if(!uebP&&m>=first) continue;
+      let pn=''; if(uebP){ const L=BU[mk.pid]||[]; const i=L.findIndex(q=>!q.u&&Math.abs(q.b-p.b)<0.01&&Math.abs(dnum2(q.d)-dnum2(p.d))<=4); if(i>=0){ L[i].u=1; pn=L[i].n; } }
+      x.rows.push({d:p.d,t:p.t||'Zahlung',pn,h:p.b,s:0,src:uebP?'Nahaus (Übernahme bis '+dmy(U)+')':'Zahlung laut Nahaus',k:kautIds.has(p.bk),alloc:uebP&&p.bk?[{id:p.bk,b:p.b}]:null,nh:1}); }
     x.rows.sort((a,b)=>a.d<b.d?-1:a.d>b.d?1:(b.s||0)-(a.s||0));
     let saldo=0, ks=0; for(const r of x.rows){ if(r.fut){ r.saldo=null; continue; } if(r.k){ ks+=(r.s||0)-(r.h||0); r.saldo=null; continue; } saldo=r2(saldo+(r.s||0)-(r.h||0)); r.saldo=saldo; if(!r.v){ x.soll+=r.s||0; x.ist+=r.h||0; } }
     x.saldo=saldo; x.kOffen=r2(ks);
@@ -904,7 +908,7 @@ function render(){
   h+='</tbody></table></div>';
   if(mahnOpen) h+='<div class="ov" id="ov"><div class="dlg">'+renderMahn()+'</div></div>';
   else if(modal&&calc.res[M.sel]) h+='<div class="ov" id="ov"><div class="dlg">'+renderDash(calc.res[M.sel])+'</div></div>';
-  h+='<div class="sub" style="margin:10px 0">Saldo positiv = Mieter schuldet, negativ = Guthaben. Soll: Sollstellungen aus Nahaus (Stand '+esc(dmy(mkStand))+'); fehlende Monatsmieten werden aus dem Mietvertrag ergänzt. Ist: Mieteingänge aus den Kontoauszügen im OS ab '+esc(calc.first.slice(5)+'/'+calc.first.slice(0,4))+', davor Zahlungen laut Nahaus. Saldo = alle bis heute fälligen Sollstellungen minus Zahlungen. Überfällig = offen und mehr als 5 Tage vor dem letzten Kontoauszug ('+esc(dmy(calc.stich))+') fällig – Zahlungen danach sind noch nicht importiert. Kaution wird getrennt geführt.</div>'+'<label class="sub"><input type="checkbox" id="m-alle"'+(M.alle?' checked':'')+'> auch nicht aktive / verkaufte Objekte zeigen</label>'+importCard(false);
+  h+='<div class="sub" style="margin:10px 0">Saldo positiv = Mieter schuldet, negativ = Guthaben. '+(mkUeb?'Bis '+esc(dmy(mkUeb))+' sind Sollstellungen und Zahlungen 1 zu 1 aus Nahaus übernommen (Stand '+esc(dmy(mkStand))+'). Danach: Sollstellungen aus dem OS bzw. Nahaus, fehlende Monatsmieten aus dem Mietvertrag, Zahlungen aus den Kontoauszügen im OS.':'Soll: Sollstellungen aus Nahaus (Stand '+esc(dmy(mkStand))+'); fehlende Monatsmieten werden aus dem Mietvertrag ergänzt. Ist: Mieteingänge aus den Kontoauszügen im OS ab '+esc(calc.first.slice(5)+'/'+calc.first.slice(0,4))+', davor Zahlungen laut Nahaus.')+' Saldo = alle bis heute fälligen Sollstellungen minus Zahlungen. Überfällig = offen und mehr als 5 Tage vor dem letzten Kontoauszug ('+esc(dmy(calc.stich))+') fällig – Zahlungen danach sind noch nicht importiert. Kaution wird getrennt geführt.</div>'+'<label class="sub"><input type="checkbox" id="m-alle"'+(M.alle?' checked':'')+'> auch nicht aktive / verkaufte Objekte zeigen</label>'+importCard(false);
   const keep=f&&(f.id==='m-q'||f.id==='mr-q'||f.id==='n-text'||f.id==='ne-text')?f:null; const sc=$('ov')?$('ov').scrollTop:0;
   $('view').innerHTML='<div class="pad">'+h+'</div>'; if($('ov')) $('ov').scrollTop=sc; document.body.style.overflow=(modal||mahnOpen)?'hidden':'';
   if(keep){ const n=$(keep.id); if(n){ n.replaceWith(keep); keep.focus({preventScroll:true}); } }
@@ -1166,7 +1170,7 @@ render();
   db.doc('stamm/einstellungen').onSnapshot(s=>{ einst=s.exists?clone(s.data()):{}; done('e'); },()=>done('e'));
   db.doc('stamm/mietkonten-edit').onSnapshot(s=>{ EDIT=(s.exists?clone(s.data()).e:null)||{}; calc=null; render(); },()=>{});
   db.doc('stamm/mietzuordnung').onSnapshot(s=>{ ZUORD=(s.exists?clone(s.data()).map:null)||{}; calc=null; render(); },()=>{});
-  db.doc('stamm/mietkonten').onSnapshot(s=>{ mkStand=s.exists?(s.data().stand||''):''; render(); },()=>{});
+  db.doc('stamm/mietkonten').onSnapshot(s=>{ mkStand=s.exists?(s.data().stand||''):''; mkUeb=s.exists?(s.data().uebernahme||''):''; render(); },()=>{});
   db.collection('buchungen').onSnapshot(q=>{ const m={}; q.docs.forEach(d=>{m[d.id]=clone(d.data());}); buch=m; done('b'); },e=>{toast('Buchungen nicht lesbar: '+e.message); done('b');});
   loadZV(); loadRegM(); loadIch();
   db.collection('notizen').onSnapshot(q=>{ const m={}; q.docs.forEach(d=>{ const v=clone(d.data()); (m[v.pid]=m[v.pid]||[]).push(v); }); NOTIZ=m; render(); },()=>{});
