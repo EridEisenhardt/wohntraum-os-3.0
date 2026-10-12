@@ -2,6 +2,7 @@
 <html lang="de"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Personal · Lohnkosten – Macher OS</title>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <style>
 :root{--bg:#f6f7f9;--surf:#fff;--surf2:#f1f3f6;--line:#e6e8ec;--text:#1c2024;--muted:#6b7280;--accent:#185fa5;--green:#1f7a4d;--red:#c0392b;--r:8px;--rl:12px;}
 *{box-sizing:border-box;margin:0;padding:0}body{background:var(--bg);color:var(--text);font-family:'Inter',system-ui,sans-serif;font-size:14px}
@@ -15,7 +16,7 @@
 th,td{border:1px solid var(--line);padding:4px 5px;text-align:center}th{background:var(--surf2);font-size:10px;text-transform:uppercase;color:var(--muted);font-weight:700}
 td.rl,th.rl{text-align:left;white-space:nowrap;position:sticky;left:0;background:var(--surf);font-weight:600}
 th.cur,td.cur{background:#fef9e7}
-input.c{width:66px;border:1px solid var(--line);background:var(--surf);font:inherit;font-size:11px;text-align:right;border-radius:4px;padding:3px 4px}
+input.c{width:84px;border:1px solid var(--line);background:var(--surf);font:inherit;font-size:11px;text-align:right;border-radius:4px;padding:3px 4px}
 input.c:focus{outline:none;border-color:var(--accent)}
 input.lbl{width:160px;border:1px solid var(--line);background:var(--surf);font:inherit;font-size:11px;font-weight:600;border-radius:4px;padding:3px 5px}
 input.lbl:focus{outline:none;border-color:var(--accent)}
@@ -25,6 +26,10 @@ tr.sum td,td.sum{font-weight:700;background:var(--surf2)}
 .minibtn{font:inherit;font-size:11px;font-weight:600;padding:4px 10px;border-radius:6px;border:1px solid var(--accent);background:var(--accent);color:#fff;cursor:pointer}.minibtn.sec{background:var(--surf);color:var(--accent)}
 #tblJahr table{margin-bottom:4px}
 .foot{font-size:11px;color:var(--muted);margin-top:10px}
+.drop{border:2px dashed var(--line);border-radius:10px;padding:16px;text-align:center;color:var(--muted);font-size:13px;background:var(--surf2)}.drop.over{border-color:var(--accent);background:#eef3fb}
+.lgrid{width:auto;min-width:0;margin-top:12px}.lgrid td,.lgrid th{padding:4px 7px}.lgrid a{text-decoration:none}
+.ov{display:none;position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:50;align-items:center;justify-content:center}.ov .box{background:#fff;border-radius:12px;width:100%;max-width:760px;max-height:90vh;overflow:auto;box-shadow:0 20px 60px rgba(0,0,0,.3)}
+.ov table{min-width:0;font-size:12.5px}.ov td,.ov th{text-align:left;padding:6px 8px}.ov td.r{text-align:right;white-space:nowrap}
 .toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:var(--surf2);border:1px solid var(--line);border-radius:var(--r);padding:10px 20px;font-size:13px;opacity:0;transition:.3s;pointer-events:none}.toast.show{opacity:1}
 /* WTR-OS-FULLWIDTH */
 .wrap,.main,.layout,main{max-width:none!important;margin-left:0!important;margin-right:0!important}
@@ -33,21 +38,133 @@ tr.sum td,td.sum{font-weight:700;background:var(--surf2)}
 <div class="main">
   <div class="bar"><label style="font-size:12px;color:var(--muted)">Jahr</label><select id="jahr" onchange="load()"></select></div>
   <div class="card">
+    <div class="card-hd">Lohnabrechnungen hochladen <span style="font-weight:400;color:var(--muted);font-size:12px">— DATEV-Lohnauswertung (PDF) je Gesellschaft und Monat · Gesellschaft und Monat werden erkannt, die Beträge in die Matrix übernommen</span></div>
+    <div style="padding:12px 15px">
+      <div class="drop" id="lDrop">📄 Lohnauswertung(en) als PDF hierher ziehen oder <label class="minibtn" style="display:inline-block">Datei wählen<input type="file" id="lFile" accept="application/pdf" multiple style="display:none" onchange="lohnFiles(this.files);this.value=''"></label></div>
+      <div id="lStatus" style="font-size:12px;color:var(--muted);margin-top:8px"></div>
+      <div id="lGrid"></div>
+    </div>
+  </div>
+  <div class="card">
     <div class="card-hd">Jahres-Matrix Personalkosten <span style="font-weight:400;color:var(--muted);font-size:12px">— je Gesellschaft ein eigenes Register · Zeilen frei bearbeiten, hinzufügen und löschen</span></div>
     <div style="padding:12px 15px" id="tblJahr"></div>
   </div>
   <div class="foot">Jede Zeile hat eine frei benennbare Bezeichnung (z. B. Mitarbeitername, Sachbezug, Knappschaft, BKK Linde, Lohnsteuer) und 12 Monatswerte. „+ Zeile" fügt eine leere Zeile hinzu, „Vorlage" legt die typischen Zeilen der Gesellschaft an. Die Gesamt-Zeile summiert je Monat automatisch. Diese Werte werden in „Fixkosten der Gruppe" übernommen.</div>
 </div><div class="toast" id="toast"></div>
+<div class="ov" id="lOv"><div class="box">
+  <div style="display:flex;justify-content:space-between;align-items:center;padding:13px 18px;border-bottom:1px solid var(--line)"><b id="lTitle">Lohnabrechnung übernehmen</b><span style="cursor:pointer;font-size:20px;color:var(--muted)" onclick="lClose()">✕</span></div>
+  <div style="padding:12px 18px" id="lBody"></div>
+  <div style="display:flex;justify-content:flex-end;gap:8px;padding:12px 18px;border-top:1px solid var(--line)"><button class="minibtn sec" onclick="lClose()">Abbrechen</button><button class="minibtn" id="lOk" onclick="lUebernehmen()">In Matrix übernehmen</button></div>
+</div></div>
 <script>
 const sb=window.supabase.createClient('https://jqzxctfqvcwbctpjksvg.supabase.co','eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpxenhjdGZxdmN3YmN0cGprc3ZnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODIxMzA0MzIsImV4cCI6MjA5NzcwNjQzMn0.RKIbZxJdusKWWPjBJqlxZ8e1m8So02UslOg55YRsn3o');
 const $=id=>document.getElementById(id);const esc=s=>(s==null?'':String(s)).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;');
 const numDE=v=>{if(v==null||v==='')return null;const n=parseFloat(String(v).replace(/\./g,'').replace(',','.'));return isNaN(n)?null:n;};
-const eur=n=>n==null||n===''||n===0?'':new Intl.NumberFormat('de-DE',{minimumFractionDigits:0,maximumFractionDigits:0}).format(n);
+const eur=n=>n==null||n===''||Number(n)===0?'':new Intl.NumberFormat('de-DE',{minimumFractionDigits:2,maximumFractionDigits:2}).format(Number(n))+' €';
 const num2=x=>x==null?0:Number(x);
 function toast(m){const t=$('toast');t.textContent=m;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),1600);}
 const MON=['Jan','Feb','Mär','Apr','Mai','Jun','Jul','Aug','Sep','Okt','Nov','Dez'];
 const PREF=['Wohn(T)raum Rheinhessen GmbH','Eric Eisenhardt','Wohntraum Kibo GmbH'];
-let MA=[],MX=[];
+let MA=[],MX=[],LA=[];
+// ===== Lohnabrechnungen (DATEV-Lohnauswertung) einlesen =====
+if(window.pdfjsLib) pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+const MONL=['januar','februar','märz','april','mai','juni','juli','august','september','oktober','november','dezember'];
+const amt=s=>parseFloat(String(s).replace(/\./g,'').replace(',','.'));
+const norm=s=>String(s||'').toLowerCase().replace(/[^a-zäöüß0-9 ]/g,' ').replace(/\s+/g,' ').trim();
+let LPARSE=null;
+async function pdfLines(file){
+  const pdf=await pdfjsLib.getDocument({data:await file.arrayBuffer()}).promise; const out=[];
+  for(let i=1;i<=pdf.numPages;i++){ const tc=await (await pdf.getPage(i)).getTextContent(); const rows={};
+    tc.items.forEach(it=>{ if(!it.str||!it.str.trim())return; const y=Math.round(it.transform[5]/2)*2; (rows[y]=rows[y]||[]).push({x:it.transform[4],s:it.str}); });
+    Object.keys(rows).map(Number).sort((a,b)=>b-a).forEach(y=>out.push(rows[y].sort((a,b)=>a.x-b.x).map(o=>o.s).join(' ').replace(/\s+/g,' ').trim()));
+    out.push('<<PAGE>>'); }
+  return out;
+}
+function parseLohn(L){
+  const txt=L.join('\n'); const r={firma:null,monat:null,jahr:null,personen:{},namen:{},sachbezug:0,zahlungen:[],lohnsteuer:0,ueberweisungen:{}};
+  const snd=txt.match(/([^*\n]{5,}?)\*[^*\n]+\*\d{5}\s/); const sd=snd?snd[1]:'';
+  r.firma=/kibo/i.test(sd)?'Wohntraum Kibo GmbH':/rheinhessen/i.test(sd)?'Wohn(T)raum Rheinhessen GmbH':/eisenhardt/i.test(sd)?'Eric Eisenhardt':null;
+  const mm=txt.match(/für\s+(Januar|Februar|März|April|Mai|Juni|Juli|August|September|Oktober|November|Dezember)\s+(\d{4})/i);
+  if(mm){ r.monat=MONL.indexOf(mm[1].toLowerCase())+1; r.jahr=+mm[2]; }
+  let pnr=null, sec='', wantName=false;
+  const AMT=/^\d{1,3}(?:\.\d{3})*,\d{2}$/;
+  const lastAmt=l=>{ const t=l.split(' ').filter(x=>AMT.test(x)); return t.length?amt(t[t.length-1]):null; };
+  L.forEach(l=>{
+    if(l==='<<PAGE>>'){ sec=''; return; }
+    let m=l.match(/\*Pers\.-Nr\.\s*0*(\d+)\*/); if(m){ pnr=m[1]; wantName=true; return; }
+    if(wantName&&pnr&&/^[A-ZÄÖÜ][A-Za-zÄÖÜäöüß'-]+(\s+[A-ZÄÖÜ][A-Za-zÄÖÜäöüß'-]+)+$/.test(l)){ r.namen[pnr]=r.namen[pnr]||l; wantName=false; }
+    if(/Personalkostenübersicht/.test(l)) sec='pk';
+    if(/DÜ-Protokoll Überweisungen/.test(l)) sec='ue';
+    if(/Übersicht Zahlungen/.test(l)) sec='za';
+    if(sec==='pk'){ m=l.match(/^0*(\d{1,5})\s+([A-Za-zÄÖÜäöüß' -]+),\s*([A-Za-zÄÖÜäöüß' -]+?)\s+[\d.]/); if(m) r.namen[m[1]]=(m[3].trim()+' '+m[2].trim()); }
+    if(sec==='ue'){ m=l.match(/^0*(\d{1,5})\s+([^,\d]+),\s*([^\d]+?)\s+DE\d/); const a=lastAmt(l); if(m&&a!=null){ r.ueberweisungen[m[1]]=a; r.namen[m[1]]=r.namen[m[1]]||(m[3].trim()+' '+m[2].trim()); } }
+    if(sec==='za'){ m=l.match(/^(\d{3,4})\s+(.+?)\s+(Lastschrift|DÜ|Überweisung|Scheck)\s*(.*?)\s*([\d.]+,\d{2})\s*$/);
+      if(m){ const emp=m[2].replace(/\s+\d{5}\s+.*$/,'').trim(), vz=m[4]||''; const b=lastAmt(l);
+        if(/LSt|Finanz|FA\s/i.test(emp+' '+vz)) r.lohnsteuer+=b; else r.zahlungen.push({empf:emp,betrag:b}); } }
+    if(/^Konto\s+DE\d/.test(l)&&pnr){ const a=lastAmt(l); if(a!=null) r.personen[pnr]=a; }
+    m=l.match(/9994\s+Sachbezug\s+([\d.]+,\d{2})-/); if(m) r.sachbezug+=amt(m[1]);
+  });
+  Object.assign(r.personen, r.ueberweisungen);
+  return r;
+}
+function findRow(u,label){ const n=norm(label), nt=n.split(' ');
+  return MX.find(x=>x.unternehmen===u&&norm(x.label)===n) || MX.find(x=>{ if(x.unternehmen!==u)return false; const t=norm(x.label).split(' ').filter(Boolean); return t.length&&t.every(w=>nt.includes(w)); })
+    || MX.find(x=>x.unternehmen===u&&norm(x.label)&&(n.includes(norm(x.label))||norm(x.label).includes(nt[0]))); }
+async function lohnFiles(files){ for(const f of [...files]){ await lohnFile(f); } }
+async function lohnFile(file){
+  if(!window.pdfjsLib){ toast('PDF-Leser konnte nicht geladen werden'); return; }
+  $('lStatus').textContent='Lese '+file.name+' …';
+  let r; try{ r=parseLohn(await pdfLines(file)); }catch(e){ $('lStatus').textContent='Fehler beim Lesen: '+e.message; return; }
+  if(!r.firma||!r.monat){ $('lStatus').textContent='Gesellschaft oder Monat in '+file.name+' nicht erkannt – ist das eine DATEV-Lohnauswertung?'; return; }
+  if(r.jahr!==+$('jahr').value){ $('jahr').value=r.jahr; await load(); }
+  const u=r.firma, mo=r.monat, pos=[];
+  Object.keys(r.personen).forEach(k=>{ const name=r.namen[k]||('Pers.-Nr. '+k); pos.push({quelle:name+' (Auszahlung)',label:name,betrag:r.personen[k]}); });
+  if(r.sachbezug) pos.push({quelle:'Sachbezüge',label:'Sachbezug',betrag:Math.round(r.sachbezug*100)/100});
+  r.zahlungen.forEach(z=>{ const lbl=z.empf.charAt(0).toUpperCase()+z.empf.slice(1).toLowerCase(); pos.push({quelle:z.empf+' (Krankenkasse)',label:lbl,betrag:z.betrag}); });
+  if(r.lohnsteuer) pos.push({quelle:'Finanzamt (Lohnsteuer)',label:'Lohnsteuer',betrag:Math.round(r.lohnsteuer*100)/100});
+  pos.forEach(p=>{ const row=findRow(u,p.label); p.rowId=row?row.id:null; p.ziel=row?row.label:p.label; p.alt=row?row['m'+mo]:null; p.on=true; });
+  // PDF ablegen
+  let url=null, pfad='lohnabrechnungen/'+r.jahr+'/'+u.replace(/[^A-Za-z0-9]/g,'_')+'_'+String(mo).padStart(2,'0')+'_'+Date.now()+'.pdf';
+  const up=await sb.storage.from('personal').upload(pfad,file,{contentType:'application/pdf',upsert:true});
+  if(!up.error) url=sb.storage.from('personal').getPublicUrl(pfad).data.publicUrl;
+  const ins=await sb.from('personal_lohnabrechnungen').insert({unternehmen:u,jahr:r.jahr,monat:mo,datei_url:url,datei_name:file.name,pfad}).select();
+  LPARSE={u,mo,jahr:r.jahr,pos,recId:ins.data&&ins.data[0]&&ins.data[0].id,file:file.name};
+  $('lStatus').textContent='';
+  lShow();
+}
+function lShow(){
+  const P=LPARSE; $('lTitle').textContent='Lohnabrechnung '+MON[P.mo-1]+' '+P.jahr+' · '+P.u;
+  $('lBody').innerHTML='<div style="font-size:12px;color:var(--muted);margin-bottom:8px">Aus '+esc(P.file)+' erkannt. Haken entfernen, was nicht übernommen werden soll; die Zielzeile lässt sich anpassen.</div>'
+   +'<table><thead><tr><th></th><th>Aus der Abrechnung</th><th>Zeile in der Matrix</th><th class="r">Betrag</th><th class="r">bisher</th></tr></thead><tbody>'
+   +P.pos.map((p,i)=>'<tr><td><input type="checkbox" '+(p.on?'checked':'')+' onchange="LPARSE.pos['+i+'].on=this.checked"></td><td>'+esc(p.quelle)+'</td><td><input value="'+esc(p.ziel)+'" style="font:inherit;font-size:12px;padding:3px 6px;border:1px solid var(--line);border-radius:5px;width:180px" onchange="lZiel('+i+',this.value)">'+(p.rowId?'':' <span style="font-size:10.5px;color:var(--accent)">neue Zeile</span>')+'</td><td class="r"><b>'+eur(p.betrag)+'</b></td><td class="r" style="color:'+(p.alt!=null&&Math.abs(num2(p.alt)-p.betrag)>0.005?'var(--red)':'var(--muted)')+'">'+(p.alt!=null?eur(p.alt)||'0,00 €':'—')+'</td></tr>').join('')
+   +'<tr><td></td><td><b>Summe</b></td><td></td><td class="r"><b>'+eur(P.pos.reduce((a,p)=>a+p.betrag,0))+'</b></td><td></td></tr></tbody></table>'
+   +'<div style="font-size:11.5px;color:var(--muted);margin-top:8px">Mitarbeiter = Auszahlungsbetrag · Krankenkassen = Lastschrift laut Zahlungsübersicht · Lohnsteuer = Betrag ans Finanzamt laut dieser Abrechnung. Rot = weicht vom bisherigen Wert ab.</div>';
+  $('lOv').style.display='flex';
+}
+function lZiel(i,v){ const p=LPARSE.pos[i]; p.ziel=v.trim(); const row=findRow(LPARSE.u,p.ziel); p.rowId=row&&norm(row.label)===norm(p.ziel)?row.id:(row?row.id:null); p.alt=row?row['m'+LPARSE.mo]:null; lShow(); }
+function lClose(){ $('lOv').style.display='none'; LPARSE=null; renderLGrid(); }
+async function lUebernehmen(){
+  const P=LPARSE; if(!P)return; $('lOk').disabled=true;
+  let sort=Math.max(0,...MX.filter(r=>r.unternehmen===P.u).map(r=>r.sort||0));
+  for(const p of P.pos.filter(x=>x.on)){
+    if(p.rowId){ await sb.from('personal_matrix').update({['m'+P.mo]:p.betrag,updated_at:new Date().toISOString()}).eq('id',p.rowId); }
+    else { await sb.from('personal_matrix').insert({unternehmen:P.u,jahr:P.jahr,label:p.ziel,sort:++sort,['m'+P.mo]:p.betrag}); }
+  }
+  if(P.recId) await sb.from('personal_lohnabrechnungen').update({uebernommen_am:new Date().toISOString()}).eq('id',P.recId);
+  $('lOk').disabled=false; $('lOv').style.display='none'; LPARSE=null; toast('Lohnabrechnung übernommen ✓'); await load();
+}
+function renderLGrid(){
+  const comps=companies(); if(!comps.length){ $('lGrid').innerHTML=''; return; }
+  let h='<div class="tablewrap"><table class="lgrid"><thead><tr><th class="rl">Hochgeladen</th>'+MON.map(m=>'<th>'+m+'</th>').join('')+'</tr></thead><tbody>';
+  comps.forEach(u=>{ h+='<tr><td class="rl">'+esc(u)+'</td>'; for(let mo=1;mo<=12;mo++){ const l=LA.filter(x=>x.unternehmen===u&&x.monat===mo); const last=l[l.length-1];
+      h+='<td>'+(last?'<a href="'+esc(last.datei_url||'#')+'" target="_blank" title="'+esc(last.datei_name||'')+(last.uebernommen_am?' · übernommen':' · noch nicht übernommen')+'">'+(last.uebernommen_am?'✅':'📄')+'</a>':'<span style="color:#c9ced6">·</span>')+'</td>'; }
+    h+='</tr>'; });
+  $('lGrid').innerHTML=h+'</tbody></table></div><div style="font-size:11px;color:var(--muted);margin-top:4px">✅ = hochgeladen und übernommen · 📄 = hochgeladen · Klick öffnet das PDF</div>';
+}
+(function(){ const d=document.getElementById('lDrop'); if(!d)return;
+  ['dragenter','dragover'].forEach(e=>d.addEventListener(e,ev=>{ev.preventDefault();d.classList.add('over');}));
+  ['dragleave','drop'].forEach(e=>d.addEventListener(e,ev=>{ev.preventDefault();d.classList.remove('over');}));
+  d.addEventListener('drop',ev=>lohnFiles(ev.dataTransfer.files)); })();
 function initYear(){const y=new Date().getFullYear();let o='';for(let j=y-1;j<=y+1;j++)o+=`<option ${j===y?'selected':''}>${j}</option>`;$('jahr').innerHTML=o;}
 function nm(m){return((m.vorname||'')+' '+(m.name||'')).trim()||'—';}
 function companies(){const set=[];MA.forEach(m=>{const u=m.unternehmen||'— ohne Unternehmen —';if(!set.includes(u))set.push(u);});MX.forEach(r=>{if(!set.includes(r.unternehmen))set.push(r.unternehmen);});
@@ -56,7 +173,8 @@ function templateLabels(u){const emps=MA.filter(m=>(m.unternehmen||'— ohne Unt
 async function load(){const jahr=+$('jahr').value;
   MA=(await sb.from('mitarbeiter').select('id,vorname,name,unternehmen').order('pos')).data||[];
   MX=(await sb.from('personal_matrix').select('*').eq('jahr',jahr).order('sort',{ascending:true})).data||[];
-  render();}
+  LA=(await sb.from('personal_lohnabrechnungen').select('*').eq('jahr',jahr).order('created_at')).data||[];
+  render();renderLGrid();}
 async function setLabel(id,val){const{error}=await sb.from('personal_matrix').update({label:val,updated_at:new Date().toISOString()}).eq('id',id);if(error){toast(error.message);return;}const r=MX.find(x=>x.id===id);if(r)r.label=val;}
 async function setMonth(id,mo,val){const v=numDE(val);const{error}=await sb.from('personal_matrix').update({['m'+mo]:v,updated_at:new Date().toISOString()}).eq('id',id);if(error){toast(error.message);return;}const r=MX.find(x=>x.id===id);if(r)r['m'+mo]=v;render();}
 async function addRow(u){const jahr=+$('jahr').value;const sort=Math.max(0,...MX.filter(r=>r.unternehmen===u).map(r=>r.sort||0))+1;const{error}=await sb.from('personal_matrix').insert({unternehmen:u,jahr,label:'',sort});if(error){toast(error.message);return;}load();}
@@ -72,7 +190,7 @@ function render(){const jahr=+$('jahr').value;const now=new Date();const cur=now
       <button class="minibtn sec" onclick="addTemplate('${uenc}')">Vorlage einfügen</button></div>`;
     const head='<thead><tr><th class="rl">Position</th>'+MON.map((x,i)=>`<th class="${i+1===cur?'cur':''}">${x}</th>`).join('')+'<th>Summe</th><th></th></tr></thead>';
     const monTot=Array(13).fill(0);
-    let body=rows.map(r=>{let sum=0,cells='';for(let mo=1;mo<=12;mo++){const v=r['m'+mo];const nv=num2(v);sum+=nv;monTot[mo]+=nv;cells+=`<td class="${mo===cur?'cur':''}"><input class="c" inputmode="decimal" value="${v!=null?v:''}" onchange="setMonth('${r.id}',${mo},this.value)"></td>`;}
+    let body=rows.map(r=>{let sum=0,cells='';for(let mo=1;mo<=12;mo++){const v=r['m'+mo];const nv=num2(v);sum+=nv;monTot[mo]+=nv;cells+=`<td class="${mo===cur?'cur':''}"><input class="c" inputmode="decimal" value="${v!=null&&v!==''?eur(v)||'0,00 €':''}" onchange="setMonth('${r.id}',${mo},this.value)"></td>`;}
       return `<tr><td class="rl"><input class="lbl" value="${esc(r.label||'')}" placeholder="Bezeichnung…" onchange="setLabel('${r.id}',this.value)"></td>${cells}<td class="sum">${eur(sum)}</td><td><button class="xbtn" title="Zeile löschen" onclick="delRow('${r.id}')">✕</button></td></tr>`;}).join('');
     if(!rows.length)body=`<tr><td class="rl" colspan="15" style="text-align:center;color:var(--muted);padding:12px">Noch keine Zeilen — „+ Zeile" oder „Vorlage einfügen".</td></tr>`;
     let tot='<tr class="sum" style="background:#e7effd"><td class="rl">Gesamt</td>';for(let mo=1;mo<=12;mo++)tot+=`<td>${eur(monTot[mo])}</td>`;tot+=`<td>${eur(monTot.reduce((a,b)=>a+b,0))}</td><td></td></tr>`;
