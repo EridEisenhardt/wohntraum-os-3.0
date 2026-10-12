@@ -517,12 +517,12 @@ function compute(opt){ opt=opt||{}; const ZMAP={};
     /* Sollstellungen aus dem OS (Sollstellungslauf am 25. für den Folgemonat) – ersetzen die Nahaus-Monatsmiete dieses Monats */
     const osM=new Set();
     for(const m of Object.keys(SL).sort()){ const p=(SL[m].posten||{})[mk.pid]; if(!p||m<START) continue; osM.add(m); mieteMonate.add(m);
-      x.rows.push({id:'os:'+m,d:m+'-01',t:'Miete '+m.slice(5)+'/'+m.slice(0,4),s:p.b,h:0,src:'Sollstellung OS · erstellt '+dmy(SL[m].erstellt),art:'WARM_MIETE',fut:(m+'-01')>fäll,teile:p}); }
-    const bisF=addM(curM,2)+'-01'; for(const s of mk.soll||[]){ const m=s.m||(s.d||'').slice(0,7); const sd=s.d||m+'-01'; if(m<START||sd>bisF) continue; if(s.art==='WARM_MIETE'&&osM.has(m)) continue; const fu=sd>fäll; if(s.art==='WARM_MIETE'&&!fu) mieteMonate.add(m);
+      x.rows.push({id:'os:'+m,d:m+'-01',t:'Miete '+m.slice(5)+'/'+m.slice(0,4),s:p.b,h:0,src:'Sollstellung OS · erstellt '+dmy(SL[m].erstellt),art:'WARM_MIETE',fut:(m+'-01')>today,teile:p}); }
+    const bisF=addM(curM,2)+'-01'; for(const s of mk.soll||[]){ const m=s.m||(s.d||'').slice(0,7); const sd=s.d||m+'-01'; if(m<START||sd>bisF) continue; if(s.art==='WARM_MIETE'&&osM.has(m)) continue; const fu=sd>today; if(s.art==='WARM_MIETE'&&!fu) mieteMonate.add(m);
       x.rows.push({id:s.id,d:s.d||m+'-01',t:(s.t||ART[s.art]||s.art),s:s.b>0?s.b:0,h:s.b<0?-s.b:0,src:s.src==='AUTO_SOLL'?'Nahaus (automatisch)':s.src==='TRANSACTION_ASSIGNMENT'?'Nahaus (aus Zahlung)':'Nahaus',k:s.art==='KAUTION',art:s.art,fut:fu}); }
     /* fehlende Monatsmieten aus dem Mietvertrag ergänzen */
     const von=(mk.von||START+'-01').slice(0,7), bis=(mk.bis||'9999-12').slice(0,7);
-    const ab=first>START?first:START; for(let m=von<ab?ab:von; m+'-01'<=fäll&&m<=bis; m=addM(m,1)){ if(mieteMonate.has(m)) continue; const st=stufeAt(mk,m); if(!st) continue;
+    const ab=first>START?first:START; for(let m=von<ab?ab:von; m+'-01'<=today&&m<=bis; m=addM(m,1)){ if(mieteMonate.has(m)) continue; const st=stufeAt(mk,m); if(!st) continue;
       x.rows.push({id:'erg:'+m,d:m+'-01',t:'Miete '+m.slice(5)+'/'+m.slice(0,4),s:st.total,h:0,src:'ergänzt aus Mietvertrag',e:1,art:'WARM_MIETE'}); x.erg=(x.erg||0)+1; }
     /* Nahaus-Zahlungen für Zeiträume ohne Kontoauszüge im OS */
     for(const p of mk.nhIst||[]){ const m=(p.d||'').slice(0,7); if(m<START||m>=first) continue; x.rows.push({d:p.d,t:p.t||'Zahlung',pn:'',h:p.b,s:0,src:'Zahlung laut Nahaus',k:kautIds.has(p.bk)}); }
@@ -541,14 +541,16 @@ function compute(opt){ opt=opt||{}; const ZMAP={};
       const opF=[]; for(const r of x.rows){ if(!r.s||!r.fut) continue; const id=r.id; let o=r.s; for(const q of x.rows) for(const a of (q.alloc||[])) if(a.id===id) o=r2(o-(Number(a.b)||0)); r.offen=o; if(o>0.005) opF.push({id,d:r.d,t:r.t,b:o,voll:r.s,k:r.k?1:0,fut:1}); }
       const op=[]; for(const r of x.rows){ if(!r.s||r.fut) continue; const id=r.id||('r'+r.d+r.t), w=r.k?'k':'n'; const c=Math.min(pool[w],offen[id]); pool[w]=r2(pool[w]-c); const o=r2(offen[id]-c); r.offen=o; if(o>0.005) op.push({id,d:r.d,t:r.t,b:o,voll:r.s,k:r.k?1:0}); }
       x.op=op.filter(o=>!o.k); x.opK=op.filter(o=>o.k); x.opF=opF; x.guthaben=r2(pool.n); }
-    let ns=0; for(const s of mk.soll||[]){ if(s.art!=='KAUTION'&&(s.d||'')<=fäll) ns+=s.b; } for(const p of mk.nhIst||[]){ if(!kautIds.has(p.bk)) ns-=p.b; } x.nhSaldo=r2(ns);
-    const st=stufeAt(mk,curM); x.miete=st?st.total:0; x.monate=x.miete?saldo/x.miete:0;
+    let ns=0; for(const s of mk.soll||[]){ if(s.art!=='KAUTION'&&(s.d||'')<=today) ns+=s.b; } for(const p of mk.nhIst||[]){ if(!kautIds.has(p.bk)) ns-=p.b; } x.nhSaldo=r2(ns);
+    /* überfällig = offene Posten, deren Fälligkeit mehr als 5 Tage vor dem letzten Kontoauszug liegt */
+    x.ueber=r2((x.op||[]).filter(o=>o.d<=fäll).reduce((a,o)=>a+o.b,0));
+    const st=stufeAt(mk,curM); x.miete=st?st.total:0; x.monate=x.miete?x.ueber/x.miete:0;
     x.aktiv=!mk.bis||mk.bis>=today;
-    x.status=saldo>0.5?(x.monate>=2?'kuendigung':x.monate>=1?'mahnen':'rueckstand'):saldo<-0.5?'guthaben':'ok';
-    x.ampelAuto=x.monate>=1?'rot':(saldo>0.5||x.spaet>=2||x.kOffen>0.5)?'gelb':'gruen'; }
+    x.status=x.ueber>0.5?(x.monate>=2?'kuendigung':x.monate>=1?'mahnen':'rueckstand'):saldo>0.5?'faellig':saldo<-0.5?'guthaben':'ok';
+    x.ampelAuto=x.monate>=1?'rot':(x.ueber>0.5||x.spaet>=2||x.kOffen>0.5)?'gelb':'gruen'; }
   return {res,first,stich,ZMAP};
 }
-const STN={ok:['ok','ausgeglichen'],rueckstand:['mid','Rückstand'],mahnen:['bad','≥ 1 Monatsmiete'],kuendigung:['bad','≥ 2 Monatsmieten'],guthaben:['src','Guthaben']};
+const STN={ok:['ok','ausgeglichen'],rueckstand:['mid','Rückstand'],mahnen:['bad','≥ 1 Monatsmiete'],kuendigung:['bad','≥ 2 Monatsmieten'],guthaben:['src','Guthaben'],faellig:['src','fällig, Zahlung noch offen']};
 
 /* ================= Buchungen (Belegbuchhaltung im Stil von BuchhaltungsButler) =================
    Gleiche Daten wie „Objekt-Controlling“ (os_docs, app 'oc'): jede Zuordnung zählt dort sofort mit. */
