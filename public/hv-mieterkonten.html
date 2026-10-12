@@ -149,6 +149,24 @@ tr.kaut td{opacity:.75}
 h3{font-size:14px;margin:14px 0 6px}
 @media (max-width:1100px){ .grid2{grid-template-columns:1fr} .det{position:static;max-height:none} .mlist{max-height:none} }
 select.zsel{font-size:11px;padding:2px 4px;margin-top:4px;max-width:100%}
+.mlist{max-height:none}
+.adot{display:inline-block;width:11px;height:11px;border-radius:50%;vertical-align:-1px}.adot.big{width:16px;height:16px;vertical-align:-2px}
+.ov{position:fixed;inset:0;background:rgba(15,20,30,.45);z-index:20;overflow:auto;padding:24px 16px}
+.dlg{max-width:1250px;margin:0 auto;background:var(--bg);border-radius:16px;padding:18px 20px;box-shadow:0 20px 60px rgba(0,0,0,.3)}
+.dtop{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;margin-bottom:12px}
+.dname{font-size:22px;font-weight:800}
+.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:12px;margin-bottom:14px}
+.cards .card{margin:0}
+.ch{font-weight:700;display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:8px}
+.big{font-size:24px;font-weight:800;font-variant-numeric:tabular-nums}
+.kvr{display:flex;justify-content:space-between;gap:10px;font-size:13px;padding:4px 0;border-bottom:1px dashed var(--line)}.kvr span{color:var(--muted)}.kvr b{text-align:right;font-weight:600}
+.fl{display:grid;gap:2px;font-size:12px;color:var(--muted);margin-bottom:6px}.fl input,.fl select{width:100%}
+details summary{cursor:pointer;color:var(--muted);font-size:12px;margin:8px 0 4px}
+table.mini{width:100%;font-size:12px}table.mini td{padding:3px 4px;border-bottom:1px dashed var(--line);white-space:normal}
+.bar{height:8px;background:var(--soft);border-radius:4px;overflow:hidden;margin:6px 0 8px}.bar span{display:block;height:100%;background:var(--pos)}
+.trow{display:flex;gap:6px;margin-bottom:8px}.trow input{flex:1}
+.tick{display:flex;gap:8px;align-items:flex-start;padding:5px 0;border-bottom:1px dashed var(--line);font-size:13px;cursor:pointer}.tick small{display:block;color:var(--muted);font-size:11px}.tick.done span{text-decoration:line-through;color:var(--muted)}
+#e-notiz{width:100%;min-height:120px}
 </style>
 </head>
 <body>
@@ -473,7 +491,7 @@ const dmy=x=>String(x||'').split('-').reverse().join('.');
 const START='2025-01';
 let MK={}, M={f:'',ges:'',obj:'',st:'alle',q:'',sel:''}; try{ const s=JSON.parse(store('mk_state')||'null'); if(s) M=Object.assign(M,s,{q:''}); }catch(e){}
 const saveM=()=>store('mk_state',JSON.stringify({ges:M.ges,obj:M.obj,st:M.st,sel:M.sel}));
-let mkStand='', loadedMK=false, calc=null, EDIT={}, ZUORD={}, editOpen=false;
+let mkStand='', loadedMK=false, calc=null, EDIT={}, ZUORD={}, editOpen=false, modal=false, showDone=false;
 const ed=mk=>Object.assign({},mk,EDIT[mk.pid]||{});
 const today=new Date().toISOString().slice(0,10), curM=today.slice(0,7);
 const addM=(m,n)=>{ const [y,mm]=m.split('-').map(Number); const d=new Date(y,mm-1+n,1); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0'); };
@@ -511,7 +529,7 @@ function compute(){
         if(sc>bs){ bs=sc; best=c; } }
       mk=best; if(!mk) continue; }
     const kaut=/kaution/.test(norm(r.tx.z+' '+r.tx.n));
-    if(!res[mk.pid]) continue; res[mk.pid].rows.push({d,t:(r.tx.n||'')+(r.tx.z?' · '+r.tx.z:''),h:r.tx.b,src:'Bank · '+kontoName(r.kkey),k:kaut,key,unit:r.c.unit,man:ZUORD[key]!==undefined}); }
+    if(!res[mk.pid]) continue; res[mk.pid].rows.push({d,t:(r.tx.n||'')+(r.tx.z?' · '+r.tx.z:''),pn:r.tx.n||'',h:r.tx.b,src:'Bank · '+kontoName(r.kkey),k:kaut,key,unit:r.c.unit,man:ZUORD[key]!==undefined}); }
   for(const x of Object.values(res)){ const mk=x.mk;
     const kautIds=new Set((mk.soll||[]).filter(s=>s.art==='KAUTION').map(s=>s.id));
     /* Saldovortrag aus Nahaus vor 2025 */
@@ -528,14 +546,23 @@ function compute(){
     const ab=first>START?first:START; for(let m=von<ab?ab:von; m+'-01'<=fäll&&m<=bis; m=addM(m,1)){ if(mieteMonate.has(m)) continue; const st=stufeAt(mk,m); if(!st) continue;
       x.rows.push({d:m+'-01',t:'Miete '+m.slice(5)+'/'+m.slice(0,4),s:st.total,h:0,src:'ergänzt aus Mietvertrag',e:1,art:'WARM_MIETE'}); x.erg=(x.erg||0)+1; }
     /* Nahaus-Zahlungen für Zeiträume ohne Kontoauszüge im OS */
-    for(const p of mk.nhIst||[]){ const m=(p.d||'').slice(0,7); if(m<START||m>=first) continue; x.rows.push({d:p.d,t:p.t||'Zahlung',h:p.b,s:0,src:'Zahlung laut Nahaus',k:kautIds.has(p.bk)}); }
+    for(const p of mk.nhIst||[]){ const m=(p.d||'').slice(0,7); if(m<START||m>=first) continue; x.rows.push({d:p.d,t:p.t||'Zahlung',pn:'',h:p.b,s:0,src:'Zahlung laut Nahaus',k:kautIds.has(p.bk)}); }
     x.rows.sort((a,b)=>a.d<b.d?-1:a.d>b.d?1:(b.s||0)-(a.s||0));
     let saldo=0, ks=0; for(const r of x.rows){ if(r.k){ ks+=(r.s||0)-(r.h||0); r.saldo=null; continue; } saldo=r2(saldo+(r.s||0)-(r.h||0)); r.saldo=saldo; if(!r.v){ x.soll+=r.s||0; x.ist+=r.h||0; } }
     x.saldo=saldo; x.kOffen=r2(ks);
+    /* Kaution, Zahler, Pünktlichkeit, offene Posten */
+    x.kSoll=r2(x.rows.filter(r=>r.k).reduce((a,r)=>a+(r.s||0),0)); x.kIst=r2(x.rows.filter(r=>r.k).reduce((a,r)=>a+(r.h||0),0));
+    const AMT=/jobcenter|bundesagentur|agentur fur arbeit|kreisverwaltung|sozialamt|landkreis|stadtverwaltung|grundsicherung|kreis |sozialhilfe/;
+    const pay=x.rows.filter(r=>r.h>0&&!r.k&&r.pn); const amt=pay.filter(r=>AMT.test(' '+norm(r.pn)+' ')), selbst=pay.filter(r=>!AMT.test(' '+norm(r.pn)+' '));
+    x.zahlerAuto=!pay.length?'':amt.length&&selbst.length?'Selbstzahler + Amt ('+[...new Set(amt.map(r=>r.pn))].slice(0,2).join(', ')+')':amt.length?'Jobcenter / Amt ('+[...new Set(amt.map(r=>r.pn))].slice(0,2).join(', ')+')':'Selbstzahler';
+    const sechs=new Date(Date.parse(stich)-183*864e5).toISOString().slice(0,10);
+    x.spaet=pay.filter(r=>r.d>=sechs&&Number(r.d.slice(8,10))>10&&Number(r.d.slice(8,10))<25).length;
+    { let ist=x.rows.filter(r=>!r.k).reduce((a,r)=>a+(r.h||0),0); const op=[]; for(const r of x.rows){ if(r.k||!r.s) continue; const c=Math.min(ist,r.s); ist-=c; if(r.s-c>0.005) op.push({d:r.d,t:r.t,b:r2(r.s-c)}); } x.op=op; }
     let ns=0; for(const s of mk.soll||[]){ if(s.art!=='KAUTION'&&(s.d||'')<=fäll) ns+=s.b; } for(const p of mk.nhIst||[]){ if(!kautIds.has(p.bk)) ns-=p.b; } x.nhSaldo=r2(ns);
     const st=stufeAt(mk,curM); x.miete=st?st.total:0; x.monate=x.miete?saldo/x.miete:0;
     x.aktiv=!mk.bis||mk.bis>=today;
-    x.status=saldo>0.5?(x.monate>=2?'kuendigung':x.monate>=1?'mahnen':'rueckstand'):saldo<-0.5?'guthaben':'ok'; }
+    x.status=saldo>0.5?(x.monate>=2?'kuendigung':x.monate>=1?'mahnen':'rueckstand'):saldo<-0.5?'guthaben':'ok';
+    x.ampelAuto=x.monate>=1?'rot':(saldo>0.5||x.spaet>=2||x.kOffen>0.5)?'gelb':'gruen'; }
   return {res,first,stich};
 }
 const STN={ok:['ok','ausgeglichen'],rueckstand:['mid','Rückstand'],mahnen:['bad','≥ 1 Monatsmiete'],kuendigung:['bad','≥ 2 Monatsmieten'],guthaben:['src','Guthaben']};
@@ -562,47 +589,91 @@ function render(){
     +'<select id="m-ges"><option value="">alle Gesellschaften</option>'+['EE','WT','KiBo'].map(g=>'<option'+(g===M.ges?' selected':'')+'>'+g+'</option>').join('')+'</select>'
     +'<select id="m-obj"><option value="">alle Objekte</option>'+objs.map(o=>'<option'+(o===M.obj?' selected':'')+'>'+esc(o)+'</option>').join('')+'</select>'
     +'<input type="search" id="m-q" placeholder="Mieter, Objekt, Einheit" value="'+esc(M.q)+'" autocomplete="off"></div>';
-  h+='<div class="grid2"><div class="tablewrap mlist"><table><thead><tr><th>Objekt</th><th>Einheit</th><th>Mieter</th><th>Zeitraum</th><th class="n">Miete</th><th class="n">Saldo</th><th>Status</th></tr></thead><tbody>';
-  if(!list.length) h+='<tr><td colspan="7" class="empty">Keine Mietverhältnisse für diesen Filter.</td></tr>';
+  h+='<div class="tablewrap mlist"><table><thead><tr><th></th><th>Objekt</th><th>Einheit</th><th>Mieter</th><th>Zahler</th><th>Zeitraum</th><th class="n">Miete</th><th class="n">Saldo</th><th>Status</th></tr></thead><tbody>';
+  if(!list.length) h+='<tr><td colspan="9" class="empty">Keine Mietverhältnisse für diesen Filter.</td></tr>';
   for(const x of list){ const mk=x.mk, sn=STN[x.status];
-    h+='<tr class="click'+(mk.pid===M.sel?' sel':'')+'" data-mk="'+esc(mk.pid)+'"><td><b>'+esc(mk.obj)+'</b></td><td>'+esc(mk.einheit||'')+'</td><td class="wrapc">'+esc(ed(mk).mieter||'–')+(mk.gewerbe?' <span class="pill src">Gewerbe</span>':'')+'</td><td class="sub">'+esc(dmy(mk.von))+(mk.bis?' – '+esc(dmy(mk.bis)):'')+'</td><td class="n">'+(x.miete?eur(x.miete):'–')+'</td>'
+    h+='<tr class="click'+(mk.pid===M.sel?' sel':'')+'" data-mk="'+esc(mk.pid)+'"><td>'+ampelDot(ampel(x))+'</td><td><b>'+esc(mk.obj)+'</b></td><td>'+esc(mk.einheit||'')+'</td><td class="wrapc">'+esc(ed(mk).mieter||'–')+(mk.gewerbe?' <span class="pill src">Gewerbe</span>':'')+'</td><td class="sub">'+esc(String(ed(mk).zahler||x.zahlerAuto||'').replace(/ \(.*\)$/,''))+'</td><td class="sub">'+esc(dmy(mk.von))+(mk.bis?' – '+esc(dmy(mk.bis)):'')+'</td><td class="n">'+(x.miete?eur(x.miete):'–')+'</td>'
       +'<td class="n '+(x.saldo>0.5?'neg':x.saldo<-0.5?'pos':'')+'"><b>'+eur(x.saldo)+'</b></td><td><span class="pill '+sn[0]+'">'+sn[1]+'</span>'+(x.kOffen>0.5?' <span class="pill mid" title="Kaution offen">K</span>':'')+(x.erg?' <span class="pill src" title="'+x.erg+' Monatsmieten aus dem Mietvertrag ergänzt">+'+x.erg+'</span>':'')+'</td></tr>'; }
-  h+='</tbody></table></div><div class="det">'+(calc.res[M.sel]?renderKonto(calc.res[M.sel]):'<div class="empty">Mietverhältnis anklicken, um das Mieterkonto zu sehen.</div>')+'</div></div>';
+  h+='</tbody></table></div>';
+  if(modal&&calc.res[M.sel]) h+='<div class="ov" id="ov"><div class="dlg">'+renderDash(calc.res[M.sel])+'</div></div>';
   h+='<div class="sub" style="margin:10px 0">Saldo positiv = Mieter schuldet, negativ = Guthaben. Soll: Sollstellungen aus Nahaus (Stand '+esc(dmy(mkStand))+'); fehlende Monatsmieten werden aus dem Mietvertrag ergänzt. Ist: Mieteingänge aus den Kontoauszügen im OS ab '+esc(calc.first.slice(5)+'/'+calc.first.slice(0,4))+', davor Zahlungen laut Nahaus. Stichtag: '+esc(dmy(calc.stich))+' (letzte importierte Kontobewegung); Sollstellungen zählen 5 Tage nach Fälligkeit. Kaution wird getrennt geführt.</div>'+'<label class="sub"><input type="checkbox" id="m-alle"'+(M.alle?' checked':'')+'> auch nicht aktive / verkaufte Objekte zeigen</label>'+importCard(false);
-  const keep=f&&f.id==='m-q'?f:null;
-  $('view').innerHTML='<div class="pad">'+h+'</div>';
+  const keep=f&&f.id==='m-q'?f:null; const sc=$('ov')?$('ov').scrollTop:0;
+  $('view').innerHTML='<div class="pad">'+h+'</div>'; if($('ov')) $('ov').scrollTop=sc; document.body.style.overflow=modal?'hidden':'';
   if(keep){ const n=$('m-q'); if(n){ n.replaceWith(keep); keep.focus({preventScroll:true}); } }
   else if(fid){ const el=$(fid); if(el&&el.tagName==='INPUT'){ el.focus({preventScroll:true}); if(fv!=null) el.value=fv; } }
 }
-function renderKonto(x){ const mk=ed(x.mk), sn=STN[x.status];
-  let h='<div class="dhead"><div><div class="dn">'+esc(mk.mieter||'–')+'</div><div class="sub">'+esc(mk.obj+' · '+(mk.einheit||''))+' · '+esc(dmy(mk.von))+(mk.bis?' – '+esc(dmy(mk.bis)):' – laufend')+'</div>'+(mk.ref?'<div class="sub">Verwendungszweck: '+esc(mk.ref)+'</div>':'')+'</div><div style="text-align:right"><div class="da '+(x.saldo>0.5?'neg':x.saldo<-0.5?'pos':'')+'">'+eur(x.saldo)+'</div><span class="pill '+sn[0]+'">'+sn[1]+'</span></div></div>';
-  h+=editForm(mk)+(mk.notiz&&!editOpen?'<div class="note" style="margin:6px 0">📝 '+esc(mk.notiz)+'</div>':'');
-  h+='<div class="kv3"><div><span>Soll ab 2025</span><b>'+eur(x.soll)+'</b></div><div><span>Ist ab 2025</span><b>'+eur(x.ist)+'</b></div><div><span>Miete aktuell</span><b>'+(x.miete?eur(x.miete):'–')+'</b></div><div><span>Saldo laut Nahaus</span><b>'+eur(x.nhSaldo)+'</b></div><div><span>Kaution</span><b>'+eur(mk.kaution)+(x.kOffen>0.5?' · offen '+eur(x.kOffen):'')+'</b></div></div>';
+const AMPEL={gruen:['#1d9a5b','zuverlässig'],gelb:['#e0a400','beobachten'],rot:['#d0362b','kritisch']};
+const ampel=x=>{ const a=ed(x.mk).ampel; return a&&AMPEL[a]?a:x.ampelAuto; };
+const ampelDot=(a,big)=>'<span class="adot'+(big?' big':'')+'" style="background:'+AMPEL[a][0]+'" title="Mieterranking: '+AMPEL[a][1]+'"></span>';
+function saveEdit(pid,patch,msg){ EDIT=Object.assign({},EDIT,{[pid]:Object.assign({},EDIT[pid]||{},patch)}); calc=null; render(); saveStamm('mietkonten-edit',{e:EDIT}).then(()=>msg&&toast(msg)); }
+function renderDash(x){ const mk=ed(x.mk), sn=STN[x.status], a=ampel(x), K=mk.kontakte||[];
+  const st=stufeAt(x.mk,curM)||{}; const kv=(l,v)=>'<div class="kvr"><span>'+l+'</span><b>'+v+'</b></div>';
+  let h='<div class="dtop"><div><div class="dname">'+ampelDot(a,1)+' '+esc(mk.mieter||'–')+'</div><div class="sub">'+esc(mk.obj+' · '+(mk.einheit||''))+' · '+esc(dmy(mk.von))+(mk.bis?' – '+esc(dmy(mk.bis)):' – laufend')+(mk.ref?' · Verwendungszweck: '+esc(mk.ref):'')+'</div></div><button class="ghost" data-close="1" title="Schließen (Esc)" style="font-size:20px">✕</button></div>';
+  h+='<div class="cards">';
+  /* Mieterinformationen */
+  h+='<div class="card"><div class="ch">👤 Mieterinformationen'+(editOpen?'':'<button class="ghost small" data-edit="1">✏️ bearbeiten</button>')+'</div>';
+  if(editOpen){ const f=(id,l,v)=>'<label class="fl">'+l+'<input type="text" id="'+id+'" value="'+esc(v??'')+'"></label>';
+    h+=f('e-mieter','Name(n)',mk.mieter)+f('e-anrede','Anrede für Briefe',mk.anrede)+f('e-email','E-Mail',mk.email!=null?mk.email:K.map(k=>k.email).filter(Boolean).join(', '))+f('e-tel','Telefon',mk.tel!=null?mk.tel:K.map(k=>k.tel).filter(Boolean).join(', '))
+      +f('e-kaution','Kaution vereinbart (€)',fnum.format(mk.kaution||0))+f('e-kbez','Kaution bezahlt (€) – leer = aus Nahaus',mk.kautionBezahlt!=null&&mk.kautionBezahlt!==''?fnum.format(mk.kautionBezahlt):'')+f('e-betreuer','Betreuer',mk.betreuer)+f('e-zahler','Wer zahlt die Miete? (leer = automatisch)',mk.zahler)+f('e-ref','Verwendungszweck',mk.ref)
+      +'<label class="fl">Mieterranking<select id="e-ampel"><option value="">automatisch ('+AMPEL[x.ampelAuto][1]+')</option>'+Object.entries(AMPEL).map(([k,v])=>'<option value="'+k+'"'+(mk.ampel===k?' selected':'')+'>'+({gruen:'🟢 grün',gelb:'🟡 gelb',rot:'🔴 rot'}[k])+' – '+v[1]+'</option>').join('')+'</select></label>'
+      +'<div class="acts"><button class="primary small" data-esave="1">Speichern</button><button class="ghost small" data-ecancel="1">Abbrechen</button></div>';
+  } else {
+    h+=kv('Name',esc(mk.mieter||'–'))+kv('E-Mail',(mk.email!=null?mk.email:K.map(k=>k.email).filter(Boolean).join(', '))?esc(mk.email!=null?mk.email:K.map(k=>k.email).filter(Boolean).join(', ')):'<span class="mut">–</span>')
+      +kv('Telefon',esc((mk.tel!=null?mk.tel:K.map(k=>k.tel).filter(Boolean).join(', '))||'–'))+kv('Betreuer',esc(mk.betreuer||'–'))
+      +kv('Wer zahlt',esc(mk.zahler||x.zahlerAuto||'–')+(mk.zahler?'':' <span class="pill src">aus Zahlungen</span>'))
+      +kv('Mieterranking',ampelDot(a)+' '+AMPEL[a][1]+(mk.ampel?' <span class="pill src">manuell</span>':' <span class="pill src" title="Automatisch aus Rückstand, Kaution und Zahlungseingang">auto</span>'))+(x.spaet?'<div class="sub">'+x.spaet+' verspätete Zahlung'+(x.spaet>1?'en':'')+' in den letzten 6 Monaten (nach dem 10.)</div>':''); }
+  h+='</div>';
+  /* Offene Posten */
+  h+='<div class="card"><div class="ch">💶 Offene Posten</div><div class="big '+(x.saldo>0.5?'neg':x.saldo<-0.5?'pos':'')+'">'+eur(x.saldo)+'</div><span class="pill '+sn[0]+'">'+sn[1]+'</span>'+(x.saldo<-0.5?' <span class="sub">Guthaben des Mieters</span>':'')
+    +kv('Rückstand in Monatsmieten',x.miete?fnum.format(Math.max(0,x.monate)):'–')+kv('Soll ab 2025',eur(x.soll))+kv('Ist ab 2025',eur(x.ist))+kv('Saldo laut Nahaus',eur(x.nhSaldo));
+  if(x.op.length) h+='<details'+(x.op.length<=4?' open':'')+'><summary>'+x.op.length+' offene Posten</summary><table class="mini">'+x.op.map(o=>'<tr><td>'+esc(dmy(o.d))+'</td><td>'+esc(o.t)+'</td><td class="n neg">'+eur(o.b)+'</td></tr>').join('')+'</table></details>';
+  h+='</div>';
+  /* Kaution */
+  const kv0=mk.kaution||0, man=mk.kautionBezahlt!=null&&mk.kautionBezahlt!=='', unbek=!man&&!x.kSoll&&!x.kIst, kb=man?Number(mk.kautionBezahlt):x.kIst, ko=r2(Math.max(0,kv0-kb));
+  if(unbek){ h+='<div class="card"><div class="ch">🔐 Kaution<button class="ghost small" data-edit="1">✏️</button></div><div class="big">'+eur(kv0)+'</div><span class="sub">vereinbart</span>'+kv('Bezahlt','<span class="mut">unbekannt</span>')+'<div class="sub" style="margin-top:6px">In Nahaus gibt es zu dieser Kaution keine Buchung (vermutlich vor der Nahaus-Zeit gezahlt). Den bezahlten Betrag kannst du über ✏️ eintragen.</div></div>'; }
+  else h+='<div class="card"><div class="ch">🔐 Kaution'+(man?' <span class="pill src">manuell</span>':'')+'</div><div class="big">'+eur(kb)+' <span class="sub">von '+eur(kv0)+'</span></div>'
+    +'<div class="bar"><span style="width:'+(kv0?Math.min(100,kb/kv0*100):0)+'%"></span></div>'
+    +kv('Vereinbart',eur(kv0))+kv('Bezahlt',eur(kb))+kv('Offen','<span class="'+(ko>0.5?'neg':'pos')+'">'+eur(ko)+'</span>')
+    +kv('Zahlweise',(mk.kautionRaten?mk.kautionRaten+' Raten':'')+(kb>0.5&&ko>0.5?(mk.kautionRaten?' · ':'')+'<span class="pill mid">Teilzahlung</span>':ko<=0.5&&kv0?'<span class="pill ok">vollständig</span>':(mk.kautionRaten?'':'–')))+'</div>';
+  /* Warmmiete */
+  const others=(st.others||[]);
+  h+='<div class="card"><div class="ch">🏠 Warmmiete</div><div class="big">'+(st.total?eur(st.total):'–')+'</div><span class="sub">'+(st.ab?'seit '+esc(dmy(st.ab)):'')+'</span>'
+    +'<details open><summary>Zusammensetzung</summary>'+kv('Kaltmiete',eur(st.kalt))+kv('Betriebskosten',eur(st.bk))+kv('Heizkosten',eur(st.hk))+(st.strom?kv('Strom',eur(st.strom)):'')+others.map(o=>kv(esc(o.t||'Sonstiges'),eur(o.b))).join('')+(!others.length&&st.sonst?kv('Sonstiges',eur(st.sonst)):'')+'</details>'
+    +((x.mk.stufen||[]).length>1?'<details><summary>Mietentwicklung</summary><table class="mini">'+x.mk.stufen.map(z=>'<tr><td>ab '+esc(dmy(z.ab))+'</td><td class="n">'+eur(z.total)+'</td></tr>').join('')+'</table></details>':'')+'</div>';
+  /* Notizen */
+  h+='<div class="card"><div class="ch">📝 Notizen</div><textarea id="e-notiz" rows="6" placeholder="Notizen zum Mieter …">'+esc(mk.notiz||'')+'</textarea><div class="sub">Wird automatisch gespeichert, sobald du das Feld verlässt.</div></div>';
+  /* Tickets */
+  const T=mk.tickets||[], to=T.filter(t=>!t.done);
+  h+='<div class="card"><div class="ch">🎫 Tickets <span class="pill '+(to.length?'mid':'ok')+'">'+to.length+' offen</span></div>'
+    +'<div class="trow"><input type="text" id="t-neu" placeholder="Neues Ticket, z. B. Heizung defekt"><button class="small primary" data-tadd="1">+</button></div>'
+    +(T.filter(t=>showDone||!t.done).map(t=>'<label class="tick'+(t.done?' done':'')+'"><input type="checkbox" data-tdone="'+esc(t.id)+'"'+(t.done?' checked':'')+'><span>'+esc(t.t)+'<small>'+esc(dmy(t.d))+(t.done?' · erledigt '+esc(dmy(t.done)):'')+'</small></span></label>').join('')||'<div class="sub">Keine offenen Tickets.</div>')
+    +(T.some(t=>t.done)?'<button class="ghost small" data-tshow="1">'+(showDone?'erledigte ausblenden':'erledigte anzeigen')+'</button>':'')+'</div>';
+  h+='</div>';
+  /* Mieterkonto */
   if(x.erg) h+='<div class="note warnbox">'+x.erg+' Monatsmiete'+(x.erg>1?'n fehlen':' fehlt')+' in Nahaus als Sollstellung und '+(x.erg>1?'wurden':'wurde')+' aus dem Mietvertrag ergänzt (kursiv).</div>';
-  h+='<div class="tablewrap"><table class="kb"><thead><tr><th>Datum</th><th>Buchung</th><th class="n">Soll</th><th class="n">Ist</th><th class="n">Saldo</th></tr></thead><tbody>';
-  for(const r of x.rows){ h+='<tr class="'+(r.e?'erg':'')+(r.k?' kaut':'')+'"><td>'+esc(dmy(r.d))+'</td><td class="wrapc">'+esc(r.t)+'<div class="sub">'+esc(r.src)+(r.k?' · Kaution (getrennt)':'')+(r.man?' · manuell zugeordnet':'')+'</div>'+(r.key?zuordSel(r,x.mk):'')+'</td><td class="n">'+(r.s?eur(r.s):'')+'</td><td class="n pos">'+(r.h?eur(r.h):'')+'</td><td class="n">'+(r.saldo==null?'':'<b class="'+(r.saldo>0.5?'neg':'')+'">'+eur(r.saldo)+'</b>')+'</td></tr>'; }
-  h+='</tbody></table></div>';
-  const st=(mk.stufen||[]); if(st.length){ h+='<h3>Miete laut Vertrag</h3><div class="tablewrap"><table><thead><tr><th>ab</th><th class="n">Kalt</th><th class="n">BK</th><th class="n">HK</th><th class="n">Sonst.</th><th class="n">Gesamt</th></tr></thead><tbody>'+st.map(s=>'<tr><td>'+esc(dmy(s.ab))+'</td><td class="n">'+eur(s.kalt)+'</td><td class="n">'+eur(s.bk)+'</td><td class="n">'+eur(s.hk)+'</td><td class="n">'+eur((s.strom||0)+(s.sonst||0))+'</td><td class="n"><b>'+eur(s.total)+'</b></td></tr>').join('')+'</tbody></table></div>'; }
+  h+='<h3>Mieterkonto</h3><div class="tablewrap"><table class="kb"><thead><tr><th>Datum</th><th>Buchung</th><th class="n">Soll</th><th class="n">Ist</th><th class="n">Saldo</th></tr></thead><tbody>';
+  for(const r of x.rows.slice().reverse()){ h+='<tr class="'+(r.e?'erg':'')+(r.k?' kaut':'')+'"><td>'+esc(dmy(r.d))+'</td><td class="wrapc">'+esc(r.t)+'<div class="sub">'+esc(r.src)+(r.k?' · Kaution (getrennt)':'')+(r.man?' · manuell zugeordnet':'')+'</div>'+(r.key?zuordSel(r,x.mk):'')+'</td><td class="n">'+(r.s?eur(r.s):'')+'</td><td class="n pos">'+(r.h?eur(r.h):'')+'</td><td class="n">'+(r.saldo==null?'':'<b class="'+(r.saldo>0.5?'neg':'')+'">'+eur(r.saldo)+'</b>')+'</td></tr>'; }
+  h+='</tbody></table></div><div class="sub" style="margin-top:6px">Neueste Buchungen oben.</div>';
   return h; }
-function editForm(mk){
-  if(!editOpen) return '<div style="margin:4px 0 8px"><button class="small" data-edit="1">✏️ Mieterdaten bearbeiten</button></div>';
-  const f=(id,l,v,w)=>'<label class="sub" style="display:grid;gap:2px">'+l+'<input type="text" id="'+id+'" value="'+esc(v??'')+'" style="width:'+(w||'100%')+'"></label>';
-  return '<div class="spl" style="margin:6px 0 10px;display:grid;gap:8px">'+f('e-mieter','Name(n) – mehrere mit Komma trennen',mk.mieter)+f('e-anrede','Anrede für Briefe (z. B. Herr Hans Keml)',mk.anrede)+f('e-ref','Verwendungszweck',mk.ref)+f('e-kaution','Kaution (€)',fnum.format(mk.kaution||0),'120px')
-    +'<label class="sub" style="display:grid;gap:2px">Notiz<textarea id="e-notiz" rows="2">'+esc(mk.notiz||'')+'</textarea></label>'
-    +'<div class="acts"><button class="primary small" data-esave="1">Speichern</button><button class="ghost small" data-ecancel="1">Abbrechen</button><span class="sub">Änderungen bleiben auch nach einem neuen Nahaus-Import erhalten.</span></div></div>'; }
 function zuordSel(r,mk0){ const L=Object.values(MK).filter(m=>m.unit===r.unit||m.obj===mk0.obj).sort((a,b)=>(b.von||'').localeCompare(a.von||''));
   return '<select class="zsel" data-zkey="'+esc(r.key)+'" title="Zahlung einem anderen Mietverhältnis zuordnen"><option value="">↪ andere Zuordnung …</option>'+L.filter(m=>m.pid!==mk0.pid).map(m=>'<option value="'+esc(m.pid)+'">'+esc(m.obj+' '+(m.einheit||'')+' · '+(ed(m).mieter||'')+' ('+dmy(m.von)+(m.bis?'–'+dmy(m.bis):'')+')')+'</option>').join('')+'<option value="-">keinem Mieter zuordnen</option>'+(r.man?'<option value="~">automatische Zuordnung wiederherstellen</option>':'')+'</select>'; }
 function importCard(big){ return '<div class="note'+(big?'':' small')+'"><b>'+(big?'Mietverträge und Sollstellungen übernehmen':'Daten aus Nahaus aktualisieren')+'</b><div style="margin:6px 0">Import-Datei <code>mietkonten_import.json</code> auswählen (erstellt Claude aus Nahaus).</div><input type="file" id="mk-file" accept=".json"> <span id="mk-st" class="sub"></span></div>'; }
 
 /* ---------- Ereignisse ---------- */
 document.addEventListener('click',e=>{ const t=e.target.closest('button,tr.click'); if(!t) return;
-  if(t.dataset.mk){ M.sel=t.dataset.mk; editOpen=false; saveM(); render(); return; }
+  if(t.dataset.mk){ M.sel=t.dataset.mk; editOpen=false; modal=true; showDone=false; saveM(); render(); return; }
+  if(t.dataset.close){ modal=false; editOpen=false; render(); return; }
+  if(t.dataset.tshow){ showDone=!showDone; render(); return; }
+  if(t.dataset.tadd){ const v=($('t-neu').value||'').trim(); if(!v){ toast('Bitte einen Text eingeben.'); return; } const T=(ed(MK[M.sel]).tickets||[]).concat([{id:'t'+Date.now().toString(36),t:v,d:today}]); saveEdit(M.sel,{tickets:T},'Ticket angelegt.'); return; }
   if(t.dataset.mst){ M.st=t.dataset.mst; saveM(); render(); return; }
   if(t.dataset.edit){ editOpen=true; render(); return; }
   if(t.dataset.ecancel){ editOpen=false; render(); return; }
-  if(t.dataset.esave){ const k=parseNum($('e-kaution').value); const e={mieter:$('e-mieter').value.trim(),anrede:$('e-anrede').value.trim(),ref:$('e-ref').value.trim(),kaution:(k==null||isNaN(k))?0:k,notiz:$('e-notiz').value.trim()};
-    EDIT=Object.assign({},EDIT,{[M.sel]:e}); editOpen=false; calc=null; render(); saveStamm('mietkonten-edit',{e:EDIT}).then(()=>toast('Mieterdaten gespeichert.')); return; } });
+  if(t.dataset.esave){ const g=id=>$(id).value.trim(); editOpen=false; const kz=parseNum(g('e-kaution')), kbz=parseNum(g('e-kbez')); saveEdit(M.sel,{kaution:(kz==null||isNaN(kz))?(ed(MK[M.sel]).kaution||0):kz,kautionBezahlt:(kbz==null||isNaN(kbz))?'':kbz,mieter:g('e-mieter'),anrede:g('e-anrede'),email:g('e-email'),tel:g('e-tel'),betreuer:g('e-betreuer'),zahler:g('e-zahler'),ref:g('e-ref'),ampel:$('e-ampel').value},'Mieterdaten gespeichert.'); return; } });
+document.addEventListener('mousedown',e=>{ if(e.target.id==='ov'){ modal=false; editOpen=false; render(); } });
+document.addEventListener('keydown',e=>{ if(e.key==='Escape'&&modal){ modal=false; editOpen=false; render(); } if(e.key==='Enter'&&e.target.id==='t-neu'){ const b=document.querySelector('[data-tadd]'); if(b) b.click(); } });
 document.addEventListener('change',async e=>{ const t=e.target;
+  if(t.id==='e-notiz'){ saveEdit(M.sel,{notiz:t.value},'Notiz gespeichert.'); return; }
+  if(t.dataset.tdone){ const T=(ed(MK[M.sel]).tickets||[]).map(x=>x.id===t.dataset.tdone?Object.assign({},x,{done:t.checked?today:''}):x); saveEdit(M.sel,{tickets:T},t.checked?'Ticket erledigt.':'Ticket wieder offen.'); return; }
   if(t.dataset.zkey){ const v=t.value; if(!v) return; const z=Object.assign({},ZUORD); if(v==='~') delete z[t.dataset.zkey]; else z[t.dataset.zkey]=v; ZUORD=z; calc=null; render(); saveStamm('mietzuordnung',{map:ZUORD}).then(()=>toast(v==='-'?'Zahlung keinem Mieter zugeordnet.':'Zahlung umgebucht.')); return; }
   if(t.id==='m-alle'){ M.alle=t.checked; calc=null; render(); return; }
   if(t.id==='m-ges'){ M.ges=t.value; saveM(); render(); return; }
