@@ -175,6 +175,8 @@ table.mini{width:100%;font-size:12px}table.mini td{padding:3px 4px;border-bottom
 .frow .up{margin-left:auto;cursor:pointer;color:var(--accent);font-size:12px}
 .file{display:flex;align-items:center;gap:10px;padding:4px 0 4px 34px;font-size:13px;border-bottom:1px dashed var(--line)}.file a{color:var(--accent);text-decoration:none;overflow-wrap:anywhere}.file .sub{margin-left:auto}
 .prow{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:6px}.prow .pd{width:110px}.prow input[data-pt]{flex:1;min-width:160px}
+tr.fut td{color:var(--muted);font-style:italic}
+.slbox{display:block}
 </style>
 </head>
 <body>
@@ -499,7 +501,7 @@ const dmy=x=>String(x||'').split('-').reverse().join('.');
 const START='2025-01';
 let MK={}, M={f:'',ges:'',obj:'',st:'alle',q:'',sel:''}; try{ const s=JSON.parse(store('mk_state')||'null'); if(s) M=Object.assign(M,s,{q:''}); }catch(e){}
 const saveM=()=>store('mk_state',JSON.stringify({ges:M.ges,obj:M.obj,st:M.st,sel:M.sel}));
-let ZV=[], ZVload=false, DOCS={}, docOpen={}, pend=null, mkStand='', loadedMK=false, calc=null, EDIT={}, ZUORD={}, editOpen=false, modal=false, showDone=false;
+let SL={}, slAuto=false, loadedSL=false, ZV=[], ZVload=false, DOCS={}, docOpen={}, pend=null, mkStand='', loadedMK=false, calc=null, EDIT={}, ZUORD={}, editOpen=false, modal=false, showDone=false;
 const ed=mk=>Object.assign({},mk,EDIT[mk.pid]||{});
 const today=new Date().toISOString().slice(0,10), curM=today.slice(0,7);
 const addM=(m,n)=>{ const [y,mm]=m.split('-').map(Number); const d=new Date(y,mm-1+n,1); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0'); };
@@ -547,7 +549,11 @@ function compute(){
     if(Math.abs(vS-vI)>0.005) x.rows.push({d:'2024-12-31',t:'Saldovortrag 31.12.2024 (laut Nahaus)',s:r2(vS-vI)>0?r2(vS-vI):0,h:r2(vS-vI)<0?-r2(vS-vI):0,src:'Nahaus',v:1});
     /* Soll ab 2025, nur fällige */
     const mieteMonate=new Set();
-    for(const s of mk.soll||[]){ const m=s.m||(s.d||'').slice(0,7); if(m<START||(s.d||m+'-01')>fäll) continue; if(s.art==='WARM_MIETE') mieteMonate.add(m);
+    /* Sollstellungen aus dem OS (Sollstellungslauf am 25. für den Folgemonat) – ersetzen die Nahaus-Monatsmiete dieses Monats */
+    const osM=new Set();
+    for(const m of Object.keys(SL).sort()){ const p=(SL[m].posten||{})[mk.pid]; if(!p||m<START) continue; osM.add(m); mieteMonate.add(m);
+      x.rows.push({d:m+'-01',t:'Miete '+m.slice(5)+'/'+m.slice(0,4),s:p.b,h:0,src:'Sollstellung OS · erstellt '+dmy(SL[m].erstellt),art:'WARM_MIETE',fut:(m+'-01')>fäll,teile:p}); }
+    for(const s of mk.soll||[]){ const m=s.m||(s.d||'').slice(0,7); if(m<START||(s.d||m+'-01')>fäll) continue; if(s.art==='WARM_MIETE'&&osM.has(m)) continue; if(s.art==='WARM_MIETE') mieteMonate.add(m);
       x.rows.push({d:s.d||m+'-01',t:(s.t||ART[s.art]||s.art),s:s.b>0?s.b:0,h:s.b<0?-s.b:0,src:s.src==='AUTO_SOLL'?'Nahaus (automatisch)':s.src==='TRANSACTION_ASSIGNMENT'?'Nahaus (aus Zahlung)':'Nahaus',k:s.art==='KAUTION',art:s.art}); }
     /* fehlende Monatsmieten aus dem Mietvertrag ergänzen */
     const von=(mk.von||START+'-01').slice(0,7), bis=(mk.bis||'9999-12').slice(0,7);
@@ -556,7 +562,7 @@ function compute(){
     /* Nahaus-Zahlungen für Zeiträume ohne Kontoauszüge im OS */
     for(const p of mk.nhIst||[]){ const m=(p.d||'').slice(0,7); if(m<START||m>=first) continue; x.rows.push({d:p.d,t:p.t||'Zahlung',pn:'',h:p.b,s:0,src:'Zahlung laut Nahaus',k:kautIds.has(p.bk)}); }
     x.rows.sort((a,b)=>a.d<b.d?-1:a.d>b.d?1:(b.s||0)-(a.s||0));
-    let saldo=0, ks=0; for(const r of x.rows){ if(r.k){ ks+=(r.s||0)-(r.h||0); r.saldo=null; continue; } saldo=r2(saldo+(r.s||0)-(r.h||0)); r.saldo=saldo; if(!r.v){ x.soll+=r.s||0; x.ist+=r.h||0; } }
+    let saldo=0, ks=0; for(const r of x.rows){ if(r.fut){ r.saldo=null; continue; } if(r.k){ ks+=(r.s||0)-(r.h||0); r.saldo=null; continue; } saldo=r2(saldo+(r.s||0)-(r.h||0)); r.saldo=saldo; if(!r.v){ x.soll+=r.s||0; x.ist+=r.h||0; } }
     x.saldo=saldo; x.kOffen=r2(ks);
     /* Kaution, Zahler, Pünktlichkeit, offene Posten */
     x.kSoll=r2(x.rows.filter(r=>r.k).reduce((a,r)=>a+(r.s||0),0)); x.kIst=r2(x.rows.filter(r=>r.k).reduce((a,r)=>a+(r.h||0),0));
@@ -581,6 +587,7 @@ function render(){
   if(!ready){ $('view').innerHTML='<div class="loading">'+(dbState==='none'?'Bitte im Wohntraum OS einloggen.':'Lade Daten …')+'</div>'; return; }
   const f=document.activeElement, fid=f&&f.id, fv=fid?f.value:null;
   if(!Object.keys(MK).length){ $('view').innerHTML='<div class="pad">'+importCard(true)+'</div>'; return; }
+  if(!slAuto&&loadedSL&&canWrite&&today>=curM+'-25'&&!SL[nextMon()]){ slAuto=true; runSoll(nextMon(),true); }
   if(!calc) calc=compute();
   const all=Object.values(calc.res);
   const q=norm(M.q);
@@ -592,7 +599,7 @@ function render(){
   let h='<div class="kpis"><div class="kpi"><div class="l">Mietverhältnisse seit 2025</div><div class="v">'+all.length+'</div><div class="s">'+all.filter(x=>x.aktiv).length+' laufend</div></div>'
     +'<div class="kpi"><div class="l">Mieter mit Rückstand</div><div class="v neg">'+nR+'</div><div class="s">zusammen '+eur(sumR)+'</div></div>'
     +'<div class="kpi"><div class="l">Rückstand ≥ 2 Monatsmieten</div><div class="v '+(n2?'neg':'')+'">'+n2+'</div><div class="s">kündigungsrelevant</div></div>'
-    +'<div class="kpi"><div class="l">Kaution offen</div><div class="v">'+eur(all.reduce((a,x)=>a+Math.max(0,x.kOffen),0))+'</div><div class="s">'+all.filter(x=>x.kOffen>0.5).length+' Mietverhältnisse</div></div></div>';
+    +'<div class="kpi"><div class="l">Kaution offen</div><div class="v">'+eur(all.reduce((a,x)=>a+Math.max(0,x.kOffen),0))+'</div><div class="s">'+all.filter(x=>x.kOffen>0.5).length+' Mietverhältnisse</div></div></div>'+sollBox();
   h+='<div class="tbar"><div class="seg">'+[['alle','Alle'],['aktiv','Laufend'],['rueck','Rückstand'],['guthaben','Guthaben'],['kaution','Kaution offen'],['beendet','Beendet']].map(([k,l])=>'<button data-mst="'+k+'" class="'+(M.st===k?'on':'')+'">'+l+'</button>').join('')+'</div>'
     +'<select id="m-ges"><option value="">alle Gesellschaften</option>'+['EE','WT','KiBo'].map(g=>'<option'+(g===M.ges?' selected':'')+'>'+g+'</option>').join('')+'</select>'
     +'<select id="m-obj"><option value="">alle Objekte</option>'+objs.map(o=>'<option'+(o===M.obj?' selected':'')+'>'+esc(o)+'</option>').join('')+'</select>'
@@ -614,6 +621,22 @@ const AMPEL={gruen:['#1d9a5b','zuverlässig'],gelb:['#e0a400','beobachten'],rot:
 const ampel=x=>{ const a=ed(x.mk).ampel; return a&&AMPEL[a]?a:x.ampelAuto; };
 const ampelDot=(a,big)=>'<span class="adot'+(big?' big':'')+'" style="background:'+AMPEL[a][0]+'" title="Mieterranking: '+AMPEL[a][1]+'"></span>';
 function saveEdit(pid,patch,msg){ EDIT=Object.assign({},EDIT,{[pid]:Object.assign({},EDIT[pid]||{},patch)}); calc=null; render(); saveStamm('mietkonten-edit',{e:EDIT}).then(()=>msg&&toast(msg)); }
+/* ---------- Sollstellungslauf ---------- */
+const nextMon=()=>addM(curM,1);
+function sollFuer(m){ const aktivKz=new Set(objekte.filter(o=>o.aktiv!==false).map(o=>o.kz)); const P={};
+  for(const mk of Object.values(MK)){ if(!aktivKz.has(mk.obj)) continue; if(mk.von&&mk.von.slice(0,7)>m) continue; if(mk.bis&&mk.bis.slice(0,7)<m) continue;
+    const st=stufeAt(mk,m); if(!st||!st.total) continue; P[mk.pid]={b:st.total,kalt:st.kalt||0,bk:st.bk||0,hk:st.hk||0,strom:st.strom||0,sonst:st.sonst||0,others:st.others||[]}; }
+  return P; }
+function runSoll(m,auto){ if(!db||!canWrite) return; const P=sollFuer(m); const n=Object.keys(P).length; if(!n){ if(!auto) toast('Keine laufenden Mietverhältnisse für '+m.slice(5)+'/'+m.slice(0,4)+'.'); return; }
+  const doc={monat:m,erstellt:today,auto:!!auto,anzahl:n,summe:r2(Object.values(P).reduce((a,p)=>a+p.b,0)),posten:P};
+  SL=Object.assign({},SL,{[m]:doc}); calc=null; render();
+  queue('sollstellungen/'+m,()=>db.doc('sollstellungen/'+m).set(doc)).then(()=>toast('Sollstellungen '+m.slice(5)+'/'+m.slice(0,4)+' erstellt: '+n+' Mietverhältnisse, '+eur(doc.summe)+'.')); }
+function sollBox(){ const m=nextMon(), d=SL[m], ab=curM+'-25', MN=m.slice(5)+'/'+m.slice(0,4);
+  let h='<div class="note slbox"><b>Sollstellungslauf</b> – jeweils am 25. für den Folgemonat. ';
+  if(d) h+='Für '+MN+' erstellt am '+esc(dmy(d.erstellt))+(d.auto?' (automatisch)':'')+': '+d.anzahl+' Mietverhältnisse, '+eur(d.summe)+'. <button class="ghost small" data-slre="1">neu erstellen</button>';
+  else h+=(today>=ab?'Für '+MN+' wird er beim Öffnen der Seite automatisch erstellt.':'Nächster Lauf für '+MN+' am '+esc(dmy(ab))+'.')+' <button class="ghost small" data-slrun="1">jetzt erstellen</button>';
+  const alt=Object.keys(SL).filter(k=>k!==m).sort().reverse().slice(0,3); if(alt.length) h+='<div class="sub">Frühere Läufe: '+alt.map(k=>esc(k.slice(5)+'/'+k.slice(0,4))+' ('+SL[k].anzahl+', '+eur(SL[k].summe)+')').join(' · ')+'</div>';
+  return h+'</div>'; }
 /* ---------- Ratenzahlungen (Tabelle zahlungsvereinbarungen) ---------- */
 async function loadZV(){ const sb=window.osSupabase; if(!sb) return; const {data,error}=await sb.from('zahlungsvereinbarungen').select('id,mieter,objekt,wohnung,forderung,rate,start_datum,status,art,zahlungen,mahnstufe'); if(!error){ ZV=data||[]; ZVload=true; render(); } }
 const zvBez=z=>(z.zahlungen||[]).reduce((a,y)=>a+(parseNum(y.betrag)||0),0);
@@ -706,7 +729,7 @@ function renderDash(x){ const mk=ed(x.mk), sn=STN[x.status], a=ampel(x), K=mk.ko
   /* Mieterkonto */
   if(x.erg) h+='<div class="note warnbox">'+x.erg+' Monatsmiete'+(x.erg>1?'n fehlen':' fehlt')+' in Nahaus als Sollstellung und '+(x.erg>1?'wurden':'wurde')+' aus dem Mietvertrag ergänzt (kursiv).</div>';
   h+='<h3>Mieterkonto</h3><div class="tablewrap"><table class="kb"><thead><tr><th>Datum</th><th>Buchung</th><th class="n">Soll</th><th class="n">Ist</th><th class="n">Saldo</th></tr></thead><tbody>';
-  for(const r of x.rows.slice().reverse()){ h+='<tr class="'+(r.e?'erg':'')+(r.k?' kaut':'')+'"><td>'+esc(dmy(r.d))+'</td><td class="wrapc">'+esc(r.t)+'<div class="sub">'+esc(r.src)+(r.k?' · Kaution (getrennt)':'')+(r.man?' · manuell zugeordnet':'')+'</div>'+(r.key?zuordSel(r,x.mk):'')+'</td><td class="n">'+(r.s?eur(r.s):'')+'</td><td class="n pos">'+(r.h?eur(r.h):'')+'</td><td class="n">'+(r.saldo==null?'':'<b class="'+(r.saldo>0.5?'neg':'')+'">'+eur(r.saldo)+'</b>')+'</td></tr>'; }
+  for(const r of x.rows.slice().reverse()){ h+='<tr class="'+(r.e?'erg':'')+(r.fut?' fut':'')+(r.k?' kaut':'')+'"><td>'+esc(dmy(r.d))+'</td><td class="wrapc">'+esc(r.t)+'<div class="sub">'+esc(r.src)+(r.fut?' · fällig ab '+esc(dmy(r.d))+', zählt noch nicht im Saldo':'')+(r.k?' · Kaution (getrennt)':'')+(r.man?' · manuell zugeordnet':'')+'</div>'+(r.key?zuordSel(r,x.mk):'')+'</td><td class="n">'+(r.s?eur(r.s):'')+'</td><td class="n pos">'+(r.h?eur(r.h):'')+'</td><td class="n">'+(r.saldo==null?'':'<b class="'+(r.saldo>0.5?'neg':'')+'">'+eur(r.saldo)+'</b>')+'</td></tr>'; }
   h+='</tbody></table></div><div class="sub" style="margin-top:6px">Neueste Buchungen oben.</div>';
   return h; }
 function zuordSel(r,mk0){ const L=Object.values(MK).filter(m=>m.unit===r.unit||m.obj===mk0.obj).sort((a,b)=>(b.von||'').localeCompare(a.von||''));
@@ -724,6 +747,8 @@ document.addEventListener('click',async e=>{ const t=e.target.closest('button,tr
   if(t.dataset.pcancel){ pend=null; render(); return; }
   if(t.dataset.pup){ uploadPend(); return; }
   if(t.dataset.ddel){ if(t.dataset.sure!=='1'){ t.dataset.sure='1'; t.textContent='Wirklich löschen?'; return; } const [f,n]=t.dataset.ddel.split('|'); const mk=MK[M.sel]; window.osSupabase.storage.from('mieterakten').remove([docBase(mk)+'/'+enc(f)+'/'+n]).then(()=>{ toast('Datei gelöscht.'); loadDocs(mk); }); return; }
+  if(t.dataset.slrun){ runSoll(nextMon(),false); return; }
+  if(t.dataset.slre){ if(t.dataset.sure!=='1'){ t.dataset.sure='1'; t.textContent='Wirklich neu erstellen?'; return; } runSoll(nextMon(),false); return; }
   if(t.dataset.close){ modal=false; editOpen=false; render(); return; }
   if(t.dataset.tshow){ showDone=!showDone; render(); return; }
   if(t.dataset.tadd){ const v=($('t-neu').value||'').trim(); if(!v){ toast('Bitte einen Text eingeben.'); return; } const T=(ed(MK[M.sel]).tickets||[]).concat([{id:'t'+Date.now().toString(36),t:v,d:today}]); saveEdit(M.sel,{tickets:T},'Ticket angelegt.'); return; }
@@ -770,6 +795,7 @@ render();
   db.doc('stamm/mietkonten').onSnapshot(s=>{ mkStand=s.exists?(s.data().stand||''):''; render(); },()=>{});
   db.collection('buchungen').onSnapshot(q=>{ const m={}; q.docs.forEach(d=>{m[d.id]=clone(d.data());}); buch=m; done('b'); },e=>{toast('Buchungen nicht lesbar: '+e.message); done('b');});
   loadZV();
+  db.collection('sollstellungen').onSnapshot(q=>{ const m={}; q.docs.forEach(d=>{m[d.id]=clone(d.data());}); SL=m; loadedSL=true; calc=null; render(); },()=>{ loadedSL=true; });
   db.collection('mietkonten').onSnapshot(q=>{ const m={}; q.docs.forEach(d=>{m[d.id]=clone(d.data());}); MK=m; loadedMK=true; calc=null; render(); },()=>{ loadedMK=true; render(); });
 })();
 })();
