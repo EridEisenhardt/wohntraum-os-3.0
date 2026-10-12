@@ -85,6 +85,8 @@ export const NAV = [
     { href: '/controlling/statistik', icon: 'ti-chart-bar', label: 'Statistik' },
     { href: '/controlling/xray', icon: 'ti-scan', label: 'xRay' },
     { href: '/controlling/monatswechsel', icon: 'ti-calendar-dollar', label: 'Monatswechsel (Controlling)' },
+    { href: '/controlling/monatswechsel-fixkosten', icon: 'ti-calendar-check', label: 'Monatswechsel Fixkosten' },
+    { href: '/controlling/objekt-controlling', icon: 'ti-building-bank', label: 'Objekt-Controlling' },
   ] },
   { type: 'group', key: 'produktivitaet', icon: 'ti-rocket', label: 'Produktivität', area: 'hv', mod: 'produktivitaet', items: [
     { href: '/produktivitaet/tracking', icon: 'ti-chart-line', label: 'Tracking' },
