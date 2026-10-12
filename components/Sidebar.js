@@ -22,6 +22,7 @@ export const NAV = [
     { href: '/vermietung/zahlungsvereinbarung-register', icon: 'ti-receipt-2', label: 'Ratenzahlungen' },
     { href: '/mahnprozess/generator', icon: 'ti-file-invoice', label: 'Mahnungen & Register' },
     { href: '/mahnprozess', icon: 'ti-gavel', label: 'Mahnprozess' },
+    { href: '/controlling/liquiditaet', icon: 'ti-droplet', label: 'Liquidität verbessern' },
   ] },
   { type: 'group', key: 'hausverwaltung', icon: 'ti-home-cog', label: 'Hausverwaltung', area: ['hv', 'backoffice'], mod: 'dashboards', items: [
     { href: '/hausverwaltung/portfolio', icon: 'ti-building-community', label: 'Portfolio' },

@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="de"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Liquidität verbessern</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
+<style>
+:root{--bg:#f6f7f9;--surf:#fff;--surf2:#f1f3f6;--line:#e4e7ec;--text:#1c2230;--muted:#6b7280;--accent:#6d4ef0;--green:#0f9d6b;--red:#c0392b;--amber:#b45309}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--text);font-family:'Inter',system-ui,-apple-system,'Segoe UI',sans-serif;font-size:14px;line-height:1.5}
+.wrap{max-width:1200px;margin:0 auto;padding:22px 24px 60px}
+h1{font-size:22px;font-weight:800}
+.sub{font-size:12.5px;color:var(--muted);margin:5px 0 16px;max-width:860px}
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:11px;margin-bottom:16px}
+.kpi{background:var(--surf);border:1px solid var(--line);border-radius:12px;padding:13px 15px}
+.kpi .l{font-size:10px;text-transform:uppercase;color:var(--muted);font-weight:700}
+.kpi .v{font-size:20px;font-weight:800;margin-top:4px}
+.kpi.green .v{color:var(--green)}.kpi.amber .v{color:var(--amber)}.kpi.accent .v{color:var(--accent)}
+.grid2{display:grid;grid-template-columns:1.6fr 1fr;gap:16px;align-items:start;margin-bottom:16px}
+@media(max-width:900px){.grid2{grid-template-columns:1fr}}
+.card{background:var(--surf);border:1px solid var(--line);border-radius:13px;padding:14px 16px}
+.card h2{font-size:12px;text-transform:uppercase;letter-spacing:.05em;color:var(--accent);font-weight:800;margin-bottom:10px}
+.scroll{overflow:auto;background:var(--surf);border:1px solid var(--line);border-radius:13px}
+table{width:100%;border-collapse:collapse;font-size:13px;min-width:860px}
+th,td{padding:8px 11px;border-bottom:1px solid var(--line);text-align:left;vertical-align:middle}
+th{font-size:10.5px;text-transform:uppercase;color:var(--muted);font-weight:700}
+th.r,td.r{text-align:right}
+tr.done td{background:#f2f8f3}
+tr.done .nm{text-decoration:line-through;color:var(--muted)}
+input,select,textarea{font:inherit;font-size:13px;border:1px solid var(--line);border-radius:7px;padding:6px 8px;background:var(--surf);color:var(--text)}
+.inl{width:100%;border:1px solid transparent;background:transparent;padding:5px 6px}
+.inl:hover,.inl:focus{border-color:var(--line);background:var(--surf2)}
+.ninp{width:110px;text-align:right}
+.badge{font-size:10.5px;font-weight:700;padding:2px 9px;border-radius:999px;color:#fff}
+.btn{font:inherit;font-size:13px;border:1px solid var(--line);background:var(--surf);border-radius:8px;padding:7px 13px;cursor:pointer;font-weight:600}
+.btn.pri{background:var(--accent);color:#fff;border-color:var(--accent)}
+.del{background:none;border:0;color:var(--red);cursor:pointer;font-size:13px}
+.toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:#000c;color:#fff;padding:10px 16px;border-radius:9px;font-size:13px;opacity:0;pointer-events:none;transition:.2s;z-index:50}
+.toast.show{opacity:1}
+</style></head><body>
+<div class="wrap">
+  <h1>💧 Liquidität verbessern</h1>
+  <div class="sub">Maßnahmen zur Verbesserung der Liquidität – je Gesellschaft, mit Status, Fälligkeit und erwartetem €-Effekt. Zum Abhaken und Nachverfolgen.</div>
+  <div class="kpis" id="kpis"></div>
+  <div class="grid2">
+    <div class="card"><h2>Umsetzungsstand</h2><div style="position:relative;height:210px"><canvas id="chStatus"></canvas></div></div>
+    <div class="card"><h2>Erwarteter Liquiditäts-Effekt</h2><div style="position:relative;height:210px"><canvas id="chEffekt"></canvas></div></div>
+  </div>
+  <div style="margin-bottom:10px"><button class="btn pri" onclick="addRow()">+ Maßnahme</button></div>
+  <div class="scroll"><table><thead><tr><th>#</th><th>Maßnahme</th><th>Kategorie</th><th>Gesellschaft</th><th>Fällig</th><th>Status</th><th class="r">Effekt €</th><th>Notiz</th><th></th></tr></thead><tbody id="tb"></tbody><tfoot><tr id="tf"></tr></tfoot></table></div>
+</div>
+<div class="toast" id="toast"></div>
+<script>
+const sb=window.supabase.createClient('https://jqzxctfqvcwbctpjksvg.supabase.co','eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpxenhjdGZxdmN3YmN0cGprc3ZnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODIxMzA0MzIsImV4cCI6MjA5NzcwNjQzMn0.RKIbZxJdusKWWPjBJqlxZ8e1m8So02UslOg55YRsn3o');
+const esc=s=>(s==null?'':String(s)).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+const eur=n=>(n==null||isNaN(n)||n==='')?'—':new Intl.NumberFormat('de-DE',{style:'currency',currency:'EUR',maximumFractionDigits:0}).format(n);
+function toast(m){const t=document.getElementById('toast');t.textContent=m;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),1700);}
+const STATUS=['offen','in Arbeit','erledigt'];
+const SCOL={'offen':'#b45309','in Arbeit':'#6d4ef0','erledigt':'#0f9d6b'};
+let ROWS=[], chS=null, chE=null;
+async function load(){
+  const {data,error}=await sb.from('liquiditaet_massnahmen').select('*').order('status').order('pos',{ascending:true}).order('created_at',{ascending:true});
+  if(error){document.getElementById('tb').innerHTML='<tr><td colspan="9">Fehler: '+esc(error.message)+'</td></tr>';return;}
+  ROWS=data||[];render();
+}
+function render(){
+  ROWS.sort((a,b)=>(a.pos||0)-(b.pos||0));
+  document.getElementById('tb').innerHTML=ROWS.map((r,i)=>`<tr class="${r.status==='erledigt'?'done':''}">
+    <td>${i+1}</td>
+    <td><input class="inl nm" value="${esc(r.name||'')}" onchange="upd('${r.id}','name',this.value)"></td>
+    <td><input class="inl" style="width:130px" value="${esc(r.kategorie||'')}" onchange="upd('${r.id}','kategorie',this.value)"></td>
+    <td><input class="inl" style="width:220px" value="${esc(r.gesellschaft||'')}" onchange="upd('${r.id}','gesellschaft',this.value)"></td>
+    <td><input type="date" value="${esc(r.faellig||'')}" onchange="upd('${r.id}','faellig',this.value)"></td>
+    <td><select onchange="upd('${r.id}','status',this.value)">${STATUS.map(s=>`<option ${s===(r.status||'offen')?'selected':''}>${s}</option>`).join('')}</select></td>
+    <td class="r"><input class="ninp" type="number" step="500" value="${r.effekt_eur!=null?r.effekt_eur:''}" placeholder="0" onchange="upd('${r.id}','effekt_eur',this.value)"></td>
+    <td><input class="inl" style="min-width:160px" value="${esc(r.notiz||'')}" placeholder="…" onchange="upd('${r.id}','notiz',this.value)"></td>
+    <td><button class="del" onclick="delRow('${r.id}')">🗑</button></td>
+  </tr>`).join('')||`<tr><td colspan="9" style="text-align:center;color:var(--muted);padding:24px">Noch keine Maßnahmen.</td></tr>`;
+  const sumAll=ROWS.reduce((s,r)=>s+(Number(r.effekt_eur)||0),0);
+  const sumDone=ROWS.filter(r=>r.status==='erledigt').reduce((s,r)=>s+(Number(r.effekt_eur)||0),0);
+  document.getElementById('tf').innerHTML=`<td></td><td><b>Σ ${ROWS.length} Maßnahmen</b></td><td colspan="4"></td><td class="r"><b>${eur(sumAll)}</b></td><td colspan="2"></td>`;
+  renderKpis(sumAll,sumDone);renderCharts();
+}
+function renderKpis(sumAll,sumDone){
+  const off=ROWS.filter(r=>r.status==='offen').length, arb=ROWS.filter(r=>r.status==='in Arbeit').length, done=ROWS.filter(r=>r.status==='erledigt').length;
+  document.getElementById('kpis').innerHTML=[
+    ['Maßnahmen gesamt',ROWS.length,''],['offen',off,'amber'],['in Arbeit',arb,'accent'],['erledigt',done,'green'],
+    ['Effekt gesamt',eur(sumAll),'accent'],['davon realisiert',eur(sumDone),'green']
+  ].map(k=>`<div class="kpi ${k[2]}"><div class="l">${k[0]}</div><div class="v">${k[1]}</div></div>`).join('');
+}
+function renderCharts(){
+  if(typeof Chart==='undefined')return;
+  const cnt={'offen':0,'in Arbeit':0,'erledigt':0};ROWS.forEach(r=>{cnt[r.status||'offen']=(cnt[r.status||'offen']||0)+1;});
+  const cs=document.getElementById('chStatus');
+  if(chS)chS.destroy();
+  chS=new Chart(cs.getContext('2d'),{type:'doughnut',data:{labels:STATUS,datasets:[{data:STATUS.map(s=>cnt[s]),backgroundColor:STATUS.map(s=>SCOL[s])}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'bottom',labels:{boxWidth:12,font:{size:11}}}}}});
+  // Effekt je Gesellschaft (offen vs erledigt)
+  const ges=[...new Set(ROWS.map(r=>r.gesellschaft||'—'))];
+  const offen=ges.map(g=>ROWS.filter(r=>r.gesellschaft===g&&r.status!=='erledigt').reduce((s,r)=>s+(Number(r.effekt_eur)||0),0));
+  const erle=ges.map(g=>ROWS.filter(r=>r.gesellschaft===g&&r.status==='erledigt').reduce((s,r)=>s+(Number(r.effekt_eur)||0),0));
+  const ce=document.getElementById('chEffekt');
+  if(chE)chE.destroy();
+  chE=new Chart(ce.getContext('2d'),{type:'bar',data:{labels:ges.map(g=>g.length>22?g.slice(0,20)+'…':g),datasets:[
+    {label:'offen/in Arbeit',data:offen,backgroundColor:'#b4530933',borderColor:'#b45309',borderWidth:1},
+    {label:'realisiert',data:erle,backgroundColor:'#0f9d6b',borderColor:'#0f9d6b',borderWidth:1}
+  ]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{labels:{boxWidth:12,font:{size:11}}},tooltip:{callbacks:{label:c=>c.dataset.label+': '+eur(c.parsed.y)}}},scales:{x:{stacked:false},y:{beginAtZero:true,ticks:{callback:v=>Math.round(v/1000)+'k'}}}}});
+}
+async function upd(id,field,val){
+  const r=ROWS.find(x=>x.id===id);if(!r)return;const nv=(field==='effekt_eur')?(val===''?null:Number(val)):(val===''?null:val);
+  r[field]=nv;
+  const {error}=await sb.from('liquiditaet_massnahmen').update({[field]:nv,updated_at:new Date().toISOString()}).eq('id',id);
+  if(error){toast('Fehler: '+error.message);return;}
+  if(field==='status')render();else renderCharts();
+}
+async function addRow(){
+  const pos=(ROWS.reduce((m,r)=>Math.max(m,r.pos||0),0))+1;
+  const {data,error}=await sb.from('liquiditaet_massnahmen').insert({pos,name:'',kategorie:'Liquidität',status:'offen'}).select().maybeSingle();
+  if(error){toast('Fehler: '+error.message);return;}
+  ROWS.push(data);render();
+}
+async function delRow(id){
+  if(!confirm('Maßnahme löschen?'))return;
+  await sb.from('liquiditaet_massnahmen').delete().eq('id',id);
+  ROWS=ROWS.filter(r=>r.id!==id);render();
+}
+load();
+</script></body></html>
