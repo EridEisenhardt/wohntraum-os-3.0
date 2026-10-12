@@ -670,15 +670,33 @@ const letzterLauf=()=>Object.keys(MAHN).sort().pop()||'';
 async function loadRegM(){ const sb=window.osSupabase; if(!sb) return; try{ const {data}=await sb.from('mahn_register').select('id,nummer,datum,objekt,we,empfaenger,mahnstufe,status').order('nummer',{ascending:false}); REGM=data||[]; }catch(e){ REGM=[]; } REGload=true; render(); }
 const weKey=s=>uName(s).toLowerCase();
 /* letzte Mahnung je Mieter: Mahnläufe im OS + Einzelmahnungen aus dem Mahnregister */
-function letzteMahnung(x){ const L=(x.mahn||[]).map(m=>({d:m.d,stufe:m.stufe,nr:m.nr}));
+function letzteMahnung(x){ const L=(x.mahn||[]).map(m=>({d:m.d,stufe:m.stufe,nr:m.nr})).concat((ed(x.mk).mahnungen||[]).map(m=>({d:m.d,stufe:m.stufe,nr:m.nr||'',quelle:m.quelle||'manuell'})));
   for(const r of REGM){ if(/storniert|bezahlt|erledigt/i.test(r.status||'')) continue; if(String(r.objekt||'').toLowerCase()!==String(x.mk.obj).toLowerCase()||weKey(r.we)!==weKey(x.mk.einheit)) continue; if(L.some(m=>m.nr==='MA-'+String(r.nummer).padStart(4,'0'))) continue; L.push({d:r.datum,stufe:r.mahnstufe,nr:'MA-'+String(r.nummer).padStart(4,'0')}); }
   return L.sort((a,b)=>a.d<b.d?-1:1).pop()||null; }
 /* Vorschlag: gilt die letzte Mahnung noch für den aktuellen Rückstand, kommt die nächste Stufe, sonst Zahlungserinnerung */
 function mahnVorschlag(x){ const ue=(x.op||[]).filter(o=>o.d<=calc.faell); const aelt=ue.length?ue[0].d:''; const lm=letzteMahnung(x); let st=STUFEN[0], grund='';
   if(lm&&aelt&&lm.d>=aelt){ const i=Math.max(0,STUFEN.indexOf(lm.stufe)); st=STUFEN[Math.min(STUFEN.length-1,i+1)]; }
-  const zv=(ed(x.mk).raten||[]).length;
-  if(x.ueber<MR.min) grund='unter Mindestbetrag'; else if(lm&&Date.parse(MR.datum)-Date.parse(lm.d)<10*864e5) grund='zuletzt gemahnt am '+dmy(lm.d); else if(zv) grund='Ratenzahlung hinterlegt';
+  const zv=(ed(x.mk).raten||[]).length, ms=mahnsperre(x.mk), za=Number(ed(x.mk).zahltAm)||0;
+  if(ms) grund='Mahnsperre: '+(ms.grund||'ohne Grund'); else if(za&&Number(MR.datum.slice(8,10))<=za+2&&(x.op||[]).filter(o=>o.d<=calc.faell&&o.d.slice(0,7)<MR.datum.slice(0,7)).length===0) grund=ed(x.mk).mahnHinweis||('zahlt am '+za+'. des Monats'); else if(x.ueber<MR.min) grund='unter Mindestbetrag'; else if(lm&&Date.parse(MR.datum)-Date.parse(lm.d)<10*864e5) grund='zuletzt gemahnt am '+dmy(lm.d); else if(zv) grund='Ratenzahlung hinterlegt';
   return {st,lm,grund,aelt}; }
+/* Mahnsperre: aktiv, solange kein Ende gesetzt oder das Ende nicht erreicht ist */
+function mahnsperre(mk){ const s=ed(mk).mahnsperre; if(!s||!s.aktiv) return null; if(s.bis&&s.bis<today) return null; return s; }
+function mahnstandCard(x){ const mk=ed(x.mk), lm=letzteMahnung(x), ms=mahnsperre(x.mk), za=Number(mk.zahltAm)||0;
+  const L=(x.mahn||[]).map(m=>({d:m.d,stufe:m.stufe,nr:m.nr,quelle:'Mahnlauf OS'})).concat((mk.mahnungen||[]).map((m,i)=>Object.assign({i},m))).sort((a,b)=>a.d<b.d?1:-1);
+  const kv=(l,v)=>'<div class="kvr"><span>'+l+'</span><b>'+v+'</b></div>';
+  let h='<div class="card"><div class="ch">Mahnstand'+(ms?' <span class="pill bad">Mahnsperre</span>':'')+'</div>';
+  h+=kv('Letzte Mahnung',lm?esc(lm.stufe+' · '+dmy(lm.d))+(lm.quelle?' <span class="pill src">'+esc(lm.quelle)+'</span>':''):'<span class="mut">keine</span>');
+  h+=kv('Mahnsperre',ms?esc(ms.grund||'ja')+(ms.bis?' (bis '+esc(dmy(ms.bis))+')':''):'nein');
+  h+=kv('Zahlt regelmäßig am',za?za+'. des Monats'+(mk.mahnHinweis?' <span class="sub">'+esc(mk.mahnHinweis)+'</span>':''):'–');
+  h+='<details'+(ms||!L.length?'':'')+'><summary>Mahnsperre und Zahltag ändern</summary>'
+    +'<label class="fl">Mahnsperre<select id="ms-aktiv"><option value="">keine</option><option value="1"'+(ms?' selected':'')+'>aktiv</option></select></label>'
+    +'<label class="fl">Grund<input type="text" id="ms-grund" value="'+esc(ms?ms.grund||'':'')+'" placeholder="z. B. in Klärung, neu eingezogen"></label>'
+    +'<label class="fl">bis (leer = unbefristet)<input type="date" id="ms-bis" value="'+esc(ms&&ms.bis||'')+'"></label>'
+    +'<label class="fl">Zahlt regelmäßig am (Tag, leer = normal)<input type="text" id="ms-tag" value="'+(za||'')+'" style="width:80px"></label>'
+    +'<div class="acts"><button class="primary small" data-mssave="1">Speichern</button></div><div class="sub">Mieter mit Mahnsperre werden im Mahnlauf nicht vorausgewählt. Bei einem Zahltag wird im Mahnlauf vor diesem Tag nur gemahnt, wenn ältere Monate offen sind.</div></details>';
+  h+='<details><summary>Mahnungen ('+L.length+')</summary>'+(L.length?'<table class="mini">'+L.map(m=>'<tr><td>'+esc(dmy(m.d))+'</td><td>'+esc(m.stufe)+(m.nr?' '+esc(m.nr):'')+'</td><td class="sub">'+esc(m.quelle||'manuell')+'</td><td>'+(m.i!=null?'<button class="ghost small" data-mnx="'+m.i+'">entfernen</button>':'')+'</td></tr>').join('')+'</table>':'<div class="sub">Noch keine Mahnung.</div>')
+    +'<div class="trow"><input type="date" id="mn-d" value="'+esc(today)+'"><select id="mn-st">'+STUFEN.map(s2=>'<option>'+s2+'</option>').join('')+'</select><button class="ghost small" data-mnadd="1">Mahnung nachtragen</button></div></details>';
+  return h+'</div>'; }
 function mahnListe(){ if(!calc) calc=compute(); return Object.values(calc.res).filter(x=>x.aktiv&&x.ueber>0.5).sort((a,b)=>b.ueber-a.ueber); }
 function mahnBox(){ const lt=laufTermin(), ll=letzterLauf(), faellig=!ll||ll<lt;
   let h='<div class="note slbox"><b>Sammelmahnung</b> – jeweils am 05. und 20. des Monats. ';
@@ -795,7 +813,7 @@ function render(){
   if(!list.length) h+='<tr><td colspan="9" class="empty">Keine Mietverhältnisse für diesen Filter.</td></tr>';
   for(const x of list){ const mk=x.mk, sn=STN[x.status];
     h+='<tr class="click'+(mk.pid===M.sel?' sel':'')+'" data-mk="'+esc(mk.pid)+'"><td>'+ampelDot(ampel(x))+'</td><td><b>'+esc(mk.obj)+'</b></td><td>'+esc(uName(mk.einheit))+'</td><td class="wrapc">'+esc(ed(mk).mieter||'–')+(mk.gewerbe?' <span class="pill src">Gewerbe</span>':'')+'</td><td class="sub">'+esc(String(ed(mk).zahler||x.zahlerAuto||'').replace(/ \(.*\)$/,''))+'</td><td class="sub">'+esc(dmy(mk.von))+(mk.bis?' – '+esc(dmy(mk.bis)):'')+'</td><td class="n">'+(x.miete?eur(x.miete):'–')+'</td>'
-      +'<td class="n '+(x.ueber>0.5?'neg':x.saldo<-0.5?'pos':'')+'"><b>'+eur(x.saldo)+'</b>'+(x.ueber>0.5&&Math.abs(x.ueber-x.saldo)>0.5?'<div class="sub">überfällig '+eur(x.ueber)+'</div>':'')+'</td><td><span class="pill '+sn[0]+'">'+sn[1]+'</span>'+(x.kOffen>0.5?' <span class="pill mid" title="Kaution offen">K</span>':'')+(x.erg?' <span class="pill src" title="'+x.erg+' Monatsmieten aus dem Mietvertrag ergänzt">+'+x.erg+'</span>':'')+'</td></tr>'; }
+      +'<td class="n '+(x.ueber>0.5?'neg':x.saldo<-0.5?'pos':'')+'"><b>'+eur(x.saldo)+'</b>'+(x.ueber>0.5&&Math.abs(x.ueber-x.saldo)>0.5?'<div class="sub">überfällig '+eur(x.ueber)+'</div>':'')+'</td><td><span class="pill '+sn[0]+'">'+sn[1]+'</span>'+(x.kOffen>0.5?' <span class="pill mid" title="Kaution offen">K</span>':'')+(x.erg?' <span class="pill src" title="'+x.erg+' Monatsmieten aus dem Mietvertrag ergänzt">+'+x.erg+'</span>':'')+(mahnsperre(mk)?' <span class="pill bad">Mahnsperre</span>':'')+(()=>{ const lm=letzteMahnung(x); return lm&&x.ueber>0.5?'<div class="sub">'+esc(lm.stufe+' '+dmy(lm.d))+'</div>':''; })()+'</td></tr>'; }
   h+='</tbody></table></div>';
   if(mahnOpen) h+='<div class="ov" id="ov"><div class="dlg">'+renderMahn()+'</div></div>';
   else if(modal&&calc.res[M.sel]) h+='<div class="ov" id="ov"><div class="dlg">'+renderDash(calc.res[M.sel])+'</div></div>';
@@ -949,6 +967,7 @@ function renderDash(x){ const mk=ed(x.mk), sn=STN[x.status], a=ampel(x), K=mk.ko
   h+='<div class="card"><div class="ch">Warmmiete</div><div class="big">'+(st.total?eur(st.total):'–')+'</div><span class="sub">'+(st.ab?'seit '+esc(dmy(st.ab)):'')+'</span>'
     +'<details open><summary>Zusammensetzung</summary>'+kv('Kaltmiete',eur(st.kalt))+kv('Betriebskosten',eur(st.bk))+kv('Heizkosten',eur(st.hk))+(st.strom?kv('Strom',eur(st.strom)):'')+others.map(o=>kv(esc(o.t||'Sonstiges'),eur(o.b))).join('')+(!others.length&&st.sonst?kv('Sonstiges',eur(st.sonst)):'')+'</details>'
     +((x.mk.stufen||[]).length>1?'<details><summary>Mietentwicklung</summary><table class="mini">'+x.mk.stufen.map(z=>'<tr><td>ab '+esc(dmy(z.ab))+'</td><td class="n">'+eur(z.total)+'</td></tr>').join('')+'</table></details>':'')+'</div>';
+  h+=mahnstandCard(x);
   /* Notizen */
   h+='<div class="card"><div class="ch">Notizen</div><textarea id="e-notiz" rows="6" placeholder="Notizen zum Mieter …">'+esc(mk.notiz||'')+'</textarea><div class="sub">Wird automatisch gespeichert, sobald du das Feld verlässt.</div></div>';
   /* Tickets */
@@ -978,6 +997,9 @@ document.addEventListener('click',async e=>{ const t=e.target.closest('button,tr
   if(t.dataset.mrnone){ MR.sel={}; render(); return; }
   if(t.dataset.mrgo){ if(MR.busy) return; mahnlaufStarten(); return; }
   if(t.dataset.mahnall){ sammelPdf(); return; }
+  if(t.dataset.mssave){ const tag=parseInt($('ms-tag').value,10); const on=$('ms-aktiv').value==='1'; saveEdit(M.sel,{mahnsperre:on?{aktiv:true,grund:$('ms-grund').value.trim(),bis:$('ms-bis').value||'',seit:(ed(MK[M.sel]).mahnsperre||{}).seit||today}:{aktiv:false},zahltAm:tag>0&&tag<32?tag:''},'Mahnstand gespeichert.'); return; }
+  if(t.dataset.mnadd){ const d=$('mn-d').value; if(!d){ toast('Bitte ein Datum wählen.'); return; } saveEdit(M.sel,{mahnungen:(ed(MK[M.sel]).mahnungen||[]).concat([{d,stufe:$('mn-st').value,quelle:'manuell'}])},'Mahnung nachgetragen.'); return; }
+  if(t.dataset.mnx!==undefined){ if(t.dataset.sure!=='1'){ t.dataset.sure='1'; t.textContent='Wirklich?'; return; } const L=(ed(MK[M.sel]).mahnungen||[]).slice(); L.splice(Number(t.dataset.mnx),1); saveEdit(M.sel,{mahnungen:L},'Mahnung entfernt.'); return; }
   if(t.dataset.bzsave){ const ab=$('bz-ab').value, v=parseNum($('bz-satz').value); if(!ab||v==null||isNaN(v)){ toast('Bitte Datum und Satz eintragen.'); return; } MBZ=MBZ.filter(z=>z.ab!==ab).concat([{ab,satz:v}]); saveStamm('mahnung',{bz:MBZ}).then(()=>toast('Basiszinssatz gespeichert.')); render(); return; }
   if(t.dataset.solf!==undefined){ solNurOffen=t.dataset.solf==='1'; render(); return; }
   if(t.dataset.sol){ solSel=solSel===t.dataset.sol?null:t.dataset.sol; render(); return; }
