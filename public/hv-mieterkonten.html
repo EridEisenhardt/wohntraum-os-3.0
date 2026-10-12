@@ -828,16 +828,18 @@ async function pdfInAkte(x,art){ const doc=pdfAuszug(x,art); if(!doc) return; co
 function pdfButtons(art){ return '<div class="acts"><button class="ghost small" data-pdf="'+art+'">Als PDF herunterladen</button><button class="ghost small" data-pdfakte="'+art+'">In Mieterakte ablegen</button></div>'; }
 
 /* ---------- Notizen: jede Notiz ein eigener Eintrag mit Datum und Ersteller, nicht änderbar oder löschbar ---------- */
-var NOTIZ={}, NOTF=[], ICH='', nBusy=false, NDRAFT='';
+var NOTIZ={}, NOTF=[], ICH='', ICHID='', ICHMAIL='', nBusy=false, NDRAFT='';
+const NUTZER={'ramona@andersmacher.info':'Ramona','juergen@andersmacher.info':'Jürgen','eric@andersmacher.info':'Eric'};
+const nutzerName=v=>{ const k=String(v||'').toLowerCase().trim(); return NUTZER[k]||v||'unbekannt'; };
 async function loadIch(){ const sb=window.osSupabase; if(!sb) return; try{ const {data:{user}}=await sb.auth.getUser(); if(!user) return; let n=(user.user_metadata&&(user.user_metadata.full_name||user.user_metadata.name))||'';
   try{ const {data}=await sb.from('profiles').select('full_name,email').eq('id',user.id).maybeSingle(); if(data&&data.full_name) n=data.full_name; }catch(e){}
-  ICH=n||user.email||''; }catch(e){} }
+  ICHID=user.id; ICHMAIL=String(user.email||'').toLowerCase(); ICH=NUTZER[ICHMAIL]||n||user.email||''; }catch(e){} }
 function notizCard(x){ const mk=ed(x.mk), L=(NOTIZ[x.mk.pid]||[]).slice().sort((a,b)=>a.d<b.d?1:-1);
   let h='<div class="card"><div class="ch">Notizen<span class="sub">'+L.length+' Eintr'+(L.length===1?'ag':'äge')+'</span></div>'
     +'<textarea id="n-text" rows="3" placeholder="Neue Notiz zum Mieter …">'+esc(NDRAFT)+'</textarea>'
     +'<div class="acts"><label class="ghost small up">Datei anhängen<input type="file" id="n-file" multiple hidden></label>'+(NOTF.length?'<span class="sub">'+NOTF.map(f=>esc(f.name)).join(', ')+'</span>':'')+'<button class="primary small" data-nsave="1"'+(nBusy?' disabled':'')+'>'+(nBusy?'Speichere …':'Notiz speichern')+'</button></div>'
-    +'<div class="sub">Gespeicherte Notizen erhalten Datum, Uhrzeit und Ersteller und können nicht geändert oder gelöscht werden.</div>';
-  for(const n of L){ const dt=new Date(n.d); h+='<div class="note-e"><div class="note-h"><b>'+esc(dt.toLocaleDateString('de-DE'))+' '+esc(dt.toLocaleTimeString('de-DE',{hour:'2-digit',minute:'2-digit'}))+'</b> · '+esc(n.by||'unbekannt')+'</div>'+(n.t?'<div class="note-t">'+esc(n.t)+'</div>':'')
+    +'<div class="sub">Gespeicherte Notizen erhalten Datum, Uhrzeit und Ersteller und können nicht geändert werden. Löschen kann nur, wer die Notiz geschrieben hat.</div>';
+  for(const n of L){ const dt=new Date(n.d); h+='<div class="note-e"><div class="note-h"><b>'+esc(dt.toLocaleDateString('de-DE'))+' '+esc(dt.toLocaleTimeString('de-DE',{hour:'2-digit',minute:'2-digit'}))+'</b> · '+esc(nutzerName(n.mail||n.by))+(eigeneNotiz(n)?' <button class="ghost small" data-ndel="'+esc(n.id||(n.pid+'__'+Date.parse(n.d)))+'">löschen</button>':'')+'</div>'+(n.t?'<div class="note-t">'+esc(n.t)+'</div>':'')
       +(n.files&&n.files.length?'<div class="note-f">'+n.files.map(f=>'<a href="#" data-nfopen="'+esc(f.p)+'">'+esc(f.n)+'</a>').join(' · ')+'</div>':'')+'</div>'; }
   if(mk.notiz) h+='<div class="note-e"><div class="note-h"><b>Frühere Notiz</b> · ohne Datum</div><div class="note-t">'+esc(mk.notiz)+'</div></div>';
   return h+'</div>'; }
@@ -845,9 +847,14 @@ async function notizSpeichern(){ const sb=window.osSupabase, mk=MK[M.sel]; if(!s
   if(!t&&!NOTF.length){ toast('Bitte einen Text eingeben oder eine Datei anhängen.'); return; }
   if(!ICH) await loadIch(); nBusy=true; render(); const ts=new Date(), id=mk.pid+'__'+ts.getTime(), files=[];
   for(const f of NOTF){ const p=docBase(mk)+'/Notizen/'+ts.getTime()+'_'+enc(f.name).replace(/\//g,'_'); const {error}=await sb.storage.from('mieterakten').upload(p,f,{upsert:false,contentType:f.type||undefined}); if(error){ toast(f.name+': '+error.message); nBusy=false; render(); return; } files.push({p,n:f.name}); }
-  const e={pid:mk.pid,d:ts.toISOString(),by:ICH||'unbekannt',t,files};
+  const e={pid:mk.pid,d:ts.toISOString(),by:ICH||'unbekannt',mail:ICHMAIL,uid:ICHID,t,files,id};
   try{ await db.doc('notizen/'+id).set(e); NOTF=[]; NDRAFT=''; if(ta) ta.value=''; toast('Notiz gespeichert.'); }catch(err){ toast('Notiz nicht gespeichert: '+(err.message||err)); }
   nBusy=false; render(); }
+
+function eigeneNotiz(n){ return (ICHID&&n.uid===ICHID)||(ICHMAIL&&String(n.mail||n.by||'').toLowerCase()===ICHMAIL); }
+async function notizLoeschen(id){ const sb=window.osSupabase; const pid=id.split('__')[0]; const n=(NOTIZ[pid]||[]).find(q=>(q.id||(q.pid+'__'+Date.parse(q.d)))===id); if(!n||!eigeneNotiz(n)){ toast('Nur der Verfasser kann diese Notiz löschen.'); return; }
+  try{ if(n.files&&n.files.length){ const {error}=await sb.storage.from('mieterakten').remove(n.files.map(f=>f.p)); if(error) throw error; }
+    await db.doc('notizen/'+id).delete(); toast('Notiz gelöscht.'); }catch(err){ toast('Löschen nicht möglich: '+(err.message||err)); } }
 /* ---------- Render ---------- */
 function render(){
   const ready=loaded.o&&loaded.k&&loaded.r&&loaded.e&&loaded.b&&loadedMK;
@@ -1067,6 +1074,7 @@ document.addEventListener('click',async e=>{ const t=e.target.closest('button,tr
   if(t.dataset.mrgo){ if(MR.busy) return; mahnlaufStarten(); return; }
   if(t.dataset.mahnall){ sammelPdf(); return; }
   if(t.dataset.nsave){ notizSpeichern(); return; }
+  if(t.dataset.ndel){ if(t.dataset.sure!=='1'){ t.dataset.sure='1'; t.textContent='Wirklich löschen?'; return; } notizLoeschen(t.dataset.ndel); return; }
   if(t.dataset.nfopen){ const {data,error}=await window.osSupabase.storage.from('mieterakten').createSignedUrl(t.dataset.nfopen,3600); if(error){ toast(error.message); return; } window.open(data.signedUrl,'_blank'); return; }
   if(t.dataset.pdf){ const x=calc&&calc.res[M.sel]; if(!x) return; const doc=pdfAuszug(x,t.dataset.pdf); if(doc) doc.save(pdfName(x,t.dataset.pdf)); return; }
   if(t.dataset.pdfakte){ const x=calc&&calc.res[M.sel]; if(x) pdfInAkte(x,t.dataset.pdfakte); return; }
