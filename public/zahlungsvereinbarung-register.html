@@ -2,6 +2,7 @@
 <html lang="de"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Zahlungsvereinbarungen · Register</title>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.2/html2pdf.bundle.min.js"></script>
 <style>
 :root{--bg:#f6f7f9;--surf:#fff;--surf2:#f1f3f6;--line:#e6e8ec;--text:#1c2024;--muted:#6b7280;--dim:#4b5563;--accent:#185fa5;--green:#1f7a4d;--red:#c0392b}
 *{box-sizing:border-box;margin:0;padding:0}
@@ -84,7 +85,7 @@ a.pdf{font-size:12px;color:var(--accent);text-decoration:none}
 <div id="briefOv" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:70;align-items:center;justify-content:center" onclick="if(event.target===this)closeBrief()">
   <div style="background:#fff;border-radius:12px;width:100%;max-width:760px;max-height:92vh;display:flex;flex-direction:column;box-shadow:0 20px 60px rgba(0,0,0,.3)">
     <div style="display:flex;justify-content:space-between;align-items:center;padding:13px 18px;border-bottom:1px solid var(--line)"><b id="briefTitle">Schreiben</b><span style="cursor:pointer;font-size:20px;color:var(--muted)" onclick="closeBrief()">✕</span></div>
-    <div style="padding:8px 18px 0"><div style="background:#fff8e1;border:1px solid #f0e0a8;color:#7a5c00;font-size:11.5px;padding:7px 10px;border-radius:7px">✏️ Erst Auswahl treffen, dann Text bei Bedarf editieren, dann „Bestätigen" bzw. „Drucken/PDF". <b>Mustertext</b>, später anpassen.</div></div>
+    <div style="padding:8px 18px 0"><div style="background:#fff8e1;border:1px solid #f0e0a8;color:#7a5c00;font-size:11.5px;padding:7px 10px;border-radius:7px">✏️ Auswahl treffen, Text bei Bedarf editieren, dann <b>„Drucken / PDF“</b> und per Post oder E-Mail versenden. Das OS verschickt nichts selbst. Danach <b>„Als verschickt markieren“</b>: Die Mahnstufe wird gesetzt und das Schreiben als PDF im Register abgelegt.</div></div>
     <div style="padding:10px 18px 0;display:grid;grid-template-columns:1fr 1fr;gap:8px">
       <label style="font-size:11px;color:var(--muted)">Absender / Empfänger<select id="briefAbsender" onchange="rebuildBrief()" style="width:100%;font:inherit;font-size:13px;padding:6px 8px;border:1px solid var(--line);border-radius:7px"><option value="wt">Wohn(T)raum Rheinhessen GmbH · Dalheimer Straße 70, 55238 Dexheim</option><option value="ee">Eric Eisenhardt · Dalheimer Straße 70, 55238 Dexheim</option></select></label>
       <label style="font-size:11px;color:var(--muted)">Anrede<select id="briefAnrede" onchange="rebuildBrief()" style="width:100%;font:inherit;font-size:13px;padding:6px 8px;border:1px solid var(--line);border-radius:7px"><option value="herr">Sehr geehrter Herr</option><option value="frau">Sehr geehrte Frau</option><option value="familie">Sehr geehrte Familie</option><option value="neutral">Sehr geehrte(r)</option><option value="damen_herren">Sehr geehrte Damen und Herren</option></select></label>
@@ -95,7 +96,7 @@ a.pdf{font-size:12px;color:var(--accent);text-decoration:none}
     <div id="briefBody" contenteditable="true" style="flex:1;overflow-y:auto;margin:12px 18px;padding:20px 24px;border:1px solid var(--line);border-radius:8px;font-family:Georgia,'Times New Roman',serif;line-height:1.55;font-size:14px;color:#111;outline:none"></div>
     <div style="display:flex;justify-content:flex-end;gap:8px;padding:12px 18px;border-top:1px solid var(--line)">
       <button class="btn" onclick="closeBrief()">◄ Zurück / Korrigieren</button>
-      <button class="btn btn-accent" onclick="bestaetigeBrief()">✓ Bestätigen &amp; verschicken</button>
+      <button class="btn btn-accent" id="briefOk" onclick="bestaetigeBrief()">✓ Als verschickt markieren (PDF speichern)</button>
       <button class="btn" onclick="druckeBrief()">🖨 Drucken / PDF</button>
     </div>
   </div>
@@ -157,7 +158,7 @@ function listeHTML(list){
       +'<td>'+eur(Number(r.forderung)||0)+'</td>'+'<td>'+eur(Number(r.rate)||0)+'</td>'
       +'<td>'+lz+'</td>'+'<td>'+zi+'</td>'
       +'<td>'+(sz?'<span style="cursor:pointer;color:var(--accent);font-weight:600" onclick="openDetail(\''+r.id+'\')" title="Sonderzahlungen bearbeiten">'+sz+' ✎</span>':'0')+'</td>'
-      +'<td style="text-align:left">'+(r.pdf_url?'<a class="pdf" href="'+esc(r.pdf_url)+'" target="_blank">📄 PDF</a> ':'')+(r.asana_url?'<a class="pdf" href="'+esc(extUrl(r.asana_url))+'" target="_blank" rel="noopener">🗂 Asana öffnen ↗</a>':'')+'</td>'
+      +'<td style="text-align:left">'+(r.pdf_url?'<a class="pdf" href="'+esc(r.pdf_url)+'" target="_blank">📄 PDF</a> ':'')+(r.schreiben||[]).filter(x=>x&&x.url).map(x=>'<a class="pdf" href="'+esc(x.url)+'" target="_blank" title="'+esc(x.name+' vom '+x.datum)+'">✉ '+esc(['','Erinnerung','Mahnung','Inkasso'][x.stufe]||'Schreiben')+' '+esc(new Date(x.datum+'T00:00:00').toLocaleDateString('de-DE',{day:'2-digit',month:'2-digit'}))+'</a> ').join('')+(r.asana_url?'<a class="pdf" href="'+esc(extUrl(r.asana_url))+'" target="_blank" rel="noopener">🗂 Asana öffnen ↗</a>':'')+'</td>'
       +'<td style="white-space:nowrap"><button class="btn" style="padding:4px 9px;font-size:12px" onclick="openDetail(\''+r.id+'\')" title="Bearbeiten">✎</button> '
         +'<button class="btn" style="padding:4px 9px;font-size:12px" onclick="pdfVorgang(\''+r.id+'\')" title="Vorgang als PDF">⬇ PDF</button> '
         +'<button class="btn btn-accent" style="padding:4px 9px;font-size:12px" onclick="schreibenErstellen(\''+r.id+'\')">'+((r.mahnstufe||0)>=2?'→ Inkasso-Schreiben':(r.mahnstufe||0)===1?'⚠⚠ Letzte Mahnung vor Inkasso':'⚠ Zahlungserinnerung')+'</button>'
@@ -267,15 +268,45 @@ function druckeBrief(){
    +'</style></head><body>'+$('briefBody').innerHTML+'<script>window.onload=function(){setTimeout(function(){window.print();},200);}<\/script></body></html>');
   w.document.close();
 }
+const BRIEF_CSS='.briefpdf{font-family:Georgia,"Times New Roman",serif;color:#111;line-height:1.55;font-size:13.5px;padding:10px 6px;background:#fff}'
+ +'.briefpdf .abs{font-size:10.5px;color:#555;border-bottom:1px solid #ccc;padding-bottom:4px;margin-bottom:26px}.briefpdf .empf{margin-bottom:26px}.briefpdf .datum{text-align:right;margin-bottom:22px;font-size:12.5px}'
+ +'.briefpdf h1{font-size:16px;margin:0 0 14px}.briefpdf p{margin:0 0 10px}.briefpdf table.d{border-collapse:collapse;margin:12px 0;font-size:13px;min-width:0;width:auto}'
+ +'.briefpdf table.d td{padding:3px 10px 3px 0;border:none;text-align:left;white-space:normal}.briefpdf .sign{margin-top:36px}';
+async function briefPdfBlob(){
+  if(!window.html2pdf) return null;
+  const wrap=document.createElement('div');
+  wrap.style.cssText='position:absolute;left:-10000px;top:0;width:720px;background:#fff';
+  wrap.innerHTML='<style>'+BRIEF_CSS+'</style><div class="briefpdf">'+$('briefBody').innerHTML+'</div>';
+  document.body.appendChild(wrap);
+  const ov=$('briefOv'), ovd=ov.style.display; ov.style.display='none';
+  try{ return await html2pdf().set({margin:[18,18,18,18],image:{type:'jpeg',quality:0.95},html2canvas:{scale:2,backgroundColor:'#ffffff',scrollX:0,scrollY:0,windowHeight:Math.max(wrap.scrollHeight,1200)},jsPDF:{unit:'mm',format:'a4',orientation:'portrait'}}).from(wrap.querySelector('.briefpdf')).outputPdf('blob'); }
+  finally{ wrap.remove(); ov.style.display=ovd; }
+}
+const STUFE_NAME=['','Zahlungserinnerung','Letzte Mahnung','Inkasso-Übergabe'];
 async function bestaetigeBrief(){
   if(!BRIEF_ID)return;
   const r=ROWS.find(x=>x.id===BRIEF_ID); if(!r){closeBrief();return;}
   if(BRIEF_STUFE===3 && !confirm('Forderung an das Inkasso übergeben? Der Status wird auf „Inkasso" gesetzt.')) return;
   const heuteIso=new Date().toISOString().slice(0,10);
-  r.mahnstufe=BRIEF_STUFE; r.letzte_mahnung=heuteIso; r.status=BRIEF_STUFE===3?'Inkasso':'Verzug';
-  await sb.from('zahlungsvereinbarungen').update({mahnstufe:BRIEF_STUFE,letzte_mahnung:heuteIso,status:r.status}).eq('id',BRIEF_ID);
+  const btn=$('briefOk'); if(btn){btn.disabled=true;btn.textContent='Speichere PDF …';}
+  let eintrag={stufe:BRIEF_STUFE,name:STUFE_NAME[BRIEF_STUFE],datum:heuteIso,url:null};
+  try{
+    const blob=await briefPdfBlob();
+    if(blob){
+      const fname=STUFE_NAME[BRIEF_STUFE].replace(/[^A-Za-z0-9-]/g,'_')+'_'+(r.mieter||'Mieter').replace(/[^a-zA-Z0-9]/g,'_')+'_'+heuteIso+'.pdf';
+      const path='zahlungsvereinbarungen/schreiben/'+BRIEF_ID+'_'+Date.now()+'.pdf';
+      const up=await sb.storage.from('darlehen').upload(path,blob,{contentType:'application/pdf',upsert:true});
+      if(!up.error){ eintrag.url=sb.storage.from('darlehen').getPublicUrl(path).data.publicUrl; eintrag.datei=fname; }
+    }
+  }catch(e){}
+  if(btn){btn.disabled=false;btn.textContent='✓ Als verschickt markieren (PDF speichern)';}
+  const schreiben=(r.schreiben||[]).concat([eintrag]);
+  r.mahnstufe=BRIEF_STUFE; r.letzte_mahnung=heuteIso; r.status=BRIEF_STUFE===3?'Inkasso':'Verzug'; r.schreiben=schreiben;
+  const upd=await sb.from('zahlungsvereinbarungen').update({mahnstufe:BRIEF_STUFE,letzte_mahnung:heuteIso,status:r.status,schreiben}).eq('id',BRIEF_ID);
+  if(upd.error){toast('Fehler: '+upd.error.message);return;}
+  if(!eintrag.url) toast('Hinweis: PDF konnte nicht gespeichert werden – bitte über „Drucken / PDF“ sichern');
   closeBrief(); render();
-  toast(BRIEF_STUFE===3?'Inkasso-Schreiben bestätigt · als PDF bereit':BRIEF_STUFE===2?'Letzte Mahnung bestätigt · als PDF bereit zum Versand':'Zahlungserinnerung bestätigt · als PDF bereit zum Versand');
+  if(eintrag.url) toast(STUFE_NAME[BRIEF_STUFE]+' als verschickt markiert · PDF im Register abgelegt');
 }
 
 // Zins-/Tilgungsplan mit optionalen Sonderzahlungen.
