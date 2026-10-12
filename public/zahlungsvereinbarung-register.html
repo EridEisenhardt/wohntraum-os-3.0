@@ -52,6 +52,7 @@ a.pdf{font-size:12px;color:var(--accent);text-decoration:none}
     <div style="display:flex;justify-content:space-between;align-items:center;padding:14px 18px;border-bottom:1px solid var(--line)"><b>Alte Vereinbarung nachtragen</b><span style="cursor:pointer;font-size:20px;color:var(--muted)" onclick="closeNeu()">✕</span></div>
     <div style="padding:16px 18px;display:grid;grid-template-columns:1fr 1fr;gap:10px">
       <label style="grid-column:1/-1">Mieter<input id="n_mieter" style="width:100%"></label>
+      <label style="grid-column:1/-1">Art der Forderung<select id="n_art" style="width:100%"><option value="mietschulden">Mietschulden</option><option value="kaution">Kaution</option></select></label>
       <label>Objekt<input id="n_objekt" style="width:100%"></label>
       <label>Wohnung<input id="n_whg" style="width:100%"></label>
       <label>Forderung (€)<input id="n_ford" type="number" step="0.01" style="width:100%"></label>
@@ -73,6 +74,7 @@ a.pdf{font-size:12px;color:var(--accent);text-decoration:none}
   <div class="kpis" id="kpis"></div>
   <div class="bar">
     <input type="text" id="q" placeholder="🔍 Mieter / Objekt…" oninput="render()">
+    <select id="fArt" onchange="render()"><option value="">Alle Arten</option><option value="mietschulden">Mietschulden</option><option value="kaution">Kaution</option></select>
     <select id="fStatus" onchange="render()"><option value="">Alle Status</option><option>laufend</option><option>abgeschlossen</option><option>gekündigt</option><option>Verzug</option><option>Inkasso</option></select>
     <span class="count" id="cnt" style="font-size:12px;color:var(--muted)"></span>
     <span style="margin-left:auto;display:flex;gap:6px"><button class="btn btn-accent" id="vList" onclick="setView('liste')">📋 Liste</button><button class="btn" id="vDetail" onclick="setView('detail')">🗂 Ratenzahlung (Detail)</button></span>
@@ -106,15 +108,17 @@ const esc=s=>(s==null?'':String(s)).replace(/&/g,'&amp;').replace(/</g,'&lt;').r
 function toast(m){const t=$('toast');t.textContent=m;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),1700);}
 const eur=v=>v==null||isNaN(v)?'–':new Intl.NumberFormat('de-DE',{style:'currency',currency:'EUR'}).format(v);
 const num=v=>{if(v==null||v==='')return null;const n=parseFloat(String(v).replace(/\./g,'').replace(',','.'));return isNaN(n)?null:n;};
+const ARTL={mietschulden:'Mietschulden',kaution:'Kaution'};
+const artBadge=a=>a==='kaution'?'<span style="font-size:11px;font-weight:700;padding:2px 8px;border-radius:20px;background:#eef4fb;color:#185fa5">Kaution</span>':'<span style="font-size:11px;font-weight:700;padding:2px 8px;border-radius:20px;background:#fdf2e3;color:#9a6700">Mietschulden</span>';
 const ym=d=>d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0');
 let ROWS=[], view='liste';
 function extUrl(u){u=(u||'').trim();if(!u)return '';return /^https?:\/\//i.test(u)?u:'https://'+u;}
 function setView(v){view=v;const a=$('vList'),b=$('vDetail');if(a)a.className='btn'+(v==='liste'?' btn-accent':'');if(b)b.className='btn'+(v==='detail'?' btn-accent':'');render();}
 function openDetail(id){setView('detail');setTimeout(function(){const box=document.getElementById('sonder_'+id);if(box){const c=box.closest('.card');if(c){c.scrollIntoView({behavior:'smooth',block:'center'});c.style.boxShadow='0 0 0 2px var(--accent)';setTimeout(function(){c.style.boxShadow='';},1600);}}},60);}
 function listeHTML(list){
-  let h='<div class="scroll"><table style="min-width:900px"><thead><tr><th style="text-align:left">Mieter</th><th style="text-align:left">Objekt · Whg</th><th style="text-align:left">Status</th><th>Forderung</th><th>Rate/Mon.</th><th>Laufzeit</th><th>Zinsen (Plan)</th><th>Sonderz.</th><th style="text-align:left">Anlagen</th><th></th></tr></thead><tbody>';
+  let h='<div class="scroll"><table style="min-width:900px"><thead><tr><th style="text-align:left">Mieter</th><th style="text-align:left">Art</th><th style="text-align:left">Objekt · Whg</th><th style="text-align:left">Status</th><th>Forderung</th><th>Rate/Mon.</th><th>Laufzeit</th><th>Zinsen (Plan)</th><th>Sonderz.</th><th style="text-align:left">Anlagen</th><th></th></tr></thead><tbody>';
   h+=list.map(r=>{const c=calcOf(r);const ok=c&&!c.withSz.fail;const lz=ok?c.withSz.rows.length+' Raten':'—';const zi=ok?eur(c.withSz.totalZins):'—';const sz=(r.sonderzahlungen||[]).filter(s=>num(s.betrag)>0).length;
-    return '<tr><td style="text-align:left;font-weight:600">'+esc(r.mieter||'')+'</td>'
+    return '<tr><td style="text-align:left;font-weight:600">'+esc(r.mieter||'')+'</td>'+'<td style="text-align:left">'+artBadge(r.art)+'</td>'
       +'<td style="text-align:left">'+esc((r.objekt||'')+(r.wohnung?' · '+r.wohnung:''))+'</td>'
       +'<td style="text-align:left">'+esc(r.status||'')+'</td>'
       +'<td>'+eur(Number(r.forderung)||0)+'</td>'+'<td>'+eur(Number(r.rate)||0)+'</td>'
@@ -180,7 +184,7 @@ function rebuildBrief(){
     body=absBlock+'<div class="datum">'+heute+'</div>'+empf
       +'<h1>Letzte Erinnerung vor Inkasso</h1>'
       +'<p>'+anrede+',</p>'
-      +'<p>wie am <b>'+vdat+'</b> mit Ihnen vereinbart, sollten die bestehenden offenen Posten in Höhe von <b>'+eur(Number(r.forderung)||0)+'</b> in monatlichen Raten zu je <b>'+eur(Number(r.rate)||0)+'</b> beglichen werden.</p>'
+      +'<p>wie am <b>'+vdat+'</b> mit Ihnen vereinbart, sollten '+(r.art==='kaution'?'die offene Kautionsforderung':'die bestehenden offenen Posten')+' in Höhe von <b>'+eur(Number(r.forderung)||0)+'</b> in monatlichen Raten zu je <b>'+eur(Number(r.rate)||0)+'</b> beglichen werden.</p>'
       +'<p>Leider müssen wir feststellen, dass die am <b>'+faelligStr+'</b> fällige Rate in Höhe von <b>'+eur(Number(r.rate)||0)+'</b> bislang nicht bei uns eingegangen ist.</p>'
       +'<p>Wir bitten Sie, den ausstehenden Betrag bis spätestens <b>'+fristStr+'</b> auf folgendes Konto zu überweisen:</p>'
       +'<table class="d"><tbody>'
@@ -265,10 +269,10 @@ function addSonder(id){const r=ROWS.find(x=>x.id===id);const arr=(r.sonderzahlun
 function updSonder(id,idx,field,val){const r=ROWS.find(x=>x.id===id);const arr=(r.sonderzahlungen||[]).slice();arr[idx]=Object.assign({},arr[idx],{[field]:val});saveSonder(id,arr);}
 function delSonder(id,idx){const r=ROWS.find(x=>x.id===id);const arr=(r.sonderzahlungen||[]).slice();arr.splice(idx,1);saveSonder(id,arr);renderSonder(id);}
 async function addRow(){const r=await sb.from('zahlungsvereinbarungen').insert({mieter:'Neuer Mieter',status:'laufend',basiszins:1.27,zuschlag:5,start_datum:new Date().toISOString().slice(0,10),pos:ROWS.length}).select();if(r.error)return toast(r.error.message);ROWS.unshift(r.data[0]);render();toast('Angelegt');}
-function openNeu(){['n_mieter','n_objekt','n_whg','n_ford','n_rate','n_iban','n_kinfo','n_notiz'].forEach(i=>{if($(i))$(i).value='';});if($('n_start'))$('n_start').value='';if($('n_status'))$('n_status').value='laufend';if($('n_bz'))$('n_bz').value='1.27';if($('n_zu'))$('n_zu').value='5';if($('n_pdf'))$('n_pdf').value='';if($('n_msg'))$('n_msg').textContent='';$('neuOv').style.display='flex';}
+function openNeu(){['n_mieter','n_objekt','n_whg','n_ford','n_rate','n_iban','n_kinfo','n_notiz'].forEach(i=>{if($(i))$(i).value='';});if($('n_start'))$('n_start').value='';if($('n_status'))$('n_status').value='laufend';if($('n_art'))$('n_art').value='mietschulden';if($('n_bz'))$('n_bz').value='1.27';if($('n_zu'))$('n_zu').value='5';if($('n_pdf'))$('n_pdf').value='';if($('n_msg'))$('n_msg').textContent='';$('neuOv').style.display='flex';}
 function closeNeu(){$('neuOv').style.display='none';}
 async function saveNeu(){
-  const rec={mieter:$('n_mieter').value.trim()||'(ohne Name)',objekt:$('n_objekt').value.trim()||null,wohnung:$('n_whg').value.trim()||null,
+  const rec={mieter:$('n_mieter').value.trim()||'(ohne Name)',art:($('n_art')&&$('n_art').value)||'mietschulden',objekt:$('n_objekt').value.trim()||null,wohnung:$('n_whg').value.trim()||null,
     forderung:parseFloat($('n_ford').value)||null,rate:parseFloat($('n_rate').value)||null,
     start_datum:$('n_start').value||null,status:$('n_status').value.trim()||'laufend',
     basiszins:parseFloat($('n_bz').value)||0,zuschlag:parseFloat($('n_zu').value)||0,
@@ -382,6 +386,7 @@ function card(r){
       +'<button class="btn" style="padding:5px 10px" onclick="pdfVorgang(\''+r.id+'\')">⬇ Vorgang als PDF</button>'
       +'<button class="abtn" onclick="del(\''+r.id+'\')">✕</button></div>'
     +'<div class="grid">'
+      +'<div class="fld"><label>Art der Forderung</label><select onchange="save(\''+r.id+'\',\'art\',this.value)"><option value="mietschulden"'+((r.art||'mietschulden')==='mietschulden'?' selected':'')+'>Mietschulden</option><option value="kaution"'+(r.art==='kaution'?' selected':'')+'>Kaution</option></select></div>'
       +f('Objekt','objekt',r.objekt)+f('Wohnung','wohnung',r.wohnung)
       +f('Forderung €','forderung',r.forderung,'n')+f('Monatl. Rate €','rate',r.rate,'n')
       +'<div class="fld"><label>Erste Rate am</label><input type="date" value="'+esc(r.start_datum)+'" onchange="save(\''+r.id+'\',\'start_datum\',this.value)"></div>'
@@ -400,8 +405,8 @@ function renderKpis(){
     .map(x=>'<div class="kpi"><div class="l">'+esc(x[0])+'</div><div class="v">'+x[1]+'</div></div>').join('');
 }
 function render(){
-  const q=($('q').value||'').toLowerCase(), fs=$('fStatus').value;
-  const list=ROWS.filter(r=>(!fs||r.status===fs)&&(!q||((r.mieter||'')+' '+(r.objekt||'')+' '+(r.wohnung||'')).toLowerCase().includes(q)));
+  const q=($('q').value||'').toLowerCase(), fs=$('fStatus').value, fa=$('fArt').value;
+  const list=ROWS.filter(r=>(!fs||r.status===fs)&&(!fa||(r.art||'mietschulden')===fa)&&(!q||((r.mieter||'')+' '+(r.objekt||'')+' '+(r.wohnung||'')).toLowerCase().includes(q)));
   $('cnt').textContent=list.length+' von '+ROWS.length;
   if(!list.length){$('list').innerHTML='<div style="color:var(--muted);padding:20px">Keine Vereinbarungen. Mit „+ Neue Vereinbarung" erfassen.</div>';renderKpis();return;}
   if(view==='liste'){$('list').innerHTML=listeHTML(list);renderKpis();return;}
