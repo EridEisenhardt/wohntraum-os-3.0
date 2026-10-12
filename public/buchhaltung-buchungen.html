@@ -468,6 +468,17 @@ const addM=(m,n)=>{ const [y,mm]=m.split('-').map(Number); const d=new Date(y,mm
 const dnum2=s=>Date.parse(s)/864e5;
 const ART={WARM_MIETE:'Miete',KAUTION:'Kaution',DUNNING_FEES:'Mahngebühren',INTEREST_EXPENSES:'Verzugszinsen',BETRIEBSKOSTEN:'Betriebskosten',SP:'Sonstiges'};
 
+/* Periodenzuordnung: Für welchen Monat ist eine Mietzahlung gedacht?
+   1. Monat im Verwendungszweck (z. B. "Miete Oktober", "10/2026", "10.26")
+   2. sonst: Zahlungen von Ämtern ab dem 20., von Mietern ab dem 25. gelten dem Folgemonat, davor dem laufenden Monat */
+const MONW={januar:1,jan:1,februar:2,feb:2,marz:3,maerz:3,april:4,apr:4,mai:5,juni:6,jun:6,juli:7,jul:7,august:8,aug:8,september:9,sept:9,sep:9,oktober:10,okt:10,november:11,nov:11,dezember:12,dez:12};
+const AMTRE=/jobcenter|bundesagentur|agentur fur arbeit|kreisverwaltung|sozialamt|landkreis|stadtverwaltung|grundsicherung|kreis |sozialhilfe/;
+function zielMonat(tx){ const d=String(tx.d||''); if(!d) return []; const pm=d.slice(0,7); const lo=addM(pm,-12), hi=addM(pm,2); const c=new Set();
+  const raw=String(tx.z||'').toLowerCase(), add=(mo,y)=>{ if(y<100) y+=2000; const k=y+'-'+String(Number(mo)).padStart(2,'0'); if(k>=lo&&k<=hi) c.add(k); };
+  for(const m of raw.matchAll(/(?<![\d.,\/])((?:(?:0?[1-9]|1[0-2])\s?[+&,u]\s?)*)(0?[1-9]|1[0-2])\s?[.\/-]\s?(20\d\d|\d\d)(?![\d.,\/])/g)){ const y=Number(m[3]); add(m[2],y); for(const v of (m[1].match(/\d+/g)||[])) add(v,y); }
+  for(const w of norm(tx.z||'').split(' ')){ const mo=MONW[w]; if(!mo) continue; let best='',bd=99; for(const y of [Number(pm.slice(0,4))-1,Number(pm.slice(0,4)),Number(pm.slice(0,4))+1]){ const k=y+'-'+String(mo).padStart(2,'0'); const dd=Math.abs((y*12+mo)-(Number(pm.slice(0,4))*12+Number(pm.slice(5,7)))); if(dd<bd&&k>=lo&&k<=hi){ bd=dd; best=k; } } if(best) c.add(best); }
+  if(c.size&&c.size<=4) return [...c].sort();
+  const amt=AMTRE.test(' '+norm(tx.n)+' '); return [Number(d.slice(8,10))>=(amt?20:25)?addM(pm,1):pm]; }
 function stufeAt(mk,m){ const st=(mk.stufen||[]).filter(x=>x.total>0); if(!st.length) return null; let s=st[0]; for(const x of st){ if((x.ab||'')<=m+'-31') s=x; } return s; }
 function bankIst(){
   /* alle Mieteingänge aller Jahre mit Einheit */
@@ -500,7 +511,7 @@ function compute(opt){ opt=opt||{}; const ZMAP={};
         if(sc>bs){ bs=sc; best=c; } }
       mk=best; if(!mk) continue; }
     ZMAP[key]=mk.pid; const kaut=/kaution/.test(norm(r.tx.z+' '+r.tx.n));
-    if(!res[mk.pid]) continue; const base={d,t:(r.tx.n||'')+(r.tx.z?' · '+r.tx.z:''),pn:r.tx.n||'',src:'Bank · '+kontoName(r.kkey),key,unit:r.c.unit,man:!!OP||ZUORD[key]!==undefined};
+    if(!res[mk.pid]) continue; const base={d,t:(r.tx.n||'')+(r.tx.z?' · '+r.tx.z:''),pn:r.tx.n||'',src:'Bank · '+kontoName(r.kkey),key,unit:r.c.unit,man:!!OP||ZUORD[key]!==undefined,zm:zielMonat(r.tx)};
     if(OP){ const kids=new Set((mk.soll||[]).filter(q=>q.art==='KAUTION').map(q=>q.id)); const aK=(OP.a||[]).filter(a=>kids.has(a.id)), aN=(OP.a||[]).filter(a=>!kids.has(a.id)); const kb=r2(aK.reduce((s2,a)=>s2+(Number(a.b)||0),0));
       if(kb>0) res[mk.pid].rows.push(Object.assign({},base,{h:Math.min(kb,r.tx.b),k:true,alloc:aK,teilK:1}));
       if(r.tx.b-kb>0.005) res[mk.pid].rows.push(Object.assign({},base,{h:r2(r.tx.b-kb),k:false,alloc:aN})); }
@@ -522,7 +533,11 @@ function compute(opt){ opt=opt||{}; const ZMAP={};
       x.rows.push({id:s.id,d:s.d||m+'-01',t:(s.t||ART[s.art]||s.art),s:s.b>0?s.b:0,h:s.b<0?-s.b:0,src:s.src==='AUTO_SOLL'?'Nahaus (automatisch)':s.src==='TRANSACTION_ASSIGNMENT'?'Nahaus (aus Zahlung)':'Nahaus',k:s.art==='KAUTION',art:s.art,fut:fu}); }
     /* fehlende Monatsmieten aus dem Mietvertrag ergänzen */
     const von=(mk.von||START+'-01').slice(0,7), bis=(mk.bis||'9999-12').slice(0,7);
+    /* nicht ergänzen: Einzugsmonat neuer Mietverhältnisse (ab 2026 in Nahaus), wenn Nahaus die erste Miete erst später stellt; Monate, in denen ein Nachmieter in der Einheit wohnt */
+    const nhMiete=(mk.soll||[]).filter(s=>s.art==='WARM_MIETE').map(s=>s.m||(s.d||'').slice(0,7)).sort(); const nhErst=nhMiete[0]||'';
+    const nachf=(byUnit[mk.unit]||[]).filter(o=>o.pid!==mk.pid&&(o.von||'')>(mk.von||'')).map(o=>(o.von||'').slice(0,7)).sort()[0]||'';
     const ab=first>START?first:START; for(let m=von<ab?ab:von; m+'-01'<=today&&m<=bis; m=addM(m,1)){ if(mieteMonate.has(m)) continue; const st=stufeAt(mk,m); if(!st) continue;
+      if((mk.von||'')>='2026-01-01'&&nhErst&&m<nhErst) continue; if(nachf&&m>=nachf) continue;
       x.rows.push({id:'erg:'+m,d:m+'-01',t:'Miete '+m.slice(5)+'/'+m.slice(0,4),s:st.total,h:0,src:'ergänzt aus Mietvertrag',e:1,art:'WARM_MIETE'}); x.erg=(x.erg||0)+1; }
     /* Nahaus-Zahlungen für Zeiträume ohne Kontoauszüge im OS */
     for(const p of mk.nhIst||[]){ const m=(p.d||'').slice(0,7); if(m<START||m>=first) continue; x.rows.push({d:p.d,t:p.t||'Zahlung',pn:'',h:p.b,s:0,src:'Zahlung laut Nahaus',k:kautIds.has(p.bk)}); }
@@ -531,15 +546,21 @@ function compute(opt){ opt=opt||{}; const ZMAP={};
     x.saldo=saldo; x.kOffen=r2(ks);
     /* Kaution, Zahler, Pünktlichkeit, offene Posten */
     x.kSoll=r2(x.rows.filter(r=>r.k).reduce((a,r)=>a+(r.s||0),0)); x.kIst=r2(x.rows.filter(r=>r.k).reduce((a,r)=>a+(r.h||0),0));
-    const AMT=/jobcenter|bundesagentur|agentur fur arbeit|kreisverwaltung|sozialamt|landkreis|stadtverwaltung|grundsicherung|kreis |sozialhilfe/;
+    const AMT=AMTRE;
     const pay=x.rows.filter(r=>r.h>0&&!r.k&&r.pn); const amt=pay.filter(r=>AMT.test(' '+norm(r.pn)+' ')), selbst=pay.filter(r=>!AMT.test(' '+norm(r.pn)+' '));
     x.zahlerAuto=!pay.length?'':amt.length&&selbst.length?'Selbstzahler + Amt ('+[...new Set(amt.map(r=>r.pn))].slice(0,2).join(', ')+')':amt.length?'Jobcenter / Amt ('+[...new Set(amt.map(r=>r.pn))].slice(0,2).join(', ')+')':'Selbstzahler';
     const sechs=new Date(Date.parse(stich)-183*864e5).toISOString().slice(0,10);
     x.spaet=pay.filter(r=>r.d>=sechs&&Number(r.d.slice(8,10))>10&&Number(r.d.slice(8,10))<25).length;
-    { const offen={}; for(const r of x.rows){ if(r.s&&!r.fut) offen[r.id||('r'+r.d+r.t)]=r.s; }
-      const pool={n:0,k:0}; for(const r of x.rows){ if(!r.h||r.fut) continue; let rest=r.h; for(const a of (r.alloc||[])){ if(offen[a.id]==null) continue; const c=Math.min(offen[a.id],Number(a.b)||0,rest); offen[a.id]=r2(offen[a.id]-c); rest=r2(rest-c); } pool[r.k?'k':'n']+=rest; }
-      const opF=[]; for(const r of x.rows){ if(!r.s||!r.fut) continue; const id=r.id; let o=r.s; for(const q of x.rows) for(const a of (q.alloc||[])) if(a.id===id) o=r2(o-(Number(a.b)||0)); r.offen=o; if(o>0.005) opF.push({id,d:r.d,t:r.t,b:o,voll:r.s,k:r.k?1:0,fut:1}); }
-      const op=[]; for(const r of x.rows){ if(!r.s||r.fut) continue; const id=r.id||('r'+r.d+r.t), w=r.k?'k':'n'; const c=Math.min(pool[w],offen[id]); pool[w]=r2(pool[w]-c); const o=r2(offen[id]-c); r.offen=o; if(o>0.005) op.push({id,d:r.d,t:r.t,b:o,voll:r.s,k:r.k?1:0}); }
+    { const offen={}, rid=r=>r.id||('r'+r.d+r.t); for(const r of x.rows){ if(r.s) offen[rid(r)]=r.s; }
+      /* 1. ausdrückliche Zuordnungen aus den Buchungen */
+      for(const r of x.rows){ if(!r.h) continue; let rest=r.h; for(const a of (r.alloc||[])){ if(offen[a.id]==null) continue; const c=Math.min(offen[a.id],Number(a.b)||0,rest); offen[a.id]=r2(offen[a.id]-c); rest=r2(rest-c); } r.rest=rest; r.ia=null; }
+      /* 2. Periodenzuordnung: Zahlung zuerst auf die Miete des Monats, für den sie gedacht ist */
+      for(const r of x.rows){ if(!r.h||r.alloc||r.k||!r.zm||r.rest<=0.005) continue;
+        for(const zm of r.zm) for(const q of x.rows){ if(r.rest<=0.005) break; if(!q.s||q.k||q.art!=='WARM_MIETE'||q.d.slice(0,7)!==zm) continue; const id=rid(q), c=r2(Math.min(offen[id],r.rest)); if(c<=0.005) continue; offen[id]=r2(offen[id]-c); r.rest=r2(r.rest-c); (r.ia=r.ia||[]).push({id,b:c}); } }
+      /* 3. Rest der Reihe nach auf die ältesten offenen Posten */
+      const pool={n:0,k:0}; for(const r of x.rows){ if(!r.h||r.fut) continue; pool[r.k?'k':'n']+=r.rest; }
+      const opF=[]; for(const r of x.rows){ if(!r.s||!r.fut) continue; const id=rid(r), o=offen[id]; r.offen=o; if(o>0.005) opF.push({id,d:r.d,t:r.t,b:o,voll:r.s,k:r.k?1:0,fut:1}); }
+      const op=[]; for(const r of x.rows){ if(!r.s||r.fut) continue; const id=rid(r), w=r.k?'k':'n'; const c=Math.min(pool[w],offen[id]); pool[w]=r2(pool[w]-c); const o=r2(offen[id]-c); r.offen=o; if(o>0.005) op.push({id,d:r.d,t:r.t,b:o,voll:r.s,k:r.k?1:0}); }
       x.op=op.filter(o=>!o.k); x.opK=op.filter(o=>o.k); x.opF=opF; x.guthaben=r2(pool.n); }
     let ns=0; for(const s of mk.soll||[]){ if(s.art!=='KAUTION'&&(s.d||'')<=today) ns+=s.b; } for(const p of mk.nhIst||[]){ if(!kautIds.has(p.bk)) ns-=p.b; } x.nhSaldo=r2(ns);
     /* überfällig = offene Posten, deren Fälligkeit mehr als 5 Tage vor dem letzten Kontoauszug liegt */
@@ -762,7 +783,7 @@ function opBox(it){ const key=(it.tx.h||'')+'|'+it.tx.b, c=it.c, betrag=it.tx.b;
   if(!opCache[key]) opCache[key]=compute({ex:key});
   const x=opCache[key].res[pid]; if(!x) return h+'<div class="sub">Für dieses Mietverhältnis gibt es kein Mieterkonto (Objekt nicht aktiv).</div></div>';
   const L=x.op.concat(x.opK||[],x.opF||[]);
-  let A; if(D&&D.a) A=D.a; else if(saved&&saved.pid===pid) A=saved.a||[]; else { A=[]; let r=betrag; for(const o of x.op.concat(x.opF||[])){ if(r<=0.005) break; if(o.k) continue; const b=r2(Math.min(o.b,r)); A.push({id:o.id,b}); r=r2(r-b); } }
+  let A; if(D&&D.a) A=D.a; else if(saved&&saved.pid===pid) A=saved.a||[]; else { A=[]; let r=betrag; const zm=zielMonat(it.tx), LL=x.op.concat(x.opF||[]), hit=o=>zm.includes(o.d.slice(0,7))&&/^Miete/.test(o.t); for(const o of LL.filter(hit).concat(LL.filter(o=>!hit(o)))){ if(r<=0.005) break; if(o.k) continue; const b=r2(Math.min(o.b,r)); A.push({id:o.id,b}); r=r2(r-b); } }
   const am=id=>{ const a=A.find(y=>y.id===id); return a?Number(a.b)||0:0; };
   const sum=r2(A.reduce((s2,a)=>s2+(Number(a.b)||0),0)), rest=r2(betrag-sum);
   if(!L.length) h+='<div class="sub">Keine offenen Posten – die Zahlung wird als Guthaben / Vorauszahlung geführt.</div>';
