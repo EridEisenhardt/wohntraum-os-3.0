@@ -135,6 +135,7 @@ th.n{text-align:right}
   <button data-tab="liste" class="on">Buchungen</button>
   <button data-tab="import">Kontoauszüge importieren</button>
   <button data-tab="regeln">Regeln</button>
+  <button data-tab="konten">Kontenplan</button>
 </div>
 <div id="view"><div class="loading">Lade Daten …</div></div>
 <div class="toast" id="toast" role="status"></div>
@@ -453,6 +454,31 @@ const ST_KEY='bu_state';
 let U={status:'offen',konto:'',q:'',sel:'',m:''}; try{ const s=JSON.parse(store(ST_KEY)||'null'); if(s) U=Object.assign(U,s,{q:''}); }catch(e){}
 const saveU=()=>store(ST_KEY,JSON.stringify({status:U.status,konto:U.konto,m:U.m}));
 let splitDraft=null, ruleDraft=null, sb=null, urlCache={};
+/* ---------- Kontenplan ---------- */
+const KA=[['grundsteuer','2010','Grundsteuer'],['wasser','2020','Wasserversorgung'],['abwasser','2030','Entwässerung / Abwasser'],['heizung','2040','Heizung / Brennstoff'],['warmwasser','2050','Warmwasser'],['aufzug','2070','Aufzug'],['strassenreinigung','2080','Straßenreinigung'],['muell','2085','Müllbeseitigung'],['reinigung','2090','Gebäudereinigung / Ungezieferbekämpfung'],['garten','2100','Gartenpflege'],['allgstrom','2110','Allgemeinstrom / Beleuchtung'],['schornstein','2120','Schornsteinreinigung'],['versicherung','2130','Sach- und Haftpflichtversicherung'],['hauswart','2140','Hauswart'],['kabel','2150','Antenne / Kabelanschluss'],['waesche','2160','Wäschepflege'],['sonstige_bk','2170','Sonstige Betriebskosten (z. B. Rauchmelder, Wartung)'],['weg','2200','WEG-Hausgeld'],['bk_nu','2900','Betriebskosten nicht umlagefähig']];
+const KAN=Object.fromEntries(KA.map(x=>[x[0],x]));
+const KONTEN=[
+  ['Einnahmen',[['1000','Mieteinnahmen','miete','',''],['1100','Sonstige Einnahmen','sonst_ein','','']]],
+  ['Betriebskosten (BetrKV)',KA.map(x=>[x[1],x[2],'bk','',x[0]])],
+  ['Objektkosten',[['3000','Instandhaltung','inst','',''],['3100','Umbau / Modernisierung','umbau','',''],['4000','Darlehen (Zins und Tilgung)','darl','',''],['4100','Sonstige Objektkosten','obj_sonst','','']]],
+  ['Verwaltung',SUBS.map((x,i)=>[String(5010+i*10),x[1],'verw',x[0],''])],
+  ['Neutral',[['9000','Umbuchung intern','intern','',''],['9100','Rücklastschrift (hebt sich auf)','ruecklast','',''],['9900','Nicht relevant','ignore','','']]]];
+const kval=(k,s,ka)=>[k||'',k==='verw'?(s||''):'',k==='bk'?(ka||''):''].join('|');
+const KMAP={}; KONTEN.forEach(([g,l])=>l.forEach(x=>{ KMAP[kval(x[2],x[3],x[4])]=x; }));
+function kontoLabel(k,s,ka){ if(!k) return 'nicht zugeordnet'; const x=KMAP[kval(k,s,ka)]; if(x) return x[0]+' '+x[1];
+  if(k==='bk') return '2000 Betriebskosten – Kostenart fehlt'; if(k==='verw') return '5000 Verwaltung – Art fehlt'; return KATN[k]||k; }
+function kontoSelect(id,c,ro){ const cur=kval(c.kat,c.sub,c.ka);
+  let h='<select id="'+id+'"'+(ro?' disabled':'')+'><option value="||"'+(c.kat?'':' selected')+'>– Konto wählen –</option>';
+  if(c.kat&&!KMAP[cur]) h+='<option value="'+esc(cur)+'" selected>'+esc(kontoLabel(c.kat,c.sub,c.ka))+'</option>';
+  for(const [g,l] of KONTEN){ h+='<optgroup label="'+esc(g)+'">'+l.map(x=>{ const v=kval(x[2],x[3],x[4]); return '<option value="'+esc(v)+'"'+(v===cur?' selected':'')+'>'+esc(x[0]+' '+x[1])+'</option>'; }).join('')+'</optgroup>'; }
+  return h+'</select>'; }
+const KA_RX=[['weg',/\bhausgeld\b|\bweg\b|wohnungseigentuemer/],['schornstein',/schornstein|kaminfeger/],['heizung',/heizoel|brennstoff|erdgas|\bgas\b|fluessiggas|\bista\b|techem|brunata|minol|kalo\b/],['abwasser',/abwasser|entwaesser|kanalgeb/],['wasser',/wasserversorg|wassergeld|wasserzins|\bwvr\b|trinkwasser/],['muell',/abfall|muell|\bawb\b|entsorgung|wertstoff/],['grundsteuer',/grundsteuer/],['versicherung',/versicherung|signal iduna|allianz|provinzial|gebaeudevers|haftpflicht/],['garten',/garten|gruenpflege|baumpflege/],['reinigung',/treppenhausreinig|gebaeudereinig|reinigungs|schaedlings|ungeziefer/],['hauswart',/hausmeister|hauswart/],['kabel',/kabelanschluss|kabel tv|antenne|tele columbus|pyur/],['sonstige_bk',/rauchmelder|rauchwarn|wartung|dichtheitspruef|legionell/],['allgstrom',/allgemeinstrom|\bstrom\b|\bews\b|elektrizitaet|eon\b|e on\b/]];
+function guessKa(tx){ const t=' '+norm((tx.n||'')+' '+(tx.z||''))+' '; for(const [k,rx] of KA_RX) if(rx.test(t)) return k; return ''; }
+const ruleKa=c=>{ if(!c.rule) return ''; const r=regeln.find(x=>x.id===c.rule); return (r&&r.ka)||''; };
+function setKonto(it,val){ const [k,s,ka]=val.split('|'); const c=it.c; let obj=c.obj||'', unit=c.unit||'';
+  if(k!=='miete') unit=''; if(k==='verw'&&!objKz().has(obj)) obj=''; if(['intern','ignore','ruecklast',''].includes(k)) obj='';
+  if(c.kat==='ruecklast'&&k!=='ruecklast') setTx(it.id,'k',k);
+  return writeTx(it.doc,it.ix,{m:1,k,s:s||'',ka:ka||'',o:obj,u:unit}); }
 const BELEG_KATS=['bk','inst','umbau','obj_sonst','verw'];
 function umlageSubs(){ return new Set(SUBS_UM.map(x=>x[0])); }
 function cls(v){return v>=0?'pos':'neg';}
@@ -472,18 +498,19 @@ function items(){
     if(!it){ const orig=(buch[r.doc].tx||[])[r.ix]||r.tx; it={id,doc:r.doc,ix:r.ix,tx:orig,k:r.k,kkey:r.kkey,m:r.m,parts:[],nh:!!r.nh,split:!!r.split}; map.set(id,it); }
     it.parts.push(r); }
   const out=[...map.values()];
-  for(const it of out){ it.c=it.parts[0].c; it.open=it.parts.some(p=>isOpen(p.c)); it.bel=(it.tx.bl||[]).length;
+  for(const it of out){ it.parts=it.parts.map((p,pi)=>{ const sp=Array.isArray(it.tx.sp)&&it.tx.sp.length&&!p.nh?it.tx.sp[pi]:null; let ka=sp?(sp.ka||''):(it.tx.m?(it.tx.ka||''):ruleKa(p.c)), kg=false; if(!ka&&p.c.kat==='bk'&&!sp){ ka=guessKa(it.tx); kg=!!ka; } return Object.assign({},p,{c:Object.assign({},p.c,{ka,kg})}); });
+    it.c=it.parts[0].c; it.needKA=!it.parts.some(p=>isOpen(p.c))&&it.parts.some(p=>p.c.kat==='bk'&&(!p.c.ka||p.c.kg)); it.open=it.parts.some(p=>isOpen(p.c)); it.bel=(it.tx.bl||[]).length;
     it.needBeleg=it.tx.b<0&&!it.open&&it.parts.some(p=>BELEG_KATS.includes(p.c.kat)&&!(p.c.kat==='verw'&&p.c.sub==='bank'))&&!it.bel; }
   return out.sort((a,b)=>a.tx.d<b.tx.d?1:a.tx.d>b.tx.d?-1:0);
 }
 function filtered(all){ const q=norm(U.q);
   return all.filter(it=>(!U.konto||it.kkey===U.konto)&&(U.m===''||it.m===Number(U.m))
-    &&(U.status==='alle'||(U.status==='offen'&&it.open)||(U.status==='beleg'&&it.needBeleg)||(U.status==='zug'&&!it.open))
+    &&(U.status==='alle'||(U.status==='offen'&&it.open)||(U.status==='beleg'&&it.needBeleg)||(U.status==='ka'&&it.needKA)||(U.status==='zug'&&!it.open))
     &&(!q||norm(it.tx.n+' '+it.tx.z+' '+fnum.format(Math.abs(it.tx.b))+' '+(it.c.obj||'')).includes(q))); }
 
 function zuordText(it){ if(it.split) return 'aufgeteilt in '+it.parts.length;
   const c=it.c; if(isOpen(c)) return c.kat?(KATN[c.kat]+' · Objekt fehlt'):'nicht zugeordnet';
-  let t=KATN[c.kat]||c.kat; if(c.kat==='verw') t+=c.sub?' · '+(SUBN[c.sub]||c.sub):''; if(c.obj&&c.obj!=='__ges') t=c.obj+' · '+t; if(c.obj==='__ges') t+=' · Gesellschaft'; if(c.kat==='verw'&&!c.obj&&umlageSubs().has(c.sub)) t+=' · Umlage'; return t; }
+  let t=kontoLabel(c.kat,c.sub,c.ka); if(c.obj&&c.obj!=='__ges') t=c.obj+' · '+t; if(c.obj==='__ges') t+=' · Gesellschaft'; if(c.kat==='verw'&&!c.obj&&umlageSubs().has(c.sub)) t+=' · Umlage'; return t; }
 
 /* ---------- Render ---------- */
 function render(){
@@ -492,14 +519,14 @@ function render(){
   document.querySelectorAll('#tabs button').forEach(b=>b.classList.toggle('on',b.dataset.tab===tab));
   if(!ready){ $('view').innerHTML='<div class="loading">'+(dbState==='none'?'Bitte im Wohntraum OS einloggen.':'Lade Daten …')+'</div>'; return; }
   const f=document.activeElement, fid=f&&f.id, fv=fid?f.value:null, ss=f&&f.selectionStart;
-  $('view').innerHTML=tab==='import'?'<div class="pad">'+renderImport()+'</div>':tab==='regeln'?'<div class="pad">'+renderRegeln()+'</div>':renderListe();
+  $('view').innerHTML=tab==='import'?'<div class="pad">'+renderImport()+'</div>':tab==='regeln'?'<div class="pad">'+renderRegeln()+'</div>':tab==='konten'?'<div class="pad">'+renderKontenplan()+'</div>':renderListe();
   if(fid){ const el=$(fid); if(el&&(el.tagName==='INPUT'||el.tagName==='TEXTAREA')){ el.focus({preventScroll:true}); if(fv!=null) el.value=fv; try{ if(ss!=null) el.setSelectionRange(ss,ss); }catch(_){} } }
   const s=document.querySelector('.row.sel'); if(s&&render.scrollSel){ s.scrollIntoView({block:'nearest'}); render.scrollSel=false; }
   if(tab==='liste') loadPreview();
 }
 function renderListe(){
   const all=items(), list=filtered(all);
-  const cnt=k=>all.filter(it=>(!U.konto||it.kkey===U.konto)&&(U.m===''||it.m===Number(U.m))&&(k==='offen'?it.open:k==='beleg'?it.needBeleg:k==='zug'?!it.open:true)).length;
+  const cnt=k=>all.filter(it=>(!U.konto||it.kkey===U.konto)&&(U.m===''||it.m===Number(U.m))&&(k==='offen'?it.open:k==='beleg'?it.needBeleg:k==='ka'?it.needKA:k==='zug'?!it.open:true)).length;
   if(U.sel&&!all.find(x=>x.id===U.sel)) U.sel='';
   if(!U.sel&&list.length) U.sel=list[0].id;
   /* linke Spalte: Konten */
@@ -511,7 +538,7 @@ function renderListe(){
       nav+='<button class="kn'+(U.konto===k?' on':'')+'" data-konto="'+esc(k)+'" title="'+esc((kontoOf(k)||{}).iban||'')+'"><span>'+esc(kontoName(k))+'</span>'+(o.open?'<b>'+o.open+'</b>':'<i>✓</i>')+'</button>'; } }
   /* Mitte: Liste */
   const sum=list.reduce((a,it)=>a+it.tx.b,0);
-  let mid='<div class="tbar"><div class="seg">'+[['offen','Offen'],['beleg','Beleg fehlt'],['zug','Zugeordnet'],['alle','Alle']].map(([k,l])=>'<button data-st="'+k+'" class="'+(U.status===k?'on':'')+'">'+l+' <span>'+cnt(k)+'</span></button>').join('')+'</div>'
+  let mid='<div class="tbar"><div class="seg">'+[['offen','Offen'],['ka','Kostenart prüfen'],['beleg','Beleg fehlt'],['zug','Zugeordnet'],['alle','Alle']].map(([k,l])=>'<button data-st="'+k+'" class="'+(U.status===k?'on':'')+'">'+l+' <span>'+cnt(k)+'</span></button>').join('')+'</div>'
     +'<select id="u-m" aria-label="Monat"><option value="">ganzes Jahr</option>'+MON.map((x,i)=>'<option value="'+i+'"'+(U.m!==''&&Number(U.m)===i?' selected':'')+'>'+x+'</option>').join('')+'</select>'
     +'<input type="search" id="u-q" placeholder="Suchen: Name, Zweck, Betrag, Objekt" value="'+esc(U.q)+'" autocomplete="off"></div>';
   mid+='<div class="lsum">'+list.length+' Buchungen · Summe <b class="'+cls(sum)+'">'+eur(sum)+'</b></div><div class="list" id="list">';
@@ -543,15 +570,16 @@ function renderDetail(it,list){
   h+='<div class="card"><div class="lab">Zuordnung '+(it.open?'<span class="pill mid">offen</span>':'<span class="pill ok">zugeordnet</span>')+' <span class="pill src" title="Woher kommt die Zuordnung?">'+esc(String(it.split?'aufgeteilt':c.src||'').slice(0,40))+'</span></div>';
   if(it.nh) h+='<div class="sub">Diese Mietzahlung ist in Nahaus abgeglichen – die Zuordnung kommt von dort.</div>';
   if(!it.split){
-    h+='<div class="frm"><label>Kategorie<select id="z-k"'+(ro?' disabled':'')+'>'+selOpts(KATS,c.kat)+'</select></label>';
-    if(c.kat==='verw') h+='<label>Verwaltungsart<select id="z-s"'+(ro?' disabled':'')+'><option value="">– Art wählen –</option><optgroup label="wird umgelegt">'+selOpts(SUBS_UM,c.sub)+'</optgroup><optgroup label="nicht umgelegt">'+selOpts(SUBS_NO,c.sub)+'</optgroup></select></label>';
+    h+='<div class="frm"><label>Konto'+kontoSelect('z-kto',c,ro)+'</label>';
+    if(c.kat==='bk'&&c.kg) h+='<div class="sub" style="color:var(--warn)">Kostenart aus dem Text erkannt – bitte prüfen und mit „Erledigt“ bestätigen.</div>'; else if(c.kat==='bk'&&!c.ka) h+='<div class="sub" style="color:var(--warn)">Bitte die Kostenart wählen – sie wird für die Betriebskostenabrechnung gebraucht.</div>';
+    if(c.kat==='verw'&&umlageSubs().has(c.sub)) h+='<div class="sub">Wird gleichmäßig auf alle Einheiten umgelegt, wenn kein Objekt gewählt ist.</div>';
     if(c.kat&&!['intern','ignore','ruecklast'].includes(c.kat)) h+='<label>Objekt'+objSel('z-o',c.obj,c.kat,c.sub).replace('<select','<select'+(ro?' disabled':''))+'</label>';
     if(c.kat==='miete'&&c.obj) h+='<label>Einheit / Mieter'+unitSel('z-u',c.obj,c.unit).replace('<select','<select'+(ro?' disabled':''))+'</label>';
     h+='</div>';
   } else {
     h+='<table class="sp"><tbody>'+it.parts.map(p=>'<tr><td>'+esc(zuordText({c:p.c,parts:[p]}))+'</td><td class="n '+cls(p.tx.b)+'">'+eur(p.tx.b)+'</td></tr>').join('')+'</tbody></table>';
   }
-  if(!ro) h+='<div class="acts">'+(it.open?'':'<button class="primary" data-next="1">✓ Erledigt – nächste</button>')+'<button data-split="1">'+(it.split?'Aufteilung ändern':'Aufteilen')+'</button>'+(it.split?'':'<button data-mkrule="1" title="Künftige Buchungen dieser Art automatisch so zuordnen">Als Regel merken</button>')+'</div>';
+  if(!ro) h+='<div class="acts">'+(it.open||(it.c.kat==='bk'&&!it.c.ka)?'':'<button class="primary" data-next="1">✓ Erledigt – nächste</button>')+'<button data-split="1">'+(it.split?'Aufteilung ändern':'Aufteilen')+'</button>'+(it.split?'':'<button data-mkrule="1" title="Künftige Buchungen dieser Art automatisch so zuordnen">Als Regel merken</button>')+'</div>';
   if(splitDraft&&splitDraft.id===it.id) h+=renderSplit(it);
   if(ruleDraft&&ruleDraft.id===it.id) h+=renderRule(it);
   h+='</div>';
@@ -569,8 +597,7 @@ function renderDetail(it,list){
 function renderSplit(it){ const D=splitDraft; const rest=r2(it.tx.b-D.parts.reduce((a,p)=>a+(parseNum(p.b)||0),0));
   let h='<div class="spl"><div class="lab">Aufteilen auf mehrere Objekte / Kategorien</div>';
   D.parts.forEach((p,i)=>{ h+='<div class="sprow"><input type="text" inputmode="decimal" id="sp-b-'+i+'" class="num" value="'+esc(p.b)+'" placeholder="Betrag">'
-    +'<select id="sp-k-'+i+'">'+selOpts(KATS.filter(x=>x[0]),p.k)+'</select>'
-    +(p.k==='verw'?'<select id="sp-s-'+i+'"><option value="">– Art –</option>'+selOpts(SUBS,p.s)+'</select>':'')
+    +kontoSelect('sp-k-'+i,{kat:p.k,sub:p.s,ka:p.ka},false)
     +objSel('sp-o-'+i,p.o,p.k,p.s)+(p.k==='miete'&&p.o?unitSel('sp-u-'+i,p.o,p.u):'')
     +'<input type="text" id="sp-t-'+i+'" value="'+esc(p.t||'')+'" placeholder="Text (optional)"><button class="ghost small" data-spdel="'+i+'">✕</button></div>'; });
   h+='<div class="acts"><button class="small" data-spadd="1">+ Zeile</button><span class="sub">Rest: <b class="'+(Math.abs(rest)<0.005?'pos':'neg')+'">'+eur(rest)+'</b></span></div>';
@@ -581,11 +608,26 @@ function renderRule(it){ const D=ruleDraft;
     +'<input type="text" id="rf-m" value="'+esc(D.m)+'" placeholder="Suchbegriff (mind. 3 Zeichen)">'
     +'<select id="rf-sc"><option value="alle"'+(D.sc==='alle'?' selected':'')+'>alle Konten</option><option value="allgemein"'+(D.sc==='allgemein'?' selected':'')+'>nur Allgemein-Konten</option><option value="objekt"'+(D.sc==='objekt'?' selected':'')+'>nur Objekt-Konten</option></select>'
     +'<select id="rf-o"><option value="">Objekt des Kontos</option>'+objekte.map(o=>'<option value="'+esc(o.kz)+'"'+(o.kz===D.o?' selected':'')+'>'+esc(o.kz)+'</option>').join('')+'</select></div>'
-    +'<div class="sub">Kategorie: <b>'+esc(KATN[it.c.kat]||'–')+'</b>'+(it.c.kat==='verw'?' · '+esc(SUBN[it.c.sub]||'ohne Art'):'')+' (wie oben gewählt)</div>'
+    +'<div class="sub">Konto: <b>'+esc(kontoLabel(it.c.kat,it.c.sub,it.c.ka))+'</b> (wie oben gewählt)</div>'
     +'<div class="acts"><button class="primary small" data-rsave="1">Regel speichern</button><button class="ghost small" data-rcancel="1">Abbrechen</button></div></div>'; }
+let kpObj='';
+function renderKontenplan(){
+  const sums={}; let ohne=0;
+  for(const it of items()){ for(const p of it.parts){ const c=p.c; if(!c.kat) continue; if(kpObj&&(kpObj==='__umlage'?!(c.kat==='verw'&&!c.obj):c.obj!==kpObj)) continue;
+    const v=kval(c.kat,c.sub,c.ka); const o=sums[v]=sums[v]||{n:0,b:0}; o.n++; o.b+=p.tx.b; } }
+  let h='<div class="note"><b>Kontenplan</b> – Betriebskosten nach den Kostenarten der Betriebskostenverordnung, dazu Objekt- und Verwaltungskonten. Die Summen zeigen alle Buchungen '+year+'. Mit dem Objekt-Filter siehst du die Kosten eines Hauses – das ist die Grundlage für die Betriebskostenabrechnung.</div>';
+  h+='<div class="tbar" style="border:none;padding:0 0 10px;background:none"><label class="sub">Objekt <select id="kp-o"><option value="">alle Objekte</option><option value="__umlage"'+(kpObj==='__umlage'?' selected':'')+'>Verwaltung ohne Objekt (Umlage)</option>'+objekte.map(o=>'<option value="'+esc(o.kz)+'"'+(o.kz===kpObj?' selected':'')+'>'+esc(o.kz+' – '+String(o.name||'').split(',')[0])+'</option>').join('')+'</select></label></div>';
+  h+='<div class="tablewrap"><table><thead><tr><th>Nr.</th><th>Konto</th><th class="n">Buchungen</th><th class="n">Summe '+year+'</th></tr></thead><tbody>';
+  const done=new Set();
+  for(const [g,l] of KONTEN){ h+='<tr><td colspan="4" style="background:var(--soft);font-weight:700">'+esc(g)+'</td></tr>';
+    for(const x of l){ const v=kval(x[2],x[3],x[4]); done.add(v); const o=sums[v]; h+='<tr><td>'+x[0]+'</td><td>'+esc(x[1])+'</td><td class="n">'+(o?o.n:'<span class="mut">–</span>')+'</td><td class="n '+(o?cls(o.b):'')+'">'+(o?eur(o.b):'<span class="mut">–</span>')+'</td></tr>'; }
+    if(g.startsWith('Betriebskosten')){ const o=sums['bk||']; if(o) h+='<tr><td>2000</td><td><b style="color:var(--warn)">Betriebskosten – Kostenart fehlt</b> <button class="ghost small" data-goka="1">zuordnen</button></td><td class="n">'+o.n+'</td><td class="n '+cls(o.b)+'">'+eur(o.b)+'</td></tr>'; done.add('bk||'); } }
+  const rest=Object.keys(sums).filter(v=>!done.has(v));
+  for(const v of rest){ const [k,s,ka]=v.split('|'); h+='<tr><td></td><td>'+esc(kontoLabel(k,s,ka))+'</td><td class="n">'+sums[v].n+'</td><td class="n">'+eur(sums[v].b)+'</td></tr>'; }
+  return h+'</tbody></table></div>'; }
 function renderRegeln(){
-  let h='<div class="note"><b>Zuordnungsregeln</b> – die erste passende Regel gilt. Gleiche Regeln wie im Objekt-Controlling. Neue Regeln legst du am schnellsten in der Buchung mit „Als Regel merken“ an.</div><div class="tablewrap"><table><thead><tr><th>Suchbegriff</th><th>Kategorie</th><th>Art</th><th>Objekt</th><th>Gilt für</th><th></th></tr></thead><tbody>';
-  regeln.forEach((r,i)=>{ h+='<tr><td><b>'+esc(r.muster||(r.iban?'IBAN '+r.iban:''))+'</b></td><td>'+esc(KATN[r.kat]||r.kat)+'</td><td>'+esc(SUBN[r.sub]||'')+'</td><td>'+esc(r.obj==='__ges'?'Gesellschaft':r.obj||(r.kat==='verw'?'Umlage':'Objekt des Kontos'))+'</td><td>'+({alle:'alle Konten',allgemein:'Allgemein-Konten',objekt:'Objekt-Konten'}[r.scope]||'alle Konten')+(r.dir==='ein'?' · nur Eingänge':r.dir==='aus'?' · nur Ausgänge':'')+(r.betrag?' · nur '+eur(r.betrag):'')+'</td><td>'+(canWrite?'<button class="ghost small" data-rup="'+i+'"'+(i?'':' disabled')+'>↑</button><button class="ghost small" data-rdel="'+i+'">Löschen</button>':'')+'</td></tr>'; });
+  let h='<div class="note"><b>Zuordnungsregeln</b> – die erste passende Regel gilt. Gleiche Regeln wie im Objekt-Controlling. Neue Regeln legst du am schnellsten in der Buchung mit „Als Regel merken“ an.</div><div class="tablewrap"><table><thead><tr><th>Suchbegriff</th><th>Konto</th><th>Objekt</th><th>Gilt für</th><th></th></tr></thead><tbody>';
+  regeln.forEach((r,i)=>{ h+='<tr><td><b>'+esc(r.muster||(r.iban?'IBAN '+r.iban:''))+'</b></td><td>'+esc(kontoLabel(r.kat,r.sub,r.ka))+'</td><td>'+esc(r.obj==='__ges'?'Gesellschaft':r.obj||(r.kat==='verw'?'Umlage':'Objekt des Kontos'))+'</td><td>'+({alle:'alle Konten',allgemein:'Allgemein-Konten',objekt:'Objekt-Konten'}[r.scope]||'alle Konten')+(r.dir==='ein'?' · nur Eingänge':r.dir==='aus'?' · nur Ausgänge':'')+(r.betrag?' · nur '+eur(r.betrag):'')+'</td><td>'+(canWrite?'<button class="ghost small" data-rup="'+i+'"'+(i?'':' disabled')+'>↑</button><button class="ghost small" data-rdel="'+i+'">Löschen</button>':'')+'</td></tr>'; });
   return h+'</tbody></table></div>'; }
 
 /* ---------- Belege ---------- */
@@ -608,33 +650,34 @@ async function uploadBelege(files){
 
 /* ---------- Ereignisse ---------- */
 function step(n){ const list=filtered(items()); const i=list.findIndex(x=>x.id===U.sel); const nx=list[i+n]; if(nx){ U.sel=nx.id; splitDraft=null; ruleDraft=null; render.scrollSel=true; render(); } }
-function nextOpen(){ const list=filtered(items()); const i=list.findIndex(x=>x.id===U.sel); const nx=list.slice(i+1).find(x=>x.open)||list.find(x=>x.open&&x.id!==U.sel)||list[i+1];
+function nextOpen(){ const list=filtered(items()); const i=list.findIndex(x=>x.id===U.sel); const need=x=>U.status==='ka'?x.needKA:U.status==='beleg'?x.needBeleg:x.open; const nx=list.slice(i+1).find(need)||list.find(x=>need(x)&&x.id!==U.sel)||list[i+1];
   if(nx){ U.sel=nx.id; splitDraft=null; ruleDraft=null; render.scrollSel=true; render(); } }
 document.addEventListener('click',async e=>{
   const t=e.target.closest('button,a[data-bopen]'); if(!t) return;
   if(t.id==='yprev'||t.id==='ynext'){ year+=t.id==='yprev'?-1:1; store('oc_year',year); U.sel=''; invalidate(); render(); return; }
   if(t.dataset.tab){ tab=t.dataset.tab; render(); return; }
+  if(t.dataset.goka){ tab='liste'; U.status='ka'; U.konto=''; U.sel=''; saveU(); render(); return; }
   if(t.dataset.konto!==undefined){ U.konto=t.dataset.konto; U.sel=''; saveU(); render(); return; }
   if(t.dataset.st){ U.status=t.dataset.st; U.sel=''; saveU(); render(); return; }
   if(t.dataset.sel){ U.sel=t.dataset.sel; splitDraft=null; ruleDraft=null; render(); return; }
   if(t.dataset.step){ step(Number(t.dataset.step)); return; }
-  if(t.dataset.next){ nextOpen(); return; }
+  if(t.dataset.next){ const it0=items().find(x=>x.id===U.sel); if(it0&&!it0.split&&it0.c.kg){ const c=it0.c; writeTx(it0.doc,it0.ix,{m:1,k:c.kat,s:c.sub||'',ka:c.ka,o:c.obj||'',u:c.unit||''}); } nextOpen(); return; }
   const it=items().find(x=>x.id===U.sel);
   if(t.dataset.bopen!==undefined){ e.preventDefault(); const b=(it.tx.bl||[])[Number(t.dataset.bopen)]; try{ window.open(await signedUrl(b.p),'_blank'); }catch(err){ toast('Öffnen fehlgeschlagen'); } return; }
   if(t.dataset.bdel!==undefined){ if(t.dataset.sure!=='1'){t.dataset.sure='1';t.textContent='wirklich?';return;} const bl=(it.tx.bl||[]).slice(); const [g]=bl.splice(Number(t.dataset.bdel),1); await writeTx(it.doc,it.ix,{bl}); if(g&&sb) sb.storage.from('belege').remove([g.p]); return; }
-  if(t.dataset.split){ splitDraft={id:it.id,parts:(it.split?it.tx.sp.map(p=>({b:fnum.format(p.b),k:p.k||'',s:p.s||'',o:p.o||'',u:p.u||'',t:p.t||''})):[{b:fnum.format(it.tx.b),k:it.c.kat||'',s:it.c.sub||'',o:it.c.obj||'',u:it.c.unit||'',t:''},{b:'',k:it.c.kat||'bk',s:'',o:'',u:'',t:''}])}; ruleDraft=null; render(); return; }
-  if(t.dataset.spadd){ splitDraft.parts.push({b:'',k:splitDraft.parts[0].k||'bk',s:'',o:'',u:'',t:''}); render(); return; }
+  if(t.dataset.split){ splitDraft={id:it.id,parts:(it.split?it.tx.sp.map(p=>({b:fnum.format(p.b),k:p.k||'',s:p.s||'',ka:p.ka||'',o:p.o||'',u:p.u||'',t:p.t||''})):[{b:fnum.format(it.tx.b),k:it.c.kat||'',s:it.c.sub||'',ka:it.c.ka||'',o:it.c.obj||'',u:it.c.unit||'',t:''},{b:'',k:it.c.kat||'bk',s:it.c.sub||'',ka:it.c.ka||'',o:'',u:'',t:''}])}; ruleDraft=null; render(); return; }
+  if(t.dataset.spadd){ const p0=splitDraft.parts[0]; splitDraft.parts.push({b:'',k:p0.k||'bk',s:p0.s||'',ka:p0.ka||'',o:'',u:'',t:''}); render(); return; }
   if(t.dataset.spdel!==undefined){ splitDraft.parts.splice(Number(t.dataset.spdel),1); render(); return; }
   if(t.dataset.spcancel){ splitDraft=null; render(); return; }
   if(t.dataset.spclear){ splitDraft=null; await writeTx(it.doc,it.ix,{sp:[]}); toast('Aufteilung aufgehoben.'); return; }
-  if(t.dataset.spsave){ const P=splitDraft.parts.map(p=>({b:r2(parseNum(p.b)),k:p.k,s:p.k==='verw'?p.s:'',o:p.o,u:p.k==='miete'?p.u:'',t:(p.t||'').trim()}));
+  if(t.dataset.spsave){ const P=splitDraft.parts.map(p=>({b:r2(parseNum(p.b)),k:p.k,s:p.k==='verw'?p.s:'',ka:p.k==='bk'?(p.ka||''):'',o:p.o,u:p.k==='miete'?p.u:'',t:(p.t||'').trim()}));
     if(P.length<2||P.some(p=>!p.b||isNaN(p.b))){ toast('Bitte mindestens zwei Zeilen mit Betrag.'); return; }
     if(Math.abs(r2(P.reduce((a,p)=>a+p.b,0))-it.tx.b)>0.005){ toast('Die Teile müssen zusammen '+eur(it.tx.b)+' ergeben.'); return; }
     splitDraft=null; await writeTx(it.doc,it.ix,{sp:P}); toast('Aufteilung gespeichert.'); return; }
   if(t.dataset.mkrule){ if(!it.c.kat){ toast('Bitte zuerst die Kategorie wählen.'); return; } ruleDraft={id:it.id,m:it.tx.n||'',sc:kontoTyp(it.k)==='allg'?'allgemein':'alle',o:kontoTyp(it.k)==='obj'?'':it.c.obj&&it.c.obj!=='__ges'?it.c.obj:''}; splitDraft=null; render(); return; }
   if(t.dataset.rcancel){ ruleDraft=null; render(); return; }
   if(t.dataset.rsave){ const m=($('rf-m').value||'').trim(); if(m.length<3){toast('Der Suchbegriff braucht mindestens 3 Zeichen.');return;}
-    const r={id:'r'+Date.now().toString(36),muster:m,kat:it.c.kat,sub:it.c.kat==='verw'?it.c.sub:'',obj:$('rf-o').value,scope:$('rf-sc').value};
+    const r={id:'r'+Date.now().toString(36),muster:m,kat:it.c.kat,sub:it.c.kat==='verw'?it.c.sub:'',ka:it.c.kat==='bk'?(it.c.ka||''):'',obj:$('rf-o').value,scope:$('rf-sc').value};
     regeln=[r].concat(regeln); ruleDraft=null; invalidate(); saveStamm('regeln',{regeln}).then(()=>toast('Regel gespeichert – gilt ab sofort für alle passenden Buchungen.')); render(); return; }
   if(t.dataset.rdel!==undefined){ const i=Number(t.dataset.rdel); if(t.dataset.sure!=='1'){t.dataset.sure='1';t.textContent='Wirklich?';return;} regeln=regeln.filter((_,j)=>j!==i); invalidate(); saveStamm('regeln',{regeln}); render(); return; }
   if(t.dataset.rup!==undefined){ const i=Number(t.dataset.rup); if(i<1) return; const a=regeln.slice(); [a[i-1],a[i]]=[a[i],a[i-1]]; regeln=a; invalidate(); saveStamm('regeln',{regeln}); render(); return; }
@@ -644,12 +687,14 @@ document.addEventListener('click',async e=>{
 document.addEventListener('change',e=>{ const t=e.target;
   if(t.id==='file'){ handleFiles([...t.files]); t.value=''; return; }
   if(t.id==='bfile'){ uploadBelege([...t.files]); t.value=''; return; }
+  if(t.id==='kp-o'){ kpObj=t.value; render(); return; }
   if(t.id==='u-m'){ U.m=t.value; U.sel=''; saveU(); render(); return; }
   if(t.dataset.pk!==undefined){ const p=pending[Number(t.dataset.pk)]; p.konto=t.value; render(); return; }
   const it=items().find(x=>x.id===U.sel);
-  if(it&&/^z-[ksou]$/.test(t.id)){ setTx(it.id,t.id.slice(2),t.value); return; }
+  if(it&&t.id==='z-kto'){ setKonto(it,t.value); return; }
+  if(it&&(t.id==='z-o'||t.id==='z-u')){ const c=it.c; const o=t.id==='z-o'?t.value:(c.obj||''), u=t.id==='z-u'?t.value:(t.id==='z-o'?'':(c.unit||'')); writeTx(it.doc,it.ix,{m:1,k:c.kat||'',s:c.sub||'',ka:c.ka||'',o,u}); return; }
   if(it&&t.id==='z-nt'){ writeTx(it.doc,it.ix,{nt:t.value.trim()}); return; }
-  if(splitDraft){ const m=t.id.match(/^sp-([bksout])-(\d+)$/); if(m){ const p=splitDraft.parts[Number(m[2])]; p[m[1]]=t.value; if(m[1]==='k'){ if(t.value!=='verw') p.s=''; if(t.value!=='miete') p.u=''; } if(m[1]==='o') p.u=''; if(['k','o','s'].includes(m[1])) render(); return; } }
+  if(splitDraft){ const m=t.id.match(/^sp-([bksout])-(\d+)$/); if(m){ const p=splitDraft.parts[Number(m[2])]; if(m[1]==='k'){ const [k,s2,ka]=t.value.split('|'); p.k=k; p.s=s2||''; p.ka=ka||''; if(k!=='miete') p.u=''; } else p[m[1]]=t.value; if(m[1]==='o') p.u=''; if(['k','o','s'].includes(m[1])) render(); return; } }
 });
 document.addEventListener('input',e=>{ const t=e.target;
   if(t.id==='u-q'){ U.q=t.value; clearTimeout(window.__qt); window.__qt=setTimeout(render,180); return; }

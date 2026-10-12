@@ -1,0 +1,607 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Mieterkonten – Wohntraum OS</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script>window.OS_APP='oc';</script>
+<script src="/os-docstore.js"></script>
+<style>
+:root{
+  --bg:#f3f5f8;--card:#ffffff;--ink:#18202c;--muted:#5f6b7a;--line:#e0e5eb;--soft:#eef1f5;
+  --accent:#2f5d8a;--accent-ink:#ffffff;--accent-soft:#e3ecf5;
+  --pos:#1d7a4c;--pos-bg:#e5f4ec;--neg:#b42318;--neg-bg:#fcebe9;--warn:#946200;--warn-bg:#fff4d6;--chip:#edf1f6;
+  --f-ui:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#11151b;--card:#1a1f28;--ink:#e5e9ef;--muted:#97a1af;--line:#2b323e;--soft:#222935;
+    --accent:#72a6d8;--accent-ink:#0d1117;--accent-soft:#1f2c3b;
+    --pos:#5cc98e;--pos-bg:#15301f;--neg:#f07b70;--neg-bg:#3a1c19;--warn:#e7b949;--warn-bg:#342e18;--chip:#252c38;color-scheme:dark;
+  }
+}
+*{box-sizing:border-box}
+html,body{height:100%}
+body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.45 var(--f-ui);display:flex;flex-direction:column;overflow:hidden}
+header{display:flex;gap:12px;align-items:center;justify-content:space-between;padding:12px 16px 0;flex-wrap:wrap}
+h1{font-size:19px;margin:0}
+.sub{color:var(--muted);font-size:12px}
+.nav{display:flex;align-items:center;gap:6px}
+.nav .y{font-weight:700;font-size:15px;min-width:44px;text-align:center}
+button,select,input,textarea{font:inherit;color:var(--ink)}
+button{border:1px solid var(--line);background:var(--card);border-radius:8px;padding:6px 10px;cursor:pointer}
+button:hover{border-color:var(--accent)}
+button:disabled{opacity:.45;cursor:default}
+button.primary{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+button.ghost{border-color:transparent;background:transparent;color:var(--muted);padding:3px 6px}
+button.small{font-size:12px;padding:3px 8px}
+select,input[type=text],input[type=search],textarea{background:var(--soft);border:1px solid var(--line);border-radius:6px;padding:5px 7px;min-width:0}
+textarea{width:100%;resize:vertical}
+.tabs{display:flex;gap:2px;border-bottom:1px solid var(--line);padding:0 16px;margin-top:8px}
+.tabs button{border:none;border-bottom:2px solid transparent;border-radius:0;background:none;padding:8px 12px;color:var(--muted)}
+.tabs button.on{color:var(--ink);border-bottom-color:var(--accent);font-weight:600}
+#view{flex:1;min-height:0;overflow:auto}
+.pad{padding:14px 16px;max-width:1200px}
+.loading,.empty{padding:40px 16px;text-align:center;color:var(--muted)}
+/* Drei Spalten wie in einer Belegbuchhaltung */
+.grid3{display:grid;grid-template-columns:230px minmax(380px,1fr) minmax(360px,440px);height:100%;min-height:0}
+.knav{border-right:1px solid var(--line);overflow:auto;padding:10px 8px;background:var(--card)}
+.nav-h{font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);padding:2px 8px 6px}
+.nav-g{font-size:12px;font-weight:700;color:var(--muted);padding:10px 8px 4px}
+.kn{display:flex;width:100%;justify-content:space-between;gap:6px;border:none;background:none;text-align:left;padding:5px 8px;border-radius:6px;font-size:13px}
+.kn span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.kn b{background:var(--warn-bg);color:var(--warn);border-radius:999px;padding:0 7px;font-size:11px;min-width:20px;text-align:center}
+.kn i{color:var(--pos);font-style:normal;font-size:12px}
+.kn.on{background:var(--accent-soft);font-weight:600}
+.mid{display:flex;flex-direction:column;min-height:0;border-right:1px solid var(--line)}
+.tbar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;padding:10px 12px;border-bottom:1px solid var(--line);background:var(--card)}
+.tbar input[type=search]{flex:1;min-width:160px}
+.seg{display:flex;border:1px solid var(--line);border-radius:8px;overflow:hidden}
+.seg button{border:none;border-radius:0;padding:5px 10px;font-size:13px;background:var(--card)}
+.seg button+button{border-left:1px solid var(--line)}
+.seg button.on{background:var(--accent);color:var(--accent-ink)}
+.seg button span{font-size:11px;opacity:.8}
+.lsum{padding:6px 12px;font-size:12px;color:var(--muted);border-bottom:1px solid var(--line)}
+.list{overflow:auto;flex:1;min-height:0}
+.lgrp{position:sticky;top:0;background:var(--soft);font-size:12px;font-weight:700;color:var(--muted);padding:4px 12px;z-index:1}
+.row{display:grid;grid-template-columns:10px 46px 1fr auto;grid-template-rows:auto auto;gap:0 10px;width:100%;text-align:left;border:none;border-bottom:1px solid var(--line);border-radius:0;background:var(--card);padding:8px 12px;align-items:center}
+.row:hover{background:var(--accent-soft)}
+.row.sel{background:var(--accent-soft);box-shadow:inset 3px 0 0 var(--accent)}
+.row .dot{width:9px;height:9px;border-radius:50%;grid-row:span 2}
+.dot.o{background:var(--warn)}.dot.b{background:transparent;border:2px solid var(--warn)}.dot.z{background:var(--pos)}
+.row .rd{font-size:12px;color:var(--muted);grid-row:span 2;font-variant-numeric:tabular-nums}
+.row .rt{min-width:0;grid-column:3;grid-row:1}
+.row .rt b{display:block;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.row .rt small{display:block;color:var(--muted);font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.row .ra{grid-column:4;grid-row:1;text-align:right;font-weight:700;font-variant-numeric:tabular-nums;white-space:nowrap}
+.row .rz{grid-column:3/5;grid-row:2;font-size:11px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pos{color:var(--pos)}.neg{color:var(--neg)}
+.det{overflow:auto;padding:12px;min-height:0}
+.dhead{display:flex;justify-content:space-between;gap:10px;align-items:flex-start;margin-bottom:6px}
+.dn{font-size:16px;font-weight:700;overflow-wrap:anywhere}
+.da{font-size:22px;font-weight:800;font-variant-numeric:tabular-nums;white-space:nowrap}
+.dnav{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:10px 12px;margin-bottom:10px}
+.lab{font-size:12px;font-weight:700;color:var(--muted);margin-bottom:6px;display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+.zweck{overflow-wrap:anywhere;font-size:13px}
+.frm{display:grid;gap:8px}
+.frm label{display:grid;gap:3px;font-size:12px;color:var(--muted)}
+.frm select{width:100%;font-size:14px;padding:6px 8px}
+.acts{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-top:10px}
+.pill{display:inline-block;font-size:11px;padding:1px 8px;border-radius:999px;font-weight:600;white-space:nowrap}
+.pill.ok{background:var(--pos-bg);color:var(--pos)}.pill.mid{background:var(--warn-bg);color:var(--warn)}.pill.src{background:var(--chip);color:var(--muted);font-weight:500}
+.spl{margin-top:10px;padding:10px;border-radius:10px;background:var(--soft)}
+.sprow{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px;padding-bottom:8px;border-bottom:1px solid var(--line)}
+.sprow select{max-width:160px}
+input.num{width:96px;text-align:right;font-variant-numeric:tabular-nums}
+table.sp{width:100%;border-collapse:collapse;font-size:13px}
+table.sp td{padding:4px 0;border-bottom:1px dashed var(--line)}
+td.n{text-align:right;font-variant-numeric:tabular-nums}
+.bel{display:flex;justify-content:space-between;align-items:center;font-size:13px;padding:3px 0}
+.bel a{color:var(--accent);text-decoration:none;overflow-wrap:anywhere}
+.bdrop{display:block;border:2px dashed var(--line);border-radius:10px;padding:14px;text-align:center;color:var(--muted);font-size:13px;cursor:pointer;margin-top:6px}
+.bdrop.over,.drop.over{border-color:var(--accent);background:var(--accent-soft)}
+.prev{margin-top:8px}
+.prev iframe{width:100%;height:520px;border:1px solid var(--line);border-radius:8px;background:#fff}
+.prev img{width:100%;border:1px solid var(--line);border-radius:8px}
+/* Import und Regeln (übernommen aus dem Objekt-Controlling) */
+.note{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:10px 14px;color:var(--muted);font-size:13px;margin-bottom:12px}
+.note b{color:var(--ink)}
+.drop{display:block;border:2px dashed var(--line);border-radius:14px;background:var(--card);padding:26px 16px;text-align:center;color:var(--muted);cursor:pointer}
+.drop b{color:var(--ink);font-size:15px;display:block;margin-bottom:4px}
+.fcard{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px 14px;margin-top:10px;display:grid;gap:8px}
+.fcard .row:hover{background:none}
+.fcard .row{display:flex;flex-wrap:wrap;gap:8px;align-items:center;border:none;padding:0;background:none}
+h2{font-size:15px;margin:22px 0 8px}
+.tablewrap{overflow-x:auto;background:var(--card);border:1px solid var(--line);border-radius:12px}
+table{border-collapse:collapse;width:100%;font-size:13px}
+th,td{padding:6px 8px;border-bottom:1px solid var(--line);text-align:left;white-space:nowrap}
+th{background:var(--soft);font-weight:600;font-size:12px;color:var(--muted)}
+th.n{text-align:right}
+.mut{color:var(--muted)}
+.toast{position:fixed;left:50%;bottom:18px;transform:translateX(-50%);background:var(--ink);color:var(--bg);padding:8px 14px;border-radius:8px;font-size:13px;opacity:0;transition:opacity .2s;pointer-events:none;max-width:90vw;z-index:9}
+.toast.on{opacity:1}
+@media (max-width:1100px){ .grid3{grid-template-columns:190px 1fr} .det{grid-column:1/-1;border-top:1px solid var(--line)} body{overflow:auto} .grid3{height:auto} .list{max-height:60vh} }
+@media (max-width:640px){ .grid3{grid-template-columns:1fr} .knav{display:none} }
+body{overflow:auto}
+#view{overflow:visible}
+.pad{max-width:1500px}
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:10px;margin-bottom:12px}
+.kpi{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:10px 12px}
+.kpi .l{font-size:12px;color:var(--muted)}.kpi .v{font-size:20px;font-weight:700;font-variant-numeric:tabular-nums}.kpi .s{font-size:12px;color:var(--muted)}
+.tbar{border:1px solid var(--line);border-radius:12px;margin-bottom:12px}
+.grid2{display:grid;grid-template-columns:minmax(0,1.5fr) minmax(380px,1fr);gap:12px;align-items:start}
+.mlist{max-height:calc(100vh - 260px);overflow:auto}
+.mlist th{position:sticky;top:0;z-index:1}
+tr.click{cursor:pointer}tr.click:hover td{background:var(--accent-soft)}tr.sel td{background:var(--accent-soft)}
+td.wrapc{white-space:normal;min-width:120px}
+.mlist table{font-size:12.5px}
+.mlist td,.mlist th{padding:6px 6px}
+.det{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px;position:sticky;top:8px;max-height:calc(100vh - 40px);overflow:auto}
+.kv3{display:grid;grid-template-columns:repeat(2,1fr);gap:6px 14px;margin:8px 0 10px;font-size:13px}
+.kv3 div{display:flex;justify-content:space-between;gap:8px}.kv3 span{color:var(--muted)}
+table.kb td{vertical-align:top}
+tr.erg td{font-style:italic;color:var(--muted)}
+tr.kaut td{opacity:.75}
+.note.warnbox{background:var(--warn-bg);border-color:transparent;color:var(--warn)}
+.note.small{font-size:12px}
+h3{font-size:14px;margin:14px 0 6px}
+@media (max-width:1100px){ .grid2{grid-template-columns:1fr} .det{position:static;max-height:none} .mlist{max-height:none} }
+</style>
+</head>
+<body>
+<header>
+  <div><h1>Mieterkonten</h1><div class="sub">Soll und Ist je Mietverhältnis ab 01.01.2025 · Grundlage für den Mahnlauf</div></div>
+</header>
+<div id="view"><div class="loading">Lade Daten …</div></div>
+<div class="toast" id="toast" role="status"></div>
+<script>
+(function(){
+const MS=['Jan','Feb','Mär','Apr','Mai','Jun','Jul','Aug','Sep','Okt','Nov','Dez'];
+const MON=['Januar','Februar','März','April','Mai','Juni','Juli','August','September','Oktober','November','Dezember'];
+const KATS=[['miete','Mieteinnahme'],['sonst_ein','Sonstige Einnahme'],['bk','Betriebskosten'],['inst','Instandhaltung'],['umbau','Umbau'],['darl','Darlehen'],['obj_sonst','Sonstige Objektkosten'],['verw','Verwaltung'],['intern','Umbuchung intern'],['ruecklast','Rücklastschrift (hebt sich auf)'],['ignore','Nicht relevant'],['','– ungeklärt –']];
+const KATN=Object.fromEntries(KATS);
+const SUBS_UM=[['lizenzen','Software / IT / Lizenzen'],['personal','Personal Verwaltung'],['gf','Geschäftsführung – Immobilienverwaltung'],['buchhaltung','Buchhaltung / Steuerberatung laufend'],['buero','Büro / Miete / Nebenkosten'],['buerobedarf','Bürobedarf / Porto / Druckkosten'],['telefon','Telefon / Internet / Kommunikation'],['bank','Bank- und Zahlungsverkehrskosten'],['objverw','Miet- und Objektverwaltung'],['forderung','Forderungsmanagement / Mahnwesen'],['bkverw','Betriebskostenverwaltung'],['vermietung','Vermietung / Inserate / Besichtigungen'],['objbetreuung','Objektbetreuung / Kontrollen / Fahrten'],['recht','Rechts- und Gerichtskosten objektbezogen'],['versicherung','Versicherungen Verwaltung'],['kfz','KFZ']];
+/* nicht umgelegt */
+const SUBS_NO=[['recht_sonst','Rechtskosten nicht objektbezogen'],['steuern','Steuern der Gesellschaft'],['spende','Spenden'],['fortbildung','Fortbildung / Fachliteratur Immobilienverwaltung'],['eeprivat','EE Privat'],['kauf','Kauf & Verkauf Immobilie'],['sonstige','Sonstige (nicht umgelegt)']];
+const SUBS=SUBS_UM.concat(SUBS_NO);
+const SUB_ALIAS={storno:'bank',leasing:'lizenzen'}; /* alte Arten */
+const subNorm=x=>SUB_ALIAS[x]||x;
+const SUBN=Object.fromEntries(SUBS);
+const POOLS=['EE-Allgemein','WT-Allgemein','KiBo-Allgemein','EE-Instandhaltung','WT-Instandhaltung'];
+const COSTK=['bk','inst','darl','obj_sonst'];
+const fmt=new Intl.NumberFormat('de-DE',{style:'currency',currency:'EUR'});
+const fmt0=new Intl.NumberFormat('de-DE',{style:'currency',currency:'EUR',maximumFractionDigits:0});
+const fnum=new Intl.NumberFormat('de-DE',{minimumFractionDigits:2,maximumFractionDigits:2});
+const eur=v=>fmt.format(v||0), eur0=v=>fmt0.format(Math.round(v||0));
+const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+/* Daten aus der Datenbank sind schreibgeschützt – immer mit einer Kopie arbeiten */
+const clone=o=>o==null?o:JSON.parse(JSON.stringify(o));
+const r2=v=>Math.round((v||0)*100)/100;
+const $=id=>document.getElementById(id);
+function parseNum(s){ if(s==null) return null; s=String(s).trim().replace(/\s|€|EUR/g,''); if(s==='') return null;
+  let neg=false; if(/-$/.test(s)){neg=true;s=s.slice(0,-1);}
+  if(s.includes(',')) s=s.replace(/\./g,'').replace(',','.'); const v=Number(s); return isFinite(v)?(neg?-v:v):NaN; }
+function store(k,v){try{ if(v===undefined) return localStorage.getItem(k); localStorage.setItem(k,v);}catch(e){return null;}}
+function toast(t){const el=$('toast');el.textContent=t;el.classList.add('on');clearTimeout(toast._t);toast._t=setTimeout(()=>el.classList.remove('on'),3000);}
+const norm=s=>String(s||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/ß/g,'ss').replace(/[^a-z0-9]+/g,' ').trim();
+
+/* ---------- Zustand ---------- */
+let db=null, downloads=null, canWrite=true, dbState='wait';
+let nhMap={}, nhStand='', vsMap={}; let unitCostOpen=store('oc_ucost')==='1', objCostOpen=store('oc_ocost')==='1', ovVerwOpen=store('oc_ovv')==='1', ovCostOpen=store('oc_ovc')==='1';
+let vors={items:[]}, vFilter='offen', objekte=[], konten=[], regeln=[], einst={}, buch={}, plan=[], loaded={o:0,k:0,r:0,e:0,b:0};
+let year=new Date().getFullYear(), month=null; // null = ganzes Jahr
+let tab=store('oc_tab')||'uebersicht', selObj=store('oc_obj')||'', bFilter={status:'alle',konto:'',q:'',sub:'',obj:'',sort:''};
+let pending=[]; // geparste, noch nicht importierte Dateien
+let ruleOpen=null; const touched=new Set();
+let kFilter={m:'',konto:'',ges:'',dir:'',ab:'',q:''}; try{ const kf=JSON.parse(store('oc_kf')||'null'); if(kf&&typeof kf==='object') kFilter=Object.assign(kFilter,kf); }catch(e){}
+function setKF(k,v){ kFilter[k]=v; store('oc_kf',JSON.stringify(kFilter)); render(); }
+/* Suche und Betrag filtern die Zeilen direkt, ohne die Seite neu aufzubauen – so bleibt das Eingabefeld beim Tippen ungestört */
+function applyKF(){ const info=$('kf-info'); if(!info) return; const q=norm(kFilter.q), ab=parseNum(kFilter.ab);
+  let n=0, sum=0, grp=null, gn=0; const fin=()=>{ if(grp){ grp.hidden=!gn; const x=grp.querySelector('.gn'); if(x) x.textContent=gn?' · '+gn+' offen':''; } };
+  document.querySelectorAll('#view tr.grp, #view tr.tx').forEach(tr=>{ if(tr.classList.contains('grp')){ fin(); grp=tr; gn=0; return; }
+    const b=Number(tr.dataset.b), ok=(!q||tr.dataset.q.includes(q))&&(!(ab>0)||Math.abs(b)>=ab); tr.hidden=!ok;
+    if(ok&&tr.dataset.open==='1'){ n++; sum+=b; gn++; } }); fin();
+  info.textContent=info.dataset.pre+' · '+n+' von '+info.dataset.all+' offenen Buchungen · Summe '+eur(sum);
+  const em=$('kf-empty'); if(em) em.hidden=n>0||!!document.querySelector('#view tr.tx:not([hidden])');
+  const rs=$('kf-reset'); if(rs) rs.hidden=!(kFilter.konto||kFilter.ges||kFilter.dir||kFilter.q||kFilter.ab); }
+{const y=Number(store('oc_year')); if(y>2000&&y<2100) year=y; const m=store('oc_month'); if(m!==null&&m!==''&&!isNaN(Number(m))) month=Number(m);}
+
+const chains={};
+function queue(path,fn){chains[path]=(chains[path]||Promise.resolve()).then(fn).catch(e=>{console.error(e);
+  toast(e&&e.code==='permission_denied'?'Nur Lesezugriff – Änderungen werden nicht gespeichert.':'Speichern fehlgeschlagen: '+(e&&e.message||e));});return chains[path];}
+function saveStamm(name,data){ if(!db||!canWrite){toast('Nur Lesezugriff.');return Promise.resolve();} return queue('stamm/'+name,()=>db.doc('stamm/'+name).set(data)); }
+
+/* ---------- Klassifizierung ---------- */
+const objKz=()=>new Set(objekte.map(o=>o.kz));
+function kontoTyp(k){ if(!k) return 'mix'; const o=k.obj||''; if(o==='__aus') return 'aus'; if(/-Allgemein$/.test(o)) return 'allg'; if(/-Instandhaltung$/.test(o)) return 'inst'; if(objKz().has(o)) return 'obj'; return 'mix'; }
+let unitIdx=null;
+function buildUnitIdx(){ unitIdx=[]; for(const o of objekte){ for(const e of (o.einheiten||[])){
+  const toks=[]; const ref=norm(e.ref); if(ref.length>=6 && !/^miete\b/.test(ref)) toks.push(ref);
+  for(const nm of String(e.mieter||'').split(',')){ const w=norm(nm).split(' ').filter(x=>x.length>=4 && x!=='undefined' && x!=='herr' && x!=='frau'); if(w.length&&!w.includes('eisenhardt')) toks.push(w[w.length-1]); } /* eigener Name (Eric Eisenhardt) nie als Mieter-Erkennung – sonst landen Geldtransits als Miete */
+  unitIdx.push({obj:o.kz,id:e.id,toks}); } } }
+function matchUnit(text,objs){ if(!unitIdx) buildUnitIdx(); const t=' '+norm(text)+' ';
+  for(const u of unitIdx){ if(objs && !objs.includes(u.obj)) continue; for(const tk of u.toks){ if(t.includes(' '+tk+' ')||(tk.includes(' ')&&t.includes(tk))) return u; } } return null; }
+/* Mieter-Erkennung inkl. ehemaliger Mieter 2026 (Einheit.alt = [{mieter, ref, von, bis, ibans}]) */
+const SHARED_IBAN=new Set(['DE94760000000076001601']); /* Bundesagentur für Arbeit – zahlt für viele Mieter */
+let tenIdx=null;
+const dnum=s=>s?Date.parse(s)/864e5:null;
+function inWin(d,von,bis,pre,post){ const x=dnum(d); if(von&&x<dnum(von)-pre) return false; if(bis&&x>dnum(bis)+post) return false; return true; }
+function nameToks(names){ const out=[]; for(const nm of String(names||'').split(',')){ const w=norm(nm).split(' ').filter(x=>x.length>=3&&!['herr','frau','undefined','unbekannt'].includes(x)); if(w.length) out.push(w); } return out; }
+function buildTenIdx(){ tenIdx={full:[],short:{},iban:[],alt:[],cur:[]};
+  for(const o of objekte){ for(const e of (o.einheiten||[])){
+    const add=(ref,von,bis,alt)=>{ const r=norm(ref); const m=r.match(/^(h\d+ w\d+)\b/); if(!m) return;
+      if(r.length>m[1].length+2) tenIdx.full.push({obj:o.kz,id:e.id,tok:r,von,bis,alt});
+      (tenIdx.short[m[1]]=tenIdx.short[m[1]]||[]).push({obj:o.kz,id:e.id}); };
+    add(e.ref,null,null,false);
+    for(const w of nameToks(e.mieter)) if(w.length>=2&&!w.includes('eisenhardt')) tenIdx.cur.push({obj:o.kz,id:e.id,w});
+    for(const a of (e.alt||[])){ add(a.ref,a.von,a.bis,true);
+      for(const ib of (a.ibans||[])) if(ib&&!SHARED_IBAN.has(ib)) tenIdx.iban.push({obj:o.kz,id:e.id,ib,von:a.von,bis:a.bis});
+      for(const w of nameToks(a.mieter)) tenIdx.alt.push({obj:o.kz,id:e.id,w,von:a.von,bis:a.bis}); } } } }
+function matchTenant(tx,kObj,typ){ if(!tenIdx) buildTenIdx(); const t=' '+norm(tx.n+' '+tx.z)+' ';
+  /* 1. vollständige Nahaus-Referenz (z. B. „H9/W6 Foller“) – gilt kontoübergreifend */
+  for(const u of tenIdx.full){ if(u.alt&&!inWin(tx.d,u.von,u.bis,31,60)) continue; if(t.includes(' '+u.tok+' ')) return {obj:u.obj,id:u.id,alt:u.alt}; }
+  /* 2. IBAN eines ehemaligen Mieters */
+  if(tx.i&&Math.abs(tx.b)>=50){ for(const u of tenIdx.iban){ if(u.ib===tx.i&&inWin(tx.d,u.von,u.bis,31,60)) return {obj:u.obj,id:u.id,alt:true}; } }
+  /* 3. kurze Referenz „H1/W1“ */
+  const m=t.match(/ (h\d+ w\d+) /); if(m&&tenIdx.short[m[1]]){ const l=tenIdx.short[m[1]], objs=[...new Set(l.map(x=>x.obj))]; if(objs.length===1) return {obj:objs[0],id:new Set(l.map(x=>x.id)).size===1?l[0].id:'',alt:false}; }
+  if(typ!=='obj'&&typ!=='mix') return null; /* auf Sammelkonten nur über Referenz/IBAN */
+  /* 4. Name – aktuelle Mieter des Kontos, dann ehemalige (Zeitraum, ab 100 €) */
+  const objs=kObj?[kObj]:null; const u0=matchUnit(tx.n+' '+tx.z,objs); if(u0) return {obj:u0.obj,id:u0.id,alt:false};
+  if(Math.abs(tx.b)>=100){ for(const u of tenIdx.alt){ if(objs&&!objs.includes(u.obj)) continue; if(!inWin(tx.d,u.von,u.bis,31,60)) continue; const ln=u.w[u.w.length-1]; if(ln.length>=4&&t.includes(' '+ln+' ')) return {obj:u.obj,id:u.id,alt:true}; } }
+  /* 5. Vor- und Nachname eines aktuellen Mieters in einem anderen Objekt (z. B. nach Umzug) */
+  for(const u of tenIdx.cur){ if(u.w.every(x=>t.includes(' '+x+' '))) return {obj:u.obj,id:u.id,alt:false}; }
+  return null; }
+const BANKFEE_RE=/^(abschluss per |\*\*endsaldo\*\*|abschluss · |entgeltabschluss · |stornorechnung · stornorechnung zur abrechnung|stornorechnung zur abrechnung|rechnung · rechnung loeschung)/i;
+function isBankFee(tx){ const z=String(tx.z||'').trim(); if(BANKFEE_RE.test(z)) return true;
+  return /^dkb ag$/i.test(String(tx.n||'').trim())&&/^abrechnung \d\d\.\d\d\.\d{4}/i.test(z); }
+let ownIban=null;
+function ruleHit(text,m){ const n=norm(m); if(!n) return false; /* endet das Muster auf eine Ziffer (z. B. „B20“), muss danach ein Wortende folgen */ return /[0-9]$/.test(n)?(' '+text+' ').includes(' '+n+' '):(' '+text).includes(' '+n); }
+function planHit(obj,b){ if(!obj||b>=0) return null; const a=Math.abs(b); return plan.find(p=>p.obj===obj&&Math.abs(p.betrag-a)<0.005)||null; }
+/* Objektkürzel im Verwendungszweck erkennen, z. B. „K28“, „EEK28U001“, „WT-S58“ */
+let objRe=null;
+/* Objektadresse im Verwendungszweck (z. B. „Kraemerstrasse 28“, „In den Kirchgaerten 7“) – hat Vorrang vor Kürzel und Konto */
+let addrRe=null;
+function streetStem(st){ let x=norm(st).replace(/ /g,'').replace(/(strasse|str)$/,''); return x.replace(/ae|oe|ue/g,m=>m[0]).replace(/[aou]/g,m=>'('+m+'|'+m+'e)?'); }
+function buildAddrRe(){ addrRe=[]; for(const o of objekte){ const m=String(o.adresse||o.name||'').split(',')[0].match(/^(.*?)\s*(\d+)\s*[a-z]?$/i); if(!m) continue;
+  const hasStr=/str(\.|asse|aße)?$/i.test(m[1].trim()); const stem=streetStem(m[1]); if(stem.length<4) continue;
+  addrRe.push({kz:o.kz,re:new RegExp(stem+(hasStr?'(str|strasse)':'')+(o.kz==='U6'?'(4)?':'')+m[2]+'(?![0-9])')}); } }
+function objByAddr(text){ if(!addrRe) buildAddrRe(); const c=norm(text).replace(/ /g,''); for(const a of addrRe){ if(a.re.test(c)) return a.kz; } return ''; }
+function objInText(text){ const ad=objByAddr(text); if(ad) return ad; if(!objRe){ const ks=objekte.map(o=>o.kz.toLowerCase()).sort((a,b)=>b.length-a.length); objRe=ks.length?new RegExp('(?:^|[^a-z0-9]|ee|wt)('+ks.join('|')+')(?![0-9])'):null; }
+  if(!objRe) return ''; const m=(' '+text).match(objRe); if(!m) return ''; const o=objekte.find(x=>x.kz.toLowerCase()===m[1]); return o?o.kz:''; }
+function classify(tx,k){
+  if(tx.m) return {obj:tx.o||'',kat:tx.k||'',sub:tx.s||'',unit:tx.u||'',src:tx.q==='beleg'?'Beleg':'manuell'};
+  const typ=kontoTyp(k), kObj=typ==='obj'?k.obj:'';
+  if(typ==='aus') return {obj:'',kat:'ignore',sub:'',unit:'',src:'Konto ausgeschlossen'};
+  /* Bankgebühren: Kontoabschluss, Entgeltabschluss, Endsaldo, DKB-Abrechnung → Objektkonto: sonstige Objektkosten; sonst Verwaltung › Bankgebühren */
+  if(isBankFee(tx)) return typ==='obj'?{obj:k.obj,kat:'obj_sonst',sub:'',unit:'',src:'Bankgebühr'}:{obj:'',kat:'verw',sub:'bank',unit:'',src:'Bankgebühr'};
+  if(!ownIban) ownIban=new Set(konten.map(x=>x.iban).filter(Boolean));
+  const text=norm((tx.n||'')+' '+(tx.z||''));
+  /* Vorrang-Regeln gelten auch für Überweisungen zwischen eigenen Konten (z. B. Kostenweitergabe K28 → S16) */
+  const dirOK=r=>!(r.dir==='ein'&&tx.b<=0)&&!(r.dir==='aus'&&tx.b>=0)&&!(r.betrag&&Math.abs(Math.abs(tx.b)-r.betrag)>0.005);
+  const hit=r=>r.iban?(tx.i===r.iban):r.nurBetrag?!!r.betrag:ruleHit(text,r.muster); /* nurBetrag: nur der Betrag entscheidet */ /* Regel mit IBAN: Gegenkonto entscheidet (z. B. Darlehenskonto) */
+  for(const r of regeln){ if(!r.vor||!r.muster||!dirOK(r)||!hit(r)) continue;
+    return {obj:(r.iban&&objInText(text))||r.obj||kObj,kat:r.kat,sub:r.sub||'',unit:'',src:r.iban?'Darlehenskonto':'Regel',rule:r.id}; }
+  if(tx.i && ownIban.has(tx.i)) return {obj:kObj,kat:'intern',sub:'',unit:'',src:'eigenes Konto'};
+  /* Zahlungen zwischen den eigenen Gesellschaften = Geldtransit */
+  const cp=norm(tx.n); if(/^(wohn t raum|wohntraum|anders macher|andersmacher)\b/.test(cp)) return {obj:kObj,kat:'intern',sub:'',unit:'',src:'eigene Gesellschaft'};
+  /* Eingang eines Mieters hat Vorrang vor allen Regeln */
+  if(tx.b>0){ const u0=matchTenant(tx,kObj,typ); if(u0) return {obj:u0.obj,kat:'miete',sub:'',unit:u0.id||'',src:u0.alt?'ehem. Mieter erkannt':'Mieter erkannt'}; }
+  for(const r of regeln){ if(!r.muster||!dirOK(r)) continue;
+    if(r.scope==='allgemein'&&typ!=='allg') continue; if(r.scope==='objekt'&&typ==='allg') continue;
+    if(tx.b>0 && r.kat==='verw' && r.dir!=='beide') continue; /* Verwaltungsregeln nie auf Eingänge anwenden */
+    if(hit(r)){ let obj=r.obj||(r.kat==='verw'?'':(objInText(text)||kObj)); let unit='';
+      if(r.kat==='miete'){const u=matchUnit(tx.n+' '+tx.z,obj?[obj]:null); if(u){unit=u.id; obj=obj||u.obj;}}
+      return {obj,kat:r.kat,sub:r.sub||'',unit,src:'Regel',rule:r.id}; } }
+  /* Eingänge = Mieten */
+  if(tx.b>0 && (typ==='allg'||typ==='inst')) return {obj:'',kat:'',sub:'',unit:'',src:'auto'}; /* Eingang auf Sammelkonto: selbst klären */
+  if(tx.b>0){ const u=matchUnit(tx.n+' '+tx.z,kObj?[kObj]:null); return {obj:kObj||(u?u.obj:''),kat:'miete',sub:'',unit:u?u.id:'',src:'auto'}; }
+  /* Ausgänge: Fixkosten-Plan (Betrag passt) */
+  const pk=typ==='obj'?kObj:(typ==='allg'?k.obj:''); const ph=planHit(pk,tx.b);
+  if(ph) return {obj:ph.kat==='verw'?'':kObj,kat:ph.kat,sub:ph.sub||'',unit:'',src:'Fixkosten: '+ph.pos};
+  const oT=objInText(text);
+  if(typ==='inst') return {obj:oT,kat:'inst',sub:'',unit:'',src:oT?'Objekt im Text':'auto'};
+  return {obj:oT||kObj,kat:'',sub:'',unit:'',src:'auto'};
+}
+function isOpen(c){ if(c.kat==='') return true; if(c.kat==='sonst_ein'&&c.obj==='__ges') return false; if(['miete','sonst_ein','bk','inst','umbau','darl','obj_sonst'].includes(c.kat) && !objKz().has(c.obj)) return true; if(c.kat==='verw'&&!c.sub) return true; return false; }
+
+/* alle Buchungen eines Jahres, klassifiziert (Cache) */
+let cache=null;
+function invalidate(){cache=null;unitIdx=null;tenIdx=null;ownIban=null;objRe=null;addrRe=null;}
+function allTx(){
+  if(cache&&cache.year===year) return cache.list;
+  const kmap=Object.fromEntries(konten.map(k=>[k.key||k.iban,k]));
+  const list=[];
+  for(const id in buch){ const d=buch[id]; if(!d||!d.monat||Number(d.monat.slice(0,4))!==year) continue; const k=kmap[d.konto];
+    (d.tx||[]).forEach((tx,ix)=>{ const mm=Number(d.monat.slice(5,7))-1;
+      /* Mietzahlungen laut Nahaus (Abgleich je Bankumsatz) haben Vorrang */
+      const nh=tx.h&&nhMap[tx.h];
+      if(nh){ if(Array.isArray(nh.sp)){ nh.sp.forEach((p,pi)=>list.push({doc:id,ix,tx:Object.assign({},tx,{b:Number(p.b)||0,z:(tx.z||'')+' · Teil '+(pi+1)+'/'+nh.sp.length+': '+eur(tx.b)+(p.t?' ('+p.t+')':'')}),k,kkey:d.konto,m:mm,split:true,nh:true,
+          c:{obj:p.o||'',kat:p.k||'',sub:'',unit:p.u||'',src:'Nahaus'+(p.t?' · '+p.t:'')}})); return; }
+        list.push({doc:id,ix,tx,k,kkey:d.konto,m:mm,nh:true,c:{obj:nh.o||'',kat:nh.k||'miete',sub:'',unit:nh.u||'',src:'Nahaus'+(nh.t?' · '+nh.t:'')}}); return; }
+      if(Array.isArray(tx.sp)&&tx.sp.length){ tx.sp.forEach((p,pi)=>list.push({doc:id,ix,tx:Object.assign({},tx,{b:Number(p.b)||0,z:(tx.z||'')+' · Teil '+(pi+1)+'/'+tx.sp.length+': '+eur(tx.b)+(p.t?' ('+p.t+')':'')}),k,kkey:d.konto,m:mm,split:true,
+        c:{obj:p.o||'',kat:p.k||'',sub:p.s||'',unit:p.u||'',src:'aufgeteilt'}})); return; }
+      const c=classify(tx,k); list.push({doc:id,ix,tx,k,kkey:d.konto,m:mm,c}); }); }
+  list.sort((a,b)=>a.tx.d<b.tx.d?-1:a.tx.d>b.tx.d?1:0);
+  for(const r of list){ if(r.c.kat==='verw'){ let sb=subNorm(r.c.sub); const ov=r.tx.h&&vsMap[r.tx.h]; if(ov&&(!sb||sb==='sonstige'||!r.tx.m)) sb=ov; /* Zuordnung aus der Verwaltungskosten-Liste; eigene Auswahl (außer „Sonstige“) hat Vorrang */ if(sb!==r.c.sub) r.c=Object.assign({},r.c,{sub:sb}); } }
+  markReturns(list); markReturnFees(list);
+  cache={year,list}; return list;
+}
+/* Rücklastschriften: Abbuchung + Wiedergutschrift (gleicher Betrag, gleiches Konto, max. 10 Tage) heben sich auf.
+   Gezählt wird nur die tatsächlich gezahlte (spätere) Abbuchung. */
+const RL_KW=/wiedergutschrift|rueckueberweisung|ruecklastschrift|nicht erreichbar/;
+function rlCore(z){ z=String(z||''); const i=z.indexOf(' · '); if(i>=0) z=z.slice(i+3); return norm(z).replace(/ /g,''); }
+function rlOwn(n){ const x=norm(n); return !x.replace(/ /g,'') || /eisenhardt|wohn ?t ?raum|anders ?macher/.test(x); }
+function markReturns(list){
+  const day=s=>Date.parse(s)/864e5, used=new Set();
+  for(const c of list){ const ct=c.tx; if(ct.b<=0||ct.rlx||c.split||c.nh||c.kkey===MANKEY) continue;
+    const cz=rlCore(ct.z), kw=RL_KW.test(norm(ct.z)), cn=norm(ct.n).slice(0,8);
+    let best=null, bd=99;
+    for(const t of list){ const tt=t.tx; if(tt.b>=0||tt.rlx||t.split||used.has(t)||t.kkey!==c.kkey||Math.abs(tt.b+ct.b)>0.004) continue;
+      const dd=day(ct.d)-day(tt.d); if(dd<0||dd>10||dd>=bd) continue;
+      const tz=rlCore(tt.z);
+      if(!kw && /geldtransit/.test(norm(tt.z))) continue;
+      const cpOK=(ct.i&&ct.i===tt.i)||(cn&&cn===norm(tt.n).slice(0,8))||rlOwn(ct.n);
+      const ok=(cz&&cz===tz&&cpOK)||(kw&&(/nicht erreichbar/.test(norm(ct.z))||(cz.length>=8&&(tz.includes(cz.slice(0,20))||cz.includes(tz.slice(0,20))))));
+      if(ok){best=t;bd=dd;} }
+    if(best){ used.add(best); used.add(c); best.c0=best.c;
+      best.c={obj:'',kat:'ruecklast',sub:'',unit:'',src:'Rücklastschrift ⇄ '+ct.d.split('-').reverse().join('.'),pair:c};
+      c.c={obj:'',kat:'ruecklast',sub:'',unit:'',src:'Rücklastschrift ⇄ '+best.tx.d.split('-').reverse().join('.'),pair:best}; } }
+}
+/* Gebühr für eine zurückgegebene Lastschrift („Rechnung Rueckgabe Lastschrift ueber 84,60 EUR …“) = Verwaltung › Stornokosten,
+   Objekt der zurückgegebenen Lastschrift (sonst Objekt des Kontos, sonst Umlage). Manuelle Zuordnung hat Vorrang. */
+function markReturnFees(list){
+  const day=s=>Date.parse(s)/864e5;
+  for(const r of list){ const t=r.tx; if(t.b>=0||t.m||r.split) continue;
+    const m=String(t.z||'').match(/R(?:ue|ü)ckgabe Lastschrift (?:ueber|über) ([\d.]+,\d{2}) ?EUR/i)||String(t.z||'').match(/R(?:ue|ü)cklastschrift.{0,20}?([\d.]+,\d{2}) ?EUR/i);
+    if(!m||Math.abs(t.b)>50) continue; const amt=parseNum(m[1]);
+    let best=null, bd=99;
+    for(const x of list){ if(x===r||x.kkey!==r.kkey||x.tx.b>=0||Math.abs(Math.abs(x.tx.b)-amt)>0.004) continue; const dd=Math.abs(day(t.d)-day(x.tx.d)); if(dd<=10&&dd<bd){best=x;bd=dd;} }
+    const src=best?(best.c0||best.c):null; let obj=src&&objKz().has(src.obj)?src.obj:'';
+    if(!obj&&best) obj=objInText(norm((best.tx.n||'')+' '+(best.tx.z||'')));
+    if(!obj&&r.k&&kontoTyp(r.k)==='obj') obj=r.k.obj;
+    r.c={obj,kat:'verw',sub:'bank',unit:'',src:'Stornogebühr'+(best?' ⇄ '+best.tx.d.split('-').reverse().join('.'):'')}; } }
+function monthsWithData(){ const s=new Set(); for(const id in buch){const d=buch[id]; if(d&&d.monat&&Number(d.monat.slice(0,4))===year) s.add(Number(d.monat.slice(5,7))-1);} return s; }
+function sortedUnits(o){ const key=l=>String(l||'').replace(/\s+/g,'').toLowerCase(); const grp=l=>/^we|^efh/i.test(String(l||'').trim())?0:1;
+  return (o.einheiten||[]).map((e,ei)=>({e,ei})).sort((a,b)=>grp(a.e.label)-grp(b.e.label)||key(a.e.label).localeCompare(key(b.e.label),'de',{numeric:true})); }
+function kontoSort(a,b){ const isO=k=>objKz().has(k.obj)||objekte.some(o=>String(k.name||'').startsWith(o.kz+' ')||String(k.name||'')===o.kz||String(k.name||'').startsWith(o.kz+'/'))||/^Rh24\b/.test(k.name||'');
+  const ga=isO(a)?0:1, gb=isO(b)?0:1; if(ga!==gb) return ga-gb; return String(a.name).localeCompare(String(b.name),'de',{numeric:true,sensitivity:'base'}); }
+function kontoName(key){ if(key===MANKEY) return 'Kosten ohne Auszug'; const k=konten.find(x=>(x.key||x.iban)===key); return k?k.name:key; }
+function objOptions(cur,withPools){ const opts=['<option value="">– kein Objekt –</option>'];
+  for(const o of objekte) opts.push('<option value="'+esc(o.kz)+'"'+(o.kz===cur?' selected':'')+'>'+esc(o.kz)+'</option>');
+  if(withPools){ for(const p of POOLS) opts.push('<option value="'+p+'"'+(p===cur?' selected':'')+'>'+p+'</option>'); opts.push('<option value="__aus"'+(cur==='__aus'?' selected':'')+'>ausgeschlossen (Objekt nicht in der Aufstellung)</option>'); }
+  return opts.join(''); }
+const MANKEY='MANUELL';
+function setTx(id,field,val){
+  if(!db||!canWrite){toast('Nur Lesezugriff.');return;}
+  const [doc,ix]=id.split('|'); const d=buch[doc]; if(!d) return; const r=allTx().find(x=>x.doc===doc&&x.ix===Number(ix)); if(!r) return;
+  const c=Object.assign({},r.c,{[field==='k'?'kat':field==='s'?'sub':field==='o'?'obj':'unit']:val});
+  if(field==='k'){ if(val!=='verw') c.sub=''; if(val!=='miete') c.unit=''; if(val==='verw'&&!objKz().has(c.obj)) c.obj=''; }
+  if(field==='o') c.unit='';
+  const wasRl=r.c.kat==='ruecklast'&&r.c.pair&&field==='k'&&val!=='ruecklast';
+  const tx=d.tx.slice(); tx[Number(ix)]=Object.assign({},tx[Number(ix)],{m:1,o:c.obj||'',k:c.kat||'',s:c.sub||'',u:c.unit||''},wasRl?{rlx:1}:{});
+  d.tx=tx;
+  if(wasRl){ const p=r.c.pair, pd=buch[p.doc]; if(pd){ const ptx=pd.tx.slice(); ptx[p.ix]=Object.assign({},ptx[p.ix],{rlx:1}); pd.tx=ptx;
+      if(p.doc!==doc) queue('buchungen/'+p.doc,()=>db.doc('buchungen/'+p.doc).update({tx:ptx})); } }
+  invalidate(); render();
+  queue('buchungen/'+doc,()=>db.doc('buchungen/'+doc).update({tx:d.tx}));
+}
+function renderImport(){
+  let h='<div class="note">So geht’s: Im Online-Banking den Umsatz-Export als <b>CSV</b> herunterladen (DKB, GLS, Sparkasse, 1822direkt …) und hier hineinziehen – gern mehrere Dateien auf einmal. Bereits importierte Buchungen werden erkannt und nicht doppelt gezählt.</div>';
+  h+='<label class="drop" id="drop" for="file"><b>CSV-Kontoauszüge hierher ziehen</b>oder klicken, um Dateien auszuwählen<input type="file" id="file" accept=".csv,.txt,text/csv" multiple hidden></label>';
+  pending.forEach((p,i)=>{ h+='<div class="fcard"><div class="row"><b>'+esc(p.file)+'</b><span class="sub">'+(p.err?'':p.tx.length+' Buchungen · '+esc(p.von)+' – '+esc(p.bis)+(p.iban?' · Konto '+esc(p.iban):''))+'</span></div>';
+    if(p.err){ h+='<div class="neg">'+esc(p.err)+'</div><div class="row"><button class="small" data-pdrop="'+i+'">Entfernen</button></div></div>'; return; }
+    const known=p.konto?konten.find(k=>(k.key||k.iban)===p.konto):null;
+    h+='<div class="row"><label for="pk-'+i+'">Konto</label><select id="pk-'+i+'" data-pk="'+i+'"><option value="">– Konto wählen –</option>'+konten.map(k=>'<option value="'+esc(k.key||k.iban)+'"'+((k.key||k.iban)===p.konto?' selected':'')+'>'+esc(k.name+' · '+(k.obj||'gemischt'))+'</option>').join('')+'<option value="__neu"'+(p.konto==='__neu'?' selected':'')+'>+ neues Konto anlegen</option></select>'+(known?'<span class="pill ok">erkannt</span>':'')+'</div>';
+    if(p.konto==='__neu') h+='<div class="row"><input type="text" id="pn-'+i+'" placeholder="Kontoname, z. B. DKB KiBo-Allgemein" style="width:240px" value="'+esc(p.nName||'')+'"><select id="pg-'+i+'"><option>EE</option><option>WT</option><option>KiBo</option></select><select id="po-'+i+'">'+objOptions('',true).replace('– kein Objekt –','gemischt (je Buchung)')+'</select></div>';
+    h+='<div class="row"><button class="primary" data-pimp="'+i+'">Importieren</button><button class="ghost" data-pdrop="'+i+'">Verwerfen</button></div></div>'; });
+  const docs=Object.values(buch).filter(d=>d&&d.monat);
+  if(docs.length){ const by={}; for(const d of docs){ (by[d.konto]=by[d.konto]||new Set()).add(d.monat); }
+    h+='<h2>Bereits importiert</h2><div class="tablewrap"><table><thead><tr><th>Konto</th><th>Zuordnung</th>'+MS.map(m=>'<th class="n">'+m+'</th>').join('')+'</tr></thead><tbody>';
+    for(const k of Object.keys(by).sort((a,b)=>kontoName(a).localeCompare(kontoName(b)))){ const ko=konten.find(x=>(x.key||x.iban)===k);
+      h+='<tr><td>'+esc(kontoName(k))+'</td><td>'+esc(ko?(ko.obj||'gemischt'):'?')+'</td>'+MS.map((m,i)=>{const key=year+'-'+String(i+1).padStart(2,'0'); const d=buch[k+'_'+key]; return '<td class="n">'+(d?'<span class="pos">'+(d.tx||[]).length+'</span>':'<span class="mut">·</span>')+'</td>';}).join('')+'</tr>'; }
+    h+='</tbody></table></div><div class="sub" style="margin-top:6px">Zahl = Anzahl Buchungen im Monat ('+year+'). So siehst du, welche Auszüge noch fehlen.</div>'; }
+  return h;
+}
+async function readText(file){ const buf=await file.arrayBuffer(); try{ return new TextDecoder('utf-8',{fatal:true}).decode(buf).replace(/^\uFEFF/,''); }catch(e){ return new TextDecoder('windows-1252').decode(buf); } }
+function splitCSV(text,delim){ const rows=[]; let row=[], cur='', q=false;
+  for(let i=0;i<text.length;i++){ const ch=text[i];
+    if(q){ if(ch==='"'){ if(text[i+1]==='"'){cur+='"';i++;} else q=false; } else cur+=ch; }
+    else if(ch==='"') q=true; else if(ch===delim){row.push(cur);cur='';} else if(ch==='\n'||ch==='\r'){ if(ch==='\r'&&text[i+1]==='\n') i++; row.push(cur); rows.push(row); row=[]; cur=''; } else cur+=ch; }
+  if(cur!==''||row.length){row.push(cur);rows.push(row);} return rows; }
+function parseDate(s){ s=String(s||'').trim(); let m=s.match(/^(\d{1,2})\.(\d{1,2})\.(\d{2,4})$/); if(m){ let y=Number(m[3]); if(y<100) y+=2000; return y+'-'+String(m[2]).padStart(2,'0')+'-'+String(m[1]).padStart(2,'0'); }
+  m=s.match(/^(\d{4})-(\d{2})-(\d{2})/); if(m) return m[1]+'-'+m[2]+'-'+m[3]; return null; }
+function parseBank(text,fname){
+  const first=text.split(/\r?\n/).slice(0,40).join('\n'); const delim=(first.match(/;/g)||[]).length>=(first.match(/,/g)||[]).length?';':(first.includes('\t')?'\t':',');
+  const rows=splitCSV(text,delim).map(r=>r.map(c=>c.trim()));
+  let hi=-1; for(let i=0;i<Math.min(rows.length,40);i++){ const l=rows[i].map(c=>c.toLowerCase()); if(l.some(c=>/buchungstag|buchungsdatum|^datum$|valuta|wertstellung/.test(c)) && l.some(c=>/betrag|umsatz|soll|haben/.test(c))){hi=i;break;} }
+  if(hi<0) throw new Error('Keine Kopfzeile mit Datum und Betrag gefunden – ist das ein CSV-Umsatzexport?');
+  const H=rows[hi].map(c=>c.toLowerCase());
+  const find=(...res)=>{ for(const re of res){ const i=H.findIndex(c=>re.test(c)); if(i>=0) return i; } return -1; };
+  const cDate=find(/^buchungstag$/,/^buchungsdatum$/,/buchungstag/,/buchungsdatum/,/^datum$/,/wertstellung/,/valuta/);
+  const cAmt=find(/^betrag( \(€\)| \(eur\)|)$/,/^betrag/,/^umsatz$/);
+  const cSoll=find(/^soll/), cHaben=find(/^haben/), cSH=find(/^s\/h$/);
+  const cName=find(/beg(ue|ü)nstigter\/zahlungspflichtiger/,/name zahlungsbeteiligter/,/^empf(ae|ä)nger/,/^auftraggeber/,/^name$/,/zahlungsempf/);
+  const cPfl=find(/zahlungspflichtige/), cEmpf=find(/zahlungsempf(ä|ae)nger/);
+  const cZweck=H.map((c,i)=>/verwendungszweck|^buchungsdetails|^beschreibung/.test(c)?i:-1).filter(i=>i>=0);
+  const cText=find(/^buchungstext$/,/^umsatztyp$/,/^umsatzart$/);
+  const cIban=find(/iban zahlungsbeteiligter/,/^kontonummer\/iban$/,/^iban$/,/gegen.*iban/,/^kontonummer$/);
+  const cOwn=find(/^auftragskonto$/,/iban auftragskonto/);
+  let iban=null; const pre=rows.slice(0,hi).flat().join(' ').replace(/\s/g,''); const mi=pre.match(/DE\d{20}/); if(mi) iban=mi[0];
+  if(cDate<0||(cAmt<0&&cSoll<0)) throw new Error('Spalten für Datum oder Betrag nicht erkannt.');
+  const tx=[]; const seen={};
+  for(let i=hi+1;i<rows.length;i++){ const r=rows[i]; if(r.length<3) continue; const d=parseDate(r[cDate]); if(!d) continue;
+    let b; if(cAmt>=0){ b=parseNum(r[cAmt]); if(cSH>=0&&b!=null&&/^s/i.test(r[cSH]||'')) b=-Math.abs(b); } else { b=(parseNum(r[cHaben])||0)-Math.abs(parseNum(r[cSoll])||0); }
+    if(b==null||isNaN(b)) continue;
+    if(cOwn>=0&&!iban){ const o=String(r[cOwn]).replace(/\s/g,''); if(/^DE\d{20}$/.test(o)) iban=o; }
+    let n=''; if(cPfl>=0&&cEmpf>=0) n=b<0?r[cEmpf]:r[cPfl]; else if(cName>=0) n=r[cName];
+    const z=[cText>=0?r[cText]:'',...cZweck.map(c=>r[c])].filter(Boolean).join(' · ').replace(/\s+/g,' ').slice(0,300);
+    const ib=cIban>=0?String(r[cIban]||'').replace(/\s/g,'').toUpperCase():'';
+    const base=d+'|'+b.toFixed(2)+'|'+norm(n).slice(0,30)+'|'+norm(z).slice(0,60); seen[base]=(seen[base]||0)+1;
+    tx.push({h:hashStr(base+'#'+seen[base]),d,b:r2(b),n:String(n||'').slice(0,120),z,i:/^[A-Z]{2}\d{2}/.test(ib)?ib:''}); }
+  if(!tx.length) throw new Error('Keine Buchungen in der Datei gefunden.');
+  tx.sort((a,b)=>a.d<b.d?-1:1);
+  return {file:fname,tx,iban,von:tx[0].d.split('-').reverse().join('.'),bis:tx[tx.length-1].d.split('-').reverse().join('.')};
+}
+function hashStr(s){ let h1=0x811c9dc5,h2=0x1b873593; for(let i=0;i<s.length;i++){const c=s.charCodeAt(i); h1=Math.imul(h1^c,16777619); h2=Math.imul(h2^c,2246822507);} return (h1>>>0).toString(36)+(h2>>>0).toString(36); }
+async function handleFiles(files){
+  for(const f of files){ try{ const t=await readText(f); const p=parseBank(t,f.name); const k=p.iban?konten.find(x=>x.iban===p.iban):null; p.konto=k?(k.key||k.iban):(p.iban?'__neu':''); pending.push(p);}catch(e){ pending.push({file:f.name,err:e.message||String(e)}); } }
+  tab='import'; render();
+}
+async function doImport(i){
+  const p=pending[i]; if(!p||!db||!canWrite){toast('Nur Lesezugriff.');return;}
+  let key=p.konto;
+  if(!key){toast('Bitte zuerst das Konto wählen.');return;}
+  if(key==='__neu'){ const name=($('pn-'+i).value||'').trim(); if(!name){toast('Bitte einen Kontonamen eingeben.');return;}
+    key=p.iban||('K-'+norm(name).replace(/ /g,'-').slice(0,40)); const nk={key,iban:p.iban||'',name,ges:$('pg-'+i).value,obj:$('po-'+i).value};
+    konten=konten.filter(k=>(k.key||k.iban)!==key).concat([nk]).sort(kontoSort); await saveStamm('konten',{konten}); }
+  const byM={}; for(const t of p.tx){ (byM[t.d.slice(0,7)]=byM[t.d.slice(0,7)]||[]).push(t); }
+  let neu=0, dup=0;
+  for(const mk of Object.keys(byM)){ const id=key+'_'+mk; const old=buch[id]; const have=new Set(((old&&old.tx)||[]).map(t=>t.h));
+    const add=byM[mk].filter(t=>{ if(have.has(t.h)){dup++;return false;} neu++; return true; }); if(!add.length) continue;
+    const tx=((old&&old.tx)||[]).concat(add).sort((a,b)=>a.d<b.d?-1:1);
+    await queue('buchungen/'+id,()=>old?db.doc('buchungen/'+id).update({tx}):db.doc('buchungen/'+id).set({konto:key,monat:mk,tx})); }
+  pending.splice(i,1); invalidate(); render(); toast(neu+' Buchungen importiert'+(dup?', '+dup+' waren schon vorhanden':'')+'.');
+}
+/* ================= Mieterkonten =================
+   Soll: Sollstellungen aus Nahaus (inkl. Kaution, Mahngebühren, BK-Nachzahlungen), fehlende Monatsmieten werden aus dem Mietvertrag ergänzt.
+   Ist: Mieteingänge aus den Kontoauszügen im OS (Kategorie Mieteinnahme + Einheit). Für Zeiträume ohne Kontoauszüge im OS: Zahlungen laut Nahaus. */
+function cls(v){return v>=0?'pos':'neg';}
+const dmy=x=>String(x||'').split('-').reverse().join('.');
+const START='2025-01';
+let MK={}, M={f:'',ges:'',obj:'',st:'alle',q:'',sel:''}; try{ const s=JSON.parse(store('mk_state')||'null'); if(s) M=Object.assign(M,s,{q:''}); }catch(e){}
+const saveM=()=>store('mk_state',JSON.stringify({ges:M.ges,obj:M.obj,st:M.st,sel:M.sel}));
+let mkStand='', loadedMK=false, calc=null;
+const today=new Date().toISOString().slice(0,10), curM=today.slice(0,7);
+const addM=(m,n)=>{ const [y,mm]=m.split('-').map(Number); const d=new Date(y,mm-1+n,1); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0'); };
+const dnum2=s=>Date.parse(s)/864e5;
+const ART={WARM_MIETE:'Miete',KAUTION:'Kaution',DUNNING_FEES:'Mahngebühren',INTEREST_EXPENSES:'Verzugszinsen',BETRIEBSKOSTEN:'Betriebskosten',SP:'Sonstiges'};
+
+function stufeAt(mk,m){ const st=(mk.stufen||[]).filter(x=>x.total>0); if(!st.length) return null; let s=st[0]; for(const x of st){ if((x.ab||'')<=m+'-31') s=x; } return s; }
+function bankIst(){
+  /* alle Mieteingänge aller Jahre mit Einheit */
+  const ys=new Set(); for(const id in buch){ const d=buch[id]; if(d&&d.monat) ys.add(Number(d.monat.slice(0,4))); }
+  const y0=year, out=[];
+  for(const y of [...ys].sort()){ year=y; invalidate(); for(const r of allTx()){ if(r.c.kat==='miete'&&r.c.unit&&r.tx.b) out.push(r); } }
+  year=y0; invalidate(); return out;
+}
+function compute(){
+  let first='9999-99'; for(const id in buch){ const d=buch[id]; if(d&&d.monat&&d.konto!==MANKEY&&d.monat<first) first=d.monat; }
+  /* Stichtag: letzte Buchung in den Kontoauszügen (spätere Sollstellungen sind noch nicht überfällig) */
+  let stich=''; for(const id in buch){ const d=buch[id]; if(!d||d.konto===MANKEY) continue; for(const t of d.tx||[]) if(t.d>stich) stich=t.d; } if(!stich||stich>today) stich=today;
+  const fäll=new Date(Date.parse(stich)-5*864e5).toISOString().slice(0,10); /* 5 Tage Zahlungsziel */
+  const aktivKz=new Set(objekte.filter(o=>o.aktiv!==false).map(o=>o.kz));
+  const byUnit={}; for(const mk of Object.values(MK)) (byUnit[mk.unit]=byUnit[mk.unit]||[]).push(mk);
+  const res={}; for(const mk of Object.values(MK)){ if(!M.alle&&!aktivKz.has(mk.obj)) continue; res[mk.pid]={mk,rows:[],soll:0,ist:0,kSoll:0,kIst:0}; }
+  /* Bank-Ist dem Mietverhältnis zuordnen */
+  for(const r of bankIst()){ const L=byUnit[r.c.unit]; if(!L) continue; const d=r.tx.d; if(d.slice(0,7)<START) continue;
+    const inside=L.filter(mk=>(!mk.von||d>=mk.von)&&(!mk.bis||d<=mk.bis));
+    const near=inside.length?inside:L.filter(mk=>(!mk.von||dnum2(d)>=dnum2(mk.von)-31)&&(!mk.bis||dnum2(d)<=dnum2(mk.bis)+60));
+    if(!near.length) continue; const mk=near[0];
+    const kaut=/kaution/.test(norm(r.tx.z+' '+r.tx.n));
+    if(!res[mk.pid]) continue; res[mk.pid].rows.push({d,t:(r.tx.n||'')+(r.tx.z?' · '+r.tx.z:''),h:r.tx.b,src:'Bank · '+kontoName(r.kkey),k:kaut}); }
+  for(const x of Object.values(res)){ const mk=x.mk;
+    const kautIds=new Set((mk.soll||[]).filter(s=>s.art==='KAUTION').map(s=>s.id));
+    /* Saldovortrag aus Nahaus vor 2025 */
+    let vS=0,vI=0;
+    for(const s of mk.soll||[]){ const m=s.m||(s.d||'').slice(0,7); if(m<START&&s.art!=='KAUTION') vS+=s.b; }
+    for(const p of mk.nhIst||[]){ if((p.d||'')<START+'-01'&&!kautIds.has(p.bk)) vI+=p.b; }
+    if(Math.abs(vS-vI)>0.005) x.rows.push({d:'2024-12-31',t:'Saldovortrag 31.12.2024 (laut Nahaus)',s:r2(vS-vI)>0?r2(vS-vI):0,h:r2(vS-vI)<0?-r2(vS-vI):0,src:'Nahaus',v:1});
+    /* Soll ab 2025, nur fällige */
+    const mieteMonate=new Set();
+    for(const s of mk.soll||[]){ const m=s.m||(s.d||'').slice(0,7); if(m<START||(s.d||m+'-01')>fäll) continue; if(s.art==='WARM_MIETE') mieteMonate.add(m);
+      x.rows.push({d:s.d||m+'-01',t:(s.t||ART[s.art]||s.art),s:s.b>0?s.b:0,h:s.b<0?-s.b:0,src:s.src==='AUTO_SOLL'?'Nahaus (automatisch)':s.src==='TRANSACTION_ASSIGNMENT'?'Nahaus (aus Zahlung)':'Nahaus',k:s.art==='KAUTION',art:s.art}); }
+    /* fehlende Monatsmieten aus dem Mietvertrag ergänzen */
+    const von=(mk.von||START+'-01').slice(0,7), bis=(mk.bis||'9999-12').slice(0,7);
+    const ab=first>START?first:START; for(let m=von<ab?ab:von; m+'-01'<=fäll&&m<=bis; m=addM(m,1)){ if(mieteMonate.has(m)) continue; const st=stufeAt(mk,m); if(!st) continue;
+      x.rows.push({d:m+'-01',t:'Miete '+m.slice(5)+'/'+m.slice(0,4),s:st.total,h:0,src:'ergänzt aus Mietvertrag',e:1,art:'WARM_MIETE'}); x.erg=(x.erg||0)+1; }
+    /* Nahaus-Zahlungen für Zeiträume ohne Kontoauszüge im OS */
+    for(const p of mk.nhIst||[]){ const m=(p.d||'').slice(0,7); if(m<START||m>=first) continue; x.rows.push({d:p.d,t:p.t||'Zahlung',h:p.b,s:0,src:'Zahlung laut Nahaus',k:kautIds.has(p.bk)}); }
+    x.rows.sort((a,b)=>a.d<b.d?-1:a.d>b.d?1:(b.s||0)-(a.s||0));
+    let saldo=0, ks=0; for(const r of x.rows){ if(r.k){ ks+=(r.s||0)-(r.h||0); r.saldo=null; continue; } saldo=r2(saldo+(r.s||0)-(r.h||0)); r.saldo=saldo; if(!r.v){ x.soll+=r.s||0; x.ist+=r.h||0; } }
+    x.saldo=saldo; x.kOffen=r2(ks);
+    let ns=0; for(const s of mk.soll||[]){ if(s.art!=='KAUTION'&&(s.d||'')<=fäll) ns+=s.b; } for(const p of mk.nhIst||[]){ if(!kautIds.has(p.bk)) ns-=p.b; } x.nhSaldo=r2(ns);
+    const st=stufeAt(mk,curM); x.miete=st?st.total:0; x.monate=x.miete?saldo/x.miete:0;
+    x.aktiv=!mk.bis||mk.bis>=today;
+    x.status=saldo>0.5?(x.monate>=2?'kuendigung':x.monate>=1?'mahnen':'rueckstand'):saldo<-0.5?'guthaben':'ok'; }
+  return {res,first,stich};
+}
+const STN={ok:['ok','ausgeglichen'],rueckstand:['mid','Rückstand'],mahnen:['bad','≥ 1 Monatsmiete'],kuendigung:['bad','≥ 2 Monatsmieten'],guthaben:['src','Guthaben']};
+
+/* ---------- Render ---------- */
+function render(){
+  const ready=loaded.o&&loaded.k&&loaded.r&&loaded.e&&loaded.b&&loadedMK;
+  if(!ready){ $('view').innerHTML='<div class="loading">'+(dbState==='none'?'Bitte im Wohntraum OS einloggen.':'Lade Daten …')+'</div>'; return; }
+  const f=document.activeElement, fid=f&&f.id, fv=fid?f.value:null;
+  if(!Object.keys(MK).length){ $('view').innerHTML='<div class="pad">'+importCard(true)+'</div>'; return; }
+  if(!calc) calc=compute();
+  const all=Object.values(calc.res);
+  const q=norm(M.q);
+  const list=all.filter(x=>(!M.ges||x.mk.ges===M.ges)&&(!M.obj||x.mk.obj===M.obj)&&(M.st==='alle'||(M.st==='aktiv'&&x.aktiv)||(M.st==='rueck'&&x.saldo>0.5)||(M.st==='guthaben'&&x.saldo<-0.5)||(M.st==='beendet'&&!x.aktiv)||(M.st==='kaution'&&x.kOffen>0.5))
+    &&(!q||norm(x.mk.mieter+' '+x.mk.obj+' '+x.mk.einheit+' '+x.mk.ref).includes(q)))
+    .sort((a,b)=>(b.saldo-a.saldo)||String(a.mk.obj).localeCompare(String(b.mk.obj),'de',{numeric:true}));
+  const sumR=all.filter(x=>x.saldo>0.5).reduce((a,x)=>a+x.saldo,0), nR=all.filter(x=>x.saldo>0.5).length, n2=all.filter(x=>x.status==='kuendigung').length;
+  const objs=[...new Set(all.map(x=>x.mk.obj))].sort((a,b)=>String(a).localeCompare(String(b),'de',{numeric:true}));
+  let h='<div class="kpis"><div class="kpi"><div class="l">Mietverhältnisse seit 2025</div><div class="v">'+all.length+'</div><div class="s">'+all.filter(x=>x.aktiv).length+' laufend</div></div>'
+    +'<div class="kpi"><div class="l">Mieter mit Rückstand</div><div class="v neg">'+nR+'</div><div class="s">zusammen '+eur(sumR)+'</div></div>'
+    +'<div class="kpi"><div class="l">Rückstand ≥ 2 Monatsmieten</div><div class="v '+(n2?'neg':'')+'">'+n2+'</div><div class="s">kündigungsrelevant</div></div>'
+    +'<div class="kpi"><div class="l">Kaution offen</div><div class="v">'+eur(all.reduce((a,x)=>a+Math.max(0,x.kOffen),0))+'</div><div class="s">'+all.filter(x=>x.kOffen>0.5).length+' Mietverhältnisse</div></div></div>';
+  h+='<div class="tbar"><div class="seg">'+[['alle','Alle'],['aktiv','Laufend'],['rueck','Rückstand'],['guthaben','Guthaben'],['kaution','Kaution offen'],['beendet','Beendet']].map(([k,l])=>'<button data-mst="'+k+'" class="'+(M.st===k?'on':'')+'">'+l+'</button>').join('')+'</div>'
+    +'<select id="m-ges"><option value="">alle Gesellschaften</option>'+['EE','WT','KiBo'].map(g=>'<option'+(g===M.ges?' selected':'')+'>'+g+'</option>').join('')+'</select>'
+    +'<select id="m-obj"><option value="">alle Objekte</option>'+objs.map(o=>'<option'+(o===M.obj?' selected':'')+'>'+esc(o)+'</option>').join('')+'</select>'
+    +'<input type="search" id="m-q" placeholder="Mieter, Objekt, Einheit" value="'+esc(M.q)+'" autocomplete="off"></div>';
+  h+='<div class="grid2"><div class="tablewrap mlist"><table><thead><tr><th>Objekt</th><th>Einheit</th><th>Mieter</th><th>Zeitraum</th><th class="n">Miete</th><th class="n">Saldo</th><th>Status</th></tr></thead><tbody>';
+  if(!list.length) h+='<tr><td colspan="7" class="empty">Keine Mietverhältnisse für diesen Filter.</td></tr>';
+  for(const x of list){ const mk=x.mk, sn=STN[x.status];
+    h+='<tr class="click'+(mk.pid===M.sel?' sel':'')+'" data-mk="'+esc(mk.pid)+'"><td><b>'+esc(mk.obj)+'</b></td><td>'+esc(mk.einheit||'')+'</td><td class="wrapc">'+esc(mk.mieter||'–')+(mk.gewerbe?' <span class="pill src">Gewerbe</span>':'')+'</td><td class="sub">'+esc(dmy(mk.von))+(mk.bis?' – '+esc(dmy(mk.bis)):'')+'</td><td class="n">'+(x.miete?eur(x.miete):'–')+'</td>'
+      +'<td class="n '+(x.saldo>0.5?'neg':x.saldo<-0.5?'pos':'')+'"><b>'+eur(x.saldo)+'</b></td><td><span class="pill '+sn[0]+'">'+sn[1]+'</span>'+(x.kOffen>0.5?' <span class="pill mid" title="Kaution offen">K</span>':'')+(x.erg?' <span class="pill src" title="'+x.erg+' Monatsmieten aus dem Mietvertrag ergänzt">+'+x.erg+'</span>':'')+'</td></tr>'; }
+  h+='</tbody></table></div><div class="det">'+(calc.res[M.sel]?renderKonto(calc.res[M.sel]):'<div class="empty">Mietverhältnis anklicken, um das Mieterkonto zu sehen.</div>')+'</div></div>';
+  h+='<div class="sub" style="margin:10px 0">Saldo positiv = Mieter schuldet, negativ = Guthaben. Soll: Sollstellungen aus Nahaus (Stand '+esc(dmy(mkStand))+'); fehlende Monatsmieten werden aus dem Mietvertrag ergänzt. Ist: Mieteingänge aus den Kontoauszügen im OS ab '+esc(calc.first.slice(5)+'/'+calc.first.slice(0,4))+', davor Zahlungen laut Nahaus. Stichtag: '+esc(dmy(calc.stich))+' (letzte importierte Kontobewegung); Sollstellungen zählen 5 Tage nach Fälligkeit. Kaution wird getrennt geführt.</div>'+'<label class="sub"><input type="checkbox" id="m-alle"'+(M.alle?' checked':'')+'> auch nicht aktive / verkaufte Objekte zeigen</label>'+importCard(false);
+  $('view').innerHTML='<div class="pad">'+h+'</div>';
+  if(fid){ const el=$(fid); if(el&&el.tagName==='INPUT'){ el.focus({preventScroll:true}); if(fv!=null) el.value=fv; } }
+}
+function renderKonto(x){ const mk=x.mk, sn=STN[x.status];
+  let h='<div class="dhead"><div><div class="dn">'+esc(mk.mieter||'–')+'</div><div class="sub">'+esc(mk.obj+' · '+(mk.einheit||''))+' · '+esc(dmy(mk.von))+(mk.bis?' – '+esc(dmy(mk.bis)):' – laufend')+'</div>'+(mk.ref?'<div class="sub">Verwendungszweck: '+esc(mk.ref)+'</div>':'')+'</div><div style="text-align:right"><div class="da '+(x.saldo>0.5?'neg':x.saldo<-0.5?'pos':'')+'">'+eur(x.saldo)+'</div><span class="pill '+sn[0]+'">'+sn[1]+'</span></div></div>';
+  h+='<div class="kv3"><div><span>Soll ab 2025</span><b>'+eur(x.soll)+'</b></div><div><span>Ist ab 2025</span><b>'+eur(x.ist)+'</b></div><div><span>Miete aktuell</span><b>'+(x.miete?eur(x.miete):'–')+'</b></div><div><span>Saldo laut Nahaus</span><b>'+eur(x.nhSaldo)+'</b></div><div><span>Kaution</span><b>'+eur(mk.kaution)+(x.kOffen>0.5?' · offen '+eur(x.kOffen):'')+'</b></div></div>';
+  if(x.erg) h+='<div class="note warnbox">'+x.erg+' Monatsmiete'+(x.erg>1?'n fehlen':' fehlt')+' in Nahaus als Sollstellung und '+(x.erg>1?'wurden':'wurde')+' aus dem Mietvertrag ergänzt (kursiv).</div>';
+  h+='<div class="tablewrap"><table class="kb"><thead><tr><th>Datum</th><th>Buchung</th><th class="n">Soll</th><th class="n">Ist</th><th class="n">Saldo</th></tr></thead><tbody>';
+  for(const r of x.rows){ h+='<tr class="'+(r.e?'erg':'')+(r.k?' kaut':'')+'"><td>'+esc(dmy(r.d))+'</td><td class="wrapc">'+esc(r.t)+'<div class="sub">'+esc(r.src)+(r.k?' · Kaution (getrennt)':'')+'</div></td><td class="n">'+(r.s?eur(r.s):'')+'</td><td class="n pos">'+(r.h?eur(r.h):'')+'</td><td class="n">'+(r.saldo==null?'':'<b class="'+(r.saldo>0.5?'neg':'')+'">'+eur(r.saldo)+'</b>')+'</td></tr>'; }
+  h+='</tbody></table></div>';
+  const st=(mk.stufen||[]); if(st.length){ h+='<h3>Miete laut Vertrag</h3><div class="tablewrap"><table><thead><tr><th>ab</th><th class="n">Kalt</th><th class="n">BK</th><th class="n">HK</th><th class="n">Sonst.</th><th class="n">Gesamt</th></tr></thead><tbody>'+st.map(s=>'<tr><td>'+esc(dmy(s.ab))+'</td><td class="n">'+eur(s.kalt)+'</td><td class="n">'+eur(s.bk)+'</td><td class="n">'+eur(s.hk)+'</td><td class="n">'+eur((s.strom||0)+(s.sonst||0))+'</td><td class="n"><b>'+eur(s.total)+'</b></td></tr>').join('')+'</tbody></table></div>'; }
+  return h; }
+function importCard(big){ return '<div class="note'+(big?'':' small')+'"><b>'+(big?'Mietverträge und Sollstellungen übernehmen':'Daten aus Nahaus aktualisieren')+'</b><div style="margin:6px 0">Import-Datei <code>mietkonten_import.json</code> auswählen (erstellt Claude aus Nahaus).</div><input type="file" id="mk-file" accept=".json"> <span id="mk-st" class="sub"></span></div>'; }
+
+/* ---------- Ereignisse ---------- */
+document.addEventListener('click',e=>{ const t=e.target.closest('button,tr.click'); if(!t) return;
+  if(t.dataset.mk){ M.sel=t.dataset.mk; saveM(); render(); return; }
+  if(t.dataset.mst){ M.st=t.dataset.mst; saveM(); render(); return; } });
+document.addEventListener('change',async e=>{ const t=e.target;
+  if(t.id==='m-alle'){ M.alle=t.checked; calc=null; render(); return; }
+  if(t.id==='m-ges'){ M.ges=t.value; saveM(); render(); return; }
+  if(t.id==='m-obj'){ M.obj=t.value; saveM(); render(); return; }
+  if(t.id==='mk-file'){ const f=t.files[0]; if(!f) return; const st=$('mk-st');
+    try{ const n=await window.osImportFile(f,x=>st.textContent=x); st.textContent='✅ '+n+' Dokumente übernommen.'; toast('Mieterkonten aktualisiert.'); }catch(err){ st.textContent='❌ '+(err.message||err); } } });
+document.addEventListener('input',e=>{ if(e.target.id==='m-q'){ M.q=e.target.value; clearTimeout(window.__mq); window.__mq=setTimeout(render,180); } });
+
+/* ---------- Start ---------- */
+render();
+(async()=>{
+  try{ db=await claude.use('db'); }catch(e){ db=null; }
+  if(!db){ dbState='none'; render(); return; }
+  const done=(k)=>{loaded[k]=1; invalidate(); calc=null; render();};
+  db.doc('stamm/objekte').onSnapshot(s=>{ const d=s.exists?clone(s.data()):{}; objekte=d.objekte||[]; done('o'); },()=>done('o'));
+  db.doc('stamm/konten').onSnapshot(s=>{ konten=(s.exists?clone(s.data()).konten:null)||[]; done('k'); },()=>done('k'));
+  db.doc('stamm/regeln').onSnapshot(s=>{ regeln=(s.exists?clone(s.data()).regeln:null)||[]; done('r'); },()=>done('r'));
+  db.doc('stamm/fixkosten').onSnapshot(s=>{ plan=(s.exists?clone(s.data()).plan:null)||[]; invalidate(); calc=null; render(); },()=>{});
+  db.doc('stamm/verwsub').onSnapshot(s=>{ vsMap=(s.exists?clone(s.data()).map:null)||{}; invalidate(); calc=null; render(); },()=>{});
+  db.doc('stamm/nahaus').onSnapshot(s=>{ const d=s.exists?clone(s.data()):{}; nhMap=d.map||{}; invalidate(); calc=null; render(); },()=>{});
+  db.doc('stamm/einstellungen').onSnapshot(s=>{ einst=s.exists?clone(s.data()):{}; done('e'); },()=>done('e'));
+  db.doc('stamm/mietkonten').onSnapshot(s=>{ mkStand=s.exists?(s.data().stand||''):''; render(); },()=>{});
+  db.collection('buchungen').onSnapshot(q=>{ const m={}; q.docs.forEach(d=>{m[d.id]=clone(d.data());}); buch=m; done('b'); },e=>{toast('Buchungen nicht lesbar: '+e.message); done('b');});
+  db.collection('mietkonten').onSnapshot(q=>{ const m={}; q.docs.forEach(d=>{m[d.id]=clone(d.data());}); MK=m; loadedMK=true; calc=null; render(); },()=>{ loadedMK=true; render(); });
+})();
+})();
+</script>
+</body>
+</html>

@@ -17,6 +17,7 @@ export const NAV = [
   ] },
   { type: 'group', key: 'buchhaltung', icon: 'ti-calculator', label: 'Buchhaltung', area: ['hv', 'backoffice'], mod: 'controlling', items: [
     { href: '/buchhaltung/buchungen', icon: 'ti-arrows-exchange', label: 'Buchungen' },
+    { href: '/hausverwaltung/mieterkonten', icon: 'ti-users', label: 'Mieterkonten' },
     { href: '/vermietung/zahlungsvereinbarung', icon: 'ti-file-dollar', label: 'Ratenzahlung erstellen' },
     { href: '/vermietung/zahlungsvereinbarung-register', icon: 'ti-receipt-2', label: 'Ratenzahlungen' },
     { href: '/mahnprozess/generator', icon: 'ti-file-invoice', label: 'Mahnungen & Register' },
@@ -27,6 +28,7 @@ export const NAV = [
     { href: '/hausverwaltung/objekte', icon: 'ti-building-skyscraper', label: 'Objekte' },
     { href: '/betriebskosten', icon: 'ti-receipt-2', label: 'Betriebskostenabrechnung' },
     { href: '/hausverwaltung/einheiten', icon: 'ti-home', label: 'Einheiten' },
+    { href: '/hausverwaltung/mieterkonten', icon: 'ti-users', label: 'Mieterkonten' },
     { href: '/hausverwaltung/leerstand', icon: 'ti-key', label: 'Leerstand' },
     { href: '/hausverwaltung/rangliste', icon: 'ti-trophy', label: 'Rangliste Objekte' },
     { href: '/hausverwaltung/offene-mieten', icon: 'ti-cash-off', label: 'Offene Mieten' },

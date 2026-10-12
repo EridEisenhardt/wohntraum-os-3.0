@@ -76,6 +76,7 @@
   ready.catch(e => { const show = () => { const v = document.getElementById('view'); if (v) v.innerHTML = '<div class="loading">' + (e.code === 'not_signed_in' ? 'Bitte im Wohntraum OS einloggen.' : 'Daten konnten nicht geladen werden: ' + (e.message || e)) + '</div>'; };
     setTimeout(show, 50); });
 
+  window.osSupabase = sb;
   const db = Object.freeze({ doc, collection });
   const downloads = Object.freeze({ async save({ filename, data }){ const blob = data instanceof Blob ? data : new Blob([data], { type: /\.xlsx$/i.test(filename) ? 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' : 'application/octet-stream' });
     const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = filename; document.body.appendChild(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000); } });
