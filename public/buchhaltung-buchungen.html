@@ -428,14 +428,19 @@ function parseBank(text,fname){
     const z=[cText>=0?r[cText]:'',...cZweck.map(c=>r[c])].filter(Boolean).join(' · ').replace(/\s+/g,' ').slice(0,300);
     const ib=cIban>=0?String(r[cIban]||'').replace(/\s/g,'').toUpperCase():'';
     const base=d+'|'+b.toFixed(2)+'|'+norm(n).slice(0,30)+'|'+norm(z).slice(0,60); seen[base]=(seen[base]||0)+1;
-    tx.push({h:hashStr(base+'#'+seen[base]),d,b:r2(b),n:String(n||'').slice(0,120),z,i:/^[A-Z]{2}\d{2}/.test(ib)?ib:''}); }
+    const own=cOwn>=0?String(r[cOwn]||'').replace(/\s/g,'').toUpperCase():'';
+    tx.push({h:hashStr(base+'#'+seen[base]),d,b:r2(b),n:String(n||'').slice(0,120),z,i:/^[A-Z]{2}\d{2}/.test(ib)?ib:'',ko:/^DE\d{20}$/.test(own)?own:''}); }
   if(!tx.length) throw new Error('Keine Buchungen in der Datei gefunden.');
   tx.sort((a,b)=>a.d<b.d?-1:1);
   return {file:fname,tx,iban,von:tx[0].d.split('-').reverse().join('.'),bis:tx[tx.length-1].d.split('-').reverse().join('.')};
 }
 function hashStr(s){ let h1=0x811c9dc5,h2=0x1b873593; for(let i=0;i<s.length;i++){const c=s.charCodeAt(i); h1=Math.imul(h1^c,16777619); h2=Math.imul(h2^c,2246822507);} return (h1>>>0).toString(36)+(h2>>>0).toString(36); }
 async function handleFiles(files){
-  for(const f of files){ try{ const t=await readText(f); const p=parseBank(t,f.name); const k=p.iban?konten.find(x=>x.iban===p.iban):null; p.konto=k?(k.key||k.iban):(p.iban?'__neu':''); pending.push(p);}catch(e){ pending.push({file:f.name,err:e.message||String(e)}); } }
+  for(const f of files){ try{ const t=await readText(f); const p0=parseBank(t,f.name);
+      /* Sammelexport mehrerer Konten (Spalte Auftragskonto je Zeile): automatisch je Konto aufteilen */
+      const own=[...new Set(p0.tx.map(x=>x.ko).filter(Boolean))]; const parts=own.length>1?own.map(ib=>Object.assign({},p0,{iban:ib,file:p0.file+' · '+ib.slice(-4),tx:p0.tx.filter(x=>x.ko===ib)})):[p0];
+      for(const p of parts){ p.tx=p.tx.map(x=>{ const y=Object.assign({},x); delete y.ko; return y; }); if(!p.tx.length) continue; p.von=p.tx[0].d.split('-').reverse().join('.'); p.bis=p.tx[p.tx.length-1].d.split('-').reverse().join('.');
+        const k=p.iban?konten.find(x=>x.iban===p.iban):null; p.konto=k?(k.key||k.iban):(p.iban?'__neu':''); pending.push(p); } }catch(e){ pending.push({file:f.name,err:e.message||String(e)}); } }
   tab='import'; render();
 }
 async function doImport(i){
