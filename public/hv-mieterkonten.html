@@ -175,6 +175,8 @@ details.sec>summary.ch{cursor:pointer;list-style:none;margin-bottom:0}details.se
 .hgrid{display:grid;grid-template-columns:repeat(4,max-content);gap:4px 36px;margin:8px 0 4px}
 .hf{display:flex;flex-direction:column}.hf span{font-size:11px;color:var(--muted,#888);text-transform:uppercase;letter-spacing:.03em}.hf b{font-size:14px;font-weight:600}
 .note-e{border-top:1px solid var(--line);padding:8px 0}.note-h{font-size:12px;color:var(--muted,#666)}.note-t{white-space:pre-wrap;margin-top:3px}.note-f{margin-top:4px;font-size:13px}
+.note-k{white-space:pre-wrap;margin-top:6px;padding:8px 10px;border-left:3px solid var(--line);background:rgba(127,127,127,.07);border-radius:4px;font-size:13px}
+.ml-row{border-top:1px solid var(--line);padding:7px 0}.ml-row .sub{font-size:12px}.ml-row .ml-b{white-space:pre-wrap;font-size:13px;margin-top:4px;max-height:260px;overflow:auto}
 button.vmtog{border:none;background:none;padding:2px 0;font-size:12px;color:var(--accent);cursor:pointer}tr.vm td{background:#f3f4f6;opacity:.8}tr.vm td:nth-child(3){padding-left:18px}tr.vmhead td{background:#fafafa}
 .cards{display:grid;grid-template-columns:1fr;gap:12px;margin-bottom:14px}
 .cards .card{margin:0}
@@ -842,10 +844,10 @@ async function loadIch(){ const sb=window.osSupabase; if(!sb) return; try{ const
 function notizCard(x){ const mk=ed(x.mk), L=(NOTIZ[x.mk.pid]||[]).slice().sort((a,b)=>a.d<b.d?1:-1);
   let h='<div class="card"><div class="ch">Notizen<span class="sub">'+L.length+' Eintr'+(L.length===1?'ag':'äge')+'</span></div>'
     +'<textarea id="n-text" rows="3" placeholder="Neue Notiz zum Mieter …">'+esc(NDRAFT)+'</textarea>'
-    +'<div class="acts"><label class="ghost small up">Datei anhängen<input type="file" id="n-file" multiple hidden></label>'+(NOTF.length?'<span class="sub">'+NOTF.map(f=>esc(f.name)).join(', ')+'</span>':'')+'<button class="primary small" data-nsave="1"'+(nBusy?' disabled':'')+'>'+(nBusy?'Speichere …':'Notiz speichern')+'</button></div>'
+    +'<div class="acts">'+kiNotizButtons('n-text')+'</div><div class="acts"><label class="ghost small up">Datei anhängen<input type="file" id="n-file" multiple hidden></label>'+(NOTF.length?'<span class="sub">'+NOTF.map(f=>esc(f.name)).join(', ')+'</span>':'')+'<button class="primary small" data-nsave="1"'+(nBusy?' disabled':'')+'>'+(nBusy?'Speichere …':'Notiz speichern')+'</button></div>'
     +'<div class="sub">Gespeicherte Notizen erhalten Datum, Uhrzeit und Ersteller und können nur von dem bearbeitet oder gelöscht werden, der sie geschrieben hat.</div>';
   for(const n of L){ const dt=new Date(n.d); h+='<div class="note-e"><div class="note-h"><b>'+esc(dt.toLocaleDateString('de-DE'))+' '+esc(dt.toLocaleTimeString('de-DE',{hour:'2-digit',minute:'2-digit'}))+'</b> · '+esc(nutzerName(n.mail||n.by))+(n.edited?' <span class="sub">(bearbeitet '+esc(new Date(n.edited).toLocaleDateString('de-DE'))+')</span>':'')+(eigeneNotiz(n)&&NEDIT!==nid(n)?' <button class="ghost small" data-nedit="'+esc(nid(n))+'">bearbeiten</button><button class="ghost small" data-ndel="'+esc(nid(n))+'">löschen</button>':'')+'</div>'
-      +(NEDIT===nid(n)?'<textarea id="ne-text" rows="3">'+esc(NEDTXT)+'</textarea><div class="acts"><button class="primary small" data-nesave="1">Speichern</button><button class="ghost small" data-necancel="1">Abbrechen</button></div>':(n.t?'<div class="note-t">'+esc(n.t)+'</div>':''))
+      +(NEDIT===nid(n)?'<textarea id="ne-text" rows="5">'+esc(NEDTXT)+'</textarea><div class="acts">'+kiNotizButtons('ne-text')+'</div><div class="acts"><button class="primary small" data-nesave="1">Speichern</button><button class="ghost small" data-necancel="1">Abbrechen</button></div>':(n.t?'<div class="note-t">'+esc(n.t)+'</div>'+(n.t.length>350?'<div class="acts"><button class="ghost small" data-nkurz="'+esc(nid(n))+'"'+(kurzBusy===nid(n)?' disabled':'')+'>'+(kurzBusy===nid(n)?'KI fasst zusammen …':KURZ[nid(n)]?'Kurzfassung ausblenden':'Kurzfassung (KI)')+'</button></div>'+(KURZ[nid(n)]?'<div class="note-k"><div class="sub">Kurzfassung der KI – die Notiz selbst bleibt unverändert'+(KURZ[nid(n)].zu!==(n.edited||n.d)?' (Notiz wurde seitdem geändert)':'')+'</div>'+esc(KURZ[nid(n)].t)+'</div>':''):''):''))
       +(n.files&&n.files.length?'<div class="note-f">'+n.files.map(f=>'<a href="#" data-nfopen="'+esc(f.p)+'">'+esc(f.n)+'</a>').join(' · ')+'</div>':'')+'</div>'; }
   if(mk.notiz) h+='<div class="note-e"><div class="note-h"><b>Frühere Notiz</b> · ohne Datum</div><div class="note-t">'+esc(mk.notiz)+'</div></div>';
   return h+'</div>'; }
@@ -867,6 +869,180 @@ function notizById(id){ const pid=id.split('__')[0]; return (NOTIZ[pid]||[]).fin
 async function notizAendern(){ const n=notizById(NEDIT); if(!n||!eigeneNotiz(n)){ toast('Nur der Verfasser kann diese Notiz bearbeiten.'); return; } const t=(NEDTXT||'').trim(); if(!t&&!(n.files||[]).length){ toast('Bitte einen Text eingeben.'); return; }
   const neu=Object.assign({},n,{t,edited:new Date().toISOString()}); const id=NEDIT;
   try{ await db.doc('notizen/'+id).set(neu); NEDIT=null; NEDTXT=''; toast('Notiz geändert.'); render(); }catch(err){ toast('Ändern nicht möglich: '+(err.message||err)); } }
+
+/* ---------- KI-Hilfe (Server: /api/ki) ---------- */
+async function kiCall(aufgabe,text,kontext){ const sb=window.osSupabase; let tok='';
+  try{ const {data}=await sb.auth.getSession(); tok=(data&&data.session&&data.session.access_token)||''; }catch(e){}
+  let r; try{ r=await fetch('/api/ki',{method:'POST',headers:{'content-type':'application/json',authorization:'Bearer '+tok},body:JSON.stringify({aufgabe,text,kontext})}); }catch(e){ throw new Error('KI nicht erreichbar.'); }
+  let j=null; try{ j=await r.json(); }catch(e){}
+  if(!j) throw new Error(r.status===404?'Die KI-Funktion ist noch nicht online (Seite neu laden oder Deploy abwarten).':'KI nicht erreichbar ('+r.status+').');
+  if(j.error) throw new Error(j.error); return j; }
+
+/* Briefanrede aus der hinterlegten Anrede (wie bei den Mahnungen) */
+function anredeZeile(mk){ const e=ed(mk), an=String(e.anrede||'').trim(), name=e.mieter||'';
+  if(!an) return 'Guten Tag '+name+',';
+  if(/^(sehr|liebe|hallo|guten)/i.test(an)) return an.replace(/,?$/,',');
+  return an.split(/\s*(?:,|\bund\b)\s*/).filter(Boolean).map((t,i)=>(i?'s':'S')+'ehr geehrte'+(/^herr/i.test(t)?'r ':' ')+t).join(', ')+','; }
+function briefInhaber(mk){ const o=objekte.find(q=>q.kz===mk.obj)||{}; return INHABER[o.ges||mk.ges]||INHABER.WT; }
+function briefEmpf(mk){ const e=ed(mk), adr=(ADR[mk.obj]||'|').split('|'); return [e.mieter||'',adr[0]+(mk.einheit&&!/efh/i.test(mk.einheit)?', '+uName(mk.einheit):''),adr[1]].filter(Boolean).join('\n'); }
+
+/* ---------- Anschreiben ---------- */
+var ANS={}, AB={pid:null}, abBusy='';
+function abReset(mk){ AB={pid:mk.pid,betreff:'',entwurf:'',phase:'eingabe',text:'',empf:briefEmpf(mk),ki:false}; }
+const abName=(mk,d,betreff)=>enc(aktenName(mk)+'_'+d+'_Anschreiben '+String(betreff||'ohne Betreff').replace(/[\/\\]/g,'-').slice(0,60).trim()).replace(/\//g,'_')+'.pdf';
+
+function anschreibenPdf(mk,B){ if(!window.jspdf){ toast('PDF-Bibliothek lädt noch, bitte gleich nochmal.'); return null; }
+  const doc=new window.jspdf.jsPDF({unit:'mm',format:'a4'}); const L=25,R=185; let y=22;
+  doc.setFont('helvetica','normal'); doc.setFontSize(8); doc.setTextColor(120); doc.text(B.inh+ABS,L,y); y+=12;
+  doc.setTextColor(20); doc.setFontSize(11); String(B.empf||'').split('\n').filter(s=>s.trim()).forEach(l=>{ doc.text(l.trim(),L,y); y+=5; });
+  y=Math.max(y,62)+8; doc.setFontSize(9); doc.setTextColor(90); doc.text('Dexheim, '+dmy(B.d),R,y,{align:'right'});
+  y+=12; doc.setTextColor(20); doc.setFontSize(12); doc.setFont('helvetica','bold'); doc.splitTextToSize(B.betreff||'',R-L).forEach(l=>{ doc.text(l,L,y); y+=6; }); doc.setFont('helvetica','normal'); y+=4; doc.setFontSize(10.5);
+  const para=t=>{ doc.splitTextToSize(t,R-L).forEach(ln=>{ if(y>275){ doc.addPage(); y=22; } doc.text(ln,L,y); y+=5.4; }); y+=3; };
+  String(B.text||'').replace(/\r/g,'').split(/\n\s*\n/).forEach(p=>para(p.trim()));
+  y+=2; para('Mit freundlichen Grüßen\n'+B.inh);
+  const pages=doc.getNumberOfPages(); if(pages>1) for(let i=1;i<=pages;i++){ doc.setPage(i); doc.setFontSize(7.5); doc.setTextColor(120); doc.text('Seite '+i+' von '+pages,R,292,{align:'right'}); }
+  return doc; }
+function abDaten(mk){ return {inh:briefInhaber(mk),empf:AB.empf,d:today,betreff:AB.betreff.trim(),text:AB.text.trim()}; }
+
+function anschreibenCard(x){ const mk=x.mk; if(AB.pid!==mk.pid) abReset(mk);
+  const L=(ANS[mk.pid]||[]).slice().sort((a,b)=>a.d<b.d?1:-1);
+  let h='<details class="card wide sec" data-sec="brief"'+(SEC.brief?' open':'')+'><summary class="ch">Anschreiben<span class="sub">'+L.length+' verschickt'+(L.length?' · zuletzt '+esc(dmy(L[0].d.slice(0,10))):'')+'</span></summary>';
+  if(AB.phase==='eingabe'){
+    h+='<label class="fl">Betreff (optional – die KI schlägt sonst einen vor)<input type="text" id="ab-betreff" value="'+esc(AB.betreff)+'" placeholder="z. B. Treppenhausreinigung"></label>'
+      +'<label class="fl">Ihr Text – Stichworte oder Entwurf<textarea id="ab-entwurf" rows="5" placeholder="Was soll der Mieter erfahren? Die KI formuliert daraus einen Brief.">'+esc(AB.entwurf)+'</textarea></label>'
+      +'<div class="acts"><button class="primary small" data-abki="1"'+(abBusy?' disabled':'')+'>'+(abBusy==='ki'?'KI formuliert …':'Mit KI formulieren')+'</button><button class="ghost small" data-abdirekt="1">Ohne KI übernehmen</button></div>'
+      +'<div class="sub">Danach siehst du den fertigen Brief und kannst alles noch ändern, bevor das PDF erstellt wird.</div>';
+  } else {
+    h+='<div class="sub">'+(AB.ki?'Vorschlag der KI – bitte prüfen und bei Bedarf ändern.':'Brief prüfen und bei Bedarf ändern.')+' Briefkopf, Datum und Grußformel ergänzt das System.</div>'
+      +'<label class="fl">Empfänger<textarea id="ab-empf" rows="3">'+esc(AB.empf)+'</textarea></label>'
+      +'<label class="fl">Betreff<input type="text" id="ab-betreff2" value="'+esc(AB.betreff)+'"></label>'
+      +'<label class="fl">Brieftext<textarea id="ab-text" rows="12">'+esc(AB.text)+'</textarea></label>'
+      +'<div class="acts"><button class="primary small" data-absave="1"'+(abBusy?' disabled':'')+'>'+(abBusy==='save'?'Speichere …':'PDF erstellen und ablegen')+'</button><button class="ghost small" data-abvor="1">Vorschau</button><button class="ghost small" data-abzur="1">Zurück zum Entwurf</button><button class="ghost small" data-abweg="1">Verwerfen</button></div>'
+      +'<div class="sub">Das PDF wird unter Dokumente / 05 Schriftverkehr abgelegt als: '+esc(abName(mk,today,AB.betreff))+'</div>';
+  }
+  h+='<div class="rh" style="margin-top:12px">Verschickte Anschreiben</div>';
+  if(!L.length) h+='<div class="sub">Noch keine Anschreiben erstellt.</div>';
+  else h+='<table class="mini">'+L.map(a=>'<tr><td>'+esc(dmy(a.d.slice(0,10)))+'</td><td><a href="#" data-dopen="05 Schriftverkehr|'+esc(a.datei)+'">'+esc(a.betreff||'ohne Betreff')+'</a></td><td class="sub">'+esc(nutzerName(a.mail||a.by))+'</td></tr>').join('')+'</table>';
+  return h+'</details>'; }
+
+async function abKi(){ const mk=MK[M.sel]; if(!mk) return; if(!AB.entwurf.trim()){ toast('Bitte zuerst einen Text oder Stichworte eingeben.'); return; }
+  abBusy='ki'; render();
+  try{ const r=await kiCall('brief',AB.entwurf,{anrede:anredeZeile(mk),mieter:ed(mk).mieter||'',objekt:mk.obj+' '+uName(mk.einheit),betreff:AB.betreff});
+    AB.text=r.text||''; if(r.betreff&&!AB.betreff.trim()) AB.betreff=r.betreff; AB.phase='vorschau'; AB.ki=true; }
+  catch(e){ toast(e.message||String(e)); }
+  abBusy=''; render(); }
+function abDirekt(){ const mk=MK[M.sel]; if(!mk) return; if(!AB.entwurf.trim()){ toast('Bitte zuerst einen Text eingeben.'); return; }
+  AB.text=(/^(sehr|liebe|hallo|guten)/i.test(AB.entwurf.trim())?'':anredeZeile(mk)+'\n\n')+AB.entwurf.trim(); AB.phase='vorschau'; AB.ki=false; render(); }
+async function abSpeichern(){ const sb=window.osSupabase, mk=MK[M.sel]; if(!sb||!db||!mk||abBusy) return;
+  if(!AB.betreff.trim()){ toast('Bitte einen Betreff eingeben.'); return; } if(!AB.text.trim()){ toast('Der Brieftext ist leer.'); return; }
+  const B=abDaten(mk), doc=anschreibenPdf(mk,B); if(!doc) return;
+  if(!ICH) await loadIch(); abBusy='save'; render();
+  const ts=new Date(), name=abName(mk,today,B.betreff), id=mk.pid+'__'+ts.getTime();
+  try{ const {error}=await sb.storage.from('mieterakten').upload(docBase(mk)+'/'+enc('05 Schriftverkehr')+'/'+name,doc.output('blob'),{contentType:'application/pdf',upsert:true}); if(error) throw error;
+    await db.doc('anschreiben/'+id).set({pid:mk.pid,id,d:ts.toISOString(),by:ICH||'unbekannt',mail:ICHMAIL,uid:ICHID,betreff:B.betreff,text:B.text,empf:B.empf,datei:name,ki:!!AB.ki});
+    doc.save(name); toast('Anschreiben erstellt und unter 05 Schriftverkehr abgelegt.'); abReset(mk); loadDocs(mk); }
+  catch(e){ toast('Ablage fehlgeschlagen: '+(e.message||e)); }
+  abBusy=''; render(); }
+
+/* ---------- Notizen mit KI verbessern oder kürzen ---------- */
+var NKI={orig:null,busy:''}, NEKI={orig:null}, KURZ={}, kurzBusy='';
+async function notizKi(aufgabe,feld){ const ta=$(feld), t=((ta&&ta.value)||'').trim(); if(!t){ toast('Bitte zuerst einen Text eingeben.'); return; }
+  NKI.busy=feld+aufgabe; render();
+  try{ const r=await kiCall(aufgabe,t); if(feld==='n-text'){ if(NKI.orig==null) NKI.orig=t; NDRAFT=r.text||t; } else { if(NEKI.orig==null) NEKI.orig=t; NEDTXT=r.text||t; } }
+  catch(e){ toast(e.message||String(e)); }
+  NKI.busy=''; render(); }
+async function notizKurz(id){ const n=notizById(id); if(!n||!n.t) return; if(KURZ[id]){ KURZ[id]=null; render(); return; }
+  kurzBusy=id; render(); try{ const r=await kiCall('stichpunkte',n.t); KURZ[id]={t:r.text||'',zu:n.edited||n.d}; }catch(e){ toast(e.message||String(e)); } kurzBusy=''; render(); }
+function kiNotizButtons(feld){ const b=NKI.busy, orig=feld==='n-text'?NKI.orig:NEKI.orig;
+  return '<button class="ghost small" data-nki="verbessern" data-nkif="'+feld+'"'+(b?' disabled':'')+'>'+(b===feld+'verbessern'?'KI arbeitet …':'Mit KI verbessern')+'</button>'
+    +'<button class="ghost small" data-nki="stichpunkte" data-nkif="'+feld+'"'+(b?' disabled':'')+'>'+(b===feld+'stichpunkte'?'KI arbeitet …':'In Stichpunkte kürzen')+'</button>'
+    +(orig!=null?'<button class="ghost small" data-nkorig="'+feld+'">Original wiederherstellen</button>':''); }
+
+document.addEventListener('click',e=>{ const t=e.target.closest('button'); if(!t) return; const d=t.dataset;
+  if(d.abki){ abKi(); return; } if(d.abdirekt){ abDirekt(); return; } if(d.absave){ abSpeichern(); return; }
+  if(d.abvor){ const mk=MK[M.sel]; if(!mk) return; const doc=anschreibenPdf(mk,abDaten(mk)); if(doc){ const w=window.open(URL.createObjectURL(doc.output('blob')),'_blank'); if(!w) doc.save(abName(mk,today,AB.betreff)); } return; }
+  if(d.abzur){ AB.phase='eingabe'; render(); return; }
+  if(d.abweg){ if(d.sure!=='1'){ d.sure='1'; t.textContent='Wirklich verwerfen?'; return; } abReset(MK[M.sel]); render(); return; }
+  if(d.nki){ notizKi(d.nki,d.nkif); return; }
+  if(d.nkorig){ if(d.nkorig==='n-text'){ NDRAFT=NKI.orig||''; NKI.orig=null; } else { NEDTXT=NEKI.orig||''; NEKI.orig=null; } render(); return; }
+  if(d.nkurz){ notizKurz(d.nkurz); return; }
+  if(d.mk||d.close||d.nsave||d.nesave||d.necancel||d.nedit){ NKI.orig=null; NEKI.orig=null; }
+});
+document.addEventListener('input',e=>{ const t=e.target; if(!t||!t.id) return;
+  if(t.id==='ab-betreff'||t.id==='ab-betreff2') AB.betreff=t.value; else if(t.id==='ab-entwurf') AB.entwurf=t.value; else if(t.id==='ab-text') AB.text=t.value; else if(t.id==='ab-empf') AB.empf=t.value; });
+
+/* ---------- Mails zum Mieter (Outlook über /api/mails, oder .eml-Dateien hochladen) ---------- */
+var MAILS={}, MLS={pid:null,res:null,busy:'',fehler:[],offen:{}};
+const mlHash=s=>{ let h=5381; for(let i=0;i<s.length;i++) h=((h*33)^s.charCodeAt(i))>>>0; return h.toString(36); };
+function mieterMails(mk){ const e=ed(mk), K=mk.kontakte||[]; const s=e.email!=null&&e.email!==''?String(e.email):K.map(k=>k.email).filter(Boolean).join(','); return s.split(/[,;\s]+/).map(x=>x.trim().toLowerCase()).filter(x=>/@/.test(x)); }
+async function mlApi(body){ const sb=window.osSupabase; let tok=''; try{ const {data}=await sb.auth.getSession(); tok=(data&&data.session&&data.session.access_token)||''; }catch(e){}
+  let r; try{ r=await fetch('/api/mails',{method:'POST',headers:{'content-type':'application/json',authorization:'Bearer '+tok},body:JSON.stringify(body)}); }catch(e){ throw new Error('Outlook-Schnittstelle nicht erreichbar.'); }
+  let j=null; try{ j=await r.json(); }catch(e){} if(!j) throw new Error(r.status===404?'Die Outlook-Schnittstelle ist noch nicht online.':'Outlook nicht erreichbar ('+r.status+').'); if(j.error) throw new Error(j.error); return j; }
+
+/* einfache .eml-Auswertung: Kopfzeilen und Text */
+function emlDecodeWords(s){ return String(s||'').replace(/(\?=)\s+(=\?)/g,'$1$2').replace(/=\?([^?]+)\?([BbQq])\?([^?]*)\?=/g,(m,cs,enc,t)=>{ try{ let bytes; if(/b/i.test(enc)) bytes=Uint8Array.from(atob(t),c=>c.charCodeAt(0)); else { const q=t.replace(/_/g,' ').replace(/=([0-9A-F]{2})/gi,(m2,h)=>String.fromCharCode(parseInt(h,16))); bytes=Uint8Array.from(q,c=>c.charCodeAt(0)); } return new TextDecoder(cs.toLowerCase()).decode(bytes); }catch(e){ return t; } }); }
+function emlTeil(raw){ const i=raw.search(/\r?\n\r?\n/); const head=(i<0?raw:raw.slice(0,i)).replace(/\r?\n[ \t]+/g,' '), body=i<0?'':raw.slice(i).replace(/^\r?\n\r?\n/,''); const H={};
+  for(const l of head.split(/\r?\n/)){ const m=l.match(/^([\w-]+):\s*(.*)$/); if(m&&H[m[1].toLowerCase()]==null) H[m[1].toLowerCase()]=m[2]; } return {H,body}; }
+function emlText(raw,tiefe){ const {H,body}=emlTeil(raw); const ct=H['content-type']||'text/plain'; tiefe=tiefe||0;
+  const bm=ct.match(/boundary="?([^";]+)"?/i);
+  if(/multipart\//i.test(ct)&&bm&&tiefe<5){ const parts=body.split('--'+bm[1]).slice(1).filter(p=>!/^--/.test(p)); let html='';
+    for(const p of parts){ const t=emlText(p.replace(/^\r?\n/,''),tiefe+1); if(t.plain) return t; if(t.html&&!html) html=t.html; } return {html}; }
+  const cs=(ct.match(/charset="?([^";]+)"?/i)||[])[1]||'utf-8', te=(H['content-transfer-encoding']||'').toLowerCase(); let bytes;
+  if(te==='base64'){ try{ bytes=Uint8Array.from(atob(body.replace(/\s+/g,'')),c=>c.charCodeAt(0)); }catch(e){ bytes=null; } }
+  else if(te==='quoted-printable'){ const q=body.replace(/=\r?\n/g,'').replace(/=([0-9A-F]{2})/gi,(m,h)=>String.fromCharCode(parseInt(h,16))); bytes=Uint8Array.from(q,c=>c.charCodeAt(0)&255); }
+  let t; try{ t=bytes?new TextDecoder(cs.toLowerCase()).decode(bytes):body; }catch(e){ t=body; }
+  if(/text\/html/i.test(ct)) return {html:t.replace(/<style[\s\S]*?<\/style>/gi,'').replace(/<br\s*\/?>/gi,'\n').replace(/<\/(p|div|tr|li)>/gi,'\n').replace(/<[^>]+>/g,'').replace(/&nbsp;/g,' ').replace(/&amp;/g,'&').replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/\n{3,}/g,'\n\n').trim()};
+  if(/text\//i.test(ct)) return {plain:t.trim()}; return {}; }
+function emlLesen(raw){ const {H}=emlTeil(raw); const t=emlText(raw); let d=''; try{ d=new Date(H.date).toISOString(); }catch(e){ d=new Date().toISOString(); }
+  return {betreff:emlDecodeWords(H.subject||''),von:emlDecodeWords(H.from||''),an:emlDecodeWords(H.to||''),datum:d,msgId:(H['message-id']||'').trim(),text:(t.plain||t.html||'').slice(0,50000)}; }
+
+function mailName(mk,m){ return enc(aktenName(mk)+'_'+String(m.datum||'').slice(0,10)+'_Mail '+m.richtung+' '+String(m.betreff||'ohne Betreff').replace(/[\/\\]/g,'-').slice(0,50).trim()).replace(/\//g,'_')+'.eml'; }
+async function mailSpeichern(mk,m,mime,quelle){ const sb=window.osSupabase; if(!ICH) await loadIch();
+  const name=mailName(mk,m), id=mk.pid+'__'+mlHash(m.msgId||(m.datum+m.betreff+m.von));
+  const {error}=await sb.storage.from('mieterakten').upload(docBase(mk)+'/Mails/'+name,new Blob([mime],{type:'message/rfc822'}),{contentType:'message/rfc822',upsert:true}); if(error) throw error;
+  await db.doc('mails/'+id).set({pid:mk.pid,id,d:m.datum,richtung:m.richtung,von:m.von,an:m.an,betreff:m.betreff,text:String(m.text||'').slice(0,20000),datei:docBase(mk)+'/Mails/'+name,msgId:m.msgId||'',quelle,by:ICH||'unbekannt',mail:ICHMAIL,erfasst:new Date().toISOString()}); }
+
+function mailsCard(x){ const mk=x.mk; if(MLS.pid!==mk.pid) MLS={pid:mk.pid,res:null,busy:'',fehler:[],offen:{}};
+  const L=(MAILS[mk.pid]||[]).slice().sort((a,b)=>String(b.d).localeCompare(String(a.d))), have=new Set(L.map(m=>m.msgId).filter(Boolean)), adr=mieterMails(mk);
+  let h='<details class="card wide sec" data-sec="mails"'+(SEC.mails?' open':'')+'><summary class="ch">Mails<span class="sub">'+L.length+' hinterlegt'+(L.length?' · zuletzt '+esc(dmy(String(L[0].d).slice(0,10))):'')+'</span></summary>';
+  h+='<div class="acts"><button class="primary small" data-mlsuch="1"'+(MLS.busy?' disabled':'')+'>'+(MLS.busy==='suche'?'Suche in Outlook …':'In Outlook suchen')+'</button>'
+    +'<label class="ghost small up">.eml-Dateien hochladen<input type="file" id="ml-file" accept=".eml,message/rfc822" multiple hidden></label>'
+    +'<span class="sub">'+(adr.length?'Mieter-Adresse: '+esc(adr.join(', ')):'Keine E-Mail-Adresse beim Mieter hinterlegt (Mieterinformationen bearbeiten).')+'</span></div>'
+    +'<div class="sub">Mails aus Outlook auf den Desktop ziehen (ergibt eine .eml-Datei) und hier hochladen – oder direkt in Outlook suchen, sobald Outlook verbunden ist.</div>';
+  if(MLS.fehler.length) h+='<div class="note warnbox">'+MLS.fehler.map(esc).join('<br>')+'</div>';
+  if(MLS.res){ const neu=MLS.res.filter(m=>!have.has(m.msgId));
+    h+='<div class="rh" style="margin-top:10px">Gefunden in Outlook: '+MLS.res.length+' Mails, davon '+neu.length+' noch nicht hinterlegt'+(neu.length>1?' <button class="ghost small" data-mlalle="1"'+(MLS.busy?' disabled':'')+'>alle hinterlegen</button>':'')+'</div>';
+    for(const m of neu) h+='<div class="ml-row"><b>'+esc(m.betreff||'ohne Betreff')+'</b> <span class="pill src">'+esc(m.richtung)+'</span><div class="sub">'+esc(new Date(m.datum).toLocaleString('de-DE'))+' · von '+esc(m.von)+' · an '+esc(m.an)+(m.anhang?' · mit Anhang':'')+'</div><div class="sub">'+esc(m.vorschau.slice(0,200))+'</div><button class="ghost small" data-mladd="'+esc(m.id)+'"'+(MLS.busy?' disabled':'')+'>'+(MLS.busy===m.id?'Hinterlege …':'Hinterlegen')+'</button></div>'; }
+  h+='<div class="rh" style="margin-top:12px">Hinterlegte Mails</div>';
+  if(!L.length) h+='<div class="sub">Noch keine Mails hinterlegt.</div>';
+  for(const m of L){ const o=MLS.offen[m.id]; h+='<div class="ml-row"><a href="#" data-mlopen="'+esc(m.id)+'"><b>'+esc(m.betreff||'ohne Betreff')+'</b></a> <span class="pill '+(m.richtung==='Eingang'?'mid':'src')+'">'+esc(m.richtung)+'</span><div class="sub">'+esc(new Date(m.d).toLocaleString('de-DE'))+' · von '+esc(m.von)+' · an '+esc(m.an)+' · hinterlegt von '+esc(nutzerName(m.mail||m.by))+'</div>'
+    +(o?'<div class="ml-b">'+esc(m.text||'(kein Text)')+'</div><div class="acts"><a href="#" data-nfopen="'+esc(m.datei)+'">Original-Mail (.eml) öffnen</a></div>':'')+'</div>'; }
+  return h+'</details>'; }
+
+async function mlSuchen(){ const mk=MK[M.sel]; if(!mk) return; const adr=mieterMails(mk); if(!adr.length){ toast('Beim Mieter ist keine E-Mail-Adresse hinterlegt.'); return; }
+  MLS.busy='suche'; MLS.fehler=[]; render();
+  try{ const r=await mlApi({aktion:'suchen',adressen:adr}); MLS.res=r.mails||[]; MLS.fehler=r.fehler||[]; if(!MLS.res.length&&!MLS.fehler.length) toast('Keine Mails zu '+adr.join(', ')+' gefunden.'); }
+  catch(e){ MLS.fehler=[e.message||String(e)]; }
+  MLS.busy=''; render(); }
+async function mlHinterlegen(ids){ const mk=MK[M.sel]; if(!mk||!MLS.res) return; let n=0;
+  for(const id of ids){ const m=MLS.res.find(q=>q.id===id); if(!m) continue; MLS.busy=id; render();
+    try{ const r=await mlApi({aktion:'laden',mailbox:m.mailbox,id:m.id}); await mailSpeichern(mk,Object.assign({},m,{text:r.text}),r.mime,'outlook'); n++; }
+    catch(e){ toast((m.betreff||'Mail')+': '+(e.message||e)); break; } }
+  MLS.busy=''; if(n) toast(n+' Mail'+(n>1?'s':'')+' hinterlegt.'); render(); }
+async function mlUpload(files){ const mk=MK[M.sel]; if(!mk||!files.length) return; const adr=mieterMails(mk); let n=0;
+  for(const f of files){ try{ const raw=await f.text(); const m=emlLesen(raw); const vonA=(m.von.match(/[\w.+-]+@[\w.-]+/)||[''])[0].toLowerCase();
+      m.richtung=adr.includes(vonA)||!/andersmacher|wohntraum/i.test(vonA)?'Eingang':'Ausgang'; if(!m.betreff) m.betreff=f.name.replace(/\.eml$/i,'');
+      await mailSpeichern(mk,m,raw,'upload'); n++; }
+    catch(e){ toast(f.name+': '+(e.message||e)); } }
+  if(n) toast(n+' Mail'+(n>1?'s':'')+' hinterlegt.'); render(); }
+
+document.addEventListener('click',e=>{ const t=e.target.closest('button,a[data-mlopen]'); if(!t) return; const d=t.dataset;
+  if(d.mlsuch){ mlSuchen(); return; }
+  if(d.mladd){ mlHinterlegen([d.mladd]); return; }
+  if(d.mlalle){ const have=new Set((MAILS[M.sel]||[]).map(m=>m.msgId)); mlHinterlegen((MLS.res||[]).filter(m=>!have.has(m.msgId)).map(m=>m.id)); return; }
+  if(d.mlopen){ e.preventDefault(); MLS.offen[d.mlopen]=!MLS.offen[d.mlopen]; render(); return; }
+});
+document.addEventListener('change',e=>{ if(e.target.id==='ml-file'){ const f=[...e.target.files]; e.target.value=''; mlUpload(f); } });
 /* ---------- Render ---------- */
 function render(){
   const ready=loaded.o&&loaded.k&&loaded.r&&loaded.e&&loaded.b&&loadedMK;
@@ -1073,7 +1249,7 @@ function renderDash(x){ const mk=ed(x.mk), sn=STN[x.status], a=ampel(x), K=mk.ko
     +'<div class="trow"><input type="text" id="t-neu" placeholder="Neues Ticket, z. B. Heizung defekt"><button class="small primary" data-tadd="1">Hinzufügen</button></div>'
     +(T.filter(t=>showDone||!t.done).map(t=>'<label class="tick'+(t.done?' done':'')+'"><input type="checkbox" data-tdone="'+esc(t.id)+'"'+(t.done?' checked':'')+'><span>'+esc(t.t)+'<small>'+esc(dmy(t.d))+(t.done?' · erledigt '+esc(dmy(t.done)):'')+'</small></span></label>').join('')||'<div class="sub">Keine offenen Tickets.</div>')
     +(T.some(t=>t.done)?'<button class="ghost small" data-tshow="1">'+(showDone?'erledigte ausblenden':'erledigte anzeigen')+'</button>':'')+'</div>';
-  h+='</div>'+sollCard(x)+docsBox(x);
+  h+='</div>'+sollCard(x)+docsBox(x)+anschreibenCard(x)+mailsCard(x);
   /* Mieterkonto */
   if(x.erg) h+='<div class="note warnbox">'+x.erg+' Monatsmiete'+(x.erg>1?'n fehlen':' fehlt')+' in Nahaus als Sollstellung und '+(x.erg>1?'wurden':'wurde')+' aus dem Mietvertrag ergänzt (kursiv).</div>';
   h+='<details class="card wide sec" data-sec="konto"'+(SEC.konto?' open':'')+'><summary class="ch">Mieterkonto<span class="sub">Saldo '+eur(x.saldo)+' · '+x.rows.length+' Buchungen</span></summary>'+pdfButtons('konto')+'<div class="tablewrap"><table class="kb"><thead><tr><th>Datum</th><th>Buchung</th><th class="n">Soll</th><th class="n">Ist</th><th class="n">Saldo</th></tr></thead><tbody>';
@@ -1173,6 +1349,8 @@ render();
   db.doc('stamm/mietkonten').onSnapshot(s=>{ mkStand=s.exists?(s.data().stand||''):''; mkUeb=s.exists?(s.data().uebernahme||''):''; render(); },()=>{});
   db.collection('buchungen').onSnapshot(q=>{ const m={}; q.docs.forEach(d=>{m[d.id]=clone(d.data());}); buch=m; done('b'); },e=>{toast('Buchungen nicht lesbar: '+e.message); done('b');});
   loadZV(); loadRegM(); loadIch();
+  db.collection('mails').onSnapshot(q=>{ const m={}; q.docs.forEach(d=>{ const v=clone(d.data()); (m[v.pid]=m[v.pid]||[]).push(v); }); MAILS=m; render(); },()=>{});
+  db.collection('anschreiben').onSnapshot(q=>{ const m={}; q.docs.forEach(d=>{ const v=clone(d.data()); (m[v.pid]=m[v.pid]||[]).push(v); }); ANS=m; render(); },()=>{});
   db.collection('notizen').onSnapshot(q=>{ const m={}; q.docs.forEach(d=>{ const v=clone(d.data()); (m[v.pid]=m[v.pid]||[]).push(v); }); NOTIZ=m; render(); },()=>{});
   db.doc('stamm/mahnung').onSnapshot(s=>{ MBZ=(s.exists?clone(s.data()).bz:null)||[]; render(); },()=>{});
   db.collection('mahnlaeufe').onSnapshot(q=>{ const m={}; q.docs.forEach(d=>{m[d.id]=clone(d.data());}); MAHN=m; calc=null; render(); },()=>{});
