@@ -49,7 +49,16 @@
     onSnapshot(fn, err){ (colL[c] = colL[c] || []).push(fn); ready.then(() => fn(snapCol(c)), e => err && err(e)); return () => { colL[c] = (colL[c] || []).filter(x => x !== fn); }; }
   }; }
 
-  /* ---------- Import (einmalige Übernahme der Artifact-Daten) ---------- */
+  /* ---------- Import (Übernahme von Daten aus einer Import-Datei) ---------- */
+  async function importFile(f, progress){
+    const j = JSON.parse(await f.text()); if (j.app !== APP || !j.docs) throw new Error('Diese Datei gehört nicht zu dieser Seite.');
+    const rows = Object.entries(j.docs).map(([pfad, data]) => ({ app: APP, pfad, data, updated_at: new Date().toISOString() }));
+    for (let i = 0; i < rows.length; i += 25){ progress && progress('Übernehme ' + Math.min(i + 25, rows.length) + ' von ' + rows.length + ' …');
+      const { error } = await sb.from('os_docs').upsert(rows.slice(i, i + 25)); if (error) throw error;
+      rows.slice(i, i + 25).forEach(r => { cache[r.pfad] = r.data; notify(r.pfad); }); }
+    return rows.length;
+  }
+  window.osImportFile = importFile;
   function importBox(){
     const box = document.createElement('div');
     box.style.cssText = 'max-width:1100px;margin:16px auto 0;padding:14px 16px;border:2px dashed #2f5d8a;border-radius:12px;background:#eef3f9;color:#1c2230;font:14px system-ui,sans-serif';
@@ -57,11 +66,8 @@
     const st = box.querySelector('.st');
     box.querySelector('input').addEventListener('change', async ev => {
       const f = ev.target.files[0]; if (!f) return;
-      try { const j = JSON.parse(await f.text()); if (j.app !== APP || !j.docs) throw new Error('Diese Datei gehört nicht zu dieser Seite.');
-        const rows = Object.entries(j.docs).map(([pfad, data]) => ({ app: APP, pfad, data, updated_at: new Date().toISOString() }));
-        for (let i = 0; i < rows.length; i += 25){ st.textContent = 'Übernehme ' + Math.min(i + 25, rows.length) + ' von ' + rows.length + ' …';
-          const { error } = await sb.from('os_docs').upsert(rows.slice(i, i + 25)); if (error) throw error; }
-        st.textContent = '✅ ' + rows.length + ' Dokumente übernommen. Seite lädt neu …'; setTimeout(() => location.href = location.pathname, 1200);
+      try { const n = await importFile(f, t => st.textContent = t);
+        st.textContent = '✅ ' + n + ' Dokumente übernommen. Seite lädt neu …'; setTimeout(() => location.href = location.pathname, 1200);
       } catch(e){ st.textContent = '❌ ' + (e.message || e); }
     });
     document.body.insertBefore(box, document.body.firstChild);
