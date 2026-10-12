@@ -16,10 +16,8 @@ export const NAV = [
     { href: '/backoffice-kosten', icon: 'ti-cash-banknote', label: 'Backoffice-Kosten & Umlage je Wohneinheit' },
   ] },
   { type: 'group', key: 'buchhaltung', icon: 'ti-calculator', label: 'Buchhaltung', area: ['hv', 'backoffice'], mod: 'controlling', items: [
-    { href: '/buchhaltung/wiederkehrende-zahlungen', icon: 'ti-repeat', label: 'Wiederkehrende Zahlungen' },
     { href: '/vermietung/zahlungsvereinbarung', icon: 'ti-file-dollar', label: 'Zahlungsvereinbarungsgenerator' },
     { href: '/vermietung/zahlungsvereinbarung-register', icon: 'ti-receipt-2', label: 'Zahlungsvereinbarungen (Register)' },
-    { href: '/controlling/nahaus-rechnungen', icon: 'ti-receipt', label: 'Rechnungen Unternehmen' },
     { href: '/mahnprozess/generator', icon: 'ti-file-invoice', label: 'Mahnungen & Register' },
     { href: '/mahnprozess', icon: 'ti-gavel', label: 'Mahnprozess' },
   ] },
@@ -87,7 +85,6 @@ export const NAV = [
     { href: '/controlling/statistik', icon: 'ti-chart-bar', label: 'Statistik' },
     { href: '/controlling/xray', icon: 'ti-scan', label: 'xRay' },
     { href: '/controlling/monatswechsel', icon: 'ti-calendar-dollar', label: 'Monatswechsel (Controlling)' },
-    { href: '/controlling/nahaus-rechnungen', icon: 'ti-receipt', label: 'Rechnungen Unternehmen' },
   ] },
   { type: 'group', key: 'produktivitaet', icon: 'ti-rocket', label: 'Produktivität', area: 'hv', mod: 'produktivitaet', items: [
     { href: '/produktivitaet/tracking', icon: 'ti-chart-line', label: 'Tracking' },
@@ -128,9 +125,6 @@ export const NAV = [
   { type: 'group', key: 'personal', icon: 'ti-users-group', label: 'Personal', area: ['hv', 'backoffice'], mod: 'personal', items: [
     { href: '/personal/zustaendigkeiten', icon: 'ti-list-check', label: 'Zuständigkeiten & SOPs' },
     { href: '/personal/akte', icon: 'ti-id', label: 'Personalakte' },
-    { href: '/personal/urlaub', icon: 'ti-beach', label: 'Urlaub' },
-    { href: '/personal/krankheit', icon: 'ti-vaccine', label: 'Krankheit' },
-    { href: '/personal/arbeitsstunden', icon: 'ti-clock-hour-4', label: 'Arbeitsstunden' },
     { href: '/personal/lohnkosten', icon: 'ti-coin-euro', label: 'Lohnkosten' },
   ] },
   { type: 'group', key: 'eric-privat', icon: 'ti-user-heart', label: 'Eric Privat', area: ['vertrieb', 'hv'], mod: 'privat', items: [

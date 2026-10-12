@@ -2,6 +2,7 @@
 <html lang="de"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Zahlungsvereinbarungen · Register</title>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.2/html2pdf.bundle.min.js"></script>
 <style>
 :root{--bg:#f6f7f9;--surf:#fff;--surf2:#f1f3f6;--line:#e6e8ec;--text:#1c2024;--muted:#6b7280;--dim:#4b5563;--accent:#185fa5;--green:#1f7a4d;--red:#c0392b}
 *{box-sizing:border-box;margin:0;padding:0}
@@ -52,6 +53,7 @@ a.pdf{font-size:12px;color:var(--accent);text-decoration:none}
     <div style="display:flex;justify-content:space-between;align-items:center;padding:14px 18px;border-bottom:1px solid var(--line)"><b>Alte Vereinbarung nachtragen</b><span style="cursor:pointer;font-size:20px;color:var(--muted)" onclick="closeNeu()">✕</span></div>
     <div style="padding:16px 18px;display:grid;grid-template-columns:1fr 1fr;gap:10px">
       <label style="grid-column:1/-1">Mieter<input id="n_mieter" style="width:100%"></label>
+      <label style="grid-column:1/-1">Art der Forderung<select id="n_art" style="width:100%"><option value="mietschulden">Mietschulden</option><option value="kaution">Kaution</option><option value="bka">BKA (Betriebskostenabrechnung)</option></select></label>
       <label>Objekt<input id="n_objekt" style="width:100%"></label>
       <label>Wohnung<input id="n_whg" style="width:100%"></label>
       <label>Forderung (€)<input id="n_ford" type="number" step="0.01" style="width:100%"></label>
@@ -73,6 +75,7 @@ a.pdf{font-size:12px;color:var(--accent);text-decoration:none}
   <div class="kpis" id="kpis"></div>
   <div class="bar">
     <input type="text" id="q" placeholder="🔍 Mieter / Objekt…" oninput="render()">
+    <select id="fArt" onchange="render()"><option value="">Alle Arten</option><option value="mietschulden">Mietschulden</option><option value="kaution">Kaution</option><option value="bka">BKA (Betriebskostenabrechnung)</option></select>
     <select id="fStatus" onchange="render()"><option value="">Alle Status</option><option>laufend</option><option>abgeschlossen</option><option>gekündigt</option><option>Verzug</option><option>Inkasso</option></select>
     <span class="count" id="cnt" style="font-size:12px;color:var(--muted)"></span>
     <span style="margin-left:auto;display:flex;gap:6px"><button class="btn btn-accent" id="vList" onclick="setView('liste')">📋 Liste</button><button class="btn" id="vDetail" onclick="setView('detail')">🗂 Ratenzahlung (Detail)</button></span>
@@ -82,17 +85,21 @@ a.pdf{font-size:12px;color:var(--accent);text-decoration:none}
 <div id="briefOv" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:70;align-items:center;justify-content:center" onclick="if(event.target===this)closeBrief()">
   <div style="background:#fff;border-radius:12px;width:100%;max-width:760px;max-height:92vh;display:flex;flex-direction:column;box-shadow:0 20px 60px rgba(0,0,0,.3)">
     <div style="display:flex;justify-content:space-between;align-items:center;padding:13px 18px;border-bottom:1px solid var(--line)"><b id="briefTitle">Schreiben</b><span style="cursor:pointer;font-size:20px;color:var(--muted)" onclick="closeBrief()">✕</span></div>
-    <div style="padding:8px 18px 0"><div style="background:#fff8e1;border:1px solid #f0e0a8;color:#7a5c00;font-size:11.5px;padding:7px 10px;border-radius:7px">✏️ Erst Auswahl treffen, dann Text bei Bedarf editieren, dann „Bestätigen" bzw. „Drucken/PDF". <b>Mustertext</b>, später anpassen.</div></div>
+    <div style="padding:8px 18px 0"><div style="background:#fff8e1;border:1px solid #f0e0a8;color:#7a5c00;font-size:11.5px;padding:7px 10px;border-radius:7px">✏️ Auswahl treffen, Text bei Bedarf editieren, dann <b>„Drucken / PDF“</b> und per Post oder E-Mail versenden. Das OS verschickt nichts selbst. Danach <b>„Als verschickt markieren“</b>: Die Mahnstufe wird gesetzt und das Schreiben als PDF im Register abgelegt.</div></div>
     <div style="padding:10px 18px 0;display:grid;grid-template-columns:1fr 1fr;gap:8px">
       <label style="font-size:11px;color:var(--muted)">Absender / Empfänger<select id="briefAbsender" onchange="rebuildBrief()" style="width:100%;font:inherit;font-size:13px;padding:6px 8px;border:1px solid var(--line);border-radius:7px"><option value="wt">Wohn(T)raum Rheinhessen GmbH · Dalheimer Straße 70, 55238 Dexheim</option><option value="ee">Eric Eisenhardt · Dalheimer Straße 70, 55238 Dexheim</option></select></label>
       <label style="font-size:11px;color:var(--muted)">Anrede<select id="briefAnrede" onchange="rebuildBrief()" style="width:100%;font:inherit;font-size:13px;padding:6px 8px;border:1px solid var(--line);border-radius:7px"><option value="herr">Sehr geehrter Herr</option><option value="frau">Sehr geehrte Frau</option><option value="familie">Sehr geehrte Familie</option><option value="neutral">Sehr geehrte(r)</option><option value="damen_herren">Sehr geehrte Damen und Herren</option></select></label>
+      <label style="font-size:11px;color:var(--muted);grid-column:1/-1">Empfänger (Name)<input id="briefName" oninput="rebuildBrief()" style="width:100%;font:inherit;font-size:13px;padding:6px 8px;border:1px solid var(--line);border-radius:7px"></label>
+      <label style="font-size:11px;color:var(--muted)">Straße + Hausnummer<input id="briefStr" oninput="rebuildBrief()" style="width:100%;font:inherit;font-size:13px;padding:6px 8px;border:1px solid var(--line);border-radius:7px"></label>
+      <label style="font-size:11px;color:var(--muted)">PLZ + Ort<input id="briefOrt" oninput="rebuildBrief()" style="width:100%;font:inherit;font-size:13px;padding:6px 8px;border:1px solid var(--line);border-radius:7px"></label>
+      <label style="font-size:11px;color:var(--muted);grid-column:1/-1">Mahnstufe<select id="briefStufe" onchange="BRIEF_STUFE=parseInt(this.value,10);rebuildBrief()" style="width:100%;font:inherit;font-size:13px;padding:6px 8px;border:1px solid var(--line);border-radius:7px"><option value="1">1 · Zahlungserinnerung (erster Ausfall)</option><option value="2">2 · Letzte Mahnung vor Inkasso (zweiter Ausfall)</option><option value="3">3 · Übergabe an das Inkasso (dritter Ausfall)</option></select></label>
       <label style="font-size:11px;color:var(--muted)">Fälligkeitsdatum der offenen Rate<input id="briefFaellig" type="date" onchange="rebuildBrief()" style="width:100%;font:inherit;font-size:13px;padding:6px 8px;border:1px solid var(--line);border-radius:7px"></label>
       <label style="font-size:11px;color:var(--muted)">Zahlungskonto (IBAN)<select id="briefKonto" onchange="rebuildBrief()" style="width:100%;font:inherit;font-size:13px;padding:6px 8px;border:1px solid var(--line);border-radius:7px"></select></label>
     </div>
     <div id="briefBody" contenteditable="true" style="flex:1;overflow-y:auto;margin:12px 18px;padding:20px 24px;border:1px solid var(--line);border-radius:8px;font-family:Georgia,'Times New Roman',serif;line-height:1.55;font-size:14px;color:#111;outline:none"></div>
     <div style="display:flex;justify-content:flex-end;gap:8px;padding:12px 18px;border-top:1px solid var(--line)">
       <button class="btn" onclick="closeBrief()">◄ Zurück / Korrigieren</button>
-      <button class="btn btn-accent" onclick="bestaetigeBrief()">✓ Bestätigen &amp; verschicken</button>
+      <button class="btn btn-accent" id="briefOk" onclick="bestaetigeBrief()">✓ Als verschickt markieren (PDF speichern)</button>
       <button class="btn" onclick="druckeBrief()">🖨 Drucken / PDF</button>
     </div>
   </div>
@@ -106,32 +113,84 @@ const esc=s=>(s==null?'':String(s)).replace(/&/g,'&amp;').replace(/</g,'&lt;').r
 function toast(m){const t=$('toast');t.textContent=m;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),1700);}
 const eur=v=>v==null||isNaN(v)?'–':new Intl.NumberFormat('de-DE',{style:'currency',currency:'EUR'}).format(v);
 const num=v=>{if(v==null||v==='')return null;const n=parseFloat(String(v).replace(/\./g,'').replace(',','.'));return isNaN(n)?null:n;};
+const ARTL={mietschulden:'Mietschulden',kaution:'Kaution',bka:'BKA'};
+const artBadge=a=>a==='bka'?'<span style="font-size:11px;font-weight:700;padding:2px 8px;border-radius:20px;background:#eaf6ef;color:#1f7a4d" title="Betriebskostenabrechnung">BKA</span>':a==='kaution'?'<span style="font-size:11px;font-weight:700;padding:2px 8px;border-radius:20px;background:#eef4fb;color:#185fa5">Kaution</span>':'<span style="font-size:11px;font-weight:700;padding:2px 8px;border-radius:20px;background:#fdf2e3;color:#9a6700">Mietschulden</span>';
+const MONATE=['Jan','Feb','Mär','Apr','Mai','Jun','Jul','Aug','Sep','Okt','Nov','Dez'];
+// Status der Rate im aktuellen Monat: bezahlt / offen / noch nicht fällig / beendet
+function rateMonat(r){
+  const now=new Date(), cur=now.getFullYear()+'-'+String(now.getMonth()+1).padStart(2,'0');
+  const lbl=MONATE[now.getMonth()]+' '+now.getFullYear();
+  if(['abgeschlossen','Inkasso','gekündigt'].includes(r.status)) return {k:'na',lbl,txt:'—'};
+  if(!r.start_datum) return {k:'na',lbl,txt:'—'};
+  if(String(r.start_datum).slice(0,7)>cur) return {k:'future',lbl,txt:'ab '+new Date(r.start_datum+'T00:00:00').toLocaleDateString('de-DE',{month:'2-digit',year:'numeric'})};
+  const c=calcOf(r); if(c&&!c.withSz.fail&&c.withSz.rows.length){ const last=c.withSz.rows[c.withSz.rows.length-1].datum; if(ym(last)<cur) return {k:'done',lbl,txt:'Plan beendet'}; }
+  const zs=(r.zahlungen||[]).filter(z=>z.datum&&String(z.datum).slice(0,7)===cur);
+  const sum=zs.reduce((a,z)=>a+(num(z.betrag)||0),0);
+  if(zs.length){ const teil=sum>0&&sum+0.005<(Number(r.rate)||0); return {k:teil?'teil':'paid',lbl,txt:(teil?'teilweise ':'')+eur(sum)+' am '+new Date(zs[zs.length-1].datum+'T00:00:00').toLocaleDateString('de-DE',{day:'2-digit',month:'2-digit'})}; }
+  return {k:'open',lbl,txt:'offen'};
+}
+function rateBadge(r){
+  const m=rateMonat(r);
+  const st={paid:'background:#dcf3e6;color:#0f7b57',teil:'background:#fef6e0;color:#9a6700',open:'background:#fdecea;color:#c0392b',future:'background:var(--surf2);color:var(--muted)',done:'background:var(--surf2);color:var(--muted)',na:'color:var(--muted)'}[m.k];
+  const ic={paid:'✓ ',teil:'◐ ',open:'✕ ',future:'',done:'',na:''}[m.k];
+  let h='<span style="font-size:11.5px;font-weight:700;padding:2px 8px;border-radius:20px;white-space:nowrap;'+st+'">'+ic+esc(m.txt)+'</span>';
+  if(m.k==='open'||m.k==='teil') h+=' <button class="btn" style="padding:2px 7px;font-size:11px" title="Zahlung für '+m.lbl+' erfassen" onclick="rateBezahlt(\''+r.id+'\')">+ Zahlung</button>';
+  return h;
+}
+async function rateBezahlt(id){
+  const r=ROWS.find(x=>x.id===id); if(!r)return;
+  const d=prompt('Zahlungseingang erfassen – Datum (TT.MM.JJJJ):', new Date().toLocaleDateString('de-DE')); if(d===null)return;
+  const m=d.trim().match(/^(\d{1,2})\.(\d{1,2})\.(\d{4})$/); if(!m){toast('Datum bitte als TT.MM.JJJJ');return;}
+  const iso=m[3]+'-'+m[2].padStart(2,'0')+'-'+m[1].padStart(2,'0');
+  const b=prompt('Betrag (€):', String(Number(r.rate)||'').replace('.',',')); if(b===null)return;
+  const betrag=num(b); if(!(betrag>0)){toast('Betrag ungültig');return;}
+  const arr=(r.zahlungen||[]).concat([{datum:iso,betrag:String(betrag)}]);
+  await saveZahlung(id,arr); render(); toast('Zahlung erfasst ✓');
+}
 const ym=d=>d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0');
 let ROWS=[], view='liste';
 function extUrl(u){u=(u||'').trim();if(!u)return '';return /^https?:\/\//i.test(u)?u:'https://'+u;}
-function setView(v){view=v;const a=$('vList'),b=$('vDetail');if(a)a.className='btn'+(v==='liste'?' btn-accent':'');if(b)b.className='btn'+(v==='detail'?' btn-accent':'');render();}
-function openDetail(id){setView('detail');setTimeout(function(){const box=document.getElementById('sonder_'+id);if(box){const c=box.closest('.card');if(c){c.scrollIntoView({behavior:'smooth',block:'center'});c.style.boxShadow='0 0 0 2px var(--accent)';setTimeout(function(){c.style.boxShadow='';},1600);}}},60);}
+let OPEN_ID=null; const OPENF=new Set();
+function togF(id){ if(OPENF.has(id))OPENF.delete(id); else OPENF.add(id); const tr=document.getElementById('fd_'+id), t=document.getElementById('ft_'+id); if(tr)tr.style.display=OPENF.has(id)?'':'none'; if(t)t.textContent=OPENF.has(id)?'▾':'▸'; }
+function setView(v,keep){if(!keep)OPEN_ID=null;view=v;const a=$('vList'),b=$('vDetail');if(a)a.className='btn'+(v==='liste'?' btn-accent':'');if(b)b.className='btn'+(v==='detail'?' btn-accent':'');render();}
+function openDetail(id){OPEN_ID=id;setView('detail',true);window.scrollTo({top:0});setTimeout(function(){const box=document.getElementById('sonder_'+id);if(box){const c=box.closest('.card');if(c){c.scrollIntoView({behavior:'smooth',block:'center'});c.style.boxShadow='0 0 0 2px var(--accent)';setTimeout(function(){c.style.boxShadow='';},1600);}}},60);}
 function listeHTML(list){
-  let h='<div class="scroll"><table style="min-width:900px"><thead><tr><th style="text-align:left">Mieter</th><th style="text-align:left">Objekt · Whg</th><th style="text-align:left">Status</th><th>Forderung</th><th>Rate/Mon.</th><th>Laufzeit</th><th>Zinsen (Plan)</th><th>Sonderz.</th><th style="text-align:left">Anlagen</th><th></th></tr></thead><tbody>';
+  let h='<div class="scroll"><table style="min-width:900px"><thead><tr><th style="text-align:left">Mieter</th><th style="text-align:left">Art</th><th style="text-align:left">Objekt · Whg</th><th style="text-align:left">Status</th><th style="text-align:left">Rate '+MONATE[new Date().getMonth()]+' '+new Date().getFullYear()+'</th><th>Forderung</th><th style="text-align:left">Anlagen</th><th></th></tr></thead><tbody>';
   h+=list.map(r=>{const c=calcOf(r);const ok=c&&!c.withSz.fail;const lz=ok?c.withSz.rows.length+' Raten':'—';const zi=ok?eur(c.withSz.totalZins):'—';const sz=(r.sonderzahlungen||[]).filter(s=>num(s.betrag)>0).length;
-    return '<tr><td style="text-align:left;font-weight:600">'+esc(r.mieter||'')+'</td>'
+    return '<tr><td style="text-align:left;font-weight:600">'+esc(r.mieter||'')+'</td>'+'<td style="text-align:left">'+artBadge(r.art)+'</td>'
       +'<td style="text-align:left">'+esc((r.objekt||'')+(r.wohnung?' · '+r.wohnung:''))+'</td>'
-      +'<td style="text-align:left">'+esc(r.status||'')+'</td>'
-      +'<td>'+eur(Number(r.forderung)||0)+'</td>'+'<td>'+eur(Number(r.rate)||0)+'</td>'
-      +'<td>'+lz+'</td>'+'<td>'+zi+'</td>'
-      +'<td>'+(sz?'<span style="cursor:pointer;color:var(--accent);font-weight:600" onclick="openDetail(\''+r.id+'\')" title="Sonderzahlungen bearbeiten">'+sz+' ✎</span>':'0')+'</td>'
-      +'<td style="text-align:left">'+(r.pdf_url?'<a class="pdf" href="'+esc(r.pdf_url)+'" target="_blank">📄 PDF</a> ':'')+(r.asana_url?'<a class="pdf" href="'+esc(extUrl(r.asana_url))+'" target="_blank" rel="noopener">🗂 Asana öffnen ↗</a>':'')+'</td>'
-      +'<td style="white-space:nowrap"><button class="btn" style="padding:4px 9px;font-size:12px" onclick="openDetail(\''+r.id+'\')" title="Bearbeiten">✎</button> '
+      +'<td style="text-align:left">'+esc(r.status||'')+'</td>'+'<td style="text-align:left">'+rateBadge(r)+'</td>'
+      +'<td style="white-space:nowrap"><span style="cursor:pointer;font-weight:700" onclick="togF(\''+r.id+'\')" title="Details ein-/ausklappen"><span id="ft_'+r.id+'" style="color:var(--accent);font-size:11px;margin-right:5px">'+(OPENF.has(r.id)?'▾':'▸')+'</span>'+eur(Number(r.forderung)||0)+'</span></td>'
+      +'<td style="text-align:left">'+(r.pdf_url?'<a class="pdf" href="'+esc(r.pdf_url)+'" target="_blank">📄 PDF</a> ':'')+(r.schreiben||[]).filter(x=>x&&x.url).map(x=>'<a class="pdf" href="'+esc(x.url)+'" target="_blank" title="'+esc(x.name+' vom '+x.datum)+'">'+(x.typ==='dokument'?'📎 Dok.':'✉ '+esc(['','Erinnerung','Mahnung','Inkasso'][x.stufe]||'Schreiben'))+' '+esc(new Date(x.datum+'T00:00:00').toLocaleDateString('de-DE',{day:'2-digit',month:'2-digit'}))+'</a> ').join('')+(r.asana_url?'<a class="pdf" href="'+esc(extUrl(r.asana_url))+'" target="_blank" rel="noopener">🗂 Asana öffnen ↗</a>':'')+'</td>'
+      +'<td style="white-space:nowrap"><button class="btn" style="padding:4px 9px;font-size:12px" onclick="openDetail(\''+r.id+'\')" title="Vereinbarung öffnen: Details, Zahlungen, Dokumente">📂 Öffnen</button> '
         +'<button class="btn" style="padding:4px 9px;font-size:12px" onclick="pdfVorgang(\''+r.id+'\')" title="Vorgang als PDF">⬇ PDF</button> '
-        +'<button class="btn btn-accent" style="padding:4px 9px;font-size:12px" onclick="schreibenErstellen(\''+r.id+'\')">'+((r.mahnstufe||0)>=1?'→ Inkasso-Schreiben':'⚠ Letzte Erinnerung vor Inkasso')+'</button>'
-        +((r.mahnstufe||0)?'<div style="font-size:10px;margin-top:2px;color:'+((r.mahnstufe||0)>=2?'var(--red)':'#9a6700')+'">'+((r.mahnstufe||0)>=2?'→ Inkasso übergeben':'Erinnerung verschickt')+(r.letzte_mahnung?' · '+r.letzte_mahnung:'')+'</div>':'')
-      +'</td></tr>';}).join('');
+        +'<button class="btn btn-accent" style="padding:4px 9px;font-size:12px" onclick="schreibenErstellen(\''+r.id+'\')">'+((r.mahnstufe||0)>=2?'→ Inkasso-Schreiben':(r.mahnstufe||0)===1?'⚠⚠ Letzte Mahnung vor Inkasso':'⚠ Zahlungserinnerung')+'</button>'
+        +((r.mahnstufe||0)?'<div style="font-size:10px;margin-top:2px;color:'+((r.mahnstufe||0)>=2?'var(--red)':'#9a6700')+'">'+(['','1. Zahlungserinnerung verschickt','Letzte Mahnung verschickt','→ Inkasso übergeben'][Math.min(r.mahnstufe||0,3)])+(r.letzte_mahnung?' · '+r.letzte_mahnung:'')+'</div>':'')
+      +'</td></tr>'
+      +'<tr id="fd_'+r.id+'" style="'+(OPENF.has(r.id)?'':'display:none')+'"><td colspan="8" style="text-align:left;background:var(--surf2);white-space:normal">'
+        +'<span style="display:inline-flex;gap:22px;flex-wrap:wrap;font-size:12px;padding:3px 2px">'
+        +'<span>Rate/Monat: <b>'+eur(Number(r.rate)||0)+'</b></span>'
+        +'<span>Laufzeit: <b>'+lz+'</b></span>'
+        +'<span>Zinsen (Plan): <b>'+zi+'</b></span>'
+        +'<span>Sonderzahlungen: <b>'+(sz?'<a href="#" style="color:var(--accent)" onclick="openDetail(\''+r.id+'\');return false">'+sz+'</a>':'0')+'</b></span>'
+        +'<span>Erste Rate: <b>'+(r.start_datum?new Date(r.start_datum+'T00:00:00').toLocaleDateString('de-DE'):'—')+'</b></span>'
+        +'<span>Eingegangen gesamt: <b>'+eur((r.zahlungen||[]).reduce((a,z)=>a+(num(z.betrag)||0),0))+'</b></span>'
+        +'</span></td></tr>';}).join('');
   return h+'</tbody></table></div>';
 }
 
 // ——— Schreiben (Letzte Erinnerung / Inkasso) — editierbar, dann bestätigen & als PDF ———
 let BRIEF_ID=null, BRIEF_STUFE=1;
-const ABS={ wt:{name:'Wohn(T)raum Rheinhessen GmbH',addr:'Dalheimer Straße 70, 55238 Dexheim'}, ee:{name:'Eric Eisenhardt',addr:'Dalheimer Straße 70, 55238 Dexheim'} };
+const ABS={ wt:{name:'Wohn(T)raum Rheinhessen GmbH',str:'Dalheimer Straße 70',ort:'55278 Dexheim',stadt:'Dexheim'}, ee:{name:'Eric Eisenhardt',str:'Dalheimer Straße 70',ort:'55278 Dexheim',stadt:'Dexheim'} };
+// Anschrift aus "Objekt" zerlegen: "Hochstr. 44 55545 Bad Kreuznach" -> Straße / PLZ Ort; sonst Adresse aus dem Portfolio (Kürzel)
+function splitAdresse(r){
+  let t=String(r.objekt||'').replace(/\s+/g,' ').trim().replace(/,\s*$/,'');
+  const pf=PORTFOLIO.find(k=>(k.kennung||'').toLowerCase()===t.toLowerCase());
+  if(pf&&pf.adresse) t=pf.adresse;
+  const m=t.match(/^(.+?)[\s,]+(\d{5,6})\s+(.+?)[\s,]*$/);
+  if(m){ const ort=m[3].charAt(0).toUpperCase()+m[3].slice(1); return {str:m[1].replace(/\s+,/g,',').replace(/,$/,'').trim(), ort:m[2]+' '+ort}; }
+  return {str:t, ort:''};
+}
 function anredeText(key,mieter){
   const n=esc(mieter||'[Name des Mieters]');
   if(key==='herr')return 'Sehr geehrter Herr '+n;
@@ -142,7 +201,7 @@ function anredeText(key,mieter){
 }
 function schreibenErstellen(id){
   const r=ROWS.find(x=>x.id===id); if(!r)return;
-  const stufe=(r.mahnstufe||0)>=1 ? 2 : 1;
+  const stufe=Math.min((r.mahnstufe||0)+1,3);
   BRIEF_ID=id; BRIEF_STUFE=stufe;
   // Konto-Dropdown füllen (Objekt · IBAN)
   const kontoSel=$('briefKonto');
@@ -154,6 +213,8 @@ function schreibenErstellen(id){
   $('briefAbsender').value='wt';
   $('briefAnrede').value='neutral';
   $('briefFaellig').value='';
+  const ad=splitAdresse(r); $('briefName').value=r.mieter||''; $('briefStr').value=ad.str; $('briefOrt').value=ad.ort;
+  if($('briefStufe'))$('briefStufe').value=String(stufe);
   $('briefOv').style.display='flex';
   rebuildBrief();
 }
@@ -167,9 +228,22 @@ function rebuildBrief(){
   const faelligStr=$('briefFaellig').value?new Date($('briefFaellig').value).toLocaleDateString('de-DE'):'[Fälligkeitsdatum]';
   const ibanSel=$('briefKonto'); const iban=ibanSel.value||'[IBAN]';
   const objSel=ibanSel.options[ibanSel.selectedIndex]?(ibanSel.options[ibanSel.selectedIndex].getAttribute('data-obj')||''):'';
-  const frist=new Date(); frist.setDate(frist.getDate()+7); const fristStr=frist.toLocaleDateString('de-DE');
+  const frist=new Date(); frist.setDate(frist.getDate()+(stufe===2?5:7)); const fristStr=frist.toLocaleDateString('de-DE');
+  const fordTxt=(r.art==='kaution'?'die offene Kautionsforderung':r.art==='bka'?'die offene Nachzahlung aus der Betriebskostenabrechnung':'die bestehenden offenen Posten');
+  const vorDat=r.letzte_mahnung?new Date(r.letzte_mahnung).toLocaleDateString('de-DE'):'';
   const vwz=esc(((r.objekt||'')+(r.wohnung?' · '+r.wohnung:'')+(r.mieter?' · '+r.mieter:'')).replace(/^ · /,'')||'[Mieter-Nr. / Objekt / Name]');
-  const absBlock='<div class="abs">'+esc(a.name)+' · '+esc(a.addr)+'</div>';
+  const kontoTab='<table class="d"><tbody>'
+        +'<tr><td>Empfänger:</td><td>'+esc(a.name)+'</td></tr>'
+        +'<tr><td>IBAN:</td><td>'+esc(iban)+(objSel?' ('+esc(objSel)+')':'')+'</td></tr>'
+        +'<tr><td>Verwendungszweck:</td><td>'+vwz+'</td></tr></tbody></table>';
+  const eName=$('briefName').value.trim()||r.mieter||'', eStr=$('briefStr').value.trim(), eOrt=$('briefOrt').value.trim();
+  const kopf='<div style="height:35mm;text-align:right;font-size:9pt;line-height:1.4;color:#333"><b style="font-size:11pt;color:#111">'+esc(a.name)+'</b><br>'+esc(a.str)+'<br>'+esc(a.ort)+'</div>'
+    +'<div style="position:relative;height:45mm;width:85mm">'
+      +'<div style="position:absolute;top:10mm;left:0;font-size:7pt;color:#444;white-space:nowrap;border-bottom:0.3pt solid #999;padding-bottom:0.5mm">'+esc(a.name)+' · '+esc(a.str)+' · '+esc(a.ort)+'</div>'
+      +'<div style="position:absolute;top:17.7mm;left:0;font-size:11pt;line-height:1.35">'+esc(eName)+(eStr?'<br>'+esc(eStr):'')+(eOrt?'<br>'+esc(eOrt):'')+'</div>'
+    +'</div>'
+    +'<div style="text-align:right;margin:2mm 0 8mm;font-size:10.5pt">'+esc(a.stadt)+', '+heute+'</div>';
+  const bezug='<div style="font-size:9.5pt;color:#444;margin:-2mm 0 6mm">Ratenzahlungsvereinbarung vom '+vdat+' · '+esc((r.objekt||'')+(r.wohnung?', '+r.wohnung:''))+'</div>';
   const empf='<div class="empf"><b>'+esc(r.mieter||'')+'</b><br>'+esc((r.objekt||'')+(r.wohnung?' · '+r.wohnung:''))+'</div>';
   const daten='<table class="d"><tbody>'
     +'<tr><td>Ratenzahlungsvereinbarung vom:</td><td><b>'+vdat+'</b></td></tr>'
@@ -177,50 +251,91 @@ function rebuildBrief(){
     +'<tr><td>Vereinbarte Rate:</td><td><b>'+eur(Number(r.rate)||0)+' / Monat</b></td></tr></tbody></table>';
   let body;
   if(stufe===1){
-    body=absBlock+'<div class="datum">'+heute+'</div>'+empf
-      +'<h1>Letzte Erinnerung vor Inkasso</h1>'
-      +'<p>'+anrede+',</p>'
-      +'<p>wie am <b>'+vdat+'</b> mit Ihnen vereinbart, sollten die bestehenden offenen Posten in Höhe von <b>'+eur(Number(r.forderung)||0)+'</b> in monatlichen Raten zu je <b>'+eur(Number(r.rate)||0)+'</b> beglichen werden.</p>'
+    body=kopf
+      +'<h1>Zahlungserinnerung</h1>'
+      +bezug+'<p>'+anrede+',</p>'
+      +'<p>wie am <b>'+vdat+'</b> mit Ihnen vereinbart, sollten '+(r.art==='kaution'?'die offene Kautionsforderung':r.art==='bka'?'die offene Nachzahlung aus der Betriebskostenabrechnung':'die bestehenden offenen Posten')+' in Höhe von <b>'+eur(Number(r.forderung)||0)+'</b> in monatlichen Raten zu je <b>'+eur(Number(r.rate)||0)+'</b> beglichen werden.</p>'
       +'<p>Leider müssen wir feststellen, dass die am <b>'+faelligStr+'</b> fällige Rate in Höhe von <b>'+eur(Number(r.rate)||0)+'</b> bislang nicht bei uns eingegangen ist.</p>'
       +'<p>Wir bitten Sie, den ausstehenden Betrag bis spätestens <b>'+fristStr+'</b> auf folgendes Konto zu überweisen:</p>'
       +'<table class="d"><tbody>'
         +'<tr><td>Empfänger:</td><td>'+esc(a.name)+'</td></tr>'
         +'<tr><td>IBAN:</td><td>'+esc(iban)+(objSel?' ('+esc(objSel)+')':'')+'</td></tr>'
         +'<tr><td>Verwendungszweck:</td><td>'+vwz+'</td></tr></tbody></table>'
-      +'<p>Wir weisen Sie ausdrücklich darauf hin, dass bei einem erneuten Ausbleiben einer vereinbarten Rate die gesamte Forderung ohne weitere Ankündigung an ein Inkassobüro übergeben wird. Dies kann für Sie mit zusätzlichen Kosten (Inkasso- und Mahngebühren) verbunden sein.</p>'
+      +'<p>Bitte beachten Sie, dass die Ratenzahlung nur bei pünktlicher Zahlung der vereinbarten Raten bestehen bleibt. Bei weiteren Zahlungsausfällen behalten wir uns vor, die gesamte Restforderung fällig zu stellen und an ein Inkassobüro zu übergeben. Dies wäre für Sie mit zusätzlichen Kosten verbunden.</p>'
       +'<p>Sollten Sie den Betrag bereits beglichen haben, betrachten Sie dieses Schreiben bitte als gegenstandslos. Falls sich an Ihrer Zahlungsfähigkeit kurzfristig etwas geändert hat, sprechen Sie uns bitte umgehend an – gerne finden wir gemeinsam eine Lösung.</p>'
       +'<div class="sign"><p>Mit freundlichen Grüßen</p><p>'+esc(a.name)+'</p></div>';
+  } else if(stufe===2){
+    body=kopf
+      +'<h1>Letzte Mahnung vor Übergabe an das Inkasso</h1>'
+      +bezug+'<p>'+anrede+',</p>'
+      +'<p>mit der Ratenzahlungsvereinbarung vom <b>'+vdat+'</b> haben Sie sich verpflichtet, '+fordTxt+' in Höhe von <b>'+eur(Number(r.forderung)||0)+'</b> in monatlichen Raten zu je <b>'+eur(Number(r.rate)||0)+'</b> zu begleichen.</p>'
+      +'<p>Bereits'+(vorDat?' mit unserer Zahlungserinnerung vom <b>'+vorDat+'</b>':' in der Vergangenheit')+' mussten wir Sie auf eine ausgebliebene Rate hinweisen. Nun ist erneut die am <b>'+faelligStr+'</b> fällige Rate in Höhe von <b>'+eur(Number(r.rate)||0)+'</b> nicht bei uns eingegangen.</p>'
+      +'<p>Nach § 4 der Vereinbarung sind wir damit berechtigt, die gesamte noch offene Restforderung sofort in einer Summe fällig zu stellen. <b>Wir geben Ihnen ein letztes Mal Gelegenheit</b>, die ausstehende Rate bis spätestens <b>'+fristStr+'</b> auf folgendes Konto zu überweisen:</p>'
+      +kontoTab
+      +'<p><b>Dies ist unsere letzte Mahnung.</b> Geht der Betrag nicht fristgerecht ein oder bleibt künftig eine weitere Rate aus, übergeben wir die gesamte Restforderung ohne weitere Ankündigung an unser Inkassounternehmen. Sämtliche dadurch entstehenden Kosten (Inkasso-, Rechtsverfolgungs- und Verzugskosten) gehen zu Ihren Lasten.</p>'
+      +'<p>Sollten Sie den Betrag inzwischen beglichen haben, betrachten Sie dieses Schreiben bitte als gegenstandslos.</p>'
+      +'<div class="sign"><p>Mit freundlichen Grüßen</p><p>'+esc(a.name)+'</p></div>';
   } else {
-    body=absBlock+'<div class="datum">'+heute+'</div>'+empf
+    body=kopf
       +'<h1>Übergabe Ihrer offenen Forderung an das Inkasso</h1>'
-      +'<p>'+anrede+',</p>'
-      +'<p>trotz unserer letzten Erinnerung'+(r.letzte_mahnung?' vom '+new Date(r.letzte_mahnung).toLocaleDateString('de-DE'):'')+' ist erneut eine vereinbarte Rate ausgeblieben. Wir sehen uns daher gezwungen, die offene Forderung aus der nachstehenden Ratenzahlungsvereinbarung an unser Inkassounternehmen zu übergeben.</p>'
+      +bezug+'<p>'+anrede+',</p>'
+      +'<p>trotz unserer Zahlungserinnerung und unserer letzten Mahnung'+(r.letzte_mahnung?' vom '+new Date(r.letzte_mahnung).toLocaleDateString('de-DE'):'')+' ist erneut eine vereinbarte Rate ausgeblieben. Wir sehen uns daher gezwungen, die offene Forderung aus der nachstehenden Ratenzahlungsvereinbarung an unser Inkassounternehmen zu übergeben.</p>'
       +daten
       +'<p>Die weitere Kommunikation und Beitreibung erfolgt ab sofort über das beauftragte Inkassounternehmen. Zusätzlich entstehende Kosten gehen zu Ihren Lasten.</p>'
       +'<div class="sign"><p>Mit freundlichen Grüßen</p><p>'+esc(a.name)+'</p></div>';
   }
-  $('briefTitle').textContent=stufe===1?'⚠ Letzte Erinnerung vor Inkasso':'→ Übergabe an das Inkasso';
+  $('briefTitle').textContent=stufe===1?'⚠ Zahlungserinnerung (Stufe 1)':stufe===2?'⚠⚠ Letzte Mahnung vor Inkasso (Stufe 2)':'→ Übergabe an das Inkasso (Stufe 3)';
   $('briefBody').innerHTML=body;
 }
 function closeBrief(){$('briefOv').style.display='none';BRIEF_ID=null;}
 function druckeBrief(){
   const w=window.open('','_blank'); if(!w){toast('Popup blockiert – bitte erlauben');return;}
   w.document.write('<html><head><meta charset="utf-8"><title>Schreiben</title><style>'
-   +'body{font-family:Georgia,\'Times New Roman\',serif;max-width:720px;margin:32px auto;padding:0 26px;color:#111;line-height:1.55;font-size:14px}'
+   +'@page{size:A4;margin:10mm 15mm 15mm 20mm}body{font-family:Georgia,\'Times New Roman\',serif;width:175mm;margin:0;padding:0;color:#111;line-height:1.5;font-size:11pt}'
    +'.abs{font-size:11px;color:#555;border-bottom:1px solid #ccc;padding-bottom:4px;margin-bottom:26px}.empf{margin-bottom:26px}.datum{text-align:right;margin-bottom:22px;font-size:12.5px}'
-   +'h1{font-size:16px;margin:0 0 14px}table.d{border-collapse:collapse;margin:14px 0;font-size:13px}table.d td{padding:3px 10px 3px 0}.sign{margin-top:40px}'
+   +'h1{font-size:12pt;margin:0 0 3mm}p{margin:0 0 3mm}table.d{border-collapse:collapse;margin:14px 0;font-size:13px}table.d td{padding:3px 10px 3px 0}.sign{margin-top:40px}'
    +'</style></head><body>'+$('briefBody').innerHTML+'<script>window.onload=function(){setTimeout(function(){window.print();},200);}<\/script></body></html>');
   w.document.close();
 }
+const BRIEF_CSS='.briefpdf{font-family:Georgia,"Times New Roman",serif;color:#111;line-height:1.5;font-size:11pt;padding:0;width:175mm;background:#fff}'
+ +'.briefpdf .abs{font-size:10.5px;color:#555;border-bottom:1px solid #ccc;padding-bottom:4px;margin-bottom:26px}.briefpdf .empf{margin-bottom:26px}.briefpdf .datum{text-align:right;margin-bottom:22px;font-size:12.5px}'
+ +'.briefpdf h1{font-size:12pt;margin:0 0 3mm}.briefpdf p{margin:0 0 10px}.briefpdf table.d{border-collapse:collapse;margin:12px 0;font-size:13px;min-width:0;width:auto}'
+ +'.briefpdf table.d td{padding:3px 10px 3px 0;border:none;text-align:left;white-space:normal}.briefpdf .sign{margin-top:36px}';
+async function briefPdfBlob(){
+  if(!window.html2pdf) return null;
+  const wrap=document.createElement('div');
+  wrap.style.cssText='position:absolute;left:-10000px;top:0;width:175mm;background:#fff';
+  wrap.innerHTML='<style>'+BRIEF_CSS+'</style><div class="briefpdf">'+$('briefBody').innerHTML+'</div>';
+  document.body.appendChild(wrap);
+  const ov=$('briefOv'), ovd=ov.style.display; ov.style.display='none';
+  try{ return await html2pdf().set({margin:[10,20,15,15],image:{type:'jpeg',quality:0.95},html2canvas:{scale:2,backgroundColor:'#ffffff',scrollX:0,scrollY:0,windowHeight:Math.max(wrap.scrollHeight,1200)},jsPDF:{unit:'mm',format:'a4',orientation:'portrait'}}).from(wrap.querySelector('.briefpdf')).outputPdf('blob'); }
+  finally{ wrap.remove(); ov.style.display=ovd; }
+}
+const STUFE_NAME=['','Zahlungserinnerung','Letzte Mahnung','Inkasso-Übergabe'];
 async function bestaetigeBrief(){
   if(!BRIEF_ID)return;
   const r=ROWS.find(x=>x.id===BRIEF_ID); if(!r){closeBrief();return;}
-  if(BRIEF_STUFE===2 && !confirm('Forderung an das Inkasso übergeben? Der Status wird auf „Inkasso" gesetzt.')) return;
+  if(BRIEF_STUFE===3 && !confirm('Forderung an das Inkasso übergeben? Der Status wird auf „Inkasso" gesetzt.')) return;
   const heuteIso=new Date().toISOString().slice(0,10);
-  r.mahnstufe=BRIEF_STUFE; r.letzte_mahnung=heuteIso; r.status=BRIEF_STUFE===2?'Inkasso':'Verzug';
-  await sb.from('zahlungsvereinbarungen').update({mahnstufe:BRIEF_STUFE,letzte_mahnung:heuteIso,status:r.status}).eq('id',BRIEF_ID);
+  const btn=$('briefOk'); if(btn){btn.disabled=true;btn.textContent='Speichere PDF …';}
+  let eintrag={stufe:BRIEF_STUFE,name:STUFE_NAME[BRIEF_STUFE],datum:heuteIso,url:null};
+  try{
+    const blob=await briefPdfBlob();
+    if(blob){
+      const fname=STUFE_NAME[BRIEF_STUFE].replace(/[^A-Za-z0-9-]/g,'_')+'_'+(r.mieter||'Mieter').replace(/[^a-zA-Z0-9]/g,'_')+'_'+heuteIso+'.pdf';
+      const path='zahlungsvereinbarungen/schreiben/'+BRIEF_ID+'_'+Date.now()+'.pdf';
+      const up=await sb.storage.from('darlehen').upload(path,blob,{contentType:'application/pdf',upsert:true});
+      if(!up.error){ eintrag.url=sb.storage.from('darlehen').getPublicUrl(path).data.publicUrl; eintrag.datei=fname; }
+    }
+  }catch(e){}
+  if(btn){btn.disabled=false;btn.textContent='✓ Als verschickt markieren (PDF speichern)';}
+  const schreiben=(r.schreiben||[]).concat([eintrag]);
+  r.mahnstufe=BRIEF_STUFE; r.letzte_mahnung=heuteIso; r.status=BRIEF_STUFE===3?'Inkasso':'Verzug'; r.schreiben=schreiben;
+  const upd=await sb.from('zahlungsvereinbarungen').update({mahnstufe:BRIEF_STUFE,letzte_mahnung:heuteIso,status:r.status,schreiben}).eq('id',BRIEF_ID);
+  if(upd.error){toast('Fehler: '+upd.error.message);return;}
+  if(!eintrag.url) toast('Hinweis: PDF konnte nicht gespeichert werden – bitte über „Drucken / PDF“ sichern');
   closeBrief(); render();
-  toast(BRIEF_STUFE===2?'Inkasso-Schreiben bestätigt · als PDF bereit':'Letzte Erinnerung bestätigt · als PDF bereit zum Versand');
+  if(eintrag.url) toast(STUFE_NAME[BRIEF_STUFE]+' als verschickt markiert · PDF im Register abgelegt');
 }
 
 // Zins-/Tilgungsplan mit optionalen Sonderzahlungen.
@@ -265,10 +380,10 @@ function addSonder(id){const r=ROWS.find(x=>x.id===id);const arr=(r.sonderzahlun
 function updSonder(id,idx,field,val){const r=ROWS.find(x=>x.id===id);const arr=(r.sonderzahlungen||[]).slice();arr[idx]=Object.assign({},arr[idx],{[field]:val});saveSonder(id,arr);}
 function delSonder(id,idx){const r=ROWS.find(x=>x.id===id);const arr=(r.sonderzahlungen||[]).slice();arr.splice(idx,1);saveSonder(id,arr);renderSonder(id);}
 async function addRow(){const r=await sb.from('zahlungsvereinbarungen').insert({mieter:'Neuer Mieter',status:'laufend',basiszins:1.27,zuschlag:5,start_datum:new Date().toISOString().slice(0,10),pos:ROWS.length}).select();if(r.error)return toast(r.error.message);ROWS.unshift(r.data[0]);render();toast('Angelegt');}
-function openNeu(){['n_mieter','n_objekt','n_whg','n_ford','n_rate','n_iban','n_kinfo','n_notiz'].forEach(i=>{if($(i))$(i).value='';});if($('n_start'))$('n_start').value='';if($('n_status'))$('n_status').value='laufend';if($('n_bz'))$('n_bz').value='1.27';if($('n_zu'))$('n_zu').value='5';if($('n_pdf'))$('n_pdf').value='';if($('n_msg'))$('n_msg').textContent='';$('neuOv').style.display='flex';}
+function openNeu(){['n_mieter','n_objekt','n_whg','n_ford','n_rate','n_iban','n_kinfo','n_notiz'].forEach(i=>{if($(i))$(i).value='';});if($('n_start'))$('n_start').value='';if($('n_status'))$('n_status').value='laufend';if($('n_art'))$('n_art').value='mietschulden';if($('n_bz'))$('n_bz').value='1.27';if($('n_zu'))$('n_zu').value='5';if($('n_pdf'))$('n_pdf').value='';if($('n_msg'))$('n_msg').textContent='';$('neuOv').style.display='flex';}
 function closeNeu(){$('neuOv').style.display='none';}
 async function saveNeu(){
-  const rec={mieter:$('n_mieter').value.trim()||'(ohne Name)',objekt:$('n_objekt').value.trim()||null,wohnung:$('n_whg').value.trim()||null,
+  const rec={mieter:$('n_mieter').value.trim()||'(ohne Name)',art:($('n_art')&&$('n_art').value)||'mietschulden',objekt:$('n_objekt').value.trim()||null,wohnung:$('n_whg').value.trim()||null,
     forderung:parseFloat($('n_ford').value)||null,rate:parseFloat($('n_rate').value)||null,
     start_datum:$('n_start').value||null,status:$('n_status').value.trim()||'laufend',
     basiszins:parseFloat($('n_bz').value)||0,zuschlag:parseFloat($('n_zu').value)||0,
@@ -382,6 +497,7 @@ function card(r){
       +'<button class="btn" style="padding:5px 10px" onclick="pdfVorgang(\''+r.id+'\')">⬇ Vorgang als PDF</button>'
       +'<button class="abtn" onclick="del(\''+r.id+'\')">✕</button></div>'
     +'<div class="grid">'
+      +'<div class="fld"><label>Art der Forderung</label><select onchange="save(\''+r.id+'\',\'art\',this.value)"><option value="mietschulden"'+((r.art||'mietschulden')==='mietschulden'?' selected':'')+'>Mietschulden</option><option value="kaution"'+(r.art==='kaution'?' selected':'')+'>Kaution</option><option value="bka"'+(r.art==='bka'?' selected':'')+'>BKA (Betriebskostenabrechnung)</option></select></div>'
       +f('Objekt','objekt',r.objekt)+f('Wohnung','wohnung',r.wohnung)
       +f('Forderung €','forderung',r.forderung,'n')+f('Monatl. Rate €','rate',r.rate,'n')
       +'<div class="fld"><label>Erste Rate am</label><input type="date" value="'+esc(r.start_datum)+'" onchange="save(\''+r.id+'\',\'start_datum\',this.value)"></div>'
@@ -389,6 +505,7 @@ function card(r){
       +'<div class="fld" style="grid-column:span 2"><label>Asana-Aufgabe (Link)</label><input value="'+esc(r.asana_url||'')+'" placeholder="https://app.asana.com/…" onchange="save(\''+r.id+'\',\'asana_url\',this.value)"></div>'
       +f('Notiz','notiz',r.notiz)
     +'</div>'
+    +'<div class="sec"><h4>Dokumente · Vereinbarung &amp; Schreiben</h4><div id="docs_'+r.id+'"></div></div>'
     +'<div class="sec"><h4>Sonderzahlungen &amp; eingegangene Zahlungen</h4><div id="sonder_'+r.id+'"></div></div>'
     +'<div id="calc_'+r.id+'"></div>'
     +'</div>';
@@ -399,18 +516,55 @@ function renderKpis(){
   $('kpis').innerHTML=[['Vereinbarungen',ROWS.length],['davon laufend',laufend],['Σ Forderungen',eur(offen)],['Σ Zinsen (Plan)',eur(Math.round(zins*100)/100)],['∑ Bezahlte Forderungen',eur(Math.round(bezahlt*100)/100)]]
     .map(x=>'<div class="kpi"><div class="l">'+esc(x[0])+'</div><div class="v">'+x[1]+'</div></div>').join('');
 }
+function renderDocs(id){
+  const r=ROWS.find(x=>x.id===id); const box=document.getElementById('docs_'+id); if(!r||!box)return;
+  const fd=d=>d?new Date(String(d).slice(0,10)+'T00:00:00').toLocaleDateString('de-DE'):'';
+  const items=[];
+  if(r.pdf_url) items.push({ic:'📄',typ:'Vereinbarung',name:r.pdf_name||'Ratenzahlungsvereinbarung',datum:r.start_datum?'(erste Rate '+fd(r.start_datum)+')':'',url:r.pdf_url});
+  (r.schreiben||[]).forEach((x,i)=>{ if(!x)return;
+    if(x.typ==='dokument') items.push({ic:'📎',typ:'Dokument',name:x.name||x.datei||'Dokument',datum:fd(x.datum),url:x.url,del:i});
+    else items.push({ic:'✉',typ:(['','1 · Zahlungserinnerung','2 · Letzte Mahnung','3 · Inkasso-Übergabe'][x.stufe]||'Schreiben'),name:x.datei||x.name||'',datum:fd(x.datum),url:x.url}); });
+  let h=items.length?'<div class="scroll"><table style="min-width:0"><thead><tr><th style="text-align:left">Art</th><th style="text-align:left">Datei</th><th style="text-align:left">Datum</th><th></th></tr></thead><tbody>'
+    +items.map(x=>'<tr><td style="text-align:left">'+x.ic+' '+esc(x.typ)+'</td><td style="text-align:left;white-space:normal">'+(x.url?'<a class="pdf" href="'+esc(x.url)+'" target="_blank" rel="noopener">'+esc(x.name||'öffnen')+' ↗</a>':'<span style="color:var(--muted)">'+esc(x.name||'')+' (kein PDF gespeichert)</span>')+'</td><td style="text-align:left">'+esc(x.datum||'')+'</td><td>'+(x.del!=null?'<button class="abtn" title="Aus der Ablage entfernen" onclick="delDoc(\''+id+'\','+x.del+')">✕</button>':'')+'</td></tr>').join('')
+    +'</tbody></table></div>':'<div style="font-size:12.5px;color:var(--muted)">Noch keine Dokumente abgelegt.</div>';
+  h+='<label class="btn" style="display:inline-block;margin-top:8px;padding:5px 10px;cursor:pointer">+ PDF ablegen<input type="file" accept="application/pdf" multiple style="display:none" onchange="uploadDoc(\''+id+'\',this)"></label>'
+    +' <span style="font-size:11px;color:var(--muted)">z. B. unterschriebene Vereinbarung, Antwort des Mieters, Inkasso-Unterlagen</span>';
+  box.innerHTML=h;
+}
+async function uploadDoc(id,input){
+  const r=ROWS.find(x=>x.id===id); const files=[...(input.files||[])]; if(!r||!files.length)return;
+  const arr=(r.schreiben||[]).slice();
+  for(const f of files){
+    const path='zahlungsvereinbarungen/dokumente/'+id+'_'+Date.now()+'_'+f.name.replace(/[^a-zA-Z0-9._-]/g,'_');
+    const up=await sb.storage.from('darlehen').upload(path,f,{upsert:true,contentType:f.type||'application/pdf'});
+    if(up.error){toast('Upload-Fehler: '+up.error.message);continue;}
+    arr.push({typ:'dokument',name:f.name,datum:new Date().toISOString().slice(0,10),url:sb.storage.from('darlehen').getPublicUrl(path).data.publicUrl});
+  }
+  const res=await sb.from('zahlungsvereinbarungen').update({schreiben:arr}).eq('id',id);
+  if(res.error){toast('Fehler: '+res.error.message);return;}
+  r.schreiben=arr; renderDocs(id); toast('PDF abgelegt ✓');
+}
+async function delDoc(id,idx){
+  const r=ROWS.find(x=>x.id===id); if(!r)return; if(!confirm('Dokument aus der Ablage entfernen?'))return;
+  const arr=(r.schreiben||[]).slice(); arr.splice(idx,1);
+  const res=await sb.from('zahlungsvereinbarungen').update({schreiben:arr}).eq('id',id);
+  if(res.error){toast('Fehler: '+res.error.message);return;}
+  r.schreiben=arr; renderDocs(id);
+}
 function render(){
-  const q=($('q').value||'').toLowerCase(), fs=$('fStatus').value;
-  const list=ROWS.filter(r=>(!fs||r.status===fs)&&(!q||((r.mieter||'')+' '+(r.objekt||'')+' '+(r.wohnung||'')).toLowerCase().includes(q)));
+  const q=($('q').value||'').toLowerCase(), fs=$('fStatus').value, fa=$('fArt').value;
+  const list=ROWS.filter(r=>(!fs||r.status===fs)&&(!fa||(r.art||'mietschulden')===fa)&&(!q||((r.mieter||'')+' '+(r.objekt||'')+' '+(r.wohnung||'')).toLowerCase().includes(q)));
   $('cnt').textContent=list.length+' von '+ROWS.length;
   if(!list.length){$('list').innerHTML='<div style="color:var(--muted);padding:20px">Keine Vereinbarungen. Mit „+ Neue Vereinbarung" erfassen.</div>';renderKpis();return;}
   if(view==='liste'){$('list').innerHTML=listeHTML(list);renderKpis();return;}
-  $('list').innerHTML=list.map(card).join('');
-  list.forEach(r=>{renderSonder(r.id);renderCalc(r.id);});
+  let dl=list;
+  if(OPEN_ID){ const one=ROWS.find(x=>x.id===OPEN_ID); dl=one?[one]:list; }
+  $('list').innerHTML=(OPEN_ID?'<div style="margin-bottom:10px"><button class="btn" onclick="setView(\'liste\')">◀ Zurück zur Liste</button></div>':'')+dl.map(card).join('');
+  dl.forEach(r=>{renderSonder(r.id);renderCalc(r.id);renderDocs(r.id);});
   renderKpis();
 }
-let MIETKONTEN=[];
-async function loadKonten(){const res=await sb.from('portfolio_immobilien').select('kennung,mietkonto').not('mietkonto','is',null).order('kennung');MIETKONTEN=(res.error?[]:(res.data||[])).filter(k=>k.mietkonto&&k.mietkonto.trim());}
+let MIETKONTEN=[], PORTFOLIO=[];
+async function loadKonten(){try{const pr=await sb.from('portfolio_immobilien').select('kennung,adresse');PORTFOLIO=(pr&&!pr.error&&pr.data)||[];}catch(e){}const res=await sb.from('portfolio_immobilien').select('kennung,mietkonto').not('mietkonto','is',null).order('kennung');MIETKONTEN=(res.error?[]:(res.data||[])).filter(k=>k.mietkonto&&k.mietkonto.trim());}
 async function load(){await loadKonten();const res=await sb.from('zahlungsvereinbarungen').select('*').order('pos',{nullsFirst:false}).order('created_at',{ascending:false});ROWS=res.error?[]:(res.data||[]);render();}
 load();
 </script>
