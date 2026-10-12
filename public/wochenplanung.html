@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Wochenplanung · Macher OS</title>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
 <style>
 :root{
   --bg:#f6f7f9;--surf:#fff;--surf2:#f1f3f6;--surf3:#e7ebf0;--line:#e6e8ec;--bord2:#eef0f3;
@@ -113,6 +114,8 @@ select.cin{cursor:pointer}
 .st-offen{color:var(--muted)}.st-in_arbeit{color:var(--accent)}.st-warten{color:var(--warn)}.st-warten_rueck{color:#c47f17}.st-fortsetzung{color:#1b7c83}.st-erledigt{color:var(--ok)}
 .topbtn{background:none;border:none;cursor:pointer;font-size:16px;color:var(--muted);line-height:1;margin-top:1px;padding:0}
 .topbtn.on{color:#e0a500}
+.topdone{display:flex;align-items:center;gap:4px;font-size:11px;color:var(--ok);font-weight:600;white-space:nowrap;cursor:pointer}
+.topdone input{cursor:pointer}
 tr.top3 td{background:#fffbe9}
 tr.top3.done td{background:#eef7ea}
 .pill{font-size:10px;font-weight:700;padding:2px 7px;border-radius:20px;color:#fff}
@@ -249,10 +252,12 @@ select.cin.tagset{color:var(--accent);border-color:var(--accent);background:#eef
       <div style="border-top:1px solid var(--line);margin-top:4px;padding-top:12px">
         <div style="font-size:12px;font-weight:700;color:var(--dim);margin-bottom:8px">⭐ Top 3 der Woche</div>
         <div style="display:grid;gap:8px">
-          <div style="display:flex;gap:8px;align-items:center"><span style="flex:0 0 22px;height:22px;line-height:22px;text-align:center;font-weight:700;font-size:12px;color:#fff;background:var(--accent);border-radius:6px">1</span><input id="top1" placeholder="Top-Priorität 1 …" style="flex:1;border:1px solid var(--line);border-radius:8px;padding:8px 10px;font:inherit;font-size:13px;background:var(--surf2)" onchange="saveFragen()"></div>
-          <div style="display:flex;gap:8px;align-items:center"><span style="flex:0 0 22px;height:22px;line-height:22px;text-align:center;font-weight:700;font-size:12px;color:#fff;background:var(--accent);border-radius:6px">2</span><input id="top2" placeholder="Top-Priorität 2 …" style="flex:1;border:1px solid var(--line);border-radius:8px;padding:8px 10px;font:inherit;font-size:13px;background:var(--surf2)" onchange="saveFragen()"></div>
-          <div style="display:flex;gap:8px;align-items:center"><span style="flex:0 0 22px;height:22px;line-height:22px;text-align:center;font-weight:700;font-size:12px;color:#fff;background:var(--accent);border-radius:6px">3</span><input id="top3" placeholder="Top-Priorität 3 …" style="flex:1;border:1px solid var(--line);border-radius:8px;padding:8px 10px;font:inherit;font-size:13px;background:var(--surf2)" onchange="saveFragen()"></div>
+          <div style="display:flex;gap:8px;align-items:center"><span style="flex:0 0 22px;height:22px;line-height:22px;text-align:center;font-weight:700;font-size:12px;color:#fff;background:var(--accent);border-radius:6px">1</span><input id="top1" placeholder="Top-Priorität 1 …" style="flex:1;border:1px solid var(--line);border-radius:8px;padding:8px 10px;font:inherit;font-size:13px;background:var(--surf2)" onchange="saveFragen()"><label class="topdone" title="als erledigt markieren"><input type="checkbox" id="top1_done" onchange="toggleTopDone()"> erledigt</label></div>
+          <div style="display:flex;gap:8px;align-items:center"><span style="flex:0 0 22px;height:22px;line-height:22px;text-align:center;font-weight:700;font-size:12px;color:#fff;background:var(--accent);border-radius:6px">2</span><input id="top2" placeholder="Top-Priorität 2 …" style="flex:1;border:1px solid var(--line);border-radius:8px;padding:8px 10px;font:inherit;font-size:13px;background:var(--surf2)" onchange="saveFragen()"><label class="topdone" title="als erledigt markieren"><input type="checkbox" id="top2_done" onchange="toggleTopDone()"> erledigt</label></div>
+          <div style="display:flex;gap:8px;align-items:center"><span style="flex:0 0 22px;height:22px;line-height:22px;text-align:center;font-weight:700;font-size:12px;color:#fff;background:var(--accent);border-radius:6px">3</span><input id="top3" placeholder="Top-Priorität 3 …" style="flex:1;border:1px solid var(--line);border-radius:8px;padding:8px 10px;font:inherit;font-size:13px;background:var(--surf2)" onchange="saveFragen()"><label class="topdone" title="als erledigt markieren"><input type="checkbox" id="top3_done" onchange="toggleTopDone()"> erledigt</label></div>
         </div>
+        <div style="margin-top:14px"><div style="font-size:12px;font-weight:700;color:var(--dim);margin-bottom:6px">📈 Erledigte Top-Ziele je Woche</div>
+          <div style="position:relative;height:150px"><canvas id="topChart"></canvas></div></div>
       </div>
     </div>
   </div>
@@ -419,10 +424,35 @@ async function editLink(id){
 }
 async function delLink(id){ if(!confirm('Link löschen?'))return; const res=await sb.from('wochen_links').delete().eq('id',id); if(res.error){toast(res.error.message);return;} LINKS=LINKS.filter(x=>x.id!==id); renderLinks(); }
 async function loadFragen(){
-  const { data } = await sb.from('wochen_fragen').select('antwort1,antwort2,antwort3,top1,top2,top3').eq('jahr',CUR.jahr).eq('kw',CUR.kw).maybeSingle();
+  const { data } = await sb.from('wochen_fragen').select('antwort1,antwort2,antwort3,top1,top2,top3,top1_done,top2_done,top3_done').eq('jahr',CUR.jahr).eq('kw',CUR.kw).maybeSingle();
   $('fa1').value=data?.antwort1||''; $('fa2').value=data?.antwort2||''; $('fa3').value=data?.antwort3||'';
   $('top1').value=data?.top1||''; $('top2').value=data?.top2||''; $('top3').value=data?.top3||''; $('fragenSaved').textContent='';
+  $('top1_done').checked=!!data?.top1_done; $('top2_done').checked=!!data?.top2_done; $('top3_done').checked=!!data?.top3_done;
+  applyTopDoneStyle();
   ['fa1','fa2','fa3'].forEach(id=>{const el=$(id);el.style.height='auto';el.style.height=el.scrollHeight+'px';});
+  renderTopChart();
+}
+function applyTopDoneStyle(){[1,2,3].forEach(n=>{const inp=$('top'+n);const done=$('top'+n+'_done').checked;inp.style.textDecoration=done?'line-through':'none';inp.style.opacity=done?'.6':'1';});}
+async function toggleTopDone(){
+  applyTopDoneStyle();
+  const rec={ jahr:CUR.jahr, kw:CUR.kw, top1_done:$('top1_done').checked, top2_done:$('top2_done').checked, top3_done:$('top3_done').checked, updated_at:new Date().toISOString() };
+  const { error } = await sb.from('wochen_fragen').upsert(rec, { onConflict:'jahr,kw' });
+  if(error){toast(error.message);return;}
+  renderTopChart();
+}
+let topChart=null;
+async function renderTopChart(){
+  const cv=$('topChart'); if(!cv||typeof Chart==='undefined')return;
+  const { data } = await sb.from('wochen_fragen').select('jahr,kw,top1,top2,top3,top1_done,top2_done,top3_done').order('jahr',{ascending:true}).order('kw',{ascending:true});
+  const rows=(data||[]).filter(r=>r.top1||r.top2||r.top3).slice(-12);
+  const labels=rows.map(r=>'KW'+r.kw);
+  const gesetzt=rows.map(r=>[r.top1,r.top2,r.top3].filter(Boolean).length);
+  const erledigt=rows.map(r=>[r.top1_done&&r.top1,r.top2_done&&r.top2,r.top3_done&&r.top3].filter(Boolean).length);
+  if(topChart)topChart.destroy();
+  topChart=new Chart(cv.getContext('2d'),{type:'bar',data:{labels,datasets:[
+    {label:'gesetzt',data:gesetzt,backgroundColor:'#c8741f33',borderColor:'#c8741f',borderWidth:1},
+    {label:'erledigt',data:erledigt,backgroundColor:'#1f7a4d',borderColor:'#1f7a4d',borderWidth:1}
+  ]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{labels:{boxWidth:12,font:{size:11}}}},scales:{y:{beginAtZero:true,max:3,ticks:{stepSize:1}}}}});
 }
 let fragenTimer=null;
 async function saveFragen(){
