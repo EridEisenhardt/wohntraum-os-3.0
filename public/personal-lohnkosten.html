@@ -100,7 +100,8 @@ function parseLohn(L){
     if(sec==='ue'){ m=l.match(/^0*(\d{1,5})\s+([^,\d]+),\s*([^\d]+?)\s+DE\d/); const a=lastAmt(l); if(m&&a!=null){ r.ueberweisungen[m[1]]=a; r.namen[m[1]]=r.namen[m[1]]||(m[3].trim()+' '+m[2].trim()); } }
     if(sec==='za'){ m=l.match(/^(\d{3,4})\s+(.+?)\s+(Lastschrift|DÜ|Überweisung|Scheck)\s*(.*?)\s*([\d.]+,\d{2})\s*$/);
       if(m){ const emp=m[2].replace(/\s+\d{5}\s+.*$/,'').trim(), vz=m[4]||''; const b=lastAmt(l);
-        if(/LSt|Finanz|FA\s/i.test(emp+' '+vz)) r.lohnsteuer+=b; else r.zahlungen.push({empf:emp,betrag:b}); } }
+        if(/LSt|Finanz|FA\s/i.test(emp+' '+vz)){ r.lohnsteuer+=b; r._lst=true; } else { r.zahlungen.push({empf:emp,betrag:b}); r._lst=false; } return; }
+      const fm=l.match(/Fälligkeit bis:\s*(\d{2})\.(\d{2})\.(\d{4})/); if(fm&&r._lst){ r.lstFaellig={tag:fm[1]+'.'+fm[2]+'.'+fm[3],monat:+fm[2],jahr:+fm[3]}; r._lst=false; } }
     if(/^Konto\s+DE\d/.test(l)&&pnr){ const a=lastAmt(l); if(a!=null) r.personen[pnr]=a; }
     m=l.match(/9994\s+Sachbezug\s+([\d.]+,\d{2})-/); if(m) r.sachbezug+=amt(m[1]);
   });
@@ -121,8 +122,8 @@ async function lohnFile(file){
   Object.keys(r.personen).forEach(k=>{ const name=r.namen[k]||('Pers.-Nr. '+k); pos.push({quelle:name+' (Auszahlung)',label:name,betrag:r.personen[k]}); });
   if(r.sachbezug) pos.push({quelle:'Sachbezüge',label:'Sachbezug',betrag:Math.round(r.sachbezug*100)/100});
   r.zahlungen.forEach(z=>{ const lbl=z.empf.charAt(0).toUpperCase()+z.empf.slice(1).toLowerCase(); pos.push({quelle:z.empf+' (Krankenkasse)',label:lbl,betrag:z.betrag}); });
-  if(r.lohnsteuer) pos.push({quelle:'Finanzamt (Lohnsteuer)',label:'Lohnsteuer',betrag:Math.round(r.lohnsteuer*100)/100});
-  pos.forEach(p=>{ const row=findRow(u,p.label); p.rowId=row?row.id:null; p.ziel=row?row.label:p.label; p.alt=row?row['m'+mo]:null; p.on=true; });
+  if(r.lohnsteuer){ const f=r.lstFaellig; pos.push({quelle:'Finanzamt (Lohnsteuer)'+(f?' · fällig '+f.tag:''),label:'Lohnsteuer',betrag:Math.round(r.lohnsteuer*100)/100,mo:f?f.monat:mo,jahr:f?f.jahr:r.jahr}); }
+  pos.forEach(p=>{ p.mo=p.mo||mo; p.jahr=p.jahr||r.jahr; const row=p.jahr===r.jahr?findRow(u,p.label):null; p.rowId=row?row.id:null; p.ziel=row?row.label:p.label; p.alt=row?row['m'+p.mo]:null; p.on=true; });
   // PDF ablegen
   let url=null, pfad='lohnabrechnungen/'+r.jahr+'/'+u.replace(/[^A-Za-z0-9]/g,'_')+'_'+String(mo).padStart(2,'0')+'_'+Date.now()+'.pdf';
   const up=await sb.storage.from('personal').upload(pfad,file,{contentType:'application/pdf',upsert:true});
@@ -135,20 +136,22 @@ async function lohnFile(file){
 function lShow(){
   const P=LPARSE; $('lTitle').textContent='Lohnabrechnung '+MON[P.mo-1]+' '+P.jahr+' · '+P.u;
   $('lBody').innerHTML='<div style="font-size:12px;color:var(--muted);margin-bottom:8px">Aus '+esc(P.file)+' erkannt. Haken entfernen, was nicht übernommen werden soll; die Zielzeile lässt sich anpassen.</div>'
-   +'<table><thead><tr><th></th><th>Aus der Abrechnung</th><th>Zeile in der Matrix</th><th class="r">Betrag</th><th class="r">bisher</th></tr></thead><tbody>'
-   +P.pos.map((p,i)=>'<tr><td><input type="checkbox" '+(p.on?'checked':'')+' onchange="LPARSE.pos['+i+'].on=this.checked"></td><td>'+esc(p.quelle)+'</td><td><input value="'+esc(p.ziel)+'" style="font:inherit;font-size:12px;padding:3px 6px;border:1px solid var(--line);border-radius:5px;width:180px" onchange="lZiel('+i+',this.value)">'+(p.rowId?'':' <span style="font-size:10.5px;color:var(--accent)">neue Zeile</span>')+'</td><td class="r"><b>'+eur(p.betrag)+'</b></td><td class="r" style="color:'+(p.alt!=null&&Math.abs(num2(p.alt)-p.betrag)>0.005?'var(--red)':'var(--muted)')+'">'+(p.alt!=null?eur(p.alt)||'0,00 €':'—')+'</td></tr>').join('')
-   +'<tr><td></td><td><b>Summe</b></td><td></td><td class="r"><b>'+eur(P.pos.reduce((a,p)=>a+p.betrag,0))+'</b></td><td></td></tr></tbody></table>'
-   +'<div style="font-size:11.5px;color:var(--muted);margin-top:8px">Mitarbeiter = Auszahlungsbetrag · Krankenkassen = Lastschrift laut Zahlungsübersicht · Lohnsteuer = Betrag ans Finanzamt laut dieser Abrechnung. Rot = weicht vom bisherigen Wert ab.</div>';
+   +'<table><thead><tr><th></th><th>Aus der Abrechnung</th><th>Zeile in der Matrix</th><th>Monat</th><th class="r">Betrag</th><th class="r">bisher</th></tr></thead><tbody>'
+   +P.pos.map((p,i)=>'<tr><td><input type="checkbox" '+(p.on?'checked':'')+' onchange="LPARSE.pos['+i+'].on=this.checked"></td><td>'+esc(p.quelle)+'</td><td><input value="'+esc(p.ziel)+'" style="font:inherit;font-size:12px;padding:3px 6px;border:1px solid var(--line);border-radius:5px;width:180px" onchange="lZiel('+i+',this.value)">'+(p.rowId||p.jahr!==P.jahr?'':' <span style="font-size:10.5px;color:var(--accent)">neue Zeile</span>')+'</td><td'+(p.mo!==P.mo||p.jahr!==P.jahr?' style="color:var(--accent);font-weight:700"':'')+'>'+MON[p.mo-1]+(p.jahr!==P.jahr?' '+p.jahr:'')+'</td><td class="r"><b>'+eur(p.betrag)+'</b></td><td class="r" style="color:'+(p.alt!=null&&Math.abs(num2(p.alt)-p.betrag)>0.005?'var(--red)':'var(--muted)')+'">'+(p.alt!=null?eur(p.alt)||'0,00 €':'—')+'</td></tr>').join('')
+   +'<tr><td></td><td><b>Summe</b></td><td></td><td></td><td class="r"><b>'+eur(P.pos.reduce((a,p)=>a+p.betrag,0))+'</b></td><td></td></tr></tbody></table>'
+   +'<div style="font-size:11.5px;color:var(--muted);margin-top:8px">Mitarbeiter = Auszahlungsbetrag · Krankenkassen = Lastschrift laut Zahlungsübersicht · Lohnsteuer = Betrag ans Finanzamt, eingetragen im Monat der Fälligkeit. Rot = weicht vom bisherigen Wert ab.</div>';
   $('lOv').style.display='flex';
 }
-function lZiel(i,v){ const p=LPARSE.pos[i]; p.ziel=v.trim(); const row=findRow(LPARSE.u,p.ziel); p.rowId=row&&norm(row.label)===norm(p.ziel)?row.id:(row?row.id:null); p.alt=row?row['m'+LPARSE.mo]:null; lShow(); }
+function lZiel(i,v){ const p=LPARSE.pos[i]; p.ziel=v.trim(); const row=p.jahr===LPARSE.jahr?findRow(LPARSE.u,p.ziel):null; p.rowId=row?row.id:null; p.alt=row?row['m'+p.mo]:null; lShow(); }
 function lClose(){ $('lOv').style.display='none'; LPARSE=null; renderLGrid(); }
 async function lUebernehmen(){
   const P=LPARSE; if(!P)return; $('lOk').disabled=true;
   let sort=Math.max(0,...MX.filter(r=>r.unternehmen===P.u).map(r=>r.sort||0));
   for(const p of P.pos.filter(x=>x.on)){
-    if(p.rowId){ await sb.from('personal_matrix').update({['m'+P.mo]:p.betrag,updated_at:new Date().toISOString()}).eq('id',p.rowId); }
-    else { await sb.from('personal_matrix').insert({unternehmen:P.u,jahr:P.jahr,label:p.ziel,sort:++sort,['m'+P.mo]:p.betrag}); }
+    let rowId=p.rowId;
+    if(!rowId&&p.jahr!==P.jahr){ const ex=(await sb.from('personal_matrix').select('id,label').eq('jahr',p.jahr).eq('unternehmen',P.u)).data||[]; const hit=ex.find(x=>norm(x.label)===norm(p.ziel)); if(hit) rowId=hit.id; }
+    if(rowId){ await sb.from('personal_matrix').update({['m'+p.mo]:p.betrag,updated_at:new Date().toISOString()}).eq('id',rowId); }
+    else { await sb.from('personal_matrix').insert({unternehmen:P.u,jahr:p.jahr,label:p.ziel,sort:++sort,['m'+p.mo]:p.betrag}); }
   }
   if(P.recId) await sb.from('personal_lohnabrechnungen').update({uebernommen_am:new Date().toISOString()}).eq('id',P.recId);
   $('lOk').disabled=false; $('lOv').style.display='none'; LPARSE=null; toast('Lohnabrechnung übernommen ✓'); await load();
