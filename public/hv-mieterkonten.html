@@ -167,6 +167,14 @@ table.mini{width:100%;font-size:12px}table.mini td{padding:3px 4px;border-bottom
 .trow{display:flex;gap:6px;margin-bottom:8px}.trow input{flex:1}
 .tick{display:flex;gap:8px;align-items:flex-start;padding:5px 0;border-bottom:1px dashed var(--line);font-size:13px;cursor:pointer}.tick small{display:block;color:var(--muted);font-size:11px}.tick.done span{text-decoration:line-through;color:var(--muted)}
 #e-notiz{width:100%;min-height:120px}
+.rbox{margin-top:10px;padding-top:8px;border-top:1px solid var(--line)}.rh{font-size:12px;font-weight:700;color:var(--muted);margin-bottom:4px}
+.rz{background:var(--soft);border-radius:8px;padding:6px 8px;margin:6px 0}.rbox select{max-width:100%;font-size:12px}
+.docs{margin-bottom:14px}.tree{display:grid;gap:2px}
+.fold{border-radius:8px;padding:2px 4px}.fold.over{background:var(--accent-soft);outline:2px dashed var(--accent)}
+.fold.sub{margin-left:26px}.frow{display:flex;align-items:center;gap:8px;padding:4px 0;border-bottom:1px solid var(--line)}
+.frow .up{margin-left:auto;cursor:pointer;color:var(--accent);font-size:12px}
+.file{display:flex;align-items:center;gap:10px;padding:4px 0 4px 34px;font-size:13px;border-bottom:1px dashed var(--line)}.file a{color:var(--accent);text-decoration:none;overflow-wrap:anywhere}.file .sub{margin-left:auto}
+.prow{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:6px}.prow .pd{width:110px}.prow input[data-pt]{flex:1;min-width:160px}
 </style>
 </head>
 <body>
@@ -491,7 +499,7 @@ const dmy=x=>String(x||'').split('-').reverse().join('.');
 const START='2025-01';
 let MK={}, M={f:'',ges:'',obj:'',st:'alle',q:'',sel:''}; try{ const s=JSON.parse(store('mk_state')||'null'); if(s) M=Object.assign(M,s,{q:''}); }catch(e){}
 const saveM=()=>store('mk_state',JSON.stringify({ges:M.ges,obj:M.obj,st:M.st,sel:M.sel}));
-let mkStand='', loadedMK=false, calc=null, EDIT={}, ZUORD={}, editOpen=false, modal=false, showDone=false;
+let ZV=[], ZVload=false, DOCS={}, docOpen={}, pend=null, mkStand='', loadedMK=false, calc=null, EDIT={}, ZUORD={}, editOpen=false, modal=false, showDone=false;
 const ed=mk=>Object.assign({},mk,EDIT[mk.pid]||{});
 const today=new Date().toISOString().slice(0,10), curM=today.slice(0,7);
 const addM=(m,n)=>{ const [y,mm]=m.split('-').map(Number); const d=new Date(y,mm-1+n,1); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0'); };
@@ -606,12 +614,58 @@ const AMPEL={gruen:['#1d9a5b','zuverlässig'],gelb:['#e0a400','beobachten'],rot:
 const ampel=x=>{ const a=ed(x.mk).ampel; return a&&AMPEL[a]?a:x.ampelAuto; };
 const ampelDot=(a,big)=>'<span class="adot'+(big?' big':'')+'" style="background:'+AMPEL[a][0]+'" title="Mieterranking: '+AMPEL[a][1]+'"></span>';
 function saveEdit(pid,patch,msg){ EDIT=Object.assign({},EDIT,{[pid]:Object.assign({},EDIT[pid]||{},patch)}); calc=null; render(); saveStamm('mietkonten-edit',{e:EDIT}).then(()=>msg&&toast(msg)); }
+/* ---------- Ratenzahlungen (Tabelle zahlungsvereinbarungen) ---------- */
+async function loadZV(){ const sb=window.osSupabase; if(!sb) return; const {data,error}=await sb.from('zahlungsvereinbarungen').select('id,mieter,objekt,wohnung,forderung,rate,start_datum,status,art,zahlungen,mahnstufe'); if(!error){ ZV=data||[]; ZVload=true; render(); } }
+const zvBez=z=>(z.zahlungen||[]).reduce((a,y)=>a+(parseNum(y.betrag)||0),0);
+const ZVART={mietschulden:'Mietschulden',kaution:'Kaution',bka:'BK-Abrechnung'};
+function zvScore(z,x){ const mk=ed(x.mk), o=objekte.find(q=>q.kz===x.mk.obj); let sc=0; const zm=' '+norm(z.mieter)+' ';
+  for(const t of (x.mk.namen||[]).concat(String(mk.mieter||'').split(','))){ const w=norm(t).split(' ').filter(v=>v.length>=3); if(w.length&&zm.includes(' '+w[w.length-1]+' ')) sc+=2; }
+  if(o){ const st=norm(String(o.name||'').split(',')[0]).split(' ')[0]; if(st&&norm(z.objekt).includes(st.slice(0,5))) sc+=1; } return sc; }
+function ratenBox(x,kinds){ const mk=ed(x.mk), ids=mk.raten||[]; const L=ZV.filter(z=>ids.includes(z.id)&&kinds.includes(z.art||'mietschulden'));
+  let h='<div class="rbox"><div class="rh">Ratenzahlung</div>';
+  if(!ZVload) return h+'<div class="sub">Lade …</div></div>';
+  if(!L.length) h+='<div class="sub">Keine Ratenzahlung hinterlegt.</div>';
+  for(const z of L){ const b=zvBez(z), rest=Math.max(0,(Number(z.forderung)||0)-b);
+    h+='<div class="rz"><div class="kvr"><span>'+esc(ZVART[z.art||'mietschulden']||z.art)+' · seit '+esc(dmy(z.start_datum))+'</span><b>'+esc(z.status||'')+(z.mahnstufe?' · Mahnstufe '+z.mahnstufe:'')+'</b></div>'
+      +'<div class="kvr"><span>Forderung / bezahlt</span><b>'+eur(z.forderung)+' / '+eur(b)+'</b></div><div class="kvr"><span>Rest · Rate</span><b>'+eur(rest)+' · '+eur(z.rate)+' mtl.</b></div>'
+      +'<div class="acts"><button class="ghost small" data-zvopen="'+esc(z.id)+'">Im Register öffnen</button><button class="ghost small" data-zvdel="'+esc(z.id)+'">Verknüpfung lösen</button></div></div>'; }
+  const cand=ZV.filter(z=>!ids.includes(z.id)&&kinds.includes(z.art||'mietschulden')).map(z=>({z,sc:zvScore(z,x)})).sort((a,b)=>b.sc-a.sc||String(a.z.mieter).localeCompare(String(b.z.mieter)));
+  h+='<div class="acts"><select data-zvadd="1"><option value="">Ratenzahlung verknüpfen …</option>'+cand.map(c=>'<option value="'+esc(c.z.id)+'">'+(c.sc>=2?'Vorschlag: ':'')+esc((c.z.mieter||'')+' · '+String(c.z.objekt||'').split(/[0-9]{5}/)[0].trim()+' · '+eur(c.z.forderung))+'</option>').join('')+'</select><button class="ghost small" data-zvnew="1">Neue erstellen</button></div></div>';
+  return h; }
+/* ---------- Dokumente (Ordnerstruktur wie im Finder) ---------- */
+const DOCF=['01 Mietbeginn','02 Vertrag & Nachträge','03 Miete & Zahlungen','03 Miete & Zahlungen/Mahnungen','04 Betriebskosten','05 Schriftverkehr','06 Mietende'];
+const docBase=mk=>String(mk.obj).replace(/[^A-Za-z0-9]/g,'')+'/'+mk.pid;
+const enc=f=>f.replace(/ä/g,'ae').replace(/ö/g,'oe').replace(/ü/g,'ue').replace(/Ä/g,'Ae').replace(/Ö/g,'Oe').replace(/Ü/g,'Ue').replace(/ß/g,'ss').replace(/&/g,'und').replace(/[^A-Za-z0-9 ._\/-]/g,'_');
+function aktenName(mk){ const e=ed(mk), K=mk.kontakte||[]; const n=(K[0]&&K[0].name)||String(e.mieter||'').split(',')[0]||''; const ln=(mk.namen||[])[0]||''; let nn; if(ln&&n.endsWith(ln)&&n.length>ln.length) nn=ln.toUpperCase()+' '+n.slice(0,n.length-ln.length).trim(); else { const w=n.trim().split(/\s+/); nn=w.length>1?w[w.length-1].toUpperCase()+' '+w.slice(0,-1).join(' '):n.toUpperCase(); }
+  return mk.obj+'_'+String(mk.einheit||'').replace(/\s+/g,'')+'_'+nn; }
+async function loadDocs(mk){ const sb=window.osSupabase; if(!sb) return; DOCS[mk.pid]=DOCS[mk.pid]||null; const base=docBase(mk), out={};
+  for(const f of DOCF){ const {data}=await sb.storage.from('mieterakten').list(base+'/'+enc(f),{limit:500,sortBy:{column:'name',order:'asc'}}); out[f]=(data||[]).filter(o=>o.id&&o.name!=='.keep'); }
+  DOCS[mk.pid]=out; render(); }
+let docLoading={};
+function docsBox(x){ const mk=x.mk, D=DOCS[mk.pid];
+  let h='<div class="card docs"><div class="ch">Dokumente<span class="sub">Ablage wie im Finder: '+esc(aktenName(mk))+'</span></div>';
+  if(!D){ if(!docLoading[mk.pid]){ docLoading[mk.pid]=1; loadDocs(mk).finally(()=>{ docLoading[mk.pid]=0; }); } return h+'<div class="sub">Lade …</div></div>'; }
+  if(pend&&pend.pid===mk.pid){ h+='<div class="spl"><div class="rh">Hochladen – Name nach Ablage-Schema</div>'+pend.files.map((p,i)=>'<div class="prow"><select data-pf="'+i+'">'+DOCF.map(f=>'<option'+(f===p.folder?' selected':'')+'>'+esc(f)+'</option>').join('')+'</select><input type="text" class="pd" data-pdt="'+i+'" value="'+esc(p.datum)+'" placeholder="JJJJ-MM-TT"><input type="text" data-pt="'+i+'" value="'+esc(p.titel)+'" placeholder="Titel"><span class="sub">'+esc(aktenName(mk)+'_'+p.datum+'_'+p.titel+p.ext)+'</span></div>').join('')
+    +'<div class="acts"><button class="primary small" data-pup="1">Hochladen</button><button class="ghost small" data-pcancel="1">Abbrechen</button></div></div>'; }
+  h+='<div class="tree">';
+  for(const f of DOCF){ const files=D[f]||[], sub=f.includes('/'), open=docOpen[mk.pid+'|'+f]??(files.length>0);
+    h+='<div class="fold'+(sub?' sub':'')+'" data-fdrop="'+esc(f)+'"><div class="frow"><button class="ghost small" data-ftog="'+esc(f)+'">'+(open?'▾':'▸')+'</button><b>'+esc(sub?f.split('/')[1]:f)+'</b><span class="sub">'+files.length+' Datei'+(files.length===1?'':'en')+'</span><label class="ghost small up">Datei hinzufügen<input type="file" multiple hidden data-fup="'+esc(f)+'"></label></div>';
+    if(open) h+=files.length?files.map(o=>'<div class="file"><a href="#" data-dopen="'+esc(f+'|'+o.name)+'">'+esc(o.name)+'</a><span class="sub">'+(o.metadata&&o.metadata.size?Math.round(o.metadata.size/1024)+' KB':'')+'</span><button class="ghost small" data-ddel="'+esc(f+'|'+o.name)+'">Löschen</button></div>').join(''):'<div class="file sub">leer – Dateien hierher ziehen</div>';
+    h+='</div>'; }
+  return h+'</div></div>'; }
+function queueFiles(mk,folder,files){ const L=[...files].map(f=>{ const m=f.name.match(/(\.[A-Za-z0-9]+)$/); return {file:f,folder,datum:today,titel:f.name.replace(/\.[A-Za-z0-9]+$/,''),ext:m?m[1].toLowerCase():''}; });
+  if(pend&&pend.pid===mk.pid) pend.files=pend.files.concat(L); else pend={pid:mk.pid,files:L}; render(); }
+async function uploadPend(){ const sb=window.osSupabase, mk=MK[pend.pid]; let n=0;
+  for(const p of pend.files){ if(!/^\d{4}-\d{2}-\d{2}$/.test(p.datum)){ toast('Datum bitte als JJJJ-MM-TT.'); return; } }
+  for(const p of pend.files){ const name=enc(aktenName(mk)+'_'+p.datum+'_'+(p.titel||'Dokument')+p.ext).replace(/\//g,'_'); const path=docBase(mk)+'/'+enc(p.folder)+'/'+name;
+    const {error}=await sb.storage.from('mieterakten').upload(path,p.file,{upsert:false,contentType:p.file.type||undefined}); if(error){ toast(p.file.name+': '+error.message); continue; } n++; }
+  pend=null; toast(n+' Datei'+(n===1?'':'en')+' hochgeladen.'); loadDocs(mk); }
 function renderDash(x){ const mk=ed(x.mk), sn=STN[x.status], a=ampel(x), K=mk.kontakte||[];
   const st=stufeAt(x.mk,curM)||{}; const kv=(l,v)=>'<div class="kvr"><span>'+l+'</span><b>'+v+'</b></div>';
-  let h='<div class="dtop"><div><div class="dname">'+ampelDot(a,1)+' '+esc(mk.mieter||'–')+'</div><div class="sub">'+esc(mk.obj+' · '+(mk.einheit||''))+' · '+esc(dmy(mk.von))+(mk.bis?' – '+esc(dmy(mk.bis)):' – laufend')+(mk.ref?' · Verwendungszweck: '+esc(mk.ref):'')+'</div></div><button class="ghost" data-close="1" title="Schließen (Esc)" style="font-size:20px">✕</button></div>';
+  let h='<div class="dtop"><div><div class="dname">'+ampelDot(a,1)+' '+esc(mk.mieter||'–')+'</div><div class="sub">'+esc(mk.obj+' · '+(mk.einheit||''))+' · '+esc(dmy(mk.von))+(mk.bis?' – '+esc(dmy(mk.bis)):' – laufend')+(mk.ref?' · Verwendungszweck: '+esc(mk.ref):'')+'</div></div><button data-close="1" title="Schließen (Esc)">Schließen</button></div>';
   h+='<div class="cards">';
   /* Mieterinformationen */
-  h+='<div class="card"><div class="ch">👤 Mieterinformationen'+(editOpen?'':'<button class="ghost small" data-edit="1">✏️ bearbeiten</button>')+'</div>';
+  h+='<div class="card"><div class="ch">Mieterinformationen'+(editOpen?'':'<button class="ghost small" data-edit="1">Bearbeiten</button>')+'</div>';
   if(editOpen){ const f=(id,l,v)=>'<label class="fl">'+l+'<input type="text" id="'+id+'" value="'+esc(v??'')+'"></label>';
     h+=f('e-mieter','Name(n)',mk.mieter)+f('e-anrede','Anrede für Briefe',mk.anrede)+f('e-email','E-Mail',mk.email!=null?mk.email:K.map(k=>k.email).filter(Boolean).join(', '))+f('e-tel','Telefon',mk.tel!=null?mk.tel:K.map(k=>k.tel).filter(Boolean).join(', '))
       +f('e-kaution','Kaution vereinbart (€)',fnum.format(mk.kaution||0))+f('e-kbez','Kaution bezahlt (€) – leer = aus Nahaus',mk.kautionBezahlt!=null&&mk.kautionBezahlt!==''?fnum.format(mk.kautionBezahlt):'')+f('e-betreuer','Betreuer',mk.betreuer)+f('e-zahler','Wer zahlt die Miete? (leer = automatisch)',mk.zahler)+f('e-ref','Verwendungszweck',mk.ref)
@@ -624,31 +678,31 @@ function renderDash(x){ const mk=ed(x.mk), sn=STN[x.status], a=ampel(x), K=mk.ko
       +kv('Mieterranking',ampelDot(a)+' '+AMPEL[a][1]+(mk.ampel?' <span class="pill src">manuell</span>':' <span class="pill src" title="Automatisch aus Rückstand, Kaution und Zahlungseingang">auto</span>'))+(x.spaet?'<div class="sub">'+x.spaet+' verspätete Zahlung'+(x.spaet>1?'en':'')+' in den letzten 6 Monaten (nach dem 10.)</div>':''); }
   h+='</div>';
   /* Offene Posten */
-  h+='<div class="card"><div class="ch">💶 Offene Posten</div><div class="big '+(x.saldo>0.5?'neg':x.saldo<-0.5?'pos':'')+'">'+eur(x.saldo)+'</div><span class="pill '+sn[0]+'">'+sn[1]+'</span>'+(x.saldo<-0.5?' <span class="sub">Guthaben des Mieters</span>':'')
+  h+='<div class="card"><div class="ch">Offene Posten</div><div class="big '+(x.saldo>0.5?'neg':x.saldo<-0.5?'pos':'')+'">'+eur(x.saldo)+'</div><span class="pill '+sn[0]+'">'+sn[1]+'</span>'+(x.saldo<-0.5?' <span class="sub">Guthaben des Mieters</span>':'')
     +kv('Rückstand in Monatsmieten',x.miete?fnum.format(Math.max(0,x.monate)):'–')+kv('Soll ab 2025',eur(x.soll))+kv('Ist ab 2025',eur(x.ist))+kv('Saldo laut Nahaus',eur(x.nhSaldo));
   if(x.op.length) h+='<details'+(x.op.length<=4?' open':'')+'><summary>'+x.op.length+' offene Posten</summary><table class="mini">'+x.op.map(o=>'<tr><td>'+esc(dmy(o.d))+'</td><td>'+esc(o.t)+'</td><td class="n neg">'+eur(o.b)+'</td></tr>').join('')+'</table></details>';
-  h+='</div>';
+  h+=ratenBox(x,['mietschulden','bka'])+'</div>';
   /* Kaution */
   const kv0=mk.kaution||0, man=mk.kautionBezahlt!=null&&mk.kautionBezahlt!=='', unbek=!man&&!x.kSoll&&!x.kIst, kb=man?Number(mk.kautionBezahlt):x.kIst, ko=r2(Math.max(0,kv0-kb));
-  if(unbek){ h+='<div class="card"><div class="ch">🔐 Kaution<button class="ghost small" data-edit="1">✏️</button></div><div class="big">'+eur(kv0)+'</div><span class="sub">vereinbart</span>'+kv('Bezahlt','<span class="mut">unbekannt</span>')+'<div class="sub" style="margin-top:6px">In Nahaus gibt es zu dieser Kaution keine Buchung (vermutlich vor der Nahaus-Zeit gezahlt). Den bezahlten Betrag kannst du über ✏️ eintragen.</div></div>'; }
-  else h+='<div class="card"><div class="ch">🔐 Kaution'+(man?' <span class="pill src">manuell</span>':'')+'</div><div class="big">'+eur(kb)+' <span class="sub">von '+eur(kv0)+'</span></div>'
+  if(unbek){ h+='<div class="card"><div class="ch">Kaution<button class="ghost small" data-edit="1">Bearbeiten</button></div><div class="big">'+eur(kv0)+'</div><span class="sub">vereinbart</span>'+kv('Bezahlt','<span class="mut">unbekannt</span>')+'<div class="sub" style="margin-top:6px">In Nahaus gibt es zu dieser Kaution keine Buchung (vermutlich vor der Nahaus-Zeit gezahlt). Den bezahlten Betrag kannst du über „Bearbeiten“ eintragen.</div>'+ratenBox(x,['kaution'])+'</div>'; }
+  else h+='<div class="card"><div class="ch">Kaution'+(man?' <span class="pill src">manuell</span>':'')+'</div><div class="big">'+eur(kb)+' <span class="sub">von '+eur(kv0)+'</span></div>'
     +'<div class="bar"><span style="width:'+(kv0?Math.min(100,kb/kv0*100):0)+'%"></span></div>'
     +kv('Vereinbart',eur(kv0))+kv('Bezahlt',eur(kb))+kv('Offen','<span class="'+(ko>0.5?'neg':'pos')+'">'+eur(ko)+'</span>')
-    +kv('Zahlweise',(mk.kautionRaten?mk.kautionRaten+' Raten':'')+(kb>0.5&&ko>0.5?(mk.kautionRaten?' · ':'')+'<span class="pill mid">Teilzahlung</span>':ko<=0.5&&kv0?'<span class="pill ok">vollständig</span>':(mk.kautionRaten?'':'–')))+'</div>';
+    +kv('Zahlweise',(mk.kautionRaten?mk.kautionRaten+' Raten':'')+(kb>0.5&&ko>0.5?(mk.kautionRaten?' · ':'')+'<span class="pill mid">Teilzahlung</span>':ko<=0.5&&kv0?'<span class="pill ok">vollständig</span>':(mk.kautionRaten?'':'–')))+ratenBox(x,['kaution'])+'</div>';
   /* Warmmiete */
   const others=(st.others||[]);
-  h+='<div class="card"><div class="ch">🏠 Warmmiete</div><div class="big">'+(st.total?eur(st.total):'–')+'</div><span class="sub">'+(st.ab?'seit '+esc(dmy(st.ab)):'')+'</span>'
+  h+='<div class="card"><div class="ch">Warmmiete</div><div class="big">'+(st.total?eur(st.total):'–')+'</div><span class="sub">'+(st.ab?'seit '+esc(dmy(st.ab)):'')+'</span>'
     +'<details open><summary>Zusammensetzung</summary>'+kv('Kaltmiete',eur(st.kalt))+kv('Betriebskosten',eur(st.bk))+kv('Heizkosten',eur(st.hk))+(st.strom?kv('Strom',eur(st.strom)):'')+others.map(o=>kv(esc(o.t||'Sonstiges'),eur(o.b))).join('')+(!others.length&&st.sonst?kv('Sonstiges',eur(st.sonst)):'')+'</details>'
     +((x.mk.stufen||[]).length>1?'<details><summary>Mietentwicklung</summary><table class="mini">'+x.mk.stufen.map(z=>'<tr><td>ab '+esc(dmy(z.ab))+'</td><td class="n">'+eur(z.total)+'</td></tr>').join('')+'</table></details>':'')+'</div>';
   /* Notizen */
-  h+='<div class="card"><div class="ch">📝 Notizen</div><textarea id="e-notiz" rows="6" placeholder="Notizen zum Mieter …">'+esc(mk.notiz||'')+'</textarea><div class="sub">Wird automatisch gespeichert, sobald du das Feld verlässt.</div></div>';
+  h+='<div class="card"><div class="ch">Notizen</div><textarea id="e-notiz" rows="6" placeholder="Notizen zum Mieter …">'+esc(mk.notiz||'')+'</textarea><div class="sub">Wird automatisch gespeichert, sobald du das Feld verlässt.</div></div>';
   /* Tickets */
   const T=mk.tickets||[], to=T.filter(t=>!t.done);
-  h+='<div class="card"><div class="ch">🎫 Tickets <span class="pill '+(to.length?'mid':'ok')+'">'+to.length+' offen</span></div>'
-    +'<div class="trow"><input type="text" id="t-neu" placeholder="Neues Ticket, z. B. Heizung defekt"><button class="small primary" data-tadd="1">+</button></div>'
+  h+='<div class="card"><div class="ch">Tickets <span class="pill '+(to.length?'mid':'ok')+'">'+to.length+' offen</span></div>'
+    +'<div class="trow"><input type="text" id="t-neu" placeholder="Neues Ticket, z. B. Heizung defekt"><button class="small primary" data-tadd="1">Hinzufügen</button></div>'
     +(T.filter(t=>showDone||!t.done).map(t=>'<label class="tick'+(t.done?' done':'')+'"><input type="checkbox" data-tdone="'+esc(t.id)+'"'+(t.done?' checked':'')+'><span>'+esc(t.t)+'<small>'+esc(dmy(t.d))+(t.done?' · erledigt '+esc(dmy(t.done)):'')+'</small></span></label>').join('')||'<div class="sub">Keine offenen Tickets.</div>')
     +(T.some(t=>t.done)?'<button class="ghost small" data-tshow="1">'+(showDone?'erledigte ausblenden':'erledigte anzeigen')+'</button>':'')+'</div>';
-  h+='</div>';
+  h+='</div>'+docsBox(x);
   /* Mieterkonto */
   if(x.erg) h+='<div class="note warnbox">'+x.erg+' Monatsmiete'+(x.erg>1?'n fehlen':' fehlt')+' in Nahaus als Sollstellung und '+(x.erg>1?'wurden':'wurde')+' aus dem Mietvertrag ergänzt (kursiv).</div>';
   h+='<h3>Mieterkonto</h3><div class="tablewrap"><table class="kb"><thead><tr><th>Datum</th><th>Buchung</th><th class="n">Soll</th><th class="n">Ist</th><th class="n">Saldo</th></tr></thead><tbody>';
@@ -656,12 +710,20 @@ function renderDash(x){ const mk=ed(x.mk), sn=STN[x.status], a=ampel(x), K=mk.ko
   h+='</tbody></table></div><div class="sub" style="margin-top:6px">Neueste Buchungen oben.</div>';
   return h; }
 function zuordSel(r,mk0){ const L=Object.values(MK).filter(m=>m.unit===r.unit||m.obj===mk0.obj).sort((a,b)=>(b.von||'').localeCompare(a.von||''));
-  return '<select class="zsel" data-zkey="'+esc(r.key)+'" title="Zahlung einem anderen Mietverhältnis zuordnen"><option value="">↪ andere Zuordnung …</option>'+L.filter(m=>m.pid!==mk0.pid).map(m=>'<option value="'+esc(m.pid)+'">'+esc(m.obj+' '+(m.einheit||'')+' · '+(ed(m).mieter||'')+' ('+dmy(m.von)+(m.bis?'–'+dmy(m.bis):'')+')')+'</option>').join('')+'<option value="-">keinem Mieter zuordnen</option>'+(r.man?'<option value="~">automatische Zuordnung wiederherstellen</option>':'')+'</select>'; }
+  return '<select class="zsel" data-zkey="'+esc(r.key)+'" title="Zahlung einem anderen Mietverhältnis zuordnen"><option value="">andere Zuordnung …</option>'+L.filter(m=>m.pid!==mk0.pid).map(m=>'<option value="'+esc(m.pid)+'">'+esc(m.obj+' '+(m.einheit||'')+' · '+(ed(m).mieter||'')+' ('+dmy(m.von)+(m.bis?'–'+dmy(m.bis):'')+')')+'</option>').join('')+'<option value="-">keinem Mieter zuordnen</option>'+(r.man?'<option value="~">automatische Zuordnung wiederherstellen</option>':'')+'</select>'; }
 function importCard(big){ return '<div class="note'+(big?'':' small')+'"><b>'+(big?'Mietverträge und Sollstellungen übernehmen':'Daten aus Nahaus aktualisieren')+'</b><div style="margin:6px 0">Import-Datei <code>mietkonten_import.json</code> auswählen (erstellt Claude aus Nahaus).</div><input type="file" id="mk-file" accept=".json"> <span id="mk-st" class="sub"></span></div>'; }
 
 /* ---------- Ereignisse ---------- */
-document.addEventListener('click',e=>{ const t=e.target.closest('button,tr.click'); if(!t) return;
+document.addEventListener('click',async e=>{ const t=e.target.closest('button,tr.click,a[data-dopen]'); if(!t) return;
+  if(t.dataset.dopen){ e.preventDefault(); const [f,n]=t.dataset.dopen.split('|'); const mk=MK[M.sel]; const {data,error}=await window.osSupabase.storage.from('mieterakten').createSignedUrl(docBase(mk)+'/'+enc(f)+'/'+n,3600); if(error){ toast(error.message); return; } window.open(data.signedUrl,'_blank'); return; }
   if(t.dataset.mk){ M.sel=t.dataset.mk; editOpen=false; modal=true; showDone=false; saveM(); render(); return; }
+  if(t.dataset.zvopen){ (window.top||window).location.href='/vermietung/zahlungsvereinbarung-register'; return; }
+  if(t.dataset.zvnew){ (window.top||window).location.href='/vermietung/zahlungsvereinbarung'; return; }
+  if(t.dataset.zvdel){ saveEdit(M.sel,{raten:(ed(MK[M.sel]).raten||[]).filter(i=>i!==t.dataset.zvdel)},'Verknüpfung gelöst.'); return; }
+  if(t.dataset.ftog){ const k=M.sel+'|'+t.dataset.ftog; const D=DOCS[M.sel]||{}; docOpen[k]=!(docOpen[k]??((D[t.dataset.ftog]||[]).length>0)); render(); return; }
+  if(t.dataset.pcancel){ pend=null; render(); return; }
+  if(t.dataset.pup){ uploadPend(); return; }
+  if(t.dataset.ddel){ if(t.dataset.sure!=='1'){ t.dataset.sure='1'; t.textContent='Wirklich löschen?'; return; } const [f,n]=t.dataset.ddel.split('|'); const mk=MK[M.sel]; window.osSupabase.storage.from('mieterakten').remove([docBase(mk)+'/'+enc(f)+'/'+n]).then(()=>{ toast('Datei gelöscht.'); loadDocs(mk); }); return; }
   if(t.dataset.close){ modal=false; editOpen=false; render(); return; }
   if(t.dataset.tshow){ showDone=!showDone; render(); return; }
   if(t.dataset.tadd){ const v=($('t-neu').value||'').trim(); if(!v){ toast('Bitte einen Text eingeben.'); return; } const T=(ed(MK[M.sel]).tickets||[]).concat([{id:'t'+Date.now().toString(36),t:v,d:today}]); saveEdit(M.sel,{tickets:T},'Ticket angelegt.'); return; }
@@ -669,9 +731,17 @@ document.addEventListener('click',e=>{ const t=e.target.closest('button,tr.click
   if(t.dataset.edit){ editOpen=true; render(); return; }
   if(t.dataset.ecancel){ editOpen=false; render(); return; }
   if(t.dataset.esave){ const g=id=>$(id).value.trim(); editOpen=false; const kz=parseNum(g('e-kaution')), kbz=parseNum(g('e-kbez')); saveEdit(M.sel,{kaution:(kz==null||isNaN(kz))?(ed(MK[M.sel]).kaution||0):kz,kautionBezahlt:(kbz==null||isNaN(kbz))?'':kbz,mieter:g('e-mieter'),anrede:g('e-anrede'),email:g('e-email'),tel:g('e-tel'),betreuer:g('e-betreuer'),zahler:g('e-zahler'),ref:g('e-ref'),ampel:$('e-ampel').value},'Mieterdaten gespeichert.'); return; } });
+['dragenter','dragover'].forEach(ev=>document.addEventListener(ev,e=>{ const d=e.target.closest&&e.target.closest('[data-fdrop]'); if(d&&e.dataTransfer&&[...(e.dataTransfer.types||[])].includes('Files')){ e.preventDefault(); document.querySelectorAll('.fold.over').forEach(x=>x!==d&&x.classList.remove('over')); d.classList.add('over'); } }));
+document.addEventListener('dragleave',e=>{ const d=e.target.closest&&e.target.closest('[data-fdrop]'); if(d&&!d.contains(e.relatedTarget)) d.classList.remove('over'); });
+document.addEventListener('drop',e=>{ const d=e.target.closest&&e.target.closest('[data-fdrop]'); if(!d||!e.dataTransfer||!e.dataTransfer.files.length) return; e.preventDefault(); d.classList.remove('over'); queueFiles(MK[M.sel],d.dataset.fdrop,e.dataTransfer.files); });
 document.addEventListener('mousedown',e=>{ if(e.target.id==='ov'){ modal=false; editOpen=false; render(); } });
 document.addEventListener('keydown',e=>{ if(e.key==='Escape'&&modal){ modal=false; editOpen=false; render(); } if(e.key==='Enter'&&e.target.id==='t-neu'){ const b=document.querySelector('[data-tadd]'); if(b) b.click(); } });
 document.addEventListener('change',async e=>{ const t=e.target;
+  if(t.dataset.zvadd){ if(!t.value) return; saveEdit(M.sel,{raten:(ed(MK[M.sel]).raten||[]).concat([t.value])},'Ratenzahlung verknüpft.'); return; }
+  if(t.dataset.fup){ queueFiles(MK[M.sel],t.dataset.fup,t.files); t.value=''; return; }
+  if(t.dataset.pf!==undefined){ pend.files[Number(t.dataset.pf)].folder=t.value; return; }
+  if(t.dataset.pdt!==undefined){ pend.files[Number(t.dataset.pdt)].datum=t.value.trim(); render(); return; }
+  if(t.dataset.pt!==undefined){ pend.files[Number(t.dataset.pt)].titel=t.value.trim(); render(); return; }
   if(t.id==='e-notiz'){ saveEdit(M.sel,{notiz:t.value},'Notiz gespeichert.'); return; }
   if(t.dataset.tdone){ const T=(ed(MK[M.sel]).tickets||[]).map(x=>x.id===t.dataset.tdone?Object.assign({},x,{done:t.checked?today:''}):x); saveEdit(M.sel,{tickets:T},t.checked?'Ticket erledigt.':'Ticket wieder offen.'); return; }
   if(t.dataset.zkey){ const v=t.value; if(!v) return; const z=Object.assign({},ZUORD); if(v==='~') delete z[t.dataset.zkey]; else z[t.dataset.zkey]=v; ZUORD=z; calc=null; render(); saveStamm('mietzuordnung',{map:ZUORD}).then(()=>toast(v==='-'?'Zahlung keinem Mieter zugeordnet.':'Zahlung umgebucht.')); return; }
@@ -699,6 +769,7 @@ render();
   db.doc('stamm/mietzuordnung').onSnapshot(s=>{ ZUORD=(s.exists?clone(s.data()).map:null)||{}; calc=null; render(); },()=>{});
   db.doc('stamm/mietkonten').onSnapshot(s=>{ mkStand=s.exists?(s.data().stand||''):''; render(); },()=>{});
   db.collection('buchungen').onSnapshot(q=>{ const m={}; q.docs.forEach(d=>{m[d.id]=clone(d.data());}); buch=m; done('b'); },e=>{toast('Buchungen nicht lesbar: '+e.message); done('b');});
+  loadZV();
   db.collection('mietkonten').onSnapshot(q=>{ const m={}; q.docs.forEach(d=>{m[d.id]=clone(d.data());}); MK=m; loadedMK=true; calc=null; render(); },()=>{ loadedMK=true; render(); });
 })();
 })();
