@@ -147,23 +147,32 @@ async function rateBezahlt(id){
 const ym=d=>d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0');
 let ROWS=[], view='liste';
 function extUrl(u){u=(u||'').trim();if(!u)return '';return /^https?:\/\//i.test(u)?u:'https://'+u;}
-function setView(v){view=v;const a=$('vList'),b=$('vDetail');if(a)a.className='btn'+(v==='liste'?' btn-accent':'');if(b)b.className='btn'+(v==='detail'?' btn-accent':'');render();}
-function openDetail(id){setView('detail');setTimeout(function(){const box=document.getElementById('sonder_'+id);if(box){const c=box.closest('.card');if(c){c.scrollIntoView({behavior:'smooth',block:'center'});c.style.boxShadow='0 0 0 2px var(--accent)';setTimeout(function(){c.style.boxShadow='';},1600);}}},60);}
+let OPEN_ID=null; const OPENF=new Set();
+function togF(id){ if(OPENF.has(id))OPENF.delete(id); else OPENF.add(id); const tr=document.getElementById('fd_'+id), t=document.getElementById('ft_'+id); if(tr)tr.style.display=OPENF.has(id)?'':'none'; if(t)t.textContent=OPENF.has(id)?'▾':'▸'; }
+function setView(v,keep){if(!keep)OPEN_ID=null;view=v;const a=$('vList'),b=$('vDetail');if(a)a.className='btn'+(v==='liste'?' btn-accent':'');if(b)b.className='btn'+(v==='detail'?' btn-accent':'');render();}
+function openDetail(id){OPEN_ID=id;setView('detail',true);window.scrollTo({top:0});setTimeout(function(){const box=document.getElementById('sonder_'+id);if(box){const c=box.closest('.card');if(c){c.scrollIntoView({behavior:'smooth',block:'center'});c.style.boxShadow='0 0 0 2px var(--accent)';setTimeout(function(){c.style.boxShadow='';},1600);}}},60);}
 function listeHTML(list){
-  let h='<div class="scroll"><table style="min-width:900px"><thead><tr><th style="text-align:left">Mieter</th><th style="text-align:left">Art</th><th style="text-align:left">Objekt · Whg</th><th style="text-align:left">Status</th><th style="text-align:left">Rate '+MONATE[new Date().getMonth()]+' '+new Date().getFullYear()+'</th><th>Forderung</th><th>Rate/Mon.</th><th>Laufzeit</th><th>Zinsen (Plan)</th><th>Sonderz.</th><th style="text-align:left">Anlagen</th><th></th></tr></thead><tbody>';
+  let h='<div class="scroll"><table style="min-width:900px"><thead><tr><th style="text-align:left">Mieter</th><th style="text-align:left">Art</th><th style="text-align:left">Objekt · Whg</th><th style="text-align:left">Status</th><th style="text-align:left">Rate '+MONATE[new Date().getMonth()]+' '+new Date().getFullYear()+'</th><th>Forderung</th><th style="text-align:left">Anlagen</th><th></th></tr></thead><tbody>';
   h+=list.map(r=>{const c=calcOf(r);const ok=c&&!c.withSz.fail;const lz=ok?c.withSz.rows.length+' Raten':'—';const zi=ok?eur(c.withSz.totalZins):'—';const sz=(r.sonderzahlungen||[]).filter(s=>num(s.betrag)>0).length;
     return '<tr><td style="text-align:left;font-weight:600">'+esc(r.mieter||'')+'</td>'+'<td style="text-align:left">'+artBadge(r.art)+'</td>'
       +'<td style="text-align:left">'+esc((r.objekt||'')+(r.wohnung?' · '+r.wohnung:''))+'</td>'
       +'<td style="text-align:left">'+esc(r.status||'')+'</td>'+'<td style="text-align:left">'+rateBadge(r)+'</td>'
-      +'<td>'+eur(Number(r.forderung)||0)+'</td>'+'<td>'+eur(Number(r.rate)||0)+'</td>'
-      +'<td>'+lz+'</td>'+'<td>'+zi+'</td>'
-      +'<td>'+(sz?'<span style="cursor:pointer;color:var(--accent);font-weight:600" onclick="openDetail(\''+r.id+'\')" title="Sonderzahlungen bearbeiten">'+sz+' ✎</span>':'0')+'</td>'
-      +'<td style="text-align:left">'+(r.pdf_url?'<a class="pdf" href="'+esc(r.pdf_url)+'" target="_blank">📄 PDF</a> ':'')+(r.schreiben||[]).filter(x=>x&&x.url).map(x=>'<a class="pdf" href="'+esc(x.url)+'" target="_blank" title="'+esc(x.name+' vom '+x.datum)+'">✉ '+esc(['','Erinnerung','Mahnung','Inkasso'][x.stufe]||'Schreiben')+' '+esc(new Date(x.datum+'T00:00:00').toLocaleDateString('de-DE',{day:'2-digit',month:'2-digit'}))+'</a> ').join('')+(r.asana_url?'<a class="pdf" href="'+esc(extUrl(r.asana_url))+'" target="_blank" rel="noopener">🗂 Asana öffnen ↗</a>':'')+'</td>'
-      +'<td style="white-space:nowrap"><button class="btn" style="padding:4px 9px;font-size:12px" onclick="openDetail(\''+r.id+'\')" title="Bearbeiten">✎</button> '
+      +'<td style="white-space:nowrap"><span style="cursor:pointer;font-weight:700" onclick="togF(\''+r.id+'\')" title="Details ein-/ausklappen"><span id="ft_'+r.id+'" style="color:var(--accent);font-size:11px;margin-right:5px">'+(OPENF.has(r.id)?'▾':'▸')+'</span>'+eur(Number(r.forderung)||0)+'</span></td>'
+      +'<td style="text-align:left">'+(r.pdf_url?'<a class="pdf" href="'+esc(r.pdf_url)+'" target="_blank">📄 PDF</a> ':'')+(r.schreiben||[]).filter(x=>x&&x.url).map(x=>'<a class="pdf" href="'+esc(x.url)+'" target="_blank" title="'+esc(x.name+' vom '+x.datum)+'">'+(x.typ==='dokument'?'📎 Dok.':'✉ '+esc(['','Erinnerung','Mahnung','Inkasso'][x.stufe]||'Schreiben'))+' '+esc(new Date(x.datum+'T00:00:00').toLocaleDateString('de-DE',{day:'2-digit',month:'2-digit'}))+'</a> ').join('')+(r.asana_url?'<a class="pdf" href="'+esc(extUrl(r.asana_url))+'" target="_blank" rel="noopener">🗂 Asana öffnen ↗</a>':'')+'</td>'
+      +'<td style="white-space:nowrap"><button class="btn" style="padding:4px 9px;font-size:12px" onclick="openDetail(\''+r.id+'\')" title="Vereinbarung öffnen: Details, Zahlungen, Dokumente">📂 Öffnen</button> '
         +'<button class="btn" style="padding:4px 9px;font-size:12px" onclick="pdfVorgang(\''+r.id+'\')" title="Vorgang als PDF">⬇ PDF</button> '
         +'<button class="btn btn-accent" style="padding:4px 9px;font-size:12px" onclick="schreibenErstellen(\''+r.id+'\')">'+((r.mahnstufe||0)>=2?'→ Inkasso-Schreiben':(r.mahnstufe||0)===1?'⚠⚠ Letzte Mahnung vor Inkasso':'⚠ Zahlungserinnerung')+'</button>'
         +((r.mahnstufe||0)?'<div style="font-size:10px;margin-top:2px;color:'+((r.mahnstufe||0)>=2?'var(--red)':'#9a6700')+'">'+(['','1. Zahlungserinnerung verschickt','Letzte Mahnung verschickt','→ Inkasso übergeben'][Math.min(r.mahnstufe||0,3)])+(r.letzte_mahnung?' · '+r.letzte_mahnung:'')+'</div>':'')
-      +'</td></tr>';}).join('');
+      +'</td></tr>'
+      +'<tr id="fd_'+r.id+'" style="'+(OPENF.has(r.id)?'':'display:none')+'"><td colspan="8" style="text-align:left;background:var(--surf2);white-space:normal">'
+        +'<span style="display:inline-flex;gap:22px;flex-wrap:wrap;font-size:12px;padding:3px 2px">'
+        +'<span>Rate/Monat: <b>'+eur(Number(r.rate)||0)+'</b></span>'
+        +'<span>Laufzeit: <b>'+lz+'</b></span>'
+        +'<span>Zinsen (Plan): <b>'+zi+'</b></span>'
+        +'<span>Sonderzahlungen: <b>'+(sz?'<a href="#" style="color:var(--accent)" onclick="openDetail(\''+r.id+'\');return false">'+sz+'</a>':'0')+'</b></span>'
+        +'<span>Erste Rate: <b>'+(r.start_datum?new Date(r.start_datum+'T00:00:00').toLocaleDateString('de-DE'):'—')+'</b></span>'
+        +'<span>Eingegangen gesamt: <b>'+eur((r.zahlungen||[]).reduce((a,z)=>a+(num(z.betrag)||0),0))+'</b></span>'
+        +'</span></td></tr>';}).join('');
   return h+'</tbody></table></div>';
 }
 
@@ -476,6 +485,7 @@ function card(r){
       +'<div class="fld" style="grid-column:span 2"><label>Asana-Aufgabe (Link)</label><input value="'+esc(r.asana_url||'')+'" placeholder="https://app.asana.com/…" onchange="save(\''+r.id+'\',\'asana_url\',this.value)"></div>'
       +f('Notiz','notiz',r.notiz)
     +'</div>'
+    +'<div class="sec"><h4>Dokumente · Vereinbarung &amp; Schreiben</h4><div id="docs_'+r.id+'"></div></div>'
     +'<div class="sec"><h4>Sonderzahlungen &amp; eingegangene Zahlungen</h4><div id="sonder_'+r.id+'"></div></div>'
     +'<div id="calc_'+r.id+'"></div>'
     +'</div>';
@@ -486,14 +496,51 @@ function renderKpis(){
   $('kpis').innerHTML=[['Vereinbarungen',ROWS.length],['davon laufend',laufend],['Σ Forderungen',eur(offen)],['Σ Zinsen (Plan)',eur(Math.round(zins*100)/100)],['∑ Bezahlte Forderungen',eur(Math.round(bezahlt*100)/100)]]
     .map(x=>'<div class="kpi"><div class="l">'+esc(x[0])+'</div><div class="v">'+x[1]+'</div></div>').join('');
 }
+function renderDocs(id){
+  const r=ROWS.find(x=>x.id===id); const box=document.getElementById('docs_'+id); if(!r||!box)return;
+  const fd=d=>d?new Date(String(d).slice(0,10)+'T00:00:00').toLocaleDateString('de-DE'):'';
+  const items=[];
+  if(r.pdf_url) items.push({ic:'📄',typ:'Vereinbarung',name:r.pdf_name||'Ratenzahlungsvereinbarung',datum:r.start_datum?'(erste Rate '+fd(r.start_datum)+')':'',url:r.pdf_url});
+  (r.schreiben||[]).forEach((x,i)=>{ if(!x)return;
+    if(x.typ==='dokument') items.push({ic:'📎',typ:'Dokument',name:x.name||x.datei||'Dokument',datum:fd(x.datum),url:x.url,del:i});
+    else items.push({ic:'✉',typ:(['','1 · Zahlungserinnerung','2 · Letzte Mahnung','3 · Inkasso-Übergabe'][x.stufe]||'Schreiben'),name:x.datei||x.name||'',datum:fd(x.datum),url:x.url}); });
+  let h=items.length?'<div class="scroll"><table style="min-width:0"><thead><tr><th style="text-align:left">Art</th><th style="text-align:left">Datei</th><th style="text-align:left">Datum</th><th></th></tr></thead><tbody>'
+    +items.map(x=>'<tr><td style="text-align:left">'+x.ic+' '+esc(x.typ)+'</td><td style="text-align:left;white-space:normal">'+(x.url?'<a class="pdf" href="'+esc(x.url)+'" target="_blank" rel="noopener">'+esc(x.name||'öffnen')+' ↗</a>':'<span style="color:var(--muted)">'+esc(x.name||'')+' (kein PDF gespeichert)</span>')+'</td><td style="text-align:left">'+esc(x.datum||'')+'</td><td>'+(x.del!=null?'<button class="abtn" title="Aus der Ablage entfernen" onclick="delDoc(\''+id+'\','+x.del+')">✕</button>':'')+'</td></tr>').join('')
+    +'</tbody></table></div>':'<div style="font-size:12.5px;color:var(--muted)">Noch keine Dokumente abgelegt.</div>';
+  h+='<label class="btn" style="display:inline-block;margin-top:8px;padding:5px 10px;cursor:pointer">+ PDF ablegen<input type="file" accept="application/pdf" multiple style="display:none" onchange="uploadDoc(\''+id+'\',this)"></label>'
+    +' <span style="font-size:11px;color:var(--muted)">z. B. unterschriebene Vereinbarung, Antwort des Mieters, Inkasso-Unterlagen</span>';
+  box.innerHTML=h;
+}
+async function uploadDoc(id,input){
+  const r=ROWS.find(x=>x.id===id); const files=[...(input.files||[])]; if(!r||!files.length)return;
+  const arr=(r.schreiben||[]).slice();
+  for(const f of files){
+    const path='zahlungsvereinbarungen/dokumente/'+id+'_'+Date.now()+'_'+f.name.replace(/[^a-zA-Z0-9._-]/g,'_');
+    const up=await sb.storage.from('darlehen').upload(path,f,{upsert:true,contentType:f.type||'application/pdf'});
+    if(up.error){toast('Upload-Fehler: '+up.error.message);continue;}
+    arr.push({typ:'dokument',name:f.name,datum:new Date().toISOString().slice(0,10),url:sb.storage.from('darlehen').getPublicUrl(path).data.publicUrl});
+  }
+  const res=await sb.from('zahlungsvereinbarungen').update({schreiben:arr}).eq('id',id);
+  if(res.error){toast('Fehler: '+res.error.message);return;}
+  r.schreiben=arr; renderDocs(id); toast('PDF abgelegt ✓');
+}
+async function delDoc(id,idx){
+  const r=ROWS.find(x=>x.id===id); if(!r)return; if(!confirm('Dokument aus der Ablage entfernen?'))return;
+  const arr=(r.schreiben||[]).slice(); arr.splice(idx,1);
+  const res=await sb.from('zahlungsvereinbarungen').update({schreiben:arr}).eq('id',id);
+  if(res.error){toast('Fehler: '+res.error.message);return;}
+  r.schreiben=arr; renderDocs(id);
+}
 function render(){
   const q=($('q').value||'').toLowerCase(), fs=$('fStatus').value, fa=$('fArt').value;
   const list=ROWS.filter(r=>(!fs||r.status===fs)&&(!fa||(r.art||'mietschulden')===fa)&&(!q||((r.mieter||'')+' '+(r.objekt||'')+' '+(r.wohnung||'')).toLowerCase().includes(q)));
   $('cnt').textContent=list.length+' von '+ROWS.length;
   if(!list.length){$('list').innerHTML='<div style="color:var(--muted);padding:20px">Keine Vereinbarungen. Mit „+ Neue Vereinbarung" erfassen.</div>';renderKpis();return;}
   if(view==='liste'){$('list').innerHTML=listeHTML(list);renderKpis();return;}
-  $('list').innerHTML=list.map(card).join('');
-  list.forEach(r=>{renderSonder(r.id);renderCalc(r.id);});
+  let dl=list;
+  if(OPEN_ID){ const one=ROWS.find(x=>x.id===OPEN_ID); dl=one?[one]:list; }
+  $('list').innerHTML=(OPEN_ID?'<div style="margin-bottom:10px"><button class="btn" onclick="setView(\'liste\')">◀ Zurück zur Liste</button></div>':'')+dl.map(card).join('');
+  dl.forEach(r=>{renderSonder(r.id);renderCalc(r.id);renderDocs(r.id);});
   renderKpis();
 }
 let MIETKONTEN=[];
