@@ -79,8 +79,10 @@ body{font-family:'DM Sans',-apple-system,Segoe UI,Roboto,Arial,sans-serif;color:
       <select id="art" onchange="artChg()">
         <option value="miete">Mietschulden (offene Miete / Nebenkosten)</option>
         <option value="kaution">Kautionszahlung (offene Mietsicherheit)</option>
+        <option value="bka">BKA – Nachzahlung aus der Betriebskostenabrechnung</option>
       </select>
-      <div class="hint">Bestimmt die Vorlage: Bei „Kautionszahlung" lautet der Vertrag auf eine Kautionsforderung.</div></div>
+      <div id="bkaBox" style="display:none;margin-top:8px"><label>Abrechnungsjahr der Betriebskostenabrechnung</label><input id="bkajahr" inputmode="numeric" oninput="artChg()"></div>
+      <div class="hint">Bestimmt die Vorlage: Kautionszahlung → Kautionsforderung; BKA → Nachzahlung aus der Betriebskostenabrechnung.</div></div>
 
     <div class="fld"><label>Objekt <span class="req">*</span></label><input id="objekt" placeholder="z. B. Rheinstraße 24, Worms"></div>
     <div class="two">
@@ -196,7 +198,7 @@ async function finalSave(){
     start_datum:document.getElementById('erste').value||null, status:'laufend', sonderzahlungen:[],
     konto_iban:_k?(_k.iban||null):null,
     konto_info:_k?(objLabel(_k).trim()||null):null,
-    art:(document.getElementById('art').value==='kaution'?'kaution':'mietschulden'),
+    art:({kaution:'kaution',bka:'bka'})[document.getElementById('art').value]||'mietschulden',
     notiz:'Gläubiger: '+g('glaeubiger')+(nachtrag?(' · Nachtrag bestehender Vereinbarung'+(urspr?(' vom '+urspr):'')+' · '+gezahlt+' Rate(n) bereits gezahlt'):'') };
   gen(); // Vorschau mit aktuellen Werten sicherstellen
   const info=document.getElementById('saveInfo'); info.textContent='Speichere …';
@@ -221,8 +223,12 @@ const ART={
   miete:{tag:'Mietschulden',sub:'über eine bestehende Forderung aus einem Mietverhältnis',ford:'Gesamtforderung',offen:'Die offene Forderung',anl:'Forderung',file:'Ratenzahlungsvereinbarung_'},
   kaution:{tag:'Kaution',sub:'über eine bestehende Kautionsforderung aus einem Mietverhältnis',ford:'Kautionsforderung',offen:'Die offene Kautionsforderung',anl:'Kautionsforderung',file:'Ratenzahlungsvereinbarung_Kaution_'}
 };
-function A(){ const el=document.getElementById('art'); return ART[el&&el.value]||ART.miete; }
-function artChg(){ const sh=document.getElementById('sheet'); if(sh && !sh.querySelector('.placeholder')){ if(sh.innerHTML.indexOf('Musterregelung')>-1) musterregelung(); else if(validate()) gen(); } }
+function A(){
+  const el=document.getElementById('art'); const v=el&&el.value;
+  if(v==='bka'){ const j=((document.getElementById('bkajahr')||{}).value||'').trim(); const bk='Betriebskostenabrechnung'+(j?(' '+j):'');
+    return {tag:'BKA',sub:'über eine Nachzahlung aus der '+bk,ford:'Forderung aus der '+bk+' (Nachzahlung)',offen:'Die offene Nachzahlung aus der '+bk,anl:'Nachzahlung BKA'+(j?(' '+j):''),file:'Ratenzahlungsvereinbarung_BKA'+(j?('_'+j):'')+'_'}; }
+  return ART[v]||ART.miete; }
+function artChg(){ const bb=document.getElementById('bkaBox'); if(bb){ const on=document.getElementById('art').value==='bka'; bb.style.display=on?'block':'none'; const jj=document.getElementById('bkajahr'); if(on&&jj&&!jj.value) jj.value=String(new Date().getFullYear()-1); } const sh=document.getElementById('sheet'); if(sh && !sh.querySelector('.placeholder')){ if(sh.innerHTML.indexOf('Musterregelung')>-1) musterregelung(); else if(validate()) gen(); } }
 function today(){ const d=new Date(); return d.toISOString().slice(0,10); }
 function firstNextMonth(){ const d=new Date(); const n=new Date(d.getFullYear(), d.getMonth()+1, 1); return n.toISOString().slice(0,10); }
 document.getElementById('datum').value=today();
@@ -282,7 +288,7 @@ function gen(){
   const gezahlt=nachtrag?Math.max(0,Math.min(parseInt(document.getElementById('gezahlt').value,10)||0,plan.rows.length)):0;
   const urspr=document.getElementById('urspr').value;
   const restNow=gezahlt>0?plan.rows[gezahlt-1].rest:forderung;
-  const h1sub=nachtrag?('Nachträgliche Dokumentation einer bestehenden Ratenzahlungsvereinbarung'+(A().tag==='Kaution'?' über eine Kautionsforderung':'')):A().sub;
+  const h1sub=nachtrag?('Nachträgliche Dokumentation einer bestehenden Ratenzahlungsvereinbarung'+(A().tag==='Kaution'?' über eine Kautionsforderung':A().tag==='BKA'?' '+A().sub:'')):A().sub;
   const introExtra=nachtrag?`<p style="background:#fff8e1;border:1px solid #ffe082;border-radius:6px;padding:8px 10px"><b>Nachtrag:</b> Diese Urkunde dokumentiert eine bereits bestehende${urspr?(`, am <b>${dt(urspr)}</b> getroffene`):''} Ratenzahlungsvereinbarung. Bislang wurden <b>${gezahlt} Rate(n)</b> geleistet; die aktuelle Restforderung beträgt <b>${eur(restNow)}</b>.</p>`:'';
 
   const planRows=plan.rows.map(r=>{const paid=r.nr<=gezahlt;return `<tr${paid?' style="background:#eef8f2;color:#1f7a4d"':''}><td>${paid?'✓ ':''}${r.nr}</td><td>${r.datum.toLocaleDateString('de-DE',{month:'2-digit',year:'numeric'})}</td><td>${eur(r.zahlung)}</td><td>${eur(r.zins)}</td><td>${eur(r.tilg)}</td><td>${eur(r.rest)}</td></tr>`;}).join('');
