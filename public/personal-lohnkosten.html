@@ -54,7 +54,7 @@ tr.sum td,td.sum{font-weight:700;background:var(--surf2)}
 <div class="ov" id="lOv"><div class="box">
   <div style="display:flex;justify-content:space-between;align-items:center;padding:13px 18px;border-bottom:1px solid var(--line)"><b id="lTitle">Lohnabrechnung übernehmen</b><span style="cursor:pointer;font-size:20px;color:var(--muted)" onclick="lClose()">✕</span></div>
   <div style="padding:12px 18px" id="lBody"></div>
-  <div style="display:flex;justify-content:flex-end;gap:8px;padding:12px 18px;border-top:1px solid var(--line)"><button class="minibtn sec" onclick="lClose()">Abbrechen</button><button class="minibtn" id="lOk" onclick="lUebernehmen()">In Matrix übernehmen</button></div>
+  <div style="display:flex;justify-content:flex-end;gap:8px;padding:12px 18px;border-top:1px solid var(--line)"><button class="minibtn sec" onclick="lClose()">Überspringen</button><button class="minibtn" id="lOk" onclick="lUebernehmen()">In Matrix übernehmen</button></div>
 </div></div>
 <script>
 const sb=window.supabase.createClient('https://jqzxctfqvcwbctpjksvg.supabase.co','eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpxenhjdGZxdmN3YmN0cGprc3ZnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODIxMzA0MzIsImV4cCI6MjA5NzcwNjQzMn0.RKIbZxJdusKWWPjBJqlxZ8e1m8So02UslOg55YRsn3o');
@@ -111,12 +111,14 @@ function parseLohn(L){
 function findRow(u,label){ const n=norm(label), nt=n.split(' ');
   return MX.find(x=>x.unternehmen===u&&norm(x.label)===n) || MX.find(x=>{ if(x.unternehmen!==u)return false; const t=norm(x.label).split(' ').filter(Boolean); return t.length&&t.every(w=>nt.includes(w)); })
     || MX.find(x=>x.unternehmen===u&&norm(x.label)&&(n.includes(norm(x.label))||norm(x.label).includes(nt[0]))); }
-async function lohnFiles(files){ for(const f of [...files]){ await lohnFile(f); } }
+let LQ=[], LBUSY=false, LTOTAL=0, LDONE=0;
+function lohnFiles(files){ const arr=[...files].sort((a,b)=>a.name.localeCompare(b.name)); LQ.push(...arr); LTOTAL+=arr.length; if(!LBUSY) lNext(); }
+async function lNext(){ const f=LQ.shift(); if(!f){ LBUSY=false; LTOTAL=0; LDONE=0; renderLGrid(); return; } LBUSY=true; LDONE++; const ok=await lohnFile(f); if(ok===false) lNext(); }
 async function lohnFile(file){
   if(!window.pdfjsLib){ toast('PDF-Leser konnte nicht geladen werden'); return; }
-  $('lStatus').textContent='Lese '+file.name+' …';
-  let r; try{ r=parseLohn(await pdfLines(file)); }catch(e){ $('lStatus').textContent='Fehler beim Lesen: '+e.message; return; }
-  if(!r.firma||!r.monat){ $('lStatus').textContent='Gesellschaft oder Monat in '+file.name+' nicht erkannt – ist das eine DATEV-Lohnauswertung?'; return; }
+  $('lStatus').textContent='Lese '+file.name+(LTOTAL>1?' ('+LDONE+' von '+LTOTAL+')':'')+' …';
+  let r; try{ r=parseLohn(await pdfLines(file)); }catch(e){ $('lStatus').textContent='Fehler beim Lesen von '+file.name+': '+e.message; return false; }
+  if(!r.firma||!r.monat){ $('lStatus').textContent='Gesellschaft oder Monat in '+file.name+' nicht erkannt – ist das eine DATEV-Lohnauswertung?'; return false; }
   if(r.jahr!==+$('jahr').value){ $('jahr').value=r.jahr; await load(); }
   const u=r.firma, mo=r.monat, pos=[];
   Object.keys(r.personen).forEach(k=>{ const name=r.namen[k]||('Pers.-Nr. '+k); pos.push({quelle:name+' (Auszahlung)',label:name,betrag:r.personen[k]}); });
@@ -134,7 +136,7 @@ async function lohnFile(file){
   lShow();
 }
 function lShow(){
-  const P=LPARSE; $('lTitle').textContent='Lohnabrechnung '+MON[P.mo-1]+' '+P.jahr+' · '+P.u;
+  const P=LPARSE; $('lTitle').textContent='Lohnabrechnung '+MON[P.mo-1]+' '+P.jahr+' · '+P.u+(LTOTAL>1?'  ('+LDONE+' von '+LTOTAL+')':'');
   $('lBody').innerHTML='<div style="font-size:12px;color:var(--muted);margin-bottom:8px">Aus '+esc(P.file)+' erkannt. Haken entfernen, was nicht übernommen werden soll; die Zielzeile lässt sich anpassen.</div>'
    +'<table><thead><tr><th></th><th>Aus der Abrechnung</th><th>Zeile in der Matrix</th><th>Monat</th><th class="r">Betrag</th><th class="r">bisher</th></tr></thead><tbody>'
    +P.pos.map((p,i)=>'<tr><td><input type="checkbox" '+(p.on?'checked':'')+' onchange="LPARSE.pos['+i+'].on=this.checked"></td><td>'+esc(p.quelle)+'</td><td><input value="'+esc(p.ziel)+'" style="font:inherit;font-size:12px;padding:3px 6px;border:1px solid var(--line);border-radius:5px;width:180px" onchange="lZiel('+i+',this.value)">'+(p.rowId||p.jahr!==P.jahr?'':' <span style="font-size:10.5px;color:var(--accent)">neue Zeile</span>')+'</td><td'+(p.mo!==P.mo||p.jahr!==P.jahr?' style="color:var(--accent);font-weight:700"':'')+'>'+MON[p.mo-1]+(p.jahr!==P.jahr?' '+p.jahr:'')+'</td><td class="r"><b>'+eur(p.betrag)+'</b></td><td class="r" style="color:'+(p.alt!=null&&Math.abs(num2(p.alt)-p.betrag)>0.005?'var(--red)':'var(--muted)')+'">'+(p.alt!=null?eur(p.alt)||'0,00 €':'—')+'</td></tr>').join('')
@@ -143,7 +145,7 @@ function lShow(){
   $('lOv').style.display='flex';
 }
 function lZiel(i,v){ const p=LPARSE.pos[i]; p.ziel=v.trim(); const row=p.jahr===LPARSE.jahr?findRow(LPARSE.u,p.ziel):null; p.rowId=row?row.id:null; p.alt=row?row['m'+p.mo]:null; lShow(); }
-function lClose(){ $('lOv').style.display='none'; LPARSE=null; renderLGrid(); }
+function lClose(){ $('lOv').style.display='none'; LPARSE=null; renderLGrid(); lNext(); }
 async function lUebernehmen(){
   const P=LPARSE; if(!P)return; $('lOk').disabled=true;
   let sort=Math.max(0,...MX.filter(r=>r.unternehmen===P.u).map(r=>r.sort||0));
@@ -154,7 +156,7 @@ async function lUebernehmen(){
     else { await sb.from('personal_matrix').insert({unternehmen:P.u,jahr:p.jahr,label:p.ziel,sort:++sort,['m'+p.mo]:p.betrag}); }
   }
   if(P.recId) await sb.from('personal_lohnabrechnungen').update({uebernommen_am:new Date().toISOString()}).eq('id',P.recId);
-  $('lOk').disabled=false; $('lOv').style.display='none'; LPARSE=null; toast('Lohnabrechnung übernommen ✓'); await load();
+  $('lOk').disabled=false; $('lOv').style.display='none'; LPARSE=null; toast('Lohnabrechnung übernommen ✓'); await load(); lNext();
 }
 function renderLGrid(){
   const comps=companies(); if(!comps.length){ $('lGrid').innerHTML=''; return; }
