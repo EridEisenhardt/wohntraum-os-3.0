@@ -121,7 +121,7 @@ th,td{padding:6px 8px;border-bottom:1px solid var(--line);text-align:left;white-
 th{background:var(--soft);font-weight:600;font-size:12px;color:var(--muted)}
 th.n{text-align:right}
 .mut{color:var(--muted)}
-.toast{position:fixed;left:50%;bottom:18px;transform:translateX(-50%);background:var(--ink);color:var(--bg);padding:8px 14px;border-radius:8px;font-size:13px;opacity:0;transition:opacity .2s;pointer-events:none;max-width:90vw;z-index:9}
+.toast{position:fixed;left:50%;bottom:18px;transform:translateX(-50%);background:var(--ink);color:var(--bg);padding:8px 14px;border-radius:8px;font-size:13px;opacity:0;transition:opacity .2s;pointer-events:none;max-width:90vw;z-index:100}
 .toast.on{opacity:1}
 @media (max-width:1100px){ .grid3{grid-template-columns:190px 1fr} .det{grid-column:1/-1;border-top:1px solid var(--line)} body{overflow:auto} .grid3{height:auto} .list{max-height:60vh} }
 @media (max-width:640px){ .grid3{grid-template-columns:1fr} .knav{display:none} }
@@ -911,7 +911,7 @@ function anschreibenCard(x){ const mk=x.mk; if(AB.pid!==mk.pid) abReset(mk);
     h+='<label class="fl">Betreff (optional – die KI schlägt sonst einen vor)<input type="text" id="ab-betreff" value="'+esc(AB.betreff)+'" placeholder="z. B. Treppenhausreinigung"></label>'
       +'<label class="fl">Ihr Text – Stichworte oder Entwurf<textarea id="ab-entwurf" rows="5" placeholder="Was soll der Mieter erfahren? Die KI formuliert daraus einen Brief.">'+esc(AB.entwurf)+'</textarea></label>'
       +'<div class="acts"><button class="primary small" data-abki="1"'+(abBusy?' disabled':'')+'>'+(abBusy==='ki'?'KI formuliert …':'Mit KI formulieren')+'</button><button class="ghost small" data-abdirekt="1">Ohne KI übernehmen</button></div>'
-      +'<div class="sub">Danach siehst du den fertigen Brief und kannst alles noch ändern, bevor das PDF erstellt wird.</div>';
+      +(AB.fehler?'<div class="note warnbox">'+esc(AB.fehler)+'</div>':'')+'<div class="sub">Danach siehst du den fertigen Brief und kannst alles noch ändern, bevor das PDF erstellt wird.</div>';
   } else {
     h+='<div class="sub">'+(AB.ki?'Vorschlag der KI – bitte prüfen und bei Bedarf ändern.':'Brief prüfen und bei Bedarf ändern.')+' Briefkopf, Datum und Grußformel ergänzt das System.</div>'
       +'<label class="fl">Empfänger<textarea id="ab-empf" rows="3">'+esc(AB.empf)+'</textarea></label>'
@@ -926,10 +926,10 @@ function anschreibenCard(x){ const mk=x.mk; if(AB.pid!==mk.pid) abReset(mk);
   return h+'</details>'; }
 
 async function abKi(){ const mk=MK[M.sel]; if(!mk) return; if(!AB.entwurf.trim()){ toast('Bitte zuerst einen Text oder Stichworte eingeben.'); return; }
-  abBusy='ki'; render();
+  abBusy='ki'; AB.fehler=''; render();
   try{ const r=await kiCall('brief',AB.entwurf,{anrede:anredeZeile(mk),mieter:ed(mk).mieter||'',objekt:mk.obj+' '+uName(mk.einheit),betreff:AB.betreff});
     AB.text=r.text||''; if(r.betreff&&!AB.betreff.trim()) AB.betreff=r.betreff; AB.phase='vorschau'; AB.ki=true; }
-  catch(e){ toast(e.message||String(e)); }
+  catch(e){ AB.fehler=e.message||String(e); }
   abBusy=''; render(); }
 function abDirekt(){ const mk=MK[M.sel]; if(!mk) return; if(!AB.entwurf.trim()){ toast('Bitte zuerst einen Text eingeben.'); return; }
   AB.text=(/^(sehr|liebe|hallo|guten)/i.test(AB.entwurf.trim())?'':anredeZeile(mk)+'\n\n')+AB.entwurf.trim(); AB.phase='vorschau'; AB.ki=false; render(); }
@@ -947,16 +947,16 @@ async function abSpeichern(){ const sb=window.osSupabase, mk=MK[M.sel]; if(!sb||
 /* ---------- Notizen mit KI verbessern oder kürzen ---------- */
 var NKI={orig:null,busy:''}, NEKI={orig:null}, KURZ={}, kurzBusy='';
 async function notizKi(aufgabe,feld){ const ta=$(feld), t=((ta&&ta.value)||'').trim(); if(!t){ toast('Bitte zuerst einen Text eingeben.'); return; }
-  NKI.busy=feld+aufgabe; render();
+  NKI.busy=feld+aufgabe; NKI.fehler=''; render();
   try{ const r=await kiCall(aufgabe,t); if(feld==='n-text'){ if(NKI.orig==null) NKI.orig=t; NDRAFT=r.text||t; } else { if(NEKI.orig==null) NEKI.orig=t; NEDTXT=r.text||t; } }
-  catch(e){ toast(e.message||String(e)); }
+  catch(e){ NKI.fehler=e.message||String(e); }
   NKI.busy=''; render(); }
 async function notizKurz(id){ const n=notizById(id); if(!n||!n.t) return; if(KURZ[id]){ KURZ[id]=null; render(); return; }
-  kurzBusy=id; render(); try{ const r=await kiCall('stichpunkte',n.t); KURZ[id]={t:r.text||'',zu:n.edited||n.d}; }catch(e){ toast(e.message||String(e)); } kurzBusy=''; render(); }
+  kurzBusy=id; render(); try{ const r=await kiCall('stichpunkte',n.t); KURZ[id]={t:r.text||'',zu:n.edited||n.d}; }catch(e){ KURZ[id]={t:'Fehler: '+(e.message||String(e)),zu:n.edited||n.d}; } kurzBusy=''; render(); }
 function kiNotizButtons(feld){ const b=NKI.busy, orig=feld==='n-text'?NKI.orig:NEKI.orig;
   return '<button class="ghost small" data-nki="verbessern" data-nkif="'+feld+'"'+(b?' disabled':'')+'>'+(b===feld+'verbessern'?'KI arbeitet …':'Mit KI verbessern')+'</button>'
     +'<button class="ghost small" data-nki="stichpunkte" data-nkif="'+feld+'"'+(b?' disabled':'')+'>'+(b===feld+'stichpunkte'?'KI arbeitet …':'In Stichpunkte kürzen')+'</button>'
-    +(orig!=null?'<button class="ghost small" data-nkorig="'+feld+'">Original wiederherstellen</button>':''); }
+    +(orig!=null?'<button class="ghost small" data-nkorig="'+feld+'">Original wiederherstellen</button>':'')+(NKI.fehler?'<div class="note warnbox" style="flex-basis:100%">'+esc(NKI.fehler)+'</div>':''); }
 
 document.addEventListener('click',e=>{ const t=e.target.closest('button'); if(!t) return; const d=t.dataset;
   if(d.abki){ abKi(); return; } if(d.abdirekt){ abDirekt(); return; } if(d.absave){ abSpeichern(); return; }
