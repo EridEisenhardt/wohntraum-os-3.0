@@ -1215,6 +1215,43 @@ document.addEventListener('change',e=>{ const t=e.target; const d=t.dataset; if(
   if(d.zrv){ ZR[d.zrv].von=t.value; render(); return; } if(d.zrb){ ZR[d.zrb].bis=t.value; render(); return; } });
 document.addEventListener('click',e=>{ const t=e.target.closest('button[data-zrq]'); if(!t) return; const [art,j]=t.dataset.zrq.split('|');
   ZR[art]=j?{von:j+'-01-01',bis:j+'-12-31'}:{von:'',bis:''}; render(); });
+/* ---------- Mieterkonten-Liste als Excel und PDF (genau die gefilterte Liste) ---------- */
+var LISTE=[];
+const EXF={alle:'Alle',aktiv:'Laufend',rueck:'Rückstand',rueck2:'Mehr als 2 Monatsmieten offen',guthaben:'Guthaben',kaution:'Kaution offen',beendet:'Beendet'};
+function exFilterText(){ return [EXF[M.st]||'Alle',M.ges?'Gesellschaft '+M.ges:'',M.obj?'Objekt '+M.obj:'',M.q?'Suche „'+M.q+'“':''].filter(Boolean).join(' · '); }
+function exZeilen(){ return LISTE.map(x=>{ const mk=x.mk, sn=STN[x.status]||['',''], lm=letzteMahnung(x);
+  return {obj:mk.obj, einheit:uName(mk.einheit), mieter:ed(mk).mieter||'', zahler:String(ed(mk).zahler||x.zahlerAuto||'').replace(/ \(.*\)$/,''), von:mk.von||'', bis:mk.bis||'',
+    miete:x.miete||0, saldo:r2(x.saldo), ueber:r2(Math.max(0,x.ueber)), monate:x.miete?Math.round(x.ueber/x.miete*10)/10:0, status:sn[1], mahnung:lm?lm.stufe+' '+dmy(lm.d)+(lm.b?' ('+eur(lm.b)+')':''):'',
+    kaution:x.kOffen>0.5?r2(x.kOffen):0, sperre:mahnsperre(mk)?'ja':'', ampel:({gruen:'grün',gelb:'gelb',rot:'rot'})[ampel(x)]||'' }; }); }
+const exName=ext=>'Mieterkonten_'+today+'_'+exFilterText().replace(/[„“]/g,'').replace(/[^A-Za-z0-9ÄÖÜäöüß -]+/g,' ').replace(/\s+/g,' ').trim()+'.'+ext;
+function exLadeXlsx(){ return window.XLSX?Promise.resolve():new Promise((res,rej)=>{ const s=document.createElement('script'); s.src='/vendor/xlsx-0.18.5.full.min.js'; s.onload=res; s.onerror=()=>rej(new Error('Excel-Bibliothek konnte nicht geladen werden.')); document.head.appendChild(s); }); }
+async function exExcel(){ try{ await exLadeXlsx(); }catch(e){ toast(e.message); return; }
+  const Z=exZeilen(), d=s=>s?new Date(s+'T00:00:00'):null;
+  const kopf=['Objekt','Einheit','Mieter','Zahler','Mietbeginn','Mietende','Miete','Saldo','davon überfällig','offene Monatsmieten','Status','Letzte Mahnung','Kaution offen','Mahnsperre','Ampel'];
+  const rows=[['Mieterkonten – '+exFilterText()],['Stand '+dmy(today)+' · Saldo positiv = Mieter schuldet, negativ = Guthaben'],[],kopf]
+    .concat(Z.map(z=>[z.obj,z.einheit,z.mieter,z.zahler,d(z.von),d(z.bis),z.miete,z.saldo,z.ueber,z.monate,z.status,z.mahnung,z.kaution||null,z.sperre,z.ampel]));
+  const n=Z.length, ende=4+n; rows.push([]); rows.push(['Summe','','',n+' Mietverhältnisse','','',null,{f:'SUM(H5:H'+ende+')'},{f:'SUM(I5:I'+ende+')'},null,'','',{f:'SUM(M5:M'+ende+')'}]);
+  const ws=XLSX.utils.aoa_to_sheet(rows,{cellDates:true});
+  const fmt=(c,z)=>{ for(let r=4;r<rows.length;r++){ const a=XLSX.utils.encode_cell({r,c}); if(ws[a]) ws[a].z=z; } };
+  [4,5].forEach(c=>fmt(c,'DD.MM.YYYY')); [6,7,8,12].forEach(c=>fmt(c,'#,##0.00 "€";-#,##0.00 "€"')); fmt(9,'0.0');
+  ws['!cols']=[8,10,30,20,11,11,11,12,14,10,18,28,12,10,7].map(w=>({wch:w})); ws['!autofilter']={ref:'A4:O'+ende}; ws['!freeze']={xSplit:0,ySplit:4};
+  const wb=XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb,ws,'Mieterkonten'); XLSX.writeFile(wb,exName('xlsx')); }
+function exPdf(){ if(!window.jspdf){ toast('PDF-Bibliothek lädt noch, bitte gleich nochmal.'); return; }
+  const Z=exZeilen(), doc=new window.jspdf.jsPDF({unit:'mm',format:'a4',orientation:'landscape'}); const L=12,R=285; let y=14;
+  const cols=[['Objekt',14,'l'],['Einheit',22,'l'],['Mieter',50,'l'],['Zahler',28,'l'],['Zeitraum',38,'l'],['Miete',20,'r'],['Saldo',22,'r'],['überfällig',22,'r'],['Status',27,'l'],['Letzte Mahnung',30,'l']];
+  const kopf=()=>{ doc.setFont('helvetica','bold'); doc.setFontSize(13); doc.setTextColor(20); doc.text('Mieterkonten',L,y); doc.setFont('helvetica','normal'); doc.setFontSize(9); doc.setTextColor(90); doc.text(exFilterText().replace(/[„“]/g,'"')+' · Stand '+dmy(today),R,y,{align:'right'}); y+=8;
+    doc.setTextColor(20); doc.setFont('helvetica','bold'); doc.setFontSize(8.5); let cx=L; for(const [t,w,a] of cols){ doc.text(t,a==='r'?cx+w-2:cx,y,{align:a==='r'?'right':'left'}); cx+=w; } y+=1.5; doc.line(L,y,R,y); y+=4; doc.setFont('helvetica','normal'); };
+  kopf();
+  for(const z of Z){ const zr=dmy(z.von)+(z.bis?' – '+dmy(z.bis):''); const extra=[z.kaution?'Kaution offen '+eur(z.kaution):'',z.sperre?'Mahnsperre':''].filter(Boolean).join(' · ');
+    const vals=[z.obj,z.einheit,z.mieter+(extra?'\n'+extra:''),z.zahler,zr,z.miete?eur(z.miete):'–',eur(z.saldo),z.ueber?eur(z.ueber):'',String(z.status).replace(/≥\s?/g,'ab '),z.mahnung];
+    const lines=vals.map((v,i)=>doc.splitTextToSize(String(v||''),cols[i][1]-2)); const hgt=Math.max(...lines.map(l=>l.length))*3.8;
+    if(y+hgt>200){ doc.addPage(); y=14; kopf(); }
+    let cx=L; lines.forEach((l,i)=>{ const [t,w,a]=cols[i]; if(i===6&&z.saldo>0.5) doc.setTextColor(170,30,30); doc.text(l,a==='r'?cx+w-2:cx,y,{align:a==='r'?'right':'left'}); doc.setTextColor(20); cx+=w; }); y+=hgt+1.2; doc.setDrawColor(225); doc.line(L,y-3.2,R,y-3.2); doc.setDrawColor(0); }
+  y+=1; doc.setFont('helvetica','bold'); doc.setFontSize(9); doc.text(Z.length+' Mietverhältnisse',L,y);
+  let cx=L; for(let i=0;i<6;i++) cx+=cols[i][1]; doc.text(eur(r2(Z.reduce((a,z)=>a+z.saldo,0))),cx+cols[6][1]-2,y,{align:'right'}); cx+=cols[6][1]; doc.text(eur(r2(Z.reduce((a,z)=>a+z.ueber,0))),cx+cols[7][1]-2,y,{align:'right'});
+  const pages=doc.getNumberOfPages(); for(let i=1;i<=pages;i++){ doc.setPage(i); doc.setFont('helvetica','normal'); doc.setFontSize(7.5); doc.setTextColor(120); doc.text('Seite '+i+' von '+pages+' · Saldo positiv = Mieter schuldet · erstellt mit Wohntraum OS',R,203,{align:'right'}); }
+  doc.save(exName('pdf')); }
+document.addEventListener('click',e=>{ const t=e.target.closest('button[data-mex]'); if(!t) return; if(!LISTE.length){ toast('Die Liste ist leer.'); return; } if(t.dataset.mex==='xlsx') exExcel(); else exPdf(); });
 /* ---------- Render ---------- */
 function render(){
   const ready=loaded.o&&loaded.k&&loaded.r&&loaded.e&&loaded.b&&loadedMK;
@@ -1228,6 +1265,7 @@ function render(){
   const list=all.filter(x=>(!M.ges||x.mk.ges===M.ges)&&(!M.obj||x.mk.obj===M.obj)&&(M.st==='alle'||(M.st==='aktiv'&&x.aktiv)||(M.st==='rueck'&&x.ueber>0.5)||(M.st==='rueck2'&&x.ueber>0.5&&x.monate>2)||(M.st==='guthaben'&&x.saldo<-0.5)||(M.st==='beendet'&&!x.aktiv)||(M.st==='kaution'&&x.kOffen>0.5))
     &&(!q||norm(ed(x.mk).mieter+' '+x.mk.obj+' '+x.mk.einheit+' '+uName(x.mk.einheit)+' '+ed(x.mk).ref).includes(q)))
     .sort(listSort);
+  LISTE=list;
   const sumR=all.filter(x=>x.ueber>0.5).reduce((a,x)=>a+x.ueber,0), nR=all.filter(x=>x.ueber>0.5).length, n2=all.filter(x=>x.status==='kuendigung').length;
   const objs=[...new Set(all.map(x=>x.mk.obj))].sort((a,b)=>String(a).localeCompare(String(b),'de',{numeric:true}));
   let h='<div class="kpis"><div class="kpi"><div class="l">Mietverhältnisse seit 2025</div><div class="v">'+all.length+'</div><div class="s">'+all.filter(x=>x.aktiv).length+' laufend</div></div>'
@@ -1237,7 +1275,7 @@ function render(){
   h+='<div class="tbar"><div class="seg">'+[['alle','Alle'],['aktiv','Laufend'],['rueck','Rückstand'],['rueck2','Mehr als 2 Monatsmieten offen'],['guthaben','Guthaben'],['kaution','Kaution offen'],['beendet','Beendet']].map(([k,l])=>'<button data-mst="'+k+'" class="'+(M.st===k?'on':'')+'">'+l+'</button>').join('')+'</div>'
     +'<select id="m-ges"><option value="">alle Gesellschaften</option>'+['EE','WT','KiBo'].map(g=>'<option'+(g===M.ges?' selected':'')+'>'+g+'</option>').join('')+'</select>'
     +'<select id="m-obj"><option value="">alle Objekte</option>'+objs.map(o=>'<option'+(o===M.obj?' selected':'')+'>'+esc(o)+'</option>').join('')+'</select>'
-    +'<input type="search" id="m-q" placeholder="Mieter, Objekt, Einheit" value="'+esc(M.q)+'" autocomplete="off"></div>';
+    +'<input type="search" id="m-q" placeholder="Mieter, Objekt, Einheit" value="'+esc(M.q)+'" autocomplete="off"><span class="sub">'+list.length+' in der Liste</span><button class="ghost small" data-mex="xlsx">Excel</button><button class="ghost small" data-mex="pdf">PDF</button></div>';
   const TH=(k,l,n)=>'<th class="sortable'+(n?' n':'')+((M.sk||'einheit')===k?' on':'')+'" data-msort="'+k+'" title="Sortieren">'+l+((M.sk||'einheit')===k?((M.sd||1)>0?' ↑':' ↓'):'')+'</th>';
   h+='<div class="tablewrap mlist"><table><thead><tr><th></th>'+TH('obj','Objekt')+TH('einheit','Einheit')+TH('mieter','Mieter')+TH('zahler','Zahler')+TH('von','Zeitraum')+TH('miete','Miete',1)+TH('saldo','Saldo',1)+TH('status','Status')+'</tr></thead><tbody>';
   if(!list.length) h+='<tr><td colspan="9" class="empty">Keine Mietverhältnisse für diesen Filter.</td></tr>';
