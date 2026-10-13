@@ -157,6 +157,9 @@ select.zsel{font-size:11px;padding:2px 4px;margin-top:4px;max-width:100%}
 .dtop{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;margin-bottom:12px}
 .dname{font-size:22px;font-weight:800}
 .card.wide{margin:0 0 14px}
+.zr{display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin:6px 0}
+.zr input[type=date]{font-size:13px;padding:4px 6px}
+.zrsum{display:flex;gap:18px;flex-wrap:wrap;font-size:13px;margin:6px 0;padding:8px 10px;background:var(--chip);border-radius:8px}
 .hneu{border:1px solid var(--line);border-radius:10px;padding:10px;margin:8px 0;display:grid;gap:8px}
 .hneu textarea{width:100%;box-sizing:border-box}
 .hrow{display:flex;gap:10px;flex-wrap:wrap}
@@ -819,24 +822,27 @@ function pdfAuszug(x,art){ if(!window.jspdf){ toast('PDF-Bibliothek lädt noch, 
   const mk=ed(x.mk), o=objekte.find(q=>q.kz===x.mk.obj)||{}, inh=INHABER[o.ges||x.mk.ges]||INHABER.WT, adr=(ADR[x.mk.obj]||'|').split('|');
   const doc=new window.jspdf.jsPDF({unit:'mm',format:'a4'}); const L=20,R=190; let y=18;
   const kopf=()=>{ doc.setFont('helvetica','normal'); doc.setFontSize(8); doc.setTextColor(120); doc.text(inh+ABS,L,y); y+=8; doc.setTextColor(20);
-    doc.setFontSize(13); doc.setFont('helvetica','bold'); doc.text(art==='soll'?'Sollstellungen':'Mieterkonto',L,y); doc.setFont('helvetica','normal'); doc.setFontSize(9); doc.setTextColor(90); doc.text('Stand '+dmy(today),R,y,{align:'right'}); y+=6; doc.setTextColor(20);
+    doc.setFontSize(13); doc.setFont('helvetica','bold'); doc.text(art==='soll'?'Sollstellungen':'Mieterkonto',L,y); doc.setFont('helvetica','normal'); doc.setFontSize(9); doc.setTextColor(90); doc.text((zrAktiv(art)?'Zeitraum '+zrText(art)+' · ':'')+'Stand '+dmy(today),R,y,{align:'right'}); y+=6; doc.setTextColor(20);
     doc.setFontSize(10); doc.text((mk.mieter||'')+' · '+x.mk.obj+' '+uName(x.mk.einheit),L,y); y+=5; doc.setFontSize(9); doc.setTextColor(90); doc.text(adr[0]+', '+adr[1]+' · Mietbeginn '+dmy(x.mk.von)+(x.mk.bis?' · Mietende '+dmy(x.mk.bis):''),L,y); y+=8; doc.setTextColor(20); };
   kopf();
   let cols, rows;
   if(art==='soll'){ cols=[['Fällig',22,'l'],['Sollstellung',78,'l'],['Betrag',22,'r'],['bezahlt',22,'r'],['offen',26,'r']];
-    rows=x.rows.filter(r=>r.s>0&&r.id&&!r.fut).map(r=>[dmy(r.d),r.t+(r.k?' (Kaution)':''),eur(r.s),eur(r2(r.s-(r.offen||0))),r.offen>0.005?eur(r.offen):'–']); }
+    rows=x.rows.filter(r=>r.s>0&&r.id&&!r.fut&&zrIn('soll',r.d)).map(r=>[dmy(r.d),r.t+(r.k?' (Kaution)':''),eur(r.s),eur(r2(r.s-(r.offen||0))),r.offen>0.005?eur(r.offen):'–']); }
   else { cols=[['Datum',22,'l'],['Buchung',88,'l'],['Soll',20,'r'],['Ist',20,'r'],['Saldo',20,'r']];
-    rows=x.rows.filter(r=>!r.fut).map(r=>[dmy(r.d),(r.t||'')+(r.k?' (Kaution)':''),r.s?eur(r.s):'',r.h?eur(r.h):'',r.saldo==null?'':eur(r.saldo)]); }
+    rows=x.rows.filter(r=>!r.fut&&zrIn('konto',r.d)).map(r=>[dmy(r.d),(r.t||'')+(r.k?' (Kaution)':''),r.s?eur(r.s):'',r.h?eur(r.h):'',r.saldo==null?'':eur(r.saldo)]); }
   const head=()=>{ doc.setFont('helvetica','bold'); doc.setFontSize(8.5); let cx=L; for(const [t,w,a] of cols){ doc.text(t,a==='r'?cx+w:cx,y,{align:a==='r'?'right':'left'}); cx+=w; } y+=1.5; doc.line(L,y,R,y); y+=4; doc.setFont('helvetica','normal'); };
   head();
   for(const row of rows){ const lines=doc.splitTextToSize(String(row[1]),cols[1][1]-2); if(y+lines.length*4>282){ doc.addPage(); y=18; head(); }
     let cx=L; row.forEach((v,i)=>{ const [t,w,a]=cols[i]; if(i===1) doc.text(lines,cx,y); else doc.text(String(v),a==='r'?cx+w:cx,y,{align:a==='r'?'right':'left'}); cx+=w; }); y+=lines.length*4+1; }
   y+=1; doc.line(L,y-3,R,y-3); y+=2; doc.setFont('helvetica','bold'); doc.setFontSize(9.5);
-  if(art==='soll'){ const off=r2(x.rows.filter(r=>r.s>0&&r.id&&!r.fut&&!r.k).reduce((a,r)=>a+(r.offen||0),0)); doc.text('Summe offen (ohne Kaution)',L,y); doc.text(eur(off),R,y,{align:'right'}); if(x.kOffen>0.5){ y+=5; doc.text('Kaution offen',L,y); doc.text(eur(x.kOffen),R,y,{align:'right'}); } }
+  if(art==='soll'){ const off=r2(x.rows.filter(r=>r.s>0&&r.id&&!r.fut&&!r.k&&zrIn('soll',r.d)).reduce((a,r)=>a+(r.offen||0),0)); doc.text('Summe offen (ohne Kaution)',L,y); doc.text(eur(off),R,y,{align:'right'}); if(x.kOffen>0.5){ y+=5; doc.text('Kaution offen',L,y); doc.text(eur(x.kOffen),R,y,{align:'right'}); } }
+  else if(zrAktiv('konto')){ const Z=zrKonto(x); const zl=[];
+    if(ZR.konto.von) zl.push(['Saldovortrag zum '+dmy(ZR.konto.von),Z.vor]); zl.push(['Soll im Zeitraum',Z.soll],['Ist im Zeitraum',Z.ist],['Saldo'+(ZR.konto.bis?' am '+dmy(ZR.konto.bis>today?today:ZR.konto.bis):'')+' (positiv = offene Forderung)',Z.ende]);
+    zl.forEach(([t,v],i)=>{ if(i) y+=5; doc.text(t,L,y); doc.text(eur(v),R,y,{align:'right'}); }); y+=5; doc.setFont('helvetica','normal'); doc.setFontSize(8.5); doc.text('Kautionsbuchungen sind gekennzeichnet und im Saldo nicht enthalten.',L,y); }
   else { doc.text('Saldo (positiv = offene Forderung)',L,y); doc.text(eur(x.saldo),R,y,{align:'right'}); y+=5; doc.setFont('helvetica','normal'); doc.setFontSize(8.5); doc.text('Kautionsbuchungen sind gekennzeichnet und im Saldo nicht enthalten.',L,y); }
   const pages=doc.getNumberOfPages(); for(let i=1;i<=pages;i++){ doc.setPage(i); doc.setFontSize(7.5); doc.setTextColor(120); doc.text('Seite '+i+' von '+pages+' · erstellt mit Wohntraum OS',R,292,{align:'right'}); }
   return doc; }
-function pdfName(x,art){ return aktenName(x.mk)+'_'+today+'_'+(art==='soll'?'Sollstellungen':'Mieterkonto')+'.pdf'; }
+function pdfName(x,art){ const z=ZR[art]||{}; return aktenName(x.mk)+'_'+today+'_'+(art==='soll'?'Sollstellungen':'Mieterkonto')+(z.von||z.bis?' '+(z.von||'Beginn')+' bis '+(z.bis||today):'')+'.pdf'; }
 async function pdfInAkte(x,art){ const doc=pdfAuszug(x,art); if(!doc) return;
   try{ const r=await akteAblegen(x.mk,'03 Miete & Zahlungen',pdfName(x,art),doc.output('blob'),'application/pdf'); toast((r.od?'In OneDrive':'In der Mieterakte')+' unter 03 Miete & Zahlungen abgelegt.'); }catch(e){ toast('Ablage fehlgeschlagen: '+(e.message||e)); return; } loadDocs(x.mk); render(); }
 function pdfButtons(art){ return '<div class="acts"><button class="ghost small" data-pdf="'+art+'">Als PDF herunterladen</button><button class="ghost small" data-pdfakte="'+art+'">In Mieterakte ablegen</button></div>'; }
@@ -1190,6 +1196,25 @@ document.addEventListener('click',async e=>{ const t=e.target.closest('button');
   if(d.hmehr){ HF.mehr=true; render(); return; }
   if(d.hsave){ histSpeichern(); return; }
   if(d.hdel){ if(t.dataset.sure!=='1'){ t.dataset.sure='1'; t.textContent='wirklich löschen?'; return; } try{ await db.doc('historie/'+d.hdel).delete(); toast('Eintrag gelöscht.'); }catch(err){ toast('Löschen nicht möglich: '+(err.message||err)); } return; } });
+/* ---------- Zeitraum für Sollstellungen und Mieterkonto (auch für die PDFs) ---------- */
+var ZR={soll:{von:'',bis:''},konto:{von:'',bis:''}};
+const zrIn=(art,d)=>{ const z=ZR[art]; return (!z.von||d>=z.von)&&(!z.bis||d<=z.bis); };
+const zrAktiv=art=>!!(ZR[art].von||ZR[art].bis);
+const zrText=art=>{ const z=ZR[art]; return z.von&&z.bis?dmy(z.von)+' – '+dmy(z.bis):z.von?'ab '+dmy(z.von):z.bis?'bis '+dmy(z.bis):''; };
+function zrBox(art){ const z=ZR[art], j=today.slice(0,4), vj=String(Number(j)-1);
+  return '<div class="zr"><span class="sub">Zeitraum</span><input type="date" data-zrv="'+art+'" value="'+esc(z.von)+'"><span class="sub">bis</span><input type="date" data-zrb="'+art+'" value="'+esc(z.bis)+'">'
+    +'<button class="ghost small" data-zrq="'+art+'|'+j+'">'+j+'</button><button class="ghost small" data-zrq="'+art+'|'+vj+'">'+vj+'</button>'
+    +(zrAktiv(art)?'<button class="ghost small" data-zrq="'+art+'|">Gesamter Zeitraum</button>':'')+'</div>'; }
+/* Kontostand vor dem Zeitraum und Summen im Zeitraum */
+function zrKonto(x){ const z=ZR.konto, R=x.rows.filter(r=>!r.fut); let vor=0, hatVor=false;
+  for(const r of R){ if(z.von&&r.d<z.von&&r.saldo!=null){ vor=r.saldo; hatVor=true; } }
+  const I=R.filter(r=>zrIn('konto',r.d)); const soll=r2(I.filter(r=>!r.k).reduce((a,r)=>a+(r.s||0),0)), ist=r2(I.filter(r=>!r.k).reduce((a,r)=>a+(r.h||0),0));
+  let ende=hatVor?vor:0; for(const r of I) if(r.saldo!=null) ende=r.saldo;
+  return {vor:hatVor?vor:0,soll,ist,ende}; }
+document.addEventListener('change',e=>{ const t=e.target; const d=t.dataset; if(!d) return;
+  if(d.zrv){ ZR[d.zrv].von=t.value; render(); return; } if(d.zrb){ ZR[d.zrb].bis=t.value; render(); return; } });
+document.addEventListener('click',e=>{ const t=e.target.closest('button[data-zrq]'); if(!t) return; const [art,j]=t.dataset.zrq.split('|');
+  ZR[art]=j?{von:j+'-01-01',bis:j+'-12-31'}:{von:'',bis:''}; render(); });
 /* ---------- Render ---------- */
 function render(){
   const ready=loaded.o&&loaded.k&&loaded.r&&loaded.e&&loaded.b&&loadedMK;
@@ -1200,7 +1225,7 @@ function render(){
   if(!calc) calc=compute();
   const all=Object.values(calc.res);
   const q=norm(M.q);
-  const list=all.filter(x=>(!M.ges||x.mk.ges===M.ges)&&(!M.obj||x.mk.obj===M.obj)&&(M.st==='alle'||(M.st==='aktiv'&&x.aktiv)||(M.st==='rueck'&&x.ueber>0.5)||(M.st==='guthaben'&&x.saldo<-0.5)||(M.st==='beendet'&&!x.aktiv)||(M.st==='kaution'&&x.kOffen>0.5))
+  const list=all.filter(x=>(!M.ges||x.mk.ges===M.ges)&&(!M.obj||x.mk.obj===M.obj)&&(M.st==='alle'||(M.st==='aktiv'&&x.aktiv)||(M.st==='rueck'&&x.ueber>0.5)||(M.st==='rueck2'&&x.ueber>0.5&&x.monate>2)||(M.st==='guthaben'&&x.saldo<-0.5)||(M.st==='beendet'&&!x.aktiv)||(M.st==='kaution'&&x.kOffen>0.5))
     &&(!q||norm(ed(x.mk).mieter+' '+x.mk.obj+' '+x.mk.einheit+' '+uName(x.mk.einheit)+' '+ed(x.mk).ref).includes(q)))
     .sort(listSort);
   const sumR=all.filter(x=>x.ueber>0.5).reduce((a,x)=>a+x.ueber,0), nR=all.filter(x=>x.ueber>0.5).length, n2=all.filter(x=>x.status==='kuendigung').length;
@@ -1209,7 +1234,7 @@ function render(){
     +'<div class="kpi"><div class="l">Mieter mit Rückstand (überfällig)</div><div class="v neg">'+nR+'</div><div class="s">zusammen '+eur(sumR)+'</div></div>'
     +'<div class="kpi"><div class="l">Rückstand ≥ 2 Monatsmieten</div><div class="v '+(n2?'neg':'')+'">'+n2+'</div><div class="s">kündigungsrelevant</div></div>'
     +'<div class="kpi"><div class="l">Kaution offen</div><div class="v">'+eur(all.reduce((a,x)=>a+Math.max(0,x.kOffen),0))+'</div><div class="s">'+all.filter(x=>x.kOffen>0.5).length+' Mietverhältnisse</div></div></div>'+sollBox()+mahnBox();
-  h+='<div class="tbar"><div class="seg">'+[['alle','Alle'],['aktiv','Laufend'],['rueck','Rückstand'],['guthaben','Guthaben'],['kaution','Kaution offen'],['beendet','Beendet']].map(([k,l])=>'<button data-mst="'+k+'" class="'+(M.st===k?'on':'')+'">'+l+'</button>').join('')+'</div>'
+  h+='<div class="tbar"><div class="seg">'+[['alle','Alle'],['aktiv','Laufend'],['rueck','Rückstand'],['rueck2','Mehr als 2 Monatsmieten offen'],['guthaben','Guthaben'],['kaution','Kaution offen'],['beendet','Beendet']].map(([k,l])=>'<button data-mst="'+k+'" class="'+(M.st===k?'on':'')+'">'+l+'</button>').join('')+'</div>'
     +'<select id="m-ges"><option value="">alle Gesellschaften</option>'+['EE','WT','KiBo'].map(g=>'<option'+(g===M.ges?' selected':'')+'>'+g+'</option>').join('')+'</select>'
     +'<select id="m-obj"><option value="">alle Objekte</option>'+objs.map(o=>'<option'+(o===M.obj?' selected':'')+'>'+esc(o)+'</option>').join('')+'</select>'
     +'<input type="search" id="m-q" placeholder="Mieter, Objekt, Einheit" value="'+esc(M.q)+'" autocomplete="off"></div>';
@@ -1315,9 +1340,9 @@ function solLinks(x){ const L={}; for(const r of x.rows){ if(!r.h) continue; for
 function solStatus(r){ if(r.offen==null) return ['src','–']; if(r.offen<=0.005) return ['ok','bezahlt']; if(r.fut) return ['src',r.offen<r.s-0.005?'teilweise vorausbezahlt':'noch nicht fällig']; return r.offen<r.s-0.005?['mid','teilweise bezahlt']:['bad','offen']; }
 function payRows(x){ const seen={}, out=[]; for(const r of x.rows.slice().reverse()){ if(!r.key||!r.h||r.doc==null) continue; if(seen[r.key]){ seen[r.key].rest=r2((seen[r.key].rest||0)+(r.rest||0)); continue; } const o=Object.assign({},r); seen[r.key]=o; out.push(o); } return out; }
 function sollCard(x){ const idT={}; for(const r of x.rows) if(r.id) idT[r.id]=r.t;
-  const S=x.rows.filter(r=>r.s>0&&r.id).slice().reverse(), LK=solLinks(x);
+  const S=x.rows.filter(r=>r.s>0&&r.id&&zrIn('soll',r.d)).slice().reverse(), LK=solLinks(x);
   const nOff=S.filter(r=>!r.fut&&r.offen>0.005).length, sOff=r2(S.filter(r=>!r.fut&&r.offen>0.005).reduce((a,r)=>a+r.offen,0));
-  let h='<details class="card wide sec" data-sec="soll"'+(SEC.soll?' open':'')+'><summary class="ch">Sollstellungen<span class="sub">'+nOff+' offen · '+eur(sOff)+'</span></summary>'
+  let h='<details class="card wide sec" data-sec="soll"'+(SEC.soll?' open':'')+'><summary class="ch">Sollstellungen<span class="sub">'+(zrAktiv('soll')?esc(zrText('soll'))+' · ':'')+nOff+' offen · '+eur(sOff)+'</span></summary>'+zrBox('soll')
     +'<div class="acts"><span class="seg mini"><button data-solf="0" class="'+(solNurOffen?'':'on')+'">Alle</button><button data-solf="1" class="'+(solNurOffen?'on':'')+'">Nur offene</button></span><button class="ghost small" data-pdf="soll">Als PDF herunterladen</button><button class="ghost small" data-pdfakte="soll">In Mieterakte ablegen</button></div>'
     +'<div class="sub" style="margin-bottom:6px">Sollstellung anklicken, um zu sehen, welche Zahlungen darauf gebucht sind, und um eine Zahlung zuzuordnen.</div>'
     +'<div class="tablewrap"><table class="soll"><thead><tr><th>Fällig</th><th>Sollstellung</th><th>Herkunft</th><th class="n">Betrag</th><th class="n">bezahlt</th><th class="n">offen</th><th>Status</th></tr></thead><tbody>';
@@ -1388,12 +1413,12 @@ function renderDash(x){ const mk=ed(x.mk), sn=STN[x.status], a=ampel(x), K=mk.ko
     +'<details open><summary>Zusammensetzung</summary>'+kv('Kaltmiete',eur(st.kalt))+kv('Betriebskosten',eur(st.bk))+kv('Heizkosten',eur(st.hk))+(st.strom?kv('Strom',eur(st.strom)):'')+others.map(o=>kv(esc(o.t||'Sonstiges'),eur(o.b))).join('')+(!others.length&&st.sonst?kv('Sonstiges',eur(st.sonst)):'')+'</details>'
     +((x.mk.stufen||[]).length>1?'<details><summary>Mietentwicklung</summary><table class="mini">'+x.mk.stufen.map(z=>'<tr><td>ab '+esc(dmy(z.ab))+'</td><td class="n">'+eur(z.total)+'</td></tr>').join('')+'</table></details>':'')+'</div>';
   h+=mahnstandCard(x);
-  h+='</div>'+histCard(x)+notizCard(x)+sollCard(x)+akteBox(x)+anschreibenCard(x)+mailsCard(x);
+  h+='</div>'+histCard(x)+notizCard(x)+anschreibenCard(x)+mailsCard(x)+akteBox(x)+sollCard(x);
   /* Mieterkonto */
   if(x.erg) h+='<div class="note warnbox">'+x.erg+' Monatsmiete'+(x.erg>1?'n fehlen':' fehlt')+' in Nahaus als Sollstellung und '+(x.erg>1?'wurden':'wurde')+' aus dem Mietvertrag ergänzt (kursiv).</div>';
-  h+='<details class="card wide sec" data-sec="konto"'+(SEC.konto?' open':'')+'><summary class="ch">Mieterkonto<span class="sub">Saldo '+eur(x.saldo)+' · '+x.rows.length+' Buchungen</span></summary>'+pdfButtons('konto')+'<div class="tablewrap"><table class="kb"><thead><tr><th>Datum</th><th>Buchung</th><th class="n">Soll</th><th class="n">Ist</th><th class="n">Saldo</th></tr></thead><tbody>';
+  h+='<details class="card wide sec" data-sec="konto"'+(SEC.konto?' open':'')+'><summary class="ch">Mieterkonto<span class="sub">'+(zrAktiv('konto')?esc(zrText('konto'))+' · ':'')+'Saldo '+eur(x.saldo)+' · '+x.rows.length+' Buchungen</span></summary>'+zrBox('konto')+(zrAktiv('konto')?(()=>{ const Z=zrKonto(x); return '<div class="zrsum">'+(ZR.konto.von?'<span>Saldovortrag zum '+esc(dmy(ZR.konto.von))+': <b>'+eur(Z.vor)+'</b></span>':'')+'<span>Soll im Zeitraum: <b>'+eur(Z.soll)+'</b></span><span>Ist im Zeitraum: <b>'+eur(Z.ist)+'</b></span><span>Saldo'+(ZR.konto.bis?' am '+esc(dmy(ZR.konto.bis>today?today:ZR.konto.bis)):'')+': <b>'+eur(Z.ende)+'</b></span></div>'; })():'')+pdfButtons('konto')+'<div class="tablewrap"><table class="kb"><thead><tr><th>Datum</th><th>Buchung</th><th class="n">Soll</th><th class="n">Ist</th><th class="n">Saldo</th></tr></thead><tbody>';
   const idT={}; for(const r of x.rows) if(r.id) idT[r.id]=r.t;
-  for(const r of x.rows.slice().reverse()){ h+='<tr class="'+(r.e?'erg':'')+(r.fut?' fut':'')+(r.k?' kaut':'')+'"><td>'+esc(dmy(r.d))+'</td><td class="wrapc">'+esc(r.t)+'<div class="sub">'+esc(r.src)+(r.fut?' · fällig ab '+esc(dmy(r.d))+', zählt noch nicht im Saldo':'')+(r.k?' · Kaution (getrennt)':'')+(r.man?' · manuell zugeordnet':'')+(r.alloc&&r.alloc.length?' · zugeordnet auf: '+r.alloc.map(q=>esc(idT[q.id]||'Posten')+' '+eur(q.b)).join(', '):r.ia&&r.ia.length?' · für '+r.ia.map(q=>esc(idT[q.id]||'Posten')+' '+eur(q.b)).join(', '):'')+(r.s&&r.fut&&r.offen!=null&&r.offen<=0.005?' · bereits bezahlt':'')+(r.s&&r.offen!=null&&!r.fut?(r.offen>0.005?(r.offen<r.s-0.005?' · teilweise bezahlt, offen '+eur(r.offen):' · offen'):' · bezahlt'):'')+'</div>'+(r.key?zuordSel(r,x.mk):'')+'</td><td class="n">'+(r.s?eur(r.s):'')+'</td><td class="n pos">'+(r.h?eur(r.h):'')+'</td><td class="n">'+(r.saldo==null?'':'<b class="'+(r.saldo>0.5?'neg':'')+'">'+eur(r.saldo)+'</b>')+'</td></tr>'; }
+  for(const r of x.rows.filter(r=>zrIn('konto',r.d)).reverse()){ h+='<tr class="'+(r.e?'erg':'')+(r.fut?' fut':'')+(r.k?' kaut':'')+'"><td>'+esc(dmy(r.d))+'</td><td class="wrapc">'+esc(r.t)+'<div class="sub">'+esc(r.src)+(r.fut?' · fällig ab '+esc(dmy(r.d))+', zählt noch nicht im Saldo':'')+(r.k?' · Kaution (getrennt)':'')+(r.man?' · manuell zugeordnet':'')+(r.alloc&&r.alloc.length?' · zugeordnet auf: '+r.alloc.map(q=>esc(idT[q.id]||'Posten')+' '+eur(q.b)).join(', '):r.ia&&r.ia.length?' · für '+r.ia.map(q=>esc(idT[q.id]||'Posten')+' '+eur(q.b)).join(', '):'')+(r.s&&r.fut&&r.offen!=null&&r.offen<=0.005?' · bereits bezahlt':'')+(r.s&&r.offen!=null&&!r.fut?(r.offen>0.005?(r.offen<r.s-0.005?' · teilweise bezahlt, offen '+eur(r.offen):' · offen'):' · bezahlt'):'')+'</div>'+(r.key?zuordSel(r,x.mk):'')+'</td><td class="n">'+(r.s?eur(r.s):'')+'</td><td class="n pos">'+(r.h?eur(r.h):'')+'</td><td class="n">'+(r.saldo==null?'':'<b class="'+(r.saldo>0.5?'neg':'')+'">'+eur(r.saldo)+'</b>')+'</td></tr>'; }
   h+='</tbody></table></div><div class="sub" style="margin-top:6px">Neueste Buchungen oben.</div></details>';
   return h; }
 function zuordSel(r,mk0){ const L=Object.values(MK).filter(m=>m.unit===r.unit||m.obj===mk0.obj).sort((a,b)=>(b.von||'').localeCompare(a.von||''));
