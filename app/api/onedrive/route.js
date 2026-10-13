@@ -1,0 +1,137 @@
+// OneDrive / SharePoint für das Wohntraum OS: Mieterordner finden, Dateien auflisten, hochladen, öffnen, löschen.
+// Nutzt die App-Registrierung aus MS_TENANT_ID / MS_CLIENT_ID / MS_CLIENT_SECRET (Berechtigung Sites.ReadWrite.All).
+// MS_SP_SITE (optional): SharePoint-Seite, Standard andersmacher.sharepoint.com:/sites/WohnTraumRheinhessenGmbH9
+import { angemeldet, antwort } from '../_lib/auth'
+import { graph, graphBereit } from '../_lib/graph'
+
+export const dynamic = 'force-dynamic'
+export const maxDuration = 60
+
+const ROOT = 'Prozesslandkarte 3.0'
+const GEB = ROOT + '/7.000 Gebäude'
+const GRUPPEN = ['Gebäude EE', 'Gebäude WT', 'Gebäude KiBo']
+const AKTUELL = '02 Mieter/01 Aktuelle Mieter', ARCHIV = '02 Mieter/02 Archiv – ehemalige Mieter'
+let DRIVE = { id: '', bis: 0 }
+
+const enc = p => p.split('/').map(encodeURIComponent).join('/')
+function pruefe(p) {
+  p = String(p || '').replace(/^\/+|\/+$/g, '')
+  if (!(p === ROOT || p.startsWith(ROOT + '/')) || p.split('/').some(t => t === '..' || t === '.')) throw new Error('Pfad nicht erlaubt.')
+  return p
+}
+async function drive() {
+  if (DRIVE.id && Date.now() < DRIVE.bis) return DRIVE.id
+  const site = process.env.MS_SP_SITE || 'andersmacher.sharepoint.com:/sites/WohnTraumRheinhessenGmbH9'
+  const s = await graph('/sites/' + site + '?$select=id')
+  const d = await graph('/sites/' + s.id + '/drive?$select=id,name')
+  DRIVE = { id: d.id, bis: Date.now() + 3600e3 }
+  return d.id
+}
+const item = x => ({ id: x.id, name: x.name, ordner: !!x.folder, size: x.size || 0, geaendert: x.lastModifiedDateTime, web: x.webUrl })
+async function kinder(pfad) {
+  const d = await drive(); const out = []
+  let url = '/drives/' + d + '/root:/' + enc(pfad) + ':/children?$top=999&$select=id,name,size,folder,file,lastModifiedDateTime,webUrl'
+  while (url) {
+    const j = await graph(url, { erlaube404: true }); if (!j) return null
+    out.push(...(j.value || []).map(item)); url = j['@odata.nextLink'] || ''
+  }
+  return out.sort((a, b) => a.name.localeCompare(b.name, 'de'))
+}
+const norm = s => String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]/g, '')
+
+export async function POST(req) {
+  try {
+    if (!(await angemeldet(req))) return antwort({ error: 'Bitte im Wohntraum OS anmelden.' }, 401)
+    const fehlt = graphBereit()
+    if (fehlt.length) return antwort({ error: 'OneDrive ist noch nicht verbunden. In Vercel fehlt: ' + fehlt.join(', '), setup: true })
+    const b = await req.json().catch(() => ({}))
+    const a = b.aktion
+
+    if (a === 'status') { const d = await drive(); const k = await kinder(GEB); return antwort({ ok: true, drive: d, objekte: k ? k.length : 0 }) }
+
+    if (a === 'mieterordner') {
+      // alle Mieterordner eines Objekts (aktuelle und ehemalige)
+      const kz = norm(b.kz); if (!kz) return antwort({ error: 'Objektkürzel fehlt.' }, 400)
+      const out = []
+      for (const g of GRUPPEN) {
+        const objs = (await kinder(GEB + '/' + g)) || []
+        for (const o of objs.filter(o => o.ordner)) {
+          const n = norm(o.name)
+          if (!(n === kz || n.startsWith('zz' + kz) || n.startsWith(kz + 'verkauft') || n.endsWith('verkauft' + kz) || n === 'verkauft' + kz)) continue
+          const basis = GEB + '/' + g + '/' + o.name
+          for (const [teil, archiv] of [[AKTUELL, false], [ARCHIV, true]]) {
+            const L = (await kinder(basis + '/' + teil)) || []
+            for (const m of L.filter(m => m.ordner)) out.push({ pfad: basis + '/' + teil + '/' + m.name, name: m.name, archiv, web: m.web })
+          }
+          out.push({ basis, objekt: true })
+        }
+      }
+      return antwort({ ordner: out.filter(o => !o.objekt), basis: (out.find(o => o.objekt) || {}).basis || '' })
+    }
+
+    if (a === 'akte') {
+      // Unterordner eines Mieterordners mit ihren Dateien (eine Ebene tiefer für z. B. 03 Miete & Zahlungen/Mahnungen)
+      const p = pruefe(b.pfad); const top = await kinder(p)
+      if (!top) return antwort({ error: 'Ordner nicht gefunden: ' + p }, 404)
+      const ordner = {}, dateien = top.filter(x => !x.ordner)
+      for (const f of top.filter(x => x.ordner)) {
+        const L = (await kinder(p + '/' + f.name)) || []
+        ordner[f.name] = L.filter(x => !x.ordner)
+        for (const u of L.filter(x => x.ordner)) ordner[f.name + '/' + u.name] = ((await kinder(p + '/' + f.name + '/' + u.name)) || []).filter(x => !x.ordner)
+      }
+      return antwort({ ordner, dateien })
+    }
+
+    if (a === 'anlegen') {
+      // Ordner (mit allen Zwischenordnern) anlegen, z. B. neuer Mieterordner mit 01–06
+      const d = await drive(); const p = pruefe(b.pfad); const teile = p.split('/'); let akt = ''
+      for (const t of teile) {
+        const naechst = akt ? akt + '/' + t : t
+        const da = await graph('/drives/' + d + '/root:/' + enc(naechst), { erlaube404: true })
+        if (!da) await graph(akt ? '/drives/' + d + '/root:/' + enc(akt) + ':/children' : '/drives/' + d + '/root/children', { method: 'POST', json: { name: t, folder: {}, '@microsoft.graph.conflictBehavior': 'fail' } })
+        akt = naechst
+      }
+      for (const u of (b.unterordner || [])) {
+        const ziel = p + '/' + String(u).replace(/^\/+/, '')
+        const da = await graph('/drives/' + d + '/root:/' + enc(pruefe(ziel)), { erlaube404: true })
+        if (!da) { const par = ziel.split('/').slice(0, -1).join('/'); await graph('/drives/' + d + '/root:/' + enc(par) + ':/children', { method: 'POST', json: { name: ziel.split('/').pop(), folder: {}, '@microsoft.graph.conflictBehavior': 'fail' } }) }
+      }
+      return antwort({ ok: true, pfad: p })
+    }
+
+    if (a === 'hochladen') {
+      // kleine Dateien (bis ca. 3 MB) direkt über den Server
+      const d = await drive(); const p = pruefe(b.pfad); const name = String(b.name || '').replace(/[\\/:*?"<>|#%]/g, '_')
+      if (!name) return antwort({ error: 'Dateiname fehlt.' }, 400)
+      const bytes = Buffer.from(String(b.daten || ''), 'base64')
+      const r = await graph('/drives/' + d + '/root:/' + enc(p + '/' + name) + ':/content?@microsoft.graph.conflictBehavior=rename', { method: 'PUT', body: bytes, headers: { 'content-type': b.typ || 'application/octet-stream' } })
+      return antwort({ ok: true, item: item(r) })
+    }
+
+    if (a === 'sitzung') {
+      // große Dateien: Upload-Sitzung, der Browser lädt direkt zu Microsoft hoch
+      const d = await drive(); const p = pruefe(b.pfad); const name = String(b.name || '').replace(/[\\/:*?"<>|#%]/g, '_')
+      const r = await graph('/drives/' + d + '/root:/' + enc(p + '/' + name) + ':/createUploadSession', { method: 'POST', json: { item: { '@microsoft.graph.conflictBehavior': 'rename' } } })
+      return antwort({ uploadUrl: r.uploadUrl })
+    }
+
+    if (a === 'link') {
+      const d = await drive(); const x = await graph('/drives/' + d + '/items/' + encodeURIComponent(b.id) + '?$select=id,name,webUrl,parentReference,@microsoft.graph.downloadUrl')
+      if (!(x.parentReference && decodeURIComponent(String(x.parentReference.path || '')).includes('/' + ROOT))) return antwort({ error: 'Datei nicht erlaubt.' }, 403)
+      return antwort({ web: x.webUrl, download: x['@microsoft.graph.downloadUrl'] })
+    }
+
+    if (a === 'loeschen') {
+      const d = await drive(); const x = await graph('/drives/' + d + '/items/' + encodeURIComponent(b.id) + '?$select=id,parentReference,folder')
+      if (x.folder || !(x.parentReference && decodeURIComponent(String(x.parentReference.path || '')).includes('/' + ROOT))) return antwort({ error: 'Löschen nicht erlaubt.' }, 403)
+      await graph('/drives/' + d + '/items/' + encodeURIComponent(b.id), { method: 'DELETE' })
+      return antwort({ ok: true })
+    }
+
+    return antwort({ error: 'Unbekannte Aktion.' }, 400)
+  } catch (e) {
+    const m = String(e && e.message || e)
+    const hinweis = /access denied|accessdenied|forbidden|insufficient/i.test(m) ? ' – In Entra fehlt vermutlich die Berechtigung Sites.ReadWrite.All mit Administratorzustimmung.' : ''
+    return antwort({ error: m + hinweis }, e.status === 404 ? 404 : 500)
+  }
+}

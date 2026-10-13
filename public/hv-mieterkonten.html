@@ -829,9 +829,8 @@ function pdfAuszug(x,art){ if(!window.jspdf){ toast('PDF-Bibliothek lädt noch, 
   const pages=doc.getNumberOfPages(); for(let i=1;i<=pages;i++){ doc.setPage(i); doc.setFontSize(7.5); doc.setTextColor(120); doc.text('Seite '+i+' von '+pages+' · erstellt mit Wohntraum OS',R,292,{align:'right'}); }
   return doc; }
 function pdfName(x,art){ return aktenName(x.mk)+'_'+today+'_'+(art==='soll'?'Sollstellungen':'Mieterkonto')+'.pdf'; }
-async function pdfInAkte(x,art){ const doc=pdfAuszug(x,art); if(!doc) return; const sb=window.osSupabase; const name=enc(pdfName(x,art)).replace(/\//g,'_');
-  const {error}=await sb.storage.from('mieterakten').upload(docBase(x.mk)+'/'+enc('03 Miete & Zahlungen')+'/'+name,doc.output('blob'),{contentType:'application/pdf',upsert:true});
-  if(error){ toast('Ablage fehlgeschlagen: '+error.message); return; } toast('In der Mieterakte unter 03 Miete & Zahlungen abgelegt.'); loadDocs(x.mk); }
+async function pdfInAkte(x,art){ const doc=pdfAuszug(x,art); if(!doc) return;
+  try{ const r=await akteAblegen(x.mk,'03 Miete & Zahlungen',pdfName(x,art),doc.output('blob'),'application/pdf'); toast((r.od?'In OneDrive':'In der Mieterakte')+' unter 03 Miete & Zahlungen abgelegt.'); }catch(e){ toast('Ablage fehlgeschlagen: '+(e.message||e)); return; } loadDocs(x.mk); render(); }
 function pdfButtons(art){ return '<div class="acts"><button class="ghost small" data-pdf="'+art+'">Als PDF herunterladen</button><button class="ghost small" data-pdfakte="'+art+'">In Mieterakte ablegen</button></div>'; }
 
 /* ---------- Notizen: jede Notiz ein eigener Eintrag mit Datum und Ersteller, nicht änderbar oder löschbar ---------- */
@@ -922,7 +921,7 @@ function anschreibenCard(x){ const mk=x.mk; if(AB.pid!==mk.pid) abReset(mk);
   }
   h+='<div class="rh" style="margin-top:12px">Verschickte Anschreiben</div>';
   if(!L.length) h+='<div class="sub">Noch keine Anschreiben erstellt.</div>';
-  else h+='<table class="mini">'+L.map(a=>'<tr><td>'+esc(dmy(a.d.slice(0,10)))+'</td><td><a href="#" data-dopen="05 Schriftverkehr|'+esc(a.datei)+'">'+esc(a.betreff||'ohne Betreff')+'</a></td><td class="sub">'+esc(nutzerName(a.mail||a.by))+'</td></tr>').join('')+'</table>';
+  else h+='<table class="mini">'+L.map(a=>'<tr><td>'+esc(dmy(a.d.slice(0,10)))+'</td><td><a href="#" '+(a.odId?'data-odopen="'+esc(a.odId)+'"':'data-dopen="05 Schriftverkehr|'+esc(a.datei)+'"')+'>'+esc(a.betreff||'ohne Betreff')+'</a></td><td class="sub">'+esc(nutzerName(a.mail||a.by))+'</td></tr>').join('')+'</table>';
   return h+'</details>'; }
 
 async function abKi(){ const mk=MK[M.sel]; if(!mk) return; if(!AB.entwurf.trim()){ toast('Bitte zuerst einen Text oder Stichworte eingeben.'); return; }
@@ -938,9 +937,10 @@ async function abSpeichern(){ const sb=window.osSupabase, mk=MK[M.sel]; if(!sb||
   const B=abDaten(mk), doc=anschreibenPdf(mk,B); if(!doc) return;
   if(!ICH) await loadIch(); abBusy='save'; render();
   const ts=new Date(), name=abName(mk,today,B.betreff), id=mk.pid+'__'+ts.getTime();
-  try{ const {error}=await sb.storage.from('mieterakten').upload(docBase(mk)+'/'+enc('05 Schriftverkehr')+'/'+name,doc.output('blob'),{contentType:'application/pdf',upsert:true}); if(error) throw error;
-    await db.doc('anschreiben/'+id).set({pid:mk.pid,id,d:ts.toISOString(),by:ICH||'unbekannt',mail:ICHMAIL,uid:ICHID,betreff:B.betreff,text:B.text,empf:B.empf,datei:name,ki:!!AB.ki});
-    doc.save(name); toast('Anschreiben erstellt und unter 05 Schriftverkehr abgelegt.'); abReset(mk); loadDocs(mk); }
+  try{ const voll=aktenName(mk)+'_'+today+'_Anschreiben '+String(B.betreff||'ohne Betreff').replace(/[\/\\]/g,'-').slice(0,60).trim()+'.pdf';
+    const r=await akteAblegen(mk,'05 Schriftverkehr',odNutzen(mk)?voll:name,doc.output('blob'),'application/pdf');
+    await db.doc('anschreiben/'+id).set({pid:mk.pid,id,d:ts.toISOString(),by:ICH||'unbekannt',mail:ICHMAIL,uid:ICHID,betreff:B.betreff,text:B.text,empf:B.empf,datei:r.od?r.od.name:name,odId:r.od?r.od.id:'',ki:!!AB.ki});
+    doc.save(r.od?r.od.name:name); toast('Anschreiben erstellt und '+(r.od?'in OneDrive ':'')+'unter 05 Schriftverkehr abgelegt.'); abReset(mk); loadDocs(mk); }
   catch(e){ toast('Ablage fehlgeschlagen: '+(e.message||e)); }
   abBusy=''; render(); }
 
@@ -999,8 +999,10 @@ function emlLesen(raw){ const {H}=emlTeil(raw); const t=emlText(raw); let d=''; 
 function mailName(mk,m){ return enc(aktenName(mk)+'_'+String(m.datum||'').slice(0,10)+'_Mail '+m.richtung+' '+String(m.betreff||'ohne Betreff').replace(/[\/\\]/g,'-').slice(0,50).trim()).replace(/\//g,'_')+'.eml'; }
 async function mailSpeichern(mk,m,mime,quelle){ const sb=window.osSupabase; if(!ICH) await loadIch();
   const name=mailName(mk,m), id=mk.pid+'__'+mlHash(m.msgId||(m.datum+m.betreff+m.von));
-  const {error}=await sb.storage.from('mieterakten').upload(docBase(mk)+'/Mails/'+name,new Blob([mime],{type:'message/rfc822'}),{contentType:'message/rfc822',upsert:true}); if(error) throw error;
-  await db.doc('mails/'+id).set({pid:mk.pid,id,d:m.datum,richtung:m.richtung,von:m.von,an:m.an,betreff:m.betreff,text:String(m.text||'').slice(0,20000),datei:docBase(mk)+'/Mails/'+name,msgId:m.msgId||'',quelle,by:ICH||'unbekannt',mail:ICHMAIL,erfasst:new Date().toISOString()}); }
+  let r;
+  if(odNutzen(mk)) r=await akteAblegen(mk,'05 Schriftverkehr/Mails',aktenName(mk)+'_'+String(m.datum||'').slice(0,10)+'_Mail '+m.richtung+' '+String(m.betreff||'ohne Betreff').replace(/[\/\\]/g,'-').slice(0,50).trim()+'.eml',new Blob([mime],{type:'message/rfc822'}),'message/rfc822');
+  else { const {error}=await sb.storage.from('mieterakten').upload(docBase(mk)+'/Mails/'+name,new Blob([mime],{type:'message/rfc822'}),{contentType:'message/rfc822',upsert:true}); if(error) throw error; r={}; }
+  await db.doc('mails/'+id).set({odId:r.od?r.od.id:'',pid:mk.pid,id,d:m.datum,richtung:m.richtung,von:m.von,an:m.an,betreff:m.betreff,text:String(m.text||'').slice(0,20000),datei:docBase(mk)+'/Mails/'+name,msgId:m.msgId||'',quelle,by:ICH||'unbekannt',mail:ICHMAIL,erfasst:new Date().toISOString()}); }
 
 function mailsCard(x){ const mk=x.mk; if(MLS.pid!==mk.pid) MLS={pid:mk.pid,res:null,busy:'',fehler:[],offen:{}};
   const L=(MAILS[mk.pid]||[]).slice().sort((a,b)=>String(b.d).localeCompare(String(a.d))), have=new Set(L.map(m=>m.msgId).filter(Boolean)), adr=mieterMails(mk);
@@ -1016,7 +1018,7 @@ function mailsCard(x){ const mk=x.mk; if(MLS.pid!==mk.pid) MLS={pid:mk.pid,res:n
   h+='<div class="rh" style="margin-top:12px">Hinterlegte Mails</div>';
   if(!L.length) h+='<div class="sub">Noch keine Mails hinterlegt.</div>';
   for(const m of L){ const o=MLS.offen[m.id]; h+='<div class="ml-row"><a href="#" data-mlopen="'+esc(m.id)+'"><b>'+esc(m.betreff||'ohne Betreff')+'</b></a> <span class="pill '+(m.richtung==='Eingang'?'mid':'src')+'">'+esc(m.richtung)+'</span><div class="sub">'+esc(new Date(m.d).toLocaleString('de-DE'))+' · von '+esc(m.von)+' · an '+esc(m.an)+' · hinterlegt von '+esc(nutzerName(m.mail||m.by))+'</div>'
-    +(o?'<div class="ml-b">'+esc(m.text||'(kein Text)')+'</div><div class="acts"><a href="#" data-nfopen="'+esc(m.datei)+'">Original-Mail (.eml) öffnen</a></div>':'')+'</div>'; }
+    +(o?'<div class="ml-b">'+esc(m.text||'(kein Text)')+'</div><div class="acts"><a href="#" '+(m.odId?'data-odopen="'+esc(m.odId):'data-nfopen="'+esc(m.datei))+'">Original-Mail (.eml) öffnen</a></div>':'')+'</div>'; }
   return h+'</details>'; }
 
 async function mlSuchen(){ const mk=MK[M.sel]; if(!mk) return; const adr=mieterMails(mk); if(!adr.length){ toast('Beim Mieter ist keine E-Mail-Adresse hinterlegt.'); return; }
@@ -1043,6 +1045,104 @@ document.addEventListener('click',e=>{ const t=e.target.closest('button,a[data-m
   if(d.mlopen){ e.preventDefault(); MLS.offen[d.mlopen]=!MLS.offen[d.mlopen]; render(); return; }
 });
 document.addEventListener('change',e=>{ if(e.target.id==='ml-file'){ const f=[...e.target.files]; e.target.value=''; mlUpload(f); } });
+
+/* ---------- Mieterakte in OneDrive (SharePoint „Wohn(T)raum Rheinhessen GmbH – Dokumente“) ---------- */
+var OD={status:null,fehler:'',pruef:false}, ODK={}, ODA={}, ODL={}, ODSEL={}, odBusy='', ODMIG={};
+const odSafe=s=>String(s||'').replace(/[\\/:*?"<>|#%]/g,'_').replace(/\s+/g,' ').trim();
+async function odApi(body){ const sb=window.osSupabase; let tok=''; try{ const {data}=await sb.auth.getSession(); tok=(data&&data.session&&data.session.access_token)||''; }catch(e){}
+  let r; try{ r=await fetch('/api/onedrive',{method:'POST',headers:{'content-type':'application/json',authorization:'Bearer '+tok},body:JSON.stringify(body)}); }catch(e){ throw new Error('OneDrive nicht erreichbar.'); }
+  let j=null; try{ j=await r.json(); }catch(e){} if(!j) throw new Error(r.status===404?'Die OneDrive-Schnittstelle ist noch nicht online.':'OneDrive nicht erreichbar ('+r.status+').'); if(j.error) throw new Error(j.error); return j; }
+async function odPruefen(){ if(OD.pruef) return; OD.pruef=true; try{ await odApi({aktion:'status'}); OD.status='ok'; }catch(e){ OD.status='aus'; OD.fehler=e.message||String(e); } render(); }
+const odPfad=mk=>ed(mk).od||'';
+const odNutzen=mk=>OD.status==='ok'&&!!odPfad(mk);
+
+/* Vorschlag: Ordnername beginnt mit der Einheit (WE1_, G1_, EFH_ …) und enthält den Nachnamen */
+function odScore(mk,o){ const n=o.name.toUpperCase(), u=uName(mk.einheit).replace(/\s+/g,'').toUpperCase(); let s=0;
+  const pre=n.split('_')[0].replace(/\s+/g,''); if(u&&(pre===u||pre==='EFH'&&/EFH/i.test(mk.einheit||''))) s+=2;
+  const norm2=t=>t.normalize('NFD').replace(/[̀-ͯ]/g,'').toUpperCase(); const nn=norm2(n);
+  for(const l of (mk.namen||[]).concat(String(ed(mk).mieter||'').split(/[ ,]+/))){ const w=norm2(String(l||'')); if(w.length>=3&&nn.includes(w)){ s+=2; break; } }
+  const von=(mk.von||'').slice(0,10); if(von&&n.includes(von)) s+=1;
+  if(o.archiv===!(mk.bis&&mk.bis<today)) s+=0.5; return s; }
+async function odLadeOrdner(mk){ if(ODK[mk.obj]&&ODK[mk.obj]!=='lade') return; ODK[mk.obj]='lade';
+  try{ ODK[mk.obj]=await odApi({aktion:'mieterordner',kz:mk.obj}); }catch(e){ ODK[mk.obj]={fehler:e.message||String(e),ordner:[]}; }
+  const L=(ODK[mk.obj].ordner||[]).map(o=>Object.assign({},o,{s:odScore(mk,o)})).sort((a,b)=>b.s-a.s);
+  if(!odPfad(mk)&&L.length&&L[0].s>=4&&(L.length<2||L[1].s<L[0].s)) saveEdit(mk.pid,{od:L[0].pfad},'OneDrive-Mieterordner zugeordnet.');
+  render(); }
+async function odLadeAkte(mk){ const p=odPfad(mk); if(!p) return; ODA[mk.pid]='lade'; render();
+  try{ ODA[mk.pid]=Object.assign(await odApi({aktion:'akte',pfad:p}),{pfad:p}); }catch(e){ ODA[mk.pid]={fehler:e.message||String(e),pfad:p}; } render(); }
+
+/* Datei in die Mieterakte legen: OneDrive, wenn zugeordnet, sonst Ablage im OS. Gibt {od:item} oder {pfad} zurück. */
+async function akteAblegen(mk,ordner,name,blob,typ){
+  if(odNutzen(mk)){ const pfad=odPfad(mk)+'/'+ordner, nm=odSafe(name); let it;
+    if(blob.size<=3*1024*1024){ const b64=await new Promise((res,rej)=>{ const r=new FileReader(); r.onload=()=>res(String(r.result).split(',')[1]||''); r.onerror=rej; r.readAsDataURL(blob); });
+      it=(await odApi({aktion:'hochladen',pfad,name:nm,daten:b64,typ:typ||blob.type})).item; }
+    else { const s=await odApi({aktion:'sitzung',pfad,name:nm}); const r=await fetch(s.uploadUrl,{method:'PUT',headers:{'Content-Range':'bytes 0-'+(blob.size-1)+'/'+blob.size},body:blob}); if(!r.ok) throw new Error('Hochladen nach OneDrive fehlgeschlagen ('+r.status+').'); const j=await r.json(); it={id:j.id,name:j.name,web:j.webUrl}; }
+    ODA[mk.pid]=null; return {od:it}; }
+  const sb=window.osSupabase, p=docBase(mk)+'/'+enc(ordner)+'/'+enc(name).replace(/\//g,'_');
+  const {error}=await sb.storage.from('mieterakten').upload(p,blob,{contentType:typ||blob.type||undefined,upsert:true}); if(error) throw error; return {pfad:p}; }
+async function odOeffnen(id,dl){ const w=window.open('','_blank'); try{ const r=await odApi({aktion:'link',id}); const u=dl?(r.download||r.web):(r.web||r.download); if(w) w.location.href=u; else window.open(u,'_blank'); }catch(e){ if(w) w.close(); toast(e.message||String(e)); } }
+
+function akteBox(x){ const mk=x.mk;
+  if(OD.status===null){ odPruefen(); return docsBox(x); }
+  if(OD.status!=='ok') return docsBox(x).replace('</summary>','</summary><div class="note warnbox">OneDrive nicht verbunden: '+esc(OD.fehler)+' – Ablage im OS wird genutzt.</div>');
+  const p=odPfad(mk);
+  let h='<details class="card docs sec" data-sec="docs"'+(SEC.docs?' open':'')+'><summary class="ch">Dokumente<span class="sub">OneDrive: '+esc(p?p.split('/').slice(-1)[0]:'noch kein Mieterordner zugeordnet')+'</span></summary>';
+  if(!p||ODSEL[mk.pid]){ const K=ODK[mk.obj];
+    if(!K||K==='lade'){ if(!K) odLadeOrdner(mk); return h+'<div class="sub">Suche Mieterordner in OneDrive …</div></details>'; }
+    const L=(K.ordner||[]).map(o=>Object.assign({},o,{s:odScore(mk,o)})).sort((a,b)=>b.s-a.s);
+    h+=(K.fehler?'<div class="note warnbox">'+esc(K.fehler)+'</div>':'')
+      +'<div class="rh">OneDrive-Mieterordner zuordnen</div>'
+      +(L.length?'<label class="fl">Ordner<select id="od-sel">'+L.map(o=>'<option value="'+esc(o.pfad)+'"'+(o.pfad===p?' selected':'')+'>'+esc((o.archiv?'Archiv: ':'')+o.name)+'</option>').join('')+'</select></label><div class="acts"><button class="primary small" data-odset="1">Zuordnen</button>'+(p?'<button class="ghost small" data-odcancel="1">Abbrechen</button>':'')+'</div>':'<div class="sub">Im Objektordner '+esc(mk.obj)+' wurde kein Mieterordner gefunden.</div>')
+      +(K.basis?'<div class="acts"><button class="ghost small" data-odneu="1"'+(odBusy?' disabled':'')+'>'+(odBusy==='neu'?'Lege an …':'Neuen Mieterordner anlegen: '+esc(odNeuName(mk)))+'</button></div>':'');
+    return h+'</details>'; }
+  const A=ODA[mk.pid];
+  if(A==='lade') return h+'<div class="sub">Lade aus OneDrive …</div></details>';
+  if(!A||A.pfad!==p){ odLadeAkte(mk); return h+'<div class="sub">Lade aus OneDrive …</div></details>'; }
+  h+='<div class="acts"><span class="sub">'+esc(p.replace(/^Prozesslandkarte 3.0\/7.000 Gebäude\//,''))+'</span><button class="ghost small" data-odaendern="1">Ordner ändern</button><button class="ghost small" data-odneuladen="1">Aktualisieren</button></div>';
+  if(A.fehler) return h+'<div class="note warnbox">'+esc(A.fehler)+'</div></details>';
+  /* bisherige Ablage im OS übertragen */
+  const S=DOCS[mk.pid]; if(S===undefined&&!docLoading[mk.pid]){ docLoading[mk.pid]=1; loadDocs(mk).finally(()=>{ docLoading[mk.pid]=0; }); }
+  const nOS=S?Object.values(S).reduce((a,L)=>a+L.length,0):0;
+  if(nOS&&!ed(mk).odMig) h+='<div class="note">Im OS liegen noch '+nOS+' Datei'+(nOS===1?'':'en')+' aus der bisherigen Ablage. <button class="primary small" data-odmig="1"'+(ODMIG[mk.pid]?' disabled':'')+'>'+(ODMIG[mk.pid]?esc(ODMIG[mk.pid]):'Nach OneDrive übertragen')+'</button></div>';
+  if(pend&&pend.pid===mk.pid){ h+='<div class="spl"><div class="rh">Hochladen – Name nach Ablage-Schema</div>'+pend.files.map((q,i)=>'<div class="prow"><select data-pf="'+i+'">'+DOCF.map(f=>'<option'+(f===q.folder?' selected':'')+'>'+esc(f)+'</option>').join('')+'</select><input type="text" class="pd" data-pdt="'+i+'" value="'+esc(q.datum)+'" placeholder="JJJJ-MM-TT"><input type="text" data-pt="'+i+'" value="'+esc(q.titel)+'" placeholder="Titel"><span class="sub">'+esc(aktenName(mk)+'_'+q.datum+'_'+q.titel+q.ext)+'</span></div>').join('')
+    +'<div class="acts"><button class="primary small" data-odup="1"'+(odBusy?' disabled':'')+'>'+(odBusy==='up'?'Lade hoch …':'Hochladen')+'</button><button class="ghost small" data-pcancel="1">Abbrechen</button></div></div>'; }
+  const F=[...new Set(DOCF.concat(Object.keys(A.ordner||{})))].sort();
+  h+='<div class="tree">';
+  if((A.dateien||[]).length) h+='<div class="fold"><div class="frow"><b>(direkt im Mieterordner)</b></div>'+A.dateien.map(o=>'<div class="file"><a href="#" data-odopen="'+esc(o.id)+'">'+esc(o.name)+'</a></div>').join('')+'</div>';
+  for(const f of F){ const files=(A.ordner||{})[f]||[], sub=f.includes('/'), open=docOpen[mk.pid+'|'+f]??(files.length>0);
+    h+='<div class="fold'+(sub?' sub':'')+'" data-fdrop="'+esc(f)+'"><div class="frow"><button class="ghost small" data-ftog="'+esc(f)+'">'+(open?'▾':'▸')+'</button><b>'+esc(sub?f.split('/').slice(1).join('/'):f)+'</b><span class="sub">'+files.length+' Datei'+(files.length===1?'':'en')+'</span><label class="ghost small up">Datei hinzufügen<input type="file" multiple hidden data-fup="'+esc(f)+'"></label></div>';
+    if(open) h+=files.length?files.map(o=>'<div class="file"><a href="#" data-odopen="'+esc(o.id)+'">'+esc(o.name)+'</a><span class="sub">'+(o.size?Math.max(1,Math.round(o.size/1024))+' KB':'')+'</span><button class="ghost small" data-oddel="'+esc(o.id)+'">Löschen</button></div>').join(''):'<div class="file sub">leer – Dateien hierher ziehen</div>';
+    h+='</div>'; }
+  return h+'</div></details>'; }
+
+function odNeuName(mk){ return odSafe(uName(mk.einheit).replace(/\s+/g,'')+'_'+aktenName(mk).split('_').slice(2).join('_')+'_ab '+(mk.von||today).slice(0,10)); }
+async function odNeu(mk){ const K=ODK[mk.obj]; if(!K||!K.basis) return; odBusy='neu'; render();
+  const archiv=mk.bis&&mk.bis<today, pfad=K.basis+'/02 Mieter/'+(archiv?'02 Archiv – ehemalige Mieter':'01 Aktuelle Mieter')+'/'+odNeuName(mk);
+  try{ await odApi({aktion:'anlegen',pfad,unterordner:['01 Mietbeginn','02 Vertrag & Nachträge','03 Miete & Zahlungen','04 Betriebskosten','05 Schriftverkehr','06 Mietende']}); ODK[mk.obj]=null; ODSEL[mk.pid]=false; saveEdit(mk.pid,{od:pfad},'Mieterordner in OneDrive angelegt.'); }
+  catch(e){ toast(e.message||String(e)); } odBusy=''; render(); }
+async function odUploadPend(){ const mk=MK[pend.pid]; let n=0;
+  for(const q of pend.files){ if(!/^\d{4}-\d{2}-\d{2}$/.test(q.datum)){ toast('Datum bitte als JJJJ-MM-TT.'); return; } }
+  odBusy='up'; render();
+  for(const q of pend.files){ try{ await akteAblegen(mk,q.folder,aktenName(mk)+'_'+q.datum+'_'+(q.titel||'Dokument')+q.ext,q.file,q.file.type); n++; }catch(e){ toast(q.file.name+': '+(e.message||e)); } }
+  odBusy=''; pend=null; toast(n+' Datei'+(n===1?'':'en')+' nach OneDrive hochgeladen.'); ODA[mk.pid]=null; render(); }
+async function odMigrieren(mk){ const sb=window.osSupabase, S=DOCS[mk.pid]||{}; const L=[]; for(const f in S) for(const o of S[f]) L.push({f,o});
+  let n=0; for(const {f,o} of L){ ODMIG[mk.pid]='Übertrage '+(n+1)+' von '+L.length+' …'; render();
+    try{ const {data,error}=await sb.storage.from('mieterakten').download(docBase(mk)+'/'+enc(f)+'/'+o.name); if(error) throw error;
+      await akteAblegen(mk,f,o.name,data,data.type); n++; }catch(e){ toast(o.name+': '+(e.message||e)); } }
+  ODMIG[mk.pid]=''; if(n===L.length) saveEdit(mk.pid,{odMig:today}); toast(n+' von '+L.length+' Dateien nach OneDrive übertragen. Die Kopien im OS bleiben erhalten.'); DOCS[mk.pid]={}; ODA[mk.pid]=null; render(); }
+
+document.addEventListener('click',e=>{ const t=e.target.closest('button,a[data-odopen]'); if(!t) return; const d=t.dataset, mk=MK[M.sel];
+  if(d.odopen){ e.preventDefault(); odOeffnen(d.odopen); return; }
+  if(!mk) return;
+  if(d.odset){ const v=($('od-sel')||{}).value; if(!v) return; ODSEL[mk.pid]=false; ODA[mk.pid]=null; saveEdit(mk.pid,{od:v},'OneDrive-Mieterordner zugeordnet.'); return; }
+  if(d.odcancel){ ODSEL[mk.pid]=false; render(); return; }
+  if(d.odaendern){ ODSEL[mk.pid]=true; if(!ODK[mk.obj]||ODK[mk.obj].fehler) ODK[mk.obj]=null; render(); return; }
+  if(d.odneuladen){ ODA[mk.pid]=null; render(); return; }
+  if(d.odneu){ odNeu(mk); return; }
+  if(d.odup){ odUploadPend(); return; }
+  if(d.odmig){ odMigrieren(mk); return; }
+  if(d.oddel){ if(d.sure!=='1'){ d.sure='1'; t.textContent='Wirklich löschen?'; return; } odApi({aktion:'loeschen',id:d.oddel}).then(()=>{ toast('In den OneDrive-Papierkorb verschoben.'); ODA[mk.pid]=null; render(); }).catch(err=>toast(err.message||String(err))); return; }
+});
 /* ---------- Render ---------- */
 function render(){
   const ready=loaded.o&&loaded.k&&loaded.r&&loaded.e&&loaded.b&&loadedMK;
@@ -1249,7 +1349,7 @@ function renderDash(x){ const mk=ed(x.mk), sn=STN[x.status], a=ampel(x), K=mk.ko
     +'<div class="trow"><input type="text" id="t-neu" placeholder="Neues Ticket, z. B. Heizung defekt"><button class="small primary" data-tadd="1">Hinzufügen</button></div>'
     +(T.filter(t=>showDone||!t.done).map(t=>'<label class="tick'+(t.done?' done':'')+'"><input type="checkbox" data-tdone="'+esc(t.id)+'"'+(t.done?' checked':'')+'><span>'+esc(t.t)+'<small>'+esc(dmy(t.d))+(t.done?' · erledigt '+esc(dmy(t.done)):'')+'</small></span></label>').join('')||'<div class="sub">Keine offenen Tickets.</div>')
     +(T.some(t=>t.done)?'<button class="ghost small" data-tshow="1">'+(showDone?'erledigte ausblenden':'erledigte anzeigen')+'</button>':'')+'</div>';
-  h+='</div>'+sollCard(x)+docsBox(x)+anschreibenCard(x)+mailsCard(x);
+  h+='</div>'+sollCard(x)+akteBox(x)+anschreibenCard(x)+mailsCard(x);
   /* Mieterkonto */
   if(x.erg) h+='<div class="note warnbox">'+x.erg+' Monatsmiete'+(x.erg>1?'n fehlen':' fehlt')+' in Nahaus als Sollstellung und '+(x.erg>1?'wurden':'wurde')+' aus dem Mietvertrag ergänzt (kursiv).</div>';
   h+='<details class="card wide sec" data-sec="konto"'+(SEC.konto?' open':'')+'><summary class="ch">Mieterkonto<span class="sub">Saldo '+eur(x.saldo)+' · '+x.rows.length+' Buchungen</span></summary>'+pdfButtons('konto')+'<div class="tablewrap"><table class="kb"><thead><tr><th>Datum</th><th>Buchung</th><th class="n">Soll</th><th class="n">Ist</th><th class="n">Saldo</th></tr></thead><tbody>';
