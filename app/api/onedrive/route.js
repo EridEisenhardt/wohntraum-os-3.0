@@ -82,6 +82,36 @@ export async function POST(req) {
       return antwort({ ordner, dateien })
     }
 
+    if (a === 'objektordner') {
+      // Objektordner eines Objekts mit den Unterordnern von 04 Betriebskosten, 05 Instandhaltung und 07 WEG (für die Belegablage)
+      const kz = norm(b.kz); if (!kz) return antwort({ error: 'Objektkürzel fehlt.' }, 400)
+      let treffer = null
+      for (const g of GRUPPEN) {
+        const objs = (await kinder(GEB + '/' + g)) || []
+        for (const o of objs.filter(o => o.ordner)) {
+          const n = norm(o.name)
+          const genau = n === kz, verkauft = n.startsWith('zz' + kz) || n.startsWith(kz + 'verkauft') || n.endsWith('verkauft' + kz) || n === 'verkauft' + kz
+          if (!genau && !verkauft) continue
+          if (!treffer || (genau && !treffer.genau)) treffer = { basis: GEB + '/' + g + '/' + o.name, genau }
+        }
+      }
+      if (!treffer) return antwort({ basis: '', top: [], unter: {} })
+      const top = ((await kinder(treffer.basis)) || []).filter(x => x.ordner).map(x => x.name)
+      const unter = {}
+      for (const t of top.filter(t => /^0[457]\b/.test(t))) unter[t] = ((await kinder(treffer.basis + '/' + t)) || []).filter(x => x.ordner).map(x => x.name)
+      return antwort({ basis: treffer.basis, top, unter })
+    }
+
+    if (a === 'inhalt') {
+      // Datei für die Vorschau (bis 3 MB) als Base64
+      const d = await drive(); const x = await graph('/drives/' + d + '/items/' + encodeURIComponent(b.id) + '?$select=id,name,size,file,parentReference,@microsoft.graph.downloadUrl')
+      if (!(x.parentReference && decodeURIComponent(String(x.parentReference.path || '')).includes('/' + ROOT))) return antwort({ error: 'Datei nicht erlaubt.' }, 403)
+      if ((x.size || 0) > 3 * 1024 * 1024) return antwort({ zuGross: true, name: x.name })
+      const r = await fetch(x['@microsoft.graph.downloadUrl']); if (!r.ok) return antwort({ error: 'Datei nicht lesbar (' + r.status + ').' }, 500)
+      const buf = Buffer.from(await r.arrayBuffer())
+      return antwort({ name: x.name, typ: (x.file && x.file.mimeType) || '', daten: buf.toString('base64') })
+    }
+
     if (a === 'baum') {
       // Ordner rekursiv auflisten (max. 3 Ebenen), z. B. Kontoauszüge eines Jahres
       const p = pruefe(b.pfad); const tiefe = Math.min(3, Math.max(1, Number(b.tiefe) || 2)); const dateien = []
