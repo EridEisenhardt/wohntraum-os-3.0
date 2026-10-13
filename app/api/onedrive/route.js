@@ -152,6 +152,27 @@ export async function POST(req) {
       return antwort({ dateien: dateien.filter(f => !/^~\$|\.(ds_store|tmp)$/i.test(f.name)) })
     }
 
+    if (a === 'objektbasis') {
+      // Objektordner aller Objekte mit ihren Hauptordnern (01 Objekt … 07 WEG)
+      const wunsch = (b.kz || []).map(k => [k, norm(k)]); const out = {}
+      await Promise.all(GRUPPEN.map(async g => {
+        const objs = ((await kinder(GEB + '/' + g)) || []).filter(o => o.ordner)
+        await Promise.all(objs.map(async o => {
+          const w = wunsch.find(([, n]) => norm(o.name) === n); if (!w) return
+          const basis = GEB + '/' + g + '/' + o.name
+          out[w[0]] = { basis, gruppe: g, top: ((await kinder(basis)) || []).filter(x => x.ordner).map(x => x.name) }
+        }))
+      }))
+      return antwort({ objekte: out })
+    }
+
+    if (a === 'ordner') {
+      // Inhalt eines Ordners (Unterordner und Dateien), für die Ordneransicht im OS
+      const p = pruefe(b.pfad); const L = await kinder(p)
+      if (!L) return antwort({ fehlt: true, eintraege: [] })
+      return antwort({ eintraege: L })
+    }
+
     if (a === 'baum') {
       // Ordner rekursiv auflisten (max. 3 Ebenen), z. B. Kontoauszüge eines Jahres
       const p = pruefe(b.pfad); const tiefe = Math.min(3, Math.max(1, Number(b.tiefe) || 2)); const dateien = []

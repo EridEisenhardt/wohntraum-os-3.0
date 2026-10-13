@@ -106,6 +106,16 @@ td.n{text-align:right;font-variant-numeric:tabular-nums}
 .belol{display:grid;gap:6px;margin:6px 0;font-size:13px}
 .belol label{display:flex;gap:8px;align-items:center;cursor:pointer}
 .belol input[type=text]{width:100%;font-size:14px;padding:6px 8px;box-sizing:border-box}
+.kt{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:6px 0;margin-top:10px}
+.kt-z{display:flex;align-items:center;gap:6px;width:100%;box-sizing:border-box;padding:4px 10px;font-size:14px;text-align:left;background:none;border:none;border-radius:0;color:var(--ink);text-decoration:none;cursor:pointer;min-height:28px}
+.kt-z:hover{background:var(--chip)}
+.kt-o{font-weight:600}
+.kt-c{display:inline-block;width:14px;color:var(--muted);font-weight:400;transition:transform .15s}
+.kt-o.auf .kt-c{transform:rotate(90deg)}
+.kt-d{justify-content:space-between;gap:12px;cursor:default}
+.kt-d>a{color:var(--accent);text-decoration:none;overflow-wrap:anywhere}
+.kt-r{display:flex;gap:6px;align-items:center;flex-shrink:0;font-size:12px}
+.kt-r a{text-decoration:none}
 .spbox{margin:8px 0;display:grid;gap:6px;border-top:1px solid var(--line);padding-top:8px}
 .spbox input[type=search]{width:100%;font-size:14px;padding:6px 8px;box-sizing:border-box}
 .belq{margin-top:8px;display:grid;gap:8px}
@@ -619,28 +629,45 @@ async function kaLaden(){ if(KAU.lade) return; KAU.lade=true; KAU.fehler=''; con
   KAU.lade=false; render(); }
 function kaFinde(k,m){ const kz=kaKz(k).toLowerCase(), mm=mmjj(m); return (KAU.dateien||[]).filter(f=>{ const n=f.name.toLowerCase(); return n.startsWith(kz+'_kontoauszug_'+mm)&&!/alle konten/.test(n); }); }
 
-function renderKA(){ let h='<h2>Kontoauszüge als PDF in OneDrive '+esc(year)+'</h2>';
-  if(KAU.jahr!==year&&!KAU.lade){ kaLaden(); }
-  h+='<div class="note">Monatliche PDF-Kontoauszüge hierher ziehen. Das OS erkennt Konto und Monat und legt sie als <b>Kürzel_Kontoauszug_mm.jj.pdf</b> in <b>9.000 Buchführung/Kontoauszüge/Jahr/Gesellschaft/mm.jj</b> ab.</div>'
-    +'<label class="drop" id="kadrop" for="ka-file"><b>PDF-Kontoauszüge hierher ziehen</b>oder klicken, um Dateien auszuwählen<input type="file" id="ka-file" accept=".pdf,application/pdf" multiple hidden></label>';
+/* Ordneransicht 1:1 wie in OneDrive: Kontoauszüge / Jahr / Gesellschaft / mm.jj / Dateien */
+var KT={k:{},offen:new Set(),lade:new Set(),fehler:'',start:false,kz:false};
+async function ktLaden(pfad){ if(pfad.startsWith('virt:obj:')) pfad='virt:Objekte'; if(KT.lade.has(pfad)) return; KT.lade.add(pfad);
+  if(pfad==='virt:Objekte'){ try{ const r=await odApi({aktion:'objektbasis',kz:objekte.map(o=>o.kz)}); const O=r.objekte||{};
+      KT.k[pfad]=objekte.map(o=>o.kz).filter(k=>O[k]).sort((a,b)=>a.localeCompare(b,'de',{numeric:true})).map(k=>({id:'o'+k,name:k,ordner:true,p:'virt:obj:'+k}));
+      for(const k of Object.keys(O)){ const B=O[k]; KT.k['virt:obj:'+k]=B.top.filter(t=>/^0[45] /.test(t)).map(t=>({id:k+t,name:t,ordner:true,p:B.basis+'/'+t})); }
+      const ohne=objekte.map(o=>o.kz).filter(k=>!O[k]); if(ohne.length) KT.k[pfad].push({id:'x',name:'Kein Objektordner gefunden: '+ohne.join(', '),info:true}); KT.fehler=''; }
+    catch(e){ KT.fehler=e.message||String(e); KT.k[pfad]=[]; } KT.lade.delete(pfad); render(); return; }
+  try{ const r=await odApi({aktion:'ordner',pfad}); KT.k[pfad]=(r.eintraege||[]).slice().sort((a,b)=>(b.ordner-a.ordner)||a.name.localeCompare(b.name,'de',{numeric:true})); KT.fehler=''; }
+  catch(e){ KT.fehler=e.message||String(e); KT.k[pfad]=KT.k[pfad]||[]; }
+  KT.lade.delete(pfad); render(); }
+function ktStart(){ if(KT.start) return; KT.start=true; KT.offen.add(KA_ROOT); KT.offen.add(KA_ROOT+'/'+year); ktLaden(KA_ROOT); ktLaden(KA_ROOT+'/'+year); }
+/* Hinweis im Monatsordner: Konten dieser Gesellschaft mit Umsätzen im OS, aber ohne PDF */
+function ktFehlt(pfad){ const m=pfad.slice(KA_ROOT.length+1).split('/'); if(m.length!==3||!/^\d{2}\.\d{2}$/.test(m[2])) return [];
+  const mon='20'+m[2].slice(3)+'-'+m[2].slice(0,2); const L=(KT.k[pfad]||[]).map(x=>x.name.toLowerCase());
+  const CSV=new Set(Object.values(buch).filter(d=>d&&d.monat===mon).map(d=>d.konto));
+  return kaKonten().filter(k=>(k.ges||'')===m[1]&&CSV.has(k.key||k.iban)&&!L.some(n=>n.startsWith(kaKz(k).toLowerCase()+'_kontoauszug'))).map(k=>kaKz(k)+'_Kontoauszug_'+m[2]); }
+function ktZweig(pfad,tiefe,datei){ const L=KT.k[pfad]; let h=''; const pad=n=>' style="padding-left:'+(tiefe*20+n)+'px"';
+  if(!L) return '<div class="kt-z sub"'+pad(22)+'>Lade …</div>';
+  if(!L.length) h+='<div class="kt-z sub"'+pad(22)+'>leer</div>';
+  for(const x of L){ const p=x.p||pfad+'/'+x.name;
+    if(x.info){ h+='<div class="kt-z sub"'+pad(22)+'>'+esc(x.name)+'</div>'; continue; }
+    if(x.ordner){ const auf=KT.offen.has(p); h+='<button class="kt-z kt-o'+(auf?' auf':'')+'" data-ktp="'+esc(p)+'"'+pad(4)+'><span class="kt-c">&gt;</span>'+esc(x.name)+'</button>'; if(auf) h+=ktZweig(p,tiefe+1,datei); }
+    else h+='<div class="kt-z kt-d"'+pad(22)+'><a href="#" data-kaopen="'+esc(x.id)+'">'+esc(x.name)+'</a><span class="kt-r">'+(datei?datei(Object.assign({pfad:p},x)):'<span class="sub">'+esc(String(x.geaendert||'').slice(0,10).split('-').reverse().join('.'))+'</span>')+'</span></div>'; }
+  if(pfad.startsWith(KA_ROOT)) for(const f of ktFehlt(pfad)) h+='<div class="kt-z"'+pad(22)+'><span class="neg">fehlt: '+esc(f)+'.pdf</span></div>';
+  return h; }
+function ktWurzel(p,name,datei){ const auf=KT.offen.has(p); return '<button class="kt-z kt-o'+(auf?' auf':'')+'" data-ktp="'+esc(p)+'" style="padding-left:4px"><span class="kt-c">&gt;</span>'+esc(name)+'</button>'+(auf?ktZweig(p,1,datei):''); }
+function renderKA(){ ktStart(); let h='<h2>Kontoauszüge</h2>';
+  h+='<label class="bdrop" id="kadrop" for="ka-file">PDF-Kontoauszüge hierher ziehen oder klicken – Konto und Monat werden erkannt und die Datei als Kürzel_Kontoauszug_mm.jj.pdf im passenden Ordner abgelegt<input type="file" id="ka-file" accept=".pdf,application/pdf" multiple hidden></label>';
   if(KAU.pend.length){ h+='<div class="fcard"><b>Ablegen in OneDrive</b>';
     KAU.pend.forEach((p,i)=>{ const k=konten.find(x=>(x.key||x.iban)===p.konto);
       h+='<div class="row"><span class="sub" style="min-width:180px">'+esc(p.file.name)+'</span><select data-kak="'+i+'"><option value="">– Konto wählen –</option>'+kaKonten().map(x=>'<option value="'+esc(x.key||x.iban)+'"'+((x.key||x.iban)===p.konto?' selected':'')+'>'+esc(kaKz(x)+' · '+x.name)+'</option>').join('')+'</select>'
         +'<input type="month" data-kam="'+i+'" value="'+esc(p.monat||'')+'">'
-        +'<span class="sub">'+(k&&p.monat?esc((k.ges||'?')+'/'+mmjj(p.monat)+'/'+kaKz(k)+'_Kontoauszug_'+mmjj(p.monat)+'.pdf'):'Konto und Monat wählen')+(p.hinweis?' · '+esc(p.hinweis):'')+'</span><button class="ghost small" data-kax="'+i+'">Entfernen</button></div>'; });
+        +'<span class="sub">'+(k&&p.monat?esc(p.monat.slice(0,4)+'/'+(k.ges||'?')+'/'+mmjj(p.monat)+'/'+kaKz(k)+'_Kontoauszug_'+mmjj(p.monat)+'.pdf'):'Konto und Monat wählen')+(p.hinweis?' · '+esc(p.hinweis):'')+'</span><button class="ghost small" data-kax="'+i+'">Entfernen</button></div>'; });
     h+='<div class="row"><button class="primary" data-kago="1"'+(KAU.busy?' disabled':'')+'>'+(KAU.busy?esc(KAU.busy):'In OneDrive ablegen')+'</button><button class="ghost" data-kaweg="1">Verwerfen</button></div></div>'; }
-  if(KAU.lade||KAU.jahr!==year) return h+'<div class="sub">Lade Kontoauszüge aus OneDrive …</div>';
-  if(KAU.fehler) return h+'<div class="note warnbox">'+esc(KAU.fehler)+'</div>';
-  const bisM=String(year)<today.slice(0,4)?12:String(year)===today.slice(0,4)?Number(today.slice(5,7))-1:0;
-  h+='<div class="tablewrap"><table><thead><tr><th>Konto</th><th>Kürzel</th>'+MS.map(m=>'<th class="n">'+m+'</th>').join('')+'</tr></thead><tbody>';
-  let fehlt=0; const CSV=new Set(Object.values(buch).filter(d=>d&&d.monat).map(d=>d.konto+'|'+d.monat));
-  for(const k of kaKonten()){ h+='<tr><td>'+esc(k.name)+' <span class="sub">'+esc(k.ges||'')+'</span></td><td><input type="text" data-kakz="'+esc(k.key||k.iban)+'" value="'+esc(kaKz(k))+'" style="width:80px"></td>';
-    for(let i=1;i<=12;i++){ const m=year+'-'+String(i).padStart(2,'0'), F=kaFinde(k,m);
-      if(F.length) h+='<td class="n"><a href="#" data-kaopen="'+esc(F[0].id)+'" title="'+esc(F[0].rel)+'">PDF</a></td>';
-      else if(i<=bisM&&CSV.has((k.key||k.iban)+'|'+m)){ fehlt++; h+='<td class="n"><span class="neg">fehlt</span></td>'; }
-      else h+='<td class="n sub">–</td>'; }
-    h+='</tr>'; }
-  h+='</tbody></table></div><div class="sub">'+fehlt+' PDF-Auszüge fehlen für Monate, deren Umsätze schon als CSV im OS sind („fehlt“). „–“ = noch keine Umsätze im OS. Das Kürzel bestimmt den Dateinamen und lässt sich je Konto ändern. <button class="ghost small" data-kaneu="1">Aktualisieren</button></div>';
+  if(KT.fehler) h+='<div class="note warnbox">'+esc(KT.fehler)+'</div>';
+  h+='<div class="kt">'+ktWurzel(KA_ROOT,'Kontoauszüge')+'</div>';
+  h+='<div class="sub" style="margin-top:6px"><button class="ghost small" data-kaneu="1">Aktualisieren</button> <button class="ghost small" data-ktkz="1">'+(KT.kz?'Kürzel ausblenden':'Kürzel je Konto')+'</button></div>';
+  if(KT.kz) h+='<div class="tablewrap" style="margin-top:8px"><table><thead><tr><th>Konto</th><th>Gesellschaft</th><th>Kürzel im Dateinamen</th></tr></thead><tbody>'+kaKonten().map(k=>'<tr><td>'+esc(k.name)+'</td><td>'+esc(k.ges||'')+'</td><td><input type="text" data-kakz="'+esc(k.key||k.iban)+'" value="'+esc(kaKz(k))+'" style="width:100px"></td></tr>').join('')+'</tbody></table></div>';
   return h; }
 
 /* Konto und Monat aus dem PDF erkennen (Dateiname, sonst Text der ersten Seite) */
@@ -669,13 +696,16 @@ async function kaAblegen(){ const fehlt=KAU.pend.filter(p=>!p.konto||!/^\d{4}-\d
       else { const s=await odApi({aktion:'sitzung',pfad,name}); const r=await fetch(s.uploadUrl,{method:'PUT',headers:{'Content-Range':'bytes 0-'+(p.file.size-1)+'/'+p.file.size},body:p.file}); if(!r.ok) throw new Error('Hochladen fehlgeschlagen ('+r.status+')'); }
       KAU.pend.splice(KAU.pend.indexOf(p),1); n++; }
     catch(e){ toast(p.file.name+': '+(e.message||e)); } }
-  KAU.busy=''; toast(n+' Kontoauszug'+(n===1?'':'e')+' in OneDrive abgelegt.'); KAU.jahr=null; render(); }
+  KAU.busy=''; toast(n+' Kontoauszug'+(n===1?'':'e')+' in OneDrive abgelegt.'); ktNeu(); }
+function ktNeu(){ const auf=[...KT.offen]; KT.k={}; KT.fehler=''; auf.forEach(p=>ktLaden(p)); render(); }
 
 document.addEventListener('click',e=>{ const t=e.target.closest('button,a[data-kaopen]'); if(!t) return; const d=t.dataset;
   if(d.kaopen){ e.preventDefault(); odOeffnen(d.kaopen); return; }
   if(d.kago){ kaAblegen(); return; } if(d.kaweg){ KAU.pend=[]; render(); return; }
   if(d.kax!==undefined){ KAU.pend.splice(Number(d.kax),1); render(); return; }
-  if(d.kaneu){ KAU.jahr=null; render(); return; } });
+  if(d.kaneu){ ktNeu(); return; }
+  if(d.ktkz){ KT.kz=!KT.kz; render(); return; }
+  if(d.ktp){ const p=d.ktp; if(KT.offen.has(p)) KT.offen.delete(p); else { KT.offen.add(p); if(!KT.k[p]) ktLaden(p); } render(); return; } });
 document.addEventListener('change',e=>{ const t=e.target;
   if(t.id==='ka-file'){ const f=[...t.files]; t.value=''; kaQueue(f); return; }
   if(t.dataset.kak!==undefined){ KAU.pend[Number(t.dataset.kak)].konto=t.value; render(); return; }
@@ -854,26 +884,17 @@ function spZuordnen(f,it){ if(!canWrite){ toast('Nur Lesezugriff.'); return Prom
   bl.push({od:f.id,n:f.name,pfad:f.pfad,am:new Date().toISOString().slice(0,10)}); const patch={bl}; if(it.tx.ol){ patch.ol=0; patch.olg=''; }
   return writeTx(it.doc,it.ix,patch); }
 const spOrt=f=>esc(f.ort);
+const BEL_WURZELN=[['Prozesslandkarte 3.0/9.000 Buchführung/Gesellschaften Rechnungen','Gesellschaften Rechnungen'],['Prozesslandkarte 3.0/9.000 Buchführung/Gesellschaften Barauslagen','Gesellschaften Barauslagen'],['virt:Objekte','Objektordner – Betriebskosten und Instandhaltung']];
 function renderBelegeTab(){ let h=renderKA();
-  h+='<h2 style="margin-top:22px">Belege in OneDrive '+esc(year)+'</h2><div class="note">Gespiegelt aus OneDrive: Gesellschaften Rechnungen und Barauslagen des Jahres sowie je Objekt 04 Betriebskosten, 05 Instandhaltung (Jahresordner) und 07 WEG. Zuordnen verknüpft die vorhandene Datei mit der Zahlung – es wird nichts kopiert oder neu abgelegt. Vorschläge kommen aus Betrag und Datum im Dateinamen, Objekt und Absender.</div>';
-  if(!spBereit()) return h+'<div class="sub">Lade Belege aus OneDrive … (das kann beim ersten Mal etwas dauern)</div>';
-  if(SP.fehler) return h+'<div class="note warnbox">'+esc(SP.fehler)+' <button class="ghost small" data-spneu="1">Erneut versuchen</button></div>';
+  h+='<h2 style="margin-top:22px">Belege</h2><div class="note">Die Ordner wie in OneDrive. Bei jeder Datei steht, ob sie schon einer Zahlung zugeordnet ist; sonst schlägt das OS eine passende Zahlung vor (Betrag und Datum im Dateinamen, Objekt, Absender). Zuordnen verknüpft nur – es wird nichts kopiert.</div>';
   const Z=spZugeordnet(), idx=spIndex(), byId=new Map(items().map(it=>[it.id,it]));
-  const L=SP.dateien.map(f=>({f,z:Z[f.id],v:Z[f.id]?null:spVorschlag(f,idx)}));
-  const q=norm(SP.q); const sicht=L.filter(x=>(SP.f==='alle'||(SP.f==='offen'?!x.z:!!x.z))&&(!q||norm(x.f.name+' '+x.f.ort).includes(q))).sort((a,b)=>(b.f.datum||'').localeCompare(a.f.datum||'')||a.f.name.localeCompare(b.f.name));
-  const nOff=L.filter(x=>!x.z).length, eind=L.filter(x=>x.v&&x.v.eindeutig&&x.v.s>=90);
-  h+='<div class="tbar" style="border:none;padding:0 0 10px;background:none">'
-    +['offen','zug','alle'].map(k=>'<button class="'+(SP.f===k?'primary':'ghost')+' small" data-spf="'+k+'">'+({offen:'Nicht zugeordnet ('+nOff+')',zug:'Zugeordnet ('+(L.length-nOff)+')',alle:'Alle ('+L.length+')'}[k])+'</button>').join('')
-    +'<input type="search" id="sp-q" placeholder="Datei oder Ordner suchen" value="'+esc(SP.q)+'">'
-    +(canWrite&&eind.length?'<button class="primary small" data-spalle="1">'+eind.length+' sichere Vorschläge übernehmen</button>':'')
-    +'<button class="ghost small" data-spneu="1">Aktualisieren</button><span class="sub">Stand '+esc(SP.stand)+'</span></div>';
-  h+='<div class="tablewrap"><table><thead><tr><th>Datum</th><th>Ablage</th><th>Datei</th><th class="n">Betrag</th><th>Zahlung</th></tr></thead><tbody>';
-  for(const x of sicht.slice(0,400)){ const f=x.f; let z='';
-    if(x.z){ const it=byId.get(x.z.id); z=it?'<a href="#" data-spgo="'+esc(it.id)+'">'+esc(dmy(it.tx.d)+' · '+(it.tx.n||'').slice(0,28))+'</a> <span class="sub">'+eur(it.tx.b)+'</span>':'<span class="sub">zugeordnet</span>'; }
-    else if(x.v){ const it=x.v.it; z='<span class="sub">Vorschlag'+(x.v.n>1?' (1 von '+x.v.n+')':'')+':</span> <a href="#" data-spgo="'+esc(it.id)+'">'+esc(dmy(it.tx.d)+' · '+(it.tx.n||'').slice(0,28))+'</a> '+(canWrite?'<button class="ghost small" data-spzu="'+esc(f.id)+'" data-spit="'+esc(it.id)+'">Zuordnen</button>':''); }
-    else z='<span class="sub">'+(f.betrag==null?'kein Betrag im Dateinamen':'keine passende Zahlung gefunden')+'</span>';
-    h+='<tr><td>'+esc(f.datum?dmy(f.datum):'–')+'</td><td class="sub">'+spOrt(f)+'</td><td><a href="#" data-kaopen="'+esc(f.id)+'" title="'+esc(f.pfad.replace(/^Prozesslandkarte 3\.0\//,''))+'">'+esc(f.name)+'</a></td><td class="n">'+(f.betrag!=null?eur(f.betrag):'–')+'</td><td>'+z+'</td></tr>'; }
-  h+='</tbody></table></div>'+(sicht.length>400?'<div class="sub">Es werden die ersten 400 von '+sicht.length+' Dateien gezeigt – bitte die Suche nutzen.</div>':'');
+  const datei=x=>{ const f=spMeta(Object.assign({},x)); const z=Z[f.id];
+    if(z){ const it=byId.get(z.id); return it?'<a href="#" data-spgo="'+esc(it.id)+'" class="sub">'+esc(dmy(it.tx.d)+' · '+(it.tx.n||'').slice(0,26)+' · '+eur(it.tx.b))+'</a>':'<span class="sub">zugeordnet</span>'; }
+    const v=spVorschlag(f,idx); if(!v) return '<span class="sub">'+(f.betrag==null?'kein Betrag im Namen':'keine passende Zahlung')+'</span>';
+    if(!SP.dateien) SP.dateien=[]; if(!SP.dateien.some(y=>y.id===f.id)) SP.dateien.push(f);
+    return '<span class="pill mid">offen</span> <a href="#" data-spgo="'+esc(v.it.id)+'" class="sub">Vorschlag '+esc(dmy(v.it.tx.d)+' · '+(v.it.tx.n||'').slice(0,22))+'</a>'+(canWrite?' <button class="ghost small" data-spzu="'+esc(f.id)+'" data-spit="'+esc(v.it.id)+'">Zuordnen</button>':''); };
+  h+='<div class="kt">'+BEL_WURZELN.map(([p,n])=>ktWurzel(p,n,datei)).join('')+'</div>';
+  h+='<div class="sub" style="margin-top:6px"><button class="ghost small" data-kaneu="1">Aktualisieren</button></div>';
   return h; }
 /* In der Buchung: passende OneDrive-Dateien vorschlagen und suchen */
 function spTreffer(it,q){ const Z=spZugeordnet(); const frei=SP.dateien.filter(f=>!Z[f.id]);
