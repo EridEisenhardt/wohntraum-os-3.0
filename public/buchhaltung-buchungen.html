@@ -103,6 +103,9 @@ td.n{text-align:right;font-variant-numeric:tabular-nums}
 .bdrop{display:block;border:2px dashed var(--line);border-radius:10px;padding:14px;text-align:center;color:var(--muted);font-size:13px;cursor:pointer;margin-top:6px}
 .bdrop.over,.drop.over{border-color:var(--accent);background:var(--accent-soft)}
 .prev{margin-top:8px}
+.belol{display:grid;gap:6px;margin:6px 0;font-size:13px}
+.belol label{display:flex;gap:8px;align-items:center;cursor:pointer}
+.belol input[type=text]{width:100%;font-size:14px;padding:6px 8px;box-sizing:border-box}
 .belq{margin-top:8px;display:grid;gap:8px}
 .belf{border:1px solid var(--line);border-radius:10px;padding:10px;display:grid;gap:8px}
 .belf input{width:100%;font-size:14px;padding:6px 8px;box-sizing:border-box}
@@ -758,7 +761,9 @@ function belEntwurf(it){ if(BEL.id!==it.id||(!BEL.L.length&&!BEL.busy&&!BEL.fehl
   else if(BEL.busy) h+='<div class="sub">'+esc(BEL.busy)+'</div>';
   return h+'</div>'; }
 function belCard(it,ro){ const bl=it.tx.bl||[];
-  let h='<div class="card"><div class="lab">Belege '+(bl.length?'<span class="pill ok">'+bl.length+'</span>':it.needBeleg?'<span class="pill mid">fehlt</span>':'')+'</div>';
+  let h='<div class="card"><div class="lab">Belege '+(bl.length?'<span class="pill ok">'+bl.length+'</span>':it.tx.ol?'<span class="pill src">beleglos</span>':it.needBeleg?'<span class="pill mid">fehlt</span>':'')+'</div>';
+  if(!bl.length&&it.tx.b<0) h+='<div class="belol"><label><input type="checkbox" id="bel-ol"'+(it.tx.ol?' checked':'')+(ro?' disabled':'')+'> Beleglos – für diese Zahlung gibt es keinen Beleg</label>'
+    +(it.tx.ol?'<input type="text" id="bel-olg" placeholder="Grund, z. B. Bankgebühr, Barabhebung, Erstattung" value="'+esc(it.tx.olg||'')+'"'+(ro?' disabled':'')+'>':'')+'</div>';
   h+=bl.map((b,i)=>'<div class="bel"><a href="#" data-bopen="'+i+'" title="'+esc(b.pfad?b.pfad.replace(/^Prozesslandkarte 3\.0\//,''):'im OS gespeichert')+'">'+esc(b.n)+'</a><span>'
     +(b.od?'<span class="pill src">OneDrive</span>':(ro?'':'<button class="ghost small" data-bmig="'+i+'" title="Datei nach dem Ablageschema in OneDrive ablegen">nach OneDrive</button>'))
     +(ro?'':'<button class="ghost small" data-bdel="'+i+'" title="'+(b.od?'Verknüpfung entfernen – die Datei bleibt in OneDrive':'Beleg löschen')+'">entfernen</button>')+'</span></div>').join('');
@@ -806,6 +811,10 @@ document.addEventListener('change',e=>{ const t=e.target; if(t.dataset.belz!==un
   if(t.dataset.belf&&t.tagName==='SELECT'){ const d=BEL.L[Number(t.dataset.beli)]; if(!d) return; d[t.dataset.belf]=t.value; render(); } });
 document.addEventListener('input',e=>{ const t=e.target; if(!t.dataset||!t.dataset.belf||t.tagName!=='INPUT') return; const i=Number(t.dataset.beli), d=BEL.L[i]; const it=items().find(x=>x.id===BEL.id); if(!d||!it) return;
   d[t.dataset.belf]=t.value; if(t.dataset.belf==='datum') d.datumPdf=false; const n=$('beln-'+i), p=$('belp-'+i); if(n) n.textContent=belName(d,it); if(p) p.textContent=belPfad(d,it).replace(/^Prozesslandkarte 3\.0\//,''); });
+document.addEventListener('change',e=>{ const t=e.target; if(t.id!=='bel-ol'&&t.id!=='bel-olg') return; const it=items().find(x=>x.id===U.sel); if(!it) return;
+  if(t.id==='bel-olg'){ writeTx(it.doc,it.ix,{olg:t.value.trim()}); return; }
+  if(!t.checked){ writeTx(it.doc,it.ix,{ol:0,olg:''}); toast('Markierung beleglos entfernt.'); return; }
+  writeTx(it.doc,it.ix,{ol:1}); toast('Als beleglos markiert.'); setTimeout(()=>{ const g=$('bel-olg'); if(g) g.focus(); },50); });
 /* ================= Buchungen (Belegbuchhaltung im Stil von BuchhaltungsButler) =================
    Gleiche Daten wie „Objekt-Controlling“ (os_docs, app 'oc'): jede Zuordnung zählt dort sofort mit. */
 tab='liste';
@@ -865,7 +874,7 @@ function items(){
   const out=[...map.values()];
   for(const it of out){ it.parts=it.parts.map((p,pi)=>{ const sp=Array.isArray(it.tx.sp)&&it.tx.sp.length&&!p.nh?it.tx.sp[pi]:null; let ka=sp?(sp.ka||''):(it.tx.m?(it.tx.ka||''):ruleKa(p.c)), kg=false; if(!ka&&p.c.kat==='bk'&&!sp){ ka=guessKa(it.tx); kg=!!ka; } return Object.assign({},p,{c:Object.assign({},p.c,{ka,kg})}); });
     it.c=it.parts[0].c; it.needKA=!it.parts.some(p=>isOpen(p.c))&&it.parts.some(p=>p.c.kat==='bk'&&(!p.c.ka||p.c.kg)); it.open=it.parts.some(p=>isOpen(p.c)); it.bel=(it.tx.bl||[]).length;
-    it.needBeleg=it.tx.b<0&&!it.open&&it.parts.some(p=>BELEG_KATS.includes(p.c.kat)&&!(p.c.kat==='verw'&&p.c.sub==='bank'))&&!it.bel; }
+    it.needBeleg=it.tx.b<0&&!it.open&&it.parts.some(p=>BELEG_KATS.includes(p.c.kat)&&!(p.c.kat==='verw'&&p.c.sub==='bank'))&&!it.bel&&!it.tx.ol; }
   return out.sort((a,b)=>a.tx.d<b.tx.d?1:a.tx.d>b.tx.d?-1:0);
 }
 function filtered(all){ const q=norm(U.q);
@@ -914,7 +923,7 @@ function renderListe(){
   for(const it of list.slice(0,600)){ const mk=it.tx.d.slice(0,7); if(mk!==lastD){ lastD=mk; mid+='<div class="lgrp">'+MON[Number(mk.slice(5,7))-1]+' '+mk.slice(0,4)+'</div>'; }
     mid+='<button class="row'+(it.id===U.sel?' sel':'')+'" data-sel="'+esc(it.id)+'"><span class="dot '+(it.open?'o':it.needBeleg?'b':'z')+'" title="'+(it.open?'offen':it.needBeleg?'Beleg fehlt':'zugeordnet')+'"></span>'
       +'<span class="rd">'+esc(dmy(it.tx.d).slice(0,6))+'</span><span class="rt"><b>'+esc(it.tx.n||'–')+'</b><small>'+esc(it.tx.z||'')+'</small></span>'
-      +'<span class="rz">'+esc(zuordText(it))+(it.bel?' <span title="Beleg vorhanden">📎</span>':'')+'</span><span class="ra '+cls(it.tx.b)+'">'+eur(it.tx.b)+'</span></button>'; }
+      +'<span class="rz">'+esc(zuordText(it))+(it.bel?' <span class="sub" title="Beleg vorhanden">· Beleg</span>':it.tx.ol?' <span class="sub" title="'+esc(it.tx.olg||'als beleglos markiert')+'">· beleglos</span>':'')+'</span><span class="ra '+cls(it.tx.b)+'">'+eur(it.tx.b)+'</span></button>'; }
   if(list.length>600) mid+='<div class="empty">Es werden die neuesten 600 gezeigt – bitte Monat oder Konto wählen.</div>';
   mid+='</div>';
   const it=all.find(x=>x.id===U.sel);
