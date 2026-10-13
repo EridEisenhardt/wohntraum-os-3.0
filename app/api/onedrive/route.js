@@ -112,6 +112,46 @@ export async function POST(req) {
       return antwort({ name: x.name, typ: (x.file && x.file.mimeType) || '', daten: buf.toString('base64') })
     }
 
+    if (a === 'belegbaum') {
+      // Alle Belege eines Jahres: Gesellschaften Rechnungen und Barauslagen sowie je Objekt 04 Betriebskosten, 05 Instandhaltung und 07 WEG
+      const jahr = String(b.jahr || '').replace(/\D/g, '').slice(0, 4); if (jahr.length !== 4) return antwort({ error: 'Jahr fehlt.' }, 400)
+      const wunsch = new Set((b.kz || []).map(norm)); const dateien = []
+      const imJahr = f => { const m = f.name.match(/(20\d{2})-\d{2}-\d{2}/) || f.name.match(/_(20\d{2})-\d{2}[_ .]/); return m ? m[1] === jahr : String(f.geaendert || '').slice(0, 4) === jahr }
+      async function geh(pfad, rel, tiefe, info, filter) {
+        const L = await kinder(pfad); if (!L) return
+        await Promise.all(L.map(async x => {
+          const r = rel ? rel + '/' + x.name : x.name
+          if (x.ordner) { if (tiefe > 1 && !/abrechnung|altablage/i.test(x.name)) await geh(pfad + '/' + x.name, r, tiefe - 1, info, filter) }
+          else if (!filter || filter(x)) dateien.push(Object.assign(x, info, { rel: r, pfad: pfad + '/' + x.name }))
+        }))
+      }
+      const BF = ROOT + '/9.000 Buchführung'
+      const auftraege = [
+        geh(BF + '/Gesellschaften Rechnungen/' + jahr, '', 3, { bereich: 'ges' }),
+        geh(BF + '/Gesellschaften Barauslagen/' + jahr, '', 2, { bereich: 'bar' })
+      ]
+      for (const g of GRUPPEN) {
+        const objs = ((await kinder(GEB + '/' + g)) || []).filter(o => o.ordner)
+        for (const o of objs) {
+          const n = norm(o.name); const kz = [...wunsch].find(k => n === k); if (!kz) continue
+          const basis = GEB + '/' + g + '/' + o.name
+          auftraege.push((async () => {
+            const top = ((await kinder(basis)) || []).filter(x => x.ordner)
+            const t04 = top.find(x => x.name.startsWith('04 ')), t05 = top.find(x => x.name.startsWith('05 ')), t07 = top.find(x => x.name.startsWith('07 '))
+            const info = { bereich: 'obj', obj: o.name }
+            const jobs = []
+            if (t04) jobs.push(geh(basis + '/' + t04.name, t04.name, 2, info, imJahr))
+            if (t07) jobs.push(geh(basis + '/' + t07.name, t07.name, 2, info, imJahr))
+            if (t05) { const L = ((await kinder(basis + '/' + t05.name)) || []).filter(x => x.ordner && x.name.includes(jahr))
+              for (const u of L) jobs.push(geh(basis + '/' + t05.name + '/' + u.name, t05.name + '/' + u.name, 2, info)) }
+            await Promise.all(jobs)
+          })())
+        }
+      }
+      await Promise.all(auftraege)
+      return antwort({ dateien: dateien.filter(f => !/^~\$|\.(ds_store|tmp)$/i.test(f.name)) })
+    }
+
     if (a === 'baum') {
       // Ordner rekursiv auflisten (max. 3 Ebenen), z. B. Kontoauszüge eines Jahres
       const p = pruefe(b.pfad); const tiefe = Math.min(3, Math.max(1, Number(b.tiefe) || 2)); const dateien = []

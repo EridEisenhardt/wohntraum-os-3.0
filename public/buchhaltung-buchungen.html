@@ -106,6 +106,8 @@ td.n{text-align:right;font-variant-numeric:tabular-nums}
 .belol{display:grid;gap:6px;margin:6px 0;font-size:13px}
 .belol label{display:flex;gap:8px;align-items:center;cursor:pointer}
 .belol input[type=text]{width:100%;font-size:14px;padding:6px 8px;box-sizing:border-box}
+.spbox{margin:8px 0;display:grid;gap:6px;border-top:1px solid var(--line);padding-top:8px}
+.spbox input[type=search]{width:100%;font-size:14px;padding:6px 8px;box-sizing:border-box}
 .belq{margin-top:8px;display:grid;gap:8px}
 .belf{border:1px solid var(--line);border-radius:10px;padding:10px;display:grid;gap:8px}
 .belf input{width:100%;font-size:14px;padding:6px 8px;box-sizing:border-box}
@@ -148,6 +150,7 @@ th.n{text-align:right}
 <div class="tabs" id="tabs">
   <button data-tab="liste" class="on">Buchungen</button>
   <button data-tab="import">Kontoauszüge importieren</button>
+  <button data-tab="belege">Belege &amp; Auszüge</button>
   <button data-tab="regeln">Regeln</button>
   <button data-tab="konten">Kontenplan</button>
 </div>
@@ -767,11 +770,13 @@ function belCard(it,ro){ const bl=it.tx.bl||[];
   h+=bl.map((b,i)=>'<div class="bel"><a href="#" data-bopen="'+i+'" title="'+esc(b.pfad?b.pfad.replace(/^Prozesslandkarte 3\.0\//,''):'im OS gespeichert')+'">'+esc(b.n)+'</a><span>'
     +(b.od?'<span class="pill src">OneDrive</span>':(ro?'':'<button class="ghost small" data-bmig="'+i+'" title="Datei nach dem Ablageschema in OneDrive ablegen">nach OneDrive</button>'))
     +(ro?'':'<button class="ghost small" data-bdel="'+i+'" title="'+(b.od?'Verknüpfung entfernen – die Datei bleibt in OneDrive':'Beleg löschen')+'">entfernen</button>')+'</span></div>').join('');
+  if(!ro&&it.tx.b<0&&!it.tx.ol) h+=spBox(it,ro);
   if(!ro) h+=belEntwurf(it);
-  if(canWrite&&!ro) h+='<label class="bdrop" id="bdrop" for="bfile">Rechnung oder Beleg hierher ziehen oder klicken (PDF, JPG, PNG) – wird nach Schema benannt und in OneDrive abgelegt<input type="file" id="bfile" accept=".pdf,image/*" multiple hidden></label>';
+  if(canWrite&&!ro) h+='<label class="bdrop" id="bdrop" for="bfile">Noch nicht in OneDrive? Datei hierher ziehen oder klicken – sie wird nach Schema benannt und abgelegt<input type="file" id="bfile" accept=".pdf,image/*" multiple hidden></label>';
   if(bl.length) h+='<div class="prev" id="prev"><div class="sub">Lade Vorschau …</div></div>';
   return h+'</div>'; }
 const b64Datei=f=>new Promise((res,rej)=>{ const r=new FileReader(); r.onload=()=>res(String(r.result).split(',')[1]||''); r.onerror=rej; r.readAsDataURL(f); });
+const z0=d=>d.ziel.art==='ges'?'ges':'obj';
 async function belAblegen(){ const it=items().find(x=>x.id===BEL.id); if(!it){ BEL.L=[]; render(); return; }
   for(const d of BEL.L){ if(!d.ziel||!belPfad(d,it)){ toast('Bitte bei allen Dateien eine Ablage wählen.'); return; } if(!/^\d{4}-\d{2}-\d{2}$/.test(d.datum)){ toast('Bitte ein gültiges Datum eingeben.'); return; } if(!belFix(d.abs)){ toast('Bitte den Absender eintragen.'); return; } }
   let bl=(it.tx.bl||[]).slice(), n=0, weg=[]; const absNeu=Object.assign({},absMap); let absGeaendert=false;
@@ -781,6 +786,7 @@ async function belAblegen(){ const it=items().find(x=>x.id===BEL.id); if(!it){ B
       if(f.size<=3*1024*1024) x=(await odApi({aktion:'hochladen',pfad,name,daten:await b64Datei(f),typ:f.type||'application/octet-stream'})).item;
       else { const s=await odApi({aktion:'sitzung',pfad,name}); const r=await fetch(s.uploadUrl,{method:'PUT',headers:{'Content-Range':'bytes 0-'+(f.size-1)+'/'+f.size},body:f}); if(!r.ok) throw new Error('Hochladen fehlgeschlagen ('+r.status+')'); const j=await r.json(); x={id:j.id,name:j.name}; }
       const e={od:x.id,n:x.name||name,pfad:pfad+'/'+(x.name||name),am:new Date().toISOString().slice(0,10)};
+      if(SP.dateien&&SP.jahr===year) SP.dateien.push(spMeta({id:x.id,name:e.n,pfad:e.pfad,rel:e.pfad.split('/').slice(-3).join('/'),bereich:z0(d),obj:d.ziel.obj||''}));
       if(d.ersetze>=0&&bl[d.ersetze]&&bl[d.ersetze].p){ weg.push(bl[d.ersetze].p); bl[d.ersetze]=e; } else bl.push(e);
       const k=belKey(it.tx.n); if(k&&belFix(d.abs)!==belAbsender(it.tx.n)){ absNeu[k]=belFix(d.abs); absGeaendert=true; }
       BEL.L.splice(BEL.L.indexOf(d),1); n++; }
@@ -815,6 +821,83 @@ document.addEventListener('change',e=>{ const t=e.target; if(t.id!=='bel-ol'&&t.
   if(t.id==='bel-olg'){ writeTx(it.doc,it.ix,{olg:t.value.trim()}); return; }
   if(!t.checked){ writeTx(it.doc,it.ix,{ol:0,olg:''}); toast('Markierung beleglos entfernt.'); return; }
   writeTx(it.doc,it.ix,{ol:1}); toast('Als beleglos markiert.'); setTimeout(()=>{ const g=$('bel-olg'); if(g) g.focus(); },50); });
+/* ---------- Belege & Auszüge: Spiegel der OneDrive-Ordner, Zuordnung zu Zahlungen ohne neue Ablage ---------- */
+var SP={jahr:null,dateien:null,lade:false,fehler:'',f:'offen',q:'',stand:''};
+async function spLaden(){ if(SP.lade) return; SP.lade=true; SP.fehler=''; const j=year;
+  try{ SP.dateien=((await odApi({aktion:'belegbaum',jahr:j,kz:objekte.map(o=>o.kz)})).dateien||[]).map(spMeta); SP.stand=new Date().toTimeString().slice(0,5); }
+  catch(e){ SP.fehler=e.message||String(e); SP.dateien=[]; }
+  SP.jahr=j; SP.lade=false; render(); }
+function spBereit(){ if(SP.jahr!==year&&!SP.lade) spLaden(); return SP.jahr===year&&!SP.lade; }
+/* Name nach Schema zerlegen: Kürzel_Absender[_Thema]_Datum_Betrag */
+function spMeta(f){ const base=f.name.replace(/\.[A-Za-z0-9]{2,5}$/,''); const T=base.split('_');
+  const di=T.findIndex(t=>/^\d{4}-\d{2}(-\d{2})?$/.test(t.trim())); const bi=T.findIndex(t=>/^-?[\d.]+,\d{2}\s?€$/.test(t.trim()));
+  const datum=di>=0?T[di].trim():''; const betrag=bi>=0?Math.abs(parseNum(T[bi])):null;
+  let ort=''; const r=String(f.rel||'').split('/');
+  if(f.bereich==='ges') ort=(r[0]||'')+' · Rechnungen'+(r.length>2?' '+r[1]:'');
+  else if(f.bereich==='bar') ort=(r[0]||'')+' · Barauslagen';
+  else ort=(f.obj||'')+' · '+r.slice(0,-1).join('/').replace(/^0\d /,'').replace(/\/0\d /,'/');
+  return Object.assign(f,{pre:T[0]||'',abs:T.length>2?T[1]:'',datum,betrag,ort}); }
+/* Welche OneDrive-Dateien hängen schon an einer Zahlung? */
+function spZugeordnet(){ const m={}; for(const [doc,d] of Object.entries(buch)){ (d.tx||[]).forEach((t,ix)=>{ (t.bl||[]).forEach(b=>{ if(b.od) m[b.od]={doc,ix,id:doc+'|'+ix}; }); }); } return m; }
+const spTage=(a,b)=>Math.round((new Date(b)-new Date(a.length===7?a+'-15':a))/864e5);
+function spScore(f,it){ if(f.betrag==null) return -1;
+  const betr=[Math.abs(it.tx.b),...it.parts.map(p=>Math.abs(p.tx&&p.tx.b!=null?p.tx.b:0))];
+  if(!betr.some(b=>Math.abs(b-f.betrag)<0.005)) return -1;
+  let s=50; if(f.datum){ const d=spTage(f.datum,it.tx.d); if(d<-15||d>120) return -1; s+=40-Math.min(40,Math.abs(d)/3); }
+  const k=it.k||{}; if(it.parts.some(p=>p.c.obj&&p.c.obj===f.pre)||k.obj===f.pre) s+=30; else if(k.ges===f.pre) s+=15;
+  const a=norm(f.abs).split(' ')[0]; if(a&&a.length>2&&norm((it.tx.n||'')+' '+(it.tx.z||'')).includes(a)) s+=25;
+  if(it.needBeleg) s+=10; if(it.tx.b>0) s-=30; return s; }
+function spIndex(){ const idx=new Map(); for(const it of items()){ if(it.tx.b>=0&&!it.split) continue; const keys=new Set([Math.round(Math.abs(it.tx.b)*100),...it.parts.map(p=>Math.round(Math.abs(p.tx&&p.tx.b!=null?p.tx.b:0)*100))]); for(const k of keys){ if(!idx.has(k)) idx.set(k,[]); idx.get(k).push(it); } } return idx; }
+function spVorschlag(f,idx){ if(f.betrag==null) return null; const L=(idx.get(Math.round(f.betrag*100))||[]).filter(it=>!(it.tx.bl||[]).some(b=>b.od===f.id)).map(it=>({it,s:spScore(f,it)})).filter(x=>x.s>=0).sort((a,b)=>b.s-a.s);
+  if(!L.length) return null; return {it:L[0].it,s:L[0].s,n:L.length,eindeutig:L.length===1||L[0].s-L[1].s>=20}; }
+function spZuordnen(f,it){ if(!canWrite){ toast('Nur Lesezugriff.'); return Promise.resolve(); } const bl=(it.tx.bl||[]).slice(); if(bl.some(b=>b.od===f.id)) return Promise.resolve();
+  bl.push({od:f.id,n:f.name,pfad:f.pfad,am:new Date().toISOString().slice(0,10)}); const patch={bl}; if(it.tx.ol){ patch.ol=0; patch.olg=''; }
+  return writeTx(it.doc,it.ix,patch); }
+const spOrt=f=>esc(f.ort);
+function renderBelegeTab(){ let h=renderKA();
+  h+='<h2 style="margin-top:22px">Belege in OneDrive '+esc(year)+'</h2><div class="note">Gespiegelt aus OneDrive: Gesellschaften Rechnungen und Barauslagen des Jahres sowie je Objekt 04 Betriebskosten, 05 Instandhaltung (Jahresordner) und 07 WEG. Zuordnen verknüpft die vorhandene Datei mit der Zahlung – es wird nichts kopiert oder neu abgelegt. Vorschläge kommen aus Betrag und Datum im Dateinamen, Objekt und Absender.</div>';
+  if(!spBereit()) return h+'<div class="sub">Lade Belege aus OneDrive … (das kann beim ersten Mal etwas dauern)</div>';
+  if(SP.fehler) return h+'<div class="note warnbox">'+esc(SP.fehler)+' <button class="ghost small" data-spneu="1">Erneut versuchen</button></div>';
+  const Z=spZugeordnet(), idx=spIndex(), byId=new Map(items().map(it=>[it.id,it]));
+  const L=SP.dateien.map(f=>({f,z:Z[f.id],v:Z[f.id]?null:spVorschlag(f,idx)}));
+  const q=norm(SP.q); const sicht=L.filter(x=>(SP.f==='alle'||(SP.f==='offen'?!x.z:!!x.z))&&(!q||norm(x.f.name+' '+x.f.ort).includes(q))).sort((a,b)=>(b.f.datum||'').localeCompare(a.f.datum||'')||a.f.name.localeCompare(b.f.name));
+  const nOff=L.filter(x=>!x.z).length, eind=L.filter(x=>x.v&&x.v.eindeutig&&x.v.s>=90);
+  h+='<div class="tbar" style="border:none;padding:0 0 10px;background:none">'
+    +['offen','zug','alle'].map(k=>'<button class="'+(SP.f===k?'primary':'ghost')+' small" data-spf="'+k+'">'+({offen:'Nicht zugeordnet ('+nOff+')',zug:'Zugeordnet ('+(L.length-nOff)+')',alle:'Alle ('+L.length+')'}[k])+'</button>').join('')
+    +'<input type="search" id="sp-q" placeholder="Datei oder Ordner suchen" value="'+esc(SP.q)+'">'
+    +(canWrite&&eind.length?'<button class="primary small" data-spalle="1">'+eind.length+' sichere Vorschläge übernehmen</button>':'')
+    +'<button class="ghost small" data-spneu="1">Aktualisieren</button><span class="sub">Stand '+esc(SP.stand)+'</span></div>';
+  h+='<div class="tablewrap"><table><thead><tr><th>Datum</th><th>Ablage</th><th>Datei</th><th class="n">Betrag</th><th>Zahlung</th></tr></thead><tbody>';
+  for(const x of sicht.slice(0,400)){ const f=x.f; let z='';
+    if(x.z){ const it=byId.get(x.z.id); z=it?'<a href="#" data-spgo="'+esc(it.id)+'">'+esc(dmy(it.tx.d)+' · '+(it.tx.n||'').slice(0,28))+'</a> <span class="sub">'+eur(it.tx.b)+'</span>':'<span class="sub">zugeordnet</span>'; }
+    else if(x.v){ const it=x.v.it; z='<span class="sub">Vorschlag'+(x.v.n>1?' (1 von '+x.v.n+')':'')+':</span> <a href="#" data-spgo="'+esc(it.id)+'">'+esc(dmy(it.tx.d)+' · '+(it.tx.n||'').slice(0,28))+'</a> '+(canWrite?'<button class="ghost small" data-spzu="'+esc(f.id)+'" data-spit="'+esc(it.id)+'">Zuordnen</button>':''); }
+    else z='<span class="sub">'+(f.betrag==null?'kein Betrag im Dateinamen':'keine passende Zahlung gefunden')+'</span>';
+    h+='<tr><td>'+esc(f.datum?dmy(f.datum):'–')+'</td><td class="sub">'+spOrt(f)+'</td><td><a href="#" data-kaopen="'+esc(f.id)+'" title="'+esc(f.pfad.replace(/^Prozesslandkarte 3\.0\//,''))+'">'+esc(f.name)+'</a></td><td class="n">'+(f.betrag!=null?eur(f.betrag):'–')+'</td><td>'+z+'</td></tr>'; }
+  h+='</tbody></table></div>'+(sicht.length>400?'<div class="sub">Es werden die ersten 400 von '+sicht.length+' Dateien gezeigt – bitte die Suche nutzen.</div>':'');
+  return h; }
+/* In der Buchung: passende OneDrive-Dateien vorschlagen und suchen */
+function spTreffer(it,q){ const Z=spZugeordnet(); const frei=SP.dateien.filter(f=>!Z[f.id]);
+  if(q){ const n=norm(q); return frei.filter(f=>norm(f.name+' '+f.ort).includes(n)).slice(0,8); }
+  return frei.map(f=>({f,s:spScore(f,it)})).filter(x=>x.s>=0).sort((a,b)=>b.s-a.s).slice(0,5).map(x=>x.f); }
+function spZeilen(it,q){ const L=spTreffer(it,q); if(!L.length) return '<div class="sub">'+(q?'Keine freie Datei gefunden.':'Keine Datei mit passendem Betrag in OneDrive. Über die Suche lässt sich jede freie Datei wählen.')+'</div>';
+  return L.map(f=>'<div class="bel"><a href="#" data-kaopen="'+esc(f.id)+'" title="'+esc(f.pfad.replace(/^Prozesslandkarte 3\.0\//,''))+'">'+esc(f.name)+'</a><span><span class="sub">'+spOrt(f)+'</span>'+(canWrite?'<button class="ghost small" data-spzu="'+esc(f.id)+'" data-spit="'+esc(it.id)+'">Zuordnen</button>':'')+'</span></div>').join(''); }
+function spBox(it,ro){ if(ro) return ''; if((it.tx.bl||[]).length&&SP.mehr!==it.id) return '<div class="spbox"><button class="ghost small" data-spmehr="1">Weitere Datei aus OneDrive zuordnen</button></div>'; let h='<div class="spbox"><div class="lab">Aus OneDrive zuordnen</div>';
+  if(!spBereit()) return h+'<div class="sub">Lade Belege aus OneDrive …</div></div>';
+  if(SP.fehler) return h+'<div class="sub" style="color:var(--warn)">'+esc(SP.fehler)+'</div></div>';
+  h+='<input type="search" id="sp-such" placeholder="Datei suchen, z. B. Absender oder Betrag" value="'+esc(SP.such||'')+'"><div id="sp-erg">'+spZeilen(it,SP.such||'')+'</div>';
+  return h+'</div>'; }
+document.addEventListener('input',e=>{ const t=e.target;
+  if(t.id==='sp-such'){ SP.such=t.value; const it=items().find(x=>x.id===U.sel); const el=$('sp-erg'); if(it&&el) el.innerHTML=spZeilen(it,t.value.trim()); return; }
+  if(t.id==='sp-q'){ SP.q=t.value; clearTimeout(spLaden._t); spLaden._t=setTimeout(()=>{ render(); const q=$('sp-q'); if(q){ q.focus(); q.setSelectionRange(q.value.length,q.value.length); } },250); } });
+document.addEventListener('click',async e=>{ const t=e.target.closest('button,a[data-spgo]'); if(!t) return; const d=t.dataset;
+  if(d.spmehr){ SP.mehr=U.sel; render(); return; }
+  if(d.spf){ SP.f=d.spf; render(); return; }
+  if(d.spneu){ SP.jahr=null; render(); return; }
+  if(d.spgo){ e.preventDefault(); tab='liste'; U.status='alle'; U.konto=''; U.sel=d.spgo; saveU(); render.scrollSel=true; render(); return; }
+  if(d.spzu){ const f=(SP.dateien||[]).find(x=>x.id===d.spzu), it=items().find(x=>x.id===d.spit); if(!f||!it) return; await spZuordnen(f,it); SP.such=''; toast('Beleg zugeordnet.'); render(); return; }
+  if(d.spalle){ const Z=spZugeordnet(), idx=spIndex(); let n=0; const benutzt=new Set();
+    for(const f of SP.dateien){ if(Z[f.id]) continue; const v=spVorschlag(f,idx); if(!v||!v.eindeutig||v.s<90||benutzt.has(v.it.id)) continue; benutzt.add(v.it.id); await spZuordnen(f,items().find(x=>x.id===v.it.id)); n++; }
+    toast(n+' Belege zugeordnet.'); render(); return; } });
 /* ================= Buchungen (Belegbuchhaltung im Stil von BuchhaltungsButler) =================
    Gleiche Daten wie „Objekt-Controlling“ (os_docs, app 'oc'): jede Zuordnung zählt dort sofort mit. */
 tab='liste';
@@ -894,7 +977,7 @@ function render(){
   if(!ready){ $('view').innerHTML='<div class="loading">'+(dbState==='none'?'Bitte im Wohntraum OS einloggen.':'Lade Daten …')+'</div>'; return; }
   const f=document.activeElement, fid=f&&f.id, fv=fid?f.value:null, ss=f&&f.selectionStart;
   const keep=f&&f.id==='u-q'?f:null;
-  $('view').innerHTML=tab==='import'?'<div class="pad">'+renderImport()+renderKA()+'</div>':tab==='regeln'?'<div class="pad">'+renderRegeln()+'</div>':tab==='konten'?'<div class="pad">'+renderKontenplan()+'</div>':renderListe();
+  $('view').innerHTML=tab==='import'?'<div class="pad">'+renderImport()+'</div>':tab==='belege'?'<div class="pad">'+renderBelegeTab()+'</div>':tab==='regeln'?'<div class="pad">'+renderRegeln()+'</div>':tab==='konten'?'<div class="pad">'+renderKontenplan()+'</div>':renderListe();
   if(keep){ const n=$('u-q'); if(n){ n.replaceWith(keep); keep.focus({preventScroll:true}); } }
   else if(fid){ const el=$(fid); if(el&&(el.tagName==='INPUT'||el.tagName==='TEXTAREA')){ el.focus({preventScroll:true}); if(fv!=null) el.value=fv; try{ if(ss!=null) el.setSelectionRange(ss,ss); }catch(_){} } }
   const s=document.querySelector('.row.sel'); if(s&&render.scrollSel){ s.scrollIntoView({block:'nearest'}); render.scrollSel=false; }
@@ -1117,7 +1200,7 @@ document.addEventListener('keydown',e=>{ const a=document.activeElement; const t
 document.addEventListener('dragleave',e=>{ const d=e.target.closest&&e.target.closest('#bdrop,#drop,#kadrop'); if(d) d.classList.remove('over'); });
 document.addEventListener('drop',e=>{ if(!e.dataTransfer||!e.dataTransfer.files.length) return; e.preventDefault(); document.querySelectorAll('.over').forEach(x=>x.classList.remove('over'));
   const files=[...e.dataTransfer.files]; const onBeleg=e.target.closest&&e.target.closest('#bdrop,#det');
-  if(tab==='import'&&files.every(f=>/\.pdf$/i.test(f.name))){ kaQueue(files); return; }
+  if(tab==='belege'&&files.every(f=>/\.pdf$/i.test(f.name))){ kaQueue(files); return; }
   if(onBeleg&&tab==='liste') uploadBelege(files); else if(files.every(f=>/\.(csv|txt)$/i.test(f.name))) handleFiles(files); else if(tab==='liste') uploadBelege(files); });
 let pendingRender=false;
 function editing(){ const a=document.activeElement; return !!(a&&$('view').contains(a)&&(a.matches('input[type=text],textarea')||(a.tagName==='SELECT'))&&a.id!=='u-q'); }
