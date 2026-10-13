@@ -157,6 +157,14 @@ select.zsel{font-size:11px;padding:2px 4px;margin-top:4px;max-width:100%}
 .dtop{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;margin-bottom:12px}
 .dname{font-size:22px;font-weight:800}
 .card.wide{margin:0 0 14px}
+.hneu{border:1px solid var(--line);border-radius:10px;padding:10px;margin:8px 0;display:grid;gap:8px}
+.hneu textarea{width:100%;box-sizing:border-box}
+.hrow{display:flex;gap:10px;flex-wrap:wrap}
+.hlist{margin-top:8px}
+.hz{display:grid;grid-template-columns:170px 1fr;gap:10px;padding:7px 0;border-top:1px solid var(--line);font-size:13px}
+.hk{display:grid;gap:1px}.hd{font-variant-numeric:tabular-nums}.hw{color:var(--muted);font-size:12px}
+.hb{overflow-wrap:anywhere}
+@media(max-width:640px){.hz{grid-template-columns:1fr;gap:2px}}
 .ch .seg.mini{margin-left:auto}.seg.mini button{padding:3px 8px;font-size:12px}
 table.soll td,table.soll th{padding:6px 8px}
 tr.solx>td{background:var(--bg,#f6f7f9);padding:10px 12px}
@@ -1066,7 +1074,7 @@ function odScore(mk,o){ const n=o.name.toUpperCase(), u=uName(mk.einheit).replac
 async function odLadeOrdner(mk){ if(ODK[mk.obj]&&ODK[mk.obj]!=='lade') return; ODK[mk.obj]='lade';
   try{ ODK[mk.obj]=await odApi({aktion:'mieterordner',kz:mk.obj}); }catch(e){ ODK[mk.obj]={fehler:e.message||String(e),ordner:[]}; }
   const L=(ODK[mk.obj].ordner||[]).map(o=>Object.assign({},o,{s:odScore(mk,o)})).sort((a,b)=>b.s-a.s);
-  if(!odPfad(mk)&&L.length&&L[0].s>=4&&(L.length<2||L[1].s<L[0].s)) saveEdit(mk.pid,{od:L[0].pfad},'OneDrive-Mieterordner zugeordnet.');
+  if(!odPfad(mk)&&L.length&&L[0].s>=4&&(L.length<2||L[1].s<L[0].s)) saveEdit(mk.pid,{od:L[0].pfad},'OneDrive-Mieterordner zugeordnet.',false);
   render(); }
 async function odLadeAkte(mk){ const p=odPfad(mk); if(!p) return; ODA[mk.pid]='lade'; render();
   try{ ODA[mk.pid]=Object.assign(await odApi({aktion:'akte',pfad:p}),{pfad:p}); }catch(e){ ODA[mk.pid]={fehler:e.message||String(e),pfad:p}; } render(); }
@@ -1123,7 +1131,7 @@ async function odNeu(mk){ const K=ODK[mk.obj]; if(!K||!K.basis) return; odBusy='
 async function odUploadPend(){ const mk=MK[pend.pid]; let n=0;
   for(const q of pend.files){ if(!/^\d{4}-\d{2}-\d{2}$/.test(q.datum)){ toast('Datum bitte als JJJJ-MM-TT.'); return; } }
   odBusy='up'; render();
-  for(const q of pend.files){ try{ await akteAblegen(mk,q.folder,aktenName(mk)+'_'+q.datum+'_'+(q.titel||'Dokument')+q.ext,q.file,q.file.type); n++; }catch(e){ toast(q.file.name+': '+(e.message||e)); } }
+  for(const q of pend.files){ try{ await akteAblegen(mk,q.folder,aktenName(mk)+'_'+q.datum+'_'+(q.titel||'Dokument')+q.ext,q.file,q.file.type); n++; histLog(mk.pid,'Dokument hochgeladen',q.folder+': '+aktenName(mk)+'_'+q.datum+'_'+(q.titel||'Dokument')+q.ext); }catch(e){ toast(q.file.name+': '+(e.message||e)); } }
   odBusy=''; pend=null; toast(n+' Datei'+(n===1?'':'en')+' nach OneDrive hochgeladen.'); ODA[mk.pid]=null; render(); }
 async function odMigrieren(mk){ const sb=window.osSupabase, S=DOCS[mk.pid]||{}; const L=[]; for(const f in S) for(const o of S[f]) L.push({f,o});
   let n=0; for(const {f,o} of L){ ODMIG[mk.pid]='Übertrage '+(n+1)+' von '+L.length+' …'; render();
@@ -1143,6 +1151,45 @@ document.addEventListener('click',e=>{ const t=e.target.closest('button,a[data-o
   if(d.odmig){ odMigrieren(mk); return; }
   if(d.oddel){ if(d.sure!=='1'){ d.sure='1'; t.textContent='Wirklich löschen?'; return; } odApi({aktion:'loeschen',id:d.oddel}).then(()=>{ toast('In den OneDrive-Papierkorb verschoben.'); ODA[mk.pid]=null; render(); }).catch(err=>toast(err.message||String(err))); return; }
 });
+/* ---------- Historie je Mieter: wer hat wann was getan (neueste oben) ----------
+   Eigene Einträge und protokollierte Aktionen in Collection 'historie' {pid,id,d,art,t,by,mail,uid,manuell}
+   dazu live aus Notizen, Anschreiben, Mails und Mahnungen */
+var HIST={}, HF={art:'alle',mehr:false,neu:false,busy:false};
+const HIST_ARTEN=['Anruf eingehend','Anruf ausgehend','Gespräch vor Ort','Termin / Besichtigung','SMS / WhatsApp','Brief per Post','Sonstiges'];
+async function histLog(pid,art,t,d){ if(!db||!pid) return; try{ if(!ICH) await loadIch(); const ts=new Date(), id=pid+'__'+ts.getTime()+Math.random().toString(36).slice(2,5);
+    await db.doc('historie/'+id).set({pid,id,d:d||ts.toISOString(),erfasst:ts.toISOString(),art,t:String(t||''),by:ICH||'unbekannt',mail:ICHMAIL,uid:ICHID,manuell:!!d}); }catch(e){} }
+const histZeit=iso=>{ const s=String(iso||''); if(s.length<=10) return dmy(s); const d=new Date(s); if(isNaN(d)) return dmy(s.slice(0,10));
+  const p=n=>String(n).padStart(2,'0'); return p(d.getDate())+'.'+p(d.getMonth()+1)+'.'+d.getFullYear()+' '+p(d.getHours())+':'+p(d.getMinutes()); };
+const histGruppe=a=>/^Anruf/.test(a)?'anruf':/^Mail/.test(a)?'mail':a==='Notiz'?'notiz':a==='Anschreiben'?'brief':/^Mahnung/.test(a)?'mahnung':/^(Gespräch|Termin|SMS|Brief per|Sonstiges)/.test(a)?'kontakt':'aenderung';
+function histListe(x){ const pid=x.mk.pid, L=[];
+  for(const h of (HIST[pid]||[])) L.push({d:h.d,art:h.art,t:h.t,by:h.by,id:h.id,eigen:h.manuell&&eigeneNotiz(h)});
+  for(const n of (NOTIZ[pid]||[])) L.push({d:n.d,art:'Notiz',t:n.t+((n.files||[]).length?' (mit '+n.files.length+' Datei'+(n.files.length===1?'':'en')+')':''),by:n.by});
+  for(const a of ((ANS[pid]||[]))) L.push({d:a.d,art:'Anschreiben',t:(a.betreff||'')+(a.ki?' (mit KI formuliert)':''),by:a.by});
+  for(const m of ((MAILS[pid]||[]))) L.push({d:m.d||m.erfasst,art:'Mail '+(m.richtung||''),t:m.betreff||'(ohne Betreff)',by:m.by,zusatz:m.erfasst?'hinterlegt am '+histZeit(m.erfasst):''});
+  for(const m of alleMahnungen(x)) L.push({d:m.d,art:'Mahnung Stufe '+m.stufe,t:(m.nr?m.nr+' · ':'')+eur(m.b)+(m.frist?' · Frist '+dmy(m.frist):''),by:m.quelle==='Mahnlauf OS'?'Mahnlauf':(m.quelle||'manuell')});
+  return L.sort((a,b)=>String(b.d).localeCompare(String(a.d))); }
+function histCard(x){ const L=histListe(x), F=HF.art==='alle'?L:L.filter(e=>histGruppe(e.art)===HF.art);
+  const G=[['alle','Alle'],['anruf','Anrufe'],['kontakt','Gespräche / Termine'],['notiz','Notizen'],['mail','Mails'],['brief','Anschreiben'],['mahnung','Mahnungen'],['aenderung','Änderungen']].filter(([k])=>k==='alle'||L.some(e=>histGruppe(e.art)===k));
+  const jetzt=new Date(Date.now()-new Date().getTimezoneOffset()*6e4).toISOString().slice(0,16);
+  let h='<details class="card wide sec" data-sec="hist"'+(SEC.hist!==false?' open':'')+'><summary class="ch">Historie<span class="sub">'+L.length+' Eintr'+(L.length===1?'ag':'äge')+' · neueste oben</span></summary>';
+  h+='<div class="acts">'+G.map(([k,n])=>'<button class="'+(HF.art===k?'primary':'ghost')+' small" data-hart="'+k+'">'+n+'</button>').join('')+(canWrite?'<button class="small" data-hneu="1" style="margin-left:auto">'+(HF.neu?'Abbrechen':'Eintrag hinzufügen')+'</button>':'')+'</div>';
+  if(HF.neu) h+='<div class="hneu"><div class="hrow"><label class="fl">Art<select id="h-art">'+HIST_ARTEN.map(a=>'<option>'+esc(a)+'</option>').join('')+'</select></label><label class="fl">Datum und Uhrzeit<input type="datetime-local" id="h-d" value="'+jetzt+'"></label></div>'
+    +'<textarea id="h-t" rows="2" placeholder="Was wurde besprochen oder vereinbart?"></textarea><div class="acts"><button class="primary small" data-hsave="1"'+(HF.busy?' disabled':'')+'>Speichern</button><span class="sub">Name und Uhrzeit werden automatisch festgehalten.</span></div></div>';
+  if(!F.length) h+='<div class="sub">Noch keine Einträge.</div>';
+  const S=HF.mehr?F:F.slice(0,25);
+  h+='<div class="hlist">'+S.map(e=>'<div class="hz"><div class="hk"><span class="hd">'+esc(histZeit(e.d))+'</span><span class="hw">'+esc(e.by||'')+'</span></div><div class="hb"><b>'+esc(e.art)+'</b>'+(e.t?' – '+esc(String(e.t).length>220?String(e.t).slice(0,220)+' …':e.t):'')+(e.zusatz?' <span class="sub">('+esc(e.zusatz)+')</span>':'')
+    +(e.eigen?' <button class="ghost small" data-hdel="'+esc(e.id)+'">löschen</button>':'')+'</div></div>').join('')+'</div>';
+  if(F.length>S.length) h+='<button class="ghost small" data-hmehr="1">Alle '+F.length+' Einträge anzeigen</button>';
+  return h+'</details>'; }
+async function histSpeichern(){ const mk=MK[M.sel]; if(!mk||HF.busy) return; const t=($('h-t').value||'').trim(), art=$('h-art').value, dv=$('h-d').value;
+  if(!t){ toast('Bitte kurz beschreiben, worum es ging.'); return; } if(!dv){ toast('Bitte Datum und Uhrzeit angeben.'); return; }
+  HF.busy=true; render(); await histLog(mk.pid,art,t,new Date(dv).toISOString()); HF.busy=false; HF.neu=false; toast('Eintrag gespeichert.'); render(); }
+document.addEventListener('click',async e=>{ const t=e.target.closest('button'); if(!t) return; const d=t.dataset;
+  if(d.hart){ HF.art=d.hart; HF.mehr=false; render(); return; }
+  if(d.hneu){ HF.neu=!HF.neu; render(); if(HF.neu) setTimeout(()=>{ const x=$('h-t'); if(x) x.focus(); },30); return; }
+  if(d.hmehr){ HF.mehr=true; render(); return; }
+  if(d.hsave){ histSpeichern(); return; }
+  if(d.hdel){ if(t.dataset.sure!=='1'){ t.dataset.sure='1'; t.textContent='wirklich löschen?'; return; } try{ await db.doc('historie/'+d.hdel).delete(); toast('Eintrag gelöscht.'); }catch(err){ toast('Löschen nicht möglich: '+(err.message||err)); } return; } });
 /* ---------- Render ---------- */
 function render(){
   const ready=loaded.o&&loaded.k&&loaded.r&&loaded.e&&loaded.b&&loadedMK;
@@ -1199,7 +1246,7 @@ const ampel=x=>{ const a=ed(x.mk).ampel; return a&&AMPEL[a]?a:x.ampelAuto; };
 /* Ampel mit drei Lichtern: das zutreffende leuchtet, die anderen sind grau */
 const ampelLight=a=>'<div class="ampel" title="Mieterranking: '+AMPEL[a][1]+'">'+['rot','gelb','gruen'].map(k=>'<span class="al'+(k===a?' on':'')+'" style="'+(k===a?'background:'+AMPEL[k][0]+';box-shadow:0 0 8px '+AMPEL[k][0]:'')+'"></span>').join('')+'</div>';
 const ampelDot=(a,big)=>'<span class="adot'+(big?' big':'')+'" style="background:'+AMPEL[a][0]+'" title="Mieterranking: '+AMPEL[a][1]+'"></span>';
-function saveEdit(pid,patch,msg){ EDIT=Object.assign({},EDIT,{[pid]:Object.assign({},EDIT[pid]||{},patch)}); calc=null; render(); saveStamm('mietkonten-edit',{e:EDIT}).then(()=>msg&&toast(msg)); }
+function saveEdit(pid,patch,msg,log){ if(log!==false&&(log||msg)) { const tx=String(log||msg).replace(/\.$/,''); histLog(pid,/^Ticket/.test(tx)?'Ticket':'Änderung',tx); } EDIT=Object.assign({},EDIT,{[pid]:Object.assign({},EDIT[pid]||{},patch)}); calc=null; render(); saveStamm('mietkonten-edit',{e:EDIT}).then(()=>msg&&toast(msg)); }
 /* ---------- Sollstellungslauf ---------- */
 const nextMon=()=>addM(curM,1);
 function sollFuer(m){ const aktivKz=new Set(objekte.filter(o=>o.aktiv!==false).map(o=>o.kz)); const P={};
@@ -1349,7 +1396,7 @@ function renderDash(x){ const mk=ed(x.mk), sn=STN[x.status], a=ampel(x), K=mk.ko
     +'<div class="trow"><input type="text" id="t-neu" placeholder="Neues Ticket, z. B. Heizung defekt"><button class="small primary" data-tadd="1">Hinzufügen</button></div>'
     +(T.filter(t=>showDone||!t.done).map(t=>'<label class="tick'+(t.done?' done':'')+'"><input type="checkbox" data-tdone="'+esc(t.id)+'"'+(t.done?' checked':'')+'><span>'+esc(t.t)+'<small>'+esc(dmy(t.d))+(t.done?' · erledigt '+esc(dmy(t.done)):'')+'</small></span></label>').join('')||'<div class="sub">Keine offenen Tickets.</div>')
     +(T.some(t=>t.done)?'<button class="ghost small" data-tshow="1">'+(showDone?'erledigte ausblenden':'erledigte anzeigen')+'</button>':'')+'</div>';
-  h+='</div>'+sollCard(x)+akteBox(x)+anschreibenCard(x)+mailsCard(x);
+  h+='</div>'+sollCard(x)+akteBox(x)+anschreibenCard(x)+mailsCard(x)+histCard(x);
   /* Mieterkonto */
   if(x.erg) h+='<div class="note warnbox">'+x.erg+' Monatsmiete'+(x.erg>1?'n fehlen':' fehlt')+' in Nahaus als Sollstellung und '+(x.erg>1?'wurden':'wurde')+' aus dem Mietvertrag ergänzt (kursiv).</div>';
   h+='<details class="card wide sec" data-sec="konto"'+(SEC.konto?' open':'')+'><summary class="ch">Mieterkonto<span class="sub">Saldo '+eur(x.saldo)+' · '+x.rows.length+' Buchungen</span></summary>'+pdfButtons('konto')+'<div class="tablewrap"><table class="kb"><thead><tr><th>Datum</th><th>Buchung</th><th class="n">Soll</th><th class="n">Ist</th><th class="n">Saldo</th></tr></thead><tbody>';
@@ -1398,7 +1445,7 @@ document.addEventListener('click',async e=>{ const t=e.target.closest('button,tr
   if(t.dataset.slre){ if(t.dataset.sure!=='1'){ t.dataset.sure='1'; t.textContent='Wirklich neu erstellen?'; return; } runSoll(nextMon(),false); return; }
   if(t.dataset.close){ modal=false; editOpen=false; render(); return; }
   if(t.dataset.tshow){ showDone=!showDone; render(); return; }
-  if(t.dataset.tadd){ const v=($('t-neu').value||'').trim(); if(!v){ toast('Bitte einen Text eingeben.'); return; } const T=(ed(MK[M.sel]).tickets||[]).concat([{id:'t'+Date.now().toString(36),t:v,d:today}]); saveEdit(M.sel,{tickets:T},'Ticket angelegt.'); return; }
+  if(t.dataset.tadd){ const v=($('t-neu').value||'').trim(); if(!v){ toast('Bitte einen Text eingeben.'); return; } const T=(ed(MK[M.sel]).tickets||[]).concat([{id:'t'+Date.now().toString(36),t:v,d:today}]); saveEdit(M.sel,{tickets:T},'Ticket angelegt.','Ticket angelegt: '+v); return; }
   if(t.dataset.vm){ VMO[t.dataset.vm]=!VMO[t.dataset.vm]; render(); return; }
   if(t.dataset.msort){ const k=t.dataset.msort; if((M.sk||'einheit')===k) M.sd=-(M.sd||1); else { M.sk=k; M.sd=['miete','saldo'].includes(k)?-1:1; } saveM(); render(); return; }
   if(t.dataset.mst){ M.st=t.dataset.mst; saveM(); render(); return; }
@@ -1417,7 +1464,7 @@ document.addEventListener('change',async e=>{ const t=e.target;
   if(t.dataset.pdt!==undefined){ pend.files[Number(t.dataset.pdt)].datum=t.value.trim(); render(); return; }
   if(t.dataset.pt!==undefined){ pend.files[Number(t.dataset.pt)].titel=t.value.trim(); render(); return; }
   if(t.id==='n-file'){ NOTF=[...t.files]; render(); return; }
-  if(t.dataset.tdone){ const T=(ed(MK[M.sel]).tickets||[]).map(x=>x.id===t.dataset.tdone?Object.assign({},x,{done:t.checked?today:''}):x); saveEdit(M.sel,{tickets:T},t.checked?'Ticket erledigt.':'Ticket wieder offen.'); return; }
+  if(t.dataset.tdone){ const T=(ed(MK[M.sel]).tickets||[]).map(x=>x.id===t.dataset.tdone?Object.assign({},x,{done:t.checked?today:''}):x); { const tk=(ed(MK[M.sel]).tickets||[]).find(x=>x.id===t.dataset.tdone); saveEdit(M.sel,{tickets:T},t.checked?'Ticket erledigt.':'Ticket wieder offen.',(t.checked?'Ticket erledigt: ':'Ticket wieder offen: ')+(tk?tk.t:'')); } return; }
   if(t.dataset.zkey){ const v=t.value; if(!v) return; const z=Object.assign({},ZUORD); if(v==='~') delete z[t.dataset.zkey]; else z[t.dataset.zkey]=v; ZUORD=z; calc=null; render(); saveStamm('mietzuordnung',{map:ZUORD}).then(()=>toast(v==='-'?'Zahlung keinem Mieter zugeordnet.':'Zahlung umgebucht.')); return; }
   if(t.dataset.mrsel){ MR.sel[t.dataset.mrsel]=t.checked; render(); return; }
   if(t.dataset.mrst){ MR.stufe[t.dataset.mrst]=t.value; render(); return; }
@@ -1451,6 +1498,7 @@ render();
   loadZV(); loadRegM(); loadIch();
   db.collection('mails').onSnapshot(q=>{ const m={}; q.docs.forEach(d=>{ const v=clone(d.data()); (m[v.pid]=m[v.pid]||[]).push(v); }); MAILS=m; render(); },()=>{});
   db.collection('anschreiben').onSnapshot(q=>{ const m={}; q.docs.forEach(d=>{ const v=clone(d.data()); (m[v.pid]=m[v.pid]||[]).push(v); }); ANS=m; render(); },()=>{});
+  db.collection('historie').onSnapshot(q=>{ const m={}; q.docs.forEach(d=>{ const v=clone(d.data()); (m[v.pid]=m[v.pid]||[]).push(v); }); HIST=m; render(); },()=>{});
   db.collection('notizen').onSnapshot(q=>{ const m={}; q.docs.forEach(d=>{ const v=clone(d.data()); (m[v.pid]=m[v.pid]||[]).push(v); }); NOTIZ=m; render(); },()=>{});
   db.doc('stamm/mahnung').onSnapshot(s=>{ MBZ=(s.exists?clone(s.data()).bz:null)||[]; render(); },()=>{});
   db.collection('mahnlaeufe').onSnapshot(q=>{ const m={}; q.docs.forEach(d=>{m[d.id]=clone(d.data());}); MAHN=m; calc=null; render(); },()=>{});
