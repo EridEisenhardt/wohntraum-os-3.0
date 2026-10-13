@@ -32,8 +32,9 @@ export async function POST(req) {
     if (!(await angemeldet(req))) return antwort({ error: 'Bitte im Wohntraum OS anmelden.' }, 401)
     const env = process.env
     const boxes = String(env.MS_MAILBOXES || '').split(',').map(s => s.trim()).filter(Boolean)
-    if (!env.MS_TENANT_ID || !env.MS_CLIENT_ID || !env.MS_CLIENT_SECRET || !boxes.length)
-      return antwort({ error: 'Outlook ist noch nicht verbunden.', setup: true })
+    const fehlt = ['MS_TENANT_ID', 'MS_CLIENT_ID', 'MS_CLIENT_SECRET', 'MS_MAILBOXES'].filter(k => !String(env[k] || '').trim())
+    if (fehlt.length || !boxes.length)
+      return antwort({ error: 'Outlook ist noch nicht verbunden. In Vercel fehlt: ' + (fehlt.length ? fehlt.join(', ') : 'MS_MAILBOXES') + ' (danach Redeploy).', setup: true })
     const body = await req.json().catch(() => ({}))
     if (body.aktion === 'suchen') {
       const such = [...new Set((body.adressen || []).map(a => String(a).trim().toLowerCase()).filter(a => /@/.test(a)))].slice(0, 5)
