@@ -82,6 +82,20 @@ export async function POST(req) {
       return antwort({ ordner, dateien })
     }
 
+    if (a === 'baum') {
+      // Ordner rekursiv auflisten (max. 3 Ebenen), z. B. Kontoauszüge eines Jahres
+      const p = pruefe(b.pfad); const tiefe = Math.min(3, Math.max(1, Number(b.tiefe) || 2)); const dateien = []
+      async function geh(pfad, rel, t) {
+        const L = await kinder(pfad); if (!L) return
+        await Promise.all(L.map(async x => {
+          const r = rel ? rel + '/' + x.name : x.name
+          if (x.ordner) { if (t < tiefe) await geh(pfad + '/' + x.name, r, t + 1) } else dateien.push(Object.assign(x, { rel: r }))
+        }))
+      }
+      await geh(p, '', 1)
+      return antwort({ dateien })
+    }
+
     if (a === 'anlegen') {
       // Ordner (mit allen Zwischenordnern) anlegen, z. B. neuer Mieterordner mit 01–06
       const d = await drive(); const p = pruefe(b.pfad); const teile = p.split('/'); let akt = ''

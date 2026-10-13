@@ -591,6 +591,85 @@ function compute(opt){ opt=opt||{}; const ZMAP={}, BU={};
 }
 const STN={ok:['ok','ausgeglichen'],rueckstand:['mid','Rückstand'],mahnen:['bad','≥ 1 Monatsmiete'],kuendigung:['bad','≥ 2 Monatsmieten'],guthaben:['src','Guthaben'],faellig:['src','fällig, Zahlung noch offen']};
 
+
+/* ---------- Kontoauszüge als PDF in OneDrive: 9.000 Buchführung/Kontoauszüge/<Jahr>/<Gesellschaft>/<mm.jj>/<Kürzel>_Kontoauszug_<mm.jj>.pdf ---------- */
+var KAU={jahr:null,dateien:null,fehler:'',lade:false,pend:[],busy:''};
+const KA_ROOT='Prozesslandkarte 3.0/9.000 Buchführung/Kontoauszüge';
+async function odApi(body){ const sb=window.osSupabase; let tok=''; try{ const {data}=await sb.auth.getSession(); tok=(data&&data.session&&data.session.access_token)||''; }catch(e){}
+  let r; try{ r=await fetch('/api/onedrive',{method:'POST',headers:{'content-type':'application/json',authorization:'Bearer '+tok},body:JSON.stringify(body)}); }catch(e){ throw new Error('OneDrive nicht erreichbar.'); }
+  let j=null; try{ j=await r.json(); }catch(e){} if(!j) throw new Error(r.status===404?'Die OneDrive-Schnittstelle ist noch nicht online.':'OneDrive nicht erreichbar ('+r.status+').'); if(j.error) throw new Error(j.error); return j; }
+async function odOeffnen(id){ const w=window.open('','_blank'); try{ const r=await odApi({aktion:'link',id}); const u=r.web||r.download; if(w) w.location.href=u; else window.open(u,'_blank'); }catch(e){ if(w) w.close(); toast(e.message||String(e)); } }
+const KA_NAME={'EE-Allgemein':'EE_Allg','EE-Instandhaltung':'EE_Inst','WT-Allgemein':'WT_Allg','WT-Instandhaltung':'WT_Inst','WT-Betriebskosten':'WT_Betr','S16 Alt':'S16_Spk','K28 Alt':'K28_Spk','KiBo-Allg. GLS':'KiBo_Allg','KiBo-Allg. Sparkasse':'KiBo_Spk','A14/E4':'A14_E4','Rh24 (verkauft)':'Rh24'};
+function kaKz(k){ if(k.kaKz) return k.kaKz; if(KA_NAME[k.name]) return KA_NAME[k.name]; const o=String(k.obj||k.name||'').replace(/[^A-Za-z0-9]/g,''); return o==='Kw30'?'KW30':o; }
+const mmjj=m=>m.slice(5,7)+'.'+m.slice(2,4);
+const kaKonten=()=>konten.filter(k=>k.iban&&!/__aus/.test(k.obj||'')).slice().sort((a,b)=>(a.ges||'').localeCompare(b.ges||'')||kaKz(a).localeCompare(kaKz(b)));
+async function kaLaden(){ if(KAU.lade) return; KAU.lade=true; KAU.fehler=''; const j=year;
+  try{ KAU.dateien=(await odApi({aktion:'baum',pfad:KA_ROOT+'/'+j,tiefe:3})).dateien||[]; KAU.jahr=j; }catch(e){ KAU.fehler=e.message||String(e); KAU.dateien=[]; KAU.jahr=j; }
+  KAU.lade=false; render(); }
+function kaFinde(k,m){ const kz=kaKz(k).toLowerCase(), mm=mmjj(m); return (KAU.dateien||[]).filter(f=>{ const n=f.name.toLowerCase(); return n.startsWith(kz+'_kontoauszug_'+mm)&&!/alle konten/.test(n); }); }
+
+function renderKA(){ let h='<h2>Kontoauszüge als PDF in OneDrive '+esc(year)+'</h2>';
+  if(KAU.jahr!==year&&!KAU.lade){ kaLaden(); }
+  h+='<div class="note">Monatliche PDF-Kontoauszüge hierher ziehen. Das OS erkennt Konto und Monat und legt sie als <b>Kürzel_Kontoauszug_mm.jj.pdf</b> in <b>9.000 Buchführung/Kontoauszüge/Jahr/Gesellschaft/mm.jj</b> ab.</div>'
+    +'<label class="drop" id="kadrop" for="ka-file"><b>PDF-Kontoauszüge hierher ziehen</b>oder klicken, um Dateien auszuwählen<input type="file" id="ka-file" accept=".pdf,application/pdf" multiple hidden></label>';
+  if(KAU.pend.length){ h+='<div class="fcard"><b>Ablegen in OneDrive</b>';
+    KAU.pend.forEach((p,i)=>{ const k=konten.find(x=>(x.key||x.iban)===p.konto);
+      h+='<div class="row"><span class="sub" style="min-width:180px">'+esc(p.file.name)+'</span><select data-kak="'+i+'"><option value="">– Konto wählen –</option>'+kaKonten().map(x=>'<option value="'+esc(x.key||x.iban)+'"'+((x.key||x.iban)===p.konto?' selected':'')+'>'+esc(kaKz(x)+' · '+x.name)+'</option>').join('')+'</select>'
+        +'<input type="month" data-kam="'+i+'" value="'+esc(p.monat||'')+'">'
+        +'<span class="sub">'+(k&&p.monat?esc((k.ges||'?')+'/'+mmjj(p.monat)+'/'+kaKz(k)+'_Kontoauszug_'+mmjj(p.monat)+'.pdf'):'Konto und Monat wählen')+(p.hinweis?' · '+esc(p.hinweis):'')+'</span><button class="ghost small" data-kax="'+i+'">Entfernen</button></div>'; });
+    h+='<div class="row"><button class="primary" data-kago="1"'+(KAU.busy?' disabled':'')+'>'+(KAU.busy?esc(KAU.busy):'In OneDrive ablegen')+'</button><button class="ghost" data-kaweg="1">Verwerfen</button></div></div>'; }
+  if(KAU.lade||KAU.jahr!==year) return h+'<div class="sub">Lade Kontoauszüge aus OneDrive …</div>';
+  if(KAU.fehler) return h+'<div class="note warnbox">'+esc(KAU.fehler)+'</div>';
+  const bisM=String(year)<today.slice(0,4)?12:String(year)===today.slice(0,4)?Number(today.slice(5,7))-1:0;
+  h+='<div class="tablewrap"><table><thead><tr><th>Konto</th><th>Kürzel</th>'+MS.map(m=>'<th class="n">'+m+'</th>').join('')+'</tr></thead><tbody>';
+  let fehlt=0; const CSV=new Set(Object.values(buch).filter(d=>d&&d.monat).map(d=>d.konto+'|'+d.monat));
+  for(const k of kaKonten()){ h+='<tr><td>'+esc(k.name)+' <span class="sub">'+esc(k.ges||'')+'</span></td><td><input type="text" data-kakz="'+esc(k.key||k.iban)+'" value="'+esc(kaKz(k))+'" style="width:80px"></td>';
+    for(let i=1;i<=12;i++){ const m=year+'-'+String(i).padStart(2,'0'), F=kaFinde(k,m);
+      if(F.length) h+='<td class="n"><a href="#" data-kaopen="'+esc(F[0].id)+'" title="'+esc(F[0].rel)+'">PDF</a></td>';
+      else if(i<=bisM&&CSV.has((k.key||k.iban)+'|'+m)){ fehlt++; h+='<td class="n"><span class="neg">fehlt</span></td>'; }
+      else h+='<td class="n sub">–</td>'; }
+    h+='</tr>'; }
+  h+='</tbody></table></div><div class="sub">'+fehlt+' PDF-Auszüge fehlen für Monate, deren Umsätze schon als CSV im OS sind („fehlt“). „–“ = noch keine Umsätze im OS. Das Kürzel bestimmt den Dateinamen und lässt sich je Konto ändern. <button class="ghost small" data-kaneu="1">Aktualisieren</button></div>';
+  return h; }
+
+/* Konto und Monat aus dem PDF erkennen (Dateiname, sonst Text der ersten Seite) */
+var PDFJS=null;
+async function pdfText(file){ if(!PDFJS){ await new Promise((res,rej)=>{ const s=document.createElement('script'); s.src='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js'; s.onload=res; s.onerror=rej; document.head.appendChild(s); }); PDFJS=window.pdfjsLib; PDFJS.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js'; }
+  const doc=await PDFJS.getDocument({data:await file.arrayBuffer()}).promise; const pg=await doc.getPage(1); const c=await pg.getTextContent(); return c.items.map(i=>i.str).join(' '); }
+async function kaErkenne(file){ const p={file,konto:'',monat:'',hinweis:''}; const n=file.name;
+  const fm=n.match(/^(.+?)_Kontoauszug_(\d{2})\.(\d{2})/i);
+  if(fm){ const k=konten.find(x=>kaKz(x).toLowerCase()===fm[1].toLowerCase()); if(k) p.konto=k.key||k.iban; p.monat='20'+fm[3]+'-'+fm[2]; }
+  if(!p.konto||!p.monat){ try{ const t=await pdfText(file);
+      if(!p.konto){ const ib=(t.replace(/\s+/g,'').match(/DE\d{20}/g)||[]); const k=konten.find(x=>x.iban&&ib.includes(x.iban)); if(k) p.konto=k.key||k.iban; else p.hinweis='Konto nicht erkannt'; }
+      if(!p.monat){ const a=t.match(/Kontoauszug\s+(\d{1,2})\s*\/\s*(\d{4})/i); if(a) p.monat=a[2]+'-'+a[1].padStart(2,'0');
+        else { const cnt={}; for(const d of t.matchAll(/\b\d{2}\.(\d{2})\.(\d{4})\b/g)){ const k2=d[2]+'-'+d[1]; cnt[k2]=(cnt[k2]||0)+1; } const best=Object.entries(cnt).sort((x,y)=>y[1]-x[1])[0]; if(best) p.monat=best[0]; } } }
+    catch(e){ p.hinweis='PDF nicht lesbar – bitte Konto und Monat wählen'; } }
+  return p; }
+async function kaQueue(files){ const L=files.filter(f=>/\.pdf$/i.test(f.name)); if(!L.length){ toast('Bitte PDF-Dateien wählen.'); return; }
+  KAU.busy='Erkenne Konto und Monat …'; render(); for(const f of L) KAU.pend.push(await kaErkenne(f)); KAU.busy=''; render(); }
+async function kaAblegen(){ const fehlt=KAU.pend.filter(p=>!p.konto||!/^\d{4}-\d{2}$/.test(p.monat)); if(fehlt.length){ toast('Bitte bei allen Dateien Konto und Monat wählen.'); return; }
+  let n=0;
+  for(const p of KAU.pend.slice()){ const k=konten.find(x=>(x.key||x.iban)===p.konto), mm=mmjj(p.monat);
+    KAU.busy='Lege ab '+(n+1)+' von '+KAU.pend.length+' …'; render();
+    try{ const pfad=KA_ROOT+'/'+p.monat.slice(0,4)+'/'+(k.ges||'WT')+'/'+mm, name=kaKz(k)+'_Kontoauszug_'+mm+'.pdf';
+      await odApi({aktion:'anlegen',pfad});
+      const b64=await new Promise((res,rej)=>{ const r=new FileReader(); r.onload=()=>res(String(r.result).split(',')[1]||''); r.onerror=rej; r.readAsDataURL(p.file); });
+      if(p.file.size<=3*1024*1024) await odApi({aktion:'hochladen',pfad,name,daten:b64,typ:'application/pdf'});
+      else { const s=await odApi({aktion:'sitzung',pfad,name}); const r=await fetch(s.uploadUrl,{method:'PUT',headers:{'Content-Range':'bytes 0-'+(p.file.size-1)+'/'+p.file.size},body:p.file}); if(!r.ok) throw new Error('Hochladen fehlgeschlagen ('+r.status+')'); }
+      KAU.pend.splice(KAU.pend.indexOf(p),1); n++; }
+    catch(e){ toast(p.file.name+': '+(e.message||e)); } }
+  KAU.busy=''; toast(n+' Kontoauszug'+(n===1?'':'e')+' in OneDrive abgelegt.'); KAU.jahr=null; render(); }
+
+document.addEventListener('click',e=>{ const t=e.target.closest('button,a[data-kaopen]'); if(!t) return; const d=t.dataset;
+  if(d.kaopen){ e.preventDefault(); odOeffnen(d.kaopen); return; }
+  if(d.kago){ kaAblegen(); return; } if(d.kaweg){ KAU.pend=[]; render(); return; }
+  if(d.kax!==undefined){ KAU.pend.splice(Number(d.kax),1); render(); return; }
+  if(d.kaneu){ KAU.jahr=null; render(); return; } });
+document.addEventListener('change',e=>{ const t=e.target;
+  if(t.id==='ka-file'){ const f=[...t.files]; t.value=''; kaQueue(f); return; }
+  if(t.dataset.kak!==undefined){ KAU.pend[Number(t.dataset.kak)].konto=t.value; render(); return; }
+  if(t.dataset.kam!==undefined){ KAU.pend[Number(t.dataset.kam)].monat=t.value; render(); return; }
+  if(t.dataset.kakz!==undefined){ const v=t.value.trim().replace(/[^A-Za-z0-9_]/g,''); const key=t.dataset.kakz; konten=konten.map(k=>(k.key||k.iban)===key?Object.assign({},k,{kaKz:v}):k); saveStamm('konten',{konten}).then(()=>toast('Kürzel gespeichert.')); render(); } });
 /* ================= Buchungen (Belegbuchhaltung im Stil von BuchhaltungsButler) =================
    Gleiche Daten wie „Objekt-Controlling“ (os_docs, app 'oc'): jede Zuordnung zählt dort sofort mit. */
 tab='liste';
@@ -670,7 +749,7 @@ function render(){
   if(!ready){ $('view').innerHTML='<div class="loading">'+(dbState==='none'?'Bitte im Wohntraum OS einloggen.':'Lade Daten …')+'</div>'; return; }
   const f=document.activeElement, fid=f&&f.id, fv=fid?f.value:null, ss=f&&f.selectionStart;
   const keep=f&&f.id==='u-q'?f:null;
-  $('view').innerHTML=tab==='import'?'<div class="pad">'+renderImport()+'</div>':tab==='regeln'?'<div class="pad">'+renderRegeln()+'</div>':tab==='konten'?'<div class="pad">'+renderKontenplan()+'</div>':renderListe();
+  $('view').innerHTML=tab==='import'?'<div class="pad">'+renderImport()+renderKA()+'</div>':tab==='regeln'?'<div class="pad">'+renderRegeln()+'</div>':tab==='konten'?'<div class="pad">'+renderKontenplan()+'</div>':renderListe();
   if(keep){ const n=$('u-q'); if(n){ n.replaceWith(keep); keep.focus({preventScroll:true}); } }
   else if(fid){ const el=$(fid); if(el&&(el.tagName==='INPUT'||el.tagName==='TEXTAREA')){ el.focus({preventScroll:true}); if(fv!=null) el.value=fv; try{ if(ss!=null) el.setSelectionRange(ss,ss); }catch(_){} } }
   const s=document.querySelector('.row.sel'); if(s&&render.scrollSel){ s.scrollIntoView({block:'nearest'}); render.scrollSel=false; }
@@ -899,10 +978,11 @@ document.addEventListener('keydown',e=>{ const a=document.activeElement; const t
   if(e.key==='Enter'&&a&&a.matches('input[type=text]')){ a.blur(); return; }
   if(typing||tab!=='liste') return;
   if(e.key==='ArrowDown'||e.key==='j'){ e.preventDefault(); step(1); } else if(e.key==='ArrowUp'||e.key==='k'){ e.preventDefault(); step(-1); } });
-['dragenter','dragover'].forEach(ev=>document.addEventListener(ev,e=>{ if(e.dataTransfer&&[...(e.dataTransfer.types||[])].includes('Files')){ e.preventDefault(); const d=e.target.closest&&e.target.closest('#bdrop,#drop'); document.querySelectorAll('.over').forEach(x=>x!==d&&x.classList.remove('over')); if(d) d.classList.add('over'); } }));
-document.addEventListener('dragleave',e=>{ const d=e.target.closest&&e.target.closest('#bdrop,#drop'); if(d) d.classList.remove('over'); });
+['dragenter','dragover'].forEach(ev=>document.addEventListener(ev,e=>{ if(e.dataTransfer&&[...(e.dataTransfer.types||[])].includes('Files')){ e.preventDefault(); const d=e.target.closest&&e.target.closest('#bdrop,#drop,#kadrop'); document.querySelectorAll('.over').forEach(x=>x!==d&&x.classList.remove('over')); if(d) d.classList.add('over'); } }));
+document.addEventListener('dragleave',e=>{ const d=e.target.closest&&e.target.closest('#bdrop,#drop,#kadrop'); if(d) d.classList.remove('over'); });
 document.addEventListener('drop',e=>{ if(!e.dataTransfer||!e.dataTransfer.files.length) return; e.preventDefault(); document.querySelectorAll('.over').forEach(x=>x.classList.remove('over'));
   const files=[...e.dataTransfer.files]; const onBeleg=e.target.closest&&e.target.closest('#bdrop,#det');
+  if(tab==='import'&&files.every(f=>/\.pdf$/i.test(f.name))){ kaQueue(files); return; }
   if(onBeleg&&tab==='liste') uploadBelege(files); else if(files.every(f=>/\.(csv|txt)$/i.test(f.name))) handleFiles(files); else if(tab==='liste') uploadBelege(files); });
 let pendingRender=false;
 function editing(){ const a=document.activeElement; return !!(a&&$('view').contains(a)&&(a.matches('input[type=text],textarea')||(a.tagName==='SELECT'))&&a.id!=='u-q'); }
