@@ -1,5 +1,5 @@
 // KI-Textfunktionen: Anschreiben formulieren, Notizen verbessern oder in Stichpunkte kürzen.
-// Benötigt die Umgebungsvariable ANTHROPIC_API_KEY (optional ANTHROPIC_MODEL).
+// Benötigt die Umgebungsvariable ANTHROPIC_API_KEY (optional ANTHROPIC_MODEL, ANTHROPIC_WORKSPACE_ID).
 import { angemeldet, antwort } from '../_lib/auth'
 
 export const dynamic = 'force-dynamic'
@@ -36,7 +36,7 @@ export async function POST(req) {
     }
     const r = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
-      headers: { 'x-api-key': key, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
+      headers: { 'x-api-key': key, 'anthropic-version': '2023-06-01', 'content-type': 'application/json', ...(process.env.ANTHROPIC_WORKSPACE_ID ? { 'anthropic-workspace-id': process.env.ANTHROPIC_WORKSPACE_ID } : {}) },
       body: JSON.stringify({ model: process.env.ANTHROPIC_MODEL || 'claude-sonnet-4-5', max_tokens: 2000, system: AUFGABEN[aufgabe], messages: [{ role: 'user', content }] }),
     })
     const j = await r.json()
