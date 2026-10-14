@@ -354,7 +354,7 @@ function renderPlan(){
   reihe.forEach(({r,ix})=>{ if(r.ges!==lastG){ lastG=r.ges; const tj=rows.filter(x=>x.ges===r.ges).reduce((s,x)=>s+x.plan.reduce((a,b)=>a+(b||0),0),0);
       const zu=!!ZU['p:'+r.ges]; h+='<tr class="grp gtog" data-zu="p:'+esc(r.ges)+'"><td colspan="18"><span class="zu">'+(zu?'ausklappen':'einklappen')+'</span>'+esc(r.ges)+' <span class="sub">'+rows.filter(x=>x.ges===r.ges).length+' Positionen</span></td><td class="n">'+eur(tj)+'</td></tr>'; }
     if(ZU['p:'+r.ges]) return;
-    h+='<tr><td>'+(canWrite?'<button class="del" data-pdel="'+ix+'" title="Position löschen">Löschen</button>':'')+'</td><td>'+esc(r.obj)+'</td><td><input type="text" class="txt" data-f="pp:'+ix+'" data-ppos="'+ix+'" value="'+esc(r.pos)+'"'+ro+'></td>'
+    h+='<tr><td>'+(canWrite?'<button class="del" data-pdel="'+ix+'" title="Position löschen">Löschen</button>':'')+'</td><td>'+esc(r.obj)+'</td><td><input type="text" class="txt" data-f="pp:'+ix+'" data-ppos="'+ix+'" value="'+esc(r.pos)+'"'+ro+'>'+(r.lohn?'<div class="sub" style="font-size:11px" title="'+esc(r.lohn.replace('|',' › '))+'">aus Lohnkosten</div>':'')+'</td>'
       +'<td><select data-pkat="'+ix+'"'+ro+'>'+KATS.map(k=>'<option'+(k===r.kat?' selected':'')+'>'+k+'</option>').join('')+'</select></td>'
       +'<td><input type="text" class="txt" style="width:170px" data-f="pr:'+ix+'" data-prh="'+ix+'" value="'+esc(r.rh||'')+'"'+ro+'></td><td class="d" style="max-width:220px;white-space:normal;font-size:11px;color:var(--muted)">'+(r.doc?esc(r.doc.datei)+(r.doc.kdnr?'<br>Kd-Nr. '+esc(r.doc.kdnr):''):'–')+'</td>';
     for(let m=0;m<12;m++) h+='<td class="n"><input type="text" inputmode="decimal" class="num" data-f="pm:'+ix+':'+m+'" data-pm="'+ix+':'+m+'" value="'+(r.plan[m]==null?'':fnum.format(r.plan[m]))+'"'+ro+'></td>';
@@ -461,6 +461,61 @@ async function makeReport(){
    2. Fixkosten: offene Posten werden abgehakt, wenn eine passende Abbuchung im Konto des Objekts gefunden wird.
       Erkennung über Betrag + Zeitraum; Zahlungsempfänger werden aus früher abgehakten Monaten gelernt.
    Vom Nutzer wieder geöffnete Posten (nein) werden nicht erneut automatisch abgehakt. */
+/* ---------- Lohnkosten → Fixkosten ----------
+   Die Beträge aus Personal › Lohnkosten (Tabelle personal_matrix, laufendes Jahr) werden in den Plan übernommen.
+   Zuordnung je Gesellschaft auf das Objekt "<Ges>-Allgemein": gleicher Name, Knappschaft = DRV, Sachbezug = Sachbezug-/Ladekarten-Positionen.
+   Übernommen werden nur Monate, für die in den Lohnkosten ein Betrag steht; andere Monate bleiben unverändert.
+   Zugeordnete Positionen tragen lohn:'Unternehmen|Bezeichnung', damit die Zuordnung beim nächsten Mal feststeht. */
+const LO={fertig:false,ergebnis:null};
+const LO_GES={'Wohn(T)raum Rheinhessen GmbH':'WT','Eric Eisenhardt':'EE','Wohntraum Kibo GmbH':'KiBo'};
+const loN=s=>String(s||'').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/ß/g,'ss').replace(/[^a-z0-9]+/g,' ').trim();
+const loSach=p=>/sachbezug|ladekarte/.test(loN(p));
+const loAbgabe=l=>/lohnsteuer|knappschaft|bkk|aok|ikk|krankenkasse|firmus|barmer|dak|techniker|minijob|drv|rentenvers|kirchensteuer/.test(loN(l));
+function loZiel(lab,kand,frei){ const L=loN(lab), F=kand.filter(r=>frei(r));
+  if(L==='sachbezug') return F.filter(r=>loSach(r.pos));
+  const ohneS=F.filter(r=>!loSach(r.pos));
+  let x=ohneS.filter(r=>loN(r.pos)===L); if(x.length) return [x[0]];
+  if(L==='knappschaft'||L==='minijob zentrale'){ x=ohneS.filter(r=>/^(drv|knappschaft|minijob)/.test(loN(r.pos))||loN(r.pos).includes('knappschaft')); if(x.length) return [x[0]]; }
+  const wl=L.split(' ').filter(w=>w.length>3);
+  x=ohneS.filter(r=>{ const p=loN(r.pos), wp=p.split(' '); return wl.length&&wl.every(w=>wp.includes(w)); }); if(x.length) return [x[0]];
+  const w1=L.split(' ')[0]; if(w1.length>2){ x=ohneS.filter(r=>loN(r.pos).split(' ')[0]===w1&&r.kat==='Personal'&&!loAbgabe(lab)); if(x.length===1) return x; }
+  return []; }
+async function loSync(){ const sb=window.osSupabase; if(!sb||!plan||planDraft) return null;
+  const heute=todayISO(), jahr=Number(heute.slice(0,4)), mHeute=Number(heute.slice(5,7))-1;
+  const {data,error}=await sb.from('personal_matrix').select('unternehmen,label,m1,m2,m3,m4,m5,m6,m7,m8,m9,m10,m11,m12').eq('jahr',jahr); if(error) throw error;
+  const rows=JSON.parse(JSON.stringify(planRows())); const benutzt=new Set(); let geaendert=0; const neu=[], aktual=[], monPatch={};
+  const werte=x=>Array.from({length:12},(_,m)=>{ const v=x['m'+(m+1)]; return v==null||v===''?null:Number(v); });
+  const istLSt=x=>/lohnsteuer/.test(loN(x.label));
+  /* letzter abgerechneter Monat je Gesellschaft (ohne Lohnsteuer, die erst im Folgemonat fällig ist) */
+  const letzter={}; for(const x of data||[]){ const g=LO_GES[x.unternehmen]; if(!g||istLSt(x)) continue; werte(x).forEach((v,m)=>{ if(v&&(letzter[g]==null||m>letzter[g])) letzter[g]=m; }); }
+  const key=x=>x.unternehmen+'|'+String(x.label).trim();
+  /* aktiv = Betrag in den letzten drei abgerechneten Monaten oder im Folgemonat */
+  const aktiv=x=>{ const g=LO_GES[x.unternehmen], lm=letzter[g], W=werte(x); if(lm==null) return false; for(let m=Math.max(0,lm-2);m<=Math.min(11,lm+1);m++) if(W[m]) return true; return false; };
+  const L=(data||[]).filter(x=>LO_GES[x.unternehmen]&&String(x.label||'').trim()&&(rows.some(r=>r.lohn===key(x))||aktiv(x)));
+  L.sort((a,b)=>(rows.some(r=>r.lohn===key(b))?1:0)-(rows.some(r=>r.lohn===key(a))?1:0));
+  /* Monate, deren Beträge genau übernommen werden: Vormonat und laufender Monat (wenn offen) */
+  const MK=[shiftKey(heute.slice(0,7),-1),heute.slice(0,7)].filter(k=>Number(k.slice(0,4))===jahr&&!(months[k]&&months[k].abgeschlossen));
+  for(const x of L){ const g=LO_GES[x.unternehmen], obj=g+'-Allgemein', k=key(x), W=werte(x), lab=String(x.label).trim();
+    let lm=-1; W.forEach((v,m)=>{ if(v) lm=m; }); const letzterW=lm>=0?W[lm]:null;
+    let Z=rows.filter(r=>r.lohn===k);
+    if(!Z.length){ const kand=rows.filter(r=>r.ges===g&&r.obj===obj&&(r.kat==='Personal'||r.kat==='Abgaben & Steuern'));
+      Z=loZiel(lab,kand,r=>!r.lohn&&!benutzt.has(r.id)); }
+    let istNeu=false;
+    if(!Z.length){ const lmG=letzter[g]; if(!letzterW||lmG==null||!(istLSt(x)?(W[lmG]||W[lmG+1]):(W[lmG]||(lmG>0&&W[lmG-1])))) continue; const r={id:'pl'+Date.now().toString(36)+Math.random().toString(36).slice(2,5),ges:g,obj,pos:lab,kat:loAbgabe(lab)?'Abgaben & Steuern':'Personal',rh:'monatlich',plan:Array(12).fill(null),lohn:k};
+      if(istLSt(x)){ W.forEach((v,m)=>{ if(v) r.plan[m]=v; }); r.rh='laut Lohnkosten'; } else r.plan=Array(12).fill(null).map(()=>letzterW);
+      rows.push(r); Z=[r]; istNeu=true; neu.push(lab+' ('+g+')'); }
+    let ch=false, wert=false; const n=Z.length, teil=(v,i)=>i===n-1?r2(v-r2(v/n)*(n-1)):r2(v/n);
+    Z.forEach((r,i)=>{ benutzt.add(r.id); if(r.lohn!==k){ r.lohn=k; ch=true; } if(!Array.isArray(r.plan)) r.plan=Array(12).fill(null);
+      /* Vorlage für die Folgemonate: zuletzt abgerechneter Betrag in allen Monaten des Rhythmus */
+      if(letzterW&&!istNeu) for(let m=0;m<12;m++){ if(r.plan[m]==null||r.plan[m]===0) continue; const t=teil(letzterW,i); if(r.plan[m]!==t){ r.plan[m]=t; ch=true; wert=true; } }
+      /* genaue Beträge für Vormonat und laufenden Monat */
+      for(const mk of MK){ const m=Number(mk.slice(5,7))-1, v=W[m]; if(v==null||!r.plan[m]) continue; const t=teil(v,i), md=months[mk]||{};
+        const eff=(md.betrag||{})[r.id]!=null?md.betrag[r.id]:r.plan[m]; if(eff!==t){ (monPatch[mk]=monPatch[mk]||{})[r.id]=t; wert=true; } } });
+    if(ch||istNeu) geaendert++; if(wert&&!istNeu) aktual.push(lab+' ('+g+')'); }
+  const res={am:new Date().toISOString(),neu,aktual,anzahl:L.length};
+  if(geaendert){ plan=Object.assign({},plan,{rows}); await queue('stamm/plan',async()=>{ await db.doc('stamm/plan').set({rows,geaendert:todayISO(),lohnAm:res.am}); }); }
+  for(const [mk,b] of Object.entries(monPatch)) await writeMonth(mk,{betrag:b});
+  LO.ergebnis=res; return res; }
 const AB={lauf:false,fertig:false,info:'',fehler:'',ergebnis:null,oc:null};
 const normT=s=>String(s||'').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/ß/g,'ss').replace(/[^a-z0-9]+/g,' ').trim();
 const STOP=new Set(['gmbh','co','kg','ag','und','der','die','das','fuer','mbh','eg','se','e','v','ev','sparkasse','bank']);
@@ -481,6 +536,7 @@ function abKonten(obj,ges,konten){ const key=k=>k.key||k.iban;
 function abPassend(t,muster){ if(!muster) return false; if(muster.i&&t.i&&muster.i===t.i) return true; const w=worte(t.n); return muster.w&&muster.w.some(x=>w.includes(x)); }
 async function abgleich(manuell){ if(AB.lauf||!db||!canWrite||!plan) return; AB.lauf=true; AB.fehler=''; AB.info='Lade Kontoumsätze …'; render();
   try{
+    if(!LO.fertig||manuell){ LO.fertig=true; AB.info='Übernehme Lohnkosten …'; render(); try{ await loSync(); }catch(e){ AB.fehler='Lohnkosten: '+(e.message||e); } AB.info='Lade Kontoumsätze …'; render(); }
     if(!AB.oc||manuell) AB.oc=await abLadeOC(); const {konten,tx}=AB.oc;
     const heute=todayISO(), lfdKey=heute.slice(0,7), key=curKey, md=months[key]||{};
     if(md.abgeschlossen){ AB.info=''; AB.lauf=false; AB.ergebnis={nur:'Monat ist abgeschlossen – kein automatischer Abgleich.'}; render(); return; }
@@ -532,6 +588,7 @@ function abLeiste(){ const md=months[curKey]||{}, R=AB.ergebnis;
   else if(R&&R.nur) h+=esc(R.nur);
   else if(R) h+=(R.bezahlt.length?R.bezahlt.length+' Posten automatisch abgehakt':'keine neuen Zahlungen gefunden')+(R.konten?' · '+R.konten+' Kontostände aus der Bank (Stand '+esc(deDate(R.stand))+')':'');
   else h+='Fixkosten werden anhand der Abbuchungen abgehakt, Kontostände kommen aus der Bank.';
+  const LR=LO.ergebnis; if(LR&&!AB.lauf){ const n=LR.neu.length+LR.aktual.length; h+=' · Lohnkosten: '+(n?esc((LR.aktual.length?LR.aktual.length+' Betr'+(LR.aktual.length===1?'ag':'äge')+' aktualisiert ('+LR.aktual.join(', ')+')':'')+(LR.aktual.length&&LR.neu.length?', ':'')+(LR.neu.length?LR.neu.length+' neu angelegt ('+LR.neu.join(', ')+')':'')):'aktuell'); }
   h+='</span>'+(AB.fehler?'<span class="neg">'+esc(AB.fehler)+'</span>':'')+(canWrite&&!md.abgeschlossen?'<button id="abgleich"'+(AB.lauf?' disabled':'')+'>Jetzt abgleichen</button>':'')+'</div>';
   return h; }
 function abAutoStart(){ if(AB.key!==curKey){ AB.key=curKey; AB.fertig=false; AB.ergebnis=null; } if(AB.fertig||AB.lauf||!loaded.plan||!loaded.mon||!loaded.set||!db||!canWrite) return; AB.fertig=true; setTimeout(()=>abgleich(false),800); }
