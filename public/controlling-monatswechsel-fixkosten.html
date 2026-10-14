@@ -50,6 +50,9 @@ button.del:hover,button.del.sure{background:var(--neg);color:#fff;border-color:v
 .tabs button.on{color:var(--ink);border-bottom-color:var(--accent);font-weight:600}
 .actions{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:14px}
 .badge{display:inline-block;font-size:11px;padding:2px 8px;border-radius:999px;background:var(--chip);color:var(--muted)}
+.abl{display:flex;flex-wrap:wrap;gap:10px;align-items:center;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:10px 14px;margin-bottom:14px;font-size:13px}
+.abl .sub{color:var(--muted)}
+.abl button{margin-left:auto}
 .badge.closed{background:var(--warn-bg);color:var(--warn)}
 .tiles{display:grid;grid-template-columns:1fr;gap:10px;margin-bottom:18px}
 .tile{display:grid;grid-template-columns:200px 1fr;gap:4px 24px;align-items:start}
@@ -62,6 +65,8 @@ button.del:hover,button.del.sure{background:var(--neg);color:#fff;border-color:v
 .kv b{color:var(--ink);font-weight:600}
 .pos{color:var(--pos)}.neg{color:var(--neg)}
 section.ges{margin-bottom:22px}
+.gtog{cursor:pointer;user-select:none}
+.zu{display:inline-block;font-size:11px;font-weight:500;color:var(--muted);border:1px solid var(--line);border-radius:999px;padding:1px 8px;margin-right:8px;background:var(--card)}
 section.ges>h2{font-size:16px;margin:0 0 8px;display:flex;align-items:center;gap:8px}
 .grid{display:grid;grid-template-columns:1fr;gap:10px}
 .card-body{display:grid;grid-template-columns:320px 1fr;gap:6px 24px;align-items:start}
@@ -163,6 +168,8 @@ function store(k,v){try{ if(v===undefined) return localStorage.getItem(k); local
 let db=null, downloads=null, canWrite=true;
 let plan=null, planDraft=null, settings=null, months={}, loaded={plan:false,set:false,mon:false};
 let np={obj:'',pos:'',kat:'Betriebskosten',betrag:'',rh:'1',sel:[0,1,2,3,4,5,6,7,8,9,10,11]};
+let ZU={}; try{ ZU=JSON.parse(store('mw_zu')||'{}')||{}; }catch(e){ ZU={}; }
+const zuSave=()=>store('mw_zu',JSON.stringify(ZU));
 let curKey=keyOf(new Date()), tab=store('mw_tab')||'monat', onlyOpen=store('mw_open')==='1';
 const stored=store('mw_month'); if(stored && /^\d{4}-\d{2}$/.test(stored)) curKey=stored;
 
@@ -209,11 +216,11 @@ function compute(key){
   const order=objOrder(), acc={};
   for(const g of GES) for(const o of (order[g]||[])) acc[o]={ges:g,obj:o,items:[],fixGes:0,offen:0,offenDarl:0,rech:0,kontostand:null};
   for(const r of rows){ if(!acc[r.obj]) acc[r.obj]={ges:r.ges,obj:r.obj,items:[],fixGes:0,offen:0,offenDarl:0,rech:0,kontostand:null};
-    const a=acc[r.obj], p=!!paid[r.id]; a.items.push(Object.assign({},r,{paid:p,paidAm:paid[r.id]||''}));
+    const a=acc[r.obj], p=!!paid[r.id]; a.items.push(Object.assign({},r,{paid:p,paidAm:paid[r.id]||'',auto:p?(md.auto||{})[r.id]||null:null}));
     a.fixGes+=r.betrag; if(!p){a.offen+=r.betrag; if(r.kat==='Darlehen') a.offenDarl+=r.betrag;} }
   const rech=md.rechnungen||{};
   for(const o in acc){ const a=acc[o]; a.rechnungen=rech[o]||[]; a.rech=a.rechnungen.reduce((s,x)=>s+(x.betrag||0),0);
-    const k=(md.konten||{})[o]; a.kontostand=(k==null?null:k);
+    const k=(md.konten||{})[o]; a.kontostand=(k==null?null:k); a.kontoAuto=(md.kontenAuto||{})[o]||'';
     a.offenOhneDarl=a.offen-a.offenDarl; a.offenGes=a.offen+a.rech;
     a.diff=a.kontostand==null?null:r2(a.kontostand-a.offenOhneDarl-a.rech);
     a.diffGes=a.kontostand==null?null:r2(a.kontostand-a.offenGes);
@@ -228,6 +235,7 @@ function compute(key){
 
 /* ---------- Render ---------- */
 function render(){
+  try{ abAutoStart(); }catch(e){}
   document.getElementById('app').classList.toggle('ro',!canWrite);
   $('mlabel').textContent=labelKey(curKey);
   document.querySelectorAll('#tabs button').forEach(b=>b.classList.toggle('on',b.dataset.tab===tab));
@@ -247,7 +255,7 @@ function renderMonat(){
   h+='<span style="flex:1"></span><label class="filter"><input type="checkbox" id="onlyOpen"'+(onlyOpen?' checked':'')+'> nur offene Posten</label>';
   if(downloads) h+='<button class="primary" id="report">Monatsreport (Excel)</button>';
   h+=closed?'<button class="wonly" id="reopen">Wieder öffnen</button>':'<button class="wonly" id="close">Monat abschließen</button>';
-  h+='</div>';
+  h+='</div>'+abLeiste();
   if(!canWrite) h+='<div class="note">Nur-Lese-Ansicht – Ramona pflegt die Zahlungen und Kontostände.</div>';
   h+='<div class="tiles">';
   for(const g of GES){ const t=tot[g]; if(!t) continue;
@@ -260,15 +268,16 @@ function renderMonat(){
       +(t.fehlt?'<div class="kv" style="color:var(--warn)"><span>Kontostand fehlt</span><b style="color:var(--warn)">'+t.fehlt+(t.fehlt>1?' Konten':' Konto')+'</b></div>':'')+'</div></div>'; }
   h+='</div>';
   for(const g of GES){ const objs=order[g]||[]; if(!objs.length) continue;
-    h+='<section class="ges"><h2>'+g+'</h2><div class="grid">';
-    for(const o of objs){ const a=acc[o]; if(!a) continue; h+=renderCard(a,closed,pct); }
-    h+='</div></section>'; }
+    const zu=!!ZU['m:'+g], nOff=objs.reduce((s,o)=>s+((acc[o]&&acc[o].items.filter(i=>!i.paid).length)||0),0);
+    h+='<section class="ges"><h2 class="gtog" data-zu="m:'+g+'"><span class="zu">'+(zu?'ausklappen':'einklappen')+'</span>'+g+' <span class="sub">'+nOff+' offene Posten</span></h2>';
+    if(!zu){ h+='<div class="grid">'; for(const o of objs){ const a=acc[o]; if(!a) continue; h+=renderCard(a,closed,pct); } h+='</div>'; }
+    h+='</section>'; }
   return h;
 }
 function renderCard(a,closed,pct){
   const o=a.obj, konto=isKonto(o), state=a.diff==null?'':(a.diff>=0?' ok':' bad'), ro=closed||!canWrite?' disabled':'';
   let h='<div class="card'+state+'"><h4>'+esc(o)+'<small>'+(a.items.length?a.items.filter(i=>!i.paid).length+' von '+a.items.length+' offen':'')+'</small></h4>';
-  h+='<div class="card-body"><div class="left"><div class="krow"><span class="l">Kontostand</span><span class="v"><input type="text" inputmode="decimal" class="num" data-f="k:'+esc(o)+'" data-konto="'+esc(o)+'" value="'+(a.kontostand==null?'':fnum.format(a.kontostand))+'" placeholder="0,00"'+ro+'></span>';
+  h+='<div class="card-body"><div class="left"><div class="krow"><span class="l">Kontostand</span><span class="v"><input type="text" inputmode="decimal" class="num" data-f="k:'+esc(o)+'" data-konto="'+esc(o)+'" value="'+(a.kontostand==null?'':fnum.format(a.kontostand))+'" placeholder="0,00"'+ro+(a.kontoAuto?' title="aus der Bank, Stand '+esc(deDate(a.kontoAuto))+'"':'')+'>'+(a.kontoAuto?'<span class="d" style="display:block;font-size:11px;color:var(--muted)">Bank, '+esc(deDate(a.kontoAuto))+'</span>':'')+'</span>';
   if(a.items.length){ h+='<span class="l">Fixkosten offen</span><span class="v">'+eur(a.offen)+'</span>';
     if(a.offenDarl) h+='<span class="l">davon Darlehen</span><span class="v">'+eur(a.offenDarl)+'</span><span class="l">offen ohne Darlehen</span><span class="v">'+eur(a.offenOhneDarl)+'</span>'; }
   if(a.rech) h+='<span class="l">offene Rechnungen</span><span class="v">'+eur(a.rech)+'</span>';
@@ -277,11 +286,12 @@ function renderCard(a,closed,pct){
     if(a.offenDarl) h+='<div class="umb">Differenz inkl. Darlehen: <b class="'+cls(a.diffGes)+'">'+eur(a.diffGes)+'</b></div>';
     if(a.umbAllg) h+='<div class="umb">Umbuchung: '+eur(a.umbAllg)+' → Allgemein ('+Math.round(pct*100)+' %) · '+eur(a.umbInst)+' → Instandhaltung ('+Math.round((1-pct)*100)+' %)</div>'; }
   h+='</div><div class="right">';
-  const items=onlyOpen?a.items.filter(i=>!i.paid):a.items;
+  const alpha=(x,y)=>String(x.pos||'').localeCompare(String(y.pos||''),'de',{numeric:true,sensitivity:'base'});
+  const items=(onlyOpen?a.items.filter(i=>!i.paid):a.items).slice().sort(alpha);
   if(items.length){ h+='<ul class="items">';
     for(const i of items){ const ov=i.planBetrag!=null&&i.betrag!==i.planBetrag;
       h+='<li class="'+(i.paid?'paid':'')+'"><input type="checkbox" data-pay="'+esc(i.id)+'"'+(i.paid?' checked':'')+ro+' aria-label="bezahlt">'
-        +'<span class="t">'+esc(i.pos)+'<span class="chip">'+esc(i.kat)+'</span>'+(i.paid?'<span class="d">bezahlt am '+esc(deDate(i.paidAm))+'</span>':'')+docLine(i.doc,curKey)+(ov?'<span class="d">Plan: '+eur(i.planBetrag)+'</span>':'')+'</span>'
+        +'<span class="t">'+esc(i.pos)+'<span class="chip">'+esc(i.kat)+'</span>'+(i.paid?'<span class="d">bezahlt am '+esc(deDate(i.paidAm))+(i.auto?' · automatisch erkannt: '+esc(i.auto.n||'')+(i.auto.k?' ('+esc(i.auto.k)+')':''):'')+'</span>':'')+docLine(i.doc,curKey)+(ov?'<span class="d">Plan: '+eur(i.planBetrag)+'</span>':'')+'</span>'
         +'<span class="a">'+(i.extra&&!ro?'<button class="ghost wonly" data-delx="'+esc(i.id)+'" title="Einmalposten entfernen">✕</button>':'')
         +'<input type="text" inputmode="decimal" class="num'+(ov?' ov':'')+'" data-f="b:'+esc(i.id)+'" data-betrag="'+esc(i.id)+'" data-extra="'+(i.extra?1:0)+'" value="'+fnum.format(i.betrag)+'"'+ro+' title="Betrag nur für diesen Monat ändern"></span></li>'; }
     h+='</ul>'; }
@@ -327,19 +337,9 @@ function renderBelege(){
 function renderPlan(){
   const rows=planRows(); const ro=canWrite?'':' disabled';
   let h='<div class="note">Der Plan gilt für jeden Monat jedes Jahres. Leeres Feld = in diesem Monat keine Zahlung. Änderungen hier wirken auf alle <b>offenen</b> Monate; abgeschlossene Monate bleiben unverändert. Einmalige Abweichungen trägst du besser direkt im Monat ein.</div>';
-  h+='<div class="tablewrap"><table class="plan"><thead><tr><th></th><th>Objekt</th><th>Position</th><th>Kategorie</th><th>Rhythmus</th><th>Beleg</th>'+MS.map(x=>'<th class="n">'+x+'</th>').join('')+'<th class="n">Jahr</th></tr></thead><tbody>';
-  let lastG=null;
-  rows.forEach((r,ix)=>{ if(r.ges!==lastG){ lastG=r.ges; const tj=rows.filter(x=>x.ges===r.ges).reduce((s,x)=>s+x.plan.reduce((a,b)=>a+(b||0),0),0);
-      h+='<tr class="grp"><td colspan="18">'+esc(r.ges)+'</td><td class="n">'+eur(tj)+'</td></tr>'; }
-    h+='<tr><td>'+(canWrite?'<button class="del" data-pdel="'+ix+'" title="Position löschen">Löschen</button>':'')+'</td><td>'+esc(r.obj)+'</td><td><input type="text" class="txt" data-f="pp:'+ix+'" data-ppos="'+ix+'" value="'+esc(r.pos)+'"'+ro+'></td>'
-      +'<td><select data-pkat="'+ix+'"'+ro+'>'+KATS.map(k=>'<option'+(k===r.kat?' selected':'')+'>'+k+'</option>').join('')+'</select></td>'
-      +'<td><input type="text" class="txt" style="width:170px" data-f="pr:'+ix+'" data-prh="'+ix+'" value="'+esc(r.rh||'')+'"'+ro+'></td><td class="d" style="max-width:220px;white-space:normal;font-size:11px;color:var(--muted)">'+(r.doc?esc(r.doc.datei)+(r.doc.kdnr?'<br>Kd-Nr. '+esc(r.doc.kdnr):''):'–')+'</td>';
-    for(let m=0;m<12;m++) h+='<td class="n"><input type="text" inputmode="decimal" class="num" data-f="pm:'+ix+':'+m+'" data-pm="'+ix+':'+m+'" value="'+(r.plan[m]==null?'':fnum.format(r.plan[m]))+'"'+ro+'></td>';
-    h+='<td class="n">'+eur(r.plan.reduce((a,b)=>a+(b||0),0))+'</td></tr>'; });
-  h+='</tbody></table></div>';
   if(canWrite){ const objs=[...new Set(rows.map(r=>r.ges+'|'+r.obj))]; if(!np.obj||!objs.includes(np.obj)) np.obj=objs[0]||'';
     const RH=[['1','monatlich'],['2','alle 2 Monate'],['3','vierteljährlich'],['6','halbjährlich'],['12','jährlich'],['0','einzelne Monate']];
-    h+='<div class="note" style="margin-top:14px"><b style="color:var(--ink)">Neue Position</b><div class="addrow" style="grid-template-columns:repeat(auto-fit,minmax(140px,1fr))">'
+    h+='<div class="note"><b style="color:var(--ink)">Neue Position</b><div class="addrow" style="grid-template-columns:repeat(auto-fit,minmax(140px,1fr))">'
       +'<select id="np-obj">'+objs.map(x=>'<option value="'+esc(x)+'"'+(x===np.obj?' selected':'')+'>'+esc(x.replace('|',' · '))+'</option>').join('')+'</select>'
       +'<input type="text" id="np-pos" data-f="np-pos" placeholder="Bezeichnung" value="'+esc(np.pos)+'"><select id="np-kat">'+KATS.map(k=>'<option'+(k===np.kat?' selected':'')+'>'+k+'</option>').join('')+'</select>'
       +'<input type="text" id="np-betrag" data-f="np-betrag" inputmode="decimal" placeholder="Betrag" value="'+esc(np.betrag)+'">'
@@ -347,15 +347,30 @@ function renderPlan(){
       +'<div class="sub" style="margin:10px 0 6px">'+(np.rh==='0'?'Monate anklicken, in denen abgebucht wird:':np.rh==='1'?'Wird jeden Monat abgebucht.':'Monat der (ersten) Abbuchung anklicken – die weiteren Monate werden automatisch gesetzt:')+'</div>'
       +'<div class="mchips">'+MS.map((x,m)=>'<button type="button" class="mchip'+(np.sel.includes(m)?' on':'')+'" data-npm="'+m+'">'+x+'</button>').join('')+'</div>'
       +'<div style="margin-top:10px"><button class="primary" id="np-add">Hinzufügen</button></div></div>'; }
+  h+='<div class="tablewrap"><table class="plan"><thead><tr><th></th><th>Objekt</th><th>Position</th><th>Kategorie</th><th>Rhythmus</th><th>Beleg</th>'+MS.map(x=>'<th class="n">'+x+'</th>').join('')+'<th class="n">Jahr</th></tr></thead><tbody>';
+  let lastG=null;
+  const gi=g=>{ const i=GES.indexOf(g); return i<0?99:i; }, oi={}; rows.forEach((r,i)=>{ const k=r.ges+'|'+r.obj; if(oi[k]==null) oi[k]=i; });
+  const reihe=rows.map((r,ix)=>({r,ix})).sort((a,b)=>gi(a.r.ges)-gi(b.r.ges)||oi[a.r.ges+'|'+a.r.obj]-oi[b.r.ges+'|'+b.r.obj]||String(a.r.pos||'').localeCompare(String(b.r.pos||''),'de',{numeric:true,sensitivity:'base'}));
+  reihe.forEach(({r,ix})=>{ if(r.ges!==lastG){ lastG=r.ges; const tj=rows.filter(x=>x.ges===r.ges).reduce((s,x)=>s+x.plan.reduce((a,b)=>a+(b||0),0),0);
+      const zu=!!ZU['p:'+r.ges]; h+='<tr class="grp gtog" data-zu="p:'+esc(r.ges)+'"><td colspan="18"><span class="zu">'+(zu?'ausklappen':'einklappen')+'</span>'+esc(r.ges)+' <span class="sub">'+rows.filter(x=>x.ges===r.ges).length+' Positionen</span></td><td class="n">'+eur(tj)+'</td></tr>'; }
+    if(ZU['p:'+r.ges]) return;
+    h+='<tr><td>'+(canWrite?'<button class="del" data-pdel="'+ix+'" title="Position löschen">Löschen</button>':'')+'</td><td>'+esc(r.obj)+'</td><td><input type="text" class="txt" data-f="pp:'+ix+'" data-ppos="'+ix+'" value="'+esc(r.pos)+'"'+ro+'>'+(r.lohn?'<div class="sub" style="font-size:11px" title="'+esc(r.lohn.replace('|',' › '))+'">aus Lohnkosten</div>':'')+'</td>'
+      +'<td><select data-pkat="'+ix+'"'+ro+'>'+KATS.map(k=>'<option'+(k===r.kat?' selected':'')+'>'+k+'</option>').join('')+'</select></td>'
+      +'<td><input type="text" class="txt" style="width:170px" data-f="pr:'+ix+'" data-prh="'+ix+'" value="'+esc(r.rh||'')+'"'+ro+'></td><td class="d" style="max-width:220px;white-space:normal;font-size:11px;color:var(--muted)">'+(r.doc?esc(r.doc.datei)+(r.doc.kdnr?'<br>Kd-Nr. '+esc(r.doc.kdnr):''):'–')+'</td>';
+    for(let m=0;m<12;m++) h+='<td class="n"><input type="text" inputmode="decimal" class="num" data-f="pm:'+ix+':'+m+'" data-pm="'+ix+':'+m+'" value="'+(r.plan[m]==null?'':fnum.format(r.plan[m]))+'"'+ro+'></td>';
+    h+='<td class="n">'+eur(r.plan.reduce((a,b)=>a+(b||0),0))+'</td></tr>'; });
+  h+='</tbody></table></div>';
   return h;
 }
 
 /* ---------- Ereignisse ---------- */
+document.addEventListener('click',e=>{ const g=e.target.closest('.gtog'); if(!g||e.target.closest('input,select,button:not(.zu)')) return; const k=g.dataset.zu; if(ZU[k]) delete ZU[k]; else ZU[k]=1; zuSave(); render(); });
 document.addEventListener('click',e=>{
   const t=e.target.closest('button'); if(!t) return;
   if(t.id==='prev'||t.id==='next'||t.id==='today'){ curKey=t.id==='today'?keyOf(new Date()):shiftKey(curKey,t.id==='prev'?-1:1); store('mw_month',curKey); render(); return; }
   if(t.dataset.tab){ tab=t.dataset.tab; store('mw_tab',tab); render(); return; }
   if(t.id==='report'){ makeReport(); return; }
+  if(t.id==='abgleich'){ abgleich(true); return; }
   if(t.id==='close'){ if(t.dataset.sure!=='1'){t.dataset.sure='1';t.textContent='Wirklich abschließen?';return;}
     const snap=monthRows(curKey); writeMonth(curKey,{abgeschlossen:true,abgeschlossenAm:todayISO(),snapshot:snap}); toast('Monat abgeschlossen – jetzt den Report ziehen.'); return; }
   if(t.id==='reopen'){ writeMonth(curKey,{abgeschlossen:false}); return; }
@@ -393,9 +408,9 @@ document.addEventListener('change',e=>{
     if(k===1) np.sel=[0,1,2,3,4,5,6,7,8,9,10,11]; else if(k>1){ np.sel=[]; for(let x=first%k;x<12;x+=k) np.sel.push(x); }
     render(); return; }
   if(t.id==='onlyOpen'){ onlyOpen=t.checked; store('mw_open',onlyOpen?'1':'0'); render(); return; }
-  if(t.dataset.pay){ const id=t.dataset.pay; writeMonth(curKey,{paid:{[id]:t.checked?todayISO():null}}); return; }
+  if(t.dataset.pay){ const id=t.dataset.pay, md=months[curKey]||{}; if(t.checked) writeMonth(curKey,{paid:{[id]:todayISO()},nein:{[id]:null}}); else writeMonth(curKey,{paid:{[id]:null},auto:{[id]:null},nein:{[id]:(md.auto||{})[id]?true:null}}); return; }
   if(t.dataset.konto){ const v=parseNum(t.value); if(v!=null&&isNaN(v)){toast('Bitte eine Zahl eingeben.');return;}
-    writeMonth(curKey,{konten:{[t.dataset.konto]:v},kontenStand:todayISO()}); return; }
+    writeMonth(curKey,{konten:{[t.dataset.konto]:v},kontenAuto:{[t.dataset.konto]:null},kontenStand:todayISO()}); return; }
   if(t.dataset.betrag){ const id=t.dataset.betrag, v=parseNum(t.value); if(v==null||isNaN(v)){toast('Bitte einen Betrag eingeben.');render();return;}
     if(t.dataset.extra==='1'){ const list=((months[curKey]||{}).extra||[]).map(x=>x.id===id?Object.assign({},x,{betrag:v}):x); writeMonth(curKey,{extra:list}); }
     else { const pr=planRows().find(r=>r.id===id), m=Number(curKey.split('-')[1])-1; writeMonth(curKey,{betrag:{[id]:(pr&&pr.plan[m]===v)?null:v}}); }
@@ -440,6 +455,143 @@ async function makeReport(){
   }catch(e){ const c=e&&e.code; if(c==='declined') toast('Download abgebrochen.'); else if(c==='rate_limited') toast('Bitte kurz warten und erneut versuchen.'); else if(c==='unavailable'||c==='not_granted'){downloads=null;toast('Downloads sind in dieser Ansicht nicht verfügbar.');render();} else toast('Report fehlgeschlagen: '+(e&&e.message||e)); }
   finally{ const b=$('report'); if(b){b.disabled=false;b.textContent='Monatsreport (Excel)';} }
 }
+
+/* ---------- Automatischer Abgleich mit den Kontoumsätzen (aus Nahaus im OS) ----------
+   1. Kontostände: aktueller Bankstand je Konto aus Nahaus (nur im laufenden, offenen Monat)
+   2. Fixkosten: offene Posten werden abgehakt, wenn eine passende Abbuchung im Konto des Objekts gefunden wird.
+      Erkennung über Betrag + Zeitraum; Zahlungsempfänger werden aus früher abgehakten Monaten gelernt.
+   Vom Nutzer wieder geöffnete Posten (nein) werden nicht erneut automatisch abgehakt. */
+/* ---------- Lohnkosten → Fixkosten ----------
+   Die Beträge aus Personal › Lohnkosten (Tabelle personal_matrix, laufendes Jahr) werden in den Plan übernommen.
+   Zuordnung je Gesellschaft auf das Objekt "<Ges>-Allgemein": gleicher Name, Knappschaft = DRV, Sachbezug = Sachbezug-/Ladekarten-Positionen.
+   Übernommen werden nur Monate, für die in den Lohnkosten ein Betrag steht; andere Monate bleiben unverändert.
+   Zugeordnete Positionen tragen lohn:'Unternehmen|Bezeichnung', damit die Zuordnung beim nächsten Mal feststeht. */
+const LO={fertig:false,ergebnis:null};
+const LO_GES={'Wohn(T)raum Rheinhessen GmbH':'WT','Eric Eisenhardt':'EE','Wohntraum Kibo GmbH':'KiBo'};
+const loN=s=>String(s||'').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/ß/g,'ss').replace(/[^a-z0-9]+/g,' ').trim();
+const loSach=p=>/sachbezug|ladekarte/.test(loN(p));
+const loAbgabe=l=>/lohnsteuer|knappschaft|bkk|aok|ikk|krankenkasse|firmus|barmer|dak|techniker|minijob|drv|rentenvers|kirchensteuer/.test(loN(l));
+function loZiel(lab,kand,frei){ const L=loN(lab), F=kand.filter(r=>frei(r));
+  if(L==='sachbezug') return F.filter(r=>loSach(r.pos));
+  const ohneS=F.filter(r=>!loSach(r.pos));
+  let x=ohneS.filter(r=>loN(r.pos)===L); if(x.length) return [x[0]];
+  if(L==='knappschaft'||L==='minijob zentrale'){ x=ohneS.filter(r=>/^(drv|knappschaft|minijob)/.test(loN(r.pos))||loN(r.pos).includes('knappschaft')); if(x.length) return [x[0]]; }
+  const wl=L.split(' ').filter(w=>w.length>3);
+  x=ohneS.filter(r=>{ const p=loN(r.pos), wp=p.split(' '); return wl.length&&wl.every(w=>wp.includes(w)); }); if(x.length) return [x[0]];
+  const w1=L.split(' ')[0]; if(w1.length>2){ x=ohneS.filter(r=>loN(r.pos).split(' ')[0]===w1&&r.kat==='Personal'&&!loAbgabe(lab)); if(x.length===1) return x; }
+  return []; }
+async function loSync(){ const sb=window.osSupabase; if(!sb||!plan||planDraft) return null;
+  const heute=todayISO(), jahr=Number(heute.slice(0,4)), mHeute=Number(heute.slice(5,7))-1;
+  const {data,error}=await sb.from('personal_matrix').select('unternehmen,label,m1,m2,m3,m4,m5,m6,m7,m8,m9,m10,m11,m12').eq('jahr',jahr); if(error) throw error;
+  const rows=JSON.parse(JSON.stringify(planRows())); const benutzt=new Set(); let geaendert=0; const neu=[], aktual=[], monPatch={};
+  const werte=x=>Array.from({length:12},(_,m)=>{ const v=x['m'+(m+1)]; return v==null||v===''?null:Number(v); });
+  const istLSt=x=>/lohnsteuer/.test(loN(x.label));
+  /* letzter abgerechneter Monat je Gesellschaft (ohne Lohnsteuer, die erst im Folgemonat fällig ist) */
+  const letzter={}; for(const x of data||[]){ const g=LO_GES[x.unternehmen]; if(!g||istLSt(x)) continue; werte(x).forEach((v,m)=>{ if(v&&(letzter[g]==null||m>letzter[g])) letzter[g]=m; }); }
+  const key=x=>x.unternehmen+'|'+String(x.label).trim();
+  /* aktiv = Betrag in den letzten drei abgerechneten Monaten oder im Folgemonat */
+  const aktiv=x=>{ const g=LO_GES[x.unternehmen], lm=letzter[g], W=werte(x); if(lm==null) return false; for(let m=Math.max(0,lm-2);m<=Math.min(11,lm+1);m++) if(W[m]) return true; return false; };
+  const L=(data||[]).filter(x=>LO_GES[x.unternehmen]&&String(x.label||'').trim()&&(rows.some(r=>r.lohn===key(x))||aktiv(x)));
+  L.sort((a,b)=>(rows.some(r=>r.lohn===key(b))?1:0)-(rows.some(r=>r.lohn===key(a))?1:0));
+  /* Monate, deren Beträge genau übernommen werden: Vormonat und laufender Monat (wenn offen) */
+  const MK=[shiftKey(heute.slice(0,7),-1),heute.slice(0,7)].filter(k=>Number(k.slice(0,4))===jahr&&!(months[k]&&months[k].abgeschlossen));
+  for(const x of L){ const g=LO_GES[x.unternehmen], obj=g+'-Allgemein', k=key(x), W=werte(x), lab=String(x.label).trim();
+    let lm=-1; W.forEach((v,m)=>{ if(v) lm=m; }); const letzterW=lm>=0?W[lm]:null;
+    let Z=rows.filter(r=>r.lohn===k);
+    if(!Z.length){ const kand=rows.filter(r=>r.ges===g&&r.obj===obj&&(r.kat==='Personal'||r.kat==='Abgaben & Steuern'));
+      Z=loZiel(lab,kand,r=>!r.lohn&&!benutzt.has(r.id)); }
+    let istNeu=false;
+    if(!Z.length){ const lmG=letzter[g]; if(!letzterW||lmG==null||!(istLSt(x)?(W[lmG]||W[lmG+1]):(W[lmG]||(lmG>0&&W[lmG-1])))) continue; const r={id:'pl'+Date.now().toString(36)+Math.random().toString(36).slice(2,5),ges:g,obj,pos:lab,kat:loAbgabe(lab)?'Abgaben & Steuern':'Personal',rh:'monatlich',plan:Array(12).fill(null),lohn:k};
+      if(istLSt(x)){ W.forEach((v,m)=>{ if(v) r.plan[m]=v; }); r.rh='laut Lohnkosten'; } else r.plan=Array(12).fill(null).map(()=>letzterW);
+      rows.push(r); Z=[r]; istNeu=true; neu.push(lab+' ('+g+')'); }
+    let ch=false, wert=false; const n=Z.length, teil=(v,i)=>i===n-1?r2(v-r2(v/n)*(n-1)):r2(v/n);
+    Z.forEach((r,i)=>{ benutzt.add(r.id); if(r.lohn!==k){ r.lohn=k; ch=true; } if(!Array.isArray(r.plan)) r.plan=Array(12).fill(null);
+      /* Vorlage für die Folgemonate: zuletzt abgerechneter Betrag in allen Monaten des Rhythmus */
+      if(letzterW&&!istNeu) for(let m=0;m<12;m++){ if(r.plan[m]==null||r.plan[m]===0) continue; const t=teil(letzterW,i); if(r.plan[m]!==t){ r.plan[m]=t; ch=true; wert=true; } }
+      /* genaue Beträge für Vormonat und laufenden Monat */
+      for(const mk of MK){ const m=Number(mk.slice(5,7))-1, v=W[m]; if(v==null||!r.plan[m]) continue; const t=teil(v,i), md=months[mk]||{};
+        const eff=(md.betrag||{})[r.id]!=null?md.betrag[r.id]:r.plan[m]; if(eff!==t){ (monPatch[mk]=monPatch[mk]||{})[r.id]=t; wert=true; } } });
+    if(ch||istNeu) geaendert++; if(wert&&!istNeu) aktual.push(lab+' ('+g+')'); }
+  const res={am:new Date().toISOString(),neu,aktual,anzahl:L.length};
+  if(geaendert){ plan=Object.assign({},plan,{rows}); await queue('stamm/plan',async()=>{ await db.doc('stamm/plan').set({rows,geaendert:todayISO(),lohnAm:res.am}); }); }
+  for(const [mk,b] of Object.entries(monPatch)) await writeMonth(mk,{betrag:b});
+  LO.ergebnis=res; return res; }
+const AB={lauf:false,fertig:false,info:'',fehler:'',ergebnis:null,oc:null};
+const normT=s=>String(s||'').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/ß/g,'ss').replace(/[^a-z0-9]+/g,' ').trim();
+const STOP=new Set(['gmbh','co','kg','ag','und','der','die','das','fuer','mbh','eg','se','e','v','ev','sparkasse','bank']);
+const worte=s=>normT(s).split(' ').filter(w=>w.length>2&&!STOP.has(w));
+const tageDiff=(a,b)=>Math.abs((new Date(a+'T12:00:00')-new Date(b+'T12:00:00'))/864e5);
+const addTage=(d,n)=>{ const x=new Date(d+'T12:00:00'); x.setDate(x.getDate()+n); return x.toISOString().slice(0,10); };
+async function abToken(){ try{ const {data}=await window.osSupabase.auth.getSession(); return (data&&data.session&&data.session.access_token)||''; }catch(e){ return ''; } }
+async function abLadeOC(){ const sb=window.osSupabase, out={konten:[],tx:[]}; let from=0;
+  for(;;){ const {data,error}=await sb.from('os_docs').select('pfad,data').eq('app','oc').or('pfad.like.buchungen/%,pfad.eq.stamm/konten').range(from,from+499); if(error) throw error;
+    for(const r of data||[]){ if(r.pfad==='stamm/konten') out.konten=(r.data&&r.data.konten)||[]; else if(r.data&&r.data.konto) for(const t of (r.data.tx||[])) if(t&&t.d) out.tx.push(Object.assign({k:r.data.konto},t)); }
+    if(!data||data.length<500) break; from+=500; }
+  return out; }
+/* Konten eines Objekts der Monatswechsel-Liste */
+function abKonten(obj,ges,konten){ const key=k=>k.key||k.iban;
+  const eigen=konten.filter(k=>k.obj===obj||k.name===obj||(String(k.name||'').split('/').includes(obj)));
+  const gesK=konten.filter(k=>k.ges===ges&&!eigen.includes(k)&&!/__aus/.test(k.obj||''));
+  return {eigen:eigen.map(key),ges:gesK.map(key)}; }
+function abPassend(t,muster){ if(!muster) return false; if(muster.i&&t.i&&muster.i===t.i) return true; const w=worte(t.n); return muster.w&&muster.w.some(x=>w.includes(x)); }
+async function abgleich(manuell){ if(AB.lauf||!db||!canWrite||!plan) return; AB.lauf=true; AB.fehler=''; AB.info='Lade Kontoumsätze …'; render();
+  try{
+    if(!LO.fertig||manuell){ LO.fertig=true; AB.info='Übernehme Lohnkosten …'; render(); try{ await loSync(); }catch(e){ AB.fehler='Lohnkosten: '+(e.message||e); } AB.info='Lade Kontoumsätze …'; render(); }
+    if(!AB.oc||manuell) AB.oc=await abLadeOC(); const {konten,tx}=AB.oc;
+    const heute=todayISO(), lfdKey=heute.slice(0,7), key=curKey, md=months[key]||{};
+    if(md.abgeschlossen){ AB.info=''; AB.lauf=false; AB.ergebnis={nur:'Monat ist abgeschlossen – kein automatischer Abgleich.'}; render(); return; }
+    const res={bezahlt:[],konten:0,stand:''};
+    /* 1. Kontostände aus Nahaus – nur im laufenden Monat */
+    if(key===lfdKey){ AB.info='Hole Kontostände aus der Bank …'; render();
+      try{ const r=await fetch('/api/nahaus',{method:'POST',headers:{'content-type':'application/json',authorization:'Bearer '+await abToken()},body:JSON.stringify({aktion:'konten'})}); const j=await r.json();
+        if(j.error) throw new Error(j.error);
+        const byIban=new Map((j.konten||[]).filter(k=>k.saldo!=null).map(k=>[k.iban,k])); const order=objOrder(), neu={}, auto={}; let stand='';
+        for(const g of GES) for(const o of (order[g]||[])){ let L=konten.filter(k=>k.name===o&&byIban.has(k.iban)); if(!L.length) L=konten.filter(k=>k.obj===o&&byIban.has(k.iban));
+          if(!L.length) continue; let s=0, am=''; for(const k of L){ const n=byIban.get(k.iban); s+=n.saldo; if(n.saldoAm>am) am=n.saldoAm; }
+          neu[o]=r2(s); auto[o]=am; if(am>stand) stand=am; }
+        if(Object.keys(neu).length){ await writeMonth(key,{konten:neu,kontenAuto:auto,kontenStand:stand||heute}); res.konten=Object.keys(neu).length; res.stand=stand; } }
+      catch(e){ AB.fehler='Kontostände: '+(e.message||e); } }
+    /* 2. Fixkosten abhaken */
+    AB.info='Gleiche Fixkosten ab …'; render();
+    const m=Number(key.split('-')[1])-1, start=key+'-01', ende=lastDay(key), prevKey=shiftKey(key,-1), prev=months[prevKey]||{};
+    const md2=months[key]||md, paid=md2.paid||{}, nein=md2.nein||{}, rows=monthRows(key);
+    /* Muster aus früheren Monaten lernen: abgehakter Posten + Abbuchung gleichen Betrags ±4 Tage */
+    const muster={};
+    for(const [mk,mo] of Object.entries(months)){ if(mk>=key) continue; const mm=Number(mk.split('-')[1])-1;
+      for(const r of planRows()){ const pd=(mo.paid||{})[r.id]; if(!pd) continue; const b=((mo.betrag||{})[r.id]!=null?mo.betrag[r.id]:r.plan&&r.plan[mm]); if(!b) continue;
+        const A=(mo.auto||{})[r.id]; const kk=abKonten(r.obj,r.ges,konten); const alle=new Set(kk.eigen.concat(kk.ges));
+        const t=A&&A.h?tx.find(x=>x.h===A.h&&(!A.kk||x.k===A.kk)):tx.find(x=>alle.has(x.k)&&x.b<0&&Math.abs(-x.b-b)<0.01&&tageDiff(x.d,pd)<=4);
+        if(t){ const w=worte(t.n).slice(0,3); muster[r.id]={i:t.i||'',w,k:t.k}; } } }
+    const benutzt=new Set(); for(const mo of [prev,md2]) for(const a of Object.values(mo.auto||{})) if(a&&a.h) benutzt.add((a.kk||'')+'|'+a.h);
+    const eigeneIban=new Set(konten.map(k=>k.iban).filter(Boolean));
+    /* zahlt dieser Posten üblicherweise schon vor Monatsbeginn? (früher abgehakt mit Datum vor dem Monatsersten) */
+    const frueh={}; for(const [mk,mo] of Object.entries(months)){ if(mk>=key) continue; for(const [id,pd] of Object.entries(mo.paid||{})) if(pd&&pd<mk+'-01') frueh[id]=true; }
+    const vorPaid=prev.paid||{}; const patch={paid:{},auto:{}};
+    const offen=rows.filter(r=>!r.extra&&!paid[r.id]&&!nein[r.id]&&r.betrag>0);
+    for(const r of offen){ const kk=abKonten(r.obj,r.ges,konten), mu=muster[r.id];
+      const vonD=addTage(start,-7); const vorD=vorPaid[r.id];
+      const cand=tx.filter(t=>t.b<0&&Math.abs(-t.b-r.betrag)<0.01&&t.d>=vonD&&t.d<=ende&&!benutzt.has(t.k+'|'+t.h)&&!(t.i&&eigeneIban.has(t.i))&&!/geldtransit|umbuchung/i.test((t.z||'')+' '+(t.n||''))&&!(vorD&&tageDiff(t.d,vorD)<=3)&&(t.d>=start||frueh[r.id]));
+      let wahl=null;
+      if(mu){ const L=cand.filter(t=>(kk.eigen.includes(t.k)||kk.ges.includes(t.k)||t.k===mu.k)&&abPassend(t,mu)); if(L.length) wahl=L.sort((a,b)=>tageDiff(a.d,start)-tageDiff(b.d,start))[0]; }
+      if(!wahl){ const L=cand.filter(t=>kk.eigen.includes(t.k)); const gleiche=offen.filter(x=>x.obj===r.obj&&Math.abs(x.betrag-r.betrag)<0.01).length;
+        if(L.length===1&&gleiche===1) wahl=L[0]; }
+      if(wahl){ benutzt.add(wahl.k+'|'+wahl.h); patch.paid[r.id]=wahl.d; const kn=konten.find(k=>(k.key||k.iban)===wahl.k);
+        patch.auto[r.id]={h:wahl.h,kk:wahl.k,d:wahl.d,n:String(wahl.n||'').slice(0,60),k:kn?kn.name:''}; res.bezahlt.push(r.pos+' ('+r.obj+')'); } }
+    if(res.bezahlt.length) await writeMonth(key,patch);
+    res.am=new Date().toISOString(); AB.ergebnis=res;
+    if(manuell||res.bezahlt.length) toast((res.bezahlt.length?res.bezahlt.length+' Posten automatisch abgehakt':'Keine neuen Zahlungen gefunden')+(res.konten?' · '+res.konten+' Kontostände aktualisiert':'')+'.');
+  }catch(e){ AB.fehler=e.message||String(e); if(manuell) toast('Abgleich fehlgeschlagen: '+AB.fehler); }
+  AB.lauf=false; AB.info=''; AB.fertig=true; render(); }
+function abLeiste(){ const md=months[curKey]||{}, R=AB.ergebnis;
+  let h='<div class="abl"><b>Abgleich mit den Kontoumsätzen</b><span class="sub">';
+  if(AB.lauf) h+=esc(AB.info||'läuft …');
+  else if(R&&R.nur) h+=esc(R.nur);
+  else if(R) h+=(R.bezahlt.length?R.bezahlt.length+' Posten automatisch abgehakt':'keine neuen Zahlungen gefunden')+(R.konten?' · '+R.konten+' Kontostände aus der Bank (Stand '+esc(deDate(R.stand))+')':'');
+  else h+='Fixkosten werden anhand der Abbuchungen abgehakt, Kontostände kommen aus der Bank.';
+  const LR=LO.ergebnis; if(LR&&!AB.lauf){ const n=LR.neu.length+LR.aktual.length; h+=' · Lohnkosten: '+(n?esc((LR.aktual.length?LR.aktual.length+' Betr'+(LR.aktual.length===1?'ag':'äge')+' aktualisiert ('+LR.aktual.join(', ')+')':'')+(LR.aktual.length&&LR.neu.length?', ':'')+(LR.neu.length?LR.neu.length+' neu angelegt ('+LR.neu.join(', ')+')':'')):'aktuell'); }
+  h+='</span>'+(AB.fehler?'<span class="neg">'+esc(AB.fehler)+'</span>':'')+(canWrite&&!md.abgeschlossen?'<button id="abgleich"'+(AB.lauf?' disabled':'')+'>Jetzt abgleichen</button>':'')+'</div>';
+  return h; }
+function abAutoStart(){ if(AB.key!==curKey){ AB.key=curKey; AB.fertig=false; AB.ergebnis=null; } if(AB.fertig||AB.lauf||!loaded.plan||!loaded.mon||!loaded.set||!db||!canWrite) return; AB.fertig=true; setTimeout(()=>abgleich(false),800); }
 
 /* ---------- Start ---------- */
 let dbState='wait';
