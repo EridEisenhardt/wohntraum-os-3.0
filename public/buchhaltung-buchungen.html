@@ -57,6 +57,7 @@ textarea{width:100%;resize:vertical}
 .kz-c{padding-top:2px}.kz-c input{width:16px;height:16px}
 .kz-i b{font-size:14px}.kz-l{font-size:12px;font-weight:600;margin-top:10px}
 .kz-z{font-size:12.5px;color:var(--muted);overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;word-break:break-word}.kz-z.auf{display:block}
+.kz-vt{font-size:12px;color:var(--accent);margin-top:4px}
 .kz-mehr{border:0;background:none;color:var(--accent);font-size:12px;padding:6px 0 0;cursor:pointer}
 .kz-b{text-align:right;font-weight:600;font-size:14px;padding-top:2px;white-space:nowrap}
 .kz-z2{display:flex;flex-direction:column;gap:8px;border-left:2px solid var(--line);padding-left:12px}
@@ -1092,7 +1093,7 @@ function karte(it,n){ const t=it.tx, c=it.c, ok=bestaetigt(it), ro=!canWrite||it
   let h='<div class="kz'+(it.id===U.sel?' sel':'')+(ok?' ok':'')+'" data-kid="'+esc(it.id)+'">';
   h+='<div class="kz-c">'+(canWrite?'<input type="checkbox" data-kw="'+esc(it.id)+'"'+(KS.wahl.has(it.id)?' checked':'')+' title="Zum Bestätigen auswählen">':'')+'</div>';
   /* links: Zahlung */
-  h+='<div class="kz-i"><b>'+esc(t.n||'–')+'</b><div class="sub">'+esc(dmy(t.d))+' · '+esc(kontoName(it.kkey))+'</div>'
+  h+='<div class="kz-i"><b>'+esc(t.n||'–')+'</b><div class="sub">'+esc(dmy(t.d))+' · '+esc(kontoName(it.kkey))+'</div>'+vtZeile(it)
     +'<div class="kz-l">Verwendungszweck</div><div class="kz-z'+(auf?' auf':'')+'">'+esc(t.z||'–')+'</div>'
     +(auf?(t.i?'<div class="kz-l">IBAN</div><div class="sub">'+esc(t.i)+'</div>':'')+(t.nt?'<div class="kz-l">Notiz</div><div class="sub">'+esc(t.nt)+'</div>':''):'')
     +'<button class="kz-mehr" data-kauf="'+esc(it.id)+'">'+(auf?'weniger':'mehr')+'</button></div>';
@@ -1134,6 +1135,22 @@ document.addEventListener('change',e=>{ const t=e.target; const m=t.id&&t.id.mat
   if(m[1]==='k'){ setKonto(it,t.value); return; }
   const c=it.c; writeTx(it.doc,it.ix,{m:1,k:c.kat||'',s:c.sub||'',ka:c.ka||'',o:t.value,u:''}); },true);
 document.addEventListener('keydown',e=>{ if(e.key==='Escape'&&U.dr){ U.dr=false; render(); } });
+
+/* ---------- Verträge (Hausverwaltung › Verträge) an der Zahlung anzeigen ---------- */
+var VERTR=[], vtCache=new Map();
+const vtZiff=s=>String(s||'').replace(/\D/g,'');
+/* Nummer muss als eigenes Wort im Verwendungszweck stehen (Satzzeichen egal), sonst gibt es Zufallstreffer in IBANs und Referenzen */
+const vtTok=z=>String(z||'').toUpperCase().split(/[\s\/,;:]+/).map(x=>x.replace(/[^A-Z0-9]/g,'')).filter(x=>x.length>=5);
+function vtPasst(v,t,kkey){ const z=String(t.z||'').toUpperCase(), T=vtTok(z);
+  for(const n of [v.vnr,v.knr,v.zaehler]){ const s=String(n||'').toUpperCase().replace(/[^A-Z0-9]/g,''); if(s.length<5) continue; const d=vtZiff(s); if(T.some(x=>x===s||(d.length>=6&&vtZiff(x)===d&&x.replace(/\d/g,'').length<=3))) return true; }
+  if(v.mref&&z.includes(String(v.mref).toUpperCase())) return true;
+  if(v.iban&&t.i&&t.i===v.iban&&(!v.konto||kkey===v.konto)&&!v.vnr&&!v.knr) return true;
+  return false; }
+function vtFuer(it){ if(!VERTR.length||!(it.tx.b<0)) return null; const k=it.id+'|'+VERTR.length; if(vtCache.has(k)) return vtCache.get(k);
+  const L=VERTR.filter(v=>vtPasst(v,it.tx,it.kkey)); const r=L.find(v=>v.konto===it.kkey)||L[0]||null; vtCache.set(k,r); return r; }
+function vtEinheit(v){ const o=objekte.find(x=>x.kz===v.obj); const e=o&&(o.einheiten||[]).find(x=>x.id===v.einheit); return e?e.label:''; }
+function vtText(v){ return [v.anbieter,v.sparte,[v.obj,vtEinheit(v)].filter(Boolean).join(' '),v.vnr||v.knr?'Nr. '+(v.vnr||v.knr):''].filter(Boolean).join(' · '); }
+function vtZeile(it){ const v=vtFuer(it); if(!v) return ''; return '<div class="kz-vt" title="'+esc((v.quelle==='vorschlag'?'Vorschlag, noch nicht geprüft. ':'')+(v.start||v.ende?'Laufzeit '+dmy(v.start||'')+' – '+(v.ende?dmy(v.ende):'offen'):''))+'">Vertrag: '+esc(vtText(v))+'</div>'; }
 /* ================= Buchungen (Belegbuchhaltung im Stil von BuchhaltungsButler) =================
    Gleiche Daten wie „Objekt-Controlling“ (os_docs, app 'oc'): jede Zuordnung zählt dort sofort mit. */
 tab='liste';
@@ -1288,7 +1305,7 @@ function renderDetail(it,list){
   const pos=list.findIndex(x=>x.id===it.id);
   let h='<div class="dhead"><div><div class="dn">'+esc(t.n||'–')+'</div><div class="sub">'+esc(dmy(t.d))+' · '+esc(kontoName(it.kkey))+(k&&k.ges?' · '+esc(k.ges):'')+'</div></div><div class="da '+cls(t.b)+'">'+eur(t.b)+'</div></div>';
   h+='<div class="dnav"><button class="ghost small" data-step="-1"'+(pos>0?'':' disabled')+'>‹ vorherige</button><span class="sub">'+(pos+1)+' / '+list.length+'</span><button class="ghost small" data-step="1"'+(pos>=0&&pos<list.length-1?'':' disabled')+'>nächste ›</button></div>';
-  h+='<div class="card"><div class="lab">Verwendungszweck</div><div class="zweck">'+esc(t.z||'–')+'</div>'+(t.i?'<div class="sub" style="margin-top:6px">IBAN '+esc(t.i)+'</div>':'')+'</div>';
+  h+='<div class="card"><div class="lab">Verwendungszweck</div><div class="zweck">'+esc(t.z||'–')+'</div>'+(t.i?'<div class="sub" style="margin-top:6px">IBAN '+esc(t.i)+'</div>':'')+vtZeile(it)+'</div>';
   /* Zuordnung */
   h+='<div class="card"><div class="lab">Zuordnung '+(it.open?'<span class="pill mid">offen</span>':'<span class="pill ok">zugeordnet</span>')+' <span class="pill src" title="Woher kommt die Zuordnung?">'+esc(String(it.split?'aufgeteilt':c.src||'').slice(0,40))+'</span></div>';
   if(it.nh) h+='<div class="sub">Diese Mietzahlung ist in Nahaus abgeglichen – die Zuordnung kommt von dort.</div>';
@@ -1500,6 +1517,7 @@ render();
   db.doc('stamm/verwsub').onSnapshot(s=>{ vsMap=(s.exists?clone(s.data()).map:null)||{}; invalidate(); softRender(); },()=>{});
   db.doc('stamm/nahaus').onSnapshot(s=>{ const d=s.exists?clone(s.data()):{}; nhMap=d.map||{}; nhStand=d.stand||''; invalidate(); softRender(); },()=>{});
   db.doc('stamm/kontenplan').onSnapshot(s=>{ objNrMap=(s.exists?clone(s.data()).objNr:null)||{}; softRender(); },()=>{});
+  db.doc('stamm/vertraege').onSnapshot(s=>{ VERTR=(s.exists?clone(s.data()).liste:null)||[]; vtCache=new Map(); softRender(); },()=>{});
   db.doc('stamm/dauerbelege').onSnapshot(s=>{ DAUER=(s.exists?clone(s.data()).liste:null)||[]; invalidate(); softRender(); },()=>{});
   db.doc('stamm/belegabsender').onSnapshot(s=>{ absMap=(s.exists?clone(s.data()).map:null)||{}; },()=>{});
   db.doc('stamm/einstellungen').onSnapshot(s=>{ einst=s.exists?clone(s.data()):{}; done('e'); },()=>done('e'));
