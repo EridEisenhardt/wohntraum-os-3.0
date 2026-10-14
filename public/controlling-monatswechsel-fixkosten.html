@@ -65,6 +65,8 @@ button.del:hover,button.del.sure{background:var(--neg);color:#fff;border-color:v
 .kv b{color:var(--ink);font-weight:600}
 .pos{color:var(--pos)}.neg{color:var(--neg)}
 section.ges{margin-bottom:22px}
+.gtog{cursor:pointer;user-select:none}
+.zu{display:inline-block;font-size:11px;font-weight:500;color:var(--muted);border:1px solid var(--line);border-radius:999px;padding:1px 8px;margin-right:8px;background:var(--card)}
 section.ges>h2{font-size:16px;margin:0 0 8px;display:flex;align-items:center;gap:8px}
 .grid{display:grid;grid-template-columns:1fr;gap:10px}
 .card-body{display:grid;grid-template-columns:320px 1fr;gap:6px 24px;align-items:start}
@@ -166,6 +168,8 @@ function store(k,v){try{ if(v===undefined) return localStorage.getItem(k); local
 let db=null, downloads=null, canWrite=true;
 let plan=null, planDraft=null, settings=null, months={}, loaded={plan:false,set:false,mon:false};
 let np={obj:'',pos:'',kat:'Betriebskosten',betrag:'',rh:'1',sel:[0,1,2,3,4,5,6,7,8,9,10,11]};
+let ZU={}; try{ ZU=JSON.parse(store('mw_zu')||'{}')||{}; }catch(e){ ZU={}; }
+const zuSave=()=>store('mw_zu',JSON.stringify(ZU));
 let curKey=keyOf(new Date()), tab=store('mw_tab')||'monat', onlyOpen=store('mw_open')==='1';
 const stored=store('mw_month'); if(stored && /^\d{4}-\d{2}$/.test(stored)) curKey=stored;
 
@@ -264,9 +268,10 @@ function renderMonat(){
       +(t.fehlt?'<div class="kv" style="color:var(--warn)"><span>Kontostand fehlt</span><b style="color:var(--warn)">'+t.fehlt+(t.fehlt>1?' Konten':' Konto')+'</b></div>':'')+'</div></div>'; }
   h+='</div>';
   for(const g of GES){ const objs=order[g]||[]; if(!objs.length) continue;
-    h+='<section class="ges"><h2>'+g+'</h2><div class="grid">';
-    for(const o of objs){ const a=acc[o]; if(!a) continue; h+=renderCard(a,closed,pct); }
-    h+='</div></section>'; }
+    const zu=!!ZU['m:'+g], nOff=objs.reduce((s,o)=>s+((acc[o]&&acc[o].items.filter(i=>!i.paid).length)||0),0);
+    h+='<section class="ges"><h2 class="gtog" data-zu="m:'+g+'"><span class="zu">'+(zu?'ausklappen':'einklappen')+'</span>'+g+' <span class="sub">'+nOff+' offene Posten</span></h2>';
+    if(!zu){ h+='<div class="grid">'; for(const o of objs){ const a=acc[o]; if(!a) continue; h+=renderCard(a,closed,pct); } h+='</div>'; }
+    h+='</section>'; }
   return h;
 }
 function renderCard(a,closed,pct){
@@ -331,19 +336,9 @@ function renderBelege(){
 function renderPlan(){
   const rows=planRows(); const ro=canWrite?'':' disabled';
   let h='<div class="note">Der Plan gilt für jeden Monat jedes Jahres. Leeres Feld = in diesem Monat keine Zahlung. Änderungen hier wirken auf alle <b>offenen</b> Monate; abgeschlossene Monate bleiben unverändert. Einmalige Abweichungen trägst du besser direkt im Monat ein.</div>';
-  h+='<div class="tablewrap"><table class="plan"><thead><tr><th></th><th>Objekt</th><th>Position</th><th>Kategorie</th><th>Rhythmus</th><th>Beleg</th>'+MS.map(x=>'<th class="n">'+x+'</th>').join('')+'<th class="n">Jahr</th></tr></thead><tbody>';
-  let lastG=null;
-  rows.forEach((r,ix)=>{ if(r.ges!==lastG){ lastG=r.ges; const tj=rows.filter(x=>x.ges===r.ges).reduce((s,x)=>s+x.plan.reduce((a,b)=>a+(b||0),0),0);
-      h+='<tr class="grp"><td colspan="18">'+esc(r.ges)+'</td><td class="n">'+eur(tj)+'</td></tr>'; }
-    h+='<tr><td>'+(canWrite?'<button class="del" data-pdel="'+ix+'" title="Position löschen">Löschen</button>':'')+'</td><td>'+esc(r.obj)+'</td><td><input type="text" class="txt" data-f="pp:'+ix+'" data-ppos="'+ix+'" value="'+esc(r.pos)+'"'+ro+'></td>'
-      +'<td><select data-pkat="'+ix+'"'+ro+'>'+KATS.map(k=>'<option'+(k===r.kat?' selected':'')+'>'+k+'</option>').join('')+'</select></td>'
-      +'<td><input type="text" class="txt" style="width:170px" data-f="pr:'+ix+'" data-prh="'+ix+'" value="'+esc(r.rh||'')+'"'+ro+'></td><td class="d" style="max-width:220px;white-space:normal;font-size:11px;color:var(--muted)">'+(r.doc?esc(r.doc.datei)+(r.doc.kdnr?'<br>Kd-Nr. '+esc(r.doc.kdnr):''):'–')+'</td>';
-    for(let m=0;m<12;m++) h+='<td class="n"><input type="text" inputmode="decimal" class="num" data-f="pm:'+ix+':'+m+'" data-pm="'+ix+':'+m+'" value="'+(r.plan[m]==null?'':fnum.format(r.plan[m]))+'"'+ro+'></td>';
-    h+='<td class="n">'+eur(r.plan.reduce((a,b)=>a+(b||0),0))+'</td></tr>'; });
-  h+='</tbody></table></div>';
   if(canWrite){ const objs=[...new Set(rows.map(r=>r.ges+'|'+r.obj))]; if(!np.obj||!objs.includes(np.obj)) np.obj=objs[0]||'';
     const RH=[['1','monatlich'],['2','alle 2 Monate'],['3','vierteljährlich'],['6','halbjährlich'],['12','jährlich'],['0','einzelne Monate']];
-    h+='<div class="note" style="margin-top:14px"><b style="color:var(--ink)">Neue Position</b><div class="addrow" style="grid-template-columns:repeat(auto-fit,minmax(140px,1fr))">'
+    h+='<div class="note"><b style="color:var(--ink)">Neue Position</b><div class="addrow" style="grid-template-columns:repeat(auto-fit,minmax(140px,1fr))">'
       +'<select id="np-obj">'+objs.map(x=>'<option value="'+esc(x)+'"'+(x===np.obj?' selected':'')+'>'+esc(x.replace('|',' · '))+'</option>').join('')+'</select>'
       +'<input type="text" id="np-pos" data-f="np-pos" placeholder="Bezeichnung" value="'+esc(np.pos)+'"><select id="np-kat">'+KATS.map(k=>'<option'+(k===np.kat?' selected':'')+'>'+k+'</option>').join('')+'</select>'
       +'<input type="text" id="np-betrag" data-f="np-betrag" inputmode="decimal" placeholder="Betrag" value="'+esc(np.betrag)+'">'
@@ -351,10 +346,22 @@ function renderPlan(){
       +'<div class="sub" style="margin:10px 0 6px">'+(np.rh==='0'?'Monate anklicken, in denen abgebucht wird:':np.rh==='1'?'Wird jeden Monat abgebucht.':'Monat der (ersten) Abbuchung anklicken – die weiteren Monate werden automatisch gesetzt:')+'</div>'
       +'<div class="mchips">'+MS.map((x,m)=>'<button type="button" class="mchip'+(np.sel.includes(m)?' on':'')+'" data-npm="'+m+'">'+x+'</button>').join('')+'</div>'
       +'<div style="margin-top:10px"><button class="primary" id="np-add">Hinzufügen</button></div></div>'; }
+  h+='<div class="tablewrap"><table class="plan"><thead><tr><th></th><th>Objekt</th><th>Position</th><th>Kategorie</th><th>Rhythmus</th><th>Beleg</th>'+MS.map(x=>'<th class="n">'+x+'</th>').join('')+'<th class="n">Jahr</th></tr></thead><tbody>';
+  let lastG=null;
+  rows.forEach((r,ix)=>{ if(r.ges!==lastG){ lastG=r.ges; const tj=rows.filter(x=>x.ges===r.ges).reduce((s,x)=>s+x.plan.reduce((a,b)=>a+(b||0),0),0);
+      const zu=!!ZU['p:'+r.ges]; h+='<tr class="grp gtog" data-zu="p:'+esc(r.ges)+'"><td colspan="18"><span class="zu">'+(zu?'ausklappen':'einklappen')+'</span>'+esc(r.ges)+' <span class="sub">'+rows.filter(x=>x.ges===r.ges).length+' Positionen</span></td><td class="n">'+eur(tj)+'</td></tr>'; }
+    if(ZU['p:'+r.ges]) return;
+    h+='<tr><td>'+(canWrite?'<button class="del" data-pdel="'+ix+'" title="Position löschen">Löschen</button>':'')+'</td><td>'+esc(r.obj)+'</td><td><input type="text" class="txt" data-f="pp:'+ix+'" data-ppos="'+ix+'" value="'+esc(r.pos)+'"'+ro+'></td>'
+      +'<td><select data-pkat="'+ix+'"'+ro+'>'+KATS.map(k=>'<option'+(k===r.kat?' selected':'')+'>'+k+'</option>').join('')+'</select></td>'
+      +'<td><input type="text" class="txt" style="width:170px" data-f="pr:'+ix+'" data-prh="'+ix+'" value="'+esc(r.rh||'')+'"'+ro+'></td><td class="d" style="max-width:220px;white-space:normal;font-size:11px;color:var(--muted)">'+(r.doc?esc(r.doc.datei)+(r.doc.kdnr?'<br>Kd-Nr. '+esc(r.doc.kdnr):''):'–')+'</td>';
+    for(let m=0;m<12;m++) h+='<td class="n"><input type="text" inputmode="decimal" class="num" data-f="pm:'+ix+':'+m+'" data-pm="'+ix+':'+m+'" value="'+(r.plan[m]==null?'':fnum.format(r.plan[m]))+'"'+ro+'></td>';
+    h+='<td class="n">'+eur(r.plan.reduce((a,b)=>a+(b||0),0))+'</td></tr>'; });
+  h+='</tbody></table></div>';
   return h;
 }
 
 /* ---------- Ereignisse ---------- */
+document.addEventListener('click',e=>{ const g=e.target.closest('.gtog'); if(!g||e.target.closest('input,select,button:not(.zu)')) return; const k=g.dataset.zu; if(ZU[k]) delete ZU[k]; else ZU[k]=1; zuSave(); render(); });
 document.addEventListener('click',e=>{
   const t=e.target.closest('button'); if(!t) return;
   if(t.id==='prev'||t.id==='next'||t.id==='today'){ curKey=t.id==='today'?keyOf(new Date()):shiftKey(curKey,t.id==='prev'?-1:1); store('mw_month',curKey); render(); return; }
