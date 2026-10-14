@@ -200,6 +200,7 @@ export default function Sidebar({ user, demo, onLogout, role, perms }) {
   const [favs, setFavs] = useState([])
   const [dragFav, setDragFav] = useState(null)
   const [favOpen, setFavOpen] = useState(true)
+  const [zu, setZu] = useState(false)
   const [openCats, setOpenCats] = useState(() => new Set())
   const [catOrder, setCatOrder] = useState([])
   const [dragCat, setDragCat] = useState(null)
@@ -239,6 +240,7 @@ export default function Sidebar({ user, demo, onLogout, role, perms }) {
 
   useEffect(() => {
     try { const f = localStorage.getItem('sidebar_favs'); if (f) setFavs(JSON.parse(f)) } catch (e) {}
+    try { setZu(localStorage.getItem('sidebar_zu') === '1') } catch (e) {}
     try { const fo = localStorage.getItem('sidebar_fav_open'); if (fo != null) setFavOpen(fo !== '0') } catch (e) {}
     try { const oc = localStorage.getItem('sidebar_open_cats'); if (oc) setOpenCats(new Set(JSON.parse(oc))) } catch (e) {}
     try { const co = localStorage.getItem('sidebar_cat_order'); if (co) setCatOrder(JSON.parse(co)) } catch (e) {}
@@ -341,7 +343,14 @@ export default function Sidebar({ user, demo, onLogout, role, perms }) {
       title: 'Ziehen zum Umsortieren',
     }
   }
+  const toggleZu = () => setZu((v) => { const n = !v; try { localStorage.setItem('sidebar_zu', n ? '1' : '0') } catch (e) {} return n })
   const catOpen = (n) => openCats.has(n.key) || n.key === activeGroupKey
+
+  if (zu) return (
+    <aside className="sbx sbx-zu">
+      <button className="sbx-zubtn" title="Menü einblenden" onClick={toggleZu}>›</button>
+    </aside>
+  )
 
   return (
     <aside className="sbx">
@@ -350,6 +359,7 @@ export default function Sidebar({ user, demo, onLogout, role, perms }) {
           <div className="logo">W</div>
           <div><div className="name">Wohntraum</div><div className="sub">Rheinhessen OS</div></div>
         </Link>
+        <button className="sbx-logout sbx-zuklapp" title="Menü einklappen" onClick={toggleZu}>‹</button>
         {!demo && <button className="sbx-logout" title="Abmelden" onClick={onLogout}><i className="ti ti-logout" /></button>}
       </div>
 

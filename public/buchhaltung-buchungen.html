@@ -47,7 +47,17 @@ textarea{width:100%;resize:vertical}
 /* Drei Spalten wie in einer Belegbuchhaltung */
 .grid3{display:grid;grid-template-columns:230px minmax(380px,1fr) minmax(360px,440px);height:100%;min-height:0}
 .knav{border-right:1px solid var(--line);overflow:auto;padding:10px 8px;background:var(--card)}
-.nav-h{font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);padding:2px 8px 6px}
+.nav-h{font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);padding:2px 0 6px 8px;display:flex;align-items:center;justify-content:space-between}
+.knzu{border:1px solid var(--line);background:var(--bg,#f6f7f9);color:var(--muted);border-radius:7px;width:24px;height:24px;padding:0;cursor:pointer;font-size:15px;line-height:1;text-transform:none}
+.knzu:hover{color:var(--ink,#111)}
+.grid3.kzu{grid-template-columns:38px minmax(380px,1fr) minmax(360px,440px)}
+.knav-zu{padding:10px 6px;display:flex;flex-direction:column;align-items:center;gap:10px}
+.knzu-t{writing-mode:vertical-rl;transform:rotate(180deg);font-size:12px;color:var(--muted);white-space:nowrap}
+button.nav-g.gtog{display:flex;align-items:center;gap:6px;width:100%;border:0;background:none;cursor:pointer;text-align:left}
+button.nav-g.gtog b{margin-left:auto;background:var(--warn-bg);color:var(--warn);border-radius:999px;padding:0 7px;font-size:11px;min-width:20px;text-align:center}
+.gpf.auf{transform:rotate(90deg)}
+.gpf{display:inline-block;width:10px;color:var(--muted)}
+@media (max-width:1100px){ .grid3.kzu{grid-template-columns:38px 1fr} }
 .nav-g{font-size:12px;font-weight:700;color:var(--muted);padding:10px 8px 4px}
 .kn{display:flex;width:100%;justify-content:space-between;gap:6px;border:none;background:none;text-align:left;padding:5px 8px;border-radius:6px;font-size:13px}
 .kn span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -1024,7 +1034,7 @@ document.addEventListener('click',e=>{ const t=e.target.closest('button[data-nhs
    Gleiche Daten wie „Objekt-Controlling“ (os_docs, app 'oc'): jede Zuordnung zählt dort sofort mit. */
 tab='liste';
 const ST_KEY='bu_state';
-let U={status:'offen',konto:'',q:'',sel:'',m:'',sort:'d',kat:''}; try{ const s=JSON.parse(store(ST_KEY)||'null'); if(s) U=Object.assign(U,s,{q:''}); }catch(e){}
+let U={status:'offen',konto:'',q:'',sel:'',m:'',sort:'d',kat:'',knZu:false,gZu:{}}; try{ const s=JSON.parse(store(ST_KEY)||'null'); if(s) U=Object.assign(U,s,{q:''}); }catch(e){}
 const saveU=()=>store(ST_KEY,JSON.stringify({status:U.status,konto:U.konto,m:U.m}));
 let splitDraft=null, ruleDraft=null, sb=null, urlCache={};
 /* ---------- Kontenplan ---------- */
@@ -1122,11 +1132,19 @@ function renderListe(){
   if(!U.sel&&list.length) U.sel=list[0].id;
   /* linke Spalte: Konten */
   const byG={}; for(const it of all){ if(U.m!==''&&it.m!==Number(U.m)) continue; const g=(it.k&&it.k.ges)||'?'; (byG[g]=byG[g]||{}); const o=byG[g][it.kkey]=byG[g][it.kkey]||{n:0,open:0}; o.n++; if(it.open) o.open++; }
-  let nav='<div class="nav-h">Konten</div><button class="kn'+(U.konto===''?' on':'')+'" data-konto=""><span>Alle Konten</span>'+((n=>n?'<b>'+n+'</b>':'<i>✓</i>')(all.filter(i=>i.open&&(U.m===''||i.m===Number(U.m))).length))+'</button>';
+  if(U.knZu) return '<div class="grid3 kzu"><aside class="knav knav-zu"><button class="knzu" data-knzu="1" title="Konten einblenden">›</button><div class="knzu-t">'+esc(U.konto?kontoName(U.konto):'Alle Konten')+'</div></aside><section class="mid">'+midHtml(all,list,cnt)+'</section><section class="det" id="det">'+((it=>it?renderDetail(it,list):'<div class="empty">Links eine Buchung auswählen.</div>')(all.find(x=>x.id===U.sel)))+'</section></div>';
+  let nav='<div class="nav-h">Konten<button class="knzu" data-knzu="1" title="Konten einklappen">‹</button></div><button class="kn'+(U.konto===''?' on':'')+'" data-konto=""><span>Alle Konten</span>'+((n=>n?'<b>'+n+'</b>':'<i>✓</i>')(all.filter(i=>i.open&&(U.m===''||i.m===Number(U.m))).length))+'</button>';
   for(const g of ['EE','WT','KiBo',...Object.keys(byG).filter(x=>!['EE','WT','KiBo'].includes(x))]){ if(!byG[g]) continue;
-    nav+='<div class="nav-g">'+esc(g)+'</div>';
+    const gz=!!(U.gZu||{})[g], gOpen=Object.values(byG[g]).reduce((a,o)=>a+o.open,0);
+    nav+='<button class="nav-g gtog" data-gzu="'+esc(g)+'" title="'+(gz?'aufklappen':'einklappen')+'"><span class="gpf">'+(gz?'›':'⌄')+'</span>'+esc(g)+(gz&&gOpen?'<b>'+gOpen+'</b>':'')+'</button>';
+    if(gz) continue;
     for(const k of Object.keys(byG[g]).sort((a,b)=>kontoName(a).localeCompare(kontoName(b),'de',{numeric:true}))){ const o=byG[g][k];
       nav+='<button class="kn'+(U.konto===k?' on':'')+'" data-konto="'+esc(k)+'" title="'+esc((kontoOf(k)||{}).iban||'')+'"><span>'+esc(kontoName(k))+'</span>'+(o.open?'<b>'+o.open+'</b>':'<i>✓</i>')+'</button>'; } }
+  const mid=midHtml(all,list,cnt);
+  const it=all.find(x=>x.id===U.sel);
+  return '<div class="grid3"><aside class="knav">'+nav+'</aside><section class="mid">'+mid+'</section><section class="det" id="det">'+(it?renderDetail(it,list):'<div class="empty">Links eine Buchung auswählen.</div>')+'</section></div>';
+}
+function midHtml(all,list,cnt){
   /* Mitte: Liste */
   const sum=list.reduce((a,it)=>a+it.tx.b,0);
   let mid='<div class="tbar"><div class="seg">'+[['offen','Offen'],['ka','Kostenart prüfen'],['beleg','Beleg fehlt'],['zug','Zugeordnet'],['alle','Alle']].map(([k,l])=>'<button data-st="'+k+'" class="'+(U.status===k?'on':'')+'">'+l+' <span>'+cnt(k)+'</span></button>').join('')+'</div>'
@@ -1145,9 +1163,7 @@ function renderListe(){
       +'<span class="rz">'+esc(zuordText(it))+(it.bel?' <span class="sub" title="Beleg vorhanden">· Beleg</span>':it.dauer?' <span class="sub" title="'+esc(it.dauer.n)+'">· Dauerbeleg</span>':it.tx.ol?' <span class="sub" title="'+esc(it.tx.olg||'als beleglos markiert')+'">· beleglos</span>':'')+'</span><span class="ra '+cls(it.tx.b)+'">'+eur(it.tx.b)+'</span></button>'; }
   if(list.length>600) mid+='<div class="empty">Es werden die ersten 600 gezeigt – bitte Monat oder Konto wählen.</div>';
   mid+='</div>';
-  const it=all.find(x=>x.id===U.sel);
-  return '<div class="grid3"><aside class="knav">'+nav+'</aside><section class="mid">'+mid+'</section><section class="det" id="det">'+(it?renderDetail(it,list):'<div class="empty">Links eine Buchung auswählen.</div>')+'</section></div>';
-}
+  return mid; }
 function selOpts(list,cur,ph){ return (ph!=null?'<option value="">'+esc(ph)+'</option>':'')+list.map(([k,l])=>'<option value="'+esc(k)+'"'+(k===cur?' selected':'')+'>'+esc(l)+'</option>').join(''); }
 function objSel(id,cur,kat,sub){ const ph=kat==='verw'?'alle Objekte (Umlage)':'– Objekt wählen –';
   let o='<option value="">'+ph+'</option>'+objekte.map(x=>'<option value="'+esc(x.kz)+'"'+(x.kz===cur?' selected':'')+'>'+esc(x.kz+' – '+String(x.name||'').split(',')[0])+'</option>').join('');
@@ -1274,6 +1290,8 @@ document.addEventListener('click',async e=>{
   if(t.id==='yprev'||t.id==='ynext'){ year+=t.id==='yprev'?-1:1; store('oc_year',year); U.sel=''; invalidate(); render(); return; }
   if(t.dataset.tab){ tab=t.dataset.tab; render(); return; }
   if(t.dataset.goka){ tab='liste'; U.status='ka'; U.konto=''; U.sel=''; saveU(); render(); return; }
+  if(t.dataset.knzu){ U.knZu=!U.knZu; saveU(); render(); return; }
+  if(t.dataset.gzu){ U.gZu=Object.assign({},U.gZu||{}); if(U.gZu[t.dataset.gzu]) delete U.gZu[t.dataset.gzu]; else U.gZu[t.dataset.gzu]=1; saveU(); render(); return; }
   if(t.dataset.konto!==undefined){ U.konto=t.dataset.konto; U.sel=''; saveU(); render(); return; }
   if(t.dataset.st){ U.status=t.dataset.st; U.sel=''; saveU(); render(); return; }
   if(t.dataset.sel){ U.sel=t.dataset.sel; splitDraft=null; ruleDraft=null; render(); return; }
