@@ -1,0 +1,75 @@
+// Kontoumsätze aus Nahaus (Bankanbindung über GoCardless) für das Wohntraum OS.
+// Benötigt in Vercel: NAHAUS_TOKEN (API-Schlüssel aus Nahaus). Optional: NAHAUS_API_URL.
+import { angemeldet, antwort } from '../_lib/auth'
+
+export const dynamic = 'force-dynamic'
+export const maxDuration = 60
+
+const BASE = (process.env.NAHAUS_API_URL || 'https://europe-west3-pool-nahaus-de.cloudfunctions.net').replace(/\/+$/, '') + '/api-v2'
+
+async function nh(pfad, query) {
+  const u = new URL(BASE + pfad)
+  for (const [k, v] of Object.entries(query || {})) if (v !== undefined && v !== null && v !== '') u.searchParams.set(k, String(v))
+  const r = await fetch(u, { headers: { authorization: 'Bearer ' + process.env.NAHAUS_TOKEN, accept: 'application/json' }, cache: 'no-store' })
+  if (r.status === 401 || r.status === 403) throw new Error('Nahaus lehnt den Schlüssel ab (' + r.status + '). Bitte NAHAUS_TOKEN in Vercel prüfen.')
+  if (!r.ok) throw new Error('Nahaus antwortet mit Fehler ' + r.status + '.')
+  return r.json()
+}
+// Datum aus Firestore-Zeitstempel (Mitternacht deutscher Zeit) als JJJJ-MM-TT
+const tag = t => (t && t._seconds ? new Date(t._seconds * 1000 + 12 * 3600e3).toISOString().slice(0, 10) : '')
+const iban = s => String(s || '').replace(/\s/g, '').toUpperCase()
+
+function umsatz(t, eigene) {
+  const b = Math.round(Number((t.transactionAmount || {}).amount || 0) * 100) / 100
+  const raus = b < 0
+  const n = String((raus ? t.creditorName : t.debtorName) || (raus ? t.debtorName : t.creditorName) || '').trim()
+  let i = iban(raus ? (t.creditorAccount || {}).iban : (t.debtorAccount || {}).iban)
+  if (i === eigene) i = ''
+  const zweck = t.remittanceInformationUnstructured || t.remittanceInformationStructured ||
+    Object.values(t.remittanceInformationStructuredArray || {}).join(' ') || ''
+  const z = [t.additionalInformation, zweck].filter(Boolean).join(' · ').replace(/\s+/g, ' ').trim().slice(0, 300)
+  return { x: t.id, d: tag(t.bookingDate) || tag(t.valueDate), b, n: n.slice(0, 120), i: /^[A-Z]{2}\d{2}/.test(i) ? i : '', z }
+}
+
+export async function POST(req) {
+  try {
+    if (!(await angemeldet(req))) return antwort({ error: 'Bitte im Wohntraum OS anmelden.' }, 401)
+    if (!process.env.NAHAUS_TOKEN) return antwort({ error: 'Nahaus ist noch nicht verbunden. In Vercel fehlt: NAHAUS_TOKEN', setup: true })
+    const b = await req.json().catch(() => ({}))
+
+    if (b.aktion === 'konten') {
+      const j = await nh('/bank-accounts', { limit: 200 })
+      const konten = (j.data || []).map(k => ({
+        id: k.id, iban: iban(k.IBAN), bank: k.bank || '', inhaber: k.accountHolder || '',
+        verbunden: !!k.isConnected, abgelaufen: !!k.requisitionExpired,
+        geprueft: tag(k.lastHealthCheck), saldo: k.balance ? Number(k.balance.amount) : null, saldoAm: k.balance ? tag(k.balance.referenceDate) : ''
+      }))
+      return antwort({ konten })
+    }
+
+    if (b.aktion === 'umsaetze') {
+      // Umsätze eines Kontos ab Datum "seit" (neueste zuerst, seitenweise)
+      const id = String(b.id || ''); if (!id) return antwort({ error: 'Konto fehlt.' }, 400)
+      const seit = /^\d{4}-\d{2}-\d{2}$/.test(b.seit || '') ? b.seit : '2026-01-01'
+      const out = []; let cursor = '', seiten = 0, eigene = ''
+      while (seiten < 40) {
+        const j = await nh('/bank-accounts/' + encodeURIComponent(id) + '/transactions', { limit: 100, cursor })
+        const L = j.data || []; seiten++
+        for (const t of L) {
+          if (!eigene && t.bankAccount) eigene = iban(t.bankAccount.IBAN)
+          if (t.status && t.status !== 'BOOKED') continue
+          const u = umsatz(t, eigene)
+          if (u.d && u.d >= seit) out.push(u)
+        }
+        const letzte = L.length ? tag(L[L.length - 1].bookingDate) : ''
+        if (!j.nextCursor || !L.length || j.nextCursor === cursor || (letzte && letzte < seit)) break
+        cursor = j.nextCursor
+      }
+      return antwort({ umsaetze: out, seiten })
+    }
+
+    return antwort({ error: 'Unbekannte Aktion.' }, 400)
+  } catch (e) {
+    return antwort({ error: String(e && e.message || e) }, 500)
+  }
+}
