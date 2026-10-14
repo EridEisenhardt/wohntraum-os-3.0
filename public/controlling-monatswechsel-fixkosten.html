@@ -501,20 +501,23 @@ async function abgleich(manuell){ if(AB.lauf||!db||!canWrite||!plan) return; AB.
     for(const [mk,mo] of Object.entries(months)){ if(mk>=key) continue; const mm=Number(mk.split('-')[1])-1;
       for(const r of planRows()){ const pd=(mo.paid||{})[r.id]; if(!pd) continue; const b=((mo.betrag||{})[r.id]!=null?mo.betrag[r.id]:r.plan&&r.plan[mm]); if(!b) continue;
         const A=(mo.auto||{})[r.id]; const kk=abKonten(r.obj,r.ges,konten); const alle=new Set(kk.eigen.concat(kk.ges));
-        const t=A&&A.h?tx.find(x=>x.h===A.h):tx.find(x=>alle.has(x.k)&&x.b<0&&Math.abs(-x.b-b)<0.01&&tageDiff(x.d,pd)<=4);
+        const t=A&&A.h?tx.find(x=>x.h===A.h&&(!A.kk||x.k===A.kk)):tx.find(x=>alle.has(x.k)&&x.b<0&&Math.abs(-x.b-b)<0.01&&tageDiff(x.d,pd)<=4);
         if(t){ const w=worte(t.n).slice(0,3); muster[r.id]={i:t.i||'',w,k:t.k}; } } }
-    const benutzt=new Set(); for(const mo of [prev,md2]) for(const a of Object.values(mo.auto||{})) if(a&&a.h) benutzt.add(a.h);
+    const benutzt=new Set(); for(const mo of [prev,md2]) for(const a of Object.values(mo.auto||{})) if(a&&a.h) benutzt.add((a.kk||'')+'|'+a.h);
+    const eigeneIban=new Set(konten.map(k=>k.iban).filter(Boolean));
+    /* zahlt dieser Posten üblicherweise schon vor Monatsbeginn? (früher abgehakt mit Datum vor dem Monatsersten) */
+    const frueh={}; for(const [mk,mo] of Object.entries(months)){ if(mk>=key) continue; for(const [id,pd] of Object.entries(mo.paid||{})) if(pd&&pd<mk+'-01') frueh[id]=true; }
     const vorPaid=prev.paid||{}; const patch={paid:{},auto:{}};
     const offen=rows.filter(r=>!r.extra&&!paid[r.id]&&!nein[r.id]&&r.betrag>0);
     for(const r of offen){ const kk=abKonten(r.obj,r.ges,konten), mu=muster[r.id];
       const vonD=addTage(start,-7); const vorD=vorPaid[r.id];
-      const cand=tx.filter(t=>t.b<0&&Math.abs(-t.b-r.betrag)<0.01&&t.d>=vonD&&t.d<=ende&&!benutzt.has(t.h)&&!(vorD&&tageDiff(t.d,vorD)<=3)&&(t.d>=start||tageDiff(t.d,start)<=7));
+      const cand=tx.filter(t=>t.b<0&&Math.abs(-t.b-r.betrag)<0.01&&t.d>=vonD&&t.d<=ende&&!benutzt.has(t.k+'|'+t.h)&&!(t.i&&eigeneIban.has(t.i))&&!/geldtransit|umbuchung/i.test((t.z||'')+' '+(t.n||''))&&!(vorD&&tageDiff(t.d,vorD)<=3)&&(t.d>=start||frueh[r.id]));
       let wahl=null;
       if(mu){ const L=cand.filter(t=>(kk.eigen.includes(t.k)||kk.ges.includes(t.k)||t.k===mu.k)&&abPassend(t,mu)); if(L.length) wahl=L.sort((a,b)=>tageDiff(a.d,start)-tageDiff(b.d,start))[0]; }
       if(!wahl){ const L=cand.filter(t=>kk.eigen.includes(t.k)); const gleiche=offen.filter(x=>x.obj===r.obj&&Math.abs(x.betrag-r.betrag)<0.01).length;
-        if(L.length===1&&gleiche===1&&L[0].d>=addTage(start,-3)) wahl=L[0]; }
-      if(wahl){ benutzt.add(wahl.h); patch.paid[r.id]=wahl.d; const kn=konten.find(k=>(k.key||k.iban)===wahl.k);
-        patch.auto[r.id]={h:wahl.h,d:wahl.d,n:String(wahl.n||'').slice(0,60),k:kn?kn.name:''}; res.bezahlt.push(r.pos+' ('+r.obj+')'); } }
+        if(L.length===1&&gleiche===1) wahl=L[0]; }
+      if(wahl){ benutzt.add(wahl.k+'|'+wahl.h); patch.paid[r.id]=wahl.d; const kn=konten.find(k=>(k.key||k.iban)===wahl.k);
+        patch.auto[r.id]={h:wahl.h,kk:wahl.k,d:wahl.d,n:String(wahl.n||'').slice(0,60),k:kn?kn.name:''}; res.bezahlt.push(r.pos+' ('+r.obj+')'); } }
     if(res.bezahlt.length) await writeMonth(key,patch);
     res.am=new Date().toISOString(); AB.ergebnis=res;
     if(manuell||res.bezahlt.length) toast((res.bezahlt.length?res.bezahlt.length+' Posten automatisch abgehakt':'Keine neuen Zahlungen gefunden')+(res.konten?' · '+res.konten+' Kontostände aktualisiert':'')+'.');
