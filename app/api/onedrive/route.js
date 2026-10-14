@@ -2,7 +2,7 @@
 // Nutzt die App-Registrierung aus MS_TENANT_ID / MS_CLIENT_ID / MS_CLIENT_SECRET (Berechtigung Sites.ReadWrite.All).
 // MS_SP_SITE (optional): SharePoint-Seite, Standard andersmacher.sharepoint.com:/sites/WohnTraumRheinhessenGmbH9
 import { angemeldet, antwort } from '../_lib/auth'
-import { graph, graphBereit } from '../_lib/graph'
+import { graph, graphBereit, graphToken } from '../_lib/graph'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60
@@ -104,10 +104,11 @@ export async function POST(req) {
 
     if (a === 'inhalt') {
       // Datei für die Vorschau (bis 3 MB) als Base64
-      const d = await drive(); const x = await graph('/drives/' + d + '/items/' + encodeURIComponent(b.id) + '?$select=id,name,size,file,parentReference,@microsoft.graph.downloadUrl')
+      const d = await drive(); const x = await graph('/drives/' + d + '/items/' + encodeURIComponent(b.id))
       if (!(x.parentReference && decodeURIComponent(String(x.parentReference.path || '')).includes('/' + ROOT))) return antwort({ error: 'Datei nicht erlaubt.' }, 403)
       if ((x.size || 0) > 3 * 1024 * 1024) return antwort({ zuGross: true, name: x.name })
-      const r = await fetch(x['@microsoft.graph.downloadUrl']); if (!r.ok) return antwort({ error: 'Datei nicht lesbar (' + r.status + ').' }, 500)
+      const dl = x['@microsoft.graph.downloadUrl']
+      const r = dl ? await fetch(dl) : await fetch('https://graph.microsoft.com/v1.0/drives/' + d + '/items/' + encodeURIComponent(b.id) + '/content', { headers: { Authorization: 'Bearer ' + (await graphToken()) } }); if (!r.ok) return antwort({ error: 'Datei nicht lesbar (' + r.status + ').' }, 500)
       const buf = Buffer.from(await r.arrayBuffer())
       return antwort({ name: x.name, typ: (x.file && x.file.mimeType) || '', daten: buf.toString('base64') })
     }
@@ -221,7 +222,7 @@ export async function POST(req) {
     }
 
     if (a === 'link') {
-      const d = await drive(); const x = await graph('/drives/' + d + '/items/' + encodeURIComponent(b.id) + '?$select=id,name,webUrl,parentReference,@microsoft.graph.downloadUrl')
+      const d = await drive(); const x = await graph('/drives/' + d + '/items/' + encodeURIComponent(b.id))
       if (!(x.parentReference && decodeURIComponent(String(x.parentReference.path || '')).includes('/' + ROOT))) return antwort({ error: 'Datei nicht erlaubt.' }, 403)
       return antwort({ web: x.webUrl, download: x['@microsoft.graph.downloadUrl'] })
     }
