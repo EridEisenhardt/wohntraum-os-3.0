@@ -286,7 +286,8 @@ function renderCard(a,closed,pct){
     if(a.offenDarl) h+='<div class="umb">Differenz inkl. Darlehen: <b class="'+cls(a.diffGes)+'">'+eur(a.diffGes)+'</b></div>';
     if(a.umbAllg) h+='<div class="umb">Umbuchung: '+eur(a.umbAllg)+' → Allgemein ('+Math.round(pct*100)+' %) · '+eur(a.umbInst)+' → Instandhaltung ('+Math.round((1-pct)*100)+' %)</div>'; }
   h+='</div><div class="right">';
-  const items=onlyOpen?a.items.filter(i=>!i.paid):a.items;
+  const alpha=(x,y)=>String(x.pos||'').localeCompare(String(y.pos||''),'de',{numeric:true,sensitivity:'base'});
+  const items=(onlyOpen?a.items.filter(i=>!i.paid):a.items).slice().sort(alpha);
   if(items.length){ h+='<ul class="items">';
     for(const i of items){ const ov=i.planBetrag!=null&&i.betrag!==i.planBetrag;
       h+='<li class="'+(i.paid?'paid':'')+'"><input type="checkbox" data-pay="'+esc(i.id)+'"'+(i.paid?' checked':'')+ro+' aria-label="bezahlt">'
@@ -348,7 +349,9 @@ function renderPlan(){
       +'<div style="margin-top:10px"><button class="primary" id="np-add">Hinzufügen</button></div></div>'; }
   h+='<div class="tablewrap"><table class="plan"><thead><tr><th></th><th>Objekt</th><th>Position</th><th>Kategorie</th><th>Rhythmus</th><th>Beleg</th>'+MS.map(x=>'<th class="n">'+x+'</th>').join('')+'<th class="n">Jahr</th></tr></thead><tbody>';
   let lastG=null;
-  rows.forEach((r,ix)=>{ if(r.ges!==lastG){ lastG=r.ges; const tj=rows.filter(x=>x.ges===r.ges).reduce((s,x)=>s+x.plan.reduce((a,b)=>a+(b||0),0),0);
+  const gi=g=>{ const i=GES.indexOf(g); return i<0?99:i; }, oi={}; rows.forEach((r,i)=>{ const k=r.ges+'|'+r.obj; if(oi[k]==null) oi[k]=i; });
+  const reihe=rows.map((r,ix)=>({r,ix})).sort((a,b)=>gi(a.r.ges)-gi(b.r.ges)||oi[a.r.ges+'|'+a.r.obj]-oi[b.r.ges+'|'+b.r.obj]||String(a.r.pos||'').localeCompare(String(b.r.pos||''),'de',{numeric:true,sensitivity:'base'}));
+  reihe.forEach(({r,ix})=>{ if(r.ges!==lastG){ lastG=r.ges; const tj=rows.filter(x=>x.ges===r.ges).reduce((s,x)=>s+x.plan.reduce((a,b)=>a+(b||0),0),0);
       const zu=!!ZU['p:'+r.ges]; h+='<tr class="grp gtog" data-zu="p:'+esc(r.ges)+'"><td colspan="18"><span class="zu">'+(zu?'ausklappen':'einklappen')+'</span>'+esc(r.ges)+' <span class="sub">'+rows.filter(x=>x.ges===r.ges).length+' Positionen</span></td><td class="n">'+eur(tj)+'</td></tr>'; }
     if(ZU['p:'+r.ges]) return;
     h+='<tr><td>'+(canWrite?'<button class="del" data-pdel="'+ix+'" title="Position löschen">Löschen</button>':'')+'</td><td>'+esc(r.obj)+'</td><td><input type="text" class="txt" data-f="pp:'+ix+'" data-ppos="'+ix+'" value="'+esc(r.pos)+'"'+ro+'></td>'
