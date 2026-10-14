@@ -1215,7 +1215,7 @@ function renderSplit(it){ const D=splitDraft; const rest=r2(it.tx.b-D.parts.redu
     +kontoSelect('sp-k-'+i,{kat:p.k,sub:p.s,ka:p.ka},false)
     +objSel('sp-o-'+i,p.o,p.k,p.s)+(p.k==='miete'&&p.o?unitSel('sp-u-'+i,p.o,p.u):'')
     +'<input type="text" id="sp-t-'+i+'" value="'+esc(p.t||'')+'" placeholder="Text (optional)"><button class="ghost small" data-spdel="'+i+'">✕</button></div>'; });
-  h+='<div class="acts"><button class="small" data-spadd="1">+ Zeile</button><span class="sub">Rest: <b class="'+(Math.abs(rest)<0.005?'pos':'neg')+'">'+eur(rest)+'</b></span></div>';
+  h+='<div class="acts"><button class="small" data-spadd="1">+ Zeile</button><span class="sub">Rest: <b id="sp-rest" class="'+(Math.abs(rest)<0.005?'pos':'neg')+'">'+eur(rest)+'</b></span></div>';
   h+='<div class="acts"><button class="primary small" data-spsave="1">Aufteilung speichern</button>'+(it.split?'<button class="small" data-spclear="1">Aufteilung aufheben</button>':'')+'<button class="ghost small" data-spcancel="1">Abbrechen</button></div></div>';
   return h; }
 function renderRule(it){ const D=ruleDraft;
@@ -1307,9 +1307,9 @@ document.addEventListener('click',async e=>{
   const it=items().find(x=>x.id===U.sel);
   if(t.dataset.bopen!==undefined){ e.preventDefault(); const b=(it.tx.bl||[])[Number(t.dataset.bopen)]; if(!b) return; if(b.od){ odOeffnen(b.od); return; } try{ window.open(await signedUrl(b.p),'_blank'); }catch(err){ toast('Öffnen fehlgeschlagen'); } return; }
   if(t.dataset.bdel!==undefined){ if(t.dataset.sure!=='1'){t.dataset.sure='1';t.textContent='wirklich?';return;} const bl=(it.tx.bl||[]).slice(); const [g]=bl.splice(Number(t.dataset.bdel),1); await writeTx(it.doc,it.ix,{bl}); if(g&&g.p&&sb) sb.storage.from('belege').remove([g.p]); return; }
-  if(t.dataset.split){ splitDraft={id:it.id,parts:(it.split?it.tx.sp.map(p=>({b:fnum.format(p.b),k:p.k||'',s:p.s||'',ka:p.ka||'',o:p.o||'',u:p.u||'',t:p.t||''})):[{b:fnum.format(it.tx.b),k:it.c.kat||'',s:it.c.sub||'',ka:it.c.ka||'',o:it.c.obj||'',u:it.c.unit||'',t:''},{b:'',k:it.c.kat||'bk',s:it.c.sub||'',ka:it.c.ka||'',o:'',u:'',t:''}])}; ruleDraft=null; render(); return; }
-  if(t.dataset.spadd){ const p0=splitDraft.parts[0]; splitDraft.parts.push({b:'',k:p0.k||'bk',s:p0.s||'',ka:p0.ka||'',o:'',u:'',t:''}); render(); return; }
-  if(t.dataset.spdel!==undefined){ splitDraft.parts.splice(Number(t.dataset.spdel),1); render(); return; }
+  if(t.dataset.split){ splitDraft={id:it.id,parts:(it.split?it.tx.sp.map(p=>({b:fnum.format(p.b),k:p.k||'',s:p.s||'',ka:p.ka||'',o:p.o||'',u:p.u||'',t:p.t||''})):[{b:fnum.format(it.tx.b),k:it.c.kat||'',s:it.c.sub||'',ka:it.c.ka||'',o:it.c.obj||'',u:it.c.unit||'',t:''},{b:'',k:it.c.kat||'bk',s:it.c.sub||'',ka:it.c.ka||'',o:'',u:'',t:'',auto:true}])}; ruleDraft=null; render(); return; }
+  if(t.dataset.spadd){ const p0=splitDraft.parts[0]; splitDraft.parts.push({b:'',k:p0.k||'bk',s:p0.s||'',ka:p0.ka||'',o:'',u:'',t:'',auto:true}); spRestDraft(); render(); return; }
+  if(t.dataset.spdel!==undefined){ splitDraft.parts.splice(Number(t.dataset.spdel),1); const P=splitDraft.parts; if(P.length&&P[P.length-1].auto) spRestDraft(); render(); return; }
   if(t.dataset.spcancel){ splitDraft=null; render(); return; }
   if(t.dataset.spclear){ splitDraft=null; await writeTx(it.doc,it.ix,{sp:[]}); toast('Aufteilung aufgehoben.'); return; }
   if(t.dataset.spsave){ const P=splitDraft.parts.map(p=>({b:r2(parseNum(p.b)),k:p.k,s:p.k==='verw'?p.s:'',ka:p.k==='bk'?(p.ka||''):'',o:p.o,u:p.k==='miete'?p.u:'',t:(p.t||'').trim()}));
@@ -1354,7 +1354,13 @@ document.addEventListener('change',e=>{ const t=e.target;
 });
 document.addEventListener('input',e=>{ const t=e.target;
   if(t.id==='u-q'){ U.q=t.value; clearTimeout(window.__qt); window.__qt=setTimeout(render,180); return; }
-  if(splitDraft){ const m=t.id.match(/^sp-([bt])-(\d+)$/); if(m){ splitDraft.parts[Number(m[2])][m[1]]=t.value; } } });
+  if(splitDraft){ const m=t.id.match(/^sp-([bt])-(\d+)$/); if(m){ const i=Number(m[2]), P=splitDraft.parts; P[i][m[1]]=t.value; if(m[1]==='b'){ P[i].auto=false; spRest(i); } } } });
+/* Aufteilen: Restbetrag sofort berechnen und in die letzte freie Zeile eintragen */
+function spRestDraft(){ const it=items().find(x=>x.id===splitDraft.id); if(!it) return; const P=splitDraft.parts, z=P.length-1; const r=r2(it.tx.b-P.reduce((a,p,j)=>a+(j===z?0:(parseNum(p.b)||0)),0)); P[z].b=r?fnum.format(r):''; }
+function spRest(i){ const it=items().find(x=>x.id===splitDraft.id); if(!it) return; const P=splitDraft.parts;
+  let z=-1; for(let j=P.length-1;j>=0;j--){ if(j!==i&&(P[j].auto||String(P[j].b).trim()==='')){ z=j; break; } }
+  if(z>=0){ const sonst=P.reduce((a,p,j)=>a+(j===z?0:(parseNum(p.b)||0)),0); const r=r2(it.tx.b-sonst); P[z].b=r?fnum.format(r):''; P[z].auto=true; const el=$('sp-b-'+z); if(el) el.value=P[z].b; }
+  const rest=r2(it.tx.b-P.reduce((a,p)=>a+(parseNum(p.b)||0),0)), el=$('sp-rest'); if(el){ el.textContent=eur(rest); el.className=Math.abs(rest)<0.005?'pos':'neg'; } }
 document.addEventListener('keydown',e=>{ const a=document.activeElement; const typing=a&&(a.tagName==='INPUT'||a.tagName==='TEXTAREA'||a.tagName==='SELECT');
   if(e.key==='Enter'&&a&&a.matches('input[type=text]')){ a.blur(); return; }
   if(typing||tab!=='liste') return;
