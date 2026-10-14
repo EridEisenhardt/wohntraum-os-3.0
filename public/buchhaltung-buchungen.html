@@ -827,7 +827,7 @@ async function belAblegen(){ const it=items().find(x=>x.id===BEL.id); if(!it){ B
   BEL.busy='';
   if(n){ await writeTx(it.doc,it.ix,{bl}); if(weg.length&&sb) sb.storage.from('belege').remove(weg).catch(()=>{}); if(absGeaendert){ absMap=absNeu; saveStamm('belegabsender',{map:absNeu}); } }
   if(!BEL.L.length) BEL={id:'',L:[],busy:'',fehler:''};
-  const list=filtered(items()), i=list.findIndex(x=>x.id===it.id), nx=n&&!BEL.L.length&&U.status==='beleg'?(list[i+1]||list[i-1]):null;
+  const list=sortiert(filtered(items())), i=list.findIndex(x=>x.id===it.id), nx=n&&!BEL.L.length&&U.status==='beleg'?(list[i+1]||list[i-1]):null;
   toast(n?(n===1?'Beleg':n+' Belege')+' in OneDrive abgelegt.'+(nx?' Weiter zur nächsten Buchung ohne Beleg.':''):'Nichts abgelegt.');
   if(nx){ U.sel=nx.id; render.scrollSel=true; } render(); }
 /* Vorschau: OneDrive-Datei über den Server laden */
@@ -1024,7 +1024,7 @@ document.addEventListener('click',e=>{ const t=e.target.closest('button[data-nhs
    Gleiche Daten wie „Objekt-Controlling“ (os_docs, app 'oc'): jede Zuordnung zählt dort sofort mit. */
 tab='liste';
 const ST_KEY='bu_state';
-let U={status:'offen',konto:'',q:'',sel:'',m:''}; try{ const s=JSON.parse(store(ST_KEY)||'null'); if(s) U=Object.assign(U,s,{q:''}); }catch(e){}
+let U={status:'offen',konto:'',q:'',sel:'',m:'',sort:'d',kat:''}; try{ const s=JSON.parse(store(ST_KEY)||'null'); if(s) U=Object.assign(U,s,{q:''}); }catch(e){}
 const saveU=()=>store(ST_KEY,JSON.stringify({status:U.status,konto:U.konto,m:U.m}));
 let splitDraft=null, ruleDraft=null, sb=null, urlCache={};
 /* ---------- Kontenplan ---------- */
@@ -1085,8 +1085,17 @@ function items(){
 }
 function filtered(all){ const q=norm(U.q);
   return all.filter(it=>(!U.konto||it.kkey===U.konto)&&(U.m===''||it.m===Number(U.m))
-    &&(U.status==='alle'||(U.status==='offen'&&it.open)||(U.status==='beleg'&&it.needBeleg)||(U.status==='ka'&&it.needKA)||(U.status==='zug'&&!it.open))
+    &&(!U.kat||(U.kat==='__offen'?it.parts.some(p=>!p.c.kat):it.parts.some(p=>p.c.kat===U.kat)))&&(U.status==='alle'||(U.status==='offen'&&it.open)||(U.status==='beleg'&&it.needBeleg)||(U.status==='ka'&&it.needKA)||(U.status==='zug'&&!it.open))
     &&(!q||norm(it.tx.n+' '+it.tx.z+' '+fnum.format(Math.abs(it.tx.b))+' '+(it.c.obj||'')).includes(q))); }
+/* Sortierung der Liste: Datum, Empfänger (gruppiert), Betrag */
+const empfKey=it=>norm(it.tx.n||'').replace(/\b(gmbh|ag|kg|se|co|s a r l|et cie|s c a|e v|ohg|mbh)\b/g,'').replace(/\s+/g,' ').trim().slice(0,28)||'zzz';
+function sortiert(list){ const L=list.slice(), byD=(a,b)=>a.tx.d<b.tx.d?1:a.tx.d>b.tx.d?-1:0;
+  if(U.sort==='da') return L.sort((a,b)=>-byD(a,b));
+  if(U.sort==='n'){ const c={}; for(const it of L){ const k=empfKey(it); c[k]=(c[k]||0)+1; } return L.sort((a,b)=>{ const ka=empfKey(a), kb=empfKey(b); return ka===kb?byD(a,b):ka.localeCompare(kb,'de'); }); }
+  if(U.sort==='nh'){ const c={}; for(const it of L){ const k=empfKey(it); c[k]=(c[k]||0)+1; } return L.sort((a,b)=>{ const ka=empfKey(a), kb=empfKey(b); return ka===kb?byD(a,b):(c[kb]-c[ka])||ka.localeCompare(kb,'de'); }); }
+  if(U.sort==='bh') return L.sort((a,b)=>Math.abs(b.tx.b)-Math.abs(a.tx.b)||byD(a,b));
+  if(U.sort==='bn') return L.sort((a,b)=>Math.abs(a.tx.b)-Math.abs(b.tx.b)||byD(a,b));
+  return L.sort(byD); }
 
 function zuordText(it){ if(it.split) return 'aufgeteilt in '+it.parts.length;
   const c=it.c; if(isOpen(c)) return c.kat?(KATN[c.kat]+' · Objekt fehlt'):'nicht zugeordnet';
@@ -1107,7 +1116,7 @@ function render(){
   if(tab==='liste') loadPreview();
 }
 function renderListe(){
-  const all=items(), list=filtered(all);
+  const all=items(), list=sortiert(filtered(all));
   const cnt=k=>all.filter(it=>(!U.konto||it.kkey===U.konto)&&(U.m===''||it.m===Number(U.m))&&(k==='offen'?it.open:k==='beleg'?it.needBeleg:k==='ka'?it.needKA:k==='zug'?!it.open:true)).length;
   if(U.sel&&!all.find(x=>x.id===U.sel)) U.sel='';
   if(!U.sel&&list.length) U.sel=list[0].id;
@@ -1122,15 +1131,19 @@ function renderListe(){
   const sum=list.reduce((a,it)=>a+it.tx.b,0);
   let mid='<div class="tbar"><div class="seg">'+[['offen','Offen'],['ka','Kostenart prüfen'],['beleg','Beleg fehlt'],['zug','Zugeordnet'],['alle','Alle']].map(([k,l])=>'<button data-st="'+k+'" class="'+(U.status===k?'on':'')+'">'+l+' <span>'+cnt(k)+'</span></button>').join('')+'</div>'
     +'<select id="u-m" aria-label="Monat"><option value="">ganzes Jahr</option>'+MON.map((x,i)=>'<option value="'+i+'"'+(U.m!==''&&Number(U.m)===i?' selected':'')+'>'+x+'</option>').join('')+'</select>'
+    +'<select id="u-kat" aria-label="Kategorie"><option value="">alle Kategorien</option><option value="__offen"'+(U.kat==='__offen'?' selected':'')+'>ohne Kategorie</option>'+KATS.filter(([k])=>k).map(([k,l])=>'<option value="'+esc(k)+'"'+(U.kat===k?' selected':'')+'>'+esc(l)+'</option>').join('')+'</select>'
+    +'<select id="u-sort" aria-label="Sortierung">'+[['d','Datum: neueste zuerst'],['da','Datum: älteste zuerst'],['n','Empfänger A–Z'],['nh','Empfänger: häufigste zuerst'],['bh','Betrag: höchster zuerst'],['bn','Betrag: niedrigster zuerst']].map(([k,l])=>'<option value="'+k+'"'+((U.sort||'d')===k?' selected':'')+'>'+l+'</option>').join('')+'</select>'
     +'<input type="search" id="u-q" placeholder="Suchen: Name, Zweck, Betrag, Objekt" value="'+esc(U.q)+'" autocomplete="off"></div>';
   mid+='<div class="lsum">'+list.length+' Buchungen · Summe <b class="'+cls(sum)+'">'+eur(sum)+'</b></div><div class="list" id="list">';
   if(!list.length) mid+='<div class="empty">'+(U.status==='offen'?'🎉 Keine offenen Buchungen – alles zugeordnet.':U.status==='beleg'?'Zu allen zugeordneten Ausgaben ist ein Beleg hinterlegt.':'Keine Buchungen für diesen Filter.')+'</div>';
   let lastD='';
-  for(const it of list.slice(0,600)){ const mk=it.tx.d.slice(0,7); if(mk!==lastD){ lastD=mk; mid+='<div class="lgrp">'+MON[Number(mk.slice(5,7))-1]+' '+mk.slice(0,4)+'</div>'; }
+  const gAnz={}; if(U.sort==='n'||U.sort==='nh') for(const x of list){ const k=empfKey(x); if(!gAnz[k]) gAnz[k]={n:0,s:0}; gAnz[k].n++; gAnz[k].s+=x.tx.b; }
+  for(const it of list.slice(0,600)){ if(U.sort==='n'||U.sort==='nh'){ const k=empfKey(it); if(k!==lastD){ lastD=k; const g=gAnz[k]; mid+='<div class="lgrp">'+esc(it.tx.n||'ohne Empfänger')+' <span class="sub">· '+g.n+' Buchung'+(g.n===1?'':'en')+' · '+eur(g.s)+'</span></div>'; } }
+    else if(U.sort==='d'||U.sort==='da'||!U.sort){ const mk=it.tx.d.slice(0,7); if(mk!==lastD){ lastD=mk; mid+='<div class="lgrp">'+MON[Number(mk.slice(5,7))-1]+' '+mk.slice(0,4)+'</div>'; } }
     mid+='<button class="row'+(it.id===U.sel?' sel':'')+'" data-sel="'+esc(it.id)+'"><span class="dot '+(it.open?'o':it.needBeleg?'b':'z')+'" title="'+(it.open?'offen':it.needBeleg?'Beleg fehlt':'zugeordnet')+'"></span>'
-      +'<span class="rd">'+esc(dmy(it.tx.d).slice(0,6))+'</span><span class="rt"><b>'+esc(it.tx.n||'–')+'</b><small>'+esc(it.tx.z||'')+'</small></span>'
+      +'<span class="rd">'+esc(U.sort&&U.sort!=='d'&&U.sort!=='da'?dmy(it.tx.d).slice(0,6)+String(it.tx.d).slice(2,4):dmy(it.tx.d).slice(0,6))+'</span><span class="rt"><b>'+esc(it.tx.n||'–')+'</b><small>'+esc(it.tx.z||'')+'</small></span>'
       +'<span class="rz">'+esc(zuordText(it))+(it.bel?' <span class="sub" title="Beleg vorhanden">· Beleg</span>':it.dauer?' <span class="sub" title="'+esc(it.dauer.n)+'">· Dauerbeleg</span>':it.tx.ol?' <span class="sub" title="'+esc(it.tx.olg||'als beleglos markiert')+'">· beleglos</span>':'')+'</span><span class="ra '+cls(it.tx.b)+'">'+eur(it.tx.b)+'</span></button>'; }
-  if(list.length>600) mid+='<div class="empty">Es werden die neuesten 600 gezeigt – bitte Monat oder Konto wählen.</div>';
+  if(list.length>600) mid+='<div class="empty">Es werden die ersten 600 gezeigt – bitte Monat oder Konto wählen.</div>';
   mid+='</div>';
   const it=all.find(x=>x.id===U.sel);
   return '<div class="grid3"><aside class="knav">'+nav+'</aside><section class="mid">'+mid+'</section><section class="det" id="det">'+(it?renderDetail(it,list):'<div class="empty">Links eine Buchung auswählen.</div>')+'</section></div>';
@@ -1253,8 +1266,8 @@ async function loadPreview(){ const el=$('prev'); if(!el) { prevKey=''; return; 
 function uploadBelege(files){ return belQueue(files); }
 
 /* ---------- Ereignisse ---------- */
-function step(n){ const list=filtered(items()); const i=list.findIndex(x=>x.id===U.sel); const nx=list[i+n]; if(nx){ U.sel=nx.id; splitDraft=null; ruleDraft=null; render.scrollSel=true; render(); } }
-function nextOpen(){ const list=filtered(items()); const i=list.findIndex(x=>x.id===U.sel); const need=x=>U.status==='ka'?x.needKA:U.status==='beleg'?x.needBeleg:x.open; const nx=list.slice(i+1).find(need)||list.find(x=>need(x)&&x.id!==U.sel)||list[i+1];
+function step(n){ const list=sortiert(filtered(items())); const i=list.findIndex(x=>x.id===U.sel); const nx=list[i+n]; if(nx){ U.sel=nx.id; splitDraft=null; ruleDraft=null; render.scrollSel=true; render(); } }
+function nextOpen(){ const list=sortiert(filtered(items())); const i=list.findIndex(x=>x.id===U.sel); const need=x=>U.status==='ka'?x.needKA:U.status==='beleg'?x.needBeleg:x.open; const nx=list.slice(i+1).find(need)||list.find(x=>need(x)&&x.id!==U.sel)||list[i+1];
   if(nx){ U.sel=nx.id; splitDraft=null; ruleDraft=null; render.scrollSel=true; render(); } }
 document.addEventListener('click',async e=>{
   const t=e.target.closest('button,a[data-bopen]'); if(!t) return;
@@ -1305,6 +1318,8 @@ document.addEventListener('change',e=>{ const t=e.target;
     const used=objekte.find(o=>o.kz!==t.dataset.onr&&objNr(o.kz)===v); if(used){ toast('Die Nummer '+v+' hat schon '+used.kz+'.'); render(); return; }
     objNrMap=Object.assign({},objNrMap,{[t.dataset.onr]:v}); saveStamm('kontenplan',{objNr:objNrMap}); render(); return; }
   if(t.id==='u-m'){ U.m=t.value; U.sel=''; saveU(); render(); return; }
+  if(t.id==='u-sort'){ U.sort=t.value; U.sel=''; saveU(); render(); return; }
+  if(t.id==='u-kat'){ U.kat=t.value; U.sel=''; saveU(); render(); return; }
   if(t.dataset.pk!==undefined){ const p=pending[Number(t.dataset.pk)]; p.konto=t.value; render(); return; }
   const it=items().find(x=>x.id===U.sel);
   if(it&&t.id==='z-kto'){ setKonto(it,t.value); return; }
