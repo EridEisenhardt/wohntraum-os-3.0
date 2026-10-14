@@ -48,6 +48,11 @@ textarea{width:100%;resize:vertical}
 .grid3{display:grid;grid-template-columns:230px minmax(380px,1fr) minmax(360px,440px);height:100%;min-height:0}
 .knav{border-right:1px solid var(--line);overflow:auto;padding:10px 8px;background:var(--card)}
 .nav-h{font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);padding:2px 0 6px 8px;display:flex;align-items:center;justify-content:space-between}
+.kcombo{position:relative;display:block}.kc-in{width:100%}.kc-sel{display:none}
+.kc-list{position:absolute;left:0;right:0;top:100%;margin-top:3px;max-height:320px;overflow:auto;background:var(--card,#fff);border:1px solid var(--line);border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,.12);z-index:50;padding:4px 0}
+.kc-g{font-size:11px;font-weight:700;color:var(--muted);padding:8px 12px 3px;text-transform:uppercase;letter-spacing:.03em}
+.kc-o{padding:6px 12px;font-size:13px;cursor:pointer}.kc-o.akt,.kc-o:hover{background:var(--brand-soft,#e8f0fb)}.kc-o.on{font-weight:600}
+.kc-leer{padding:8px 12px;color:var(--muted);font-size:13px}
 .knzu{border:1px solid var(--line);background:var(--bg,#f6f7f9);color:var(--muted);border-radius:7px;width:24px;height:24px;padding:0;cursor:pointer;font-size:15px;line-height:1;text-transform:none}
 .knzu:hover{color:var(--ink,#111)}
 .grid3.kzu{grid-template-columns:38px minmax(380px,1fr) minmax(360px,440px)}
@@ -1038,7 +1043,7 @@ let U={status:'offen',konto:'',q:'',sel:'',m:'',sort:'d',kat:'',knZu:false,gZu:{
 const saveU=()=>store(ST_KEY,JSON.stringify({status:U.status,konto:U.konto,m:U.m}));
 let splitDraft=null, ruleDraft=null, sb=null, urlCache={};
 /* ---------- Kontenplan ---------- */
-const KA=[['grundsteuer','2375','Grundsteuer'],['wasser','4243','Frischwasser'],['abwasser','4244','Schmutzwasser'],['niederschlag','4245','Niederschlagswasser'],['heizung','4241','Heizung (Gas / Öl / Wärme)'],['warmwasser','4249','Warmwasser'],['aufzug','4252','Aufzug'],['strassenreinigung','4247','Straßenreinigung'],['muell','4246','Müllgebühren'],['reinigung','4250','Gebäudereinigung / Ungezieferbekämpfung'],['garten','4253','Gartenpflege'],['allgstrom','4242','Allgemeinstrom'],['schornstein','4254','Schornsteinfeger'],['versicherung','4360','Versicherungen (Gebäude / Haftpflicht)'],['hauswart','4248','Hausmeister'],['kabel','4255','Kabel / Antenne'],['waesche','4256','Wäschepflege'],['sonstige_bk','4257','Sonstige Betriebskosten (Wartung, Rauchmelder)'],['weg','4240','Hausgeld (WEG)'],['bk_nu','4258','Betriebskosten nicht umlagefähig']];
+const KA=[['grundsteuer','2375','Grundsteuer'],['wasser','4243','Frischwasser'],['abwasser','4244','Schmutzwasser'],['niederschlag','4245','Niederschlagswasser'],['heizung','4241','Heizung (Gas / Öl / Wärme)'],['warmwasser','4249','Warmwasser'],['aufzug','4252','Aufzug'],['strassenreinigung','4247','Straßenreinigung'],['muell','4246','Müllgebühren'],['reinigung','4250','Gebäudereinigung / Ungezieferbekämpfung'],['garten','4253','Gartenpflege'],['allgstrom','4242','Allgemeinstrom'],['schornstein','4254','Schornsteinfeger'],['versicherung','4360','Versicherungen (Gebäude / Haftpflicht)'],['hauswart','4248','Hausmeister'],['kabel','4255','Kabel / Antenne'],['internet','4259','Internet / Telefon'],['waesche','4256','Wäschepflege'],['sonstige_bk','4257','Sonstige Betriebskosten (Wartung, Rauchmelder)'],['weg','4240','Hausgeld (WEG)'],['bk_nu','4258','Betriebskosten nicht umlagefähig']];
 const KAN=Object.fromEntries(KA.map(x=>[x[0],x]));
 const VNR={lizenzen:'4806',personal:'4120',gf:'4124',buchhaltung:'4955',buero:'4210',buerobedarf:'4930',telefon:'4920',bank:'4970',objverw:'4901',forderung:'4902',bkverw:'4903',vermietung:'4610',objbetreuung:'4904',recht:'4950',versicherung:'4366',kfz:'4500',recht_sonst:'4951',steuern:'4320',spende:'2380',fortbildung:'4945',eeprivat:'1800',kauf:'4905',sonstige:'4909'};
 const KONTEN=[
@@ -1058,11 +1063,13 @@ function kontoLabel(k,s,ka,obj){ if(!k) return 'nicht zugeordnet'; const x=KMAP[
   if(obj===undefined) return x[0]+' '+x[1];
   const on=objNr(obj); return (x[0]+(on||'00'))+' '+(on?obj+' ':'')+x[1]; }
 function kontoSelect(id,c,ro){ const cur=kval(c.kat,c.sub,c.ka);
-  let h='<select id="'+id+'"'+(ro?' disabled':'')+'><option value="||"'+(c.kat?'':' selected')+'>– Konto wählen –</option>';
+  const lab=c.kat?(KMAP[cur]?KMAP[cur][0]+' '+KMAP[cur][1]:kontoLabel(c.kat,c.sub,c.ka)):'';
+  let h='<div class="kcombo"><input type="text" class="kc-in" id="'+id+'-q" data-kc="'+id+'" value="'+esc(lab)+'" placeholder="Konto suchen: Nummer oder Begriff" autocomplete="off"'+(ro?' disabled':'')+'><div class="kc-list" hidden></div>';
+  h+='<select id="'+id+'" class="kc-sel" tabindex="-1" aria-hidden="true"'+(ro?' disabled':'')+'><option value="||"'+(c.kat?'':' selected')+'>– Konto wählen –</option>';
   if(c.kat&&!KMAP[cur]) h+='<option value="'+esc(cur)+'" selected>'+esc(kontoLabel(c.kat,c.sub,c.ka))+'</option>';
   for(const [g,l] of KONTEN){ h+='<optgroup label="'+esc(g)+'">'+l.map(x=>{ const v=kval(x[2],x[3],x[4]); return '<option value="'+esc(v)+'"'+(v===cur?' selected':'')+'>'+esc(x[0]+' '+x[1])+'</option>'; }).join('')+'</optgroup>'; }
-  return h+'</select>'; }
-const KA_RX=[['weg',/\bhausgeld\b|\bweg\b|wohnungseigentuemer/],['schornstein',/schornstein|kaminfeger/],['heizung',/heizoel|brennstoff|erdgas|\bgas\b|fluessiggas|\bista\b|techem|brunata|minol|kalo\b/],['niederschlag',/niederschlag/],['abwasser',/abwasser|schmutzwasser|entwaesser|kanalgeb/],['wasser',/wasserversorg|wassergeld|wasserzins|\bwvr\b|trinkwasser/],['muell',/abfall|muell|\bawb\b|entsorgung|wertstoff/],['grundsteuer',/grundsteuer/],['versicherung',/versicherung|signal iduna|allianz|provinzial|gebaeudevers|haftpflicht/],['garten',/garten|gruenpflege|baumpflege/],['reinigung',/treppenhausreinig|gebaeudereinig|reinigungs|schaedlings|ungeziefer/],['hauswart',/hausmeister|hauswart/],['kabel',/kabelanschluss|kabel tv|antenne|tele columbus|pyur/],['sonstige_bk',/rauchmelder|rauchwarn|wartung|dichtheitspruef|legionell/],['allgstrom',/allgemeinstrom|\bstrom\b|\bews\b|elektrizitaet|eon\b|e on\b/]];
+  return h+'</select></div>'; }
+const KA_RX=[['weg',/\bhausgeld\b|\bweg\b|wohnungseigentuemer/],['schornstein',/schornstein|kaminfeger/],['heizung',/heizoel|brennstoff|erdgas|\bgas\b|fluessiggas|\bista\b|techem|brunata|minol|kalo\b/],['niederschlag',/niederschlag/],['abwasser',/abwasser|schmutzwasser|entwaesser|kanalgeb/],['wasser',/wasserversorg|wassergeld|wasserzins|\bwvr\b|trinkwasser/],['muell',/abfall|muell|\bawb\b|entsorgung|wertstoff/],['grundsteuer',/grundsteuer/],['versicherung',/versicherung|signal iduna|allianz|provinzial|gebaeudevers|haftpflicht/],['garten',/garten|gruenpflege|baumpflege/],['reinigung',/treppenhausreinig|gebaeudereinig|reinigungs|schaedlings|ungeziefer/],['hauswart',/hausmeister|hauswart/],['kabel',/kabelanschluss|kabel tv|antenne|tele columbus|pyur/],['sonstige_bk',/rauchmelder|rauchwarn|wartung|dichtheitspruef|legionell/],['internet',/telekom|1 1 telecom|vodafone|telefonica|\bo2\b|starlink|congstar|\binternet\b|\bdsl\b/],['allgstrom',/allgemeinstrom|\bstrom\b|\bews\b|elektrizitaet|eon\b|e on\b/]];
 function guessKa(tx){ const t=' '+norm((tx.n||'')+' '+(tx.z||''))+' '; for(const [k,rx] of KA_RX) if(rx.test(t)) return k; return ''; }
 const ruleKa=c=>{ if(!c.rule) return ''; const r=regeln.find(x=>x.id===c.rule); return (r&&r.ka)||''; };
 function setKonto(it,val){ const [k,s,ka]=val.split('|'); const c=it.c; let obj=c.obj||'', unit=c.unit||'';
@@ -1389,6 +1396,25 @@ render();
   db.collection('sollstellungen').onSnapshot(q=>{ const m={}; q.docs.forEach(d=>{m[d.id]=clone(d.data());}); SL=m; mkDirty(); },()=>{});
   db.collection('buchungen').onSnapshot(q=>{ const m={}; q.docs.forEach(d=>{m[d.id]=clone(d.data());}); buch=m; done('b'); },e=>{toast('Buchungen nicht lesbar: '+e.message); done('b');});
 })();
+
+/* ---------- Konto-Auswahl mit Suche ---------- */
+const KC={el:null,ix:0};
+function kcOpts(inp){ const sel=$(inp.dataset.kc); if(!sel) return []; const q=norm(inp.dataset.typed==='1'?inp.value:''); const out=[];
+  for(const g of sel.querySelectorAll('optgroup')) for(const o of g.querySelectorAll('option')){ const t=o.textContent; if(!q||norm(t+' '+g.label).includes(q)||q.split(' ').every(w=>norm(t+' '+g.label).includes(w))) out.push({v:o.value,t,g:g.label,on:o.selected}); }
+  return out; }
+function kcZeigen(inp){ const box=inp.parentNode.querySelector('.kc-list'); const L=kcOpts(inp); KC.el=inp; if(KC.ix>=L.length) KC.ix=0;
+  let h='', lg=''; L.forEach((o,i)=>{ if(o.g!==lg){ lg=o.g; h+='<div class="kc-g">'+esc(o.g)+'</div>'; } h+='<div class="kc-o'+(i===KC.ix?' akt':'')+(o.on?' on':'')+'" data-kcv="'+esc(o.v)+'">'+esc(o.t)+'</div>'; });
+  box.innerHTML=h||'<div class="kc-leer">Kein Konto gefunden</div>'; box.hidden=false; const a=box.querySelector('.akt'); if(a) a.scrollIntoView({block:'nearest'}); }
+function kcWahl(inp,v){ const sel=$(inp.dataset.kc); if(!sel) return; sel.value=v; inp.parentNode.querySelector('.kc-list').hidden=true; KC.el=null; inp.blur(); sel.dispatchEvent(new Event('change',{bubbles:true})); }
+document.addEventListener('focusin',e=>{ const t=e.target; if(!t.classList||!t.classList.contains('kc-in')) return; t.dataset.typed='0'; KC.ix=0; t.select(); kcZeigen(t); });
+document.addEventListener('input',e=>{ const t=e.target; if(!t.classList||!t.classList.contains('kc-in')) return; e.stopPropagation(); t.dataset.typed='1'; KC.ix=0; kcZeigen(t); },true);
+document.addEventListener('keydown',e=>{ const t=e.target; if(!t.classList||!t.classList.contains('kc-in')) return; const L=kcOpts(t);
+  if(e.key==='ArrowDown'){ e.preventDefault(); KC.ix=Math.min(L.length-1,KC.ix+1); kcZeigen(t); }
+  else if(e.key==='ArrowUp'){ e.preventDefault(); KC.ix=Math.max(0,KC.ix-1); kcZeigen(t); }
+  else if(e.key==='Enter'){ e.preventDefault(); if(L[KC.ix]) kcWahl(t,L[KC.ix].v); }
+  else if(e.key==='Escape'){ t.parentNode.querySelector('.kc-list').hidden=true; t.blur(); } },true);
+document.addEventListener('mousedown',e=>{ const o=e.target.closest('.kc-o'); if(o&&KC.el){ e.preventDefault(); kcWahl(KC.el,o.dataset.kcv); return; }
+  if(!e.target.closest('.kcombo')) document.querySelectorAll('.kc-list').forEach(b=>{ if(!b.hidden){ b.hidden=true; const i=b.parentNode.querySelector('.kc-in'); const sel=i&&$(i.dataset.kc); if(i&&sel){ const op=sel.options[sel.selectedIndex]; i.value=op&&op.value!=='||'?op.textContent:''; } } }); });
 })();
 </script>
 </body>
