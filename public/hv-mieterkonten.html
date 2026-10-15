@@ -1341,6 +1341,7 @@ const ZVART={mietschulden:'Mietschulden',kaution:'Kaution',bka:'BK-Abrechnung'};
 function zvScore(z,x){ const mk=ed(x.mk), o=objekte.find(q=>q.kz===x.mk.obj); let sc=0; const zm=' '+norm(z.mieter)+' ';
   for(const t of (x.mk.namen||[]).concat(String(mk.mieter||'').split(','))){ const w=norm(t).split(' ').filter(v=>v.length>=3); if(w.length&&zm.includes(' '+w[w.length-1]+' ')) sc+=2; }
   if(o){ const st=norm(String(o.name||'').split(',')[0]).split(' ')[0]; if(st&&norm(z.objekt).includes(st.slice(0,5))) sc+=1; } return sc; }
+var ZVLAB={};
 function ratenBox(x,kinds){ const mk=ed(x.mk), ids=mk.raten||[]; const L=ZV.filter(z=>ids.includes(z.id)&&kinds.includes(z.art||'mietschulden'));
   let h='<div class="rbox"><div class="rh">Ratenzahlung</div>';
   if(!ZVload) return h+'<div class="sub">Lade …</div></div>';
@@ -1350,7 +1351,12 @@ function ratenBox(x,kinds){ const mk=ed(x.mk), ids=mk.raten||[]; const L=ZV.filt
       +'<div class="kvr"><span>Forderung / bezahlt</span><b>'+eur(z.forderung)+' / '+eur(b)+'</b></div><div class="kvr"><span>Rest · Rate</span><b>'+eur(rest)+' · '+eur(z.rate)+' mtl.</b></div>'
       +'<div class="acts"><button class="ghost small" data-zvopen="'+esc(z.id)+'">Im Register öffnen</button><button class="ghost small" data-zvdel="'+esc(z.id)+'">Verknüpfung lösen</button></div></div>'; }
   const cand=ZV.filter(z=>!ids.includes(z.id)&&kinds.includes(z.art||'mietschulden')).map(z=>({z,sc:zvScore(z,x)})).sort((a,b)=>b.sc-a.sc||String(a.z.mieter).localeCompare(String(b.z.mieter)));
-  h+='<div class="acts"><select data-zvadd="1"><option value="">Ratenzahlung verknüpfen …</option>'+cand.map(c=>'<option value="'+esc(c.z.id)+'">'+(c.sc>=2?'Vorschlag: ':'')+esc((c.z.mieter||'')+' · '+String(c.z.objekt||'').split(/[0-9]{5}/)[0].trim()+' · '+eur(c.z.forderung))+'</option>').join('')+'</select><button class="ghost small" data-zvnew="'+(kinds.includes('kaution')?'kaution':'miete')+'">Neue erstellen</button></div></div>';
+  const lid='zvl-'+kinds[0];
+  const lab=c=>(c.sc>=2?'Vorschlag: ':'')+(c.z.mieter||'')+' · '+String(c.z.objekt||'').split(/[0-9]{5}/)[0].trim().replace(/,$/,'')+' · '+(ZVART[c.z.art||'mietschulden']||'')+' · '+eur(c.z.forderung)+(c.z.start_datum?' · ab '+dmy(c.z.start_datum):'');
+  for(const c of cand) ZVLAB[lab(c)]=c.z.id;
+  const andere=ZV.filter(z=>ids.includes(z.id)&&!kinds.includes(z.art||'mietschulden'));
+  if(andere.length) h+='<div class="sub" style="margin-top:4px">Außerdem verknüpft: '+andere.map(z=>esc(ZVART[z.art||'mietschulden']||z.art)+' '+eur(z.forderung)).join(', ')+' – steht im Bereich '+(kinds.includes('kaution')?'Offene Posten':'Kaution')+'.</div>';
+  h+='<div class="acts"><input type="text" list="'+lid+'" data-zvadd="1" placeholder="Name eintippen, um eine Ratenzahlung zu verknüpfen …" style="flex:1;min-width:260px"><datalist id="'+lid+'">'+cand.map(c=>'<option value="'+esc(lab(c))+'"></option>').join('')+'</datalist><button class="ghost small" data-zvnew="'+(kinds.includes('kaution')?'kaution':'miete')+'">Neue erstellen</button></div></div>';
   return h; }
 /* ---------- Dokumente (Ordnerstruktur wie im Finder) ---------- */
 const DOCF=['01 Mietbeginn','02 Vertrag & Nachträge','03 Miete & Zahlungen','03 Miete & Zahlungen/Mahnungen','04 Betriebskosten','05 Schriftverkehr','06 Mietende'];
@@ -1540,7 +1546,7 @@ document.addEventListener('drop',e=>{ const d=e.target.closest&&e.target.closest
 document.addEventListener('mousedown',e=>{ if(e.target.id==='ov'&&!MR.busy){ modal=false; mahnOpen=false; editOpen=false; render(); } });
 document.addEventListener('keydown',e=>{ if(e.key==='Escape'&&(modal||mahnOpen)&&!MR.busy){ modal=false; mahnOpen=false; editOpen=false; render(); } if(e.key==='Enter'&&e.target.id==='t-neu'){ const b=document.querySelector('[data-tadd]'); if(b) b.click(); } });
 document.addEventListener('change',async e=>{ const t=e.target;
-  if(t.dataset.zvadd){ if(!t.value) return; saveEdit(M.sel,{raten:(ed(MK[M.sel]).raten||[]).concat([t.value])},'Ratenzahlung verknüpft.'); return; }
+  if(t.dataset.zvadd){ const id=ZVLAB[t.value]; if(!id){ if(t.value) toast('Bitte einen Eintrag aus der Liste wählen.'); return; } const r=ed(MK[M.sel]).raten||[]; if(r.includes(id)) return; saveEdit(M.sel,{raten:r.concat([id])},'Ratenzahlung verknüpft.'); return; }
   if(t.dataset.fup){ queueFiles(MK[M.sel],t.dataset.fup,t.files); t.value=''; return; }
   if(t.dataset.pf!==undefined){ pend.files[Number(t.dataset.pf)].folder=t.value; return; }
   if(t.dataset.pdt!==undefined){ pend.files[Number(t.dataset.pdt)].datum=t.value.trim(); render(); return; }
