@@ -549,6 +549,8 @@ let MK={}, M={f:'',ges:'',obj:'',st:'alle',q:'',sel:''}; try{ const s=JSON.parse
 const saveM=()=>store('mk_state',JSON.stringify({ges:M.ges,obj:M.obj,betr:M.betr||'',st:M.st,sel:M.sel,sk:M.sk,sd:M.sd,sv:2}));
 let MAHN={}; let SL={}, slAuto=false, loadedSL=false, ZV=[], ZVload=false, DOCS={}, docOpen={}, pend=null, mkStand='', mkUeb='', loadedMK=false, calc=null, EDIT={}, ZUORD={}, editOpen=false, modal=false, showDone=false;
 const ed=mk=>Object.assign({},mk,EDIT[mk.pid]||{});
+/* Auszug (Mietende) kann im OS eingetragen werden (EDIT.bis) und gilt dann vor dem Wert aus Nahaus */
+function applyBis(){ for(const mk of Object.values(MK)){ if(!('bisNH' in mk)) mk.bisNH=mk.bis||null; const e=EDIT[mk.pid]; mk.bis=(e&&e.bis)?e.bis:mk.bisNH; } }
 const today=new Date().toISOString().slice(0,10), curM=today.slice(0,7);
 const addM=(m,n)=>{ const [y,mm]=m.split('-').map(Number); const d=new Date(y,mm-1+n,1); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0'); };
 const dnum2=s=>Date.parse(s)/864e5;
@@ -616,7 +618,7 @@ function compute(opt){ opt=opt||{}; const ZMAP={}, BU={};
     /* Sollstellungen aus dem OS (Sollstellungslauf am 25. für den Folgemonat) – ersetzen die Nahaus-Monatsmiete dieses Monats */
     const osM=new Set();
     const U=mk.ueb||'';
-    for(const m of Object.keys(SL).sort()){ const p=(SL[m].posten||{})[mk.pid]; if(!p||m<START||(U&&m+'-01'<=U)) continue; osM.add(m); mieteMonate.add(m);
+    for(const m of Object.keys(SL).sort()){ const p=(SL[m].posten||{})[mk.pid]; if(!p||m<START||(U&&m+'-01'<=U)||(mk.bis&&m>mk.bis.slice(0,7))) continue; osM.add(m); mieteMonate.add(m);
       x.rows.push({id:'os:'+m,d:m+'-01',t:'Miete '+m.slice(5)+'/'+m.slice(0,4),s:p.b,h:0,src:'Sollstellung OS · erstellt '+dmy(SL[m].erstellt),art:'WARM_MIETE',fut:(m+'-01')>today,teile:p}); }
     const bisF=addM(curM,2)+'-01'; for(const s of mk.soll||[]){ const m=s.m||(s.d||'').slice(0,7); const sd=s.d||m+'-01'; if(m<START||sd>bisF) continue; if(U&&sd>U) continue; /* nach dem Übernahme-Stichtag wird nur noch im OS gebucht */ if(s.art==='WARM_MIETE'&&osM.has(m)) continue; const fu=sd>today; if(s.art==='WARM_MIETE'&&!fu) mieteMonate.add(m);
       x.rows.push({id:s.id,d:s.d||m+'-01',t:(s.t||ART[s.art]||s.art),s:s.b>0?s.b:0,h:s.b<0?-s.b:0,src:s.src==='AUTO_SOLL'?'Nahaus (automatisch)':s.src==='TRANSACTION_ASSIGNMENT'?'Nahaus (aus Zahlung)':'Nahaus',k:s.art==='KAUTION',art:s.art,fut:fu}); }
@@ -1458,7 +1460,7 @@ const ampel=x=>{ const a=ed(x.mk).ampel; return a&&AMPEL[a]?a:x.ampelAuto; };
 /* Ampel mit drei Lichtern: das zutreffende leuchtet, die anderen sind grau */
 const ampelLight=a=>'<div class="ampel" title="Mieterranking: '+AMPEL[a][1]+'">'+['rot','gelb','gruen'].map(k=>'<span class="al'+(k===a?' on':'')+'" style="'+(k===a?'background:'+AMPEL[k][0]+';box-shadow:0 0 8px '+AMPEL[k][0]:'')+'"></span>').join('')+'</div>';
 const ampelDot=(a,big)=>'<span class="adot'+(big?' big':'')+'" style="background:'+AMPEL[a][0]+'" title="Mieterranking: '+AMPEL[a][1]+'"></span>';
-function saveEdit(pid,patch,msg,log){ if(log!==false&&(log||msg)) { const tx=String(log||msg).replace(/\.$/,''); histLog(pid,/^Ticket/.test(tx)?'Ticket':'Änderung',tx); } EDIT=Object.assign({},EDIT,{[pid]:Object.assign({},EDIT[pid]||{},patch)}); calc=null; render(); saveStamm('mietkonten-edit',{e:EDIT}).then(()=>msg&&toast(msg)); }
+function saveEdit(pid,patch,msg,log){ if(log!==false&&(log||msg)) { const tx=String(log||msg).replace(/\.$/,''); histLog(pid,/^Ticket/.test(tx)?'Ticket':'Änderung',tx); } EDIT=Object.assign({},EDIT,{[pid]:Object.assign({},EDIT[pid]||{},patch)}); applyBis(); calc=null; render(); saveStamm('mietkonten-edit',{e:EDIT}).then(()=>msg&&toast(msg)); }
 /* ---------- Sollstellungslauf ---------- */
 const nextMon=()=>addM(curM,1);
 function sollFuer(m){ const aktivKz=new Set(objekte.filter(o=>o.aktiv!==false).map(o=>o.kz)); const P={};
@@ -1590,7 +1592,7 @@ function renderDash(x){ const mk=ed(x.mk), sn=STN[x.status], a=ampel(x), K=mk.ko
   /* Mieterinformationen */
   h+='<div class="card"><div class="ch">Mieterinformationen'+(editOpen?'':'<button class="ghost small" data-edit="1">Bearbeiten</button>')+'</div>';
   if(editOpen){ const f=(id,l,v)=>'<label class="fl">'+l+'<input type="text" id="'+id+'" value="'+esc(v??'')+'"></label>';
-    h+=f('e-mieter','Name(n)',mk.mieter)+f('e-anrede','Anrede für Briefe',mk.anrede)+f('e-email','E-Mail',mk.email!=null?mk.email:K.map(k=>k.email).filter(Boolean).join(', '))+f('e-tel','Telefon',mk.tel!=null?mk.tel:K.map(k=>k.tel).filter(Boolean).join(', '))
+    h+=f('e-mieter','Name(n)',mk.mieter)+'<label class="fl">Auszug / Mietende<input type="date" id="e-bis" value="'+esc(x.mk.bis||'')+'"><span class="sub">'+(x.mk.bisNH?'laut Nahaus: '+esc(dmy(x.mk.bisNH))+' · ':'')+'Ab dem Folgemonat werden keine Sollstellungen mehr erstellt. Leer lassen, wenn der Mieter bleibt.</span></label>'+f('e-anrede','Anrede für Briefe',mk.anrede)+f('e-email','E-Mail',mk.email!=null?mk.email:K.map(k=>k.email).filter(Boolean).join(', '))+f('e-tel','Telefon',mk.tel!=null?mk.tel:K.map(k=>k.tel).filter(Boolean).join(', '))
       +f('e-kaution','Kaution vereinbart (€)',fnum.format(mk.kaution||0))+f('e-kbez','Kaution bezahlt (€) – leer = aus Nahaus',mk.kautionBezahlt!=null&&mk.kautionBezahlt!==''?fnum.format(mk.kautionBezahlt):'')+f('e-betreuer','Betreuer',mk.betreuer).replace('id="e-betreuer"','id="e-betreuer" list="e-betrl"')+'<datalist id="e-betrl">'+BK.slice().sort((a,b)=>(b.vermittler-a.vermittler)||a.voll.localeCompare(b.voll,'de')).map(k=>'<option value="'+esc(betrLabel(k))+'"></option>').join('')+'</datalist>'+f('e-zahler','Wer zahlt die Miete? (leer = automatisch)',mk.zahler)+f('e-ref','Verwendungszweck',mk.ref)
       +'<label class="fl">Mieterranking<select id="e-ampel"><option value="">automatisch ('+AMPEL[x.ampelAuto][1]+')</option>'+Object.entries(AMPEL).map(([k,v])=>'<option value="'+k+'"'+(mk.ampel===k?' selected':'')+'>'+({gruen:'🟢 grün',gelb:'🟡 gelb',rot:'🔴 rot'}[k])+' – '+v[1]+'</option>').join('')+'</select></label>'
       +'<div class="acts"><button class="primary small" data-esave="1">Speichern</button><button class="ghost small" data-ecancel="1">Abbrechen</button></div>';
@@ -1690,9 +1692,11 @@ document.addEventListener('click',async e=>{ const t=e.target.closest('button,tr
   if(t.dataset.mst){ M.st=t.dataset.mst; saveM(); render(); return; }
   if(t.dataset.edit){ editOpen=true; render(); return; }
   if(t.dataset.ecancel){ editOpen=false; render(); return; }
-  if(t.dataset.esave){ const g=id=>$(id).value.trim(); editOpen=false; const kz=parseNum(g('e-kaution')), kbz=parseNum(g('e-kbez')); const alt=ed(MK[M.sel]), neu={kaution:(kz==null||isNaN(kz))?(alt.kaution||0):kz,kautionBezahlt:(kbz==null||isNaN(kbz))?'':kbz,mieter:g('e-mieter'),anrede:g('e-anrede'),email:g('e-email'),tel:g('e-tel'),betreuer:g('e-betreuer'),zahler:g('e-zahler'),ref:g('e-ref'),ampel:$('e-ampel').value};
-    const NAM={kaution:'Kaution vereinbart',kautionBezahlt:'Kaution bezahlt',mieter:'Name',anrede:'Anrede',email:'E-Mail',tel:'Telefon',betreuer:'Betreuer',zahler:'Wer zahlt',ref:'Verwendungszweck',ampel:'Mieterranking'};
-    const diff=Object.keys(neu).filter(k=>String(alt[k]??'')!==String(neu[k]??'')).map(k=>NAM[k]+': '+(String(alt[k]??'')||'–')+' → '+(String(neu[k]??'')||'–'));
+  if(t.dataset.esave){ const g=id=>$(id).value.trim(); editOpen=false; const kz=parseNum(g('e-kaution')), kbz=parseNum(g('e-kbez')); const alt=ed(MK[M.sel]), neu={kaution:(kz==null||isNaN(kz))?(alt.kaution||0):kz,kautionBezahlt:(kbz==null||isNaN(kbz))?'':kbz,mieter:g('e-mieter'),anrede:g('e-anrede'),email:g('e-email'),tel:g('e-tel'),betreuer:g('e-betreuer'),zahler:g('e-zahler'),ref:g('e-ref'),ampel:$('e-ampel').value,bis:g('e-bis')};
+    if(String(neu.bis||'')===String(MK[M.sel].bisNH||'')) neu.bis=''; if(!neu.bis&&!(EDIT[M.sel]||{}).bis) delete neu.bis;
+    const NAM={kaution:'Kaution vereinbart',kautionBezahlt:'Kaution bezahlt',mieter:'Name',anrede:'Anrede',email:'E-Mail',tel:'Telefon',betreuer:'Betreuer',zahler:'Wer zahlt',ref:'Verwendungszweck',ampel:'Mieterranking',bis:'Auszug'};
+    const eff=Object.assign({},neu); if('bis' in neu) eff.bis=neu.bis||MK[M.sel].bisNH||''; else eff.bis=alt.bis||''; const fmt=(k,v)=>k==='bis'?dmy(v):v;
+    const diff=Object.keys(eff).filter(k=>String(alt[k]??'')!==String(eff[k]??'')).map(k=>NAM[k]+': '+(String(fmt(k,alt[k]??''))||'–')+' → '+(String(fmt(k,eff[k]??''))||'–'));
     saveEdit(M.sel,neu,'Mieterdaten gespeichert.',diff.length?'Mieterdaten geändert – '+diff.join('; '):false); return; } });
 ['dragenter','dragover'].forEach(ev=>document.addEventListener(ev,e=>{ const d=e.target.closest&&e.target.closest('[data-fdrop]'); if(d&&e.dataTransfer&&[...(e.dataTransfer.types||[])].includes('Files')){ e.preventDefault(); document.querySelectorAll('.fold.over').forEach(x=>x!==d&&x.classList.remove('over')); d.classList.add('over'); } }));
 document.addEventListener('dragleave',e=>{ const d=e.target.closest&&e.target.closest('[data-fdrop]'); if(d&&!d.contains(e.relatedTarget)) d.classList.remove('over'); });
@@ -1733,7 +1737,7 @@ render();
   db.doc('stamm/verwsub').onSnapshot(s=>{ vsMap=(s.exists?clone(s.data()).map:null)||{}; invalidate(); calc=null; render(); },()=>{});
   db.doc('stamm/nahaus').onSnapshot(s=>{ const d=s.exists?clone(s.data()):{}; nhMap=d.map||{}; invalidate(); calc=null; render(); },()=>{});
   db.doc('stamm/einstellungen').onSnapshot(s=>{ einst=s.exists?clone(s.data()):{}; done('e'); },()=>done('e'));
-  db.doc('stamm/mietkonten-edit').onSnapshot(s=>{ EDIT=(s.exists?clone(s.data()).e:null)||{}; EDITload=true; calc=null; render(); zvTry(); },()=>{});
+  db.doc('stamm/mietkonten-edit').onSnapshot(s=>{ EDIT=(s.exists?clone(s.data()).e:null)||{}; applyBis(); EDITload=true; calc=null; render(); zvTry(); },()=>{});
   db.doc('stamm/mietzuordnung').onSnapshot(s=>{ ZUORD=(s.exists?clone(s.data()).map:null)||{}; calc=null; render(); },()=>{});
   db.doc('stamm/mietkonten').onSnapshot(s=>{ mkStand=s.exists?(s.data().stand||''):''; mkUeb=s.exists?(s.data().uebernahme||''):''; render(); },()=>{});
   db.collection('buchungen').onSnapshot(q=>{ const m={}; q.docs.forEach(d=>{m[d.id]=clone(d.data());}); buch=m; done('b'); },e=>{toast('Buchungen nicht lesbar: '+e.message); done('b');});
@@ -1745,7 +1749,7 @@ render();
   db.doc('stamm/mahnung').onSnapshot(s=>{ MBZ=(s.exists?clone(s.data()).bz:null)||[]; render(); },()=>{});
   db.collection('mahnlaeufe').onSnapshot(q=>{ const m={}; q.docs.forEach(d=>{m[d.id]=clone(d.data());}); MAHN=m; calc=null; render(); },()=>{});
   db.collection('sollstellungen').onSnapshot(q=>{ const m={}; q.docs.forEach(d=>{m[d.id]=clone(d.data());}); SL=m; loadedSL=true; calc=null; render(); },()=>{ loadedSL=true; });
-  db.collection('mietkonten').onSnapshot(q=>{ const m={}; q.docs.forEach(d=>{m[d.id]=clone(d.data());}); MK=m; loadedMK=true; calc=null; render(); zvTry(); },()=>{ loadedMK=true; render(); });
+  db.collection('mietkonten').onSnapshot(q=>{ const m={}; q.docs.forEach(d=>{m[d.id]=clone(d.data());}); MK=m; applyBis(); loadedMK=true; calc=null; render(); zvTry(); },()=>{ loadedMK=true; render(); });
 })();
 })();
 </script>
