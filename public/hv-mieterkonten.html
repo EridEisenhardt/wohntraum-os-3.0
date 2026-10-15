@@ -1327,7 +1327,12 @@ function sollBox(){ const m=nextMon(), d=SL[m], ab=curM+'-25', MN=m.slice(5)+'/'
   const alt=Object.keys(SL).filter(k=>k!==m).sort().reverse().slice(0,3); if(alt.length) h+='<div class="sub">Frühere Läufe: '+alt.map(k=>esc(k.slice(5)+'/'+k.slice(0,4))+' ('+SL[k].anzahl+', '+eur(SL[k].summe)+')').join(' · ')+'</div>';
   return h+'</div>'; }
 /* ---------- Ratenzahlungen (Tabelle zahlungsvereinbarungen) ---------- */
-async function loadZV(){ const sb=window.osSupabase; if(!sb) return; const {data,error}=await sb.from('zahlungsvereinbarungen').select('id,mieter,objekt,wohnung,forderung,rate,start_datum,status,art,zahlungen,mahnstufe'); if(!error){ ZV=data||[]; ZVload=true; render(); } }
+var EDITload=false; function zvTry(){ if(ZVload&&loadedMK&&EDITload&&canWrite) zvNeuVerknuepfen(); }
+function zvNeuVerknuepfen(){ let n=null; try{ n=JSON.parse(localStorage.getItem('zv_neu')||'null'); }catch(e){} if(!n||!n.pid||!n.id||!MK[n.pid]) return;
+  try{ localStorage.removeItem('zv_neu'); }catch(e){}
+  const r=ed(MK[n.pid]).raten||[]; if(!r.includes(n.id)) saveEdit(n.pid,{raten:r.concat([n.id])},'Neue Ratenzahlung mit dem Mieterkonto verknüpft.');
+  M.sel=n.pid; modal=true; saveM(); render(); }
+async function loadZV(){ const sb=window.osSupabase; if(!sb) return; const {data,error}=await sb.from('zahlungsvereinbarungen').select('id,mieter,objekt,wohnung,forderung,rate,start_datum,status,art,zahlungen,mahnstufe'); if(!error){ ZV=data||[]; ZVload=true; render(); zvTry(); } }
 const zvBez=z=>(z.zahlungen||[]).reduce((a,y)=>a+(parseNum(y.betrag)||0),0);
 const ZVART={mietschulden:'Mietschulden',kaution:'Kaution',bka:'BK-Abrechnung'};
 function zvScore(z,x){ const mk=ed(x.mk), o=objekte.find(q=>q.kz===x.mk.obj); let sc=0; const zm=' '+norm(z.mieter)+' ';
@@ -1342,7 +1347,7 @@ function ratenBox(x,kinds){ const mk=ed(x.mk), ids=mk.raten||[]; const L=ZV.filt
       +'<div class="kvr"><span>Forderung / bezahlt</span><b>'+eur(z.forderung)+' / '+eur(b)+'</b></div><div class="kvr"><span>Rest · Rate</span><b>'+eur(rest)+' · '+eur(z.rate)+' mtl.</b></div>'
       +'<div class="acts"><button class="ghost small" data-zvopen="'+esc(z.id)+'">Im Register öffnen</button><button class="ghost small" data-zvdel="'+esc(z.id)+'">Verknüpfung lösen</button></div></div>'; }
   const cand=ZV.filter(z=>!ids.includes(z.id)&&kinds.includes(z.art||'mietschulden')).map(z=>({z,sc:zvScore(z,x)})).sort((a,b)=>b.sc-a.sc||String(a.z.mieter).localeCompare(String(b.z.mieter)));
-  h+='<div class="acts"><select data-zvadd="1"><option value="">Ratenzahlung verknüpfen …</option>'+cand.map(c=>'<option value="'+esc(c.z.id)+'">'+(c.sc>=2?'Vorschlag: ':'')+esc((c.z.mieter||'')+' · '+String(c.z.objekt||'').split(/[0-9]{5}/)[0].trim()+' · '+eur(c.z.forderung))+'</option>').join('')+'</select><button class="ghost small" data-zvnew="1">Neue erstellen</button></div></div>';
+  h+='<div class="acts"><select data-zvadd="1"><option value="">Ratenzahlung verknüpfen …</option>'+cand.map(c=>'<option value="'+esc(c.z.id)+'">'+(c.sc>=2?'Vorschlag: ':'')+esc((c.z.mieter||'')+' · '+String(c.z.objekt||'').split(/[0-9]{5}/)[0].trim()+' · '+eur(c.z.forderung))+'</option>').join('')+'</select><button class="ghost small" data-zvnew="'+(kinds.includes('kaution')?'kaution':'miete')+'">Neue erstellen</button></div></div>';
   return h; }
 /* ---------- Dokumente (Ordnerstruktur wie im Finder) ---------- */
 const DOCF=['01 Mietbeginn','02 Vertrag & Nachträge','03 Miete & Zahlungen','03 Miete & Zahlungen/Mahnungen','04 Betriebskosten','05 Schriftverkehr','06 Mietende'];
@@ -1490,7 +1495,13 @@ document.addEventListener('click',async e=>{ const t=e.target.closest('button,tr
   if(t.dataset.solx){ const p=solAssign(M.sel,t.dataset.solx,solSel,0); if(p) p.then(()=>toast('Zuordnung gelöst.')); return; }
   if(t.dataset.mk){ M.sel=t.dataset.mk; solSel=null; NDRAFT=''; NOTF=[]; editOpen=false; modal=true; showDone=false; saveM(); render(); return; }
   if(t.dataset.zvopen){ (window.top||window).location.href='/vermietung/zahlungsvereinbarung-register'; return; }
-  if(t.dataset.zvnew){ (window.top||window).location.href='/vermietung/zahlungsvereinbarung'; return; }
+  if(t.dataset.zvnew){ const x=calc&&calc.res[M.sel]; if(!x){ (window.top||window).location.href='/vermietung/zahlungsvereinbarung'; return; }
+    const mk=ed(x.mk), o=objekte.find(q=>q.kz===x.mk.obj)||{}, adr=(ADR[x.mk.obj]||'').split('|').filter(Boolean), kau=t.dataset.zvnew==='kaution';
+    const ford=kau?(x.kOffen||0):Math.max(x.saldo||0,0);
+    const q=new URLSearchParams({von:'mieterkonto',pid:M.sel,art:kau?'kaution':'miete',mieter:mk.mieter||'',whg:uName(x.mk.einheit)||'',objekt:adr.join(', '),obj:x.mk.obj||'',glaeubiger:INHABER[o.ges||x.mk.ges]||INHABER.WT,forderung:ford>0.005?String(ford.toFixed(2)).replace('.',','):'',ort:(adr[1]||'').replace(/^\d{5}\s*/,'')});
+    if(!kau&&x.op&&x.op.length) q.set('posten',x.op.map(op=>dmy(op.d)+' '+op.t+' '+eur(op.b)).join(' | ').slice(0,1500));
+    try{ localStorage.setItem('zv_rueck',JSON.stringify({pid:M.sel,t:Date.now()})); }catch(e){}
+    (window.top||window).location.href='/vermietung/zahlungsvereinbarung?'+q.toString(); return; }
   if(t.dataset.zvdel){ saveEdit(M.sel,{raten:(ed(MK[M.sel]).raten||[]).filter(i=>i!==t.dataset.zvdel)},'Verknüpfung gelöst.'); return; }
   if(t.dataset.ftog){ const k=M.sel+'|'+t.dataset.ftog; const D=DOCS[M.sel]||{}; docOpen[k]=!(docOpen[k]??((D[t.dataset.ftog]||[]).length>0)); render(); return; }
   if(t.dataset.pcancel){ pend=null; render(); return; }
@@ -1546,7 +1557,7 @@ render();
   db.doc('stamm/verwsub').onSnapshot(s=>{ vsMap=(s.exists?clone(s.data()).map:null)||{}; invalidate(); calc=null; render(); },()=>{});
   db.doc('stamm/nahaus').onSnapshot(s=>{ const d=s.exists?clone(s.data()):{}; nhMap=d.map||{}; invalidate(); calc=null; render(); },()=>{});
   db.doc('stamm/einstellungen').onSnapshot(s=>{ einst=s.exists?clone(s.data()):{}; done('e'); },()=>done('e'));
-  db.doc('stamm/mietkonten-edit').onSnapshot(s=>{ EDIT=(s.exists?clone(s.data()).e:null)||{}; calc=null; render(); },()=>{});
+  db.doc('stamm/mietkonten-edit').onSnapshot(s=>{ EDIT=(s.exists?clone(s.data()).e:null)||{}; EDITload=true; calc=null; render(); zvTry(); },()=>{});
   db.doc('stamm/mietzuordnung').onSnapshot(s=>{ ZUORD=(s.exists?clone(s.data()).map:null)||{}; calc=null; render(); },()=>{});
   db.doc('stamm/mietkonten').onSnapshot(s=>{ mkStand=s.exists?(s.data().stand||''):''; mkUeb=s.exists?(s.data().uebernahme||''):''; render(); },()=>{});
   db.collection('buchungen').onSnapshot(q=>{ const m={}; q.docs.forEach(d=>{m[d.id]=clone(d.data());}); buch=m; done('b'); },e=>{toast('Buchungen nicht lesbar: '+e.message); done('b');});
@@ -1558,7 +1569,7 @@ render();
   db.doc('stamm/mahnung').onSnapshot(s=>{ MBZ=(s.exists?clone(s.data()).bz:null)||[]; render(); },()=>{});
   db.collection('mahnlaeufe').onSnapshot(q=>{ const m={}; q.docs.forEach(d=>{m[d.id]=clone(d.data());}); MAHN=m; calc=null; render(); },()=>{});
   db.collection('sollstellungen').onSnapshot(q=>{ const m={}; q.docs.forEach(d=>{m[d.id]=clone(d.data());}); SL=m; loadedSL=true; calc=null; render(); },()=>{ loadedSL=true; });
-  db.collection('mietkonten').onSnapshot(q=>{ const m={}; q.docs.forEach(d=>{m[d.id]=clone(d.data());}); MK=m; loadedMK=true; calc=null; render(); },()=>{ loadedMK=true; render(); });
+  db.collection('mietkonten').onSnapshot(q=>{ const m={}; q.docs.forEach(d=>{m[d.id]=clone(d.data());}); MK=m; loadedMK=true; calc=null; render(); zvTry(); },()=>{ loadedMK=true; render(); });
 })();
 })();
 </script>
