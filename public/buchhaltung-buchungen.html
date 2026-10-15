@@ -50,7 +50,7 @@ textarea{width:100%;resize:vertical}
 .nav-h{font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);padding:2px 0 6px 8px;display:flex;align-items:center;justify-content:space-between}
 .grid3.kart{grid-template-columns:230px minmax(0,1fr)}.grid3.kart.kzu{grid-template-columns:38px minmax(0,1fr)}
 .grid3.kart .mid{border-right:none}
-.kbulk{margin-left:auto;display:inline-flex;gap:10px;align-items:center}.lsum{display:flex;align-items:center;gap:8px}
+.kbulk{margin-left:auto;display:inline-flex;gap:10px;align-items:center}.lsum{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
 .klist{background:var(--bg)}
 .kz{display:grid;grid-template-columns:28px minmax(200px,1fr) 110px minmax(320px,440px) 64px;gap:14px;align-items:start;background:var(--card);border-bottom:1px solid var(--line);padding:16px 14px 14px 10px}
 .kz.sel{box-shadow:inset 3px 0 0 var(--accent)}
@@ -1084,6 +1084,7 @@ function kartenLayout(all,list,cnt,nav){ const it=U.dr?all.find(x=>x.id===U.sel)
 function kartenListe(list,sum){ const W=[...KS.wahl].filter(id=>list.some(x=>x.id===id));
   let h='<div class="lsum">'+list.length+' Buchungen · Summe <b class="'+cls(sum)+'">'+eur(sum)+'</b>';
   if(canWrite) h+='<span class="kbulk"><label><input type="checkbox" data-kalle="1"'+(W.length&&W.length===Math.min(list.length,KS.mehr)?' checked':'')+'> alle auf dieser Seite</label>'+(W.length?' <button class="primary small" data-kbest="1">'+W.length+' bestätigen</button>':'')+'</span>';
+  if(canWrite&&W.length) h+='<div class="kbulk2" style="flex-basis:100%;display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:8px"><span class="sub">Für die '+W.length+' markierten Buchungen:</span><span style="min-width:280px;flex:0 1 360px">'+kontoSelect('kb-konto',{kat:''},false)+'</span><button class="primary small" data-kbkonto="1">Konto zuordnen und bestätigen</button></div>';
   h+='</div><div class="list klist" id="list">';
   if(!list.length) h+='<div class="empty">Keine Buchungen für diesen Filter.</div>';
   h+=list.slice(0,KS.mehr).map((it,n)=>karte(it,n)).join('');
@@ -1137,8 +1138,11 @@ document.addEventListener('click',async e=>{ const t=e.target.closest('button,a,
   if(d.kdet){ e.preventDefault(); U.sel=d.kdet; U.dr=true; splitDraft=null; ruleDraft=null; render(); return; }
   if(d.kdrzu){ U.dr=false; splitDraft=null; ruleDraft=null; render(); return; }
   if(d.kw){ if(t.checked) KS.wahl.add(d.kw); else KS.wahl.delete(d.kw); render(); return; }
-  if(d.kalle){ const list=sortiert(filtered(items())).slice(0,KS.mehr).filter(x=>!x.open&&!bestaetigt(x)&&!x.nh); if(t.checked) list.forEach(x=>KS.wahl.add(x.id)); else KS.wahl.clear(); render(); return; }
+  if(d.kalle){ const list=sortiert(filtered(items())).slice(0,KS.mehr).filter(x=>!bestaetigt(x)&&!x.nh&&!x.split); if(t.checked) list.forEach(x=>KS.wahl.add(x.id)); else KS.wahl.clear(); render(); return; }
   if(d.kok){ const it=kItem(d.kok); if(!it||it.open) return; U.sel=it.id; await kBestaetigen(it); KS.wahl.delete(it.id); return; }
+  if(d.kbkonto){ const v=($('kb-konto')||{}).value||''; if(!v||v==='||'){ toast('Bitte zuerst ein Konto wählen.'); return; }
+    const L=[...KS.wahl].map(kItem).filter(x=>x&&!x.nh&&!x.split); let n=0; t.disabled=true;
+    for(const it of L){ await setKonto(it,v); n++; } KS.wahl.clear(); toast(n+' Buchung'+(n===1?'':'en')+' zugeordnet und bestätigt.'); render(); return; }
   if(d.kbest){ const L=[...KS.wahl].map(kItem).filter(x=>x&&!x.open&&!bestaetigt(x)&&!x.nh); let n=0; for(const it of L){ await kBestaetigen(it); n++; } KS.wahl.clear(); toast(n+' Buchung'+(n===1?'':'en')+' bestätigt.'); render(); return; }
   if(d.kol){ e.preventDefault(); const it=kItem(d.kol); if(!it) return; if(it.tx.ol){ await writeTx(it.doc,it.ix,{ol:0,olg:''}); toast('Markierung beleglos entfernt.'); } else { await writeTx(it.doc,it.ix,{ol:1}); toast('Als beleglos markiert. Den Grund kannst du in den Details eintragen.'); } return; }
   if(d.kspzu){ const f=(SP.dateien||[]).find(x=>x.id===d.kspzu), it=kItem(d.kspit); if(!f||!it) return; await spZuordnen(f,it); toast('Beleg zugeordnet.'); render(); return; } });
