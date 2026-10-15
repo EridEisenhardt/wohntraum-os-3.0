@@ -1245,6 +1245,26 @@ document.addEventListener('click',e=>{ const t=e.target.closest('button,a[data-o
 /* ---------- Historie je Mieter: wer hat wann was getan (neueste oben) ----------
    Eigene Einträge und protokollierte Aktionen in Collection 'historie' {pid,id,d,art,t,by,mail,uid,manuell}
    dazu live aus Notizen, Anschreiben, Mails und Mahnungen */
+/* ---------- Betreuer mit „Firmen & Dienstleister“ verknüpfen ---------- */
+var BK=[], BF=[], BKload=false;
+async function betrLaden(){ if(BKload) return; BKload=true; const sb=window.osSupabase; if(!sb) return;
+  try{ const [k,f]=await Promise.all([sb.from('hv_kontakte').select('id,vorname,name,firma_id,kategorien,telefon,email'),sb.from('hv_firmen').select('id,name')]);
+    BF=(f&&f.data)||[]; BK=((k&&k.data)||[]).map(x=>({id:x.id,voll:(String(x.vorname||'')+' '+String(x.name||'')).replace(/\s+/g,' ').trim(),name:String(x.name||'').trim(),firma:(BF.find(q=>q.id===x.firma_id)||{}).name||'',vermittler:(x.kategorien||[]).some(c=>/vermittler|betreu/i.test(c))}));
+    render(); }catch(e){} }
+const betrLabel=k=>k.voll+(k.firma?' – '+k.firma:'');
+/* passenden Kontakt (oder die Firma) zum Betreuer-Text finden */
+function betrFinde(text){ const t=' '+norm(text)+' '; if(!t.trim()) return null;
+  let best=null, bs=0;
+  for(const k of BK){ const v=norm(k.voll), n=norm(k.name); let sc=0;
+    if(v&&t.includes(' '+v+' ')) sc=3; else if(n.length>=4&&t.includes(' '+n+' ')) sc=k.vermittler?2:1;
+    if(sc>bs){ bs=sc; best={typ:'kontakt',id:k.id}; } }
+  if(best) return best;
+  for(const f of BF){ const n=norm(f.name); if(n.length>=4&&t.includes(n)) return {typ:'firma',id:f.id}; }
+  return null; }
+function betrHtml(text,klein){ if(!text) return klein?'':'–'; const l=betrFinde(text);
+  if(!l) return esc(text);
+  return '<a data-blink="1" href="/hausverwaltung/dienstleister?'+l.typ+'='+encodeURIComponent(l.id)+'" target="_top" title="In Firmen & Dienstleister öffnen" style="color:inherit;text-decoration:underline;text-decoration-color:var(--line)">'+esc(text)+'</a>'; }
+document.addEventListener('click',e=>{ if(e.target.closest&&e.target.closest('a[data-blink]')) e.stopPropagation(); },true);
 /* ---------- Aktivitäten (Inbox wie in Asana): wer hat was in den Mieterkonten gemacht ---------- */
 var INB={tab:'neu',von:'',eigene:false,mehr:false}, INBA={}, INBload=false;
 try{ const s=JSON.parse(store('mk_inbox')||'null'); if(s) INB=Object.assign(INB,s,{mehr:false}); }catch(e){}
@@ -1407,7 +1427,7 @@ function render(){
   h+='<div class="tablewrap mlist"><table><thead><tr><th></th>'+TH('obj','Objekt')+TH('einheit','Einheit')+TH('mieter','Mieter')+TH('zahler','Zahler')+TH('betreuer','Betreuer')+TH('von','Zeitraum')+TH('miete','Miete',1)+TH('saldo','Saldo',1)+TH('status','Status')+'</tr></thead><tbody>';
   if(!list.length) h+='<tr><td colspan="10" class="empty">Keine Mietverhältnisse für diesen Filter.</td></tr>';
   const rowH=(x,cls,vm)=>{ const mk=x.mk, sn=STN[x.status];
-    return '<tr class="click'+(cls||'')+(mk.pid===M.sel?' sel':'')+'" data-mk="'+esc(mk.pid)+'"><td>'+ampelDot(ampel(x))+'</td><td><b>'+esc(mk.obj)+'</b></td><td>'+esc(uName(mk.einheit))+(vm?vm:'')+'</td><td class="wrapc">'+esc(ed(mk).mieter||'–')+(mk.gewerbe?' <span class="pill src">Gewerbe</span>':'')+'</td><td class="sub">'+esc(String(ed(mk).zahler||x.zahlerAuto||'').replace(/ \(.*\)$/,''))+'</td><td class="sub">'+esc(ed(mk).betreuer||'')+'</td><td class="sub">'+esc(dmy(mk.von))+(mk.bis?' – '+esc(dmy(mk.bis)):'')+'</td><td class="n">'+(x.miete?eur(x.miete):'–')+'</td>'
+    return '<tr class="click'+(cls||'')+(mk.pid===M.sel?' sel':'')+'" data-mk="'+esc(mk.pid)+'"><td>'+ampelDot(ampel(x))+'</td><td><b>'+esc(mk.obj)+'</b></td><td>'+esc(uName(mk.einheit))+(vm?vm:'')+'</td><td class="wrapc">'+esc(ed(mk).mieter||'–')+(mk.gewerbe?' <span class="pill src">Gewerbe</span>':'')+'</td><td class="sub">'+esc(String(ed(mk).zahler||x.zahlerAuto||'').replace(/ \(.*\)$/,''))+'</td><td class="sub">'+betrHtml(ed(mk).betreuer,1)+'</td><td class="sub">'+esc(dmy(mk.von))+(mk.bis?' – '+esc(dmy(mk.bis)):'')+'</td><td class="n">'+(x.miete?eur(x.miete):'–')+'</td>'
       +'<td class="n '+(x.ueber>0.5?'neg':x.saldo<-0.5?'pos':'')+'"><b>'+eur(x.saldo)+'</b>'+(x.ueber>0.5&&Math.abs(x.ueber-x.saldo)>0.5?'<div class="sub">überfällig '+eur(x.ueber)+'</div>':'')+'</td><td><span class="pill '+sn[0]+'">'+sn[1]+'</span>'+(x.kOffen>0.5?' <span class="pill mid" title="Kaution offen">K</span>':'')+(x.erg?' <span class="pill src" title="'+x.erg+' Monatsmieten aus dem Mietvertrag ergänzt">+'+x.erg+'</span>':'')+(mahnsperre(mk)?' <span class="pill bad">Mahnsperre</span>':'')+(()=>{ const lm=letzteMahnung(x); return lm&&x.ueber>0.5?'<div class="sub">'+esc(lm.stufe+' '+dmy(lm.d))+(lm.b?' · '+eur(lm.b):'')+'</div>':''; })()+'</td></tr>'; };
   const grp=M.st==='alle'&&!q;
   if(!grp){ for(const x of list) h+=rowH(x); }
@@ -1568,12 +1588,12 @@ function renderDash(x){ const mk=ed(x.mk), sn=STN[x.status], a=ampel(x), K=mk.ko
   h+='<div class="card"><div class="ch">Mieterinformationen'+(editOpen?'':'<button class="ghost small" data-edit="1">Bearbeiten</button>')+'</div>';
   if(editOpen){ const f=(id,l,v)=>'<label class="fl">'+l+'<input type="text" id="'+id+'" value="'+esc(v??'')+'"></label>';
     h+=f('e-mieter','Name(n)',mk.mieter)+f('e-anrede','Anrede für Briefe',mk.anrede)+f('e-email','E-Mail',mk.email!=null?mk.email:K.map(k=>k.email).filter(Boolean).join(', '))+f('e-tel','Telefon',mk.tel!=null?mk.tel:K.map(k=>k.tel).filter(Boolean).join(', '))
-      +f('e-kaution','Kaution vereinbart (€)',fnum.format(mk.kaution||0))+f('e-kbez','Kaution bezahlt (€) – leer = aus Nahaus',mk.kautionBezahlt!=null&&mk.kautionBezahlt!==''?fnum.format(mk.kautionBezahlt):'')+f('e-betreuer','Betreuer',mk.betreuer)+f('e-zahler','Wer zahlt die Miete? (leer = automatisch)',mk.zahler)+f('e-ref','Verwendungszweck',mk.ref)
+      +f('e-kaution','Kaution vereinbart (€)',fnum.format(mk.kaution||0))+f('e-kbez','Kaution bezahlt (€) – leer = aus Nahaus',mk.kautionBezahlt!=null&&mk.kautionBezahlt!==''?fnum.format(mk.kautionBezahlt):'')+f('e-betreuer','Betreuer',mk.betreuer).replace('id="e-betreuer"','id="e-betreuer" list="e-betrl"')+'<datalist id="e-betrl">'+BK.slice().sort((a,b)=>(b.vermittler-a.vermittler)||a.voll.localeCompare(b.voll,'de')).map(k=>'<option value="'+esc(betrLabel(k))+'"></option>').join('')+'</datalist>'+f('e-zahler','Wer zahlt die Miete? (leer = automatisch)',mk.zahler)+f('e-ref','Verwendungszweck',mk.ref)
       +'<label class="fl">Mieterranking<select id="e-ampel"><option value="">automatisch ('+AMPEL[x.ampelAuto][1]+')</option>'+Object.entries(AMPEL).map(([k,v])=>'<option value="'+k+'"'+(mk.ampel===k?' selected':'')+'>'+({gruen:'🟢 grün',gelb:'🟡 gelb',rot:'🔴 rot'}[k])+' – '+v[1]+'</option>').join('')+'</select></label>'
       +'<div class="acts"><button class="primary small" data-esave="1">Speichern</button><button class="ghost small" data-ecancel="1">Abbrechen</button></div>';
   } else {
     h+=kv('Name',esc(mk.mieter||'–'))+kv('E-Mail',(mk.email!=null?mk.email:K.map(k=>k.email).filter(Boolean).join(', '))?esc(mk.email!=null?mk.email:K.map(k=>k.email).filter(Boolean).join(', ')):'<span class="mut">–</span>')
-      +kv('Telefon',esc((mk.tel!=null?mk.tel:K.map(k=>k.tel).filter(Boolean).join(', '))||'–'))+kv('Betreuer',esc(mk.betreuer||'–'))
+      +kv('Telefon',esc((mk.tel!=null?mk.tel:K.map(k=>k.tel).filter(Boolean).join(', '))||'–'))+kv('Betreuer',betrHtml(mk.betreuer))
       +kv('Wer zahlt',esc(mk.zahler||x.zahlerAuto||'–')+(mk.zahler?'':' <span class="pill src">aus Zahlungen</span>'))
       +kv('Mieterranking',ampelDot(a)+' '+AMPEL[a][1]+(mk.ampel?' <span class="pill src">manuell</span>':' <span class="pill src" title="Automatisch aus Rückstand, Kaution und Zahlungseingang">auto</span>'))+(x.spaet?'<div class="sub">'+x.spaet+' verspätete Zahlung'+(x.spaet>1?'en':'')+' in den letzten 6 Monaten (nach dem 10.)</div>':''); }
   h+='</div>';
@@ -1714,7 +1734,7 @@ render();
   db.doc('stamm/mietzuordnung').onSnapshot(s=>{ ZUORD=(s.exists?clone(s.data()).map:null)||{}; calc=null; render(); },()=>{});
   db.doc('stamm/mietkonten').onSnapshot(s=>{ mkStand=s.exists?(s.data().stand||''):''; mkUeb=s.exists?(s.data().uebernahme||''):''; render(); },()=>{});
   db.collection('buchungen').onSnapshot(q=>{ const m={}; q.docs.forEach(d=>{m[d.id]=clone(d.data());}); buch=m; done('b'); },e=>{toast('Buchungen nicht lesbar: '+e.message); done('b');});
-  loadZV(); loadRegM(); loadIch().then(inboxStart);
+  loadZV(); loadRegM(); loadIch().then(inboxStart); betrLaden();
   db.collection('mails').onSnapshot(q=>{ const m={}; q.docs.forEach(d=>{ const v=clone(d.data()); (m[v.pid]=m[v.pid]||[]).push(v); }); MAILS=m; render(); },()=>{});
   db.collection('anschreiben').onSnapshot(q=>{ const m={}; q.docs.forEach(d=>{ const v=clone(d.data()); (m[v.pid]=m[v.pid]||[]).push(v); }); ANS=m; render(); },()=>{});
   db.collection('historie').onSnapshot(q=>{ const m={}; q.docs.forEach(d=>{ const v=clone(d.data()); (m[v.pid]=m[v.pid]||[]).push(v); }); HIST=m; render(); },()=>{});
