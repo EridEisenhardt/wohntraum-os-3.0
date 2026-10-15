@@ -6,7 +6,7 @@ export const dynamic = 'force-dynamic'
 export const maxDuration = 30
 
 const WS = () => process.env.ASANA_WORKSPACE || '1206683226417804'
-const FELDER = 'name,completed,completed_at,due_on,assignee.name,projects.name,memberships.section.name,permalink_url,modified_at,notes'
+const FELDER = 'tags.name,name,completed,completed_at,due_on,assignee.name,projects.name,memberships.section.name,permalink_url,modified_at,notes'
 let PROJ = { list: null, bis: 0 }
 
 async function asana(pfad, opt = {}) {
@@ -24,6 +24,7 @@ const aufgabe = t => ({
   gid: t.gid, name: t.name, erledigt: !!t.completed, erledigtAm: t.completed_at || '', faellig: t.due_on || '',
   zustaendig: (t.assignee && t.assignee.name) || '', projekte: (t.projects || []).map(p => p.name),
   abschnitt: ((t.memberships || []).find(m => m.section) || {}).section?.name || '',
+  tags: (t.tags || []).map(x => x.name),
   link: t.permalink_url || ('https://app.asana.com/0/0/' + t.gid), geaendert: t.modified_at || '', notiz: String(t.notes || '').slice(0, 400)
 })
 
@@ -31,6 +32,16 @@ export async function POST(req) {
   try {
     if (!(await angemeldet(req))) return antwort({ error: 'Bitte im Wohntraum OS anmelden.' }, 401)
     if (!process.env.ASANA_TOKEN) return antwort({ error: 'Asana ist noch nicht verbunden. In Vercel fehlt: ASANA_TOKEN', setup: true })
+    // Datei an eine Aufgabe anhängen (multipart: gid + datei), max. ca. 4 MB je Datei
+    if ((req.headers.get('content-type') || '').includes('multipart/form-data')) {
+      const fd = await req.formData(); const gid = String(fd.get('gid') || ''); const f = fd.get('datei')
+      if (!gid || !f || typeof f === 'string') return antwort({ error: 'Datei oder Aufgabe fehlt.' }, 400)
+      const out = new FormData(); out.append('parent', gid); out.append('file', f, f.name || 'Datei')
+      const r = await fetch('https://app.asana.com/api/1.0/attachments', { method: 'POST', headers: { Authorization: 'Bearer ' + process.env.ASANA_TOKEN }, body: out })
+      const j = await r.json().catch(() => ({}))
+      if (!r.ok) throw new Error((j.errors && j.errors[0] && j.errors[0].message) || ('Asana-Fehler ' + r.status))
+      return antwort({ ok: true, name: j.data && j.data.name })
+    }
     const b = await req.json().catch(() => ({}))
     const a = b.aktion
 
@@ -68,12 +79,31 @@ export async function POST(req) {
       return antwort({ nutzer: (L || []).map(u => ({ gid: u.gid, name: u.name, email: u.email || '' })).sort((x, y) => String(x.name).localeCompare(String(y.name), 'de')) })
     }
 
+    if (a === 'tags') {
+      let L = [], off = ''
+      for (let i = 0; i < 10; i++) {
+        const q = new URLSearchParams({ limit: '100', opt_fields: 'name' }); if (off) q.set('offset', off)
+        const r = await fetch('https://app.asana.com/api/1.0/workspaces/' + WS() + '/tags?' + q, { headers: { Authorization: 'Bearer ' + process.env.ASANA_TOKEN }, cache: 'no-store' })
+        const j = await r.json(); if (!r.ok) throw new Error('Asana-Fehler ' + r.status)
+        L = L.concat((j.data || []).map(t => ({ gid: t.gid, name: t.name })))
+        off = j.next_page && j.next_page.offset; if (!off) break
+      }
+      return antwort({ tags: L.sort((x, y) => String(x.name).localeCompare(String(y.name), 'de')) })
+    }
+
     if (a === 'anlegen') {
       const name = String(b.name || '').trim(); if (!name) return antwort({ error: 'Bitte einen Titel eingeben.' }, 400)
       const d = { name, workspace: WS(), notes: String(b.notiz || '') }
       if (b.projekt) d.projects = [String(b.projekt)]
       if (/^\d{4}-\d\d-\d\d$/.test(b.faellig || '')) d.due_on = b.faellig
       if (b.zustaendig) d.assignee = String(b.zustaendig)
+      // Tags: vorhandene per gid, neue per Name (werden in Asana angelegt)
+      const tags = []
+      for (const t of (b.tags || []).slice(0, 10)) {
+        if (t && t.gid) tags.push(String(t.gid))
+        else if (t && String(t.name || '').trim()) { const n = await asana('/workspaces/' + WS() + '/tags', { method: 'POST', json: { name: String(t.name).trim() } }); tags.push(n.gid) }
+      }
+      if (tags.length) d.tags = tags
       const t = await asana('/tasks?opt_fields=' + FELDER, { method: 'POST', json: d })
       return antwort({ aufgabe: aufgabe(t) })
     }
