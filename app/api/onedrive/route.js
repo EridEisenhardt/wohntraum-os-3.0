@@ -221,6 +221,24 @@ export async function POST(req) {
       return antwort({ uploadUrl: r.uploadUrl })
     }
 
+    if (a === 'dateisuche') {
+      // Gibt es eine Datei mit diesem Namen schon in OneDrive (unterhalb der Prozesslandkarte)? Für doppelte Belege.
+      const name = String(b.name || '').trim(); if (!name) return antwort({ treffer: [] })
+      const d = await drive(); const base = name.replace(/\.[A-Za-z0-9]{2,5}$/, '')
+      const q = base.replace(/[^\p{L}\p{N}]+/gu, ' ').trim().slice(0, 100)
+      const r = await graph('/drives/' + d + "/root/search(q='" + encodeURIComponent(q) + "')?$top=50&$select=id,name,size,file")
+      const norm = s => String(s || '').toLowerCase().normalize('NFC').replace(/\s+/g, ' ').trim()
+      const kand = (r.value || []).filter(x => x.file && (norm(x.name) === norm(name) || (b.size && x.size === b.size && norm(x.name).replace(/\.[a-z0-9]+$/, '') === norm(base))))
+      const treffer = []
+      for (const x of kand.slice(0, 5)) {
+        const y = await graph('/drives/' + d + '/items/' + encodeURIComponent(x.id) + '?$select=id,name,size,parentReference,webUrl')
+        const pfad = decodeURIComponent(String((y.parentReference && y.parentReference.path) || '').replace(/^.*?root:\/?/, ''))
+        if (!(pfad === ROOT || pfad.startsWith(ROOT + '/'))) continue
+        treffer.push({ id: y.id, name: y.name, size: y.size, pfad: pfad + '/' + y.name, gleicheGroesse: !!(b.size && y.size === b.size) })
+      }
+      return antwort({ treffer })
+    }
+
     if (a === 'link') {
       const d = await drive(); const x = await graph('/drives/' + d + '/items/' + encodeURIComponent(b.id))
       if (!(x.parentReference && decodeURIComponent(String(x.parentReference.path || '')).includes('/' + ROOT))) return antwort({ error: 'Datei nicht erlaubt.' }, 403)
