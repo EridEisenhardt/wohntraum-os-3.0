@@ -574,13 +574,13 @@ function compute(opt){ opt=opt||{}; const ZMAP={}, BU={};
   const byUnit={}; for(const mk of Object.values(MK)) (byUnit[mk.unit]=byUnit[mk.unit]||[]).push(mk);
   const res={}; for(const mk of Object.values(MK)){ if(!osKz.has(mk.obj)) continue; /* Objekte, die nicht im OS sind (z. B. verkauft), nie zeigen */ if(!M.alle&&!aktivKz.has(mk.obj)) continue; res[mk.pid]={mk,rows:[],soll:0,ist:0,kSoll:0,kIst:0}; }
   /* Bank-Ist dem Mietverhältnis zuordnen */
-  const OWN=new Set(konten.map(x=>x.iban).filter(Boolean));
+  const OWN=new Set(konten.map(x=>x.iban).filter(Boolean)); const IBMK={}; for(const m of Object.values(MK)) for(const ib of (m.ibans||[])) (IBMK[ib]=IBMK[ib]||[]).push(m);
   const toks=mk=>{ const e=ed(mk); const out=new Set(); for(const n of (mk.namen||[]).concat(String(e.mieter||'').split(','))){ const w=norm(n).split(' ').filter(x=>x.length>=3&&!['herr','frau','und'].includes(x)); if(w.length) out.add(w[w.length-1]); } return [...out]; };
   for(const r of bankIst()){ const d=r.tx.d; if(d.slice(0,7)<START) continue; const key=(r.tx.h||'')+'|'+r.tx.b; if(opt.ex===key) continue;
     let mk=null; const OP=r.tx.op&&r.tx.op.pid&&!r.split?r.tx.op:null;
     if(OP){ mk=MK[OP.pid]||null; if(!mk) continue; }
     else if(ZUORD[key]!==undefined){ if(ZUORD[key]==='-') continue; mk=MK[ZUORD[key]]||null; if(!mk) continue; }
-    else { const L=byUnit[r.c.unit]; if(!L) continue; const txt=' '+norm(r.tx.n+' '+r.tx.z)+' ';
+    else { let L=byUnit[r.c.unit]; const ib=r.tx.i; if(ib&&!OWN.has(ib)&&!SHARED_IBAN.has(ib)&&IBMK[ib]&&!(L||[]).some(c=>(c.ibans||[]).includes(ib))) L=IBMK[ib]; /* IBAN des Mieters hat Vorrang vor der Einheit aus der Buchung */ if(!L) continue; const txt=' '+norm(r.tx.n+' '+r.tx.z)+' ';
       let best=null, bs=-1;
       for(const c of L){ let sc=0; const inside=(!c.von||d>=c.von)&&(!c.bis||d<=c.bis), near=(!c.von||dnum2(d)>=dnum2(c.von)-31)&&(!c.bis||dnum2(d)<=dnum2(c.bis)+60);
         if(r.tx.i&&!OWN.has(r.tx.i)&&!SHARED_IBAN.has(r.tx.i)&&(c.ibans||[]).includes(r.tx.i)) sc+=4;
@@ -1107,6 +1107,7 @@ function karte(it,n){ const t=it.tx, c=it.c, ok=bestaetigt(it), ro=!canWrite||it
   else if(t.b<0){ h+='<div class="sub">Dieser Zahlung sind noch keine Belege zugewiesen.</div>';
     const v=kVorschlag(it); if(v&&!ro) h+='<div class="kz-vb">Vorschlag: <span title="'+esc(v.ort||'')+'">'+esc(v.name)+'</span> <button class="ghost small" data-kspzu="'+esc(v.id)+'" data-kspit="'+esc(it.id)+'">Zuordnen</button></div>';
     if(!ro) h+='<div class="kz-acts"><a href="#" data-kdet="'+esc(it.id)+'">Beleg zuweisen</a><a href="#" data-kol="'+esc(it.id)+'">Als beleglos markieren</a></div>'; }
+  else if(c.kat==='miete'&&t.b>0&&!it.split) h+=kMieter(it,ro);
   else h+='<div class="sub">Einnahme – kein Beleg nötig</div>';
   h+='</div>';
   if(it.split) h+='<div class="kz-f"><div class="sub">Aufgeteilt in '+it.parts.length+' Teile: '+esc(it.parts.map(p=>kontoLabel(p.c.kat,p.c.sub,p.c.ka)+(p.c.obj?' '+p.c.obj:'')).join(' · '))+'</div><a href="#" data-kdet="'+esc(it.id)+'">ändern</a></div>';
@@ -1117,6 +1118,16 @@ function karte(it,n){ const t=it.tx, c=it.c, ok=bestaetigt(it), ro=!canWrite||it
   h+='<div class="kz-r"><button class="kz-d" data-kdet="'+esc(it.id)+'" title="Details, Aufteilen, Regel">Details</button>'
     +'<button class="kz-ok'+(ok?' on':'')+'" data-kok="'+esc(it.id)+'"'+(ro||it.open||ok?' disabled':'')+' title="'+(ok?'bestätigt':it.open?'Erst Konto und Objekt wählen':'Vorschlag bestätigen')+'"></button></div>';
   return h+'</div>'; }
+/* Mietzahlung: welcher Mieter, auf welche Sollstellung */
+function kMieter(it,ro){ const t=it.tx; if(!MKload||!Object.keys(MK).length) return '<div class="sub">Einnahme – kein Beleg nötig</div>';
+  if(!mkCalc) mkCalc=compute(); const key=(t.h||'')+'|'+t.b, op=t.op&&t.op.pid?t.op:null, pid=(op&&op.pid)||mkCalc.ZMAP[key]||'', mk=MK[pid];
+  if(!mk) return '<div class="sub">Mietzahlung – kein Mieter erkannt.</div>'+(ro?'':'<div class="kz-acts"><a href="#" data-kdet="'+esc(it.id)+'">Mieter und Sollstellung zuordnen</a></div>');
+  const x=mkCalc.res[pid], tit=id=>{ const r=x&&x.rows.find(q=>q.id===id); return r?r.t:'Posten'; };
+  let h='<div class="sub"><b>'+esc(mk.obj+' '+uName(mk.einheit)+' · '+(ed(mk).mieter||(mk.namen||[]).join(', ')))+'</b>'+(op?'':' <span class="pill src">automatisch</span>')+'</div>';
+  if(op&&(op.a||[]).length) h+='<div class="sub">auf '+esc(op.a.map(a=>tit(a.id)+' '+eur(a.b)).join(', '))+'</div>';
+  else h+='<div class="sub">'+(op?'ohne feste Sollstellung':'Sollstellung: älteste offene zuerst')+'</div>';
+  if(!ro) h+='<div class="kz-acts"><a href="#" data-kdet="'+esc(it.id)+'">'+(op?'Zuordnung ändern':'Sollstellung zuordnen')+'</a></div>';
+  return h; }
 function kVorschlag(it){ try{ if(typeof spBereit!=='function'||!spBereit()||!SP.dateien) return null; const f=spTreffer(it,'')[0]; if(!f) return null; const s=spScore(f,it); return s>=100?{id:f.id,name:f.name,ort:f.ort}:null; }catch(e){ return null; } }
 function kBestaetigen(it){ const c=it.c; return writeTx(it.doc,it.ix,{m:1,k:c.kat||'',s:c.sub||'',ka:c.ka||'',o:c.obj||'',u:c.unit||''}); }
 const kItem=id=>items().find(x=>x.id===id);
@@ -1448,7 +1459,7 @@ document.addEventListener('click',async e=>{
   if(t.dataset.rup!==undefined){ const i=Number(t.dataset.rup); if(i<1) return; const a=regeln.slice(); [a[i-1],a[i]]=[a[i],a[i-1]]; regeln=a; invalidate(); saveStamm('regeln',{regeln}); render(); return; }
   if(t.dataset.opsave){ const key=t.dataset.opsave, it=items().find(x=>x.id===U.sel); if(!it) return; const D=opDraft(key,it); if(!D.pid){ toast('Bitte den Mieter wählen.'); return; }
     const a=(D.a||[]).filter(y=>y.b>0).map(y=>({id:y.id,b:r2(y.b)})); const sum=a.reduce((s2,y)=>s2+y.b,0); if(sum-it.tx.b>0.005){ toast('Es ist mehr zugeordnet als gezahlt wurde.'); return; }
-    const c=it.c; delete OPD[key]; writeTx(it.doc,it.ix,{op:{pid:D.pid,a},m:1,k:'miete',s:'',ka:'',o:c.obj||(MK[D.pid]||{}).obj||'',u:c.unit||(MK[D.pid]||{}).unit||''}).then(()=>toast('Zahlung zugeordnet.')); return; }
+    const c=it.c; delete OPD[key]; writeTx(it.doc,it.ix,{op:{pid:D.pid,a},m:1,k:'miete',s:'',ka:'',o:(MK[D.pid]||{}).obj||c.obj||'',u:(MK[D.pid]||{}).unit||c.unit||''}).then(()=>toast('Zahlung zugeordnet.')); return; }
   if(t.dataset.opdel){ const key=t.dataset.opdel, it=items().find(x=>x.id===U.sel); if(!it) return; delete OPD[key]; writeTx(it.doc,it.ix,{op:null}).then(()=>toast('Zuordnung entfernt.')); return; }
   if(t.dataset.pimp!==undefined){ doImport(Number(t.dataset.pimp)); return; }
   if(t.dataset.pdrop!==undefined){ pending.splice(Number(t.dataset.pdrop),1); render(); return; }
