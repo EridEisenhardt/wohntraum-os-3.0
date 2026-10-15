@@ -603,6 +603,8 @@ function compute(opt){ opt=opt||{}; const ZMAP={}, BU={};
       if(r.tx.b-kb>0.005) res[mk.pid].rows.push(Object.assign({},base,{h:r2(r.tx.b-kb),k:false,alloc:aN})); }
     else res[mk.pid].rows.push(Object.assign({},base,{h:r.tx.b,k:kaut,alloc:null})); }
   for(const x of Object.values(res)){ const mk=x.mk;
+    /* Objekte, die wir nicht verwalten (mk.extern): nur Stammdaten, keine Sollstellungen, Zahlungen oder Mahnungen */
+    if(mk.extern){ const st0=stufeAt(mk,curM); Object.assign(x,{rows:[],mahn:[],saldo:0,kOffen:0,kSoll:0,kIst:0,op:[],opK:[],opF:[],guthaben:0,nhSaldo:0,ueber:0,miete:st0?st0.total:0,monate:0,spaet:0,zahlerAuto:'',status:'extern',ampelAuto:'gruen',aktiv:!mk.bis||mk.bis>=today}); continue; }
     const kautIds=new Set((mk.soll||[]).filter(s=>s.art==='KAUTION').map(s=>s.id));
     /* Saldovortrag aus Nahaus vor 2025 */
     let vS=0,vI=0;
@@ -667,13 +669,13 @@ function compute(opt){ opt=opt||{}; const ZMAP={}, BU={};
     x.ampelAuto=x.monate>=1?'rot':(x.ueber>0.5||x.spaet>=2||x.kOffen>0.5)?'gelb':'gruen'; }
   return {res,first,stich,ZMAP,faell:fäll};
 }
-const STN={ok:['ok','ausgeglichen'],rueckstand:['mid','Rückstand'],mahnen:['bad','≥ 1 Monatsmiete'],kuendigung:['bad','≥ 2 Monatsmieten'],guthaben:['src','Guthaben'],faellig:['src','fällig, Zahlung noch offen']};
+const STN={ok:['ok','ausgeglichen'],rueckstand:['mid','Rückstand'],mahnen:['bad','≥ 1 Monatsmiete'],kuendigung:['bad','≥ 2 Monatsmieten'],guthaben:['src','Guthaben'],extern:['src','nicht von uns verwaltet'],faellig:['src','fällig, Zahlung noch offen']};
 
 /* ---------- Sammelmahnung (Mahnlauf am 05. und 20.) ---------- */
 var mahnOpen=false, MR={sel:{},stufe:{},datum:'',frist:'',min:10,busy:false,done:null,q:''}, REGM=[], REGload=false;
 const STUFEN=['Zahlungserinnerung','1. Mahnung','2. Mahnung','3. Mahnung'];
 const MAHNGEB=5;
-const ADR={A14:'Abtweilerstraße 14|55568 Lauschied',E4:'Eiermarkt 4|55545 Bad Kreuznach',H3:'Hammer Straße 3|67575 Eich',H44:'Hochstraße 44|55545 Bad Kreuznach',K6:'Kreuzstraße 6|55546 Fürfeld',K7:'In den Kirchgärten 7|55278 Dexheim',K28:'Krämerstraße 28|55276 Oppenheim',Kw30:'Kellerweg 30|67583 Guntersblum',M8:'Mannheimer Straße 8|55545 Bad Kreuznach',R6:'Am Römer 6|67598 Gundersheim',S16:'St.-Georgen-Straße 16|55232 Alzey',S58:'Schlossgasse 58|55232 Alzey',U6:'Uhlandstraße 6|55543 Bad Kreuznach',Rh24:'Rheinstraße 24|55283 Nierstein'};
+const ADR={V11:'Vorstädter Straße 11|55276 Oppenheim',A14:'Abtweilerstraße 14|55568 Lauschied',E4:'Eiermarkt 4|55545 Bad Kreuznach',H3:'Hammer Straße 3|67575 Eich',H44:'Hochstraße 44|55545 Bad Kreuznach',K6:'Kreuzstraße 6|55546 Fürfeld',K7:'In den Kirchgärten 7|55278 Dexheim',K28:'Krämerstraße 28|55276 Oppenheim',Kw30:'Kellerweg 30|67583 Guntersblum',M8:'Mannheimer Straße 8|55545 Bad Kreuznach',R6:'Am Römer 6|67598 Gundersheim',S16:'St.-Georgen-Straße 16|55232 Alzey',S58:'Schlossgasse 58|55232 Alzey',U6:'Uhlandstraße 6|55543 Bad Kreuznach',Rh24:'Rheinstraße 24|55283 Nierstein'};
 const INHABER={EE:'Eric Eisenhardt',WT:'Wohn(T)raum Rheinhessen GmbH',KiBo:'Wohn(T)raum Rheinhessen GmbH'};
 const ABS=' · Dalheimer Straße 70 · 55278 Dexheim';
 /* Verzugszinsen nach § 288 BGB: Basiszinssatz + 5 Prozentpunkte (Wohnraum) bzw. + 9 Prozentpunkte (Gewerbe) */
@@ -1448,7 +1450,7 @@ function render(){
   else if(fid){ const el=$(fid); if(el&&el.tagName==='INPUT'){ el.focus({preventScroll:true}); if(fv!=null) el.value=fv; } }
 }
 /* Sortierung der Mieterliste: Klick auf Spaltenkopf, erneuter Klick dreht die Reihenfolge */
-const STORD={kuendigung:0,mahnen:1,rueckstand:2,faellig:3,guthaben:4,ok:5};
+const STORD={kuendigung:0,mahnen:1,rueckstand:2,faellig:3,guthaben:4,ok:5,extern:6};
 function sortVal(x,k){ const mk=ed(x.mk); switch(k){ case 'obj': return String(x.mk.obj); case 'einheit': return String(x.mk.obj)+' '+uName(x.mk.einheit); case 'mieter': return String(mk.mieter||''); case 'zahler': return String(mk.zahler||x.zahlerAuto||''); case 'betreuer': return String(mk.betreuer||''); case 'von': return String(x.mk.von||''); case 'miete': return x.miete||0; case 'status': return STORD[x.status]??9; default: return x.saldo||0; } }
 function listSort(a,b){ if(a.aktiv!==b.aktiv) return a.aktiv?-1:1; const k=M.sk||'einheit', d=M.sd||1; const va=sortVal(a,k), vb=sortVal(b,k); let c=typeof va==='number'?va-vb:String(va).localeCompare(String(vb),'de',{numeric:true,sensitivity:'base'}); if(!c) c=String(a.mk.obj).localeCompare(String(b.mk.obj),'de',{numeric:true})||uName(a.mk.einheit).localeCompare(uName(b.mk.einheit),'de',{numeric:true}); else c*=d; return c; }
 const AMPEL={gruen:['#1d9a5b','zuverlässig'],gelb:['#e0a400','beobachten'],rot:['#d0362b','kritisch']};
@@ -1460,7 +1462,7 @@ function saveEdit(pid,patch,msg,log){ if(log!==false&&(log||msg)) { const tx=Str
 /* ---------- Sollstellungslauf ---------- */
 const nextMon=()=>addM(curM,1);
 function sollFuer(m){ const aktivKz=new Set(objekte.filter(o=>o.aktiv!==false).map(o=>o.kz)); const P={};
-  for(const mk of Object.values(MK)){ if(!aktivKz.has(mk.obj)) continue; if(mk.von&&mk.von.slice(0,7)>m) continue; if(mk.bis&&mk.bis.slice(0,7)<m) continue;
+  for(const mk of Object.values(MK)){ if(!aktivKz.has(mk.obj)||mk.extern) continue; if(mk.von&&mk.von.slice(0,7)>m) continue; if(mk.bis&&mk.bis.slice(0,7)<m) continue;
     const st=stufeAt(mk,m); if(!st||!st.total) continue; P[mk.pid]={b:st.total,kalt:st.kalt||0,bk:st.bk||0,hk:st.hk||0,strom:st.strom||0,sonst:st.sonst||0,others:st.others||[]}; }
   return P; }
 function runSoll(m,auto){ if(!db||!canWrite) return; const P=sollFuer(m); const n=Object.keys(P).length; if(!n){ if(!auto) toast('Keine laufenden Mietverhältnisse für '+m.slice(5)+'/'+m.slice(0,4)+'.'); return; }
@@ -1583,6 +1585,7 @@ function renderDash(x){ const mk=ed(x.mk), sn=STN[x.status], a=ampel(x), K=mk.ko
   let h='<div class="dtop"><div class="dhead">'+ampelLight(a)+'<div><div class="dname">'+esc(mk.mieter||'–')+'</div><div class="sub">Mieterranking: '+esc(AMPEL[a][1])+(mk.ampel?' (manuell)':' (automatisch)')+'</div>'
     +'<div class="hgrid">'+fi('Kürzel',esc(x.mk.obj+' '+uName(x.mk.einheit)))+fi('Adresse',esc(adr[0]+(x.mk.einheit&&!/efh/i.test(x.mk.einheit)?', '+uName(x.mk.einheit):'')+(adr[1]?', '+adr[1]:'')))+fi('Einzug',esc(dmy(x.mk.von)||'–'))+fi('Auszug',esc(auszug)+(x.mk.bis&&x.mk.bis>=today?' <span class="pill mid">gekündigt</span>':''))+'</div>'
     +(mk.ref?'<div class="sub">Verwendungszweck: '+esc(mk.ref)+'</div>':'')+'</div></div><button data-close="1" title="Schließen (Esc)">Schließen</button></div>';
+  if(x.mk.extern) h+='<div class="note">Dieses Objekt wird nicht von uns verwaltet. Das Konto enthält nur die Stammdaten aus dem Mietvertrag – ohne Sollstellungen, Zahlungen, Mahnungen und Betriebskostenabrechnung.</div>';
   h+='<div class="cards">';
   /* Mieterinformationen */
   h+='<div class="card"><div class="ch">Mieterinformationen'+(editOpen?'':'<button class="ghost small" data-edit="1">Bearbeiten</button>')+'</div>';
