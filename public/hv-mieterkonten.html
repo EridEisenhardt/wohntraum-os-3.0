@@ -820,7 +820,7 @@ async function mahnlaufStarten(){ const sb=window.osSupabase; if(!sb||!db||!canW
   MR.busy=false; MR.done=done; loadRegM(); render(); toast(done.list.length+' Mahnungen erstellt.'); }
 function sammelPdf(){ if(!MRPDF.length||!window.jspdf) return; const doc=new window.jspdf.jsPDF({unit:'mm',format:'a4'}); MRPDF.forEach((B,i)=>{ if(i) doc.addPage(); drawBrief(doc,B); }); doc.save('Sammelmahnung_'+MR.datum+'.pdf'); }
 /* ---------- Ausklappbare Bereiche und PDF-Auszüge (Sollstellungen, Mieterkonto) ---------- */
-var SEC={soll:false,docs:false,konto:false};
+var SEC={soll:false,docs:false,konto:false,inbox:true};
 document.addEventListener('toggle',e=>{ const d=e.target; if(d&&d.dataset&&d.dataset.sec) SEC[d.dataset.sec]=d.open; },true);
 function pdfAuszug(x,art){ if(!window.jspdf){ toast('PDF-Bibliothek lädt noch, bitte gleich nochmal.'); return null; }
   const mk=ed(x.mk), o=objekte.find(q=>q.kz===x.mk.obj)||{}, inh=INHABER[o.ges||x.mk.ges]||INHABER.WT, adr=(ADR[x.mk.obj]||'|').split('|');
@@ -1245,6 +1245,46 @@ document.addEventListener('click',e=>{ const t=e.target.closest('button,a[data-o
 /* ---------- Historie je Mieter: wer hat wann was getan (neueste oben) ----------
    Eigene Einträge und protokollierte Aktionen in Collection 'historie' {pid,id,d,art,t,by,mail,uid,manuell}
    dazu live aus Notizen, Anschreiben, Mails und Mahnungen */
+/* ---------- Aktivitäten (Inbox wie in Asana): wer hat was in den Mieterkonten gemacht ---------- */
+var INB={tab:'neu',von:'',eigene:false,mehr:false}, INBA={}, INBload=false;
+try{ const s=JSON.parse(store('mk_inbox')||'null'); if(s) INB=Object.assign(INB,s,{mehr:false}); }catch(e){}
+const inbSave=()=>store('mk_inbox',JSON.stringify({tab:INB.tab,von:INB.von,eigene:INB.eigene}));
+function inbArch(ids,wert){ if(!db||!ICHID){ toast('Bitte kurz warten, Benutzer wird geladen.'); return; } const a=Object.assign({},INBA); for(const id of ids){ if(wert) a[id]=today; else delete a[id]; } INBA=a; render();
+  return db.doc('inbox/'+ICHID).set({arch:a,stand:new Date().toISOString()}).catch(e=>toast('Speichern nicht möglich: '+(e.message||e))); }
+function inbAlle(){ const L=[]; for(const pid in HIST) for(const v of HIST[pid]||[]) if(v&&v.id) L.push(v); return L.sort((a,b)=>String(b.erfasst||b.d).localeCompare(String(a.erfasst||a.d))); }
+function inbTag(iso){ const s=String(iso||'').slice(0,10); const g=new Date(Date.parse(today)-864e5).toISOString().slice(0,10); return s===today?'Heute':s===g?'Gestern':dmy(s); }
+function inboxCard(){ const alle=inbAlle(), grenze=new Date(Date.now()-60*864e5).toISOString();
+  const basis=alle.filter(v=>String(v.erfasst||v.d)>=grenze);
+  const vonF=norm(INB.von);
+  const L=basis.filter(v=>(INB.tab==='archiv')===!!INBA[v.id]).filter(v=>!INB.eigene||!(v.uid&&v.uid===ICHID)).filter(v=>!vonF||norm(v.by).includes(vonF));
+  const nNeu=basis.filter(v=>!INBA[v.id]&&!(INB.eigene&&v.uid&&v.uid===ICHID)).length;
+  const pers=[...new Set(basis.map(v=>v.by).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'de'));
+  let h='<details class="card wide sec" data-sec="inbox"'+(SEC.inbox?' open':'')+' style="margin:12px 0"><summary class="ch">Aktivitäten<span class="sub">'+nNeu+' neu · letzte 60 Tage</span></summary>';
+  h+='<div class="acts" style="flex-wrap:wrap"><span class="seg mini"><button data-inbtab="neu" class="'+(INB.tab==='neu'?'on':'')+'">Neu ('+nNeu+')</button><button data-inbtab="archiv" class="'+(INB.tab==='archiv'?'on':'')+'">Archiv</button></span>'
+    +'<input type="search" id="inb-von" list="inb-vonl" placeholder="Von wem? (Name eintippen)" value="'+esc(INB.von)+'" style="width:190px"><datalist id="inb-vonl">'+pers.map(p=>'<option value="'+esc(p)+'"></option>').join('')+'</datalist>'
+    +'<label class="sub" style="display:flex;gap:4px;align-items:center"><input type="checkbox" id="inb-eigene"'+(INB.eigene?' checked':'')+'> eigene ausblenden</label>'
+    +(INB.tab==='neu'&&L.length?'<button class="ghost small" data-inball="1" style="margin-left:auto">Alle '+L.length+' archivieren</button>':'')+'</div>';
+  if(!L.length) h+='<div class="sub">'+(INB.tab==='neu'?'Keine neuen Aktivitäten.':'Noch nichts archiviert.')+'</div>';
+  const zeig=INB.mehr?L.slice(0,300):L.slice(0,40); let tag='';
+  for(const v of zeig){ const t=inbTag(v.erfasst||v.d); if(t!==tag){ tag=t; h+='<div class="rh" style="margin-top:10px">'+esc(t)+'</div>'; }
+    const mk=MK[v.pid]; const lab=mk?(mk.obj+' '+uName(mk.einheit)+' · '+(ed(mk).mieter||(mk.namen||[]).join(', '))):'Mieterkonto';
+    const zeit=String(v.erfasst||v.d||''); const uhr=zeit.length>10?histZeit(zeit).slice(-5):'';
+    h+='<div class="kvr" style="align-items:flex-start;padding:6px 0"><span><span class="pill src">'+esc(v.art||'Änderung')+'</span> <a href="#" data-inbmk="'+esc(v.pid)+'" style="font-weight:600">'+esc(lab)+'</a>'
+      +'<div style="margin-top:2px">'+esc(v.t||'')+'</div><div class="sub">'+esc((v.by||'unbekannt')+(uhr?' · '+uhr+' Uhr':'')+(v.manuell?' · nachgetragen für '+dmy(String(v.d).slice(0,10)):''))+(INBA[v.id]&&INB.tab==='archiv'?' · archiviert am '+esc(dmy(INBA[v.id])):'')+'</div></span>'
+      +'<b><button class="ghost small" data-inbarch="'+esc(v.id)+'">'+(INB.tab==='archiv'?'Zurückholen':'Archivieren')+'</button></b></div>'; }
+  if(L.length>zeig.length) h+='<div class="acts"><button class="ghost small" data-inbmehr="1">Weitere '+(L.length-zeig.length)+' anzeigen</button></div>';
+  return h+'</details>'; }
+document.addEventListener('click',e=>{ const t=e.target.closest('button,a'); if(!t||!t.dataset) return; const d=t.dataset;
+  if(d.inbtab){ INB.tab=d.inbtab; INB.mehr=false; inbSave(); render(); return; }
+  if(d.inbmehr){ INB.mehr=true; render(); return; }
+  if(d.inbarch){ inbArch([d.inbarch],INB.tab!=='archiv'); return; }
+  if(d.inball){ const alle=inbAlle(), grenze=new Date(Date.now()-60*864e5).toISOString(), vonF=norm(INB.von);
+    const ids=alle.filter(v=>String(v.erfasst||v.d)>=grenze&&!INBA[v.id]&&(!INB.eigene||!(v.uid&&v.uid===ICHID))&&(!vonF||norm(v.by).includes(vonF))).map(v=>v.id); inbArch(ids,true); return; }
+  if(d.inbmk){ e.preventDefault(); if(!MK[d.inbmk]){ toast('Mieterkonto nicht gefunden.'); return; } M.sel=d.inbmk; solSel=null; NDRAFT=''; NOTF=[]; editOpen=false; modal=true; showDone=false; SEC.hist=true; saveM(); render(); return; } });
+document.addEventListener('input',e=>{ const t=e.target; if(t&&t.id==='inb-von'){ INB.von=t.value; inbSave(); clearTimeout(window.__ib); window.__ib=setTimeout(render,250); } });
+document.addEventListener('change',e=>{ const t=e.target; if(t&&t.id==='inb-eigene'){ INB.eigene=t.checked; inbSave(); render(); } });
+function inboxStart(){ if(!db||!ICHID||INBload) return; INBload=true; db.doc('inbox/'+ICHID).onSnapshot(s=>{ INBA=((s.exists?s.data():null)||{}).arch||{}; render(); },()=>{}); }
+
 var HIST={}, HF={art:'alle',mehr:false,neu:false,busy:false};
 const HIST_ARTEN=['Anruf eingehend','Anruf ausgehend','Gespräch vor Ort','Termin / Besichtigung','SMS / WhatsApp','Brief per Post','Sonstiges'];
 async function histLog(pid,art,t,d){ if(!db||!pid) return; try{ if(!ICH) await loadIch(); const ts=new Date(), id=pid+'__'+ts.getTime()+Math.random().toString(36).slice(2,5);
@@ -1357,7 +1397,7 @@ function render(){
   let h='<div class="kpis"><div class="kpi"><div class="l">Mietverhältnisse seit 2025</div><div class="v">'+all.length+'</div><div class="s">'+all.filter(x=>x.aktiv).length+' laufend</div></div>'
     +'<div class="kpi"><div class="l">Mieter mit Rückstand (überfällig)</div><div class="v neg">'+nR+'</div><div class="s">zusammen '+eur(sumR)+'</div></div>'
     +'<div class="kpi"><div class="l">Rückstand ≥ 2 Monatsmieten</div><div class="v '+(n2?'neg':'')+'">'+n2+'</div><div class="s">kündigungsrelevant</div></div>'
-    +'<div class="kpi"><div class="l">Kaution offen</div><div class="v">'+eur(all.reduce((a,x)=>a+Math.max(0,x.kOffen),0))+'</div><div class="s">'+all.filter(x=>x.kOffen>0.5).length+' Mietverhältnisse</div></div></div>'+sollBox()+mahnBox();
+    +'<div class="kpi"><div class="l">Kaution offen</div><div class="v">'+eur(all.reduce((a,x)=>a+Math.max(0,x.kOffen),0))+'</div><div class="s">'+all.filter(x=>x.kOffen>0.5).length+' Mietverhältnisse</div></div></div>'+sollBox()+mahnBox()+inboxCard();
   h+='<div class="tbar"><div class="seg">'+[['alle','Alle'],['aktiv','Laufend'],['rueck','Rückstand'],['rueck2','Mehr als 2 Monatsmieten offen'],['guthaben','Guthaben'],['kaution','Kaution offen'],['beendet','Beendet']].map(([k,l])=>'<button data-mst="'+k+'" class="'+(M.st===k?'on':'')+'">'+l+'</button>').join('')+'</div>'
     +'<select id="m-ges"><option value="">alle Gesellschaften</option>'+['EE','WT','KiBo'].map(g=>'<option'+(g===M.ges?' selected':'')+'>'+g+'</option>').join('')+'</select>'
     +'<select id="m-obj"><option value="">alle Objekte</option>'+objs.map(o=>'<option'+(o===M.obj?' selected':'')+'>'+esc(o)+'</option>').join('')+'</select>'
@@ -1382,7 +1422,7 @@ function render(){
   if(mahnOpen) h+='<div class="ov" id="ov"><div class="dlg">'+renderMahn()+'</div></div>';
   else if(modal&&calc.res[M.sel]) h+='<div class="ov" id="ov"><div class="dlg">'+renderDash(calc.res[M.sel])+'</div></div>';
   h+='<div class="sub" style="margin:10px 0">Saldo positiv = Mieter schuldet, negativ = Guthaben. '+(mkUeb?'Bis '+esc(dmy(mkUeb))+' sind Sollstellungen und Zahlungen 1 zu 1 aus Nahaus übernommen (Stand '+esc(dmy(mkStand))+'). Danach wird nur noch im OS gebucht: Sollstellungen aus dem Sollstellungslauf (fehlende Monatsmieten aus dem Mietvertrag), Zahlungen aus den Kontoauszügen.':'Soll: Sollstellungen aus Nahaus (Stand '+esc(dmy(mkStand))+'); fehlende Monatsmieten werden aus dem Mietvertrag ergänzt. Ist: Mieteingänge aus den Kontoauszügen im OS ab '+esc(calc.first.slice(5)+'/'+calc.first.slice(0,4))+', davor Zahlungen laut Nahaus.')+' Saldo = alle bis heute fälligen Sollstellungen minus Zahlungen. Überfällig = offen und mehr als 5 Tage vor dem letzten Kontoauszug ('+esc(dmy(calc.stich))+') fällig – Zahlungen danach sind noch nicht importiert. Kaution wird getrennt geführt.</div>'+'<label class="sub"><input type="checkbox" id="m-alle"'+(M.alle?' checked':'')+'> auch nicht aktive / verkaufte Objekte zeigen</label>'+importCard(false);
-  const keep=f&&(f.id==='m-q'||f.id==='m-betr'||f.id==='mr-q'||f.id==='n-text'||f.id==='ne-text')?f:null; const sc=$('ov')?$('ov').scrollTop:0;
+  const keep=f&&(f.id==='inb-von'||f.id==='m-q'||f.id==='m-betr'||f.id==='mr-q'||f.id==='n-text'||f.id==='ne-text')?f:null; const sc=$('ov')?$('ov').scrollTop:0;
   $('view').innerHTML='<div class="pad">'+h+'</div>'; if($('ov')) $('ov').scrollTop=sc; document.body.style.overflow=(modal||mahnOpen)?'hidden':'';
   if(keep){ const n=$(keep.id); if(n){ n.replaceWith(keep); keep.focus({preventScroll:true}); } }
   else if(fid){ const el=$(fid); if(el&&el.tagName==='INPUT'){ el.focus({preventScroll:true}); if(fv!=null) el.value=fv; } }
@@ -1627,7 +1667,10 @@ document.addEventListener('click',async e=>{ const t=e.target.closest('button,tr
   if(t.dataset.mst){ M.st=t.dataset.mst; saveM(); render(); return; }
   if(t.dataset.edit){ editOpen=true; render(); return; }
   if(t.dataset.ecancel){ editOpen=false; render(); return; }
-  if(t.dataset.esave){ const g=id=>$(id).value.trim(); editOpen=false; const kz=parseNum(g('e-kaution')), kbz=parseNum(g('e-kbez')); saveEdit(M.sel,{kaution:(kz==null||isNaN(kz))?(ed(MK[M.sel]).kaution||0):kz,kautionBezahlt:(kbz==null||isNaN(kbz))?'':kbz,mieter:g('e-mieter'),anrede:g('e-anrede'),email:g('e-email'),tel:g('e-tel'),betreuer:g('e-betreuer'),zahler:g('e-zahler'),ref:g('e-ref'),ampel:$('e-ampel').value},'Mieterdaten gespeichert.'); return; } });
+  if(t.dataset.esave){ const g=id=>$(id).value.trim(); editOpen=false; const kz=parseNum(g('e-kaution')), kbz=parseNum(g('e-kbez')); const alt=ed(MK[M.sel]), neu={kaution:(kz==null||isNaN(kz))?(alt.kaution||0):kz,kautionBezahlt:(kbz==null||isNaN(kbz))?'':kbz,mieter:g('e-mieter'),anrede:g('e-anrede'),email:g('e-email'),tel:g('e-tel'),betreuer:g('e-betreuer'),zahler:g('e-zahler'),ref:g('e-ref'),ampel:$('e-ampel').value};
+    const NAM={kaution:'Kaution vereinbart',kautionBezahlt:'Kaution bezahlt',mieter:'Name',anrede:'Anrede',email:'E-Mail',tel:'Telefon',betreuer:'Betreuer',zahler:'Wer zahlt',ref:'Verwendungszweck',ampel:'Mieterranking'};
+    const diff=Object.keys(neu).filter(k=>String(alt[k]??'')!==String(neu[k]??'')).map(k=>NAM[k]+': '+(String(alt[k]??'')||'–')+' → '+(String(neu[k]??'')||'–'));
+    saveEdit(M.sel,neu,'Mieterdaten gespeichert.',diff.length?'Mieterdaten geändert – '+diff.join('; '):false); return; } });
 ['dragenter','dragover'].forEach(ev=>document.addEventListener(ev,e=>{ const d=e.target.closest&&e.target.closest('[data-fdrop]'); if(d&&e.dataTransfer&&[...(e.dataTransfer.types||[])].includes('Files')){ e.preventDefault(); document.querySelectorAll('.fold.over').forEach(x=>x!==d&&x.classList.remove('over')); d.classList.add('over'); } }));
 document.addEventListener('dragleave',e=>{ const d=e.target.closest&&e.target.closest('[data-fdrop]'); if(d&&!d.contains(e.relatedTarget)) d.classList.remove('over'); });
 document.addEventListener('drop',e=>{ const d=e.target.closest&&e.target.closest('[data-fdrop]'); if(!d||!e.dataTransfer||!e.dataTransfer.files.length) return; e.preventDefault(); d.classList.remove('over'); queueFiles(MK[M.sel],d.dataset.fdrop,e.dataTransfer.files); });
@@ -1671,7 +1714,7 @@ render();
   db.doc('stamm/mietzuordnung').onSnapshot(s=>{ ZUORD=(s.exists?clone(s.data()).map:null)||{}; calc=null; render(); },()=>{});
   db.doc('stamm/mietkonten').onSnapshot(s=>{ mkStand=s.exists?(s.data().stand||''):''; mkUeb=s.exists?(s.data().uebernahme||''):''; render(); },()=>{});
   db.collection('buchungen').onSnapshot(q=>{ const m={}; q.docs.forEach(d=>{m[d.id]=clone(d.data());}); buch=m; done('b'); },e=>{toast('Buchungen nicht lesbar: '+e.message); done('b');});
-  loadZV(); loadRegM(); loadIch();
+  loadZV(); loadRegM(); loadIch().then(inboxStart);
   db.collection('mails').onSnapshot(q=>{ const m={}; q.docs.forEach(d=>{ const v=clone(d.data()); (m[v.pid]=m[v.pid]||[]).push(v); }); MAILS=m; render(); },()=>{});
   db.collection('anschreiben').onSnapshot(q=>{ const m={}; q.docs.forEach(d=>{ const v=clone(d.data()); (m[v.pid]=m[v.pid]||[]).push(v); }); ANS=m; render(); },()=>{});
   db.collection('historie').onSnapshot(q=>{ const m={}; q.docs.forEach(d=>{ const v=clone(d.data()); (m[v.pid]=m[v.pid]||[]).push(v); }); HIST=m; render(); },()=>{});
