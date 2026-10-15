@@ -1063,6 +1063,58 @@ document.addEventListener('click',e=>{ const t=e.target.closest('button,a[data-m
 });
 document.addEventListener('change',e=>{ if(e.target.id==='ml-file'){ const f=[...e.target.files]; e.target.value=''; mlUpload(f); } });
 
+/* ---------- Aufgaben aus Asana (ersetzen das Ticketsystem im Mieterkonto) ---------- */
+var AS={}, ASP=null, ASPlade=false, ASF={neu:false,titel:'',proj:'',due:'',notiz:'',busy:false};
+SEC.asana=true;
+async function asApi(body){ const sb=window.osSupabase; let tok=''; try{ const {data}=await sb.auth.getSession(); tok=(data&&data.session&&data.session.access_token)||''; }catch(e){}
+  let r; try{ r=await fetch('/api/asana',{method:'POST',headers:{'content-type':'application/json',authorization:'Bearer '+tok},body:JSON.stringify(body)}); }catch(e){ throw new Error('Asana nicht erreichbar.'); }
+  let j=null; try{ j=await r.json(); }catch(e){} if(!j) throw new Error(r.status===404?'Die Asana-Schnittstelle ist noch nicht online.':'Asana nicht erreichbar ('+r.status+').'); if(j.error){ const e=new Error(j.error); e.setup=!!j.setup; throw e; } return j; }
+function asNachnamen(x){ const mk=ed(x.mk), out=[]; for(const n of String(mk.mieter||'').split(/,| und | & |\//).concat(x.mk.namen||[])){ const w=String(n).trim().split(/\s+/).filter(v=>v.length>=3&&!/^(herr|frau)$/i.test(v)); if(w.length) out.push(w[w.length-1]); } return [...new Set(out)].slice(0,3); }
+async function asLaden(pid,neu){ const x=calc&&calc.res[pid]; if(!x) return; if(AS[pid]&&AS[pid].lade) return; if(AS[pid]&&!neu&&(AS[pid].L||AS[pid].err)) return;
+  AS[pid]={lade:true,L:AS[pid]&&AS[pid].L||null}; render();
+  try{ const nn=asNachnamen(x); const j=await asApi({aktion:'suche',begriffe:nn}); const kz=norm(x.mk.obj);
+    const L=(j.aufgaben||[]).map(a=>Object.assign(a,{rang:(norm(a.name).includes(kz)?2:0)+(nn.some(n=>norm(a.name).includes(norm(n)))?1:0)})).filter(a=>a.rang>0||nn.some(n=>norm(a.notiz).includes(norm(n))));
+    L.sort((a,b)=>(a.erledigt-b.erledigt)||(b.rang-a.rang)||String(b.geaendert).localeCompare(String(a.geaendert)));
+    AS[pid]={L}; }
+  catch(e){ AS[pid]={err:e.message||String(e),setup:!!e.setup}; }
+  render(); }
+async function asProjekte(){ if(ASP||ASPlade) return; ASPlade=true; try{ ASP=(await asApi({aktion:'projekte'})).projekte||[]; }catch(e){ ASP=[]; toast(e.message||String(e)); } ASPlade=false; render(); }
+function asanaCard(x){ const pid=x.mk.pid, s=AS[pid];
+  if(!s&&SEC.asana) setTimeout(()=>asLaden(pid),0);
+  const L=(s&&s.L)||[], off=L.filter(a=>!a.erledigt), fertig=L.filter(a=>a.erledigt);
+  let h='<details class="card wide sec" data-sec="asana"'+(SEC.asana?' open':'')+'><summary class="ch">Aufgaben (Asana)<span class="sub">'+(s&&s.lade&&!s.L?'lade …':s&&s.err?'nicht verbunden':off.length+' offen'+(fertig.length?' · '+fertig.length+' erledigt':''))+'</span></summary>';
+  if(s&&s.err) return h+'<div class="sub">'+esc(s.err)+(s.setup?'<br>Sobald das Asana-Token in Vercel hinterlegt ist, erscheinen hier die Aufgaben.':'')+'</div><div class="acts"><button class="ghost small" data-asneu="1">Erneut versuchen</button></div></details>';
+  h+='<div class="acts"><button class="ghost small" data-asneu="1"'+(s&&s.lade?' disabled':'')+'>'+(s&&s.lade?'Lade …':'Aktualisieren')+'</button>'+(canWrite?'<button class="small" data-asform="1" style="margin-left:auto">'+(ASF.neu?'Abbrechen':'Neue Aufgabe in Asana')+'</button>':'')+'</div>';
+  if(ASF.neu){ if(!ASP) setTimeout(asProjekte,0); const mk=ed(x.mk);
+    if(!ASF.titel) ASF.titel=x.mk.obj+'_'+(asNachnamen(x)[0]||'')+'_';
+    h+='<div class="hneu"><label class="fl">Titel<input type="text" id="as-titel" value="'+esc(ASF.titel)+'"></label>'
+      +'<div class="hrow"><label class="fl">Projekt<select id="as-proj"><option value="">'+(ASP?'– ohne Projekt (nur „Meine Aufgaben“) –':'Lade Projekte …')+'</option>'+(ASP||[]).map(p=>'<option value="'+esc(p.gid)+'"'+(p.gid===ASF.proj?' selected':'')+'>'+esc(p.name)+'</option>').join('')+'</select></label>'
+      +'<label class="fl">Fällig am<input type="date" id="as-due" value="'+esc(ASF.due)+'"></label></div>'
+      +'<textarea id="as-notiz" rows="3" placeholder="Beschreibung (optional)">'+esc(ASF.notiz)+'</textarea>'
+      +'<div class="acts"><button class="primary small" data-assave="1"'+(ASF.busy?' disabled':'')+'>'+(ASF.busy?'Lege an …':'In Asana anlegen')+'</button><span class="sub">Mieter, Einheit und Adresse werden automatisch in die Beschreibung übernommen.</span></div></div>'; }
+  const zeile=a=>'<div class="kvr" style="align-items:flex-start"><span style="display:flex;gap:8px;align-items:flex-start">'+(canWrite?'<input type="checkbox" data-asdone="'+esc(a.gid)+'"'+(a.erledigt?' checked':'')+' style="margin-top:3px">':'')+'<span><span'+(a.erledigt?' style="text-decoration:line-through;color:var(--muted)"':'')+'>'+esc(a.name)+'</span>'
+    +'<div class="sub">'+esc([a.projekte.join(', ')+(a.abschnitt&&a.abschnitt!=='Unbenannter Abschnitt'?' · '+a.abschnitt:''),a.zustaendig?'zuständig: '+a.zustaendig:'',a.erledigt?(a.erledigtAm?'erledigt am '+dmy(a.erledigtAm.slice(0,10)):'erledigt'):a.faellig?'fällig '+dmy(a.faellig):''].filter(Boolean).join(' · '))+'</div></span></span>'
+    +'<b><a href="'+esc(a.link)+'" target="_blank" rel="noopener" class="ghost small" style="text-decoration:none">In Asana öffnen</a></b></div>';
+  if(s&&s.L&&!L.length) h+='<div class="sub">Keine Aufgaben zu '+esc(asNachnamen(x).join(', ')||'diesem Mieter')+' in Asana gefunden.</div>';
+  h+=off.map(zeile).join('');
+  if(fertig.length) h+='<details style="margin-top:8px"><summary class="sub" style="cursor:pointer">'+fertig.length+' erledigte Aufgabe'+(fertig.length===1?'':'n')+'</summary>'+fertig.map(zeile).join('')+'</details>';
+  h+='<div class="sub" style="margin-top:6px">Gesucht wird in Asana nach: '+esc(asNachnamen(x).join(', '))+'. Aufgaben am besten nach dem Muster „Objekt_Nachname_Thema“ benennen, dann werden sie sicher gefunden.</div>';
+  return h+'</details>'; }
+document.addEventListener('input',e=>{ const t=e.target; if(!t||!t.id) return; if(t.id==='as-titel') ASF.titel=t.value; else if(t.id==='as-notiz') ASF.notiz=t.value; else if(t.id==='as-due') ASF.due=t.value; });
+document.addEventListener('change',e=>{ const t=e.target; if(t&&t.id==='as-proj') ASF.proj=t.value; if(t&&t.id==='as-due') ASF.due=t.value; });
+document.addEventListener('click',async e=>{ const t=e.target.closest('button,input[data-asdone]'); if(!t||!t.dataset) return; const d=t.dataset;
+  if(d.asneu){ asLaden(M.sel,true); return; }
+  if(d.asform){ ASF=Object.assign({},ASF,{neu:!ASF.neu,titel:'',notiz:'',due:''}); render(); return; }
+  if(d.assave){ const x=calc&&calc.res[M.sel]; if(!x) return; const titel=String(ASF.titel||'').trim(); if(!titel){ toast('Bitte einen Titel eingeben.'); return; }
+    const mk=ed(x.mk), adr=(ADR[x.mk.obj]||'').split('|').filter(Boolean).join(', ');
+    const notiz=(ASF.notiz?ASF.notiz+'\n\n':'')+'Mieter: '+(mk.mieter||'')+'\nEinheit: '+x.mk.obj+' '+uName(x.mk.einheit)+(adr?' · '+adr:'')+'\nAngelegt im Wohntraum OS (Mieterkonto) von '+(ICH||'')+' am '+dmy(today);
+    ASF.busy=true; render();
+    try{ const j=await asApi({aktion:'anlegen',name:titel,projekt:ASF.proj,faellig:ASF.due,notiz}); histLog(M.sel,'Ticket','Asana-Aufgabe angelegt: '+titel);
+      const s=AS[M.sel]||{L:[]}; s.L=[Object.assign(j.aufgabe,{rang:3})].concat(s.L||[]); AS[M.sel]=s; ASF={neu:false,titel:'',proj:ASF.proj,due:'',notiz:'',busy:false}; toast('Aufgabe in Asana angelegt.'); }
+    catch(err){ ASF.busy=false; toast(err.message||String(err)); }
+    render(); return; }
+  if(d.asdone){ const gid=d.asdone, wert=t.checked; try{ const j=await asApi({aktion:'erledigt',gid,wert}); const s=AS[M.sel]; if(s&&s.L) s.L=s.L.map(a=>a.gid===gid?Object.assign(a,j.aufgabe):a); histLog(M.sel,'Ticket','Asana-Aufgabe '+(wert?'erledigt':'wieder geöffnet')+': '+j.aufgabe.name); toast(wert?'In Asana als erledigt markiert.':'In Asana wieder geöffnet.'); }catch(err){ t.checked=!wert; toast(err.message||String(err)); } render(); return; } });
+document.addEventListener('toggle',e=>{ const d=e.target; if(d&&d.dataset&&d.dataset.sec==='asana'&&d.open&&M.sel&&!AS[M.sel]) asLaden(M.sel); },true);
 /* ---------- Mieterakte in OneDrive (SharePoint „Wohn(T)raum Rheinhessen GmbH – Dokumente“) ---------- */
 var OD={status:null,fehler:'',pruef:false}, ODK={}, ODA={}, ODL={}, ODSEL={}, odBusy='', ODMIG={};
 const odSafe=s=>String(s||'').replace(/[\\/:*?"<>|#%]/g,'_').replace(/\s+/g,' ').trim();
@@ -1471,7 +1523,7 @@ function renderDash(x){ const mk=ed(x.mk), sn=STN[x.status], a=ampel(x), K=mk.ko
     +'<details open><summary>Zusammensetzung</summary>'+kv('Kaltmiete',eur(st.kalt))+kv('Betriebskosten',eur(st.bk))+kv('Heizkosten',eur(st.hk))+(st.strom?kv('Strom',eur(st.strom)):'')+others.map(o=>kv(esc(o.t||'Sonstiges'),eur(o.b))).join('')+(!others.length&&st.sonst?kv('Sonstiges',eur(st.sonst)):'')+'</details>'
     +((x.mk.stufen||[]).length>1?'<details><summary>Mietentwicklung</summary><table class="mini">'+x.mk.stufen.map(z=>'<tr><td>ab '+esc(dmy(z.ab))+'</td><td class="n">'+eur(z.total)+'</td></tr>').join('')+'</table></details>':'')+'</div>';
   h+=mahnstandCard(x);
-  h+='</div>'+histCard(x)+notizCard(x)+anschreibenCard(x)+mailsCard(x)+akteBox(x)+sollCard(x);
+  h+='</div>'+asanaCard(x)+histCard(x)+notizCard(x)+anschreibenCard(x)+mailsCard(x)+akteBox(x)+sollCard(x);
   /* Mieterkonto */
   if(x.erg) h+='<div class="note warnbox">'+x.erg+' Monatsmiete'+(x.erg>1?'n fehlen':' fehlt')+' in Nahaus als Sollstellung und '+(x.erg>1?'wurden':'wurde')+' aus dem Mietvertrag ergänzt (kursiv).</div>';
   h+='<details class="card wide sec" data-sec="konto"'+(SEC.konto?' open':'')+'><summary class="ch">Mieterkonto<span class="sub">'+(zrAktiv('konto')?esc(zrText('konto'))+' · ':'')+'Saldo '+eur(x.saldo)+' · '+x.rows.length+' Buchungen</span></summary>'+zrBox('konto')+(zrAktiv('konto')?(()=>{ const Z=zrKonto(x); return '<div class="zrsum">'+(ZR.konto.von?'<span>Saldovortrag zum '+esc(dmy(ZR.konto.von))+': <b>'+eur(Z.vor)+'</b></span>':'')+'<span>Soll im Zeitraum: <b>'+eur(Z.soll)+'</b></span><span>Ist im Zeitraum: <b>'+eur(Z.ist)+'</b></span><span>Saldo'+(ZR.konto.bis?' am '+esc(dmy(ZR.konto.bis>today?today:ZR.konto.bis)):'')+': <b>'+eur(Z.ende)+'</b></span></div>'; })():'')+pdfButtons('konto')+'<div class="tablewrap"><table class="kb"><thead><tr><th>Datum</th><th>Buchung</th><th class="n">Soll</th><th class="n">Ist</th><th class="n">Saldo</th></tr></thead><tbody>';
