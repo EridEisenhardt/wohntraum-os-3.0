@@ -1001,6 +1001,7 @@ document.addEventListener('click',async e=>{ const t=e.target.closest('button,a[
    gespeichert in stamm/dauerbelege {liste:[{id,od,n,pfad,kkey,iban,name,betrag,jede,von,bis,am}]} */
 var DAUER=[], DBF=null;
 const dbKey=t=>belKey(t.n||'');
+const dbFid=b=>b?(b.od||(b.p?'p:'+b.p:'')):''; /* Datei in OneDrive (od) oder nur im OS gespeichert (p) */
 function dbPasst(d,it){ const t=it.tx; if(!(t.b<0)||it.kkey!==d.kkey||t.d<d.von||t.d>d.bis) return false;
   const zahler=(d.iban&&t.i)?t.i===d.iban:dbKey(t)===d.name; if(!zahler) return false;
   return d.jede||Math.abs(Math.abs(t.b)-d.betrag)<0.005; }
@@ -1008,31 +1009,32 @@ function dbFuer(it){ for(const d of DAUER) if(dbPasst(d,it)) return d; return nu
 function dbAnzahl(d){ let n=0; for(const it of items()) if(dbPasst(d,it)) n++; return n; }
 const dbJahrEnde=d=>d.slice(0,4)+'-12-31', dbJahrAnf=d=>d.slice(0,4)+'-01-01';
 function dbBox(it,ro){ const bl=it.tx.bl||[]; let h='';
-  if(it.dauer&&!bl.some(b=>b.od===it.dauer.od)){ const d=it.dauer;
-    h+='<div class="bel"><a href="#" data-kaopen="'+esc(d.od)+'" title="'+esc(String(d.pfad||'').replace(/^Prozesslandkarte 3\.0\//,''))+'">'+esc(d.n)+'</a><span><span class="pill src">Dauerbeleg</span></span></div>'
+  if(it.dauer&&!bl.some(b=>dbFid(b)===dbFid(it.dauer))){ const d=it.dauer;
+    h+='<div class="bel"><a href="#" '+(d.od?'data-kaopen="'+esc(d.od)+'"':'data-dbpopen="'+esc(d.p||'')+'"')+' title="'+esc(String(d.pfad||'').replace(/^Prozesslandkarte 3\.0\//,''))+'">'+esc(d.n)+'</a><span><span class="pill src">Dauerbeleg</span></span></div>'
       +'<div class="sub">Gilt für alle Abschläge an diesen Empfänger'+(d.jede?'':' über '+eur(d.betrag))+' vom '+esc(dmy(d.von))+' bis '+esc(dmy(d.bis))+'.</div>'; }
   if(ro||!(it.tx.b<0)) return h;
-  const kand=bl.filter(b=>b.od&&!DAUER.some(d=>d.od===b.od&&d.kkey===it.kkey));
-  const aktiv=DAUER.filter(d=>bl.some(b=>b.od===d.od)&&d.kkey===it.kkey);
+  const kand=bl.filter(b=>dbFid(b)&&!DAUER.some(d=>dbFid(d)===dbFid(b)&&d.kkey===it.kkey));
+  const aktiv=DAUER.filter(d=>bl.some(b=>dbFid(b)===dbFid(d))&&d.kkey===it.kkey);
   for(const d of aktiv) h+='<div class="dbinfo sub">Dauerbeleg für alle Abschläge'+(d.jede?'':' über '+eur(d.betrag))+' vom '+esc(dmy(d.von))+' bis '+esc(dmy(d.bis))+' – gilt für '+dbAnzahl(d)+' Zahlungen. <button class="ghost small" data-dbbis="'+esc(d.id)+'">Zeitraum ändern</button><button class="ghost small" data-dbweg="'+esc(d.id)+'">aufheben</button></div>';
   if(DBF&&DBF.it===it.id){ const f=DBF;
     h+='<div class="belf"><div class="lab">'+(f.id?'Zeitraum des Dauerbelegs ändern':'Beleg für alle Abschläge merken')+'</div><div class="sub">'+esc(f.n)+'</div><div class="frm">'
       +'<label>Gilt von<input type="date" id="db-von" value="'+esc(f.von)+'"></label><label>bis<input type="date" id="db-bis" value="'+esc(f.bis)+'"></label>'
       +'<label style="display:flex;gap:8px;align-items:flex-start;font-size:13px"><input type="checkbox" id="db-jede"'+(f.jede?' checked':'')+' style="width:auto;flex:0 0 auto;margin-top:3px"> <span>auch bei abweichendem Betrag (sonst nur Zahlungen über '+eur(f.betrag)+')</span></label></div>'
       +'<div style="display:flex;gap:12px;flex-wrap:wrap;align-items:center;margin-top:4px"><button class="primary small" data-dbok="1" style="flex:0 0 auto">Speichern</button><button class="ghost small" data-dbab="1" style="flex:0 0 auto">Abbrechen</button></div></div>'; }
-  else for(const b of kand) h+='<div class="dbinfo"><button class="ghost small" data-dbneu="'+esc(b.od)+'">'+esc(kand.length>1?'„'+b.n.slice(0,30)+'…“ für alle Abschläge merken':'Für alle Abschläge merken')+'</button> <span class="sub">Der Beleg wird dann automatisch allen Folgezahlungen an diesen Empfänger zugeordnet.</span></div>';
+  else for(const b of kand) h+='<div class="dbinfo"><button class="ghost small" data-dbneu="'+esc(dbFid(b))+'">'+esc(kand.length>1?'„'+b.n.slice(0,30)+'…“ für alle Abschläge merken':'Für alle Abschläge merken')+'</button> <span class="sub">Der Beleg wird dann automatisch allen Folgezahlungen an diesen Empfänger zugeordnet.</span></div>';
   return h; }
 function dbSpeichern(liste){ DAUER=liste; mkCalc=null; invalidate(); render(); return saveStamm('dauerbelege',{liste}); }
+document.addEventListener('click',async e=>{ const a=e.target.closest('a[data-dbpopen]'); if(!a) return; e.preventDefault(); const w=window.open('','_blank'); try{ const u=await signedUrl(a.dataset.dbpopen); if(w) w.location.href=u; else window.open(u,'_blank'); }catch(err){ if(w) w.close(); toast('Datei nicht lesbar: '+(err.message||err)); } });
 document.addEventListener('click',e=>{ const t=e.target.closest('button'); if(!t) return; const d=t.dataset;
-  if(d.dbneu){ const it=items().find(x=>x.id===U.sel); if(!it) return; const b=(it.tx.bl||[]).find(x=>x.od===d.dbneu); if(!b) return;
-    DBF={it:it.id,od:b.od,n:b.n,pfad:b.pfad||'',von:it.tx.d,bis:dbJahrEnde(it.tx.d),jede:false,betrag:Math.abs(it.tx.b)}; render(); return; }
+  if(d.dbneu){ const it=items().find(x=>x.id===U.sel); if(!it) return; const b=(it.tx.bl||[]).find(x=>dbFid(x)===d.dbneu); if(!b) return;
+    DBF={it:it.id,od:b.od||'',p:b.p||'',n:b.n,pfad:b.pfad||'',von:it.tx.d,bis:dbJahrEnde(it.tx.d),jede:false,betrag:Math.abs(it.tx.b)}; render(); return; }
   if(d.dbbis){ const it=items().find(x=>x.id===U.sel); const x=DAUER.find(y=>y.id===d.dbbis); if(!it||!x) return; DBF=Object.assign({it:it.id},x); render(); return; }
   if(d.dbab){ DBF=null; render(); return; }
   if(d.dbok){ const it=items().find(x=>x.id===DBF.it); if(!it) return; const von=$('db-von').value, bis=$('db-bis').value, jede=$('db-jede').checked;
     if(!/^\d{4}-\d{2}-\d{2}$/.test(von)||!/^\d{4}-\d{2}-\d{2}$/.test(bis)||bis<von){ toast('Bitte einen gültigen Zeitraum eingeben.'); return; }
     let liste;
     if(DBF.id) liste=DAUER.map(x=>x.id===DBF.id?Object.assign({},x,{von,bis,jede}):x);
-    else liste=DAUER.concat([{id:'db'+Date.now().toString(36),od:DBF.od,n:DBF.n,pfad:DBF.pfad,kkey:it.kkey,iban:it.tx.i||'',name:dbKey(it.tx),betrag:DBF.betrag,jede,von,bis,am:new Date().toISOString().slice(0,10)}]);
+    else liste=DAUER.concat([{id:'db'+Date.now().toString(36),od:DBF.od||'',p:DBF.p||'',n:DBF.n,pfad:DBF.pfad,kkey:it.kkey,iban:it.tx.i||'',name:dbKey(it.tx),betrag:DBF.betrag,jede,von,bis,am:new Date().toISOString().slice(0,10)}]);
     DBF=null; dbSpeichern(liste).then(()=>{ const x=liste[liste.length-1]; toast('Dauerbeleg gespeichert – gilt für '+dbAnzahl(x)+' Zahlungen.'); }); return; }
   if(d.dbweg){ if(t.dataset.sure!=='1'){ t.dataset.sure='1'; t.textContent='wirklich aufheben?'; return; } dbSpeichern(DAUER.filter(x=>x.id!==d.dbweg)).then(()=>toast('Dauerbeleg aufgehoben.')); return; } });
 /* ---------- Kontoumsätze automatisch aus Nahaus abrufen ----------
