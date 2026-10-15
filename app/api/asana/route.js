@@ -63,11 +63,17 @@ export async function POST(req) {
       return antwort({ projekte: PROJ.list })
     }
 
+    if (a === 'nutzer') {
+      const L = await asana('/workspaces/' + WS() + '/users?opt_fields=name,email&limit=100')
+      return antwort({ nutzer: (L || []).map(u => ({ gid: u.gid, name: u.name, email: u.email || '' })).sort((x, y) => String(x.name).localeCompare(String(y.name), 'de')) })
+    }
+
     if (a === 'anlegen') {
       const name = String(b.name || '').trim(); if (!name) return antwort({ error: 'Bitte einen Titel eingeben.' }, 400)
       const d = { name, workspace: WS(), notes: String(b.notiz || '') }
       if (b.projekt) d.projects = [String(b.projekt)]
       if (/^\d{4}-\d\d-\d\d$/.test(b.faellig || '')) d.due_on = b.faellig
+      if (b.zustaendig) d.assignee = String(b.zustaendig)
       const t = await asana('/tasks?opt_fields=' + FELDER, { method: 'POST', json: d })
       return antwort({ aufgabe: aufgabe(t) })
     }
