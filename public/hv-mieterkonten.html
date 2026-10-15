@@ -149,7 +149,8 @@ tr.kaut td{opacity:.75}
 .note.small{font-size:12px}
 h3{font-size:14px;margin:14px 0 6px}
 @media (max-width:1100px){ .grid2{grid-template-columns:1fr} .det{position:static;max-height:none} .mlist{max-height:none} }
-select.zsel{font-size:11px;padding:2px 4px;margin-top:4px;max-width:100%}
+select.zsel,input.zsel{font-size:11px;padding:2px 4px;margin-top:4px;max-width:100%}
+input.zsel{width:240px}
 .mlist{max-height:none}
 .adot{display:inline-block;width:11px;height:11px;border-radius:50%;vertical-align:-1px}.adot.big{width:16px;height:16px;vertical-align:-2px}
 .ov{position:fixed;inset:0;background:rgba(15,20,30,.45);z-index:20;overflow:auto;padding:24px 16px}
@@ -1118,7 +1119,7 @@ document.addEventListener('click',async e=>{ const t=e.target.closest('button,in
   if(d.asdone){ const gid=d.asdone, wert=t.checked; try{ const j=await asApi({aktion:'erledigt',gid,wert}); const s=AS[M.sel]; if(s&&s.L) s.L=s.L.map(a=>a.gid===gid?Object.assign(a,j.aufgabe):a); histLog(M.sel,'Ticket','Asana-Aufgabe '+(wert?'erledigt':'wieder geöffnet')+': '+j.aufgabe.name); toast(wert?'In Asana als erledigt markiert.':'In Asana wieder geöffnet.'); }catch(err){ t.checked=!wert; toast(err.message||String(err)); } render(); return; } });
 document.addEventListener('toggle',e=>{ const d=e.target; if(d&&d.dataset&&d.dataset.sec==='asana'&&d.open&&M.sel&&!AS[M.sel]) asLaden(M.sel); },true);
 /* ---------- Mieterakte in OneDrive (SharePoint „Wohn(T)raum Rheinhessen GmbH – Dokumente“) ---------- */
-var OD={status:null,fehler:'',pruef:false}, ODK={}, ODA={}, ODL={}, ODSEL={}, odBusy='', ODMIG={};
+var ODLAB={}; var OD={status:null,fehler:'',pruef:false}, ODK={}, ODA={}, ODL={}, ODSEL={}, odBusy='', ODMIG={};
 const odSafe=s=>String(s||'').replace(/[\\/:*?"<>|#%]/g,'_').replace(/\s+/g,' ').trim();
 async function odApi(body){ const sb=window.osSupabase; let tok=''; try{ const {data}=await sb.auth.getSession(); tok=(data&&data.session&&data.session.access_token)||''; }catch(e){}
   let r; try{ r=await fetch('/api/onedrive',{method:'POST',headers:{'content-type':'application/json',authorization:'Bearer '+tok},body:JSON.stringify(body)}); }catch(e){ throw new Error('OneDrive nicht erreichbar.'); }
@@ -1163,7 +1164,7 @@ function akteBox(x){ const mk=x.mk;
     const L=(K.ordner||[]).map(o=>Object.assign({},o,{s:odScore(mk,o)})).sort((a,b)=>b.s-a.s);
     h+=(K.fehler?'<div class="note warnbox">'+esc(K.fehler)+'</div>':'')
       +'<div class="rh">OneDrive-Mieterordner zuordnen</div>'
-      +(L.length?'<label class="fl">Ordner<select id="od-sel">'+L.map(o=>'<option value="'+esc(o.pfad)+'"'+(o.pfad===p?' selected':'')+'>'+esc((o.archiv?'Archiv: ':'')+o.name)+'</option>').join('')+'</select></label><div class="acts"><button class="primary small" data-odset="1">Zuordnen</button>'+(p?'<button class="ghost small" data-odcancel="1">Abbrechen</button>':'')+'</div>':'<div class="sub">Im Objektordner '+esc(mk.obj)+' wurde kein Mieterordner gefunden.</div>')
+      +(L.length?'<label class="fl">Ordner<input type="text" id="od-sel" list="od-sell" placeholder="Ordnername eintippen …" value="'+esc((L.find(o=>o.pfad===p)?((L.find(o=>o.pfad===p).archiv?'Archiv: ':'')+L.find(o=>o.pfad===p).name):''))+'"><datalist id="od-sell">'+L.map(o=>{ const l=(o.archiv?'Archiv: ':'')+o.name; ODLAB[l]=o.pfad; return '<option value="'+esc(l)+'"></option>'; }).join('')+'</datalist></label><div class="acts"><button class="primary small" data-odset="1">Zuordnen</button>'+(p?'<button class="ghost small" data-odcancel="1">Abbrechen</button>':'')+'</div>':'<div class="sub">Im Objektordner '+esc(mk.obj)+' wurde kein Mieterordner gefunden.</div>')
       +(K.basis?'<div class="acts"><button class="ghost small" data-odneu="1"'+(odBusy?' disabled':'')+'>'+(odBusy==='neu'?'Lege an …':'Neuen Mieterordner anlegen: '+esc(odNeuName(mk)))+'</button></div>':'');
     return h+'</details>'; }
   const A=ODA[mk.pid];
@@ -1205,7 +1206,7 @@ async function odMigrieren(mk){ const sb=window.osSupabase, S=DOCS[mk.pid]||{}; 
 document.addEventListener('click',e=>{ const t=e.target.closest('button,a[data-odopen]'); if(!t) return; const d=t.dataset, mk=MK[M.sel];
   if(d.odopen){ e.preventDefault(); odOeffnen(d.odopen); return; }
   if(!mk) return;
-  if(d.odset){ const v=($('od-sel')||{}).value; if(!v) return; ODSEL[mk.pid]=false; ODA[mk.pid]=null; saveEdit(mk.pid,{od:v},'OneDrive-Mieterordner zugeordnet.'); return; }
+  if(d.odset){ const v=ODLAB[($('od-sel')||{}).value||'']; if(!v){ toast('Bitte einen Ordner aus der Liste wählen.'); return; } ODSEL[mk.pid]=false; ODA[mk.pid]=null; saveEdit(mk.pid,{od:v},'OneDrive-Mieterordner zugeordnet.'); return; }
   if(d.odcancel){ ODSEL[mk.pid]=false; render(); return; }
   if(d.odaendern){ ODSEL[mk.pid]=true; if(!ODK[mk.obj]||ODK[mk.obj].fehler) ODK[mk.obj]=null; render(); return; }
   if(d.odneuladen){ ODA[mk.pid]=null; render(); return; }
@@ -1531,10 +1532,14 @@ function renderDash(x){ const mk=ed(x.mk), sn=STN[x.status], a=ampel(x), K=mk.ko
   h+='<details class="card wide sec" data-sec="konto"'+(SEC.konto?' open':'')+'><summary class="ch">Mieterkonto<span class="sub">'+(zrAktiv('konto')?esc(zrText('konto'))+' · ':'')+'Saldo '+eur(x.saldo)+' · '+x.rows.length+' Buchungen</span></summary>'+zrBox('konto')+(zrAktiv('konto')?(()=>{ const Z=zrKonto(x); return '<div class="zrsum">'+(ZR.konto.von?'<span>Saldovortrag zum '+esc(dmy(ZR.konto.von))+': <b>'+eur(Z.vor)+'</b></span>':'')+'<span>Soll im Zeitraum: <b>'+eur(Z.soll)+'</b></span><span>Ist im Zeitraum: <b>'+eur(Z.ist)+'</b></span><span>Saldo'+(ZR.konto.bis?' am '+esc(dmy(ZR.konto.bis>today?today:ZR.konto.bis)):'')+': <b>'+eur(Z.ende)+'</b></span></div>'; })():'')+pdfButtons('konto')+'<div class="tablewrap"><table class="kb"><thead><tr><th>Datum</th><th>Buchung</th><th class="n">Soll</th><th class="n">Ist</th><th class="n">Saldo</th></tr></thead><tbody>';
   const idT={}; for(const r of x.rows) if(r.id) idT[r.id]=r.t;
   for(const r of x.rows.filter(r=>zrIn('konto',r.d)).reverse()){ h+='<tr class="'+(r.e?'erg':'')+(r.fut?' fut':'')+(r.k?' kaut':'')+'"><td>'+esc(dmy(r.d))+'</td><td class="wrapc">'+esc(r.t)+'<div class="sub">'+esc(r.src)+(r.fut?' · fällig ab '+esc(dmy(r.d))+', zählt noch nicht im Saldo':'')+(r.k?' · Kaution (getrennt)':'')+(r.man?' · manuell zugeordnet':'')+(r.alloc&&r.alloc.length?' · zugeordnet auf: '+r.alloc.map(q=>esc(idT[q.id]||'Posten')+' '+eur(q.b)).join(', '):r.ia&&r.ia.length?' · für '+r.ia.map(q=>esc(idT[q.id]||'Posten')+' '+eur(q.b)).join(', '):'')+(r.s&&r.fut&&r.offen!=null&&r.offen<=0.005?' · bereits bezahlt':'')+(r.s&&r.offen!=null&&!r.fut?(r.offen>0.005?(r.offen<r.s-0.005?' · teilweise bezahlt, offen '+eur(r.offen):' · offen'):' · bezahlt'):'')+'</div>'+(r.key?zuordSel(r,x.mk):'')+'</td><td class="n">'+(r.s?eur(r.s):'')+'</td><td class="n pos">'+(r.h?eur(r.h):'')+'</td><td class="n">'+(r.saldo==null?'':'<b class="'+(r.saldo>0.5?'neg':'')+'">'+eur(r.saldo)+'</b>')+'</td></tr>'; }
-  h+='</tbody></table></div><div class="sub" style="margin-top:6px">Neueste Buchungen oben.</div></details>';
+  h+='</tbody></table></div>'+zuordList(x.mk)+'<div class="sub" style="margin-top:6px">Neueste Buchungen oben.</div></details>';
   return h; }
-function zuordSel(r,mk0){ const L=Object.values(MK).filter(m=>m.unit===r.unit||m.obj===mk0.obj).sort((a,b)=>(b.von||'').localeCompare(a.von||''));
-  return '<select class="zsel" data-zkey="'+esc(r.key)+'" title="Zahlung einem anderen Mietverhältnis zuordnen"><option value="">andere Zuordnung …</option>'+L.filter(m=>m.pid!==mk0.pid).map(m=>'<option value="'+esc(m.pid)+'">'+esc(m.obj+' '+uName(m.einheit)+' · '+(ed(m).mieter||'')+' ('+dmy(m.von)+(m.bis?'–'+dmy(m.bis):'')+')')+'</option>').join('')+'<option value="-">keinem Mieter zuordnen</option>'+(r.man?'<option value="~">automatische Zuordnung wiederherstellen</option>':'')+'</select>'; }
+var ZLAB={};
+function zuordList(mk0){ const L=Object.values(MK).filter(m=>m.pid!==mk0.pid).sort((a,b)=>((b.obj===mk0.obj)-(a.obj===mk0.obj))||String(a.obj).localeCompare(String(b.obj),'de',{numeric:true})||uName(a.einheit).localeCompare(uName(b.einheit),'de',{numeric:true})||(b.von||'').localeCompare(a.von||''));
+  const opts=L.map(m=>[m.obj+' '+uName(m.einheit)+' · '+(ed(m).mieter||'')+' ('+dmy(m.von)+(m.bis?'–'+dmy(m.bis):'')+')',m.pid]).concat([['keinem Mieter zuordnen','-'],['automatische Zuordnung wiederherstellen','~']]);
+  for(const [l,v] of opts) ZLAB[l]=v;
+  return '<datalist id="zl-mieter">'+opts.map(([l])=>'<option value="'+esc(l)+'"></option>').join('')+'</datalist>'; }
+function zuordSel(r,mk0){ return '<input type="text" class="zsel" list="zl-mieter" data-zkey="'+esc(r.key)+'" placeholder="andere Zuordnung: Name oder Einheit eintippen …" title="Zahlung einem anderen Mietverhältnis zuordnen">'; }
 function importCard(big){ return '<div class="note'+(big?'':' small')+'"><b>'+(big?'Mietverträge und Sollstellungen übernehmen':'Daten aus Nahaus aktualisieren')+'</b><div style="margin:6px 0">Import-Datei <code>mietkonten_import.json</code> auswählen (erstellt Claude aus Nahaus).</div><input type="file" id="mk-file" accept=".json"> <span id="mk-st" class="sub"></span></div>'; }
 
 /* ---------- Ereignisse ---------- */
@@ -1607,7 +1612,7 @@ document.addEventListener('change',async e=>{ const t=e.target;
   if(t.dataset.pt!==undefined){ pend.files[Number(t.dataset.pt)].titel=t.value.trim(); render(); return; }
   if(t.id==='n-file'){ NOTF=[...t.files]; render(); return; }
   if(t.dataset.tdone){ const T=(ed(MK[M.sel]).tickets||[]).map(x=>x.id===t.dataset.tdone?Object.assign({},x,{done:t.checked?today:''}):x); { const tk=(ed(MK[M.sel]).tickets||[]).find(x=>x.id===t.dataset.tdone); saveEdit(M.sel,{tickets:T},t.checked?'Ticket erledigt.':'Ticket wieder offen.',(t.checked?'Ticket erledigt: ':'Ticket wieder offen: ')+(tk?tk.t:'')); } return; }
-  if(t.dataset.zkey){ const v=t.value; if(!v) return; const z=Object.assign({},ZUORD); if(v==='~') delete z[t.dataset.zkey]; else z[t.dataset.zkey]=v; ZUORD=z; calc=null; render(); saveStamm('mietzuordnung',{map:ZUORD}).then(()=>toast(v==='-'?'Zahlung keinem Mieter zugeordnet.':'Zahlung umgebucht.')); return; }
+  if(t.dataset.zkey){ const v=ZLAB[t.value]; if(!v){ if(t.value) toast('Bitte einen Eintrag aus der Liste wählen.'); return; } const z=Object.assign({},ZUORD); if(v==='~') delete z[t.dataset.zkey]; else z[t.dataset.zkey]=v; ZUORD=z; calc=null; render(); saveStamm('mietzuordnung',{map:ZUORD}).then(()=>toast(v==='-'?'Zahlung keinem Mieter zugeordnet.':'Zahlung umgebucht.')); return; }
   if(t.dataset.mrsel){ MR.sel[t.dataset.mrsel]=t.checked; render(); return; }
   if(t.dataset.mrst){ MR.stufe[t.dataset.mrst]=t.value; render(); return; }
   if(t.id==='mr-datum'){ if(t.value){ MR.datum=t.value; } render(); return; }
