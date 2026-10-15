@@ -50,7 +50,7 @@ textarea{width:100%;resize:vertical}
 .nav-h{font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);padding:2px 0 6px 8px;display:flex;align-items:center;justify-content:space-between}
 .grid3.kart{grid-template-columns:230px minmax(0,1fr)}.grid3.kart.kzu{grid-template-columns:38px minmax(0,1fr)}
 .grid3.kart .mid{border-right:none}
-.kbulk{margin-left:auto;display:inline-flex;gap:10px;align-items:center}.lsum{display:flex;align-items:center;gap:8px}
+.kbulk{margin-left:auto;display:inline-flex;gap:10px;align-items:center}.lsum{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
 .klist{background:var(--bg)}
 .kz{display:grid;grid-template-columns:28px minmax(200px,1fr) 110px minmax(320px,440px) 64px;gap:14px;align-items:start;background:var(--card);border-bottom:1px solid var(--line);padding:16px 14px 14px 10px}
 .kz.sel{box-shadow:inset 3px 0 0 var(--accent)}
@@ -574,13 +574,13 @@ function compute(opt){ opt=opt||{}; const ZMAP={}, BU={};
   const byUnit={}; for(const mk of Object.values(MK)) (byUnit[mk.unit]=byUnit[mk.unit]||[]).push(mk);
   const res={}; for(const mk of Object.values(MK)){ if(!osKz.has(mk.obj)) continue; /* Objekte, die nicht im OS sind (z. B. verkauft), nie zeigen */ if(!M.alle&&!aktivKz.has(mk.obj)) continue; res[mk.pid]={mk,rows:[],soll:0,ist:0,kSoll:0,kIst:0}; }
   /* Bank-Ist dem Mietverhältnis zuordnen */
-  const OWN=new Set(konten.map(x=>x.iban).filter(Boolean));
+  const OWN=new Set(konten.map(x=>x.iban).filter(Boolean)); const IBMK={}; for(const m of Object.values(MK)) for(const ib of (m.ibans||[])) (IBMK[ib]=IBMK[ib]||[]).push(m);
   const toks=mk=>{ const e=ed(mk); const out=new Set(); for(const n of (mk.namen||[]).concat(String(e.mieter||'').split(','))){ const w=norm(n).split(' ').filter(x=>x.length>=3&&!['herr','frau','und'].includes(x)); if(w.length) out.add(w[w.length-1]); } return [...out]; };
   for(const r of bankIst()){ const d=r.tx.d; if(d.slice(0,7)<START) continue; const key=(r.tx.h||'')+'|'+r.tx.b; if(opt.ex===key) continue;
     let mk=null; const OP=r.tx.op&&r.tx.op.pid&&!r.split?r.tx.op:null;
     if(OP){ mk=MK[OP.pid]||null; if(!mk) continue; }
     else if(ZUORD[key]!==undefined){ if(ZUORD[key]==='-') continue; mk=MK[ZUORD[key]]||null; if(!mk) continue; }
-    else { const L=byUnit[r.c.unit]; if(!L) continue; const txt=' '+norm(r.tx.n+' '+r.tx.z)+' ';
+    else { let L=byUnit[r.c.unit]; const ib=r.tx.i; if(ib&&!OWN.has(ib)&&!SHARED_IBAN.has(ib)&&IBMK[ib]&&!(L||[]).some(c=>(c.ibans||[]).includes(ib))) L=IBMK[ib]; /* IBAN des Mieters hat Vorrang vor der Einheit aus der Buchung */ if(!L) continue; const txt=' '+norm(r.tx.n+' '+r.tx.z)+' ';
       let best=null, bs=-1;
       for(const c of L){ let sc=0; const inside=(!c.von||d>=c.von)&&(!c.bis||d<=c.bis), near=(!c.von||dnum2(d)>=dnum2(c.von)-31)&&(!c.bis||dnum2(d)<=dnum2(c.bis)+60);
         if(r.tx.i&&!OWN.has(r.tx.i)&&!SHARED_IBAN.has(r.tx.i)&&(c.ibans||[]).includes(r.tx.i)) sc+=4;
@@ -995,8 +995,8 @@ function dbBox(it,ro){ const bl=it.tx.bl||[]; let h='';
   if(DBF&&DBF.it===it.id){ const f=DBF;
     h+='<div class="belf"><div class="lab">'+(f.id?'Zeitraum des Dauerbelegs ändern':'Beleg für alle Abschläge merken')+'</div><div class="sub">'+esc(f.n)+'</div><div class="frm">'
       +'<label>Gilt von<input type="date" id="db-von" value="'+esc(f.von)+'"></label><label>bis<input type="date" id="db-bis" value="'+esc(f.bis)+'"></label>'
-      +'<label style="display:flex;gap:8px;align-items:center"><input type="checkbox" id="db-jede"'+(f.jede?' checked':'')+'> auch bei abweichendem Betrag (sonst nur Zahlungen über '+eur(f.betrag)+')</label></div>'
-      +'<div class="row"><button class="primary small" data-dbok="1">Speichern</button><button class="ghost small" data-dbab="1">Abbrechen</button></div></div>'; }
+      +'<label style="display:flex;gap:8px;align-items:flex-start;font-size:13px"><input type="checkbox" id="db-jede"'+(f.jede?' checked':'')+' style="width:auto;flex:0 0 auto;margin-top:3px"> <span>auch bei abweichendem Betrag (sonst nur Zahlungen über '+eur(f.betrag)+')</span></label></div>'
+      +'<div style="display:flex;gap:12px;flex-wrap:wrap;align-items:center;margin-top:4px"><button class="primary small" data-dbok="1" style="flex:0 0 auto">Speichern</button><button class="ghost small" data-dbab="1" style="flex:0 0 auto">Abbrechen</button></div></div>'; }
   else for(const b of kand) h+='<div class="dbinfo"><button class="ghost small" data-dbneu="'+esc(b.od)+'">'+esc(kand.length>1?'„'+b.n.slice(0,30)+'…“ für alle Abschläge merken':'Für alle Abschläge merken')+'</button> <span class="sub">Der Beleg wird dann automatisch allen Folgezahlungen an diesen Empfänger zugeordnet.</span></div>';
   return h; }
 function dbSpeichern(liste){ DAUER=liste; mkCalc=null; invalidate(); render(); return saveStamm('dauerbelege',{liste}); }
@@ -1075,7 +1075,7 @@ document.addEventListener('click',e=>{ const t=e.target.closest('button[data-nhs
    Jede Zahlung als Zeile: links Empfänger, Datum, Konto, Verwendungszweck; Betrag; rechts Belege, Konto (Buchungstext) und Objekt;
    ganz rechts der Bestätigen-Knopf. Vorschläge des OS (Regel, Fixkosten, automatisch) erscheinen orange, bis sie bestätigt sind. */
 var KS={auf:{},wahl:new Set(),mehr:100};
-function bestaetigt(it){ return !!(it.tx.m||it.split||it.nh||it.c.src==='Beleg'); }
+function bestaetigt(it){ return !!((it.tx.m&&it.tx.ok!==0)||it.split||it.nh||it.c.src==='Beleg'); }
 function kartenLayout(all,list,cnt,nav){ const it=U.dr?all.find(x=>x.id===U.sel):null;
   let h='<div class="grid3 kart'+(nav?'':' kzu')+'">'+(nav?'<aside class="knav">'+nav+'</aside>':'<aside class="knav knav-zu"><button class="knzu" data-knzu="1" title="Konten einblenden">›</button><div class="knzu-t">'+esc(U.konto?kontoName(U.konto):'Alle Konten')+'</div></aside>')
     +'<section class="mid">'+midHtml(all,list,cnt)+'</section></div>';
@@ -1084,6 +1084,7 @@ function kartenLayout(all,list,cnt,nav){ const it=U.dr?all.find(x=>x.id===U.sel)
 function kartenListe(list,sum){ const W=[...KS.wahl].filter(id=>list.some(x=>x.id===id));
   let h='<div class="lsum">'+list.length+' Buchungen · Summe <b class="'+cls(sum)+'">'+eur(sum)+'</b>';
   if(canWrite) h+='<span class="kbulk"><label><input type="checkbox" data-kalle="1"'+(W.length&&W.length===Math.min(list.length,KS.mehr)?' checked':'')+'> alle auf dieser Seite</label>'+(W.length?' <button class="primary small" data-kbest="1">'+W.length+' bestätigen</button>':'')+'</span>';
+  if(canWrite&&W.length) h+='<div class="kbulk2" style="flex-basis:100%;display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:8px"><span class="sub">Für die '+W.length+' markierten Buchungen:</span><span style="min-width:280px;flex:0 1 360px">'+kontoSelect('kb-konto',{kat:''},false)+'</span><button class="primary small" data-kbkonto="1">Konto zuordnen und bestätigen</button></div>';
   h+='</div><div class="list klist" id="list">';
   if(!list.length) h+='<div class="empty">Keine Buchungen für diesen Filter.</div>';
   h+=list.slice(0,KS.mehr).map((it,n)=>karte(it,n)).join('');
@@ -1107,6 +1108,7 @@ function karte(it,n){ const t=it.tx, c=it.c, ok=bestaetigt(it), ro=!canWrite||it
   else if(t.b<0){ h+='<div class="sub">Dieser Zahlung sind noch keine Belege zugewiesen.</div>';
     const v=kVorschlag(it); if(v&&!ro) h+='<div class="kz-vb">Vorschlag: <span title="'+esc(v.ort||'')+'">'+esc(v.name)+'</span> <button class="ghost small" data-kspzu="'+esc(v.id)+'" data-kspit="'+esc(it.id)+'">Zuordnen</button></div>';
     if(!ro) h+='<div class="kz-acts"><a href="#" data-kdet="'+esc(it.id)+'">Beleg zuweisen</a><a href="#" data-kol="'+esc(it.id)+'">Als beleglos markieren</a></div>'; }
+  else if(c.kat==='miete'&&t.b>0&&!it.split) h+=kMieter(it,ro);
   else h+='<div class="sub">Einnahme – kein Beleg nötig</div>';
   h+='</div>';
   if(it.split) h+='<div class="kz-f"><div class="sub">Aufgeteilt in '+it.parts.length+' Teile: '+esc(it.parts.map(p=>kontoLabel(p.c.kat,p.c.sub,p.c.ka)+(p.c.obj?' '+p.c.obj:'')).join(' · '))+'</div><a href="#" data-kdet="'+esc(it.id)+'">ändern</a></div>';
@@ -1117,8 +1119,18 @@ function karte(it,n){ const t=it.tx, c=it.c, ok=bestaetigt(it), ro=!canWrite||it
   h+='<div class="kz-r"><button class="kz-d" data-kdet="'+esc(it.id)+'" title="Details, Aufteilen, Regel">Details</button>'
     +'<button class="kz-ok'+(ok?' on':'')+'" data-kok="'+esc(it.id)+'"'+(ro||it.open||ok?' disabled':'')+' title="'+(ok?'bestätigt':it.open?'Erst Konto und Objekt wählen':'Vorschlag bestätigen')+'"></button></div>';
   return h+'</div>'; }
+/* Mietzahlung: welcher Mieter, auf welche Sollstellung */
+function kMieter(it,ro){ const t=it.tx; if(!MKload||!Object.keys(MK).length) return '<div class="sub">Einnahme – kein Beleg nötig</div>';
+  if(!mkCalc) mkCalc=compute(); const key=(t.h||'')+'|'+t.b, op=t.op&&t.op.pid?t.op:null, pid=(op&&op.pid)||mkCalc.ZMAP[key]||'', mk=MK[pid];
+  if(!mk) return '<div class="sub">Mietzahlung – kein Mieter erkannt.</div>'+(ro?'':'<div class="kz-acts"><a href="#" data-kdet="'+esc(it.id)+'">Mieter und Sollstellung zuordnen</a></div>');
+  const x=mkCalc.res[pid], tit=id=>{ const r=x&&x.rows.find(q=>q.id===id); return r?r.t:'Posten'; };
+  let h='<div class="sub"><b>'+esc(mk.obj+' '+uName(mk.einheit)+' · '+(ed(mk).mieter||(mk.namen||[]).join(', ')))+'</b>'+(op?'':' <span class="pill src">automatisch</span>')+'</div>';
+  if(op&&(op.a||[]).length) h+='<div class="sub">auf '+esc(op.a.map(a=>tit(a.id)+' '+eur(a.b)).join(', '))+'</div>';
+  else h+='<div class="sub">'+(op?'ohne feste Sollstellung':'Sollstellung: älteste offene zuerst')+'</div>';
+  if(!ro) h+='<div class="kz-acts"><a href="#" data-kdet="'+esc(it.id)+'">'+(op?'Zuordnung ändern':'Sollstellung zuordnen')+'</a></div>';
+  return h; }
 function kVorschlag(it){ try{ if(typeof spBereit!=='function'||!spBereit()||!SP.dateien) return null; const f=spTreffer(it,'')[0]; if(!f) return null; const s=spScore(f,it); return s>=100?{id:f.id,name:f.name,ort:f.ort}:null; }catch(e){ return null; } }
-function kBestaetigen(it){ const c=it.c; return writeTx(it.doc,it.ix,{m:1,k:c.kat||'',s:c.sub||'',ka:c.ka||'',o:c.obj||'',u:c.unit||''}); }
+function kBestaetigen(it){ const c=it.c; return writeTx(it.doc,it.ix,{m:1,ok:1,k:c.kat||'',s:c.sub||'',ka:c.ka||'',o:c.obj||'',u:c.unit||''}); }
 const kItem=id=>items().find(x=>x.id===id);
 document.addEventListener('click',async e=>{ const t=e.target.closest('button,a,input[data-kw],input[data-kalle],.kdrw-bg'); if(!t) return; const d=t.dataset;
   if(d.kauf){ KS.auf[d.kauf]=!KS.auf[d.kauf]; render(); return; }
@@ -1126,14 +1138,17 @@ document.addEventListener('click',async e=>{ const t=e.target.closest('button,a,
   if(d.kdet){ e.preventDefault(); U.sel=d.kdet; U.dr=true; splitDraft=null; ruleDraft=null; render(); return; }
   if(d.kdrzu){ U.dr=false; splitDraft=null; ruleDraft=null; render(); return; }
   if(d.kw){ if(t.checked) KS.wahl.add(d.kw); else KS.wahl.delete(d.kw); render(); return; }
-  if(d.kalle){ const list=sortiert(filtered(items())).slice(0,KS.mehr).filter(x=>!x.open&&!bestaetigt(x)&&!x.nh); if(t.checked) list.forEach(x=>KS.wahl.add(x.id)); else KS.wahl.clear(); render(); return; }
-  if(d.kok){ const it=kItem(d.kok); if(!it||it.open) return; U.sel=it.id; await kBestaetigen(it); KS.wahl.delete(it.id); return; }
-  if(d.kbest){ const L=[...KS.wahl].map(kItem).filter(x=>x&&!x.open&&!bestaetigt(x)&&!x.nh); let n=0; for(const it of L){ await kBestaetigen(it); n++; } KS.wahl.clear(); toast(n+' Buchung'+(n===1?'':'en')+' bestätigt.'); render(); return; }
+  if(d.kalle){ const list=sortiert(filtered(items())).slice(0,KS.mehr).filter(x=>!bestaetigt(x)&&!x.nh&&!x.split); if(t.checked) list.forEach(x=>KS.wahl.add(x.id)); else KS.wahl.clear(); render(); return; }
+  if(d.kok){ const it=kItem(d.kok); if(!it||it.open) return; U.sel=it.id; await kBestaetigen(it); KS.wahl.delete(it.id); HALT.delete(it.id); render(); return; }
+  if(d.kbkonto){ const v=($('kb-konto')||{}).value||''; if(!v||v==='||'){ toast('Bitte zuerst ein Konto wählen.'); return; }
+    const L=[...KS.wahl].map(kItem).filter(x=>x&&!x.nh&&!x.split); let n=0; t.disabled=true;
+    for(const it of L){ await setKonto(it,v,{ok:1}); n++; } KS.wahl.clear(); toast(n+' Buchung'+(n===1?'':'en')+' zugeordnet und bestätigt.'); render(); return; }
+  if(d.kbest){ const L=[...KS.wahl].map(kItem).filter(x=>x&&!x.open&&!bestaetigt(x)&&!x.nh); let n=0; for(const it of L){ await kBestaetigen(it); HALT.delete(it.id); n++; } KS.wahl.clear(); toast(n+' Buchung'+(n===1?'':'en')+' bestätigt.'); render(); return; }
   if(d.kol){ e.preventDefault(); const it=kItem(d.kol); if(!it) return; if(it.tx.ol){ await writeTx(it.doc,it.ix,{ol:0,olg:''}); toast('Markierung beleglos entfernt.'); } else { await writeTx(it.doc,it.ix,{ol:1}); toast('Als beleglos markiert. Den Grund kannst du in den Details eintragen.'); } return; }
   if(d.kspzu){ const f=(SP.dateien||[]).find(x=>x.id===d.kspzu), it=kItem(d.kspit); if(!f||!it) return; await spZuordnen(f,it); toast('Beleg zugeordnet.'); render(); return; } });
-document.addEventListener('change',e=>{ const t=e.target; const m=t.id&&t.id.match(/^k([ko])-(\d+)$/); if(!m) return; const card=t.closest('.kz'); const it=card&&kItem(card.dataset.kid); if(!it) return; U.sel=it.id;
-  if(m[1]==='k'){ setKonto(it,t.value); return; }
-  const c=it.c; writeTx(it.doc,it.ix,{m:1,k:c.kat||'',s:c.sub||'',ka:c.ka||'',o:t.value,u:''}); },true);
+document.addEventListener('change',e=>{ const t=e.target; const m=t.id&&t.id.match(/^k([ko])-(\d+)$/); if(!m) return; const card=t.closest('.kz'); const it=card&&kItem(card.dataset.kid); if(!it) return; U.sel=it.id; HALT.add(it.id);
+  if(m[1]==='k'){ setKonto(it,t.value,{ok:0}); return; }
+  const c=it.c; writeTx(it.doc,it.ix,{m:1,ok:bestaetigt(it)?1:0,k:c.kat||'',s:c.sub||'',ka:c.ka||'',o:t.value,u:''}); },true);
 document.addEventListener('keydown',e=>{ if(e.key==='Escape'&&U.dr){ U.dr=false; render(); } });
 
 /* ---------- Verträge (Hausverwaltung › Verträge) an der Zahlung anzeigen ---------- */
@@ -1188,14 +1203,15 @@ function kontoSelect(id,c,ro){ const cur=kval(c.kat,c.sub,c.ka);
 const KA_RX=[['weg',/\bhausgeld\b|\bweg\b|wohnungseigentuemer/],['schornstein',/schornstein|kaminfeger/],['heizung',/heizoel|brennstoff|erdgas|\bgas\b|fluessiggas|\bista\b|techem|brunata|minol|kalo\b/],['niederschlag',/niederschlag/],['abwasser',/abwasser|schmutzwasser|entwaesser|kanalgeb/],['wasser',/wasserversorg|wassergeld|wasserzins|\bwvr\b|trinkwasser/],['muell',/abfall|muell|\bawb\b|entsorgung|wertstoff/],['grundsteuer',/grundsteuer/],['versicherung',/versicherung|signal iduna|allianz|provinzial|gebaeudevers|haftpflicht/],['garten',/garten|gruenpflege|baumpflege/],['reinigung',/treppenhausreinig|gebaeudereinig|reinigungs|schaedlings|ungeziefer/],['hauswart',/hausmeister|hauswart/],['kabel',/kabelanschluss|kabel tv|antenne|tele columbus|pyur/],['sonstige_bk',/rauchmelder|rauchwarn|wartung|dichtheitspruef|legionell/],['internet',/telekom|1 1 telecom|vodafone|telefonica|\bo2\b|starlink|congstar|\binternet\b|\bdsl\b/],['allgstrom',/allgemeinstrom|\bstrom\b|\bews\b|elektrizitaet|eon\b|e on\b/]];
 function guessKa(tx){ const t=' '+norm((tx.n||'')+' '+(tx.z||''))+' '; for(const [k,rx] of KA_RX) if(rx.test(t)) return k; return ''; }
 const ruleKa=c=>{ if(!c.rule) return ''; const r=regeln.find(x=>x.id===c.rule); return (r&&r.ka)||''; };
-function setKonto(it,val){ const [k,s,ka]=val.split('|'); const c=it.c; let obj=c.obj||'', unit=c.unit||'';
+function setKonto(it,val,extra){ const [k,s,ka]=val.split('|'); const c=it.c; let obj=c.obj||'', unit=c.unit||'';
   if(k!=='miete') unit=''; if(k==='verw'&&!objKz().has(obj)) obj=''; if(['intern','ignore','ruecklast',''].includes(k)) obj='';
   if(c.kat==='ruecklast'&&k!=='ruecklast') setTx(it.id,'k',k);
-  return writeTx(it.doc,it.ix,{m:1,k,s:s||'',ka:ka||'',o:obj,u:unit}); }
+  return writeTx(it.doc,it.ix,Object.assign({m:1,k,s:s||'',ka:ka||'',o:obj,u:unit},extra||{ok:1})); }
 const BELEG_KATS=['bk','inst','umbau','obj_sonst','verw'];
 function umlageSubs(){ return new Set(SUBS_UM.map(x=>x[0])); }
 const kontoOf=key=>konten.find(x=>(x.key||x.iban)===key)||null;
 
+var HALT=new Set(); /* gerade bearbeitete Karten bleiben sichtbar, bis sie bestätigt sind */
 let MKload=false, mkCalc=null, opCache={}, OPD={};
 function writeTx(doc,ix,patch){ mkCalc=null; opCache={};
   if(!db||!canWrite){toast('Nur Lesezugriff.');return Promise.resolve();}
@@ -1218,7 +1234,7 @@ function items(){
 }
 function filtered(all){ const q=norm(U.q);
   return all.filter(it=>(!U.konto||it.kkey===U.konto)&&(U.m===''||it.m===Number(U.m))
-    &&(!U.kat||(U.kat==='__offen'?it.parts.some(p=>!p.c.kat):it.parts.some(p=>p.c.kat===U.kat)))&&(U.status==='alle'||(U.status==='best'&&!it.open&&!bestaetigt(it))||(U.status==='offen'&&it.open)||(U.status==='beleg'&&it.needBeleg)||(U.status==='ka'&&it.needKA)||(U.status==='zug'&&!it.open))
+    &&(!U.kat||(U.kat==='__offen'?it.parts.some(p=>!p.c.kat):it.parts.some(p=>p.c.kat===U.kat)))&&(U.status==='alle'||HALT.has(it.id)||(U.status==='best'&&!it.open&&!bestaetigt(it))||(U.status==='offen'&&it.open)||(U.status==='beleg'&&it.needBeleg)||(U.status==='ka'&&it.needKA)||(U.status==='zug'&&!it.open))
     &&(!q||norm(it.tx.n+' '+it.tx.z+' '+fnum.format(Math.abs(it.tx.b))+' '+(it.c.obj||'')).includes(q))); }
 /* Sortierung der Liste: Datum, Empfänger (gruppiert), Betrag */
 const empfKey=it=>norm(it.tx.n||'').replace(/\b(gmbh|ag|kg|se|co|s a r l|et cie|s c a|e v|ohg|mbh)\b/g,'').replace(/\s+/g,' ').trim().slice(0,28)||'zzz';
@@ -1423,7 +1439,7 @@ document.addEventListener('click',async e=>{
   if(t.dataset.knzu){ U.knZu=!U.knZu; saveU(); render(); return; }
   if(t.dataset.gzu){ U.gZu=Object.assign({},U.gZu||{}); if(U.gZu[t.dataset.gzu]) delete U.gZu[t.dataset.gzu]; else U.gZu[t.dataset.gzu]=1; saveU(); render(); return; }
   if(t.dataset.konto!==undefined){ U.konto=t.dataset.konto; U.sel=''; saveU(); render(); return; }
-  if(t.dataset.st){ U.status=t.dataset.st; U.sel=''; saveU(); render(); return; }
+  if(t.dataset.st){ U.status=t.dataset.st; U.sel=''; HALT.clear(); saveU(); render(); return; }
   if(t.dataset.sel){ U.sel=t.dataset.sel; splitDraft=null; ruleDraft=null; render(); return; }
   if(t.dataset.step){ step(Number(t.dataset.step)); return; }
   if(t.dataset.next){ const it0=items().find(x=>x.id===U.sel); if(it0&&!it0.split&&it0.c.kg){ const c=it0.c; writeTx(it0.doc,it0.ix,{m:1,k:c.kat,s:c.sub||'',ka:c.ka,o:c.obj||'',u:c.unit||''}); } nextOpen(); return; }
@@ -1448,7 +1464,7 @@ document.addEventListener('click',async e=>{
   if(t.dataset.rup!==undefined){ const i=Number(t.dataset.rup); if(i<1) return; const a=regeln.slice(); [a[i-1],a[i]]=[a[i],a[i-1]]; regeln=a; invalidate(); saveStamm('regeln',{regeln}); render(); return; }
   if(t.dataset.opsave){ const key=t.dataset.opsave, it=items().find(x=>x.id===U.sel); if(!it) return; const D=opDraft(key,it); if(!D.pid){ toast('Bitte den Mieter wählen.'); return; }
     const a=(D.a||[]).filter(y=>y.b>0).map(y=>({id:y.id,b:r2(y.b)})); const sum=a.reduce((s2,y)=>s2+y.b,0); if(sum-it.tx.b>0.005){ toast('Es ist mehr zugeordnet als gezahlt wurde.'); return; }
-    const c=it.c; delete OPD[key]; writeTx(it.doc,it.ix,{op:{pid:D.pid,a},m:1,k:'miete',s:'',ka:'',o:c.obj||(MK[D.pid]||{}).obj||'',u:c.unit||(MK[D.pid]||{}).unit||''}).then(()=>toast('Zahlung zugeordnet.')); return; }
+    const c=it.c; delete OPD[key]; writeTx(it.doc,it.ix,{op:{pid:D.pid,a},m:1,k:'miete',s:'',ka:'',o:(MK[D.pid]||{}).obj||c.obj||'',u:(MK[D.pid]||{}).unit||c.unit||''}).then(()=>toast('Zahlung zugeordnet.')); return; }
   if(t.dataset.opdel){ const key=t.dataset.opdel, it=items().find(x=>x.id===U.sel); if(!it) return; delete OPD[key]; writeTx(it.doc,it.ix,{op:null}).then(()=>toast('Zuordnung entfernt.')); return; }
   if(t.dataset.pimp!==undefined){ doImport(Number(t.dataset.pimp)); return; }
   if(t.dataset.pdrop!==undefined){ pending.splice(Number(t.dataset.pdrop),1); render(); return; }

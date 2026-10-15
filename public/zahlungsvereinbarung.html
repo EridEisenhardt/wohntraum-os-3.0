@@ -183,7 +183,29 @@ async function loadKonten(){
   sel.innerHTML='<option value="">— ohne IBAN (allgemein „vom Gläubiger benanntes Konto") —</option>'
     +KONTEN.map(function(k){return '<option value="'+k.id+'">'+kontoLabel(k)+'</option>';}).join('');
 }
-loadKonten();
+/* Vorbelegung aus dem Mieterkonto (Aufruf über "Neue erstellen" in den Mieterkonten) */
+var PRE=null;
+function vorbelegen(){
+  let q; try{ q=new URLSearchParams((window.top||window).location.search); }catch(e){ q=new URLSearchParams(location.search); }
+  if(!q.get('von')) q=new URLSearchParams(location.search);
+  if(q.get('von')!=='mieterkonto') return;
+  PRE={pid:q.get('pid')||'',obj:q.get('obj')||''};
+  const setv=(id,v)=>{ const el=document.getElementById(id); if(el&&v) el.value=v; };
+  setv('art',q.get('art')); setv('glaeubiger',q.get('glaeubiger')); setv('objekt',q.get('objekt')); setv('whg',q.get('whg'));
+  setv('mieter',q.get('mieter')); setv('forderung',q.get('forderung')); setv('ort',q.get('ort'));
+  const sel=document.getElementById('konto');
+  if(sel&&PRE.obj){ const k=KONTEN.find(function(k){ return String(k.kennung||'').toLowerCase()===PRE.obj.toLowerCase(); }); if(k) sel.value=k.id; }
+  try{ artChg(); }catch(e){}
+  const box=document.createElement('div');
+  box.style.cssText='background:#eef4fb;border:1px solid #c9dbef;border-radius:8px;padding:10px 12px;margin:0 0 14px;font-size:13px;line-height:1.45';
+  const posten=(q.get('posten')||'').split(' | ').filter(Boolean);
+  box.innerHTML='<b>Aus dem Mieterkonto übernommen</b><div>Mieter, Objekt, Wohnung, Gläubiger, Mietkonto und Forderung sind ausgefüllt. Bitte noch die monatliche Rate eintragen und alles prüfen.</div>'
+    +(posten.length?'<div style="margin-top:6px;color:#5a6472">Offene Posten: '+posten.map(esc).join(' · ')+'</div>':'');
+  const anker=document.getElementById('glaeubiger'); const fld=anker&&anker.closest('.fld');
+  if(fld&&fld.parentNode) fld.parentNode.insertBefore(box,fld);
+  const r=document.getElementById('rate'); if(r) setTimeout(function(){ r.focus(); },50);
+}
+loadKonten().then(vorbelegen,vorbelegen);
 async function finalSave(){
   const warn=document.getElementById('warn'); warn.style.display='none';
   if(!validate()){ warn.style.display='block'; warn.textContent='Bitte alle rot markierten Pflichtfelder ausfüllen.'; return; }
@@ -217,7 +239,9 @@ async function finalSave(){
       if(!up.error){ const url=_sb.storage.from('darlehen').getPublicUrl(path).data.publicUrl; await _sb.from('zahlungsvereinbarungen').update({pdf_url:url,pdf_name:fname}).eq('id',id); }
     }
   }catch(e){}
-  info.innerHTML='✔ Ins Register übernommen (inkl. Vertrags-PDF). <a href="/vermietung/zahlungsvereinbarung-register" target="_top" style="color:var(--accent);font-weight:600">Register öffnen ↗</a>';
+  if(PRE&&PRE.pid&&id){ try{ localStorage.setItem('zv_neu',JSON.stringify({pid:PRE.pid,id:id})); }catch(e){} }
+  info.innerHTML='Ins Register übernommen (inkl. Vertrags-PDF). <a href="/vermietung/zahlungsvereinbarung-register" target="_top" style="color:var(--accent);font-weight:600">Register öffnen</a>'
+    +(PRE&&PRE.pid?' · <a href="/hausverwaltung/mieterkonten" target="_top" style="color:var(--accent);font-weight:600">Zurück zum Mieterkonto</a> (wird dort automatisch verknüpft)':'');
 }
 const ART={
   miete:{tag:'Mietschulden',sub:'über eine bestehende Forderung aus einem Mietverhältnis',ford:'Gesamtforderung',offen:'Die offene Forderung',anl:'Forderung',file:'Ratenzahlungsvereinbarung_'},

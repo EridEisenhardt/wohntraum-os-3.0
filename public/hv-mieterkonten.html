@@ -149,7 +149,8 @@ tr.kaut td{opacity:.75}
 .note.small{font-size:12px}
 h3{font-size:14px;margin:14px 0 6px}
 @media (max-width:1100px){ .grid2{grid-template-columns:1fr} .det{position:static;max-height:none} .mlist{max-height:none} }
-select.zsel{font-size:11px;padding:2px 4px;margin-top:4px;max-width:100%}
+select.zsel,input.zsel{font-size:11px;padding:2px 4px;margin-top:4px;max-width:100%}
+input.zsel{width:240px}
 .mlist{max-height:none}
 .adot{display:inline-block;width:11px;height:11px;border-radius:50%;vertical-align:-1px}.adot.big{width:16px;height:16px;vertical-align:-2px}
 .ov{position:fixed;inset:0;background:rgba(15,20,30,.45);z-index:20;overflow:auto;padding:24px 16px}
@@ -545,7 +546,7 @@ function cls(v){return v>=0?'pos':'neg';}
 const dmy=x=>String(x||'').split('-').reverse().join('.');
 const START='2025-01';
 let MK={}, M={f:'',ges:'',obj:'',st:'alle',q:'',sel:''}; try{ const s=JSON.parse(store('mk_state')||'null'); if(s){ if(s.sv!==2){ delete s.sk; delete s.sd; } M=Object.assign(M,s,{q:''}); } }catch(e){}
-const saveM=()=>store('mk_state',JSON.stringify({ges:M.ges,obj:M.obj,st:M.st,sel:M.sel,sk:M.sk,sd:M.sd,sv:2}));
+const saveM=()=>store('mk_state',JSON.stringify({ges:M.ges,obj:M.obj,betr:M.betr||'',st:M.st,sel:M.sel,sk:M.sk,sd:M.sd,sv:2}));
 let MAHN={}; let SL={}, slAuto=false, loadedSL=false, ZV=[], ZVload=false, DOCS={}, docOpen={}, pend=null, mkStand='', mkUeb='', loadedMK=false, calc=null, EDIT={}, ZUORD={}, editOpen=false, modal=false, showDone=false;
 const ed=mk=>Object.assign({},mk,EDIT[mk.pid]||{});
 const today=new Date().toISOString().slice(0,10), curM=today.slice(0,7);
@@ -581,13 +582,13 @@ function compute(opt){ opt=opt||{}; const ZMAP={}, BU={};
   const byUnit={}; for(const mk of Object.values(MK)) (byUnit[mk.unit]=byUnit[mk.unit]||[]).push(mk);
   const res={}; for(const mk of Object.values(MK)){ if(!osKz.has(mk.obj)) continue; /* Objekte, die nicht im OS sind (z. B. verkauft), nie zeigen */ if(!M.alle&&!aktivKz.has(mk.obj)) continue; res[mk.pid]={mk,rows:[],soll:0,ist:0,kSoll:0,kIst:0}; }
   /* Bank-Ist dem Mietverhältnis zuordnen */
-  const OWN=new Set(konten.map(x=>x.iban).filter(Boolean));
+  const OWN=new Set(konten.map(x=>x.iban).filter(Boolean)); const IBMK={}; for(const m of Object.values(MK)) for(const ib of (m.ibans||[])) (IBMK[ib]=IBMK[ib]||[]).push(m);
   const toks=mk=>{ const e=ed(mk); const out=new Set(); for(const n of (mk.namen||[]).concat(String(e.mieter||'').split(','))){ const w=norm(n).split(' ').filter(x=>x.length>=3&&!['herr','frau','und'].includes(x)); if(w.length) out.add(w[w.length-1]); } return [...out]; };
   for(const r of bankIst()){ const d=r.tx.d; if(d.slice(0,7)<START) continue; const key=(r.tx.h||'')+'|'+r.tx.b; if(opt.ex===key) continue;
     let mk=null; const OP=r.tx.op&&r.tx.op.pid&&!r.split?r.tx.op:null;
     if(OP){ mk=MK[OP.pid]||null; if(!mk) continue; }
     else if(ZUORD[key]!==undefined){ if(ZUORD[key]==='-') continue; mk=MK[ZUORD[key]]||null; if(!mk) continue; }
-    else { const L=byUnit[r.c.unit]; if(!L) continue; const txt=' '+norm(r.tx.n+' '+r.tx.z)+' ';
+    else { let L=byUnit[r.c.unit]; const ib=r.tx.i; if(ib&&!OWN.has(ib)&&!SHARED_IBAN.has(ib)&&IBMK[ib]&&!(L||[]).some(c=>(c.ibans||[]).includes(ib))) L=IBMK[ib]; /* IBAN des Mieters hat Vorrang vor der Einheit aus der Buchung */ if(!L) continue; const txt=' '+norm(r.tx.n+' '+r.tx.z)+' ';
       let best=null, bs=-1;
       for(const c of L){ let sc=0; const inside=(!c.von||d>=c.von)&&(!c.bis||d<=c.bis), near=(!c.von||dnum2(d)>=dnum2(c.von)-31)&&(!c.bis||dnum2(d)<=dnum2(c.bis)+60);
         if(r.tx.i&&!OWN.has(r.tx.i)&&!SHARED_IBAN.has(r.tx.i)&&(c.ibans||[]).includes(r.tx.i)) sc+=4;
@@ -633,6 +634,9 @@ function compute(opt){ opt=opt||{}; const ZMAP={}, BU={};
     for(const p of mk.nhIst||[]){ const m=(p.d||'').slice(0,7); if(m<START) continue; const uebP=U&&p.d<=U; if(!uebP&&m>=first) continue;
       let pn=''; if(uebP){ const L=BU[mk.pid]||[]; const i=L.findIndex(q=>!q.u&&Math.abs(q.b-p.b)<0.01&&Math.abs(dnum2(q.d)-dnum2(p.d))<=4); if(i>=0){ L[i].u=1; pn=L[i].n; } }
       x.rows.push({d:p.d,t:p.t||'Zahlung',pn,h:p.b,s:0,src:uebP?'Nahaus (Übernahme bis '+dmy(U)+')':'Zahlung laut Nahaus',k:kautIds.has(p.bk),alloc:uebP&&p.bk?[{id:p.bk,b:p.b}]:null,nh:1}); }
+    /* Zahlungen, die manuell erfasst wurden (z. B. Kaution auf ein Kautionskonto ohne Zugriff, Barzahlung) */
+    for(const z of (ed(mk).manZ||[])){ const zb=Number(z&&z.b)||0; if(zb<=0||!z.d) continue;
+      x.rows.push({d:z.d,t:'Zahlung manuell erfasst'+(z.t?' · '+z.t:''),pn:'',h:zb,s:0,src:'manuell erfasst',k:z.sid?kautIds.has(z.sid):!!z.k,alloc:z.sid?[{id:z.sid,b:zb}]:null,mz:z.id}); }
     x.rows.sort((a,b)=>a.d<b.d?-1:a.d>b.d?1:(b.s||0)-(a.s||0));
     let saldo=0, ks=0; for(const r of x.rows){ if(r.fut){ r.saldo=null; continue; } if(r.k){ ks+=(r.s||0)-(r.h||0); r.saldo=null; continue; } saldo=r2(saldo+(r.s||0)-(r.h||0)); r.saldo=saldo; if(!r.v){ x.soll+=r.s||0; x.ist+=r.h||0; } }
     x.saldo=saldo; x.kOffen=r2(ks);
@@ -816,7 +820,7 @@ async function mahnlaufStarten(){ const sb=window.osSupabase; if(!sb||!db||!canW
   MR.busy=false; MR.done=done; loadRegM(); render(); toast(done.list.length+' Mahnungen erstellt.'); }
 function sammelPdf(){ if(!MRPDF.length||!window.jspdf) return; const doc=new window.jspdf.jsPDF({unit:'mm',format:'a4'}); MRPDF.forEach((B,i)=>{ if(i) doc.addPage(); drawBrief(doc,B); }); doc.save('Sammelmahnung_'+MR.datum+'.pdf'); }
 /* ---------- Ausklappbare Bereiche und PDF-Auszüge (Sollstellungen, Mieterkonto) ---------- */
-var SEC={soll:false,docs:false,konto:false};
+var SEC={soll:false,docs:false,konto:false,inbox:true};
 document.addEventListener('toggle',e=>{ const d=e.target; if(d&&d.dataset&&d.dataset.sec) SEC[d.dataset.sec]=d.open; },true);
 function pdfAuszug(x,art){ if(!window.jspdf){ toast('PDF-Bibliothek lädt noch, bitte gleich nochmal.'); return null; }
   const mk=ed(x.mk), o=objekte.find(q=>q.kz===x.mk.obj)||{}, inh=INHABER[o.ges||x.mk.ges]||INHABER.WT, adr=(ADR[x.mk.obj]||'|').split('|');
@@ -1060,8 +1064,89 @@ document.addEventListener('click',e=>{ const t=e.target.closest('button,a[data-m
 });
 document.addEventListener('change',e=>{ if(e.target.id==='ml-file'){ const f=[...e.target.files]; e.target.value=''; mlUpload(f); } });
 
+/* ---------- Aufgaben aus Asana (ersetzen das Ticketsystem im Mieterkonto) ---------- */
+var AS={}, ASP=null, ASPlade=false, ASU=null, ASUlade=false, AST=null, ASTlade=false, ASKI={busy:'',orig:null,fehler:''}, ASF={neu:false,titel:'',proj:'',due:'',notiz:'',busy:false};
+SEC.asana=true;
+async function asApi(body){ const sb=window.osSupabase; let tok=''; try{ const {data}=await sb.auth.getSession(); tok=(data&&data.session&&data.session.access_token)||''; }catch(e){}
+  let r; try{ r=await fetch('/api/asana',{method:'POST',headers:{'content-type':'application/json',authorization:'Bearer '+tok},body:JSON.stringify(body)}); }catch(e){ throw new Error('Asana nicht erreichbar.'); }
+  let j=null; try{ j=await r.json(); }catch(e){} if(!j) throw new Error(r.status===404?'Die Asana-Schnittstelle ist noch nicht online.':'Asana nicht erreichbar ('+r.status+').'); if(j.error){ const e=new Error(j.error); e.setup=!!j.setup; throw e; } return j; }
+function asNachnamen(x){ const mk=ed(x.mk), out=[]; for(const n of String(mk.mieter||'').split(/,| und | & |\//).concat(x.mk.namen||[])){ const w=String(n).trim().split(/\s+/).filter(v=>v.length>=3&&!/^(herr|frau)$/i.test(v)); if(w.length) out.push(w[w.length-1]); } return [...new Set(out)].slice(0,3); }
+async function asLaden(pid,neu){ const x=calc&&calc.res[pid]; if(!x) return; if(AS[pid]&&AS[pid].lade) return; if(AS[pid]&&!neu&&(AS[pid].L||AS[pid].err)) return;
+  AS[pid]={lade:true,L:AS[pid]&&AS[pid].L||null}; render();
+  try{ const nn=asNachnamen(x); const j=await asApi({aktion:'suche',begriffe:nn}); const kz=norm(x.mk.obj);
+    const L=(j.aufgaben||[]).map(a=>Object.assign(a,{rang:(norm(a.name).includes(kz)?2:0)+(nn.some(n=>norm(a.name).includes(norm(n)))?1:0)})).filter(a=>a.rang>0||nn.some(n=>norm(a.notiz).includes(norm(n))));
+    L.sort((a,b)=>(a.erledigt-b.erledigt)||(b.rang-a.rang)||String(b.geaendert).localeCompare(String(a.geaendert)));
+    AS[pid]={L}; }
+  catch(e){ AS[pid]={err:e.message||String(e),setup:!!e.setup}; }
+  render(); }
+async function asTags(){ if(AST||ASTlade) return; ASTlade=true; try{ AST=(await asApi({aktion:'tags'})).tags||[]; }catch(e){ AST=[]; } ASTlade=false; render(); }
+function asTagAdd(){ const el=$('as-tag'); const v=String(el&&el.value||'').trim(); if(!v) return; const L=ASF.tags||[]; if(L.some(t=>t.name.toLowerCase()===v.toLowerCase())){ el.value=''; return; }
+  const t=(AST||[]).find(q=>q.name.toLowerCase()===v.toLowerCase()); ASF.tags=L.concat([t?{gid:t.gid,name:t.name}:{name:v}]); render(); setTimeout(()=>{ const e2=$('as-tag'); if(e2) e2.focus(); },0); }
+async function asDateiHoch(gid,f){ const sb=window.osSupabase; let tok=''; try{ const {data}=await sb.auth.getSession(); tok=(data&&data.session&&data.session.access_token)||''; }catch(e){}
+  const fd=new FormData(); fd.append('gid',gid); fd.append('datei',f,f.name);
+  const r=await fetch('/api/asana',{method:'POST',headers:{authorization:'Bearer '+tok},body:fd}); let j=null; try{ j=await r.json(); }catch(e){}
+  if(!r.ok||!j||j.error) throw new Error((j&&j.error)||(r.status===413?'Datei zu groß':'Hochladen fehlgeschlagen ('+r.status+')')); }
+async function asNutzer(){ if(ASU||ASUlade) return; ASUlade=true; try{ ASU=(await asApi({aktion:'nutzer'})).nutzer||[]; }catch(e){ ASU=[]; toast(e.message||String(e)); } ASUlade=false; render(); }
+function asNutzerWahl(v){ ASF.userName=v; const u=(ASU||[]).find(q=>q.name===v); ASF.user=u?u.gid:''; }
+async function asKi(aufgabe){ const t=String(ASF.notiz||'').trim(); if(!t){ toast('Bitte zuerst eine Beschreibung schreiben.'); return; } ASKI.busy=aufgabe; ASKI.fehler=''; render();
+  try{ const r=await kiCall('aufgabe_'+aufgabe,t); if(ASKI.orig==null) ASKI.orig=t; ASF.notiz=r.text||t; }catch(e){ ASKI.fehler=e.message||String(e); }
+  ASKI.busy=''; render(); }
+async function asProjekte(){ if(ASP||ASPlade) return; ASPlade=true; try{ ASP=(await asApi({aktion:'projekte'})).projekte||[]; }catch(e){ ASP=[]; toast(e.message||String(e)); } ASPlade=false; render(); }
+function asanaCard(x){ const pid=x.mk.pid, s=AS[pid];
+  if(!s&&SEC.asana) setTimeout(()=>asLaden(pid),0);
+  const L=(s&&s.L)||[], off=L.filter(a=>!a.erledigt), fertig=L.filter(a=>a.erledigt);
+  let h='<details class="card wide sec" data-sec="asana"'+(SEC.asana?' open':'')+'><summary class="ch">Aufgaben (Asana)<span class="sub">'+(s&&s.lade&&!s.L?'lade …':s&&s.err?'nicht verbunden':off.length+' offen'+(fertig.length?' · '+fertig.length+' erledigt':''))+'</span></summary>';
+  if(s&&s.err) return h+'<div class="sub">'+esc(s.err)+(s.setup?'<br>Sobald das Asana-Token in Vercel hinterlegt ist, erscheinen hier die Aufgaben.':'')+'</div><div class="acts"><button class="ghost small" data-asneu="1">Erneut versuchen</button></div></details>';
+  h+='<div class="acts"><button class="ghost small" data-asneu="1"'+(s&&s.lade?' disabled':'')+'>'+(s&&s.lade?'Lade …':'Aktualisieren')+'</button>'+(canWrite?'<button class="small" data-asform="1" style="margin-left:auto">'+(ASF.neu?'Abbrechen':'Neue Aufgabe in Asana')+'</button>':'')+'</div>';
+  if(ASF.neu){ if(!ASP) setTimeout(asProjekte,0); if(!ASU) setTimeout(asNutzer,0); if(!AST) setTimeout(asTags,0); const mk=ed(x.mk);
+    if(!ASF.titel) ASF.titel=x.mk.obj+'_'+(asNachnamen(x)[0]||'')+'_';
+    h+='<div class="hneu"><label class="fl">Titel<input type="text" id="as-titel" value="'+esc(ASF.titel)+'"></label>'
+      +'<div class="hrow"><label class="fl" style="flex:2">Projekt<input type="text" id="as-proj" list="as-projl" value="'+esc(ASF.projName||'')+'" placeholder="'+(ASP?'Projektname eintippen, leer = ohne Projekt':'Lade Projekte …')+'"><datalist id="as-projl">'+(ASP||[]).map(p=>'<option value="'+esc(p.name)+'"></option>').join('')+'</datalist></label>'
+      +'<label class="fl" style="flex:1">Zuständig<input type="text" id="as-user" list="as-userl" value="'+esc(ASF.userName||'')+'" placeholder="'+(ASU?'Name eintippen, leer = niemand':'Lade Personen …')+'"><datalist id="as-userl">'+(ASU||[]).map(u=>'<option value="'+esc(u.name)+'"></option>').join('')+'</datalist></label>'
+      +'<label class="fl">Fällig am<input type="date" id="as-due" value="'+esc(ASF.due)+'"></label></div>'
+      +'<div class="hrow"><label class="fl" style="flex:1">Tags<span style="display:flex;gap:6px"><input type="text" id="as-tag" list="as-tagl" placeholder="'+(AST?'Tag eintippen und hinzufügen (neue Tags werden angelegt)':'Lade Tags …')+'" style="flex:1"><button class="ghost small" data-astag="1" type="button">Hinzufügen</button></span><datalist id="as-tagl">'+(AST||[]).map(t=>'<option value="'+esc(t.name)+'"></option>').join('')+'</datalist></label>'
+      +'<label class="fl" style="flex:1">Dateien<input type="file" id="as-files" multiple></label></div>'
+      +((ASF.tags||[]).length||(ASF.files||[]).length?'<div class="acts" style="flex-wrap:wrap">'+(ASF.tags||[]).map((t,i)=>'<span class="pill src">'+esc(t.name)+(t.gid?'':' (neu)')+' <button class="ghost small" data-astagx="'+i+'" type="button" style="padding:0 4px">x</button></span>').join('')+(ASF.files||[]).map((f,i)=>'<span class="pill src">'+esc(f.name)+' <button class="ghost small" data-asfx="'+i+'" type="button" style="padding:0 4px">x</button></span>').join('')+'</div>':'')
+      +'<textarea id="as-notiz" rows="3" placeholder="Beschreibung (optional)">'+esc(ASF.notiz)+'</textarea>'
+      +'<div class="acts"><button class="ghost small" data-aski="verbessern"'+(ASKI.busy?' disabled':'')+'>'+(ASKI.busy==='verbessern'?'KI arbeitet …':'Mit KI verbessern')+'</button><button class="ghost small" data-aski="stichpunkte"'+(ASKI.busy?' disabled':'')+'>'+(ASKI.busy==='stichpunkte'?'KI arbeitet …':'In Stichpunkte kürzen')+'</button>'+(ASKI.orig!=null?'<button class="ghost small" data-askorig="1">Original wiederherstellen</button>':'')+(ASKI.fehler?'<div class="note warnbox" style="flex-basis:100%">'+esc(ASKI.fehler)+'</div>':'')+'</div>'
+      +'<div class="acts"><button class="primary small" data-assave="1"'+(ASF.busy?' disabled':'')+'>'+(ASF.busy?'Lege an …':'In Asana anlegen')+'</button><span class="sub">Mieter, Einheit und Adresse werden automatisch in die Beschreibung übernommen.</span></div></div>'; }
+  const zeile=a=>'<div class="kvr" style="align-items:flex-start"><span style="display:flex;gap:8px;align-items:flex-start">'+(canWrite?'<input type="checkbox" data-asdone="'+esc(a.gid)+'"'+(a.erledigt?' checked':'')+' style="margin-top:3px">':'')+'<span><span>'+esc(a.name)+'</span>'
+    +'<div class="sub">'+esc([a.projekte.join(', ')+(a.abschnitt&&a.abschnitt!=='Unbenannter Abschnitt'?' · '+a.abschnitt:''),a.zustaendig?'zuständig: '+a.zustaendig:'',(a.tags||[]).length?'Tags: '+a.tags.join(', '):'',a.erledigt?(a.erledigtAm?'erledigt am '+dmy(a.erledigtAm.slice(0,10)):'erledigt'):a.faellig?'fällig '+dmy(a.faellig):''].filter(Boolean).join(' · '))+'</div></span></span>'
+    +'<b><a href="'+esc(a.link)+'" target="_blank" rel="noopener" class="ghost small" style="text-decoration:none">In Asana öffnen</a></b></div>';
+  if(s&&s.L&&!L.length) h+='<div class="sub">Keine Aufgaben zu '+esc(asNachnamen(x).join(', ')||'diesem Mieter')+' in Asana gefunden.</div>';
+  h+=off.map(zeile).join('');
+  if(fertig.length) h+='<details style="margin-top:8px"><summary class="sub" style="cursor:pointer">'+fertig.length+' erledigte Aufgabe'+(fertig.length===1?'':'n')+'</summary>'+fertig.map(zeile).join('')+'</details>';
+  h+='<div class="sub" style="margin-top:6px">Gesucht wird in Asana nach: '+esc(asNachnamen(x).join(', '))+'. Aufgaben am besten nach dem Muster „Objekt_Nachname_Thema“ benennen, dann werden sie sicher gefunden.</div>';
+  return h+'</details>'; }
+document.addEventListener('input',e=>{ const t=e.target; if(!t||!t.id) return; if(t.id==='as-titel') ASF.titel=t.value; else if(t.id==='as-proj') asProjWahl(t.value); else if(t.id==='as-user') asNutzerWahl(t.value); else if(t.id==='as-notiz') ASF.notiz=t.value; else if(t.id==='as-due') ASF.due=t.value; });
+function asProjWahl(v){ ASF.projName=v; const p=(ASP||[]).find(q=>q.name===v); ASF.proj=p?p.gid:''; }
+document.addEventListener('keydown',e=>{ if(e.key==='Enter'&&e.target&&e.target.id==='as-tag'){ e.preventDefault(); asTagAdd(); } });
+document.addEventListener('change',e=>{ const t=e.target; if(t&&t.id==='as-files'){ const neu=[...(t.files||[])]; const zuGross=neu.filter(f=>f.size>4e6); if(zuGross.length) toast('Zu groß (max. 4 MB je Datei): '+zuGross.map(f=>f.name).join(', ')); ASF.files=(ASF.files||[]).concat(neu.filter(f=>f.size<=4e6)); render(); return; } if(t&&t.id==='as-proj') asProjWahl(t.value); if(t&&t.id==='as-user') asNutzerWahl(t.value); if(t&&t.id==='as-due') ASF.due=t.value; });
+document.addEventListener('click',async e=>{ const t=e.target.closest('button,input[data-asdone]'); if(!t||!t.dataset) return; const d=t.dataset;
+  if(d.asneu){ asLaden(M.sel,true); return; }
+  if(d.aski){ asKi(d.aski); return; }
+  if(d.astag){ asTagAdd(); return; }
+  if(d.astagx!==undefined){ ASF.tags=(ASF.tags||[]).filter((_,i)=>i!==Number(d.astagx)); render(); return; }
+  if(d.asfx!==undefined){ ASF.files=(ASF.files||[]).filter((_,i)=>i!==Number(d.asfx)); render(); return; }
+  if(d.askorig){ ASF.notiz=ASKI.orig||''; ASKI.orig=null; render(); return; }
+  if(d.asform){ ASF=Object.assign({},ASF,{neu:!ASF.neu,titel:'',notiz:'',due:'',tags:[],files:[]}); ASKI={busy:'',orig:null,fehler:''}; render(); return; }
+  if(d.assave){ const x=calc&&calc.res[M.sel]; if(!x) return; const titel=String(ASF.titel||'').trim(); if(!titel){ toast('Bitte einen Titel eingeben.'); return; }
+    if(ASF.userName&&!ASF.user){ toast('Person nicht gefunden – bitte einen Eintrag aus der Liste wählen oder das Feld leeren.'); return; }
+    if(ASF.projName&&!ASF.proj){ toast('Projekt nicht gefunden – bitte einen Eintrag aus der Liste wählen oder das Feld leeren.'); return; }
+    const mk=ed(x.mk), adr=(ADR[x.mk.obj]||'').split('|').filter(Boolean).join(', ');
+    const notiz=(ASF.notiz?ASF.notiz+'\n\n':'')+'Mieter: '+(mk.mieter||'')+'\nEinheit: '+x.mk.obj+' '+uName(x.mk.einheit)+(adr?' · '+adr:'')+'\nAngelegt im Wohntraum OS (Mieterkonto) von '+(ICH||'')+' am '+dmy(today);
+    ASF.busy=true; render();
+    try{ const j=await asApi({aktion:'anlegen',name:titel,projekt:ASF.proj,faellig:ASF.due,zustaendig:ASF.user,tags:ASF.tags||[],notiz}); histLog(M.sel,'Ticket','Asana-Aufgabe angelegt: '+titel);
+      const ASFdat=(ASF.files||[]).length; const fehler=[]; for(const f of (ASF.files||[])){ try{ await asDateiHoch(j.aufgabe.gid,f); }catch(err2){ fehler.push(f.name+': '+(err2.message||err2)); } }
+      if(fehler.length) toast('Aufgabe angelegt, aber nicht alle Dateien hochgeladen: '+fehler.join('; '));
+      if((ASF.tags||[]).some(t=>!t.gid)) AST=null;
+      const s=AS[M.sel]||{L:[]}; s.L=[Object.assign(j.aufgabe,{rang:3})].concat(s.L||[]); AS[M.sel]=s; ASF={neu:false,titel:'',proj:ASF.proj,projName:ASF.projName,user:'',userName:'',due:'',notiz:'',tags:[],files:[],busy:false}; ASKI={busy:'',orig:null,fehler:''}; if(!fehler.length) toast('Aufgabe in Asana angelegt'+((ASFdat||0)?' (mit '+ASFdat+' Datei'+(ASFdat>1?'en':'')+').':'.')); }
+    catch(err){ ASF.busy=false; toast(err.message||String(err)); }
+    render(); return; }
+  if(d.asdone){ const gid=d.asdone, wert=t.checked; try{ const j=await asApi({aktion:'erledigt',gid,wert}); const s=AS[M.sel]; if(s&&s.L) s.L=s.L.map(a=>a.gid===gid?Object.assign(a,j.aufgabe):a); histLog(M.sel,'Ticket','Asana-Aufgabe '+(wert?'erledigt':'wieder geöffnet')+': '+j.aufgabe.name); toast(wert?'In Asana als erledigt markiert.':'In Asana wieder geöffnet.'); }catch(err){ t.checked=!wert; toast(err.message||String(err)); } render(); return; } });
+document.addEventListener('toggle',e=>{ const d=e.target; if(d&&d.dataset&&d.dataset.sec==='asana'&&d.open&&M.sel&&!AS[M.sel]) asLaden(M.sel); },true);
 /* ---------- Mieterakte in OneDrive (SharePoint „Wohn(T)raum Rheinhessen GmbH – Dokumente“) ---------- */
-var OD={status:null,fehler:'',pruef:false}, ODK={}, ODA={}, ODL={}, ODSEL={}, odBusy='', ODMIG={};
+var ODLAB={}; var OD={status:null,fehler:'',pruef:false}, ODK={}, ODA={}, ODL={}, ODSEL={}, odBusy='', ODMIG={};
 const odSafe=s=>String(s||'').replace(/[\\/:*?"<>|#%]/g,'_').replace(/\s+/g,' ').trim();
 async function odApi(body){ const sb=window.osSupabase; let tok=''; try{ const {data}=await sb.auth.getSession(); tok=(data&&data.session&&data.session.access_token)||''; }catch(e){}
   let r; try{ r=await fetch('/api/onedrive',{method:'POST',headers:{'content-type':'application/json',authorization:'Bearer '+tok},body:JSON.stringify(body)}); }catch(e){ throw new Error('OneDrive nicht erreichbar.'); }
@@ -1106,7 +1191,7 @@ function akteBox(x){ const mk=x.mk;
     const L=(K.ordner||[]).map(o=>Object.assign({},o,{s:odScore(mk,o)})).sort((a,b)=>b.s-a.s);
     h+=(K.fehler?'<div class="note warnbox">'+esc(K.fehler)+'</div>':'')
       +'<div class="rh">OneDrive-Mieterordner zuordnen</div>'
-      +(L.length?'<label class="fl">Ordner<select id="od-sel">'+L.map(o=>'<option value="'+esc(o.pfad)+'"'+(o.pfad===p?' selected':'')+'>'+esc((o.archiv?'Archiv: ':'')+o.name)+'</option>').join('')+'</select></label><div class="acts"><button class="primary small" data-odset="1">Zuordnen</button>'+(p?'<button class="ghost small" data-odcancel="1">Abbrechen</button>':'')+'</div>':'<div class="sub">Im Objektordner '+esc(mk.obj)+' wurde kein Mieterordner gefunden.</div>')
+      +(L.length?'<label class="fl">Ordner<input type="text" id="od-sel" list="od-sell" placeholder="Ordnername eintippen …" value="'+esc((L.find(o=>o.pfad===p)?((L.find(o=>o.pfad===p).archiv?'Archiv: ':'')+L.find(o=>o.pfad===p).name):''))+'"><datalist id="od-sell">'+L.map(o=>{ const l=(o.archiv?'Archiv: ':'')+o.name; ODLAB[l]=o.pfad; return '<option value="'+esc(l)+'"></option>'; }).join('')+'</datalist></label><div class="acts"><button class="primary small" data-odset="1">Zuordnen</button>'+(p?'<button class="ghost small" data-odcancel="1">Abbrechen</button>':'')+'</div>':'<div class="sub">Im Objektordner '+esc(mk.obj)+' wurde kein Mieterordner gefunden.</div>')
       +(K.basis?'<div class="acts"><button class="ghost small" data-odneu="1"'+(odBusy?' disabled':'')+'>'+(odBusy==='neu'?'Lege an …':'Neuen Mieterordner anlegen: '+esc(odNeuName(mk)))+'</button></div>':'');
     return h+'</details>'; }
   const A=ODA[mk.pid];
@@ -1148,7 +1233,7 @@ async function odMigrieren(mk){ const sb=window.osSupabase, S=DOCS[mk.pid]||{}; 
 document.addEventListener('click',e=>{ const t=e.target.closest('button,a[data-odopen]'); if(!t) return; const d=t.dataset, mk=MK[M.sel];
   if(d.odopen){ e.preventDefault(); odOeffnen(d.odopen); return; }
   if(!mk) return;
-  if(d.odset){ const v=($('od-sel')||{}).value; if(!v) return; ODSEL[mk.pid]=false; ODA[mk.pid]=null; saveEdit(mk.pid,{od:v},'OneDrive-Mieterordner zugeordnet.'); return; }
+  if(d.odset){ const v=ODLAB[($('od-sel')||{}).value||'']; if(!v){ toast('Bitte einen Ordner aus der Liste wählen.'); return; } ODSEL[mk.pid]=false; ODA[mk.pid]=null; saveEdit(mk.pid,{od:v},'OneDrive-Mieterordner zugeordnet.'); return; }
   if(d.odcancel){ ODSEL[mk.pid]=false; render(); return; }
   if(d.odaendern){ ODSEL[mk.pid]=true; if(!ODK[mk.obj]||ODK[mk.obj].fehler) ODK[mk.obj]=null; render(); return; }
   if(d.odneuladen){ ODA[mk.pid]=null; render(); return; }
@@ -1160,6 +1245,66 @@ document.addEventListener('click',e=>{ const t=e.target.closest('button,a[data-o
 /* ---------- Historie je Mieter: wer hat wann was getan (neueste oben) ----------
    Eigene Einträge und protokollierte Aktionen in Collection 'historie' {pid,id,d,art,t,by,mail,uid,manuell}
    dazu live aus Notizen, Anschreiben, Mails und Mahnungen */
+/* ---------- Betreuer mit „Firmen & Dienstleister“ verknüpfen ---------- */
+var BK=[], BF=[], BKload=false;
+async function betrLaden(){ if(BKload) return; BKload=true; const sb=window.osSupabase; if(!sb) return;
+  try{ const [k,f]=await Promise.all([sb.from('hv_kontakte').select('id,vorname,name,firma_id,kategorien,telefon,email'),sb.from('hv_firmen').select('id,name')]);
+    BF=(f&&f.data)||[]; BK=((k&&k.data)||[]).map(x=>({id:x.id,voll:(String(x.vorname||'')+' '+String(x.name||'')).replace(/\s+/g,' ').trim(),name:String(x.name||'').trim(),firma:(BF.find(q=>q.id===x.firma_id)||{}).name||'',vermittler:(x.kategorien||[]).some(c=>/vermittler|betreu/i.test(c))}));
+    render(); }catch(e){} }
+const betrLabel=k=>k.voll+(k.firma?' – '+k.firma:'');
+/* passenden Kontakt (oder die Firma) zum Betreuer-Text finden */
+function betrFinde(text){ const t=' '+norm(text)+' '; if(!t.trim()) return null;
+  let best=null, bs=0;
+  for(const k of BK){ const v=norm(k.voll), n=norm(k.name); let sc=0;
+    if(v&&t.includes(' '+v+' ')) sc=3; else if(n.length>=4&&t.includes(' '+n+' ')) sc=k.vermittler?2:1;
+    if(sc>bs){ bs=sc; best={typ:'kontakt',id:k.id}; } }
+  if(best) return best;
+  for(const f of BF){ const n=norm(f.name); if(n.length>=4&&t.includes(n)) return {typ:'firma',id:f.id}; }
+  return null; }
+function betrHtml(text,klein){ if(!text) return klein?'':'–'; const l=betrFinde(text);
+  if(!l) return esc(text);
+  return '<a data-blink="1" href="/hausverwaltung/dienstleister?'+l.typ+'='+encodeURIComponent(l.id)+'" target="_top" title="In Firmen & Dienstleister öffnen" style="color:inherit;text-decoration:underline;text-decoration-color:var(--line)">'+esc(text)+'</a>'; }
+document.addEventListener('click',e=>{ if(e.target.closest&&e.target.closest('a[data-blink]')) e.stopPropagation(); },true);
+/* ---------- Aktivitäten (Inbox wie in Asana): wer hat was in den Mieterkonten gemacht ---------- */
+var INB={tab:'neu',von:'',eigene:false,mehr:false}, INBA={}, INBload=false;
+try{ const s=JSON.parse(store('mk_inbox')||'null'); if(s) INB=Object.assign(INB,s,{mehr:false}); }catch(e){}
+const inbSave=()=>store('mk_inbox',JSON.stringify({tab:INB.tab,von:INB.von,eigene:INB.eigene}));
+function inbArch(ids,wert){ if(!db||!ICHID){ toast('Bitte kurz warten, Benutzer wird geladen.'); return; } const a=Object.assign({},INBA); for(const id of ids){ if(wert) a[id]=today; else delete a[id]; } INBA=a; render();
+  return db.doc('inbox/'+ICHID).set({arch:a,stand:new Date().toISOString()}).catch(e=>toast('Speichern nicht möglich: '+(e.message||e))); }
+function inbAlle(){ const L=[]; for(const pid in HIST) for(const v of HIST[pid]||[]) if(v&&v.id) L.push(v); return L.sort((a,b)=>String(b.erfasst||b.d).localeCompare(String(a.erfasst||a.d))); }
+function inbTag(iso){ const s=String(iso||'').slice(0,10); const g=new Date(Date.parse(today)-864e5).toISOString().slice(0,10); return s===today?'Heute':s===g?'Gestern':dmy(s); }
+function inboxCard(){ const alle=inbAlle(), grenze=new Date(Date.now()-60*864e5).toISOString();
+  const basis=alle.filter(v=>String(v.erfasst||v.d)>=grenze);
+  const vonF=norm(INB.von);
+  const L=basis.filter(v=>(INB.tab==='archiv')===!!INBA[v.id]).filter(v=>!INB.eigene||!(v.uid&&v.uid===ICHID)).filter(v=>!vonF||norm(v.by).includes(vonF));
+  const nNeu=basis.filter(v=>!INBA[v.id]&&!(INB.eigene&&v.uid&&v.uid===ICHID)).length;
+  const pers=[...new Set(basis.map(v=>v.by).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'de'));
+  let h='<details class="card wide sec" data-sec="inbox"'+(SEC.inbox?' open':'')+' style="margin:12px 0"><summary class="ch">Aktivitäten<span class="sub">'+nNeu+' neu · letzte 60 Tage</span></summary>';
+  h+='<div class="acts" style="flex-wrap:wrap"><span class="seg mini"><button data-inbtab="neu" class="'+(INB.tab==='neu'?'on':'')+'">Neu ('+nNeu+')</button><button data-inbtab="archiv" class="'+(INB.tab==='archiv'?'on':'')+'">Archiv</button></span>'
+    +'<input type="search" id="inb-von" list="inb-vonl" placeholder="Von wem? (Name eintippen)" value="'+esc(INB.von)+'" style="width:190px"><datalist id="inb-vonl">'+pers.map(p=>'<option value="'+esc(p)+'"></option>').join('')+'</datalist>'
+    +'<label class="sub" style="display:flex;gap:4px;align-items:center"><input type="checkbox" id="inb-eigene"'+(INB.eigene?' checked':'')+'> eigene ausblenden</label>'
+    +(INB.tab==='neu'&&L.length?'<button class="ghost small" data-inball="1" style="margin-left:auto">Alle '+L.length+' archivieren</button>':'')+'</div>';
+  if(!L.length) h+='<div class="sub">'+(INB.tab==='neu'?'Keine neuen Aktivitäten.':'Noch nichts archiviert.')+'</div>';
+  const zeig=INB.mehr?L.slice(0,300):L.slice(0,40); let tag='';
+  for(const v of zeig){ const t=inbTag(v.erfasst||v.d); if(t!==tag){ tag=t; h+='<div class="rh" style="margin-top:10px">'+esc(t)+'</div>'; }
+    const mk=MK[v.pid]; const lab=mk?(mk.obj+' '+uName(mk.einheit)+' · '+(ed(mk).mieter||(mk.namen||[]).join(', '))):'Mieterkonto';
+    const zeit=String(v.erfasst||v.d||''); const uhr=zeit.length>10?histZeit(zeit).slice(-5):'';
+    h+='<div class="kvr" style="align-items:flex-start;padding:6px 0"><span><span class="pill src">'+esc(v.art||'Änderung')+'</span> <a href="#" data-inbmk="'+esc(v.pid)+'" style="font-weight:600">'+esc(lab)+'</a>'
+      +'<div style="margin-top:2px">'+esc(v.t||'')+'</div><div class="sub">'+esc((v.by||'unbekannt')+(uhr?' · '+uhr+' Uhr':'')+(v.manuell?' · nachgetragen für '+dmy(String(v.d).slice(0,10)):''))+(INBA[v.id]&&INB.tab==='archiv'?' · archiviert am '+esc(dmy(INBA[v.id])):'')+'</div></span>'
+      +'<b><button class="ghost small" data-inbarch="'+esc(v.id)+'">'+(INB.tab==='archiv'?'Zurückholen':'Archivieren')+'</button></b></div>'; }
+  if(L.length>zeig.length) h+='<div class="acts"><button class="ghost small" data-inbmehr="1">Weitere '+(L.length-zeig.length)+' anzeigen</button></div>';
+  return h+'</details>'; }
+document.addEventListener('click',e=>{ const t=e.target.closest('button,a'); if(!t||!t.dataset) return; const d=t.dataset;
+  if(d.inbtab){ INB.tab=d.inbtab; INB.mehr=false; inbSave(); render(); return; }
+  if(d.inbmehr){ INB.mehr=true; render(); return; }
+  if(d.inbarch){ inbArch([d.inbarch],INB.tab!=='archiv'); return; }
+  if(d.inball){ const alle=inbAlle(), grenze=new Date(Date.now()-60*864e5).toISOString(), vonF=norm(INB.von);
+    const ids=alle.filter(v=>String(v.erfasst||v.d)>=grenze&&!INBA[v.id]&&(!INB.eigene||!(v.uid&&v.uid===ICHID))&&(!vonF||norm(v.by).includes(vonF))).map(v=>v.id); inbArch(ids,true); return; }
+  if(d.inbmk){ e.preventDefault(); if(!MK[d.inbmk]){ toast('Mieterkonto nicht gefunden.'); return; } M.sel=d.inbmk; solSel=null; NDRAFT=''; NOTF=[]; editOpen=false; modal=true; showDone=false; SEC.hist=true; saveM(); render(); return; } });
+document.addEventListener('input',e=>{ const t=e.target; if(t&&t.id==='inb-von'){ INB.von=t.value; inbSave(); clearTimeout(window.__ib); window.__ib=setTimeout(render,250); } });
+document.addEventListener('change',e=>{ const t=e.target; if(t&&t.id==='inb-eigene'){ INB.eigene=t.checked; inbSave(); render(); } });
+function inboxStart(){ if(!db||!ICHID||INBload) return; INBload=true; db.doc('inbox/'+ICHID).onSnapshot(s=>{ INBA=((s.exists?s.data():null)||{}).arch||{}; render(); },()=>{}); }
+
 var HIST={}, HF={art:'alle',mehr:false,neu:false,busy:false};
 const HIST_ARTEN=['Anruf eingehend','Anruf ausgehend','Gespräch vor Ort','Termin / Besichtigung','SMS / WhatsApp','Brief per Post','Sonstiges'];
 async function histLog(pid,art,t,d){ if(!db||!pid) return; try{ if(!ICH) await loadIch(); const ts=new Date(), id=pid+'__'+ts.getTime()+Math.random().toString(36).slice(2,5);
@@ -1218,23 +1363,23 @@ document.addEventListener('click',e=>{ const t=e.target.closest('button[data-zrq
 /* ---------- Mieterkonten-Liste als Excel und PDF (genau die gefilterte Liste) ---------- */
 var LISTE=[];
 const EXF={alle:'Alle',aktiv:'Laufend',rueck:'Rückstand',rueck2:'Mehr als 2 Monatsmieten offen',guthaben:'Guthaben',kaution:'Kaution offen',beendet:'Beendet'};
-function exFilterText(){ return [EXF[M.st]||'Alle',M.ges?'Gesellschaft '+M.ges:'',M.obj?'Objekt '+M.obj:'',M.q?'Suche „'+M.q+'“':''].filter(Boolean).join(' · '); }
+function exFilterText(){ return [EXF[M.st]||'Alle',M.ges?'Gesellschaft '+M.ges:'',M.obj?'Objekt '+M.obj:'',M.betr?'Betreuer „'+M.betr+'“':'',M.q?'Suche „'+M.q+'“':''].filter(Boolean).join(' · '); }
 function exZeilen(){ return LISTE.map(x=>{ const mk=x.mk, sn=STN[x.status]||['',''], lm=letzteMahnung(x);
-  return {obj:mk.obj, einheit:uName(mk.einheit), mieter:ed(mk).mieter||'', zahler:String(ed(mk).zahler||x.zahlerAuto||'').replace(/ \(.*\)$/,''), von:mk.von||'', bis:mk.bis||'',
+  return {obj:mk.obj, einheit:uName(mk.einheit), mieter:ed(mk).mieter||'', betreuer:ed(mk).betreuer||'', zahler:String(ed(mk).zahler||x.zahlerAuto||'').replace(/ \(.*\)$/,''), von:mk.von||'', bis:mk.bis||'',
     miete:x.miete||0, saldo:r2(x.saldo), ueber:r2(Math.max(0,x.ueber)), monate:x.miete?Math.round(x.ueber/x.miete*10)/10:0, status:sn[1], mahnung:lm?lm.stufe+' '+dmy(lm.d)+(lm.b?' ('+eur(lm.b)+')':''):'',
     kaution:x.kOffen>0.5?r2(x.kOffen):0, sperre:mahnsperre(mk)?'ja':'', ampel:({gruen:'grün',gelb:'gelb',rot:'rot'})[ampel(x)]||'' }; }); }
 const exName=ext=>'Mieterkonten_'+today+'_'+exFilterText().replace(/[„“]/g,'').replace(/[^A-Za-z0-9ÄÖÜäöüß -]+/g,' ').replace(/\s+/g,' ').trim()+'.'+ext;
 function exLadeXlsx(){ return window.XLSX?Promise.resolve():new Promise((res,rej)=>{ const s=document.createElement('script'); s.src='/vendor/xlsx-0.18.5.full.min.js'; s.onload=res; s.onerror=()=>rej(new Error('Excel-Bibliothek konnte nicht geladen werden.')); document.head.appendChild(s); }); }
 async function exExcel(){ try{ await exLadeXlsx(); }catch(e){ toast(e.message); return; }
   const Z=exZeilen(), d=s=>s?new Date(s+'T00:00:00'):null;
-  const kopf=['Objekt','Einheit','Mieter','Zahler','Mietbeginn','Mietende','Miete','Saldo','davon überfällig','offene Monatsmieten','Status','Letzte Mahnung','Kaution offen','Mahnsperre','Ampel'];
+  const kopf=['Objekt','Einheit','Mieter','Zahler','Mietbeginn','Mietende','Miete','Saldo','davon überfällig','offene Monatsmieten','Status','Letzte Mahnung','Kaution offen','Mahnsperre','Ampel','Betreuer'];
   const rows=[['Mieterkonten – '+exFilterText()],['Stand '+dmy(today)+' · Saldo positiv = Mieter schuldet, negativ = Guthaben'],[],kopf]
-    .concat(Z.map(z=>[z.obj,z.einheit,z.mieter,z.zahler,d(z.von),d(z.bis),z.miete,z.saldo,z.ueber,z.monate,z.status,z.mahnung,z.kaution||null,z.sperre,z.ampel]));
+    .concat(Z.map(z=>[z.obj,z.einheit,z.mieter,z.zahler,d(z.von),d(z.bis),z.miete,z.saldo,z.ueber,z.monate,z.status,z.mahnung,z.kaution||null,z.sperre,z.ampel,z.betreuer]));
   const n=Z.length, ende=4+n; rows.push([]); rows.push(['Summe','','',n+' Mietverhältnisse','','',null,{f:'SUM(H5:H'+ende+')'},{f:'SUM(I5:I'+ende+')'},null,'','',{f:'SUM(M5:M'+ende+')'}]);
   const ws=XLSX.utils.aoa_to_sheet(rows,{cellDates:true});
   const fmt=(c,z)=>{ for(let r=4;r<rows.length;r++){ const a=XLSX.utils.encode_cell({r,c}); if(ws[a]) ws[a].z=z; } };
   [4,5].forEach(c=>fmt(c,'DD.MM.YYYY')); [6,7,8,12].forEach(c=>fmt(c,'#,##0.00 "€";-#,##0.00 "€"')); fmt(9,'0.0');
-  ws['!cols']=[8,10,30,20,11,11,11,12,14,10,18,28,12,10,7].map(w=>({wch:w})); ws['!autofilter']={ref:'A4:O'+ende}; ws['!freeze']={xSplit:0,ySplit:4};
+  ws['!cols']=[8,10,30,20,11,11,11,12,14,10,18,28,12,10,7,20].map(w=>({wch:w})); ws['!autofilter']={ref:'A4:P'+ende}; ws['!freeze']={xSplit:0,ySplit:4};
   const wb=XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb,ws,'Mieterkonten'); XLSX.writeFile(wb,exName('xlsx')); }
 function exPdf(){ if(!window.jspdf){ toast('PDF-Bibliothek lädt noch, bitte gleich nochmal.'); return; }
   const Z=exZeilen(), doc=new window.jspdf.jsPDF({unit:'mm',format:'a4',orientation:'landscape'}); const L=12,R=285; let y=14;
@@ -1262,7 +1407,8 @@ function render(){
   if(!calc) calc=compute();
   const all=Object.values(calc.res);
   const q=norm(M.q);
-  const list=all.filter(x=>(!M.ges||x.mk.ges===M.ges)&&(!M.obj||x.mk.obj===M.obj)&&(M.st==='alle'||(M.st==='aktiv'&&x.aktiv)||(M.st==='rueck'&&x.ueber>0.5)||(M.st==='rueck2'&&x.ueber>0.5&&x.monate>2)||(M.st==='guthaben'&&x.saldo<-0.5)||(M.st==='beendet'&&!x.aktiv)||(M.st==='kaution'&&x.kOffen>0.5))
+  const betrF=norm(M.betr||'');
+  const list=all.filter(x=>(!M.ges||x.mk.ges===M.ges)&&(!M.obj||x.mk.obj===M.obj)&&(!betrF||(betrF==='ohne betreuer'?!String(ed(x.mk).betreuer||'').trim():norm(ed(x.mk).betreuer).includes(betrF)))&&(M.st==='alle'||(M.st==='aktiv'&&x.aktiv)||(M.st==='rueck'&&x.ueber>0.5)||(M.st==='rueck2'&&x.ueber>0.5&&x.monate>2)||(M.st==='guthaben'&&x.saldo<-0.5)||(M.st==='beendet'&&!x.aktiv)||(M.st==='kaution'&&x.kOffen>0.5))
     &&(!q||norm(ed(x.mk).mieter+' '+x.mk.obj+' '+x.mk.einheit+' '+uName(x.mk.einheit)+' '+ed(x.mk).ref).includes(q)))
     .sort(listSort);
   LISTE=list;
@@ -1275,12 +1421,13 @@ function render(){
   h+='<div class="tbar"><div class="seg">'+[['alle','Alle'],['aktiv','Laufend'],['rueck','Rückstand'],['rueck2','Mehr als 2 Monatsmieten offen'],['guthaben','Guthaben'],['kaution','Kaution offen'],['beendet','Beendet']].map(([k,l])=>'<button data-mst="'+k+'" class="'+(M.st===k?'on':'')+'">'+l+'</button>').join('')+'</div>'
     +'<select id="m-ges"><option value="">alle Gesellschaften</option>'+['EE','WT','KiBo'].map(g=>'<option'+(g===M.ges?' selected':'')+'>'+g+'</option>').join('')+'</select>'
     +'<select id="m-obj"><option value="">alle Objekte</option>'+objs.map(o=>'<option'+(o===M.obj?' selected':'')+'>'+esc(o)+'</option>').join('')+'</select>'
+    +'<input type="search" id="m-betr" list="m-betrl" placeholder="Betreuer" value="'+esc(M.betr||'')+'" autocomplete="off" style="width:150px"><datalist id="m-betrl"><option value="ohne Betreuer"></option>'+[...new Set(all.map(x=>String(ed(x.mk).betreuer||'').trim()).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'de')).map(b=>'<option value="'+esc(b)+'"></option>').join('')+'</datalist>'
     +'<input type="search" id="m-q" placeholder="Mieter, Objekt, Einheit" value="'+esc(M.q)+'" autocomplete="off"><span class="sub">'+list.length+' in der Liste</span><button class="ghost small" data-mex="xlsx">Excel</button><button class="ghost small" data-mex="pdf">PDF</button></div>';
   const TH=(k,l,n)=>'<th class="sortable'+(n?' n':'')+((M.sk||'einheit')===k?' on':'')+'" data-msort="'+k+'" title="Sortieren">'+l+((M.sk||'einheit')===k?((M.sd||1)>0?' ↑':' ↓'):'')+'</th>';
-  h+='<div class="tablewrap mlist"><table><thead><tr><th></th>'+TH('obj','Objekt')+TH('einheit','Einheit')+TH('mieter','Mieter')+TH('zahler','Zahler')+TH('von','Zeitraum')+TH('miete','Miete',1)+TH('saldo','Saldo',1)+TH('status','Status')+'</tr></thead><tbody>';
-  if(!list.length) h+='<tr><td colspan="9" class="empty">Keine Mietverhältnisse für diesen Filter.</td></tr>';
+  h+='<div class="tablewrap mlist"><table><thead><tr><th></th>'+TH('obj','Objekt')+TH('einheit','Einheit')+TH('mieter','Mieter')+TH('zahler','Zahler')+TH('betreuer','Betreuer')+TH('von','Zeitraum')+TH('miete','Miete',1)+TH('saldo','Saldo',1)+TH('status','Status')+'</tr></thead><tbody>';
+  if(!list.length) h+='<tr><td colspan="10" class="empty">Keine Mietverhältnisse für diesen Filter.</td></tr>';
   const rowH=(x,cls,vm)=>{ const mk=x.mk, sn=STN[x.status];
-    return '<tr class="click'+(cls||'')+(mk.pid===M.sel?' sel':'')+'" data-mk="'+esc(mk.pid)+'"><td>'+ampelDot(ampel(x))+'</td><td><b>'+esc(mk.obj)+'</b></td><td>'+esc(uName(mk.einheit))+(vm?vm:'')+'</td><td class="wrapc">'+esc(ed(mk).mieter||'–')+(mk.gewerbe?' <span class="pill src">Gewerbe</span>':'')+'</td><td class="sub">'+esc(String(ed(mk).zahler||x.zahlerAuto||'').replace(/ \(.*\)$/,''))+'</td><td class="sub">'+esc(dmy(mk.von))+(mk.bis?' – '+esc(dmy(mk.bis)):'')+'</td><td class="n">'+(x.miete?eur(x.miete):'–')+'</td>'
+    return '<tr class="click'+(cls||'')+(mk.pid===M.sel?' sel':'')+'" data-mk="'+esc(mk.pid)+'"><td>'+ampelDot(ampel(x))+'</td><td><b>'+esc(mk.obj)+'</b></td><td>'+esc(uName(mk.einheit))+(vm?vm:'')+'</td><td class="wrapc">'+esc(ed(mk).mieter||'–')+(mk.gewerbe?' <span class="pill src">Gewerbe</span>':'')+'</td><td class="sub">'+esc(String(ed(mk).zahler||x.zahlerAuto||'').replace(/ \(.*\)$/,''))+'</td><td class="sub">'+betrHtml(ed(mk).betreuer,1)+'</td><td class="sub">'+esc(dmy(mk.von))+(mk.bis?' – '+esc(dmy(mk.bis)):'')+'</td><td class="n">'+(x.miete?eur(x.miete):'–')+'</td>'
       +'<td class="n '+(x.ueber>0.5?'neg':x.saldo<-0.5?'pos':'')+'"><b>'+eur(x.saldo)+'</b>'+(x.ueber>0.5&&Math.abs(x.ueber-x.saldo)>0.5?'<div class="sub">überfällig '+eur(x.ueber)+'</div>':'')+'</td><td><span class="pill '+sn[0]+'">'+sn[1]+'</span>'+(x.kOffen>0.5?' <span class="pill mid" title="Kaution offen">K</span>':'')+(x.erg?' <span class="pill src" title="'+x.erg+' Monatsmieten aus dem Mietvertrag ergänzt">+'+x.erg+'</span>':'')+(mahnsperre(mk)?' <span class="pill bad">Mahnsperre</span>':'')+(()=>{ const lm=letzteMahnung(x); return lm&&x.ueber>0.5?'<div class="sub">'+esc(lm.stufe+' '+dmy(lm.d))+(lm.b?' · '+eur(lm.b):'')+'</div>':''; })()+'</td></tr>'; };
   const grp=M.st==='alle'&&!q;
   if(!grp){ for(const x of list) h+=rowH(x); }
@@ -1289,20 +1436,20 @@ function render(){
     gs.sort((a,b)=>listSort(a.rep,b.rep));
     for(const g of gs){ const open=!!VMO[g.k], n=g.alt.length, tog=n?'<div><button class="vmtog" data-vm="'+esc(g.k)+'">'+(open?'▾ ':'▸ ')+n+(n===1?' Vormieter':' Vormieter')+'</button></div>':'';
       if(g.akt.length){ g.akt.forEach((x,i)=>{ h+=rowH(x,'',i===0?tog:''); }); }
-      else h+='<tr class="vmhead"><td></td><td><b>'+esc(g.rep.mk.obj)+'</b></td><td>'+esc(uName(g.rep.mk.einheit))+tog+'</td><td colspan="6" class="sub">kein laufendes Mietverhältnis</td></tr>';
+      else h+='<tr class="vmhead"><td></td><td><b>'+esc(g.rep.mk.obj)+'</b></td><td>'+esc(uName(g.rep.mk.einheit))+tog+'</td><td colspan="7" class="sub">kein laufendes Mietverhältnis</td></tr>';
       if(open) for(const x of g.alt) h+=rowH(x,' vm'); } }
   h+='</tbody></table></div>';
   if(mahnOpen) h+='<div class="ov" id="ov"><div class="dlg">'+renderMahn()+'</div></div>';
   else if(modal&&calc.res[M.sel]) h+='<div class="ov" id="ov"><div class="dlg">'+renderDash(calc.res[M.sel])+'</div></div>';
-  h+='<div class="sub" style="margin:10px 0">Saldo positiv = Mieter schuldet, negativ = Guthaben. '+(mkUeb?'Bis '+esc(dmy(mkUeb))+' sind Sollstellungen und Zahlungen 1 zu 1 aus Nahaus übernommen (Stand '+esc(dmy(mkStand))+'). Danach wird nur noch im OS gebucht: Sollstellungen aus dem Sollstellungslauf (fehlende Monatsmieten aus dem Mietvertrag), Zahlungen aus den Kontoauszügen.':'Soll: Sollstellungen aus Nahaus (Stand '+esc(dmy(mkStand))+'); fehlende Monatsmieten werden aus dem Mietvertrag ergänzt. Ist: Mieteingänge aus den Kontoauszügen im OS ab '+esc(calc.first.slice(5)+'/'+calc.first.slice(0,4))+', davor Zahlungen laut Nahaus.')+' Saldo = alle bis heute fälligen Sollstellungen minus Zahlungen. Überfällig = offen und mehr als 5 Tage vor dem letzten Kontoauszug ('+esc(dmy(calc.stich))+') fällig – Zahlungen danach sind noch nicht importiert. Kaution wird getrennt geführt.</div>'+'<label class="sub"><input type="checkbox" id="m-alle"'+(M.alle?' checked':'')+'> auch nicht aktive / verkaufte Objekte zeigen</label>'+importCard(false);
-  const keep=f&&(f.id==='m-q'||f.id==='mr-q'||f.id==='n-text'||f.id==='ne-text')?f:null; const sc=$('ov')?$('ov').scrollTop:0;
+  h+='<div class="sub" style="margin:10px 0">Saldo positiv = Mieter schuldet, negativ = Guthaben. '+(mkUeb?'Bis '+esc(dmy(mkUeb))+' sind Sollstellungen und Zahlungen 1 zu 1 aus Nahaus übernommen (Stand '+esc(dmy(mkStand))+'). Danach wird nur noch im OS gebucht: Sollstellungen aus dem Sollstellungslauf (fehlende Monatsmieten aus dem Mietvertrag), Zahlungen aus den Kontoauszügen.':'Soll: Sollstellungen aus Nahaus (Stand '+esc(dmy(mkStand))+'); fehlende Monatsmieten werden aus dem Mietvertrag ergänzt. Ist: Mieteingänge aus den Kontoauszügen im OS ab '+esc(calc.first.slice(5)+'/'+calc.first.slice(0,4))+', davor Zahlungen laut Nahaus.')+' Saldo = alle bis heute fälligen Sollstellungen minus Zahlungen. Überfällig = offen und mehr als 5 Tage vor dem letzten Kontoauszug ('+esc(dmy(calc.stich))+') fällig – Zahlungen danach sind noch nicht importiert. Kaution wird getrennt geführt.</div>'+'<label class="sub"><input type="checkbox" id="m-alle"'+(M.alle?' checked':'')+'> auch nicht aktive / verkaufte Objekte zeigen</label>'+inboxCard()+importCard(false);
+  const keep=f&&(f.id==='inb-von'||f.id==='m-q'||f.id==='m-betr'||f.id==='mr-q'||f.id==='n-text'||f.id==='ne-text')?f:null; const sc=$('ov')?$('ov').scrollTop:0;
   $('view').innerHTML='<div class="pad">'+h+'</div>'; if($('ov')) $('ov').scrollTop=sc; document.body.style.overflow=(modal||mahnOpen)?'hidden':'';
   if(keep){ const n=$(keep.id); if(n){ n.replaceWith(keep); keep.focus({preventScroll:true}); } }
   else if(fid){ const el=$(fid); if(el&&el.tagName==='INPUT'){ el.focus({preventScroll:true}); if(fv!=null) el.value=fv; } }
 }
 /* Sortierung der Mieterliste: Klick auf Spaltenkopf, erneuter Klick dreht die Reihenfolge */
 const STORD={kuendigung:0,mahnen:1,rueckstand:2,faellig:3,guthaben:4,ok:5};
-function sortVal(x,k){ const mk=ed(x.mk); switch(k){ case 'obj': return String(x.mk.obj); case 'einheit': return String(x.mk.obj)+' '+uName(x.mk.einheit); case 'mieter': return String(mk.mieter||''); case 'zahler': return String(mk.zahler||x.zahlerAuto||''); case 'von': return String(x.mk.von||''); case 'miete': return x.miete||0; case 'status': return STORD[x.status]??9; default: return x.saldo||0; } }
+function sortVal(x,k){ const mk=ed(x.mk); switch(k){ case 'obj': return String(x.mk.obj); case 'einheit': return String(x.mk.obj)+' '+uName(x.mk.einheit); case 'mieter': return String(mk.mieter||''); case 'zahler': return String(mk.zahler||x.zahlerAuto||''); case 'betreuer': return String(mk.betreuer||''); case 'von': return String(x.mk.von||''); case 'miete': return x.miete||0; case 'status': return STORD[x.status]??9; default: return x.saldo||0; } }
 function listSort(a,b){ if(a.aktiv!==b.aktiv) return a.aktiv?-1:1; const k=M.sk||'einheit', d=M.sd||1; const va=sortVal(a,k), vb=sortVal(b,k); let c=typeof va==='number'?va-vb:String(va).localeCompare(String(vb),'de',{numeric:true,sensitivity:'base'}); if(!c) c=String(a.mk.obj).localeCompare(String(b.mk.obj),'de',{numeric:true})||uName(a.mk.einheit).localeCompare(uName(b.mk.einheit),'de',{numeric:true}); else c*=d; return c; }
 const AMPEL={gruen:['#1d9a5b','zuverlässig'],gelb:['#e0a400','beobachten'],rot:['#d0362b','kritisch']};
 const ampel=x=>{ const a=ed(x.mk).ampel; return a&&AMPEL[a]?a:x.ampelAuto; };
@@ -1327,12 +1474,18 @@ function sollBox(){ const m=nextMon(), d=SL[m], ab=curM+'-25', MN=m.slice(5)+'/'
   const alt=Object.keys(SL).filter(k=>k!==m).sort().reverse().slice(0,3); if(alt.length) h+='<div class="sub">Frühere Läufe: '+alt.map(k=>esc(k.slice(5)+'/'+k.slice(0,4))+' ('+SL[k].anzahl+', '+eur(SL[k].summe)+')').join(' · ')+'</div>';
   return h+'</div>'; }
 /* ---------- Ratenzahlungen (Tabelle zahlungsvereinbarungen) ---------- */
-async function loadZV(){ const sb=window.osSupabase; if(!sb) return; const {data,error}=await sb.from('zahlungsvereinbarungen').select('id,mieter,objekt,wohnung,forderung,rate,start_datum,status,art,zahlungen,mahnstufe'); if(!error){ ZV=data||[]; ZVload=true; render(); } }
+var EDITload=false; function zvTry(){ if(ZVload&&loadedMK&&EDITload&&canWrite) zvNeuVerknuepfen(); }
+function zvNeuVerknuepfen(){ let n=null; try{ n=JSON.parse(localStorage.getItem('zv_neu')||'null'); }catch(e){} if(!n||!n.pid||!n.id||!MK[n.pid]) return;
+  try{ localStorage.removeItem('zv_neu'); }catch(e){}
+  const r=ed(MK[n.pid]).raten||[]; if(!r.includes(n.id)) saveEdit(n.pid,{raten:r.concat([n.id])},'Neue Ratenzahlung mit dem Mieterkonto verknüpft.');
+  M.sel=n.pid; modal=true; saveM(); render(); }
+async function loadZV(){ const sb=window.osSupabase; if(!sb) return; const {data,error}=await sb.from('zahlungsvereinbarungen').select('id,mieter,objekt,wohnung,forderung,rate,start_datum,status,art,zahlungen,mahnstufe'); if(!error){ ZV=data||[]; ZVload=true; render(); zvTry(); } }
 const zvBez=z=>(z.zahlungen||[]).reduce((a,y)=>a+(parseNum(y.betrag)||0),0);
 const ZVART={mietschulden:'Mietschulden',kaution:'Kaution',bka:'BK-Abrechnung'};
 function zvScore(z,x){ const mk=ed(x.mk), o=objekte.find(q=>q.kz===x.mk.obj); let sc=0; const zm=' '+norm(z.mieter)+' ';
   for(const t of (x.mk.namen||[]).concat(String(mk.mieter||'').split(','))){ const w=norm(t).split(' ').filter(v=>v.length>=3); if(w.length&&zm.includes(' '+w[w.length-1]+' ')) sc+=2; }
   if(o){ const st=norm(String(o.name||'').split(',')[0]).split(' ')[0]; if(st&&norm(z.objekt).includes(st.slice(0,5))) sc+=1; } return sc; }
+var ZVLAB={};
 function ratenBox(x,kinds){ const mk=ed(x.mk), ids=mk.raten||[]; const L=ZV.filter(z=>ids.includes(z.id)&&kinds.includes(z.art||'mietschulden'));
   let h='<div class="rbox"><div class="rh">Ratenzahlung</div>';
   if(!ZVload) return h+'<div class="sub">Lade …</div></div>';
@@ -1342,7 +1495,12 @@ function ratenBox(x,kinds){ const mk=ed(x.mk), ids=mk.raten||[]; const L=ZV.filt
       +'<div class="kvr"><span>Forderung / bezahlt</span><b>'+eur(z.forderung)+' / '+eur(b)+'</b></div><div class="kvr"><span>Rest · Rate</span><b>'+eur(rest)+' · '+eur(z.rate)+' mtl.</b></div>'
       +'<div class="acts"><button class="ghost small" data-zvopen="'+esc(z.id)+'">Im Register öffnen</button><button class="ghost small" data-zvdel="'+esc(z.id)+'">Verknüpfung lösen</button></div></div>'; }
   const cand=ZV.filter(z=>!ids.includes(z.id)&&kinds.includes(z.art||'mietschulden')).map(z=>({z,sc:zvScore(z,x)})).sort((a,b)=>b.sc-a.sc||String(a.z.mieter).localeCompare(String(b.z.mieter)));
-  h+='<div class="acts"><select data-zvadd="1"><option value="">Ratenzahlung verknüpfen …</option>'+cand.map(c=>'<option value="'+esc(c.z.id)+'">'+(c.sc>=2?'Vorschlag: ':'')+esc((c.z.mieter||'')+' · '+String(c.z.objekt||'').split(/[0-9]{5}/)[0].trim()+' · '+eur(c.z.forderung))+'</option>').join('')+'</select><button class="ghost small" data-zvnew="1">Neue erstellen</button></div></div>';
+  const lid='zvl-'+kinds[0];
+  const lab=c=>(c.sc>=2?'Vorschlag: ':'')+(c.z.mieter||'')+' · '+String(c.z.objekt||'').split(/[0-9]{5}/)[0].trim().replace(/,$/,'')+' · '+(ZVART[c.z.art||'mietschulden']||'')+' · '+eur(c.z.forderung)+(c.z.start_datum?' · ab '+dmy(c.z.start_datum):'');
+  for(const c of cand) ZVLAB[lab(c)]=c.z.id;
+  const andere=ZV.filter(z=>ids.includes(z.id)&&!kinds.includes(z.art||'mietschulden'));
+  if(andere.length) h+='<div class="sub" style="margin-top:4px">Außerdem verknüpft: '+andere.map(z=>esc(ZVART[z.art||'mietschulden']||z.art)+' '+eur(z.forderung)).join(', ')+' – steht im Bereich '+(kinds.includes('kaution')?'Offene Posten':'Kaution')+'.</div>';
+  h+='<div class="acts"><input type="text" list="'+lid+'" data-zvadd="1" placeholder="Name eintippen, um eine Ratenzahlung zu verknüpfen …" style="flex:1;min-width:260px"><datalist id="'+lid+'">'+cand.map(c=>'<option value="'+esc(lab(c))+'"></option>').join('')+'</datalist><button class="ghost small" data-zvnew="'+(kinds.includes('kaution')?'kaution':'miete')+'">Neue erstellen</button></div></div>';
   return h; }
 /* ---------- Dokumente (Ordnerstruktur wie im Finder) ---------- */
 const DOCF=['01 Mietbeginn','02 Vertrag & Nachträge','03 Miete & Zahlungen','03 Miete & Zahlungen/Mahnungen','04 Betriebskosten','05 Schriftverkehr','06 Mietende'];
@@ -1393,10 +1551,16 @@ function sollCard(x){ const idT={}; for(const r of x.rows) if(r.id) idT[r.id]=r.
 function solPanel(x,r,links,idT){ const bez=r2(r.s-(r.offen||0)), lsum=r2(links.reduce((a,l)=>a+l.b,0));
   let h='<div class="solp"><div class="rh">Zahlungen auf diese Sollstellung</div>';
   if(!links.length&&bez<=0.005) h+='<div class="sub">Noch keine Zahlung zugeordnet.</div>';
-  for(const l of links) h+='<div class="kvr"><span>'+esc(dmy(l.r.d))+' · '+esc(l.r.pn||l.r.t)+' <span class="pill src">'+l.w+'</span></span><b>'+eur(l.b)+(l.w==='manuell'?' <button class="ghost small" data-solx="'+esc(l.r.key)+'">lösen</button>':'')+'</b></div>';
+  for(const l of links) h+='<div class="kvr"><span>'+esc(dmy(l.r.d))+' · '+esc(l.r.pn||l.r.t)+' <span class="pill src">'+l.w+'</span></span><b>'+eur(l.b)+(l.r.mz?' <button class="ghost small" data-mzdel="'+esc(l.r.mz)+'">entfernen</button>':l.w==='manuell'?' <button class="ghost small" data-solx="'+esc(l.r.key)+'">lösen</button>':'')+'</b></div>';
   if(bez-lsum>0.005) h+='<div class="kvr"><span>aus Zahlungen ohne feste Zuordnung (älteste Posten zuerst) bzw. aus Nahaus</span><b>'+eur(bez-lsum)+'</b></div>';
   const P=payRows(x).slice(0,18);
   h+='<div class="rh" style="margin-top:10px">Zahlung zuordnen</div>';
+  const vorB=r.offen>0.005?r.offen:r.s;
+  const manH='<div class="rh" style="margin-top:12px">Zahlung manuell erfassen</div><div class="sub">Für Zahlungen, die nicht auf unseren Konten eingehen – z. B. Kaution auf ein Kautionskonto (Sparbuch, Bürgschaft) oder Barzahlung.</div>'
+    +'<div class="acts" style="flex-wrap:wrap;align-items:flex-end"><label class="fl" style="min-width:140px">Datum<input type="date" id="mz-d" value="'+esc(today)+'"></label>'
+    +'<label class="fl" style="min-width:120px">Betrag (€)<input type="text" class="amt" id="mz-b" value="'+esc(fnum.format(vorB))+'"></label>'
+    +'<label class="fl" style="flex:1;min-width:200px">Bemerkung<input type="text" id="mz-t" placeholder="'+(r.k?'z. B. Kautionskonto Sparkasse':'z. B. Barzahlung')+'"></label>'
+    +'<button class="primary small" data-mzadd="'+esc(r.id)+'">Zahlung erfassen</button></div>';
   if(!P.length) h+='<div class="sub">Für diesen Mieter gibt es keine Zahlungen aus den Kontoauszügen im OS.</div>';
   else { h+='<table class="mini pay"><thead><tr><th>Eingang</th><th>Zahler / Verwendungszweck</th><th class="n">Betrag</th><th>derzeit auf</th><th class="n">frei</th><th class="n">zuordnen</th><th></th></tr></thead><tbody>';
     for(const p of P){ const cur=(p.alloc&&p.alloc.length?p.alloc:p.ia||[]).filter(a=>Number(a.b)>0); const here=cur.filter(a=>a.id===r.id).reduce((a,y)=>a+Number(y.b),0);
@@ -1404,7 +1568,7 @@ function solPanel(x,r,links,idT){ const bez=r2(r.s-(r.offen||0)), lsum=r2(links.
       h+='<tr><td>'+esc(dmy(p.d))+'</td><td class="wrapc">'+esc(p.t)+'</td><td class="n">'+eur(p.tb)+'</td><td class="sub">'+(cur.length?cur.map(a=>esc(idT[a.id]||'Posten')+' '+eur(a.b)).join(', '):'ältester offener Posten')+'</td><td class="n">'+((p.rest||0)>0.005?eur(p.rest):'')+'</td>'
         +'<td class="n"><input type="text" class="amt" data-sola="'+esc(p.key)+'" value="'+esc(fnum.format(here||vor))+'"></td><td><button class="small '+(here?'ghost':'primary')+'" data-solz="'+esc(p.key)+'">'+(here?'ändern':'zuordnen')+'</button></td></tr>'; }
     h+='</tbody></table><div class="sub">Eine Zahlung kann auf mehrere Sollstellungen verteilt werden. Wird mehr zugeordnet als gezahlt, werden die anderen Zuordnungen dieser Zahlung gekürzt.</div>'; }
-  return h+'</div>'; }
+  return h+manH+'</div>'; }
 function mkWriteTx(doc,ix,patch){ if(!db||!canWrite){ toast('Nur Lesezugriff.'); return Promise.resolve(); } const d=buch[doc]; if(!d) return Promise.resolve();
   const tx=d.tx.slice(); tx[ix]=Object.assign({},tx[ix],patch); d.tx=tx; invalidate(); calc=null; render(); return queue('buchungen/'+doc,()=>db.doc('buchungen/'+doc).update({tx:d.tx})); }
 function solAssign(pid,key,sid,b){ const x=calc&&calc.res[pid]; if(!x) return; const r=x.rows.find(q=>q.key===key&&!q.k)||x.rows.find(q=>q.key===key); if(!r) return;
@@ -1424,12 +1588,12 @@ function renderDash(x){ const mk=ed(x.mk), sn=STN[x.status], a=ampel(x), K=mk.ko
   h+='<div class="card"><div class="ch">Mieterinformationen'+(editOpen?'':'<button class="ghost small" data-edit="1">Bearbeiten</button>')+'</div>';
   if(editOpen){ const f=(id,l,v)=>'<label class="fl">'+l+'<input type="text" id="'+id+'" value="'+esc(v??'')+'"></label>';
     h+=f('e-mieter','Name(n)',mk.mieter)+f('e-anrede','Anrede für Briefe',mk.anrede)+f('e-email','E-Mail',mk.email!=null?mk.email:K.map(k=>k.email).filter(Boolean).join(', '))+f('e-tel','Telefon',mk.tel!=null?mk.tel:K.map(k=>k.tel).filter(Boolean).join(', '))
-      +f('e-kaution','Kaution vereinbart (€)',fnum.format(mk.kaution||0))+f('e-kbez','Kaution bezahlt (€) – leer = aus Nahaus',mk.kautionBezahlt!=null&&mk.kautionBezahlt!==''?fnum.format(mk.kautionBezahlt):'')+f('e-betreuer','Betreuer',mk.betreuer)+f('e-zahler','Wer zahlt die Miete? (leer = automatisch)',mk.zahler)+f('e-ref','Verwendungszweck',mk.ref)
+      +f('e-kaution','Kaution vereinbart (€)',fnum.format(mk.kaution||0))+f('e-kbez','Kaution bezahlt (€) – leer = aus Nahaus',mk.kautionBezahlt!=null&&mk.kautionBezahlt!==''?fnum.format(mk.kautionBezahlt):'')+f('e-betreuer','Betreuer',mk.betreuer).replace('id="e-betreuer"','id="e-betreuer" list="e-betrl"')+'<datalist id="e-betrl">'+BK.slice().sort((a,b)=>(b.vermittler-a.vermittler)||a.voll.localeCompare(b.voll,'de')).map(k=>'<option value="'+esc(betrLabel(k))+'"></option>').join('')+'</datalist>'+f('e-zahler','Wer zahlt die Miete? (leer = automatisch)',mk.zahler)+f('e-ref','Verwendungszweck',mk.ref)
       +'<label class="fl">Mieterranking<select id="e-ampel"><option value="">automatisch ('+AMPEL[x.ampelAuto][1]+')</option>'+Object.entries(AMPEL).map(([k,v])=>'<option value="'+k+'"'+(mk.ampel===k?' selected':'')+'>'+({gruen:'🟢 grün',gelb:'🟡 gelb',rot:'🔴 rot'}[k])+' – '+v[1]+'</option>').join('')+'</select></label>'
       +'<div class="acts"><button class="primary small" data-esave="1">Speichern</button><button class="ghost small" data-ecancel="1">Abbrechen</button></div>';
   } else {
     h+=kv('Name',esc(mk.mieter||'–'))+kv('E-Mail',(mk.email!=null?mk.email:K.map(k=>k.email).filter(Boolean).join(', '))?esc(mk.email!=null?mk.email:K.map(k=>k.email).filter(Boolean).join(', ')):'<span class="mut">–</span>')
-      +kv('Telefon',esc((mk.tel!=null?mk.tel:K.map(k=>k.tel).filter(Boolean).join(', '))||'–'))+kv('Betreuer',esc(mk.betreuer||'–'))
+      +kv('Telefon',esc((mk.tel!=null?mk.tel:K.map(k=>k.tel).filter(Boolean).join(', '))||'–'))+kv('Betreuer',betrHtml(mk.betreuer))
       +kv('Wer zahlt',esc(mk.zahler||x.zahlerAuto||'–')+(mk.zahler?'':' <span class="pill src">aus Zahlungen</span>'))
       +kv('Mieterranking',ampelDot(a)+' '+AMPEL[a][1]+(mk.ampel?' <span class="pill src">manuell</span>':' <span class="pill src" title="Automatisch aus Rückstand, Kaution und Zahlungseingang">auto</span>'))+(x.spaet?'<div class="sub">'+x.spaet+' verspätete Zahlung'+(x.spaet>1?'en':'')+' in den letzten 6 Monaten (nach dem 10.)</div>':''); }
   h+='</div>';
@@ -1451,16 +1615,20 @@ function renderDash(x){ const mk=ed(x.mk), sn=STN[x.status], a=ampel(x), K=mk.ko
     +'<details open><summary>Zusammensetzung</summary>'+kv('Kaltmiete',eur(st.kalt))+kv('Betriebskosten',eur(st.bk))+kv('Heizkosten',eur(st.hk))+(st.strom?kv('Strom',eur(st.strom)):'')+others.map(o=>kv(esc(o.t||'Sonstiges'),eur(o.b))).join('')+(!others.length&&st.sonst?kv('Sonstiges',eur(st.sonst)):'')+'</details>'
     +((x.mk.stufen||[]).length>1?'<details><summary>Mietentwicklung</summary><table class="mini">'+x.mk.stufen.map(z=>'<tr><td>ab '+esc(dmy(z.ab))+'</td><td class="n">'+eur(z.total)+'</td></tr>').join('')+'</table></details>':'')+'</div>';
   h+=mahnstandCard(x);
-  h+='</div>'+histCard(x)+notizCard(x)+anschreibenCard(x)+mailsCard(x)+akteBox(x)+sollCard(x);
+  h+='</div>'+asanaCard(x)+histCard(x)+notizCard(x)+anschreibenCard(x)+mailsCard(x)+akteBox(x)+sollCard(x);
   /* Mieterkonto */
   if(x.erg) h+='<div class="note warnbox">'+x.erg+' Monatsmiete'+(x.erg>1?'n fehlen':' fehlt')+' in Nahaus als Sollstellung und '+(x.erg>1?'wurden':'wurde')+' aus dem Mietvertrag ergänzt (kursiv).</div>';
   h+='<details class="card wide sec" data-sec="konto"'+(SEC.konto?' open':'')+'><summary class="ch">Mieterkonto<span class="sub">'+(zrAktiv('konto')?esc(zrText('konto'))+' · ':'')+'Saldo '+eur(x.saldo)+' · '+x.rows.length+' Buchungen</span></summary>'+zrBox('konto')+(zrAktiv('konto')?(()=>{ const Z=zrKonto(x); return '<div class="zrsum">'+(ZR.konto.von?'<span>Saldovortrag zum '+esc(dmy(ZR.konto.von))+': <b>'+eur(Z.vor)+'</b></span>':'')+'<span>Soll im Zeitraum: <b>'+eur(Z.soll)+'</b></span><span>Ist im Zeitraum: <b>'+eur(Z.ist)+'</b></span><span>Saldo'+(ZR.konto.bis?' am '+esc(dmy(ZR.konto.bis>today?today:ZR.konto.bis)):'')+': <b>'+eur(Z.ende)+'</b></span></div>'; })():'')+pdfButtons('konto')+'<div class="tablewrap"><table class="kb"><thead><tr><th>Datum</th><th>Buchung</th><th class="n">Soll</th><th class="n">Ist</th><th class="n">Saldo</th></tr></thead><tbody>';
   const idT={}; for(const r of x.rows) if(r.id) idT[r.id]=r.t;
   for(const r of x.rows.filter(r=>zrIn('konto',r.d)).reverse()){ h+='<tr class="'+(r.e?'erg':'')+(r.fut?' fut':'')+(r.k?' kaut':'')+'"><td>'+esc(dmy(r.d))+'</td><td class="wrapc">'+esc(r.t)+'<div class="sub">'+esc(r.src)+(r.fut?' · fällig ab '+esc(dmy(r.d))+', zählt noch nicht im Saldo':'')+(r.k?' · Kaution (getrennt)':'')+(r.man?' · manuell zugeordnet':'')+(r.alloc&&r.alloc.length?' · zugeordnet auf: '+r.alloc.map(q=>esc(idT[q.id]||'Posten')+' '+eur(q.b)).join(', '):r.ia&&r.ia.length?' · für '+r.ia.map(q=>esc(idT[q.id]||'Posten')+' '+eur(q.b)).join(', '):'')+(r.s&&r.fut&&r.offen!=null&&r.offen<=0.005?' · bereits bezahlt':'')+(r.s&&r.offen!=null&&!r.fut?(r.offen>0.005?(r.offen<r.s-0.005?' · teilweise bezahlt, offen '+eur(r.offen):' · offen'):' · bezahlt'):'')+'</div>'+(r.key?zuordSel(r,x.mk):'')+'</td><td class="n">'+(r.s?eur(r.s):'')+'</td><td class="n pos">'+(r.h?eur(r.h):'')+'</td><td class="n">'+(r.saldo==null?'':'<b class="'+(r.saldo>0.5?'neg':'')+'">'+eur(r.saldo)+'</b>')+'</td></tr>'; }
-  h+='</tbody></table></div><div class="sub" style="margin-top:6px">Neueste Buchungen oben.</div></details>';
+  h+='</tbody></table></div>'+zuordList(x.mk)+'<div class="sub" style="margin-top:6px">Neueste Buchungen oben.</div></details>';
   return h; }
-function zuordSel(r,mk0){ const L=Object.values(MK).filter(m=>m.unit===r.unit||m.obj===mk0.obj).sort((a,b)=>(b.von||'').localeCompare(a.von||''));
-  return '<select class="zsel" data-zkey="'+esc(r.key)+'" title="Zahlung einem anderen Mietverhältnis zuordnen"><option value="">andere Zuordnung …</option>'+L.filter(m=>m.pid!==mk0.pid).map(m=>'<option value="'+esc(m.pid)+'">'+esc(m.obj+' '+uName(m.einheit)+' · '+(ed(m).mieter||'')+' ('+dmy(m.von)+(m.bis?'–'+dmy(m.bis):'')+')')+'</option>').join('')+'<option value="-">keinem Mieter zuordnen</option>'+(r.man?'<option value="~">automatische Zuordnung wiederherstellen</option>':'')+'</select>'; }
+var ZLAB={};
+function zuordList(mk0){ const L=Object.values(MK).filter(m=>m.pid!==mk0.pid).sort((a,b)=>((b.obj===mk0.obj)-(a.obj===mk0.obj))||String(a.obj).localeCompare(String(b.obj),'de',{numeric:true})||uName(a.einheit).localeCompare(uName(b.einheit),'de',{numeric:true})||(b.von||'').localeCompare(a.von||''));
+  const opts=L.map(m=>[m.obj+' '+uName(m.einheit)+' · '+(ed(m).mieter||'')+' ('+dmy(m.von)+(m.bis?'–'+dmy(m.bis):'')+')',m.pid]).concat([['keinem Mieter zuordnen','-'],['automatische Zuordnung wiederherstellen','~']]);
+  for(const [l,v] of opts) ZLAB[l]=v;
+  return '<datalist id="zl-mieter">'+opts.map(([l])=>'<option value="'+esc(l)+'"></option>').join('')+'</datalist>'; }
+function zuordSel(r,mk0){ return '<input type="text" class="zsel" list="zl-mieter" data-zkey="'+esc(r.key)+'" placeholder="andere Zuordnung: Name oder Einheit eintippen …" title="Zahlung einem anderen Mietverhältnis zuordnen">'; }
 function importCard(big){ return '<div class="note'+(big?'':' small')+'"><b>'+(big?'Mietverträge und Sollstellungen übernehmen':'Daten aus Nahaus aktualisieren')+'</b><div style="margin:6px 0">Import-Datei <code>mietkonten_import.json</code> auswählen (erstellt Claude aus Nahaus).</div><input type="file" id="mk-file" accept=".json"> <span id="mk-st" class="sub"></span></div>'; }
 
 /* ---------- Ereignisse ---------- */
@@ -1487,10 +1655,23 @@ document.addEventListener('click',async e=>{ const t=e.target.closest('button,tr
   if(t.dataset.solf!==undefined){ solNurOffen=t.dataset.solf==='1'; render(); return; }
   if(t.dataset.sol){ solSel=solSel===t.dataset.sol?null:t.dataset.sol; render(); return; }
   if(t.dataset.solz){ const inp=document.querySelector('[data-sola="'+CSS.escape(t.dataset.solz)+'"]'); const b=parseNum(inp?inp.value:''); if(b==null||isNaN(b)||b<0){ toast('Bitte einen Betrag eingeben.'); return; } const p=solAssign(M.sel,t.dataset.solz,solSel,b); if(p) p.then(()=>toast(b>0?'Zahlung zugeordnet.':'Zuordnung entfernt.')); return; }
+  if(t.dataset.mzadd){ if(!canWrite){ toast('Nur Lesezugriff.'); return; } const d=($('mz-d')||{}).value||'', b=parseNum(($('mz-b')||{}).value||''), bem=String(($('mz-t')||{}).value||'').trim();
+    if(!/^\d{4}-\d\d-\d\d$/.test(d)){ toast('Bitte ein Datum eingeben.'); return; } if(b==null||isNaN(b)||b<=0){ toast('Bitte einen Betrag eingeben.'); return; }
+    const x=calc&&calc.res[M.sel], sr=x&&x.rows.find(q=>q.id===t.dataset.mzadd);
+    const neu={id:'mz'+Date.now().toString(36),d,b:r2(b),t:bem,sid:t.dataset.mzadd,k:!!(sr&&sr.k),am:today,von:ICH||''};
+    saveEdit(M.sel,{manZ:(ed(MK[M.sel]).manZ||[]).concat([neu])},'Zahlung erfasst.','Zahlung manuell erfasst: '+eur(neu.b)+' am '+dmy(d)+(sr?' auf '+sr.t:'')+(bem?' ('+bem+')':'')); return; }
+  if(t.dataset.mzdel){ if(t.dataset.sure!=='1'){ t.dataset.sure='1'; t.textContent='wirklich entfernen?'; return; } const L=ed(MK[M.sel]).manZ||[], z=L.find(q=>q.id===t.dataset.mzdel);
+    saveEdit(M.sel,{manZ:L.filter(q=>q.id!==t.dataset.mzdel)},'Zahlung entfernt.',z?'Manuelle Zahlung entfernt: '+eur(z.b)+' vom '+dmy(z.d):'Manuelle Zahlung entfernt'); return; }
   if(t.dataset.solx){ const p=solAssign(M.sel,t.dataset.solx,solSel,0); if(p) p.then(()=>toast('Zuordnung gelöst.')); return; }
   if(t.dataset.mk){ M.sel=t.dataset.mk; solSel=null; NDRAFT=''; NOTF=[]; editOpen=false; modal=true; showDone=false; saveM(); render(); return; }
   if(t.dataset.zvopen){ (window.top||window).location.href='/vermietung/zahlungsvereinbarung-register'; return; }
-  if(t.dataset.zvnew){ (window.top||window).location.href='/vermietung/zahlungsvereinbarung'; return; }
+  if(t.dataset.zvnew){ const x=calc&&calc.res[M.sel]; if(!x){ (window.top||window).location.href='/vermietung/zahlungsvereinbarung'; return; }
+    const mk=ed(x.mk), o=objekte.find(q=>q.kz===x.mk.obj)||{}, adr=(ADR[x.mk.obj]||'').split('|').filter(Boolean), kau=t.dataset.zvnew==='kaution';
+    const ford=kau?(x.kOffen||0):Math.max(x.saldo||0,0);
+    const q=new URLSearchParams({von:'mieterkonto',pid:M.sel,art:kau?'kaution':'miete',mieter:mk.mieter||'',whg:uName(x.mk.einheit)||'',objekt:adr.join(', '),obj:x.mk.obj||'',glaeubiger:INHABER[o.ges||x.mk.ges]||INHABER.WT,forderung:ford>0.005?String(ford.toFixed(2)).replace('.',','):'',ort:(adr[1]||'').replace(/^\d{5}\s*/,'')});
+    if(!kau&&x.op&&x.op.length) q.set('posten',x.op.map(op=>dmy(op.d)+' '+op.t+' '+eur(op.b)).join(' | ').slice(0,1500));
+    try{ localStorage.setItem('zv_rueck',JSON.stringify({pid:M.sel,t:Date.now()})); }catch(e){}
+    (window.top||window).location.href='/vermietung/zahlungsvereinbarung?'+q.toString(); return; }
   if(t.dataset.zvdel){ saveEdit(M.sel,{raten:(ed(MK[M.sel]).raten||[]).filter(i=>i!==t.dataset.zvdel)},'Verknüpfung gelöst.'); return; }
   if(t.dataset.ftog){ const k=M.sel+'|'+t.dataset.ftog; const D=DOCS[M.sel]||{}; docOpen[k]=!(docOpen[k]??((D[t.dataset.ftog]||[]).length>0)); render(); return; }
   if(t.dataset.pcancel){ pend=null; render(); return; }
@@ -1506,21 +1687,24 @@ document.addEventListener('click',async e=>{ const t=e.target.closest('button,tr
   if(t.dataset.mst){ M.st=t.dataset.mst; saveM(); render(); return; }
   if(t.dataset.edit){ editOpen=true; render(); return; }
   if(t.dataset.ecancel){ editOpen=false; render(); return; }
-  if(t.dataset.esave){ const g=id=>$(id).value.trim(); editOpen=false; const kz=parseNum(g('e-kaution')), kbz=parseNum(g('e-kbez')); saveEdit(M.sel,{kaution:(kz==null||isNaN(kz))?(ed(MK[M.sel]).kaution||0):kz,kautionBezahlt:(kbz==null||isNaN(kbz))?'':kbz,mieter:g('e-mieter'),anrede:g('e-anrede'),email:g('e-email'),tel:g('e-tel'),betreuer:g('e-betreuer'),zahler:g('e-zahler'),ref:g('e-ref'),ampel:$('e-ampel').value},'Mieterdaten gespeichert.'); return; } });
+  if(t.dataset.esave){ const g=id=>$(id).value.trim(); editOpen=false; const kz=parseNum(g('e-kaution')), kbz=parseNum(g('e-kbez')); const alt=ed(MK[M.sel]), neu={kaution:(kz==null||isNaN(kz))?(alt.kaution||0):kz,kautionBezahlt:(kbz==null||isNaN(kbz))?'':kbz,mieter:g('e-mieter'),anrede:g('e-anrede'),email:g('e-email'),tel:g('e-tel'),betreuer:g('e-betreuer'),zahler:g('e-zahler'),ref:g('e-ref'),ampel:$('e-ampel').value};
+    const NAM={kaution:'Kaution vereinbart',kautionBezahlt:'Kaution bezahlt',mieter:'Name',anrede:'Anrede',email:'E-Mail',tel:'Telefon',betreuer:'Betreuer',zahler:'Wer zahlt',ref:'Verwendungszweck',ampel:'Mieterranking'};
+    const diff=Object.keys(neu).filter(k=>String(alt[k]??'')!==String(neu[k]??'')).map(k=>NAM[k]+': '+(String(alt[k]??'')||'–')+' → '+(String(neu[k]??'')||'–'));
+    saveEdit(M.sel,neu,'Mieterdaten gespeichert.',diff.length?'Mieterdaten geändert – '+diff.join('; '):false); return; } });
 ['dragenter','dragover'].forEach(ev=>document.addEventListener(ev,e=>{ const d=e.target.closest&&e.target.closest('[data-fdrop]'); if(d&&e.dataTransfer&&[...(e.dataTransfer.types||[])].includes('Files')){ e.preventDefault(); document.querySelectorAll('.fold.over').forEach(x=>x!==d&&x.classList.remove('over')); d.classList.add('over'); } }));
 document.addEventListener('dragleave',e=>{ const d=e.target.closest&&e.target.closest('[data-fdrop]'); if(d&&!d.contains(e.relatedTarget)) d.classList.remove('over'); });
 document.addEventListener('drop',e=>{ const d=e.target.closest&&e.target.closest('[data-fdrop]'); if(!d||!e.dataTransfer||!e.dataTransfer.files.length) return; e.preventDefault(); d.classList.remove('over'); queueFiles(MK[M.sel],d.dataset.fdrop,e.dataTransfer.files); });
 document.addEventListener('mousedown',e=>{ if(e.target.id==='ov'&&!MR.busy){ modal=false; mahnOpen=false; editOpen=false; render(); } });
 document.addEventListener('keydown',e=>{ if(e.key==='Escape'&&(modal||mahnOpen)&&!MR.busy){ modal=false; mahnOpen=false; editOpen=false; render(); } if(e.key==='Enter'&&e.target.id==='t-neu'){ const b=document.querySelector('[data-tadd]'); if(b) b.click(); } });
 document.addEventListener('change',async e=>{ const t=e.target;
-  if(t.dataset.zvadd){ if(!t.value) return; saveEdit(M.sel,{raten:(ed(MK[M.sel]).raten||[]).concat([t.value])},'Ratenzahlung verknüpft.'); return; }
+  if(t.dataset.zvadd){ const id=ZVLAB[t.value]; if(!id){ if(t.value) toast('Bitte einen Eintrag aus der Liste wählen.'); return; } const r=ed(MK[M.sel]).raten||[]; if(r.includes(id)) return; saveEdit(M.sel,{raten:r.concat([id])},'Ratenzahlung verknüpft.'); return; }
   if(t.dataset.fup){ queueFiles(MK[M.sel],t.dataset.fup,t.files); t.value=''; return; }
   if(t.dataset.pf!==undefined){ pend.files[Number(t.dataset.pf)].folder=t.value; return; }
   if(t.dataset.pdt!==undefined){ pend.files[Number(t.dataset.pdt)].datum=t.value.trim(); render(); return; }
   if(t.dataset.pt!==undefined){ pend.files[Number(t.dataset.pt)].titel=t.value.trim(); render(); return; }
   if(t.id==='n-file'){ NOTF=[...t.files]; render(); return; }
   if(t.dataset.tdone){ const T=(ed(MK[M.sel]).tickets||[]).map(x=>x.id===t.dataset.tdone?Object.assign({},x,{done:t.checked?today:''}):x); { const tk=(ed(MK[M.sel]).tickets||[]).find(x=>x.id===t.dataset.tdone); saveEdit(M.sel,{tickets:T},t.checked?'Ticket erledigt.':'Ticket wieder offen.',(t.checked?'Ticket erledigt: ':'Ticket wieder offen: ')+(tk?tk.t:'')); } return; }
-  if(t.dataset.zkey){ const v=t.value; if(!v) return; const z=Object.assign({},ZUORD); if(v==='~') delete z[t.dataset.zkey]; else z[t.dataset.zkey]=v; ZUORD=z; calc=null; render(); saveStamm('mietzuordnung',{map:ZUORD}).then(()=>toast(v==='-'?'Zahlung keinem Mieter zugeordnet.':'Zahlung umgebucht.')); return; }
+  if(t.dataset.zkey){ const v=ZLAB[t.value]; if(!v){ if(t.value) toast('Bitte einen Eintrag aus der Liste wählen.'); return; } const z=Object.assign({},ZUORD); if(v==='~') delete z[t.dataset.zkey]; else z[t.dataset.zkey]=v; ZUORD=z; calc=null; render(); saveStamm('mietzuordnung',{map:ZUORD}).then(()=>toast(v==='-'?'Zahlung keinem Mieter zugeordnet.':'Zahlung umgebucht.')); return; }
   if(t.dataset.mrsel){ MR.sel[t.dataset.mrsel]=t.checked; render(); return; }
   if(t.dataset.mrst){ MR.stufe[t.dataset.mrst]=t.value; render(); return; }
   if(t.id==='mr-datum'){ if(t.value){ MR.datum=t.value; } render(); return; }
@@ -1531,7 +1715,7 @@ document.addEventListener('change',async e=>{ const t=e.target;
   if(t.id==='m-obj'){ M.obj=t.value; saveM(); render(); return; }
   if(t.id==='mk-file'){ const f=t.files[0]; if(!f) return; const st=$('mk-st');
     try{ const n=await window.osImportFile(f,x=>st.textContent=x); st.textContent='✅ '+n+' Dokumente übernommen.'; toast('Mieterkonten aktualisiert.'); }catch(err){ st.textContent='❌ '+(err.message||err); } } });
-document.addEventListener('input',e=>{ if(e.target.id==='n-text'){ NDRAFT=e.target.value; return; } if(e.target.id==='ne-text'){ NEDTXT=e.target.value; return; } if(e.target.id==='mr-q'){ MR.q=e.target.value; clearTimeout(window.__mq); window.__mq=setTimeout(render,180); return; } if(e.target.id==='m-q'){ M.q=e.target.value; clearTimeout(window.__mq); window.__mq=setTimeout(render,180); } });
+document.addEventListener('input',e=>{ if(e.target.id==='n-text'){ NDRAFT=e.target.value; return; } if(e.target.id==='ne-text'){ NEDTXT=e.target.value; return; } if(e.target.id==='mr-q'){ MR.q=e.target.value; clearTimeout(window.__mq); window.__mq=setTimeout(render,180); return; } if(e.target.id==='m-betr'){ M.betr=e.target.value; saveM(); clearTimeout(window.__mq); window.__mq=setTimeout(render,250); return; } if(e.target.id==='m-q'){ M.q=e.target.value; clearTimeout(window.__mq); window.__mq=setTimeout(render,180); } });
 
 /* ---------- Start ---------- */
 render();
@@ -1546,11 +1730,11 @@ render();
   db.doc('stamm/verwsub').onSnapshot(s=>{ vsMap=(s.exists?clone(s.data()).map:null)||{}; invalidate(); calc=null; render(); },()=>{});
   db.doc('stamm/nahaus').onSnapshot(s=>{ const d=s.exists?clone(s.data()):{}; nhMap=d.map||{}; invalidate(); calc=null; render(); },()=>{});
   db.doc('stamm/einstellungen').onSnapshot(s=>{ einst=s.exists?clone(s.data()):{}; done('e'); },()=>done('e'));
-  db.doc('stamm/mietkonten-edit').onSnapshot(s=>{ EDIT=(s.exists?clone(s.data()).e:null)||{}; calc=null; render(); },()=>{});
+  db.doc('stamm/mietkonten-edit').onSnapshot(s=>{ EDIT=(s.exists?clone(s.data()).e:null)||{}; EDITload=true; calc=null; render(); zvTry(); },()=>{});
   db.doc('stamm/mietzuordnung').onSnapshot(s=>{ ZUORD=(s.exists?clone(s.data()).map:null)||{}; calc=null; render(); },()=>{});
   db.doc('stamm/mietkonten').onSnapshot(s=>{ mkStand=s.exists?(s.data().stand||''):''; mkUeb=s.exists?(s.data().uebernahme||''):''; render(); },()=>{});
   db.collection('buchungen').onSnapshot(q=>{ const m={}; q.docs.forEach(d=>{m[d.id]=clone(d.data());}); buch=m; done('b'); },e=>{toast('Buchungen nicht lesbar: '+e.message); done('b');});
-  loadZV(); loadRegM(); loadIch();
+  loadZV(); loadRegM(); loadIch().then(inboxStart); betrLaden();
   db.collection('mails').onSnapshot(q=>{ const m={}; q.docs.forEach(d=>{ const v=clone(d.data()); (m[v.pid]=m[v.pid]||[]).push(v); }); MAILS=m; render(); },()=>{});
   db.collection('anschreiben').onSnapshot(q=>{ const m={}; q.docs.forEach(d=>{ const v=clone(d.data()); (m[v.pid]=m[v.pid]||[]).push(v); }); ANS=m; render(); },()=>{});
   db.collection('historie').onSnapshot(q=>{ const m={}; q.docs.forEach(d=>{ const v=clone(d.data()); (m[v.pid]=m[v.pid]||[]).push(v); }); HIST=m; render(); },()=>{});
@@ -1558,7 +1742,7 @@ render();
   db.doc('stamm/mahnung').onSnapshot(s=>{ MBZ=(s.exists?clone(s.data()).bz:null)||[]; render(); },()=>{});
   db.collection('mahnlaeufe').onSnapshot(q=>{ const m={}; q.docs.forEach(d=>{m[d.id]=clone(d.data());}); MAHN=m; calc=null; render(); },()=>{});
   db.collection('sollstellungen').onSnapshot(q=>{ const m={}; q.docs.forEach(d=>{m[d.id]=clone(d.data());}); SL=m; loadedSL=true; calc=null; render(); },()=>{ loadedSL=true; });
-  db.collection('mietkonten').onSnapshot(q=>{ const m={}; q.docs.forEach(d=>{m[d.id]=clone(d.data());}); MK=m; loadedMK=true; calc=null; render(); },()=>{ loadedMK=true; render(); });
+  db.collection('mietkonten').onSnapshot(q=>{ const m={}; q.docs.forEach(d=>{m[d.id]=clone(d.data());}); MK=m; loadedMK=true; calc=null; render(); zvTry(); },()=>{ loadedMK=true; render(); });
 })();
 })();
 </script>
