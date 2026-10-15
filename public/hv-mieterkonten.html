@@ -1088,7 +1088,7 @@ function asanaCard(x){ const pid=x.mk.pid, s=AS[pid];
   if(ASF.neu){ if(!ASP) setTimeout(asProjekte,0); const mk=ed(x.mk);
     if(!ASF.titel) ASF.titel=x.mk.obj+'_'+(asNachnamen(x)[0]||'')+'_';
     h+='<div class="hneu"><label class="fl">Titel<input type="text" id="as-titel" value="'+esc(ASF.titel)+'"></label>'
-      +'<div class="hrow"><label class="fl">Projekt<select id="as-proj"><option value="">'+(ASP?'– ohne Projekt (nur „Meine Aufgaben“) –':'Lade Projekte …')+'</option>'+(ASP||[]).map(p=>'<option value="'+esc(p.gid)+'"'+(p.gid===ASF.proj?' selected':'')+'>'+esc(p.name)+'</option>').join('')+'</select></label>'
+      +'<div class="hrow"><label class="fl" style="flex:2">Projekt<input type="text" id="as-proj" list="as-projl" value="'+esc(ASF.projName||'')+'" placeholder="'+(ASP?'Projektname eintippen, leer = ohne Projekt':'Lade Projekte …')+'"><datalist id="as-projl">'+(ASP||[]).map(p=>'<option value="'+esc(p.name)+'"></option>').join('')+'</datalist></label>'
       +'<label class="fl">Fällig am<input type="date" id="as-due" value="'+esc(ASF.due)+'"></label></div>'
       +'<textarea id="as-notiz" rows="3" placeholder="Beschreibung (optional)">'+esc(ASF.notiz)+'</textarea>'
       +'<div class="acts"><button class="primary small" data-assave="1"'+(ASF.busy?' disabled':'')+'>'+(ASF.busy?'Lege an …':'In Asana anlegen')+'</button><span class="sub">Mieter, Einheit und Adresse werden automatisch in die Beschreibung übernommen.</span></div></div>'; }
@@ -1100,17 +1100,19 @@ function asanaCard(x){ const pid=x.mk.pid, s=AS[pid];
   if(fertig.length) h+='<details style="margin-top:8px"><summary class="sub" style="cursor:pointer">'+fertig.length+' erledigte Aufgabe'+(fertig.length===1?'':'n')+'</summary>'+fertig.map(zeile).join('')+'</details>';
   h+='<div class="sub" style="margin-top:6px">Gesucht wird in Asana nach: '+esc(asNachnamen(x).join(', '))+'. Aufgaben am besten nach dem Muster „Objekt_Nachname_Thema“ benennen, dann werden sie sicher gefunden.</div>';
   return h+'</details>'; }
-document.addEventListener('input',e=>{ const t=e.target; if(!t||!t.id) return; if(t.id==='as-titel') ASF.titel=t.value; else if(t.id==='as-notiz') ASF.notiz=t.value; else if(t.id==='as-due') ASF.due=t.value; });
-document.addEventListener('change',e=>{ const t=e.target; if(t&&t.id==='as-proj') ASF.proj=t.value; if(t&&t.id==='as-due') ASF.due=t.value; });
+document.addEventListener('input',e=>{ const t=e.target; if(!t||!t.id) return; if(t.id==='as-titel') ASF.titel=t.value; else if(t.id==='as-proj') asProjWahl(t.value); else if(t.id==='as-notiz') ASF.notiz=t.value; else if(t.id==='as-due') ASF.due=t.value; });
+function asProjWahl(v){ ASF.projName=v; const p=(ASP||[]).find(q=>q.name===v); ASF.proj=p?p.gid:''; }
+document.addEventListener('change',e=>{ const t=e.target; if(t&&t.id==='as-proj') asProjWahl(t.value); if(t&&t.id==='as-due') ASF.due=t.value; });
 document.addEventListener('click',async e=>{ const t=e.target.closest('button,input[data-asdone]'); if(!t||!t.dataset) return; const d=t.dataset;
   if(d.asneu){ asLaden(M.sel,true); return; }
   if(d.asform){ ASF=Object.assign({},ASF,{neu:!ASF.neu,titel:'',notiz:'',due:''}); render(); return; }
   if(d.assave){ const x=calc&&calc.res[M.sel]; if(!x) return; const titel=String(ASF.titel||'').trim(); if(!titel){ toast('Bitte einen Titel eingeben.'); return; }
+    if(ASF.projName&&!ASF.proj){ toast('Projekt nicht gefunden – bitte einen Eintrag aus der Liste wählen oder das Feld leeren.'); return; }
     const mk=ed(x.mk), adr=(ADR[x.mk.obj]||'').split('|').filter(Boolean).join(', ');
     const notiz=(ASF.notiz?ASF.notiz+'\n\n':'')+'Mieter: '+(mk.mieter||'')+'\nEinheit: '+x.mk.obj+' '+uName(x.mk.einheit)+(adr?' · '+adr:'')+'\nAngelegt im Wohntraum OS (Mieterkonto) von '+(ICH||'')+' am '+dmy(today);
     ASF.busy=true; render();
     try{ const j=await asApi({aktion:'anlegen',name:titel,projekt:ASF.proj,faellig:ASF.due,notiz}); histLog(M.sel,'Ticket','Asana-Aufgabe angelegt: '+titel);
-      const s=AS[M.sel]||{L:[]}; s.L=[Object.assign(j.aufgabe,{rang:3})].concat(s.L||[]); AS[M.sel]=s; ASF={neu:false,titel:'',proj:ASF.proj,due:'',notiz:'',busy:false}; toast('Aufgabe in Asana angelegt.'); }
+      const s=AS[M.sel]||{L:[]}; s.L=[Object.assign(j.aufgabe,{rang:3})].concat(s.L||[]); AS[M.sel]=s; ASF={neu:false,titel:'',proj:ASF.proj,projName:ASF.projName,due:'',notiz:'',busy:false}; toast('Aufgabe in Asana angelegt.'); }
     catch(err){ ASF.busy=false; toast(err.message||String(err)); }
     render(); return; }
   if(d.asdone){ const gid=d.asdone, wert=t.checked; try{ const j=await asApi({aktion:'erledigt',gid,wert}); const s=AS[M.sel]; if(s&&s.L) s.L=s.L.map(a=>a.gid===gid?Object.assign(a,j.aufgabe):a); histLog(M.sel,'Ticket','Asana-Aufgabe '+(wert?'erledigt':'wieder geöffnet')+': '+j.aufgabe.name); toast(wert?'In Asana als erledigt markiert.':'In Asana wieder geöffnet.'); }catch(err){ t.checked=!wert; toast(err.message||String(err)); } render(); return; } });
