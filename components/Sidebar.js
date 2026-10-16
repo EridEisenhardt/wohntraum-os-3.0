@@ -195,11 +195,11 @@ export const GB_MAP = {
   '/hausmeisterdienst': 'hausmeisterdienst', '/haushaltshilfe': 'gf', '/jahresplaner': 'gf', '/persoenliche-assistenz': 'gf', '/ziele-entwicklung': 'gf',
   wissensdatenbank: 'wissen',
 }
-// Zwei Arbeitsbereiche im Menü: "eric" (Geschäftsführung) und "team" (Tagesgeschäft von Ramona und Jürgen).
+// Zwei Arbeitsbereiche im Menü: "eric" (Geschäftsführung) und "team" (Verwalto: Tagesgeschäft von Ramona und Jürgen).
 // Nicht aufgeführte Einträge erscheinen in beiden Bereichen.
 export const BEREICHE = [
+  { v: 'team', label: 'Verwalto', text: 'Hausverwaltung, Buchhaltung, Personal und Stammdaten – die tägliche Arbeit im Büro' },
   { v: 'eric', label: 'Eric', text: 'Geschäftsführung, Controlling, Finanzen, Assetmanagement, Vermietung und Persönliches' },
-  { v: 'team', label: 'Tagesgeschäft', text: 'Hausverwaltung, Buchhaltung, Personal und Stammdaten – die tägliche Arbeit im Büro' },
 ]
 export const BEREICH_MAP = {
   'gf-dashboard': 'eric', '/beschluesse': 'eric', backoffice: 'eric', 'assetmgmt-bh': 'eric', assetmanagement: 'eric', strategie: 'eric',
@@ -226,9 +226,12 @@ export default function Sidebar({ user, demo, onLogout, role, perms }) {
   useEffect(() => {
     const lies = () => { try { const b = localStorage.getItem('os_bereich'); setBereich(b === 'eric' || b === 'team' ? b : '') } catch (e) {} }
     lies()
+    // Klick auf eine Kategorie im Cockpit: nur diese Kategorie im Menü aufklappen
+    const oeffne = (e) => { const k = e && e.detail; if (!k) return; const n = new Set([k]); setOpenCats(n); try { localStorage.setItem('sidebar_open_cats', JSON.stringify([k])) } catch (er) {} }
     window.addEventListener('os-bereich', lies)
     window.addEventListener('storage', lies)
-    return () => { window.removeEventListener('os-bereich', lies); window.removeEventListener('storage', lies) }
+    window.addEventListener('os-oeffne', oeffne)
+    return () => { window.removeEventListener('os-bereich', lies); window.removeEventListener('storage', lies); window.removeEventListener('os-oeffne', oeffne) }
   }, [])
   const waehleBereich = (b) => { setBereich(b); try { localStorage.setItem('os_bereich', b) } catch (e) {} ; try { window.dispatchEvent(new Event('os-bereich')) } catch (e) {} }
 
@@ -351,7 +354,7 @@ export default function Sidebar({ user, demo, onLogout, role, perms }) {
   const visibleNav = aktBereich ? allVisible.filter((n) => imBereich(n, aktBereich)) : allVisible
   useEffect(() => {
     try {
-      window.__osBereiche = { aktiv: aktBereich, liste: bereicheSichtbar.map((b) => ({ v: b.v, label: b.label, text: b.text, kategorien: allVisible.filter((n) => bereichOf(n) === b.v).map((n) => n.label) })) }
+      window.__osBereiche = { aktiv: aktBereich, liste: bereicheSichtbar.map((b) => ({ v: b.v, label: b.label, text: b.text, kategorien: allVisible.filter((n) => bereichOf(n) === b.v).map((n) => ({ label: n.label, key: n.type === 'group' ? n.key : '', href: n.type === 'group' ? '' : n.href })) })) }
       window.dispatchEvent(new Event('os-bereiche'))
     } catch (e) {}
   })

@@ -1,10 +1,12 @@
 'use client'
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
+import { useRouter } from 'next/navigation'
 
 // Cockpit: Auswahl des Arbeitsbereichs. Die Liste der Bereiche liefert das Menü (je nach Rechten).
 export default function Cockpit() {
   const [daten, setDaten] = useState({ aktiv: '', liste: [] })
+  const router = useRouter()
 
   useEffect(() => {
     const lies = () => { if (window.__osBereiche) setDaten(window.__osBereiche) }
@@ -16,6 +18,13 @@ export default function Cockpit() {
   const waehle = (v) => {
     try { localStorage.setItem('os_bereich', v) } catch (e) {}
     try { window.dispatchEvent(new Event('os-bereich')) } catch (e) {}
+  }
+  // Kategorie anklicken: Bereich wählen und im Menü nur diese Kategorie aufklappen (einzelne Seiten direkt öffnen)
+  const oeffne = (e, v, k) => {
+    e.stopPropagation()
+    waehle(v)
+    if (k.href) { router.push(k.href); return }
+    try { window.dispatchEvent(new CustomEvent('os-oeffne', { detail: k.key })) } catch (er) {}
   }
 
   return (
@@ -35,12 +44,12 @@ export default function Cockpit() {
       <div className="sub" style={{ marginBottom: 10 }}>Arbeitsbereich wählen – links im Menü erscheinen dann die passenden Punkte.</div>
       <div className="bereiche">
         {daten.liste.map((b) => (
-          <button key={b.v} className={'bereich-karte' + (daten.aktiv === b.v ? ' on' : '')} onClick={() => waehle(b.v)}>
+          <div key={b.v} role="button" tabIndex={0} className={'bereich-karte' + (daten.aktiv === b.v ? ' on' : '')} onClick={() => waehle(b.v)}>
             <div className="t">{b.label}</div>
             <div className="d">{b.text}</div>
-            <div className="k">{b.kategorien.map((k) => <span key={k}>{k}</span>)}</div>
+            <div className="k">{b.kategorien.map((k) => <button key={k.label} onClick={(e) => oeffne(e, b.v, k)}>{k.label}</button>)}</div>
             {daten.aktiv === b.v && <div className="akt">Aktiver Bereich</div>}
-          </button>
+          </div>
         ))}
         {!daten.liste.length && <div className="sub">Lade …</div>}
       </div>
