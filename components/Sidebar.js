@@ -397,9 +397,9 @@ export default function Sidebar({ user, demo, onLogout, role, perms }) {
   const imBereich = (n, b) => { const x = bereichOf(n); return x === 'beide' || x === b }
   const bereicheSichtbar = BEREICHE.filter((b) => allVisible.some((n) => bereichOf(n) === b.v))
   const aktBereich = bereicheSichtbar.some((b) => b.v === bereich) ? bereich : (bereicheSichtbar.length ? (isAdmin && bereicheSichtbar.some((b) => b.v === 'eric') ? 'eric' : bereicheSichtbar[bereicheSichtbar.length - 1].v) : '')
-  // Im Bereich Verwalto stehen die Kategorien alphabetisch (gemeinsame Links wie Cockpit bleiben an ihrem Platz)
+  // Im Bereich Verwalto stehen die Kategorien alphabetisch, die gemeinsamen Links (Cockpit, Alle Tools …) darunter
   const alphaBereich = (b) => b === 'team'
-  const sortAlpha = (L, b) => { if (!alphaBereich(b)) return L; const eig = L.filter((n) => bereichOf(n) === b).sort((x, y) => x.label.localeCompare(y.label, 'de')); let i = 0; return L.map((n) => (bereichOf(n) === b ? eig[i++] : n)) }
+  const sortAlpha = (L, b) => { if (!alphaBereich(b)) return L; const eig = L.filter((n) => bereichOf(n) === b).sort((x, y) => x.label.localeCompare(y.label, 'de')); return eig.concat(L.filter((n) => bereichOf(n) !== b)) }
   const visibleNav = aktBereich ? sortAlpha(allVisible.filter((n) => imBereich(n, aktBereich)), aktBereich) : allVisible
   useEffect(() => {
     try {
