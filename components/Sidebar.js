@@ -17,6 +17,7 @@ export const NAV = [
   ] },
   { type: 'group', key: 'buchhaltung', icon: 'ti-calculator', label: 'Buchhaltung', area: ['hv', 'backoffice'], mod: 'controlling', items: [
     { href: '/buchhaltung/buchungen', icon: 'ti-arrows-exchange', label: 'Buchungen' },
+    { href: '/controlling/monatswechsel-fixkosten', icon: 'ti-calendar-check', label: 'Monatswechsel Fixkosten' },
     { href: '/hausverwaltung/mieterkonten', icon: 'ti-users', label: 'Mieterkonten' },
     { href: '/vermietung/zahlungsvereinbarung', icon: 'ti-file-dollar', label: 'Ratenzahlung erstellen' },
     { href: '/vermietung/zahlungsvereinbarung-register', icon: 'ti-receipt-2', label: 'Ratenzahlungen' },
@@ -38,6 +39,9 @@ export const NAV = [
     { href: '/hausverwaltung/mietermeldungen', icon: 'ti-message-report', label: 'Mietermeldungen' },
     { href: '/hausverwaltung/dienstleister', icon: 'ti-address-book', label: 'Firmen & Dienstleister' },
     { href: '/hausverwaltung/anschreiben', icon: 'ti-mail', label: 'Anschreiben' },
+    { href: '/vermietung/einzuege', icon: 'ti-door-enter', label: 'Einzüge' },
+    { href: '/vermietung/mieteruebergaben', icon: 'ti-key', label: 'Mieterübergaben' },
+    { href: '/vermietung/auszuege', icon: 'ti-door-exit', label: 'Auszüge' },
     { href: '/vermietung/zahlungsvereinbarung', icon: 'ti-file-dollar', label: 'Ratenzahlung erstellen' },
     { href: '/vermietung/zahlungsvereinbarung-register', icon: 'ti-receipt-2', label: 'Ratenzahlungen' },
     { href: '/gerichtsfaelle', icon: 'ti-gavel', label: 'Gericht-Anwalt-Inkasso' },
@@ -81,9 +85,6 @@ export const NAV = [
     { href: '/vermietung/wohnungsvermietung-bpmn', icon: 'ti-hierarchy-2', label: 'Wohnungsvermietung · BPMN' },
     { href: '/vermietung/steckbrief', icon: 'ti-id-badge-2', label: 'Steckbrief Generator' },
     { href: '/vermietung/laufende-vermietungen', icon: 'ti-progress', label: 'Laufende Vermietungen' },
-    { href: '/vermietung/einzuege', icon: 'ti-door-enter', label: 'Einzüge' },
-    { href: '/vermietung/mieteruebergaben', icon: 'ti-key', label: 'Mieterübergaben' },
-    { href: '/vermietung/auszuege', icon: 'ti-door-exit', label: 'Auszüge' },
     { href: '/vermietung/zahlungsvereinbarung', icon: 'ti-file-dollar', label: 'Ratenzahlung erstellen' },
     { href: '/vermietung/zahlungsvereinbarung-register', icon: 'ti-receipt-2', label: 'Ratenzahlungen' },
   ] },
@@ -91,7 +92,6 @@ export const NAV = [
     { href: '/controlling/statistik', icon: 'ti-chart-bar', label: 'Statistik' },
     { href: '/controlling/xray', icon: 'ti-scan', label: 'xRay' },
     { href: '/controlling/monatswechsel', icon: 'ti-calendar-dollar', label: 'Monatswechsel (Controlling)' },
-    { href: '/controlling/monatswechsel-fixkosten', icon: 'ti-calendar-check', label: 'Monatswechsel Fixkosten' },
     { href: '/controlling/objekt-controlling', icon: 'ti-building-bank', label: 'Objekt-Controlling' },
   ] },
   { type: 'group', key: 'produktivitaet', icon: 'ti-rocket', label: 'Produktivität', area: 'hv', mod: 'produktivitaet', items: [
@@ -198,14 +198,14 @@ export const GB_MAP = {
 // Zwei Arbeitsbereiche im Menü: "eric" (Geschäftsführung) und "team" (Tagesgeschäft von Ramona und Jürgen).
 // Nicht aufgeführte Einträge erscheinen in beiden Bereichen.
 export const BEREICHE = [
-  { v: 'eric', label: 'Eric', text: 'Geschäftsführung, Finanzen, Assetmanagement, Vertrieb und Persönliches' },
+  { v: 'eric', label: 'Eric', text: 'Geschäftsführung, Controlling, Finanzen, Assetmanagement, Vermietung und Persönliches' },
   { v: 'team', label: 'Tagesgeschäft', text: 'Hausverwaltung, Buchhaltung, Personal und Stammdaten – die tägliche Arbeit im Büro' },
 ]
 export const BEREICH_MAP = {
   'gf-dashboard': 'eric', '/beschluesse': 'eric', backoffice: 'eric', 'assetmgmt-bh': 'eric', assetmanagement: 'eric', strategie: 'eric',
   baustandard: 'eric', crm: 'eric', ankauf: 'eric', produktivitaet: 'eric', finance: 'eric', prozesse: 'eric', 'eric-privat': 'eric',
   '/jahresplaner': 'eric', '/ziele-entwicklung': 'eric', '/persoenliche-assistenz': 'eric', '/haushaltshilfe': 'eric',
-  hausverwaltung: 'team', buchhaltung: 'team', controlling: 'team', personal: 'team', stammdaten: 'team', vermietung: 'team',
+  hausverwaltung: 'team', buchhaltung: 'team', personal: 'team', stammdaten: 'team', controlling: 'eric', vermietung: 'eric',
   '/hausmeisterdienst': 'team', '/aktivitaeten': 'team', berichte: 'team', wissensdatenbank: 'team', '/dokumente': 'team', '/dms': 'team',
 }
 export const bereichOf = (n) => BEREICH_MAP[n.type === 'group' ? n.key : n.href] || 'beide'
