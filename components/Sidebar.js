@@ -39,7 +39,7 @@ export const NAV = [
     { href: '/personal/zustaendigkeiten', icon: 'ti-list-check', label: 'Zuständigkeiten' },
   ] },
   { type: 'group', key: 'v-stammdaten', icon: 'ti-database', label: 'Stammdaten', mod: 'verwalto', items: [
-    { href: '/hausverwaltung/dienstleister', icon: 'ti-address-book', label: 'Kontaktdaten' },
+    { href: '/hausverwaltung/dienstleister', icon: 'ti-address-book', label: 'Kontakte' },
     { href: '/verwalto/gesellschaften', icon: 'ti-building', label: 'Gesellschaften', offen: true },
   ] },
   { type: 'group', key: 'v-verwaltung', icon: 'ti-folders', label: 'Verwaltung', mod: 'verwalto', items: [
