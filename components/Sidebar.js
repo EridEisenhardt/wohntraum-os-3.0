@@ -12,11 +12,12 @@ export const NAV = [
     { href: '/buchhaltung/buchungen', icon: 'ti-arrows-exchange', label: 'Buchungen' },
     { href: '/controlling/monatswechsel-fixkosten', icon: 'ti-calendar-check', label: 'Monatswechsel Fixkosten' },
     { href: '/betriebskosten', icon: 'ti-receipt-2', label: 'Betriebskostenabrechnung' },
+    { href: '/controlling/objekt-controlling', icon: 'ti-building-bank', label: 'Objekt-Controlling' },
   ] },
-  { type: 'group', key: 'v-dokumente', icon: 'ti-files', label: 'Dokumentenmanagement', mod: 'verwalto', items: [
+  { type: 'group', key: 'v-dokumente', icon: 'ti-files', label: 'Dokumente erstellen', mod: 'verwalto', items: [
     { href: '/hausverwaltung/anschreiben', icon: 'ti-mail', label: 'Anschreiben' },
     { href: '/verwalto/dokumente', icon: 'ti-file', label: 'Dokumente', offen: true },
-    { href: '/vermietung/zahlungsvereinbarung', icon: 'ti-file-dollar', label: 'Ratenzahlung erstellen' },
+    { href: '/vermietung/zahlungsvereinbarung', icon: 'ti-file-dollar', label: 'Ratenzahlung' },
     { href: '/mahnprozess/generator', icon: 'ti-file-invoice', label: 'Mahnungen' },
   ] },
   { type: 'group', key: 'v-fuhrpark', icon: 'ti-car', label: 'Fuhrpark', mod: 'verwalto', items: [
@@ -27,7 +28,7 @@ export const NAV = [
     { href: '/hausverwaltung/mieterkonten', icon: 'ti-users', label: 'Mieterkonten' },
     { href: '/verwalto/neuvermietung', icon: 'ti-key', label: 'Neuvermietung', offen: true },
   ] },
-  { type: 'group', key: 'v-mahnwesen', icon: 'ti-cash-off', label: 'Mahnwesen und Forderungen', mod: 'verwalto', items: [
+  { type: 'group', key: 'v-mahnwesen', icon: 'ti-cash-off', label: 'Mahnwesen & Forderungen', mod: 'verwalto', items: [
     { href: '/hausverwaltung/offene-mieten', icon: 'ti-cash-off', label: 'Offene Mieten' },
     { href: '/vermietung/zahlungsvereinbarung-register', icon: 'ti-receipt-2', label: 'Ratenzahlungen' },
     { href: '/verwalto/mahnlaeufe', icon: 'ti-gavel', label: 'Mahnläufe', perm: '/hausverwaltung/mieterkonten' },
