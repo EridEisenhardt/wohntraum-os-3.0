@@ -476,7 +476,8 @@ export default function Sidebar({ user, demo, onLogout, role, perms }) {
             </div>
             </div>
           )
-          const vis = n.items.filter((it) => canSeeItem(n, it))
+          const vis0 = n.items.filter((it) => canSeeItem(n, it))
+          const vis = alphaBereich(bereichOf(n)) ? vis0.slice().sort((x, y) => x.label.localeCompare(y.label, 'de')) : vis0
           if (!vis.length) return null
           const open = catOpen(n)
           return (
