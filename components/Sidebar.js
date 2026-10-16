@@ -6,6 +6,45 @@ import { useState, useEffect } from 'react'
 export const NAV = [
   { type: 'link', href: '/', icon: 'ti-layout-dashboard', label: 'Cockpit', exact: true, area: 'common' },
   { type: 'link', href: '/tools', icon: 'ti-layout-grid', label: 'Alle Tools', area: 'common' },
+  // Bereich Verwalto: eigene Kategorien. Einträge mit "offen" sind Platzhalter für alle sichtbar,
+  // alle anderen sind sichtbar, wenn die Seite (bzw. "perm") an ihrem bisherigen Platz im Menü sichtbar war.
+  { type: 'group', key: 'v-buchhaltung', icon: 'ti-calculator', label: 'Buchhaltung', mod: 'verwalto', items: [
+    { href: '/buchhaltung/buchungen', icon: 'ti-arrows-exchange', label: 'Buchungen' },
+    { href: '/controlling/monatswechsel-fixkosten', icon: 'ti-calendar-check', label: 'Monatswechsel Fixkosten' },
+    { href: '/betriebskosten', icon: 'ti-receipt-2', label: 'Betriebskostenabrechnung' },
+  ] },
+  { type: 'group', key: 'v-dokumente', icon: 'ti-files', label: 'Dokumentenmanagement', mod: 'verwalto', items: [
+    { href: '/hausverwaltung/anschreiben', icon: 'ti-mail', label: 'Anschreiben' },
+    { href: '/verwalto/dokumente', icon: 'ti-file', label: 'Dokumente', offen: true },
+    { href: '/vermietung/zahlungsvereinbarung', icon: 'ti-file-dollar', label: 'Ratenzahlung erstellen' },
+    { href: '/mahnprozess/generator', icon: 'ti-file-invoice', label: 'Mahnungen' },
+  ] },
+  { type: 'group', key: 'v-fuhrpark', icon: 'ti-car', label: 'Fuhrpark', mod: 'verwalto', items: [
+    { href: '/verwalto/fuhrpark', icon: 'ti-car', label: 'Fahrzeuge', offen: true },
+  ] },
+  { type: 'group', key: 'v-hausverwaltung', icon: 'ti-home-cog', label: 'Hausverwaltung', mod: 'verwalto', items: [
+    { href: '/hausverwaltung/objekte', icon: 'ti-building-skyscraper', label: 'Objekte' },
+    { href: '/hausverwaltung/mieterkonten', icon: 'ti-users', label: 'Mieterkonten' },
+    { href: '/verwalto/neuvermietung', icon: 'ti-key', label: 'Neuvermietung', offen: true },
+  ] },
+  { type: 'group', key: 'v-mahnwesen', icon: 'ti-cash-off', label: 'Mahnwesen und Forderungen', mod: 'verwalto', items: [
+    { href: '/hausverwaltung/offene-mieten', icon: 'ti-cash-off', label: 'Offene Mieten' },
+    { href: '/vermietung/zahlungsvereinbarung-register', icon: 'ti-receipt-2', label: 'Ratenzahlungen' },
+    { href: '/verwalto/mahnlaeufe', icon: 'ti-gavel', label: 'Mahnläufe', perm: '/hausverwaltung/mieterkonten' },
+  ] },
+  { type: 'group', key: 'v-personal', icon: 'ti-users-group', label: 'Personal', mod: 'verwalto', items: [
+    { href: '/personal/lohnkosten', icon: 'ti-coin', label: 'Lohnkosten' },
+    { href: '/personal/akte', icon: 'ti-folder', label: 'Personalakten' },
+    { href: '/personal/zustaendigkeiten', icon: 'ti-list-check', label: 'Zuständigkeiten' },
+  ] },
+  { type: 'group', key: 'v-stammdaten', icon: 'ti-database', label: 'Stammdaten', mod: 'verwalto', items: [
+    { href: '/hausverwaltung/dienstleister', icon: 'ti-address-book', label: 'Kontaktdaten' },
+    { href: '/verwalto/gesellschaften', icon: 'ti-building', label: 'Gesellschaften', offen: true },
+  ] },
+  { type: 'group', key: 'v-verwaltung', icon: 'ti-folders', label: 'Verwaltung', mod: 'verwalto', items: [
+    { href: '/hausverwaltung/vertraege', icon: 'ti-file-certificate', label: 'Verträge' },
+    { href: '/gerichtsfaelle', icon: 'ti-gavel', label: 'Gericht-Anwalt-Inkasso' },
+  ] },
   { type: 'link', href: '/playbook', icon: 'ti-book-2', label: 'Playbook', area: 'common' },
   { type: 'group', key: 'gf-dashboard', icon: 'ti-chart-pie', label: 'GF-Dashboard', area: ['vertrieb', 'hv'], mod: 'dashboards', items: [
     { href: '/gf-dashboard', icon: 'ti-chart-pie', label: 'Übersicht' },
@@ -205,8 +244,9 @@ export const BEREICH_MAP = {
   'gf-dashboard': 'eric', '/beschluesse': 'eric', backoffice: 'eric', 'assetmgmt-bh': 'eric', assetmanagement: 'eric', strategie: 'eric',
   baustandard: 'eric', crm: 'eric', ankauf: 'eric', produktivitaet: 'eric', finance: 'eric', prozesse: 'eric', 'eric-privat': 'eric',
   '/jahresplaner': 'eric', '/ziele-entwicklung': 'eric', '/persoenliche-assistenz': 'eric', '/haushaltshilfe': 'eric',
-  hausverwaltung: 'team', buchhaltung: 'team', personal: 'team', stammdaten: 'team', controlling: 'eric', vermietung: 'eric',
-  '/hausmeisterdienst': 'team', '/aktivitaeten': 'team', berichte: 'team', wissensdatenbank: 'team', '/dokumente': 'team', '/dms': 'team',
+  hausverwaltung: 'eric', buchhaltung: 'eric', personal: 'eric', stammdaten: 'eric', controlling: 'eric', vermietung: 'eric',
+  '/hausmeisterdienst': 'eric', '/aktivitaeten': 'eric', berichte: 'eric', wissensdatenbank: 'eric', '/dokumente': 'eric', '/dms': 'eric',
+  'v-buchhaltung': 'team', 'v-dokumente': 'team', 'v-fuhrpark': 'team', 'v-hausverwaltung': 'team', 'v-mahnwesen': 'team', 'v-personal': 'team', 'v-stammdaten': 'team', 'v-verwaltung': 'team',
 }
 export const bereichOf = (n) => BEREICH_MAP[n.type === 'group' ? n.key : n.href] || 'beide'
 export const gbOf = (n) => (n.type === 'group' ? GB_MAP[n.key] : GB_MAP[n.href])
@@ -242,6 +282,11 @@ export default function Sidebar({ user, demo, onLogout, role, perms }) {
   const roleOwnsBereich = (n) => !!role && gbOf(n) === role
   const canSeeItem = (n, it) => {
     if (demo || isAdmin) return true
+    if (String(n.key || '').startsWith('v-')) {
+      if (it.offen) return true
+      const h = it.perm || it.href
+      return NAV.some((g) => g.type === 'group' && !String(g.key).startsWith('v-') && g.items.some((x) => x.href === h && canSeeItem(g, x)))
+    }
     if (n.key === 'eric-privat') return isAdmin
     if (roleOwnsBereich(n)) return true
     if (!perms) return true

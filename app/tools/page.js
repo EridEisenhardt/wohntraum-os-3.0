@@ -6,7 +6,7 @@ import { NAV } from '../../components/Sidebar'
 function buildItems() {
   const items = []
   NAV.forEach((n) => {
-    if (n.href === '/tools') return
+    if (n.href === '/tools' || String(n.key || '').startsWith('v-')) return
     if (n.type === 'link') items.push({ href: n.href, label: n.label, icon: n.icon, cat: 'Direktzugriff' })
     else n.items.forEach((it) => items.push({ href: it.href, label: it.label, icon: it.icon, cat: n.label }))
   })
