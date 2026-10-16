@@ -195,6 +195,20 @@ export const GB_MAP = {
   '/hausmeisterdienst': 'hausmeisterdienst', '/haushaltshilfe': 'gf', '/jahresplaner': 'gf', '/persoenliche-assistenz': 'gf', '/ziele-entwicklung': 'gf',
   wissensdatenbank: 'wissen',
 }
+// Zwei Arbeitsbereiche im Menü: "eric" (Geschäftsführung) und "team" (Tagesgeschäft von Ramona und Jürgen).
+// Nicht aufgeführte Einträge erscheinen in beiden Bereichen.
+export const BEREICHE = [
+  { v: 'eric', label: 'Eric', text: 'Geschäftsführung, Finanzen, Assetmanagement, Vertrieb und Persönliches' },
+  { v: 'team', label: 'Tagesgeschäft', text: 'Hausverwaltung, Buchhaltung, Personal und Stammdaten – die tägliche Arbeit im Büro' },
+]
+export const BEREICH_MAP = {
+  'gf-dashboard': 'eric', '/beschluesse': 'eric', backoffice: 'eric', 'assetmgmt-bh': 'eric', assetmanagement: 'eric', strategie: 'eric',
+  baustandard: 'eric', crm: 'eric', ankauf: 'eric', produktivitaet: 'eric', finance: 'eric', prozesse: 'eric', 'eric-privat': 'eric',
+  '/jahresplaner': 'eric', '/ziele-entwicklung': 'eric', '/persoenliche-assistenz': 'eric', '/haushaltshilfe': 'eric',
+  hausverwaltung: 'team', buchhaltung: 'team', controlling: 'team', personal: 'team', stammdaten: 'team', vermietung: 'team',
+  '/hausmeisterdienst': 'team', '/aktivitaeten': 'team', berichte: 'team', wissensdatenbank: 'team', '/dokumente': 'team', '/dms': 'team',
+}
+export const bereichOf = (n) => BEREICH_MAP[n.type === 'group' ? n.key : n.href] || 'beide'
 export const gbOf = (n) => (n.type === 'group' ? GB_MAP[n.key] : GB_MAP[n.href])
 
 export default function Sidebar({ user, demo, onLogout, role, perms }) {
@@ -208,6 +222,15 @@ export default function Sidebar({ user, demo, onLogout, role, perms }) {
   const [catOrder, setCatOrder] = useState([])
   const [dragCat, setDragCat] = useState(null)
   const isAdmin = role === 'admin'
+  const [bereich, setBereich] = useState('')
+  useEffect(() => {
+    const lies = () => { try { const b = localStorage.getItem('os_bereich'); setBereich(b === 'eric' || b === 'team' ? b : '') } catch (e) {} }
+    lies()
+    window.addEventListener('os-bereich', lies)
+    window.addEventListener('storage', lies)
+    return () => { window.removeEventListener('os-bereich', lies); window.removeEventListener('storage', lies) }
+  }, [])
+  const waehleBereich = (b) => { setBereich(b); try { localStorage.setItem('os_bereich', b) } catch (e) {} ; try { window.dispatchEvent(new Event('os-bereich')) } catch (e) {} }
 
   const has = (key) => !!(perms && Object.prototype.hasOwnProperty.call(perms, key))
   const on = (key) => { const p = perms && perms[key]; return !!(p && p.sehen) }
@@ -321,7 +344,17 @@ export default function Sidebar({ user, demo, onLogout, role, perms }) {
   // Hauptkategorien: eigene Reihenfolge (per Drag & Drop, im Browser gespeichert)
   const navId = (n) => (n.type === 'group' ? 'cat:' + n.key : 'lnk:' + n.href)
   const navRank = (n, i) => { const r = catOrder.indexOf(navId(n)); return r < 0 ? 1000 + i : r }
-  const visibleNav = NAV.map((n, i) => ({ n, r: navRank(n, i) })).sort((a, b) => a.r - b.r).map((x) => x.n).filter((n) => canSee(n))
+  const allVisible = NAV.map((n, i) => ({ n, r: navRank(n, i) })).sort((a, b) => a.r - b.r).map((x) => x.n).filter((n) => canSee(n) && (n.type !== 'group' || n.items.some((it) => canSeeItem(n, it))))
+  const imBereich = (n, b) => { const x = bereichOf(n); return x === 'beide' || x === b }
+  const bereicheSichtbar = BEREICHE.filter((b) => allVisible.some((n) => bereichOf(n) === b.v))
+  const aktBereich = bereicheSichtbar.some((b) => b.v === bereich) ? bereich : (bereicheSichtbar.length ? (isAdmin && bereicheSichtbar.some((b) => b.v === 'eric') ? 'eric' : bereicheSichtbar[bereicheSichtbar.length - 1].v) : '')
+  const visibleNav = aktBereich ? allVisible.filter((n) => imBereich(n, aktBereich)) : allVisible
+  useEffect(() => {
+    try {
+      window.__osBereiche = { aktiv: aktBereich, liste: bereicheSichtbar.map((b) => ({ v: b.v, label: b.label, text: b.text, kategorien: allVisible.filter((n) => bereichOf(n) === b.v).map((n) => n.label) })) }
+      window.dispatchEvent(new Event('os-bereiche'))
+    } catch (e) {}
+  })
   // 'dragged' vor 'target' einfügen (target=null → ans Ende)
   const moveCatBefore = (dragged, target) => {
     if (!dragged || dragged === target) return
@@ -365,6 +398,14 @@ export default function Sidebar({ user, demo, onLogout, role, perms }) {
         <button className="sbx-logout sbx-zuklapp" title="Menü einklappen" onClick={toggleZu}>‹</button>
         {!demo && <button className="sbx-logout" title="Abmelden" onClick={onLogout}><i className="ti ti-logout" /></button>}
       </div>
+
+      {bereicheSichtbar.length > 1 && (
+        <div className="sbx-bereich">
+          {bereicheSichtbar.map((b) => (
+            <button key={b.v} className={aktBereich === b.v ? 'on' : ''} onClick={() => waehleBereich(b.v)}>{b.label}</button>
+          ))}
+        </div>
+      )}
 
       <div className="sbx-search">
         <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="🔍 Thema suchen…" />
