@@ -351,10 +351,13 @@ export default function Sidebar({ user, demo, onLogout, role, perms }) {
   const imBereich = (n, b) => { const x = bereichOf(n); return x === 'beide' || x === b }
   const bereicheSichtbar = BEREICHE.filter((b) => allVisible.some((n) => bereichOf(n) === b.v))
   const aktBereich = bereicheSichtbar.some((b) => b.v === bereich) ? bereich : (bereicheSichtbar.length ? (isAdmin && bereicheSichtbar.some((b) => b.v === 'eric') ? 'eric' : bereicheSichtbar[bereicheSichtbar.length - 1].v) : '')
-  const visibleNav = aktBereich ? allVisible.filter((n) => imBereich(n, aktBereich)) : allVisible
+  // Im Bereich Verwalto stehen die Kategorien alphabetisch (gemeinsame Links wie Cockpit bleiben an ihrem Platz)
+  const alphaBereich = (b) => b === 'team'
+  const sortAlpha = (L, b) => { if (!alphaBereich(b)) return L; const eig = L.filter((n) => bereichOf(n) === b).sort((x, y) => x.label.localeCompare(y.label, 'de')); let i = 0; return L.map((n) => (bereichOf(n) === b ? eig[i++] : n)) }
+  const visibleNav = aktBereich ? sortAlpha(allVisible.filter((n) => imBereich(n, aktBereich)), aktBereich) : allVisible
   useEffect(() => {
     try {
-      window.__osBereiche = { aktiv: aktBereich, liste: bereicheSichtbar.map((b) => ({ v: b.v, label: b.label, text: b.text, kategorien: allVisible.filter((n) => bereichOf(n) === b.v).map((n) => ({ label: n.label, key: n.type === 'group' ? n.key : '', href: n.type === 'group' ? '' : n.href })) })) }
+      window.__osBereiche = { aktiv: aktBereich, liste: bereicheSichtbar.map((b) => ({ v: b.v, label: b.label, text: b.text, kategorien: sortAlpha(allVisible.filter((n) => bereichOf(n) === b.v), b.v).map((n) => ({ label: n.label, key: n.type === 'group' ? n.key : '', href: n.type === 'group' ? '' : n.href })) })) }
       window.dispatchEvent(new Event('os-bereiche'))
     } catch (e) {}
   })
