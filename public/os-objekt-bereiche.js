@@ -20,29 +20,74 @@ document.addEventListener('focusin',e=>{const t=e.target;if(t&&t.matches&&t.matc
 document.addEventListener('focusout',e=>{const t=e.target;if(t&&t.matches&&t.matches('input[data-wahl]')&&!t.value&&t.dataset.alt){t.value=t.dataset.alt;t.dispatchEvent(new Event('input',{bubbles:true}));}});
 
 /* ---------- Bereiche anlegen ---------- */
-const BER=[['hist','Historie'],['asana','Aufgaben (Asana)'],['brief','Anschreiben'],['mails','Mails'],['kosten','Kosten']];
-let OH=[],OBR=[],OML=[],MH=[],BLADE=false;
+const BER=[['notiz','Notizen'],['hist','Historie'],['asana','Aufgaben (Asana)'],['brief','Anschreiben'],['mails','Mails'],['kosten','Kosten']];
+let ON=[],OH=[],OBR=[],OML=[],MH=[],BLADE=false;
 function bereicheInit(){const box=document.getElementById('uebBereiche');if(!box||box.dataset.ok)return;box.dataset.ok='1';
   box.innerHTML=BER.map(([k,t])=>`<details class="card sec" data-sec="${k}"${SECO[k]?' open':''}><summary class="ch">${t}<span class="sub" id="bs-${k}"></span></summary><div id="bx-${k}"><div class="sub">Lädt …</div></div></details>`).join('');
   bereicheLaden();}
 async function bereicheLaden(){if(BLADE)return;BLADE=true;loadIch();
   const pids=[...new Set(TEN.filter(t=>t.quelle==='mk'&&t.pid).map(t=>t.pid))];
-  const [h,b,m,mh]=await Promise.all([docsVon('objhist'),docsVon('objbrief'),docsVon('objmails'),
+  const [n,h,b,m,mh]=await Promise.all([docsVon('objnotiz'),docsVon('objhist'),docsVon('objbrief'),docsVon('objmails'),
     pids.length?sb.from('os_docs').select('data').eq('app','oc').like('pfad','historie/%').in('data->>pid',pids).then(r=>(r.data||[]).map(x=>x.data)):Promise.resolve([])]);
-  OH=h;OBR=b;OML=m;MH=(mh||[]).filter(Boolean);
-  rHist();rAsana();rBrief();rMails();rKosten();
+  ON=n;OH=h;OBR=b;OML=m;MH=(mh||[]).filter(Boolean);
+  rNotiz();rHist();rAsana();rBrief();rMails();rKosten();
   BER.forEach(([k])=>{if(SECO[k])bereichOeffnen(k);});}
 function bereichOeffnen(k){if(k==='asana'&&!AS.L&&!AS.lade&&!AS.err)asLaden();if(k==='kosten')kostenOeffnen();}
 async function objLog(art,t,d){if(!ICH)await loadIch();const ts=new Date(),lid=OB.kz+'__'+ts.getTime()+Math.random().toString(36).slice(2,5);
   const e={kz:OB.kz,id:lid,d:d||ts.toISOString(),erfasst:ts.toISOString(),art,t:String(t||''),by:ICH||'unbekannt',mail:ICHMAIL,uid:ICHID,manuell:!!d};
   try{await docSet('objhist/'+lid,e);OH.push(e);rHist();}catch(err){}}
 
+/* ---------- Notizen mit KI (wie im Mieterkonto) ---------- */
+let NDRAFT='',NOTF=[],NBUSY=false,NKI={busy:'',orig:null,fehler:''},NEDIT=null,NEDTXT='',NEKI=null,KURZ={},KBUSY='';
+const eigen=n=>(ICHID&&n.uid===ICHID)||(ICHMAIL&&String(n.mail||n.by||'').toLowerCase()===ICHMAIL);
+function kiKnoepfe(feld){const b=NKI.busy,orig=feld==='n-text'?NKI.orig:NEKI;
+  return `<button class="ghost small" onclick="notizKi('verbessern','${feld}')"${b?' disabled':''}>${b===feld+'verbessern'?'KI arbeitet …':'Mit KI verbessern'}</button>`
+    +`<button class="ghost small" onclick="notizKi('stichpunkte','${feld}')"${b?' disabled':''}>${b===feld+'stichpunkte'?'KI arbeitet …':'In Stichpunkte kürzen'}</button>`
+    +(orig!=null?`<button class="ghost small" onclick="notizOrig('${feld}')">Original wiederherstellen</button>`:'')
+    +(NKI.fehler?`<div class="note warnbox" style="flex-basis:100%">${esc(NKI.fehler)}</div>`:'');}
+function rNotiz(){const box=document.getElementById('bx-notiz');if(!box)return;const L=ON.slice().sort((a,b)=>String(b.d).localeCompare(String(a.d)));
+  document.getElementById('bs-notiz').textContent=L.length+' Eintr'+(L.length===1?'ag':'äge')+(L.length?' · zuletzt '+dfmt(String(L[0].d).slice(0,10)):'');
+  let h=`<textarea id="n-text" class="inp" style="width:100%" rows="3" placeholder="Neue Notiz zum Objekt …" oninput="NDRAFT=this.value">${esc(NDRAFT)}</textarea>
+    <div class="acts">${kiKnoepfe('n-text')}</div>
+    <div class="acts"><label class="up">Datei anhängen<input type="file" multiple hidden onchange="NOTF=NOTF.concat([...this.files]);this.value='';rNotiz()"></label>${NOTF.length?`<span class="sub">${NOTF.map(f=>esc(f.name)).join(', ')}</span><button class="ghost small" onclick="NOTF=[];rNotiz()">Dateien entfernen</button>`:''}<button class="primary small" onclick="notizSpeichern()"${NBUSY?' disabled':''}>${NBUSY?'Speichere …':'Notiz speichern'}</button></div>
+    <div class="sub">Gespeicherte Notizen erhalten Datum, Uhrzeit und Ersteller und können nur von dem bearbeitet oder gelöscht werden, der sie geschrieben hat. Dateien werden im Objektordner unter 01 Objekt / Notizen abgelegt.</div>`;
+  for(const n of L){const dt=new Date(n.d),mein=eigen(n);
+    h+=`<div class="note-e"><div class="note-h"><b>${esc(dt.toLocaleDateString('de-DE'))} ${esc(dt.toLocaleTimeString('de-DE',{hour:'2-digit',minute:'2-digit'}))}</b> · ${esc(nutzerName(n.mail||n.by))}${n.edited?` <span class="sub">(bearbeitet ${esc(new Date(n.edited).toLocaleDateString('de-DE'))})</span>`:''}${mein&&NEDIT!==n.id?` <button class="ghost small" onclick="NEDIT='${jq(n.id)}';NEDTXT=ON.find(x=>x.id===NEDIT).t||'';NEKI=null;rNotiz()">bearbeiten</button><button class="ghost small" onclick="notizLoeschen('${jq(n.id)}',this)">löschen</button>`:''}</div>`;
+    if(NEDIT===n.id)h+=`<textarea id="ne-text" class="inp" style="width:100%" rows="5" oninput="NEDTXT=this.value">${esc(NEDTXT)}</textarea><div class="acts">${kiKnoepfe('ne-text')}</div><div class="acts"><button class="primary small" onclick="notizAendern()">Speichern</button><button class="ghost small" onclick="NEDIT=null;NEKI=null;rNotiz()">Abbrechen</button></div>`;
+    else if(n.t){h+=`<div class="note-t">${esc(n.t)}</div>`;
+      if(n.t.length>350)h+=`<div class="acts"><button class="ghost small" onclick="notizKurz('${jq(n.id)}')"${KBUSY===n.id?' disabled':''}>${KBUSY===n.id?'KI fasst zusammen …':KURZ[n.id]?'Kurzfassung ausblenden':'Kurzfassung (KI)'}</button></div>`+(KURZ[n.id]?`<div class="note-k">${esc(KURZ[n.id])}</div>`:'');}
+    if((n.files||[]).length)h+=`<div class="note-f">${n.files.map(f=>f.web?`<a href="${esc(f.web)}" target="_blank" rel="noopener">${esc(f.n)}</a>`:esc(f.n)).join(' · ')}</div>`;
+    h+='</div>';}
+  if(OB.notizen)h+=`<div class="note-e"><div class="note-h"><b>Frühere Notiz</b> · ohne Datum</div><div class="note-t">${esc(OB.notizen)}</div></div>`;
+  box.innerHTML=h;}
+async function notizKi(aufgabe,feld){const ta=document.getElementById(feld),t=((ta&&ta.value)||'').trim();if(!t){toast('Bitte zuerst einen Text eingeben.');return;}
+  NKI.busy=feld+aufgabe;NKI.fehler='';rNotiz();
+  try{const r=await kiCall(aufgabe,t);if(feld==='n-text'){if(NKI.orig==null)NKI.orig=t;NDRAFT=r.text||t;}else{if(NEKI==null)NEKI=t;NEDTXT=r.text||t;}}
+  catch(e){NKI.fehler=e.message||String(e);}NKI.busy='';rNotiz();}
+function notizOrig(feld){if(feld==='n-text'){NDRAFT=NKI.orig||'';NKI.orig=null;}else{NEDTXT=NEKI||'';NEKI=null;}rNotiz();}
+async function notizKurz(nid){const n=ON.find(x=>x.id===nid);if(!n)return;if(KURZ[nid]){delete KURZ[nid];rNotiz();return;}
+  KBUSY=nid;rNotiz();try{KURZ[nid]=(await kiCall('stichpunkte',n.t)).text||'';}catch(e){KURZ[nid]='Fehler: '+(e.message||e);}KBUSY='';rNotiz();}
+async function notizSpeichern(){if(NBUSY)return;const t=(NDRAFT||'').trim();if(!t&&!NOTF.length){toast('Bitte einen Text eingeben oder eine Datei anhängen.');return;}
+  if(NOTF.length&&!OB.onedrive_pfad){toast('Für dieses Objekt ist kein OneDrive-Ordner hinterlegt, Dateien können nicht abgelegt werden.');return;}
+  if(!ICH)await loadIch();NBUSY=true;rNotiz();const ts=new Date(),nid=OB.kz+'__'+ts.getTime(),files=[];
+  try{for(const f of NOTF){const it=await odHochladen(OB.onedrive_pfad+'/01 Objekt/Notizen',OB.kz+'_'+HEUTE+'_'+f.name,f);files.push({n:it.name,web:it.web||'',id:it.id||''});}
+    const e={kz:OB.kz,id:nid,d:ts.toISOString(),by:ICH||'unbekannt',mail:ICHMAIL,uid:ICHID,t,files};
+    await docSet('objnotiz/'+nid,e);ON.push(e);NDRAFT='';NOTF=[];NKI={busy:'',orig:null,fehler:''};toast('Notiz gespeichert.');rHist();}
+  catch(err){toast('Notiz nicht gespeichert: '+(err.message||err));}NBUSY=false;rNotiz();}
+async function notizAendern(){const n=ON.find(x=>x.id===NEDIT);if(!n||!eigen(n)){toast('Nur der Verfasser kann diese Notiz bearbeiten.');return;}const t=(NEDTXT||'').trim();if(!t&&!(n.files||[]).length){toast('Bitte einen Text eingeben.');return;}
+  const neu=Object.assign({},n,{t,edited:new Date().toISOString()});
+  try{await docSet('objnotiz/'+n.id,neu);ON=ON.map(x=>x.id===n.id?neu:x);NEDIT=null;NEKI=null;delete KURZ[n.id];toast('Notiz geändert.');rNotiz();rHist();}catch(err){toast('Ändern nicht möglich: '+(err.message||err));}}
+async function notizLoeschen(nid,btn){const n=ON.find(x=>x.id===nid);if(!n||!eigen(n)){toast('Nur der Verfasser kann diese Notiz löschen.');return;}
+  if(btn.dataset.sure!=='1'){btn.dataset.sure='1';btn.textContent='wirklich löschen?';return;}
+  const {error}=await sb.from('os_docs').delete().eq('app','oc').eq('pfad','objnotiz/'+nid);if(error){toast('Löschen nicht möglich: '+error.message);return;}ON=ON.filter(x=>x.id!==nid);rNotiz();rHist();}
+
 /* ---------- Historie ---------- */
 const HIST_ARTEN=['Anruf eingehend','Anruf ausgehend','Gespräch vor Ort','Termin / Besichtigung','Handwerker / Dienstleister','Behörde / Versorger','SMS / WhatsApp','Brief per Post','Sonstiges'];
 let HF={art:'alle',mehr:false,neu:false,busy:false};
 const pidName=pid=>{const t=TEN.find(x=>x.pid===pid);return t?t.mieter_name:'Mieter';};
-const hGruppe=e=>e.mieter?'mieter':/^Anruf/.test(e.art)?'anruf':/^Mail/.test(e.art)?'mail':e.art==='Anschreiben'?'brief':e.art==='Aufgabe'?'aufgabe':e.art==='Dokument'?'dokument':/^(Gespräch|Termin|Handwerker|Behörde|SMS|Brief per|Sonstiges)/.test(e.art)?'kontakt':'aenderung';
+const hGruppe=e=>e.mieter?'mieter':/^Anruf/.test(e.art)?'anruf':/^Mail/.test(e.art)?'mail':e.art==='Anschreiben'?'brief':e.art==='Aufgabe'?'aufgabe':e.art==='Notiz'?'notiz':e.art==='Dokument'?'dokument':/^(Gespräch|Termin|Handwerker|Behörde|SMS|Brief per|Sonstiges)/.test(e.art)?'kontakt':'aenderung';
 function histListe(){const L=[];
+  for(const n of ON)L.push({d:n.d,art:'Notiz',t:n.t+((n.files||[]).length?' (mit '+n.files.length+' Datei'+(n.files.length===1?'':'en')+')':''),by:n.by});
   for(const h of OH)L.push({d:h.d,art:h.art,t:h.t,by:h.by,id:h.id,eigen:h.manuell&&(h.uid===ICHID||String(h.mail||'').toLowerCase()===ICHMAIL)});
   for(const a of OBR)L.push({d:a.d,art:'Anschreiben',t:(a.betreff||'')+(a.zielText?' – an '+a.zielText:''),by:a.by});
   for(const m of OML)L.push({d:m.d,art:'Mail '+(m.richtung||''),t:m.betreff||'(ohne Betreff)',by:m.by});
@@ -50,7 +95,7 @@ function histListe(){const L=[];
   return L.sort((a,b)=>String(b.d).localeCompare(String(a.d)));}
 function rHist(){const box=document.getElementById('bx-hist');if(!box)return;const L=histListe(),F=HF.art==='alle'?L:L.filter(e=>hGruppe(e)===HF.art);
   document.getElementById('bs-hist').textContent=L.length+' Eintr'+(L.length===1?'ag':'äge')+(L.length?' · zuletzt '+kurzZeit(L[0].d)+(L[0].by?' von '+nutzerName(L[0].by):''):'');
-  const G=[['alle','Alle'],['kontakt','Gespräche / Termine'],['anruf','Anrufe'],['aenderung','Änderungen'],['dokument','Dokumente'],['aufgabe','Aufgaben'],['brief','Anschreiben'],['mail','Mails'],['mieter','Mieter']].filter(([k])=>k==='alle'||L.some(e=>hGruppe(e)===k));
+  const G=[['alle','Alle'],['kontakt','Gespräche / Termine'],['anruf','Anrufe'],['notiz','Notizen'],['aenderung','Änderungen'],['dokument','Dokumente'],['aufgabe','Aufgaben'],['brief','Anschreiben'],['mail','Mails'],['mieter','Mieter']].filter(([k])=>k==='alle'||L.some(e=>hGruppe(e)===k));
   const jetzt=new Date(Date.now()-new Date().getTimezoneOffset()*6e4).toISOString().slice(0,16);
   let h='<div class="acts" style="margin-top:0">'+G.map(([k,n])=>`<button class="${HF.art===k?'primary':'ghost'} small" onclick="HF.art='${k}';HF.mehr=false;rHist()">${n}</button>`).join('')+`<button class="small" style="margin-left:auto" onclick="HF.neu=!HF.neu;rHist()">${HF.neu?'Abbrechen':'Eintrag hinzufügen'}</button></div>`;
   if(HF.neu)h+=`<div class="hneu"><div class="hrow"><label class="fl" style="flex:1">Art<input id="h-art" data-wahl="1" list="h-artl" value="${esc(HIST_ARTEN[0])}"><datalist id="h-artl">${HIST_ARTEN.map(a=>`<option value="${esc(a)}">`).join('')}</datalist></label><label class="fl">Datum und Uhrzeit<input type="datetime-local" id="h-d" value="${jetzt}"></label></div>
