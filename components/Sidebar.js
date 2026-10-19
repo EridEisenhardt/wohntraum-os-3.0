@@ -8,6 +8,7 @@ export const NAV = [
   { type: 'link', href: '/tools', icon: 'ti-layout-grid', label: 'Alle Tools', area: 'common' },
   // Bereich Verwalto: eigene Kategorien. Einträge mit "offen" sind Platzhalter für alle sichtbar,
   // alle anderen sind sichtbar, wenn die Seite (bzw. "perm") an ihrem bisherigen Platz im Menü sichtbar war.
+  { type: 'link', href: '/verwalto/anleitungen', icon: 'ti-school', label: 'Anleitungen', area: 'common' },
   { type: 'group', key: 'v-buchhaltung', icon: 'ti-calculator', label: 'Buchhaltung', mod: 'verwalto', items: [
     { href: '/buchhaltung/buchungen', icon: 'ti-arrows-exchange', label: 'Buchungen' },
     { href: '/controlling/monatswechsel-fixkosten', icon: 'ti-calendar-check', label: 'Monatswechsel Fixkosten' },
