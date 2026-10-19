@@ -137,8 +137,8 @@ function rAsana(){const box=document.getElementById('bx-asana');if(!box)return;c
     <textarea class="inp" style="width:100%" rows="3" placeholder="Beschreibung (optional)" oninput="ASF.notiz=this.value">${esc(ASF.notiz)}</textarea>
     <div class="acts"><button class="primary small" onclick="asSpeichern()"${ASF.busy?' disabled':''}>${ASF.busy?'Lege an …':'In Asana anlegen'}</button><span class="sub">Objekt und Adresse werden automatisch in die Beschreibung übernommen.</span></div></div>`;
   const zeile=a=>`<div class="kvr" style="align-items:flex-start"><span style="display:flex;gap:8px;align-items:flex-start;white-space:normal;color:var(--ink)"><input type="checkbox" onchange="asErledigt('${jq(a.gid)}',this)"${a.erledigt?' checked':''} style="margin-top:3px"><span><span>${esc(a.name)}</span>
-    <div class="sub">${esc([(a.projekte||[]).join(', ')+(a.abschnitt&&a.abschnitt!=='Unbenannter Abschnitt'?' · '+a.abschnitt:''),a.zustaendig?'zuständig: '+a.zustaendig:'',a.erledigt?(a.erledigtAm?'erledigt am '+dfmt(a.erledigtAm.slice(0,10)):'erledigt'):a.faellig?'fällig '+dfmt(a.faellig):''].filter(Boolean).join(' · '))}</div></span></span>
-    <b><a href="${esc(a.link)}" target="_blank" rel="noopener" class="lnk">In Asana öffnen</a></b></div>`;
+    <div class="sub">${esc([(a.projekte||[]).join(', ')+(a.abschnitt&&a.abschnitt!=='Unbenannter Abschnitt'?' · '+a.abschnitt:''),a.zustaendig?'zuständig: '+nutzerName(a.zustaendig):'',a.erledigt?(a.erledigtAm?'erledigt am '+dfmt(a.erledigtAm.slice(0,10)):'erledigt'):a.faellig?'fällig '+dfmt(a.faellig):''].filter(Boolean).join(' · '))}</div></span></span>
+    <b style="flex:0 0 auto;white-space:nowrap"><a href="${esc(a.link)}" target="_blank" rel="noopener" class="lnk">In Asana öffnen</a></b></div>`;
   if(AS.L&&!L.length)h+='<div class="sub">Keine Aufgaben zu diesem Objekt in Asana gefunden.</div>';
   h+=off.map(zeile).join('');
   if(fertig.length)h+=`<details style="margin-top:8px"><summary class="sub" style="cursor:pointer">${fertig.length} erledigte Aufgabe${fertig.length===1?'':'n'}</summary>${fertig.map(zeile).join('')}</details>`;
