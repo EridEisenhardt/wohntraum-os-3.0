@@ -125,6 +125,15 @@ export async function POST(req) {
       return antwort({ ok: true })
     }
 
+    if (a === 'aktualisieren') {
+      // Zuständige Person und Fälligkeit einer Aufgabe ändern (leer = entfernen)
+      const d = {}
+      if (b.zustaendig !== undefined) d.assignee = b.zustaendig ? String(b.zustaendig) : null
+      if (b.faellig !== undefined) d.due_on = /^\d{4}-\d\d-\d\d$/.test(b.faellig || '') ? b.faellig : null
+      const t = await asana('/tasks/' + encodeURIComponent(b.gid) + '?opt_fields=' + FELDER, { method: 'PUT', json: d })
+      return antwort({ aufgabe: aufgabe(t) })
+    }
+
     if (a === 'kommentar') {
       const text = String(b.text || '').trim(); if (!text) return antwort({ error: 'Kommentar fehlt.' }, 400)
       await asana('/tasks/' + encodeURIComponent(b.gid) + '/stories', { method: 'POST', json: { text } })
