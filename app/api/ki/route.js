@@ -24,6 +24,7 @@ const AUFGABEN = {
     'Nur der Brieftext – keine Anrede, keine Grußformel, keine Unterschrift. Prüfe auch, ob der Betreff passt, und schlage sonst einen besseren vor. ' +
     'Liste in "hinweise" kurz auf, was du geändert hast und was inhaltlich fehlt oder unklar ist (z. B. fehlende Frist, fehlendes Datum, widersprüchliche Angaben, Ton zu scharf). Höchstens 6 Hinweise, leer wenn alles passt. ' +
     'Antworte ausschließlich als JSON: {"betreff": "Betreff", "text": "verbesserter Brieftext", "hinweise": ["…"]}.',
+  beleg_json: 'Du liest Belege (Rechnungen, Bescheide, Briefe) und gibst ausschließlich ein JSON-Objekt nach den Vorgaben des Nutzers zurück – ohne Erklärung, ohne Markdown.',
   verbessern: STIL + ' Aufgabe: Verbessere die folgende interne Notiz: Rechtschreibung, Grammatik, verständliche Sätze. ' +
     'Inhalt, Namen, Daten und Beträge unverändert lassen, nichts hinzufügen. Antworte nur mit dem verbesserten Text.' + NUR_TEXT,
   aufgabe_verbessern: STIL + ' Aufgabe: Verbessere die folgende Aufgabenbeschreibung für eine Aufgabe im Team (Asana): Rechtschreibung, Grammatik, klare und verständliche Sätze, was zu tun ist. ' +
@@ -41,11 +42,16 @@ export async function POST(req) {
     if (!key) return antwort({ error: 'Die KI ist noch nicht eingerichtet (API-Schlüssel fehlt).', setup: true })
     const body = await req.json().catch(() => ({}))
     const aufgabe = String(body.aufgabe || '')
-    const text = String(body.text || '').slice(0, 20000)
+    const text = String(body.text || '').slice(0, aufgabe === 'beleg_json' ? 30000 : 20000)
     if (!AUFGABEN[aufgabe]) return antwort({ error: 'Unbekannte Aufgabe.' }, 400)
     if (!text.trim()) return antwort({ error: 'Kein Text übergeben.' }, 400)
     const k = body.kontext || {}
     let content = aufgabe === 'brief' ? text : '<text>\n' + text + '\n</text>'
+    if (aufgabe === 'beleg_json') {
+      const bild = body.bild && body.bild.daten ? body.bild : null
+      if (bild && String(bild.daten).length > 4500000) return antwort({ error: 'Bild zu groß.' }, 413)
+      content = bild ? [{ type: 'image', source: { type: 'base64', media_type: bild.typ || 'image/jpeg', data: String(bild.daten) } }, { type: 'text', text }] : text
+    }
     if (aufgabe === 'brief_allgemein' || aufgabe === 'brief_pruefen') {
       content = 'Absender: ' + (k.absender || '') + '\nEmpfänger (' + (k.empfaengerTyp || 'unbekannt') + '):\n' + (k.empfaenger || '') + '\nAnrede im Brief: ' + (k.anrede || '') +
         '\nVersandart: ' + (k.versand || '') + (k.betreff ? '\nBetreff: ' + k.betreff : '') + '\n\n' + (aufgabe === 'brief_pruefen' ? 'Brieftext zum Prüfen' : 'Stichworte / Entwurf') + ':\n<text>\n' + text + '\n</text>'
@@ -62,6 +68,10 @@ export async function POST(req) {
     const j = await r.json()
     if (!r.ok) return antwort({ error: 'KI-Fehler: ' + ((j && j.error && j.error.message) || r.status) })
     const out = (j.content || []).filter(c => c.type === 'text').map(c => c.text).join('').trim()
+    if (aufgabe === 'beleg_json') {
+      const m = out.match(/\{[\s\S]*\}/)
+      try { return antwort({ json: JSON.parse(m ? m[0] : out) }) } catch { return antwort({ error: 'Antwort der KI war kein gültiges JSON.' }) }
+    }
     if (aufgabe === 'brief_allgemein' || aufgabe === 'brief_pruefen') {
       const m = out.match(/\{[\s\S]*\}/)
       try { const o = JSON.parse(m ? m[0] : out); return antwort({ betreff: String(o.betreff || k.betreff || ''), text: String(o.text || '').replace(/<\/?text>/g, '').trim(), hinweise: Array.isArray(o.hinweise) ? o.hinweise.map(String).slice(0, 8) : [] }) }
