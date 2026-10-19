@@ -94,28 +94,37 @@ h1{font-size:28px;font-weight:800;line-height:1.1;color:#fff}
 .sdot{width:7px;height:7px;border-radius:50%;background:var(--accent2)}
 .stellrow .dt{margin-left:auto;color:var(--muted);font-size:11.5px}
 </style></head><body>
-<div class="hero" id="hero"><div class="back" onclick="history.length>1?history.back():location.href='/hausverwaltung/objekte'">← Objekte</div>
+<div class="hero" id="hero"><div class="back" onclick="history.length>1?history.back():location.href='/hausverwaltung/objekte'">Zurück zu Objekte</div>
+  <div class="herobtns"><button onclick="zeigeTab('guide')">Guide</button><button onclick="guideTeilen()">QR / Link</button></div>
   <div class="in"><div class="badges" id="badges"></div><h1 id="title">Objekt lädt…</h1><div class="adr" id="adr"></div></div></div>
 <div class="wrap">
+  <div class="tabs" id="tabs"><button data-t="uebersicht" class="on">Übersicht</button><button data-t="einheiten">Einheiten &amp; Mieter</button><button data-t="zaehler">Zähler</button><button data-t="guide">Guide</button></div>
+  <div class="pane" data-p="uebersicht">
   <div class="kpis" id="kpis"></div>
 
-  <div class="sec"><div class="vhd"><h2 style="margin:0">🏘 Einheiten / Wohnungen</h2><span style="font-size:12px;color:var(--muted)" id="ucount"></span></div>
-    <div class="units" id="units"></div></div>
 
-  <div class="sec"><h2>🏠 Stammdaten Objekt</h2><div class="grid" id="stamm"></div></div>
 
-  <div class="sec"><h2>📅 Anstehende Termine &amp; Fristen</h2><div id="fristen"></div></div>
+  <div class="sec"><h2>Stammdaten Objekt</h2><div class="grid" id="stamm"></div></div>
 
-  <div class="sec"><h2>🤝 Beteiligte</h2><div class="cards3" id="bet"></div></div>
+  <div class="sec"><h2>Anstehende Termine &amp; Fristen</h2><div id="fristen"></div></div>
 
-  <div class="sec"><div class="vhd"><h2 style="margin:0">📅 Termine &amp; Transaktion</h2><div class="milebar" id="milebar"></div></div>
+  <div class="sec"><h2>Beteiligte</h2><div class="cards3" id="bet"></div></div>
+
+  <div class="sec"><div class="vhd"><h2 style="margin:0">Termine &amp; Transaktion</h2><div class="milebar" id="milebar"></div></div>
     <div class="row2tx" id="transakt"></div></div>
 
-  <div class="sec"><h2>📝 Notizen</h2>
+  <div class="sec"><h2>Notizen</h2>
     <div class="noteadd"><textarea id="noteInput" rows="2" placeholder="Notiz zum Objekt hinzufügen…"></textarea><button onclick="addNote()">+ Hinzufügen</button></div>
     <div class="notes" id="notes"></div></div>
 
-  <div class="sec"><h2>📍 Lage</h2><div id="lagebox"></div></div>
+  <div class="sec"><h2>Lage</h2><div id="lagebox"></div></div>
+  </div>
+  <div class="pane" data-p="einheiten" hidden>
+  <div class="sec"><div class="vhd"><h2 style="margin:0">Einheiten / Wohnungen</h2><span style="font-size:12px;color:var(--muted)" id="ucount"></span></div>
+    <div class="units" id="units"></div></div>
+  </div>
+  <div class="pane" data-p="zaehler" hidden><div class="sec"><h2>Zähler &amp; Verbrauchsdaten</h2><div id="zaehlerBox"></div></div></div>
+  <div class="pane" data-p="guide" hidden><div class="sec"><h2>Guide Haustechnik</h2><div id="guideBox"></div></div></div>
 </div>
 <script>
 const sb=window.supabase.createClient('https://jqzxctfqvcwbctpjksvg.supabase.co','eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpxenhjdGZxdmN3YmN0cGprc3ZnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODIxMzA0MzIsImV4cCI6MjA5NzcwNjQzMn0.RKIbZxJdusKWWPjBJqlxZ8e1m8So02UslOg55YRsn3o');
@@ -155,6 +164,7 @@ async function load(){
   if(uids.length){const {data:mv}=await sb.from('nahaus_mietverhaeltnisse').select('unit_id,is_current,is_rented,mieter_namen,kaltmiete,warmmiete,start_date').in('unit_id',uids).eq('is_current',true);
     (mv||[]).forEach(m=>{CURMAP[m.unit_id]=m;});}
   renderHero();renderKpis();renderUnits();renderStamm();renderFristen();renderBet();renderTransakt();renderNotes();renderLage();
+  if(window.osTabsInit)osTabsInit();
 }
 function renderHero(){
   if(OB.bild_url)document.getElementById('hero').style.backgroundImage=`url('${OB.bild_url}')`;
@@ -190,7 +200,7 @@ function renderUnits(){
       <div class="ubody"><div class="utop"><span class="ulbl">${esc(u.label||u.w_id_text||'Einheit')}</span><span class="ukz">${esc(u.w_id_text||'')}</span></div>
         <div class="umeta">${esc(KAT[u.kategorie_typ]||u.kategorie_typ||'Einheit')}${u.flaeche?' · '+u.flaeche+' m²':''}${u.zimmer?' · '+u.zimmer+' Zi.':''}</div>
         <div class="urent">${rented?esc(c.mieter_namen||'Vermietet')+' · '+eur(c.kaltmiete):'<span style="color:var(--amber)">leerstehend</span>'}</div>
-        ${rented&&c.start_date?`<div class="ustart">📅 Mietbeginn ${dfmt(c.start_date)}</div>`:''}
+        ${rented&&c.start_date?`<div class="ustart">Mietbeginn ${dfmt(c.start_date)}</div>`:''}
       </div></div>`;
   }).join('');
 }
@@ -218,7 +228,7 @@ function renderInvest(){
       <div class="fld"><div class="l">Eigenkapital im Objekt</div><input class="einp" type="number" step="1000" value="${OB.eigenkapital!=null?OB.eigenkapital:''}" placeholder="0 €" onchange="saveNum('eigenkapital',this.value)"></div>
       <div class="fld"><div class="l">GIK gesamt</div><div class="v">${eur(gikGesamt())}</div></div>
     </div>
-    <div class="vhd" style="margin-top:16px"><h2 style="margin:0;font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:var(--accent2);font-weight:800">🧾 GIK-Posten (Kaufnebenkosten / Renovierung / Sanierung)</h2><button class="ghost acc" onclick="addGik()">+ Posten hinzufügen</button></div>
+    <div class="vhd" style="margin-top:16px"><h2 style="margin:0;font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:var(--accent2);font-weight:800">GIK-Posten (Kaufnebenkosten / Renovierung / Sanierung)</h2><button class="ghost acc" onclick="addGik()">+ Posten hinzufügen</button></div>
     ${posten}
     <div style="font-size:11.5px;color:var(--muted);margin-top:8px">GIK gesamt = Kaufpreis (${eur(OB.kaufpreis)}) + Σ GIK-Posten (${eur(gikSumme())}).</div>`;
 }
@@ -380,4 +390,5 @@ function renderLage(){
   setTimeout(()=>{if(mapDone)return;const map=L.map('map').setView([OB.lat,OB.lng],15);L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{attribution:'© OpenStreetMap',maxZoom:19}).addTo(map);L.marker([OB.lat,OB.lng]).addTo(map).bindPopup(esc(OB.name||'')).openPopup();mapDone=true;},60);
 }
 load();
-</script></body></html>
+</script>
+<script src="/hv-objekt-tabs.js?v=20261019d"></script></body></html>
