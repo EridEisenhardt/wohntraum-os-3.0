@@ -24,6 +24,7 @@ const BER=[['notiz','Notizen'],['hist','Historie'],['asana','Aufgaben (Asana)'],
 let ON=[],OH=[],OBR=[],OML=[],MH=[],BLADE=false;
 function bereicheInit(){const box=document.getElementById('uebBereiche');if(!box||box.dataset.ok)return;box.dataset.ok='1';
   box.innerHTML=BER.map(([k,t])=>`<details class="card sec" data-sec="${k}"${SECO[k]?' open':''}><summary class="ch">${t}<span class="sub" id="bs-${k}"></span></summary><div id="bx-${k}"><div class="sub">Lädt …</div></div></details>`).join('');
+  if(typeof ueberOrdnen==='function')ueberOrdnen();
   bereicheLaden();}
 async function bereicheLaden(){if(BLADE)return;BLADE=true;loadIch();
   const pids=[...new Set(TEN.filter(t=>t.quelle==='mk'&&t.pid).map(t=>t.pid))];
@@ -300,7 +301,7 @@ function rKosten(){const box=document.getElementById('bx-kosten');if(!box)return
   h+='<div class="rh">Fixkosten laut Monatswechsel</div>';
   if(!R.length)h+='<div class="sub">Für dieses Objekt sind im Monatswechsel keine Fixkosten geplant.</div>';
   else h+=`<div style="overflow-x:auto"><table class="tab"><thead><tr><th>Position</th><th>Kategorie</th><th>Rhythmus</th><th class="r">${MON[m]}</th><th class="r">Jahr (Plan)</th><th>Status ${MON[m]}</th></tr></thead><tbody>`
-    +R.sort((a,b)=>String(a.kat).localeCompare(String(b.kat),'de')||String(a.pos).localeCompare(String(b.pos),'de')).map(r=>`<tr><td><b>${esc(r.pos)}</b>${r.info?`<div class="sub">${esc(String(r.info).slice(0,140))}</div>`:''}</td><td>${esc(r.kat||'')}</td><td>${esc(r.rh)}</td><td class="r">${r.faellig?eur(r.mon):'<span class="mut">–</span>'}</td><td class="r">${eur(r.jahr)}</td><td>${!r.faellig?'<span class="pill">nicht fällig</span>':r.paid?`<span class="pill ok">bezahlt ${esc(dfmt(r.paid))}</span>`:'<span class="pill mid">offen</span>'}</td></tr>`).join('')
+    +R.sort((a,b)=>String(a.pos).localeCompare(String(b.pos),'de')).map(r=>`<tr><td><b>${esc(r.pos)}</b>${r.info?`<div class="sub">${esc(String(r.info).slice(0,140))}</div>`:''}</td><td>${esc(r.kat||'')}</td><td>${esc(r.rh)}</td><td class="r">${r.faellig?eur(r.mon):'<span class="mut">–</span>'}</td><td class="r">${eur(r.jahr)}</td><td>${!r.faellig?'<span class="pill">nicht fällig</span>':r.paid?`<span class="pill ok">bezahlt ${esc(dfmt(r.paid))}</span>`:'<span class="pill mid">offen</span>'}</td></tr>`).join('')
     +`<tr><td colspan="3"><b>Summe</b></td><td class="r"><b>${eur(sumM)}</b></td><td class="r"><b>${eur(sumJ)}</b></td><td></td></tr></tbody></table></div>`;
   k.innerHTML=h;}
 
