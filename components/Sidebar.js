@@ -24,7 +24,7 @@ export const NAV = [
     { href: '/verwalto/fuhrpark', icon: 'ti-car', label: 'Fahrzeuge', offen: true },
   ] },
   { type: 'group', key: 'v-hausverwaltung', icon: 'ti-home-cog', label: 'Hausverwaltung', mod: 'verwalto', items: [
-    { href: '/verwalto/objekte', icon: 'ti-building-skyscraper', label: 'Objekte' },
+    { href: '/verwalto/objekte', icon: 'ti-building-skyscraper', label: 'Objekte', perm: '/hausverwaltung/objekte' },
     { href: '/hausverwaltung/mieterkonten', icon: 'ti-users', label: 'Mieterkonten' },
     { href: '/verwalto/neuvermietung', icon: 'ti-key', label: 'Neuvermietung', offen: true },
   ] },
