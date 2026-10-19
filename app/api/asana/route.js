@@ -94,7 +94,8 @@ export async function POST(req) {
     if (a === 'anlegen') {
       const name = String(b.name || '').trim(); if (!name) return antwort({ error: 'Bitte einen Titel eingeben.' }, 400)
       const d = { name, workspace: WS(), notes: String(b.notiz || '') }
-      if (b.projekt) d.projects = [String(b.projekt)]
+      if (b.projekt && b.abschnitt) d.memberships = [{ project: String(b.projekt), section: String(b.abschnitt) }]
+      else if (b.projekt) d.projects = [String(b.projekt)]
       if (/^\d{4}-\d\d-\d\d$/.test(b.faellig || '')) d.due_on = b.faellig
       if (b.zustaendig) d.assignee = String(b.zustaendig)
       // Tags: vorhandene per gid, neue per Name (werden in Asana angelegt)
@@ -106,6 +107,28 @@ export async function POST(req) {
       if (tags.length) d.tags = tags
       const t = await asana('/tasks?opt_fields=' + FELDER, { method: 'POST', json: d })
       return antwort({ aufgabe: aufgabe(t) })
+    }
+
+    if (a === 'status') {
+      // Stand mehrerer Aufgaben (z. B. Störungsmeldungen): erledigt und Abschnitt
+      const out = {}
+      for (const gid of (b.gids || []).map(String).filter(g => /^\d+$/.test(g)).slice(0, 60)) {
+        try { const t = await asana('/tasks/' + gid + '?opt_fields=' + FELDER); out[gid] = aufgabe(t) } catch (e) { out[gid] = { fehler: e.message } }
+      }
+      return antwort({ aufgaben: out })
+    }
+
+    if (a === 'abschnitt') {
+      // Aufgabe in einen Abschnitt verschieben (z. B. Eingang, In Arbeit, Erledigt)
+      await asana('/sections/' + encodeURIComponent(b.abschnitt) + '/addTask', { method: 'POST', json: { task: String(b.gid) } })
+      if (b.erledigt !== undefined) await asana('/tasks/' + encodeURIComponent(b.gid), { method: 'PUT', json: { completed: !!b.erledigt } })
+      return antwort({ ok: true })
+    }
+
+    if (a === 'kommentar') {
+      const text = String(b.text || '').trim(); if (!text) return antwort({ error: 'Kommentar fehlt.' }, 400)
+      await asana('/tasks/' + encodeURIComponent(b.gid) + '/stories', { method: 'POST', json: { text } })
+      return antwort({ ok: true })
     }
 
     if (a === 'erledigt') {

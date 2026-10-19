@@ -1,0 +1,247 @@
+<!DOCTYPE html>
+<html lang="de"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Störungsmeldungen</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+:root{--bg:#f3f5f8;--card:#ffffff;--ink:#18202c;--muted:#5f6b7a;--line:#e0e5eb;--soft:#eef1f5;--accent:#2f5d8a;--accent-ink:#ffffff;--accent-soft:#e3ecf5;
+  --pos:#1d7a4c;--pos-bg:#e5f4ec;--neg:#b42318;--neg-bg:#fcebe9;--warn:#946200;--warn-bg:#fff4d6;--chip:#edf1f6}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--ink);font:14px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+button,input,select,textarea{font:inherit;color:var(--ink)}
+.wrap{max-width:1240px;margin:0 auto;padding:16px 20px 60px}
+h1{font-size:22px;font-weight:800}
+.sub{color:var(--muted);font-size:12px}
+.kopf{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;margin-bottom:12px;flex-wrap:wrap}
+button{border:1px solid var(--line);background:var(--card);border-radius:8px;padding:6px 10px;cursor:pointer}
+button:hover{border-color:var(--accent)}
+button.primary{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+button.small{font-size:12px;padding:3px 8px}
+button.ghost{border-color:transparent;background:transparent;color:var(--muted);padding:3px 6px}
+button:disabled{opacity:.6;cursor:default}
+.lnk{color:var(--accent);cursor:pointer;background:none;border:0;padding:0;font-weight:600}.lnk:hover{text-decoration:underline}
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;margin-bottom:12px}
+.kpi{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:10px 14px}
+.kpi .l{font-size:12px;font-weight:700;color:var(--muted)}.kpi .v{font-size:22px;font-weight:800;font-variant-numeric:tabular-nums;margin-top:2px}
+.bar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:12px}
+.inp{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:7px 10px}
+.seg{display:flex;border:1px solid var(--line);border-radius:8px;overflow:hidden;background:var(--card)}
+.seg button{border:0;border-radius:0;padding:6px 12px}.seg button+button{border-left:1px solid var(--line)}
+.seg button.on{background:var(--accent);color:var(--accent-ink)}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:10px 14px;margin-bottom:12px}
+.ch{font-weight:700;display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:6px}
+details.sec>summary.ch{cursor:pointer;list-style:none;margin-bottom:0;justify-content:flex-start}details.sec>summary.ch::-webkit-details-marker{display:none}
+details.sec>summary.ch::before{content:'▸';margin-right:8px;color:var(--muted)}details.sec[open]>summary.ch::before{content:'▾'}details.sec[open]>summary.ch{margin-bottom:8px}
+details.sec>summary.ch .sub{margin-left:auto}
+.kvgrid{display:grid;grid-template-columns:1fr 1fr;column-gap:36px}.kvcol{min-width:0}
+.kvr{display:flex;justify-content:space-between;gap:12px;font-size:13px;padding:5px 0;border-bottom:1px dashed var(--line)}.kvr:last-child{border-bottom:0}
+.kvr span{color:var(--muted);white-space:nowrap}.kvr b{text-align:right;font-weight:600;overflow-wrap:anywhere}
+.fl{display:grid;gap:2px;font-size:12px;color:var(--muted);margin-bottom:8px}
+.fl input,.fl select,.fl textarea{width:100%;background:var(--soft);border:1px solid var(--line);border-radius:6px;padding:6px 8px;font-size:13.5px;color:var(--ink)}
+.acts{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-top:8px}
+.pill{display:inline-block;font-size:11px;padding:1px 8px;border-radius:999px;font-weight:600;white-space:nowrap;background:var(--chip);color:var(--muted)}
+.p-neu{background:var(--accent-soft);color:var(--accent)}.p-arbeit{background:var(--warn-bg);color:var(--warn)}.p-ok{background:var(--pos-bg);color:var(--pos)}
+.p-notfall{background:var(--neg-bg);color:var(--neg)}.p-dringend{background:var(--warn-bg);color:var(--warn)}
+.tab{width:100%;border-collapse:collapse;font-size:13px;background:var(--card)}
+.tab th{text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:.03em;color:var(--muted);font-weight:600;padding:8px;border-bottom:1px solid var(--line);white-space:nowrap}
+.tab td{padding:8px;border-bottom:1px solid var(--line);vertical-align:top}
+.tab tr.kl td{cursor:pointer}.tab tr.kl:hover td{background:var(--accent-soft)}.tab tr.auf td{background:var(--accent-soft)}
+.tab td.det{background:var(--soft);padding:12px;cursor:default}
+.tbox{background:var(--card);border:1px solid var(--line);border-radius:12px;overflow:hidden}
+.empty{color:var(--muted);font-size:13px;padding:24px;text-align:center;background:var(--card);border:1px dashed var(--line);border-radius:12px}
+.txt{white-space:pre-wrap;font-size:13px;margin-top:8px;padding-top:8px;border-top:1px solid var(--line)}
+.thumbs{display:flex;gap:8px;flex-wrap:wrap}
+.thumbs a{display:flex;width:96px;height:96px;border-radius:8px;overflow:hidden;background:var(--soft);border:1px solid var(--line);align-items:center;justify-content:center;font-size:11px;text-align:center;padding:4px;color:var(--ink);text-decoration:none}
+.thumbs img{width:100%;height:100%;object-fit:cover}
+.hz{display:grid;grid-template-columns:150px 1fr;gap:10px;padding:7px 0;border-top:1px solid var(--line);font-size:13px}
+.hz .hw{color:var(--muted);font-size:12px}
+label.up{border:1px solid var(--line);border-radius:8px;padding:3px 8px;background:var(--card);cursor:pointer;font-size:12px}
+.note{background:var(--warn-bg);color:var(--warn);border-radius:8px;padding:8px 10px;font-size:13px;margin:6px 0}
+.qr{display:inline-block;padding:8px;background:#fff;border:1px solid var(--line);border-radius:8px}
+.lrow{display:grid;grid-template-columns:1fr auto;gap:10px;align-items:center;padding:7px 0;border-top:1px solid var(--line);font-size:13px}
+.toast{position:fixed;left:50%;bottom:20px;transform:translateX(-50%);background:var(--ink);color:#fff;padding:8px 14px;border-radius:8px;font-size:13px;opacity:0;pointer-events:none;transition:opacity .2s;z-index:50}.toast.on{opacity:1}
+@media(max-width:800px){.wrap{padding:12px}.kvgrid{grid-template-columns:1fr}.hide-m{display:none}.hz{grid-template-columns:1fr}}
+</style></head><body>
+<div class="wrap">
+  <div class="kopf"><div><h1>Störungsmeldungen</h1><div class="sub">Erfasst im OS, über das Mieter-Formular oder vom Handwerker. Bearbeitet wird in Asana im Projekt „Mieter Meldungen“, der Stand wird hier abgeglichen.</div></div>
+    <div class="acts" style="margin-top:0"><button onclick="LINKS.offen=!LINKS.offen;render()">Mieter-Links und QR-Codes</button><button class="primary" onclick="neuOeffnen()">Störung erfassen</button></div></div>
+  <div class="kpis" id="kpis"></div>
+  <div id="oben"></div>
+  <div class="bar">
+    <input class="inp" id="q" placeholder="Suche: Nr., Objekt, Mieter, Störung …" style="flex:1;min-width:220px" oninput="render()">
+    <input class="inp" id="fobj" list="dl-obj-f" placeholder="Alle Objekte" style="width:220px" onchange="setTimeout(render)"><datalist id="dl-obj-f"></datalist>
+    <div class="seg" id="seg"><button data-s="offen" class="on">Offen</button><button data-s="Erledigt">Erledigt</button><button data-s="">Alle</button></div>
+    <span class="sub" id="sync"></span>
+  </div>
+  <div id="liste"><div class="empty">Störungen werden geladen …</div></div>
+</div>
+<div class="toast" id="toast"></div>
+<script>
+const sb=window.supabase.createClient('https://jqzxctfqvcwbctpjksvg.supabase.co','eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpxenhjdGZxdmN3YmN0cGprc3ZnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODIxMzA0MzIsImV4cCI6MjA5NzcwNjQzMn0.RKIbZxJdusKWWPjBJqlxZ8e1m8So02UslOg55YRsn3o');
+const esc=s=>(s==null?'':String(s)).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+const jq=s=>esc(s).replace(/'/g,"\\'");
+const dfmt=d=>d?new Date(d).toLocaleDateString('de-DE',{day:'2-digit',month:'2-digit',year:'numeric'}):'–';
+const zeit=d=>d?new Date(d).toLocaleString('de-DE',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'}):'–';
+const HEUTE=new Date().toISOString().slice(0,10);
+const FOTO_URL='https://jqzxctfqvcwbctpjksvg.supabase.co/storage/v1/object/public/stoerungen/';
+const PROJEKT='1211451233949578',ABSCHNITT={'Neu':'1211451233949579','In Arbeit':'1211552684972106','Erledigt':'1211451233949592'};
+const KATS=['Heizung / Warmwasser','Wasser / Sanitär / Abfluss','Elektrik / Licht','Fenster / Türen / Schlösser','Dach / Fassade / Feuchtigkeit','Schimmel','Küche / Geräte','Treppenhaus / Gemeinschaftsflächen','Außenanlage / Müll','Ungeziefer','Sonstiges'];
+const NUTZER={'ramona@andersmacher.info':'Ramona','juergen@andersmacher.info':'Jürgen','eric@andersmacher.info':'Eric'};
+let S=[],O=[],E=[],LK=[],MK=[],MKE={},FIRMEN=[],ICH='',ST='offen',AUF={},NEU=null,EDIT=null,LINKS={offen:false},SEC={};
+try{SEC=JSON.parse(localStorage.getItem('st_sec')||'{}')||{};}catch(e){}
+function toast(t){const el=document.getElementById('toast');el.textContent=t;el.classList.add('on');clearTimeout(toast._t);toast._t=setTimeout(()=>el.classList.remove('on'),3500);}
+document.addEventListener('focusin',e=>{const t=e.target;if(t.matches&&t.matches('input[list]')){t.dataset.alt=t.value;t.value='';}});
+document.addEventListener('focusout',e=>{const t=e.target;if(t.matches&&t.matches('input[list]')&&!t.value&&t.dataset.alt){t.value=t.dataset.alt;t.dispatchEvent(new Event('change',{bubbles:true}));}});
+document.addEventListener('toggle',e=>{const d=e.target;if(d&&d.matches&&d.matches('details.sec[data-sec]')){SEC[d.dataset.sec]=d.open;try{localStorage.setItem('st_sec',JSON.stringify(SEC));}catch(x){}}},true);
+document.querySelectorAll('#seg button').forEach(b=>b.onclick=()=>{ST=b.dataset.s;document.querySelectorAll('#seg button').forEach(x=>x.classList.toggle('on',x===b));render();});
+async function token(){const {data}=await sb.auth.getSession();return data&&data.session?data.session.access_token:'';}
+async function asApi(body){let r;try{r=await fetch('/api/asana',{method:'POST',headers:{'content-type':'application/json',authorization:'Bearer '+await token()},body:JSON.stringify(body)});}catch(e){throw new Error('Asana nicht erreichbar.');}
+  let j=null;try{j=await r.json();}catch(e){}if(!j)throw new Error('Asana nicht erreichbar ('+r.status+').');if(j.error)throw new Error(j.error);return j;}
+const objVon=s=>O.find(o=>o.id===s.objekt_id)||{};const einVon=s=>E.find(e=>e.id===s.einheit_id)||null;
+const objLabel=o=>o&&o.kz?o.kz+' · '+o.name:'';
+function mieterVon(u){if(!u||!u.nahaus_id)return null;const akt=m=>{const bis=(MKE[m.pid]||{}).bis||m.bis;return (!m.von||m.von<=HEUTE)&&(!bis||bis>=HEUTE);};
+  const m=MK.find(x=>x.unit===u.nahaus_id&&akt(x));if(!m)return null;const e=MKE[m.pid]||{},k=(m.kontakte||[])[0]||{};return {pid:m.pid,name:e.mieter||m.mieter||(m.namen||[]).join(', '),tel:e.tel||k.tel||'',email:e.email||k.email||''};}
+async function laden(){
+  const [s,o,e,l,mk,me,f,u]=await Promise.all([sb.from('stoerungen').select('*').order('created_at',{ascending:false}),sb.from('obj_objekte').select('id,kz,name,strasse,plz,ort,status,gesellschaft').order('sort'),
+    sb.from('obj_einheiten').select('id,objekt_id,bezeichnung,lage,nahaus_id,aktiv').order('sort'),sb.from('stoerung_links').select('*'),
+    sb.from('os_docs').select('pid:data->>pid,unit:data->>unit,obj:data->>obj,von:data->>von,bis:data->>bis,mieter:data->>mieter,namen:data->namen,kontakte:data->kontakte').eq('app','oc').like('pfad','mietkonten/%'),
+    sb.from('os_docs').select('data').eq('app','oc').eq('pfad','stamm/mietkonten-edit').maybeSingle(),sb.from('hv_firmen').select('name').order('name'),sb.auth.getUser()]);
+  if(s.error){document.getElementById('liste').innerHTML='<div class="empty">Störungen konnten nicht geladen werden. Bitte im OS angemeldet sein.</div>';return;}
+  S=s.data||[];O=o.data||[];E=e.data||[];LK=l.data||[];MK=mk.data||[];MKE=(me.data&&me.data.data&&me.data.data.e)||{};FIRMEN=((f&&f.data)||[]).map(x=>x.name).filter(Boolean);
+  const us=u&&u.data&&u.data.user;if(us){const m=String(us.email||'').toLowerCase();ICH=NUTZER[m]||(us.user_metadata&&(us.user_metadata.full_name||us.user_metadata.name))||us.email||'';}
+  document.getElementById('dl-obj-f').innerHTML='<option value="Alle">'+O.map(x=>`<option value="${esc(objLabel(x))}">`).join('');
+  const P=new URLSearchParams(location.search);if(P.get('id')){AUF[P.get('id')]=true;ST='';document.querySelectorAll('#seg button').forEach(x=>x.classList.toggle('on',x.dataset.s===''));}
+  if(P.get('neu')){const ob=O.find(x=>x.kz===P.get('obj'));neuOeffnen(ob?objLabel(ob):'');}
+  render();abgleich();}
+const offen=s=>s.status!=='Erledigt';
+function render(){
+  const q=document.getElementById('q').value.trim().toLowerCase(),fo=document.getElementById('fobj').value.replace(/^Alle$/,'');
+  const ob=O.find(x=>objLabel(x)===fo);
+  let L=S.filter(s=>ST==='offen'?offen(s):ST?s.status===ST:true);if(ob)L=L.filter(s=>s.objekt_id===ob.id);
+  if(q)L=L.filter(s=>{const o=objVon(s),e=einVon(s);return [s.nr,o.kz,o.name,e&&e.bezeichnung,s.titel,s.beschreibung,s.melder_name,s.kategorie,s.handwerker].join(' ').toLowerCase().includes(q);});
+  const off=S.filter(offen),d30=new Date(Date.now()-30*864e5).toISOString();
+  document.getElementById('kpis').innerHTML=[['Offen',off.length],['Neu',off.filter(s=>s.status==='Neu').length],['In Arbeit',off.filter(s=>s.status==='In Arbeit').length],['Notfall / dringend offen',off.filter(s=>s.dringlichkeit&&s.dringlichkeit!=='Normal').length],['Erledigt (30 Tage)',S.filter(s=>s.status==='Erledigt'&&(s.erledigt_am||s.updated_at)>=d30).length]].map(k=>`<div class="kpi"><div class="l">${k[0]}</div><div class="v">${k[1]}</div></div>`).join('');
+  document.getElementById('oben').innerHTML=(NEU?neuForm():'')+(LINKS.offen?linksCard():'');
+  if(!L.length){document.getElementById('liste').innerHTML='<div class="empty">Keine Störungen gefunden.</div>';return;}
+  document.getElementById('liste').innerHTML='<div class="tbox" style="overflow-x:auto"><table class="tab"><thead><tr><th>Nr.</th><th>Gemeldet</th><th>Objekt</th><th>Störung</th><th class="hide-m">Gemeldet von</th><th>Dringlichkeit</th><th>Status</th></tr></thead><tbody>'+L.map(s=>{const o=objVon(s),e=einVon(s),auf=AUF[s.id];
+    return `<tr class="kl${auf?' auf':''}" onclick="AUF['${s.id}']=!AUF['${s.id}'];render()"><td><b>${esc(s.nr)}</b></td><td>${dfmt(s.created_at)}<div class="sub">${esc(s.quelle||'')}</div></td><td><b>${esc(o.kz||'')}</b>${e?' · '+esc(e.bezeichnung):''}<div class="sub">${esc(o.name||'')}</div></td>
+      <td>${esc(s.titel)}<div class="sub">${esc(s.kategorie||'')}</div></td><td class="hide-m">${esc(s.melder_name||'–')}</td><td>${dPill(s.dringlichkeit)}</td><td>${sPill(s)}${s.asana_gid?'':'<div class="sub">noch nicht in Asana</div>'}</td></tr>`
+      +(auf?`<tr><td colspan="7" class="det">${detail(s)}</td></tr>`:'');}).join('')+'</tbody></table></div>';
+  qrZeichnen();}
+const dPill=d=>d==='Notfall'?'<span class="pill p-notfall">Notfall</span>':d==='Dringend'?'<span class="pill p-dringend">Dringend</span>':'<span class="pill">Normal</span>';
+const sPill=s=>(s.status==='Erledigt'?`<span class="pill p-ok">Erledigt</span>`:s.status==='In Arbeit'?'<span class="pill p-arbeit">In Arbeit</span>':'<span class="pill p-neu">Neu</span>')+(s.hw_erledigt&&s.status!=='Erledigt'?'<div class="sub">Handwerker meldet erledigt</div>':'');
+const kv=(l,v)=>`<div class="kvr"><span>${l}</span><b>${v==null||v===''?'<span class="sub">–</span>':v}</b></div>`;
+const spalten=L=>{const n=Math.ceil(L.length/2);return '<div class="kvgrid"><div class="kvcol">'+L.slice(0,n).join('')+'</div><div class="kvcol">'+L.slice(n).join('')+'</div></div>';};
+const hwLink=s=>location.origin+'/stoerung.html?h='+s.hw_token;
+function detail(s){const o=objVon(s),e=einVon(s),m=mieterVon(e);let h='';
+  if(EDIT===s.id){h+=`<div class="card"><div class="ch">Meldung bearbeiten</div>${spalten([
+      `<label class="fl">Störung<input id="e-titel" value="${esc(s.titel)}"></label>`,`<label class="fl">Kategorie<input id="e-kat" list="dl-kat" value="${esc(s.kategorie||'')}"></label>`,
+      `<label class="fl">Dringlichkeit<input id="e-dr" list="dl-dr" value="${esc(s.dringlichkeit||'Normal')}"></label>`,`<label class="fl">Einheit<input id="e-ein" list="dl-ein-${s.id}" value="${esc(e?e.bezeichnung:'')}"><datalist id="dl-ein-${s.id}">${E.filter(x=>x.objekt_id===s.objekt_id).map(x=>`<option value="${esc(x.bezeichnung)}">`).join('')}</datalist></label>`,
+      `<label class="fl">Gemeldet von<input id="e-mel" value="${esc(s.melder_name||'')}"></label>`,`<label class="fl">Kontakt<input id="e-kon" value="${esc(s.melder_kontakt||'')}"></label>`])}
+     <label class="fl">Beschreibung<textarea id="e-text" rows="4">${esc(s.beschreibung||'')}</textarea></label>
+     <div class="acts"><button class="primary" onclick="bearbeitenSpeichern('${s.id}')">Speichern</button><button onclick="EDIT=null;render()">Abbrechen</button></div></div>`;}
+  else{h+=`<div class="card"><div class="ch">Meldung Nr. ${esc(s.nr)} – ${esc(s.titel)}<button class="ghost small" onclick="EDIT='${s.id}';render()">Bearbeiten</button></div>${spalten([
+      kv('Objekt',esc(objLabel(o))),kv('Einheit',e?esc(e.bezeichnung)+(e.lage?' · '+esc(e.lage):''):''),kv('Kategorie',esc(s.kategorie||'')),kv('Dringlichkeit',dPill(s.dringlichkeit)),
+      kv('Gemeldet von',esc(s.melder_name||'')+(s.melder_rolle&&s.melder_rolle!=='Mieter'?' ('+esc(s.melder_rolle)+')':'')),kv('Kontakt',esc(s.melder_kontakt||'')),kv('Gemeldet am',zeit(s.created_at)),kv('Quelle',esc(s.quelle||'')+(s.erfasst_von?' · '+esc(s.erfasst_von):''))])}
+     ${s.beschreibung?`<div class="txt">${esc(s.beschreibung)}</div>`:''}
+     <div class="acts"><span class="sub">Status</span><div class="seg">${['Neu','In Arbeit','Erledigt'].map(x=>`<button class="${s.status===x?'on':''}" onclick="statusSetzen('${s.id}','${x}')">${x}</button>`).join('')}</div>
+      ${s.asana_link?`<a class="lnk" href="${esc(s.asana_link)}" target="_blank" rel="noopener" style="margin-left:8px">In Asana öffnen</a>`:`<button class="small" onclick="asanaAnlegen('${s.id}')">In Asana anlegen</button>`}
+      ${s.pid||(m&&m.pid)?`<button class="small" onclick="(window.top||window).location.href='/hausverwaltung/mieterkonten?pid='+encodeURIComponent('${jq(s.pid||m.pid)}')">Mieterkonto öffnen</button>`:''}
+      ${o.id?`<button class="small" onclick="(window.top||window).location.href='/verwalto/objekt?id=${o.id}'">Objekt öffnen</button>`:''}</div></div>`;}
+  const F=s.fotos||[],V=(s.verlauf||[]).slice().sort((a,b)=>String(b.d).localeCompare(String(a.d))),RM=V.filter(v=>v.art==='Rückmeldung');
+  const sek=[['Fotos',`<span class="sub">${F.length} Datei${F.length===1?'':'en'}</span>`,`${F.length?`<div class="thumbs">${F.map(f=>`<a href="${FOTO_URL+esc(f.pfad)}" target="_blank" rel="noopener" title="${esc(f.name||'')}">${/^image\/|\.(jpe?g|png|webp)$/i.test((f.typ||'')+f.pfad)?`<img src="${FOTO_URL+esc(f.pfad)}" alt="">`:esc(f.name||'Datei')}</a>`).join('')}</div>`:'<div class="sub">Noch keine Fotos.</div>'}
+      <div class="acts"><label class="up">Fotos hinzufügen<input type="file" accept="image/*,video/*,application/pdf" multiple hidden onchange="fotosDazu('${s.id}',this)"></label></div>`],
+    ['Handwerker',`<span class="sub">${esc(s.handwerker||'noch nicht beauftragt')}${RM.length?' · '+RM.length+' Rückmeldung'+(RM.length===1?'':'en'):''}</span>`,
+      `<div class="kvgrid"><div class="kvcol"><label class="fl">Beauftragter Handwerker / Firma<input id="hw-${s.id}" list="dl-firmen" value="${esc(s.handwerker||'')}"></label>
+        <div class="acts" style="margin-top:0"><button class="small primary" onclick="hwSpeichern('${s.id}')">Speichern</button><button class="small" onclick="kopieren('${jq(hwLink(s))}')">Link kopieren</button><a class="lnk" href="${esc(hwLink(s))}" target="_blank" rel="noopener">Seite ansehen</a></div>
+        <div class="sub" style="margin-top:6px">Über diesen Link sieht der Handwerker nur diese Störung (Adresse, Beschreibung, Fotos, Ansprechpartner) und kann eine Rückmeldung mit Fotos geben. Die Rückmeldung erscheint im Verlauf und als Kommentar in Asana.</div></div>
+        <div class="kvcol"><div class="qr" data-qr="${esc(hwLink(s))}"></div></div></div>
+       ${RM.map(r=>`<div class="hz"><div><div>${zeit(r.d)}</div><div class="hw">${esc(r.by)}</div></div><div>${r.erledigt?'<b>Als erledigt gemeldet.</b> ':''}${esc(r.t||'')}</div></div>`).join('')}`],
+    ['Verlauf',`<span class="sub">${V.length} Eintr${V.length===1?'ag':'äge'}</span>`,`<div class="acts" style="margin-top:0"><input class="inp" id="vn-${s.id}" placeholder="Notiz hinzufügen, z. B. Mieter angerufen, Termin vereinbart" style="flex:1"><button class="small primary" onclick="notiz('${s.id}')">Hinzufügen</button></div>
+      ${V.map(v=>`<div class="hz"><div><div>${zeit(v.d)}</div><div class="hw">${esc(v.by||'')}</div></div><div><b>${esc(v.art||'')}</b>${v.t?' – '+esc(v.t):''}</div></div>`).join('')}`]];
+  h+=sek.map(([t,sub,inh])=>`<details class="card sec" data-sec="${t}"${SEC[t]?' open':''}><summary class="ch">${t}${sub}</summary>${inh}</details>`).join('');
+  return h+`<datalist id="dl-kat">${KATS.map(k=>`<option value="${esc(k)}">`).join('')}</datalist><datalist id="dl-dr"><option value="Normal"><option value="Dringend"><option value="Notfall"></datalist><datalist id="dl-firmen">${FIRMEN.map(f=>`<option value="${esc(f)}">`).join('')}</datalist>`;}
+async function qrLib(){if(window.QRCode)return;await new Promise((res,rej)=>{const s=document.createElement('script');s.src='https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js';s.onload=res;s.onerror=rej;document.head.appendChild(s);});}
+async function qrZeichnen(){const L=[...document.querySelectorAll('[data-qr]')].filter(x=>!x.dataset.ok);if(!L.length)return;try{await qrLib();}catch(e){return;}
+  L.forEach(x=>{x.dataset.ok='1';new QRCode(x,{text:x.dataset.qr,width:Number(x.dataset.gr||120),height:Number(x.dataset.gr||120),correctLevel:QRCode.CorrectLevel.M});});}
+function kopieren(t){navigator.clipboard.writeText(t).then(()=>toast('Link kopiert.'),()=>prompt('Link kopieren:',t));}
+const eintrag=(art,t)=>({d:new Date().toISOString(),by:ICH||'OS',art,t});
+async function speichern(s,patch,log){if(log)patch.verlauf=(s.verlauf||[]).concat([log]);patch.updated_at=new Date().toISOString();
+  const {error}=await sb.from('stoerungen').update(patch).eq('id',s.id);if(error){toast('Speichern fehlgeschlagen: '+error.message);return false;}Object.assign(s,patch);return true;}
+async function statusSetzen(sid,st,ausAsana){const s=S.find(x=>x.id===sid);if(!s||s.status===st)return;
+  const patch={status:st,erledigt_am:st==='Erledigt'?new Date().toISOString():null};if(st!=='Erledigt'&&s.hw_erledigt&&!ausAsana)patch.hw_erledigt=false;
+  if(!await speichern(s,patch,eintrag('Status',(ausAsana?'aus Asana übernommen: ':'')+st)))return;render();
+  if(!ausAsana&&s.asana_gid){try{await asApi({aktion:'abschnitt',gid:s.asana_gid,abschnitt:ABSCHNITT[st],erledigt:st==='Erledigt'});toast('Status gespeichert und in Asana verschoben.');}catch(e){toast('Status gespeichert, Asana nicht aktualisiert: '+e.message);}}}
+function asanaNotiz(s){const o=objVon(s),e=einVon(s),F=s.fotos||[];
+  return [(s.dringlichkeit&&s.dringlichkeit!=='Normal'?'DRINGLICHKEIT: '+s.dringlichkeit+'\n':'')+(s.beschreibung||''),'Objekt: '+(o.kz||'')+' · '+[o.strasse,[o.plz,o.ort].filter(Boolean).join(' ')].filter(Boolean).join(', ')+(e?' · '+e.bezeichnung:''),
+    'Kategorie: '+(s.kategorie||'–'),'Gemeldet von: '+(s.melder_name||'–')+(s.melder_kontakt?' · '+s.melder_kontakt:''),F.length?'Fotos:\n'+F.map(f=>'- '+(f.name||'Foto')+': '+FOTO_URL+f.pfad).join('\n'):'',
+    'Handwerker-Link: '+hwLink(s),'Störung Nr. '+s.nr+' · erfasst im Wohntraum OS'+(ICH?' von '+ICH:'')].filter(Boolean).join('\n\n');}
+async function asanaAnlegen(sid){const s=S.find(x=>x.id===sid);if(!s||s.asana_gid)return;const o=objVon(s),e=einVon(s);
+  try{const j=await asApi({aktion:'anlegen',name:[o.kz,e&&e.bezeichnung,s.titel].filter(Boolean).join('_'),projekt:PROJEKT,abschnitt:ABSCHNITT[s.status]||ABSCHNITT.Neu,notiz:asanaNotiz(s)});
+    await speichern(s,{asana_gid:j.aufgabe.gid,asana_link:j.aufgabe.link},eintrag('Asana','Aufgabe in „Mieter Meldungen“ angelegt'));toast('In Asana angelegt.');render();}
+  catch(err){toast('Asana: '+(err.message||err));}}
+async function abgleich(){const L=S.filter(s=>offen(s)&&s.asana_gid);if(!L.length)return;const el=document.getElementById('sync');el.textContent='Gleiche mit Asana ab …';
+  try{const j=await asApi({aktion:'status',gids:L.map(s=>s.asana_gid)});let n=0;
+    for(const s of L){const a=(j.aufgaben||{})[s.asana_gid];if(!a||a.fehler)continue;const st=a.erledigt||a.abschnitt==='Erledigt'?'Erledigt':a.abschnitt==='In Arbeit'?'In Arbeit':a.abschnitt==='Eingang'?'Neu':s.status;
+      if(st!==s.status){await statusSetzen(s.id,st,true);n++;}}
+    el.textContent='Mit Asana abgeglichen'+(n?': '+n+' Status übernommen':'');}
+  catch(e){el.textContent='Asana-Abgleich nicht möglich: '+(e.message||e);}}
+async function hwSpeichern(sid){const s=S.find(x=>x.id===sid);const v=(document.getElementById('hw-'+sid).value||'').trim();if(!s||v===(s.handwerker||''))return;
+  if(!await speichern(s,{handwerker:v||null,status:s.status==='Neu'&&v?'In Arbeit':s.status},eintrag('Handwerker',v?'beauftragt: '+v:'Zuordnung entfernt')))return;render();toast('Gespeichert.');
+  if(s.asana_gid&&v){try{await asApi({aktion:'kommentar',gid:s.asana_gid,text:'Handwerker beauftragt: '+v+'\nRückmelde-Link für den Handwerker: '+hwLink(s)});if(s.status==='In Arbeit')await asApi({aktion:'abschnitt',gid:s.asana_gid,abschnitt:ABSCHNITT['In Arbeit']});}catch(e){}}}
+async function notiz(sid){const s=S.find(x=>x.id===sid),el=document.getElementById('vn-'+sid),t=(el.value||'').trim();if(!s||!t)return;
+  if(!await speichern(s,{},eintrag('Notiz',t)))return;render();if(s.asana_gid){try{await asApi({aktion:'kommentar',gid:s.asana_gid,text:t+'\n('+(ICH||'OS')+' im Wohntraum OS)'});}catch(e){}}}
+async function bearbeitenSpeichern(sid){const s=S.find(x=>x.id===sid);const v=i=>(document.getElementById(i).value||'').trim();const e=E.find(x=>x.objekt_id===s.objekt_id&&x.bezeichnung===v('e-ein'));
+  if(!v('e-titel')){toast('Bitte die Störung kurz benennen.');return;}
+  const dr=['Normal','Dringend','Notfall'].includes(v('e-dr'))?v('e-dr'):'Normal';
+  if(await speichern(s,{titel:v('e-titel'),kategorie:v('e-kat')||null,dringlichkeit:dr,einheit_id:e?e.id:s.einheit_id,melder_name:v('e-mel')||null,melder_kontakt:v('e-kon')||null,beschreibung:v('e-text')||null},eintrag('Änderung','Meldung bearbeitet'))){EDIT=null;render();toast('Gespeichert.');}}
+async function hochladen(dateien){const out=[],ordner='meldungen/'+(crypto.randomUUID?crypto.randomUUID():Date.now());
+  for(const f of dateien){const pfad=ordner+'/'+out.length+'_'+f.name.replace(/[^\w.\-]+/g,'_').slice(-80);const {error}=await sb.storage.from('stoerungen').upload(pfad,f,{contentType:f.type||undefined});if(error)throw new Error(f.name+': '+error.message);out.push({pfad,name:f.name,typ:f.type||''});}return out;}
+async function fotosDazu(sid,inp){const s=S.find(x=>x.id===sid),L=[...inp.files];inp.value='';if(!L.length)return;toast('Lädt hoch …');
+  try{const neu=await hochladen(L);if(await speichern(s,{fotos:(s.fotos||[]).concat(neu)},eintrag('Fotos',neu.length+' Datei'+(neu.length===1?'':'en')+' hinzugefügt'))){render();toast('Hochgeladen.');}}catch(e){toast('Hochladen fehlgeschlagen: '+e.message);}}
+
+/* ---------- Neue Störung erfassen ---------- */
+function neuOeffnen(obj){NEU={obj:obj||'',ein:'',mel:'',kon:'',kat:'',dr:'Normal',titel:'',text:'',dateien:[],asana:true,busy:false,pid:''};render();window.scrollTo(0,0);}
+function neuForm(){const ob=O.find(x=>objLabel(x)===NEU.obj),EL=ob?E.filter(x=>x.objekt_id===ob.id&&x.aktiv):[];
+  return `<div class="card"><div class="ch">Störung erfassen<button class="ghost small" onclick="NEU=null;render()">Schließen</button></div>${spalten([
+    `<label class="fl">Objekt<input list="dl-obj" value="${esc(NEU.obj)}" onchange="NEU.obj=this.value;NEU.ein='';setTimeout(render)" placeholder="Kürzel oder Straße eintippen"><datalist id="dl-obj">${O.filter(x=>x.status!=='Verkauft').map(x=>`<option value="${esc(objLabel(x))}">`).join('')}</datalist></label>`,
+    `<label class="fl">Einheit<input list="dl-ein" value="${esc(NEU.ein)}" onchange="neuEinheit(this.value)" placeholder="${ob?'Einheit wählen':'erst Objekt wählen'}"><datalist id="dl-ein">${EL.map(x=>`<option value="${esc(x.bezeichnung)}">`).join('')}<option value="Gemeinschaftsfläche"></datalist></label>`,
+    `<label class="fl">Gemeldet von<input value="${esc(NEU.mel)}" oninput="NEU.mel=this.value" placeholder="Name"></label>`,
+    `<label class="fl">Kontakt<input value="${esc(NEU.kon)}" oninput="NEU.kon=this.value" placeholder="Telefon oder E-Mail"></label>`,
+    `<label class="fl">Kategorie<input list="dl-kat-n" value="${esc(NEU.kat)}" onchange="NEU.kat=this.value"><datalist id="dl-kat-n">${KATS.map(k=>`<option value="${esc(k)}">`).join('')}</datalist></label>`,
+    `<div class="fl">Dringlichkeit<div class="seg" style="width:max-content">${['Normal','Dringend','Notfall'].map(x=>`<button class="${NEU.dr===x?'on':''}" onclick="NEU.dr='${x}';render()">${x}</button>`).join('')}</div></div>`])}
+   <label class="fl">Störung (kurz)<input value="${esc(NEU.titel)}" oninput="NEU.titel=this.value" placeholder="z. B. Heizung im Bad wird nicht warm"></label>
+   <label class="fl">Beschreibung<textarea rows="3" oninput="NEU.text=this.value">${esc(NEU.text)}</textarea></label>
+   <div class="acts"><label class="up">Fotos hinzufügen<input type="file" accept="image/*,video/*,application/pdf" multiple hidden onchange="NEU.dateien=NEU.dateien.concat([...this.files]);render()"></label>${NEU.dateien.length?`<span class="sub">${NEU.dateien.map(f=>esc(f.name)).join(', ')}</span>`:''}
+    <label class="sub" style="display:flex;gap:4px;align-items:center;margin-left:auto"><input type="checkbox" ${NEU.asana?'checked':''} onchange="NEU.asana=this.checked"> direkt in Asana anlegen (Mieter Meldungen, Eingang)</label>
+    <button class="primary" onclick="neuSpeichern()"${NEU.busy?' disabled':''}>${NEU.busy?'Speichere …':'Speichern'}</button></div></div>`;}
+function neuEinheit(v){NEU.ein=v;const ob=O.find(x=>objLabel(x)===NEU.obj),e=ob&&E.find(x=>x.objekt_id===ob.id&&x.bezeichnung===v),m=mieterVon(e);
+  if(m){NEU.mel=m.name||NEU.mel;NEU.kon=[m.tel,m.email].filter(Boolean).join(' · ')||NEU.kon;NEU.pid=m.pid;}else NEU.pid='';setTimeout(render);}
+async function neuSpeichern(){const ob=O.find(x=>objLabel(x)===NEU.obj);if(!ob){toast('Bitte ein Objekt aus der Liste wählen.');return;}if(!NEU.titel.trim()){toast('Bitte die Störung kurz benennen.');return;}
+  const e=E.find(x=>x.objekt_id===ob.id&&x.bezeichnung===NEU.ein);NEU.busy=true;render();
+  try{const fotos=NEU.dateien.length?await hochladen(NEU.dateien):[];
+    const rec={objekt_id:ob.id,einheit_id:e?e.id:null,pid:NEU.pid||null,melder_name:NEU.mel.trim()||null,melder_kontakt:NEU.kon.trim()||null,melder_rolle:NEU.pid?'Mieter':'Sonstige',titel:NEU.titel.trim(),
+      beschreibung:((!e&&NEU.ein?'Bereich: '+NEU.ein+'\n':'')+NEU.text.trim())||null,kategorie:NEU.kat.trim()||null,dringlichkeit:NEU.dr,quelle:'OS',erfasst_von:ICH||null,fotos,verlauf:[eintrag('Meldung','im OS erfasst')]};
+    const {data,error}=await sb.from('stoerungen').insert(rec).select().single();if(error)throw new Error(error.message);
+    S.unshift(data);AUF[data.id]=true;const mitAsana=NEU.asana;NEU=null;render();toast('Störung Nr. '+data.nr+' gespeichert.');if(mitAsana)asanaAnlegen(data.id);}
+  catch(err){NEU.busy=false;render();toast('Speichern fehlgeschlagen: '+(err.message||err));}}
+
+/* ---------- Mieter-Links und QR-Codes je Objekt ---------- */
+const mLink=l=>location.origin+'/stoerung.html?o='+l.token;
+function linksCard(){const B=O.filter(o=>o.status!=='Verkauft');
+  return `<div class="card"><div class="ch">Mieter-Links und QR-Codes<button class="ghost small" onclick="LINKS.offen=false;render()">Schließen</button></div>
+   <div class="sub">Über den Link oder QR-Code (z. B. als Aushang im Treppenhaus) melden Mieter Störungen direkt. Die Meldung landet hier und automatisch in Asana unter „Mieter Meldungen“, Abschnitt Eingang.</div>
+   ${B.map(o=>{const l=LK.find(x=>x.objekt_id===o.id);return `<div class="lrow"><div><b>${esc(o.kz)}</b> · ${esc(o.name)} ${l?(l.aktiv?'<span class="pill p-ok">aktiv</span>':'<span class="pill">deaktiviert</span>'):'<span class="sub">noch kein Link</span>'}
+     ${l&&l.aktiv&&LINKS.qr===o.id?`<div style="margin-top:8px"><div class="qr" data-qr="${esc(mLink(l))}" data-gr="160"></div></div>`:''}</div>
+     <div class="acts" style="margin-top:0">${!l?`<button class="small" onclick="linkAnlegen('${o.id}')">Link anlegen</button>`:l.aktiv?`<button class="small" onclick="kopieren('${jq(mLink(l))}')">Link kopieren</button><button class="small" onclick="LINKS.qr=LINKS.qr==='${o.id}'?null:'${o.id}';render()">QR-Code</button><button class="small" onclick="aushang('${o.id}')">Aushang drucken</button><button class="ghost small" onclick="linkAktiv('${o.id}',false)">Deaktivieren</button>`:`<button class="small" onclick="linkAktiv('${o.id}',true)">Wieder aktivieren</button>`}</div></div>`;}).join('')}</div>`;}
+async function linkAnlegen(oid){const {data,error}=await sb.from('stoerung_links').insert({objekt_id:oid}).select().single();if(error){toast(error.message);return;}LK.push(data);LINKS.qr=oid;render();}
+async function linkAktiv(oid,w){const {error}=await sb.from('stoerung_links').update({aktiv:w}).eq('objekt_id',oid);if(error){toast(error.message);return;}LK.find(x=>x.objekt_id===oid).aktiv=w;render();}
+async function aushang(oid){const o=O.find(x=>x.id===oid),l=LK.find(x=>x.objekt_id===oid);try{await qrLib();}catch(e){toast('QR-Code nicht verfügbar.');return;}
+  const d=document.createElement('div');new QRCode(d,{text:mLink(l),width:420,height:420,correctLevel:QRCode.CorrectLevel.M});await new Promise(r=>setTimeout(r,150));
+  const c=d.querySelector('canvas'),img=c?c.toDataURL('image/png'):(d.querySelector('img')||{}).src;
+  const w=window.open('','_blank');if(!w){toast('Bitte Pop-ups erlauben.');return;}
+  w.document.write(`<!DOCTYPE html><html lang="de"><head><meta charset="UTF-8"><title>Aushang ${esc(o.kz)}</title><style>body{font-family:system-ui,sans-serif;text-align:center;padding:40px;color:#18202c}h1{font-size:34px;margin:0 0 6px}p{font-size:18px;margin:6px 0}.adr{color:#5f6b7a}img{width:320px;height:320px;margin:24px 0}.k{font-size:13px;color:#5f6b7a;word-break:break-all}</style></head><body>
+   <h1>Störung oder Schaden melden</h1><p class="adr">${esc(o.name)} · ${esc([o.strasse,[o.plz,o.ort].filter(Boolean).join(' ')].filter(Boolean).join(', '))}</p>
+   <img src="${img}" alt="QR-Code"><p>QR-Code mit dem Handy scannen, Störung beschreiben und Fotos hochladen.</p><p>Bei Gefahr (Gasgeruch, Wasserrohrbruch, Stromausfall, Brand) bitte zusätzlich sofort telefonisch melden und im Notfall die 112 rufen.</p>
+   <p class="k">${esc(mLink(l))}</p><p style="margin-top:30px">Wohntraum Rheinhessen · Hausverwaltung</p><script>window.onload=()=>setTimeout(()=>window.print(),300)<\/script></body></html>`);w.document.close();}
+laden();
+</script></body></html>
