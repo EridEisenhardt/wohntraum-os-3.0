@@ -178,7 +178,7 @@ function drawer(){ if(!DRAFT) return ''; const v=DRAFT, ro=!canWrite, d=ro?' dis
   h+='</div>';
   /* Unterlagen aus OneDrive */
   const DK=(v.dokumente||[]).slice().sort((a,b)=>String(b.d||'')<String(a.d||'')?-1:1);
-  if(DK.length) h+='<div class="card"><div class="lab">Unterlagen ('+DK.length+')</div>'+DK.map(x=>'<div class="zl"><span>'+esc(String(x.n||'').replace(/\.pdf$/i,''))+'<div class="sub">'+esc([x.t,dmy(x.d)].filter(Boolean).join(' · '))+'</div></span><button class="ghost" data-dok="'+esc(x.id)+'">Öffnen</button></div>').join('')+'</div>';
+  if(DK.length) h+='<div class="card"><div class="lab">Unterlagen ('+DK.length+')</div>'+DK.map(x=>'<div class="zl"><span>'+esc(String(x.n||'').replace(/\.pdf$/i,''))+'<div class="sub">'+esc([x.t,dmy(x.d)].filter(Boolean).join(' · '))+'</div></span><button class="ghost" data-dok="'+esc(x.id||('p:'+x.pfad))+'">Öffnen</button></div>').join('')+'</div>';
   /* Zahlungen zu diesem Vertrag */
   const Z=zahlungen(v);
   h+='<div class="card"><div class="lab">Zahlungen '+(TX?'('+Z.length+')':'')+'</div>'+(TX==null?'<div class="sub">Lade Kontoumsätze …</div>':Z.length?Z.slice(0,24).map(t=>'<div class="zl"><span>'+esc(dmy(t.d))+' · '+esc(kontoName(t.k))+'<div class="sub">'+esc(String(t.z||'').slice(0,90))+'</div></span><b style="white-space:nowrap">'+eur(t.b)+'</b></div>').join('')+(Z.length>24?'<div class="sub">… und '+(Z.length-24)+' weitere</div>':''):'<div class="sub">Keine Zahlung gefunden. Mit Vertrags- oder Kundennummer, Mandatsreferenz oder IBAN findet das OS die Zahlungen.</div>')+'</div>';
@@ -198,9 +198,14 @@ async function ladeTX(){ if(TX) return; const sb=window.osSupabase, out=[]; let 
   catch(e){ TX=[]; toast('Kontoumsätze nicht lesbar: '+(e.message||e)); }
   render(); }
 async function dokOeffnen(id){ const w=window.open('','_blank'); try{ const sb=window.osSupabase; let tok=''; try{ const {data}=await sb.auth.getSession(); tok=(data&&data.session&&data.session.access_token)||''; }catch(e){}
+    if(String(id).startsWith('p:')){ let p=String(id).slice(2); if(!p.startsWith('Prozesslandkarte 3.0')) p='Prozesslandkarte 3.0/'+p; const i=p.lastIndexOf('/'); const r0=await fetch('/api/onedrive',{method:'POST',headers:{'content-type':'application/json',authorization:'Bearer '+tok},body:JSON.stringify({aktion:'ordner',pfad:p.slice(0,i)})}); const j0=await r0.json().catch(()=>null); const f=j0&&(j0.eintraege||[]).find(x=>x.name===p.slice(i+1)); if(!f) throw new Error('Datei nicht gefunden.'); id=f.id; }
     const r=await fetch('/api/onedrive',{method:'POST',headers:{'content-type':'application/json',authorization:'Bearer '+tok},body:JSON.stringify({aktion:'link',id})}); const j=await r.json().catch(()=>null);
     if(!j||j.error) throw new Error((j&&j.error)||'OneDrive nicht erreichbar.'); const u=j.web||j.download; if(w) w.location.href=u; else window.open(u,'_blank'); }
   catch(e){ if(w) w.close(); toast(e.message||String(e)); } }
+/* Direkt öffnen aus der Objektseite: ?id=... oder ?neu=1&obj=KZ */
+let __dl=false; function deepLink(){ if(__dl||!loaded.o) return; const q=new URLSearchParams(location.search); const vid=q.get('id'); __dl=true;
+  if(vid){ const v=L.find(x=>x.id===vid); if(v){ SEL=v.id; DRAFT=JSON.parse(JSON.stringify(v)); render(); ladeTX(); } return; }
+  if(q.get('neu')){ const kz=q.get('obj')||''; const o=objekte.find(x=>x.kz===kz); SEL=null; DRAFT={id:neuId(),art:'Versorger',sparte:'',anbieter:'',vnr:'',knr:'',zaehler:'',mref:'',ges:o?o.ges:'',obj:kz,einheit:'',start:'',ende:'',kuendigung:'',betrag:null,rhythmus:'monatlich',konto:'',iban:'',notiz:'',quelle:'manuell'}; render(); } }
 const neuId=()=>'v'+Date.now().toString(36)+Math.random().toString(36).slice(2,6);
 function speichern(liste){ L=liste; render(); return db.doc('stamm/vertraege').set({liste,geaendert:heute()}).catch(e=>toast('Speichern fehlgeschlagen: '+(e.message||e))); }
 function parseNum(s){ s=String(s||'').trim().replace(/\s|€/g,''); if(!s) return null; if(s.includes(',')) s=s.replace(/\./g,'').replace(',','.'); const n=Number(s); return isFinite(n)?n:null; }
@@ -231,8 +236,8 @@ document.addEventListener('keydown',e=>{ if(e.key==='Escape'&&DRAFT){ DRAFT=null
   try{ db=await claude.use('db'); }catch(e){ db=null; }
   if(!db){ $('app').innerHTML='<div class="loading">Bitte im Wohntraum OS anmelden.</div>'; return; }
   const done=k=>{ loaded[k]=1; render(); };
-  db.doc('stamm/vertraege').onSnapshot(s=>{ L=((s.exists?s.data():null)||{}).liste||[]; done('v'); },()=>done('v'));
-  db.doc('stamm/objekte').onSnapshot(s=>{ objekte=((s.exists?s.data():null)||{}).objekte||[]; done('o'); },()=>done('o'));
+  db.doc('stamm/vertraege').onSnapshot(s=>{ L=((s.exists?s.data():null)||{}).liste||[]; done('v'); deepLink(); },()=>done('v'));
+  db.doc('stamm/objekte').onSnapshot(s=>{ objekte=((s.exists?s.data():null)||{}).objekte||[]; done('o'); if(loaded.v) deepLink(); },()=>done('o'));
   db.doc('stamm/konten').onSnapshot(s=>{ konten=((s.exists?s.data():null)||{}).konten||[]; done('k'); },()=>done('k'));
 })();
 })();
