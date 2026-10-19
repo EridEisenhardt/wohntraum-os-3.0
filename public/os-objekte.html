@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="de"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Objekte</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+:root{--bg:#f6f7f9;--surf:#ffffff;--surf2:#f1f3f6;--line:#e4e7ec;--text:#1c2230;--muted:#6b7280;--accent:#6d4ef0;--accent2:#8266ff;--green:#0f9d6b;--red:#d64550;--amber:#c7851d}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--text);font-family:'Inter',system-ui,-apple-system,'Segoe UI',sans-serif;font-size:14px;line-height:1.5}
+.wrap{max-width:1240px;margin:0 auto;padding:26px 30px 60px}
+h1{font-size:24px;font-weight:800}
+.sub{color:var(--muted);font-size:13.5px;margin:4px 0 18px}
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:11px;margin-bottom:18px}
+.kpi{background:var(--surf);border:1px solid var(--line);border-radius:12px;padding:13px 15px}
+.kpi .l{font-size:10.5px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);font-weight:700}
+.kpi .v{font-size:21px;font-weight:800;margin-top:4px}
+.bar{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:14px}
+.inp{font:inherit;font-size:14px;padding:9px 11px;border:1px solid var(--line);border-radius:9px;background:var(--surf);color:var(--text)}
+.seg{display:flex;background:var(--surf);border:1px solid var(--line);border-radius:10px;padding:3px;gap:2px}
+.seg button{border:0;background:none;font:inherit;font-weight:600;color:var(--muted);padding:7px 13px;border-radius:7px;cursor:pointer}
+.seg button.on{background:var(--accent);color:#fff}
+.tab{width:100%;border-collapse:collapse;background:var(--surf);border:1px solid var(--line);border-radius:12px;overflow:hidden}
+.tab th{text-align:left;font-size:10.5px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);padding:10px 12px;border-bottom:1px solid var(--line);background:var(--surf2);white-space:nowrap}
+.tab td{padding:11px 12px;border-bottom:1px solid var(--line);vertical-align:middle}
+.tab tr:last-child td{border-bottom:0}
+.tab tbody tr{cursor:pointer}.tab tbody tr:hover td{background:#f7f5ff}
+.kz{display:inline-block;font-weight:800;font-size:12px;background:var(--surf2);border:1px solid var(--line);border-radius:6px;padding:2px 8px}
+.r{text-align:right;white-space:nowrap}
+.pill{display:inline-block;font-size:11px;font-weight:700;padding:2px 9px;border-radius:999px}
+.p-best{background:#e7f6ef;color:var(--green)}.p-verk{background:#eef0f4;color:var(--muted)}.p-leer{background:#fdf2e3;color:var(--amber)}
+.muted{color:var(--muted)}
+.empty{color:var(--muted);text-align:center;padding:30px;background:var(--surf);border:1px dashed var(--line);border-radius:12px}
+@media(max-width:800px){.wrap{padding:18px 14px}.hide-m{display:none}}
+</style></head><body>
+<div class="wrap">
+  <h1>Objekte</h1>
+  <div class="sub">Alle Objekte von EE, WT und KiBo mit Einheiten, Mietern, Verträgen, Zählern und Guide. Daten aus Nahaus und den OneDrive-Unterlagen übernommen.</div>
+  <div class="kpis" id="kpis"></div>
+  <div class="bar">
+    <input class="inp" id="q" placeholder="Suche: Kürzel, Straße, Ort, Mieter …" style="flex:1;min-width:220px">
+    <input class="inp" id="ges" list="dlGes" placeholder="Alle Gesellschaften" style="width:190px">
+    <datalist id="dlGes"><option value="Alle"><option value="EE"><option value="WT"><option value="KiBo"></datalist>
+    <div class="seg" id="seg"><button data-s="Bestand" class="on">Bestand</button><button data-s="Verkauft">Verkauft</button><button data-s="">Alle</button></div>
+  </div>
+  <div id="liste"><div class="empty">Objekte werden geladen …</div></div>
+</div>
+<script>
+const sb=window.supabase.createClient('https://jqzxctfqvcwbctpjksvg.supabase.co','eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpxenhjdGZxdmN3YmN0cGprc3ZnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODIxMzA0MzIsImV4cCI6MjA5NzcwNjQzMn0.RKIbZxJdusKWWPjBJqlxZ8e1m8So02UslOg55YRsn3o');
+const esc=s=>(s==null?'':String(s)).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+const eur=n=>(n==null||isNaN(n))?'—':new Intl.NumberFormat('de-DE',{style:'currency',currency:'EUR',maximumFractionDigits:0}).format(n);
+const heute=new Date().toISOString().slice(0,10);
+let O=[],E=[],M=[],ST='Bestand';
+const aktuell=m=>(!m.beginn||m.beginn<=heute)&&(!m.ende||m.ende>=heute);
+async function laden(){
+  const [o,e,m]=await Promise.all([sb.from('obj_objekte').select('*').order('sort'),sb.from('obj_einheiten').select('id,objekt_id,aktiv,art'),sb.from('obj_mietverhaeltnisse').select('einheit_id,mieter_name,beginn,ende,kaltmiete')]);
+  if(o.error){document.getElementById('liste').innerHTML='<div class="empty">Objekte konnten nicht geladen werden. Bitte im OS angemeldet sein.</div>';return;}
+  O=o.data||[];E=e.data||[];M=m.data||[];
+  O.forEach(ob=>{const we=E.filter(x=>x.objekt_id===ob.id&&x.aktiv);ob._we=we.length;let verm=0,soll=0;const namen=[];
+    we.forEach(u=>{const a=M.filter(x=>x.einheit_id===u.id&&aktuell(x));if(a.length){verm++;soll+=a.reduce((s,x)=>s+Number(x.kaltmiete||0),0);a.forEach(x=>namen.push(x.mieter_name||''));}});
+    ob._verm=verm;ob._leer=we.length-verm;ob._soll=soll;ob._namen=namen.join(' ').toLowerCase();});
+  render();
+}
+function render(){
+  const q=document.getElementById('q').value.trim().toLowerCase(),g=document.getElementById('ges').value.trim().replace(/^Alle$/,'');
+  let L=O.filter(o=>(!ST||o.status===ST)&&(!g||o.gesellschaft===g));
+  if(q)L=L.filter(o=>[o.kz,o.name,o.strasse,o.ort,o.plz,o.eigentuemer,o._namen].join(' ').toLowerCase().includes(q));
+  const B=L.filter(o=>o.status!=='Verkauft');
+  document.getElementById('kpis').innerHTML=[['Objekte',L.length],['Einheiten',B.reduce((s,o)=>s+o._we,0)],['Vermietet',B.reduce((s,o)=>s+o._verm,0)],['Leerstand',B.reduce((s,o)=>s+o._leer,0)],['Soll-Kaltmiete / Monat',eur(B.reduce((s,o)=>s+o._soll,0))]].map(k=>`<div class="kpi"><div class="l">${k[0]}</div><div class="v">${k[1]}</div></div>`).join('');
+  if(!L.length){document.getElementById('liste').innerHTML='<div class="empty">Keine Objekte gefunden.</div>';return;}
+  document.getElementById('liste').innerHTML=`<table class="tab"><thead><tr><th>Kürzel</th><th>Objekt</th><th class="hide-m">Gesellschaft</th><th class="hide-m">Typ</th><th class="r">Einheiten</th><th class="r">Vermietet</th><th class="r">Leer</th><th class="r hide-m">Soll-Kaltmiete</th><th>Status</th></tr></thead><tbody>${L.map(o=>`<tr onclick="oeffne('${o.id}')"><td><span class="kz">${esc(o.kz)}</span></td><td><b>${esc(o.name)}</b><div class="muted" style="font-size:12.5px">${esc([o.plz,o.ort].filter(Boolean).join(' '))}</div></td><td class="hide-m">${esc(o.gesellschaft||'')}</td><td class="hide-m">${esc(o.typ||'—')}</td><td class="r">${o.status==='Verkauft'?'—':o._we}</td><td class="r">${o.status==='Verkauft'?'—':o._verm}</td><td class="r">${o.status==='Verkauft'?'—':(o._leer?`<span class="pill p-leer">${o._leer}</span>`:'0')}</td><td class="r hide-m">${o.status==='Verkauft'?'—':eur(o._soll)}</td><td><span class="pill ${o.status==='Verkauft'?'p-verk':'p-best'}">${esc(o.status)}</span>${o.verkaufsdatum&&o.status==='Verkauft'?`<div class="muted" style="font-size:11.5px">${new Date(o.verkaufsdatum).toLocaleDateString('de-DE',{day:'2-digit',month:'2-digit',year:'numeric'})}</div>`:''}</td></tr>`).join('')}</tbody></table>`;
+}
+function oeffne(id){(window.top||window).location.href='/verwalto/objekt?id='+encodeURIComponent(id);}
+document.getElementById('q').addEventListener('input',render);
+const gi=document.getElementById('ges');gi.addEventListener('focusin',()=>{gi.dataset.alt=gi.value;gi.value='';});gi.addEventListener('focusout',()=>{if(!gi.value&&gi.dataset.alt)gi.value=gi.dataset.alt;render();});gi.addEventListener('change',render);
+document.querySelectorAll('#seg button').forEach(b=>b.onclick=()=>{ST=b.dataset.s;document.querySelectorAll('#seg button').forEach(x=>x.classList.toggle('on',x===b));render();});
+laden();
+</script></body></html>
