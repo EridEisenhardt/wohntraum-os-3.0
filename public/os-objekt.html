@@ -94,18 +94,23 @@ const zahlF=n=>n==null||n===''?'—':Number(n).toLocaleString('de-DE');
 const HEUTE=new Date().toISOString().slice(0,10);
 const ROOT='Prozesslandkarte 3.0';
 const id=new URLSearchParams(location.search).get('id');
-let OB={},UNITS=[],EIN=[],MV=[],VT=[],EDIT=false,offenWE={},geladen={};
+let OB={},UNITS=[],EIN=[],MV=[],EDIT=false,offenWE={},geladen={};
 
 async function laden(){
   if(!id){document.getElementById('titel').textContent='Kein Objekt angegeben';return;}
   const {data:o,error}=await sb.from('obj_objekte').select('*').eq('id',id).maybeSingle();
   if(error||!o){document.getElementById('titel').textContent=error?'Bitte im OS anmelden':'Objekt nicht gefunden';return;}
   OB=o;OB.display_address=[o.strasse,[o.plz,o.ort].filter(Boolean).join(' ')].filter(Boolean).join(', ');
-  const [e,v]=await Promise.all([sb.from('obj_einheiten').select('*').eq('objekt_id',id).order('sort'),sb.from('obj_vertraege').select('*').eq('objekt_id',id).order('thema')]);
-  EIN=e.data||[];VT=v.data||[];
+  const [e,mk,me,vt]=await Promise.all([sb.from('obj_einheiten').select('*').eq('objekt_id',id).order('sort'),
+    sb.from('os_docs').select('pid:data->>pid,unit:data->>unit,von:data->>von,bis:data->>bis,mieter:data->>mieter,namen:data->namen,kontakte:data->kontakte,stufen:data->stufen,kaution:data->kaution,ref:data->>ref,gewerbe:data->gewerbe').eq('app','oc').like('pfad','mietkonten/%').eq('data->>obj',OB.kz),
+    sb.from('os_docs').select('data').eq('app','oc').eq('pfad','stamm/mietkonten-edit').maybeSingle(),
+    sb.from('os_docs').select('data').eq('app','oc').eq('pfad','stamm/vertraege').maybeSingle()]);
+  EIN=e.data||[];MK=mk.data||[];MKE=(me.data&&me.data.data&&me.data.data.e)||{};
+  VL=((vt.data&&vt.data.data&&vt.data.data.liste)||[]).filter(v=>v.obj===OB.kz);
   UNITS=EIN.map(u=>({id:u.id,label:u.bezeichnung}));
   const ids=EIN.map(u=>u.id);MV=[];
   if(ids.length){const {data:m}=await sb.from('obj_mietverhaeltnisse').select('*').in('einheit_id',ids).order('beginn',{ascending:false,nullsFirst:false});MV=m||[];}
+  baueTen();
   document.title=OB.kz+' '+OB.name;
   renderHero();renderUeb();renderEin();renderVer();
   const t=new URLSearchParams(location.search).get('tab');if(t)wechsel(t);
@@ -127,12 +132,6 @@ function wechsel(t){
   if(t==='zaehler')zLaden();if(t==='guide')gLaden();if(t==='dokumente'&&!geladen.dok){geladen.dok=1;dokLaden(OB.onedrive_pfad);}
 }
 document.querySelectorAll('#reiter button').forEach(b=>b.onclick=()=>wechsel(b.dataset.t));
-
-/* ---------- aktuelle Mietverhältnisse ---------- */
-const aktuell=m=>(!m.beginn||m.beginn<=HEUTE)&&(!m.ende||m.ende>=HEUTE);
-const mvVon=uid=>MV.filter(m=>m.einheit_id===uid);
-const mvAkt=uid=>mvVon(uid).filter(aktuell);
-const mvBald=uid=>mvVon(uid).filter(m=>m.beginn&&m.beginn>HEUTE);
 
 /* ---------- Übersicht ---------- */
 const FELDER=[
@@ -175,19 +174,41 @@ async function feldSpeichern(f,v,t){
 }
 async function hinwErledigt(i){const n=(OB.pruefhinweise||[]).filter((x,j)=>j!==i);const {error}=await sb.from('obj_objekte').update({pruefhinweise:n}).eq('id',id);if(error){alert(error.message);return;}OB.pruefhinweise=n;renderUeb();}
 
+/* ---------- Mietverhältnisse: Quelle sind die Mieterkonten (OS), ergänzend die Objektdaten ---------- */
+const aktuell=m=>(!m.beginn||m.beginn<=HEUTE)&&(!m.ende||m.ende>=HEUTE);
+const mvVon=uid=>TEN.filter(m=>m.einheit_id===uid).sort((a,b)=>String(b.beginn||'').localeCompare(String(a.beginn||'')));
+const mvAkt=uid=>mvVon(uid).filter(aktuell);
+const mvBald=uid=>mvVon(uid).filter(m=>m.beginn&&m.beginn>HEUTE);
+let MK=[],MKE={},TEN=[],VL=[];
+function stufeAm(st,d){const L=(st||[]).slice().sort((a,b)=>String(a.ab||'').localeCompare(String(b.ab||'')));let s=L[0]||{};for(const x of L)if(!x.ab||x.ab<=d)s=x;return s;}
+function baueTen(){
+  TEN=[];const mitMK=new Set();
+  MK.forEach(k=>{const e=MKE[k.pid]||{};const u=EIN.find(x=>x.nahaus_id&&x.nahaus_id===k.unit);if(!u)return;mitMK.add(u.id);
+    const s=stufeAm(k.stufen,HEUTE);const mv=MV.find(x=>x.nahaus_id===k.pid)||{};
+    const kon=(k.kontakte||[]).map(c=>({name:c.name,email:c.email,tel:c.tel}));
+    if(e.email||e.tel){if(kon[0]){if(e.email)kon[0].email=e.email;if(e.tel)kon[0].tel=e.tel;}else kon.push({name:e.mieter||k.mieter,email:e.email,tel:e.tel});}
+    TEN.push({quelle:'mk',pid:k.pid,einheit_id:u.id,mieter_name:e.mieter||k.mieter||(k.namen||[]).join(', '),mieter:kon,beginn:k.von||null,ende:e.bis||k.bis||null,
+      kaltmiete:s.kalt,betriebskosten:s.bk,heizkosten:s.hk,sonstiges:(s.others||[]).map(o=>({text:o.t,betrag:o.b})),kaution:k.kaution,zahlungsreferenz:e.ref||k.ref,
+      vertrag_datei:mv.vertrag_datei,onedrive_ordner:e.od?e.od.replace(ROOT+'/',''):mv.onedrive_ordner,gewerbe:k.gewerbe});});
+  MV.forEach(m=>{if(mitMK.has(m.einheit_id))return;if(m.nahaus_id==='test')return;TEN.push(Object.assign({quelle:'objekt',mvid:m.id},m));});
+}
+function zumKonto(pid){(window.top||window).location.href='/hausverwaltung/mieterkonten?pid='+encodeURIComponent(pid);}
+
 /* ---------- Einheiten & Mieter ---------- */
 function renderEin(){
-  let h=`<div class="sec"><h2>Einheiten &amp; Mieter <span class="rechts"><label class="muted" style="font-size:12.5px;font-weight:600;text-transform:none;letter-spacing:0;margin-right:10px"><input type="checkbox" ${offenWE._alle?'checked':''} onchange="offenWE._alle=this.checked;renderEin()"> alle Mieterhistorien zeigen</label><button class="btn kl" onclick="einForm()">Einheit anlegen</button></span></h2>`;
+  let h=`<div class="sec"><h2>Einheiten &amp; Mieter <span class="rechts"><label class="muted" style="font-size:12.5px;font-weight:600;text-transform:none;letter-spacing:0;margin-right:10px"><input type="checkbox" ${offenWE._alle?'checked':''} onchange="offenWE._alle=this.checked;renderEin()"> alle Mieterhistorien zeigen</label><button class="btn kl" onclick="einForm()">Einheit anlegen</button></span></h2>
+   <div class="muted" style="font-size:12.5px;margin:-4px 0 10px">Die Mieterdaten kommen aus den Mieterkonten. Ein Klick auf den Mieter öffnet das Mieterkonto, dort werden Miete, Kontakt und Auszug gepflegt.</div>`;
   if(!EIN.length){document.getElementById('pEin').innerHTML=h+'<div class="empty">Noch keine Einheiten angelegt.</div></div>';return;}
   h+=`<div style="overflow-x:auto"><table class="tab"><thead><tr><th>Einheit</th><th>Art</th><th class="r">Fläche</th><th>Mieter</th><th>seit</th><th class="r">Kaltmiete</th><th class="r">BK + HK</th><th class="r">Kaution</th><th>Status</th></tr></thead><tbody>`;
   EIN.forEach(u=>{
     const a=mvAkt(u.id),bald=mvBald(u.id),m=a[0];
     const st=!u.aktiv?'<span class="pill">inaktiv</span>':m?'<span class="pill p-ok">vermietet</span>':bald.length?`<span class="pill p-bald">ab ${dfmt(bald[bald.length-1].beginn)}</span>`:'<span class="pill p-leer">leer</span>';
+    const name=m?(m.quelle==='mk'?`<button class="lnk" style="font-weight:600" onclick="event.stopPropagation();zumKonto('${esc(m.pid)}')">${esc(m.mieter_name||'Mieterkonto')}</button>`:`${esc(m.mieter_name||'')}<div class="warn" style="font-size:11.5px">ohne Mieterkonto</div>`):(bald.length&&bald[0].quelle==='mk'?`<button class="lnk" onclick="event.stopPropagation();zumKonto('${esc(bald[0].pid)}')">${esc(bald[0].mieter_name||'')}</button>`:'—');
     h+=`<tr class="kl" onclick="offenWE['${u.id}']=!offenWE['${u.id}'];renderEin()"><td><b>${esc(u.bezeichnung)}</b>${u.ausstattung?`<div class="muted" style="font-size:12px">${esc(u.ausstattung)}</div>`:''}</td><td>${esc(u.art||'')}</td><td class="r">${u.flaeche?zahlF(u.flaeche)+' m²':'—'}</td>
-      <td>${m?esc(m.mieter_name||''):'—'}${a.length>1?`<div class="warn" style="font-size:11.5px">${a.length} laufende Mietverhältnisse</div>`:''}</td><td>${m?dfmt(m.beginn):''}</td><td class="r">${m?eur(m.kaltmiete):''}</td><td class="r">${m?eur(Number(m.betriebskosten||0)+Number(m.heizkosten||0)):''}</td><td class="r">${m?eur(m.kaution):''}</td><td>${st}</td></tr>`;
+      <td>${name}${a.length>1?`<div class="warn" style="font-size:11.5px">${a.length} laufende Mietverhältnisse</div>`:''}</td><td>${m?dfmt(m.beginn):''}</td><td class="r">${m?eur(m.kaltmiete):''}</td><td class="r">${m?eur(Number(m.betriebskosten||0)+Number(m.heizkosten||0)):''}</td><td class="r">${m?eur(m.kaution):''}</td><td>${st}</td></tr>`;
     if(offenWE[u.id]||offenWE._alle){
       const L=mvVon(u.id);
-      h+=`<tr><td colspan="9"><div class="mvbox"><div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:6px"><button class="btn kl" onclick="mvForm(null,'${u.id}')">Mietverhältnis anlegen</button><button class="btn zw kl" onclick="einForm('${u.id}')">Einheit bearbeiten</button></div>
+      h+=`<tr><td colspan="9"><div class="mvbox"><div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:6px"><button class="btn zw kl" onclick="einForm('${u.id}')">Einheit bearbeiten</button>${L.some(x=>x.quelle==='mk')?'':`<button class="btn zw kl" onclick="mvForm(null,'${u.id}')">Mieter ohne Mieterkonto erfassen</button>`}</div>
         ${L.length?L.map(x=>mvZeile(x)).join(''):'<div class="muted" style="font-size:13px">Keine Mietverhältnisse erfasst.</div>'}</div></td></tr>`;
     }
   });
@@ -195,13 +216,14 @@ function renderEin(){
   document.getElementById('pEin').innerHTML=h;
 }
 function mvZeile(x){
-  const pers=(x.mieter||[]).map(p=>`<div><b>${esc(p.name||'')}</b>${p.email?' · '+esc(p.email):''}${p.tel?' · '+esc(p.tel):''}${p.geburtstag?' · geb. '+dfmt(p.geburtstag):''}</div>`).join('')||`<div><b>${esc(x.mieter_name||'—')}</b></div>`;
+  const pers=(x.mieter||[]).map(p=>`<div><b>${esc(p.name||'')}</b>${p.email?' · '+esc(p.email):''}${p.tel?' · '+esc(p.tel):''}</div>`).join('')||`<div><b>${esc(x.mieter_name||'—')}</b></div>`;
   const so=(x.sonstiges||[]).map(s=>esc(s.text)+' '+eur(s.betrag)).join(', ');
   const st=aktuell(x)?'<span class="pill p-ok">aktuell</span>':(x.beginn&&x.beginn>HEUTE?'<span class="pill p-bald">künftig</span>':'<span class="pill">beendet</span>');
-  return `<div class="mv"><div>${pers}<div class="muted" style="font-size:12px;margin-top:3px">${st} ${dfmt(x.beginn)} bis ${x.ende?dfmt(x.ende):'unbefristet'}${x.kuendigungsfrist_monate?' · Kündigungsfrist '+x.kuendigungsfrist_monate+' Monate':''}</div></div>
+  const knopf=x.quelle==='mk'?`<button class="btn kl" onclick="zumKonto('${esc(x.pid)}')">Mieterkonto öffnen</button>`:`<button class="btn zw kl" onclick="mvForm('${x.mvid}')">Bearbeiten</button>`;
+  return `<div class="mv"><div>${pers}<div class="muted" style="font-size:12px;margin-top:3px">${st} ${dfmt(x.beginn)} bis ${x.ende?dfmt(x.ende):'unbefristet'}${x.quelle==='mk'?'':' · <span class="warn">kein Mieterkonto</span>'}</div></div>
     <div>Kaltmiete <b>${eur(x.kaltmiete)}</b><br>BK ${eur(x.betriebskosten)} · HK ${eur(x.heizkosten)}${so?'<br>'+so:''}</div>
     <div>Kaution ${eur(x.kaution)}<br><span class="muted">Ref.: ${esc(x.zahlungsreferenz||'—')}</span>${x.notizen?`<br><span class="warn">${esc(x.notizen)}</span>`:''}</div>
-    <div style="display:flex;flex-direction:column;gap:5px;align-items:flex-end">${x.vertrag_datei?`<button class="lnk" onclick="odOeffne('${esc(x.vertrag_datei).replace(/'/g,"\\'")}')">Mietvertrag</button>`:''}${x.onedrive_ordner?`<button class="lnk" onclick="wechsel('dokumente');dokLaden('${esc(x.onedrive_ordner).replace(/'/g,"\\'")}')">Mieterordner</button>`:''}<button class="btn zw kl" onclick="mvForm('${x.id}')">Bearbeiten</button></div></div>`;
+    <div style="display:flex;flex-direction:column;gap:5px;align-items:flex-end">${knopf}${x.vertrag_datei?`<button class="lnk" onclick="odOeffne('${esc(x.vertrag_datei).replace(/'/g,"\\'")}')">Mietvertrag</button>`:''}${x.onedrive_ordner?`<button class="lnk" onclick="wechsel('dokumente');dokLaden('${esc(x.onedrive_ordner).replace(/'/g,"\\'")}')">Mieterordner</button>`:''}</div></div>`;
 }
 function einForm(uid){
   const u=uid?EIN.find(x=>x.id===uid):{aktiv:true};
@@ -225,78 +247,44 @@ function einForm(uid){
     if(error){alert('Fehler: '+error.message);return;}zu();laden();
   };
 }
+/* Mieter ohne Mieterkonto (z. B. K10): einfache Erfassung am Objekt */
 function mvForm(mid,uid){
   const m=mid?MV.find(x=>x.id===mid):{einheit_id:uid,mieter:[]};
   const pers=(m.mieter||[]).map(p=>[p.name||'',p.email||'',p.tel||''].join('; ')).join('\n');
-  const so=(m.sonstiges||[]).map(s=>s.text+'; '+String(s.betrag).replace('.',',')).join('\n');
   const z=v=>v==null?'':String(v).replace('.',',');
-  dialog(`<h3>${mid?'Mietverhältnis bearbeiten':'Mietverhältnis anlegen'}</h3><div class="fg">
+  dialog(`<h3>${mid?'Mieter bearbeiten':'Mieter ohne Mieterkonto erfassen'}</h3><div class="hinw"><span>Für laufende Mieter bitte ein Mieterkonto anlegen, dann laufen Sollstellungen und Mahnwesen darüber.</span></div><div class="fg">
    <label class="voll">Mieter (je Zeile: Name; E-Mail; Telefon)<textarea class="inp" id="mP" rows="3">${esc(pers)}</textarea></label>
    <label>Mietbeginn<input class="inp" type="date" id="mB" value="${esc(m.beginn||'')}"></label>
    <label>Mietende<input class="inp" type="date" id="mE" value="${esc(m.ende||'')}"></label>
    <label>Kaltmiete<input class="inp" id="mK" inputmode="decimal" value="${z(m.kaltmiete)}"></label>
-   <label>Betriebskosten<input class="inp" id="mBK" inputmode="decimal" value="${z(m.betriebskosten)}"></label>
-   <label>Heizkosten<input class="inp" id="mHK" inputmode="decimal" value="${z(m.heizkosten)}"></label>
    <label>Kaution<input class="inp" id="mKa" inputmode="decimal" value="${z(m.kaution)}"></label>
-   <label class="voll">Weitere Positionen (je Zeile: Text; Betrag)<textarea class="inp" id="mS" rows="2" placeholder="EBK; 40">${esc(so)}</textarea></label>
-   <label>Zahlungsreferenz<input class="inp" id="mR" value="${esc(m.zahlungsreferenz||'')}"></label>
-   <label>Kündigungsfrist Monate<input class="inp" id="mKf" inputmode="numeric" value="${esc(m.kuendigungsfrist_monate==null?'':m.kuendigungsfrist_monate)}"></label>
-   <label class="voll">Anrede für Briefe<input class="inp" id="mA" value="${esc(m.anrede||'')}"></label>
    <label class="voll">Notiz<input class="inp" id="mN" value="${esc(m.notizen||'')}"></label>
   </div><div class="akt">${mid?'<button class="btn rot" id="mDel">Löschen</button>':''}<button class="btn zw" onclick="zu()">Abbrechen</button><button class="btn" id="mOk">Speichern</button></div>`);
   const n=v=>{v=String(v||'').trim();if(v.includes(','))v=v.replace(/\./g,'').replace(',','.');return v===''||isNaN(Number(v))?null:Number(v);};
   document.getElementById('mOk').onclick=async()=>{
-    const P=document.getElementById('mP').value.split('\n').map(l=>l.split(';').map(s=>s.trim())).filter(a=>a[0]).map(a=>{const alt=(m.mieter||[]).find(p=>p.name===a[0])||{};return Object.assign({},alt,{name:a[0],email:a[1]||undefined,tel:a[2]||undefined});});
-    const S=document.getElementById('mS').value.split('\n').map(l=>l.split(';').map(s=>s.trim())).filter(a=>a[0]).map(a=>({text:a[0],betrag:n(a[1])}));
-    const rec={einheit_id:m.einheit_id,mieter:P,mieter_name:P.map(p=>p.name).join(', ')||null,beginn:document.getElementById('mB').value||null,ende:document.getElementById('mE').value||null,
-      kaltmiete:n(document.getElementById('mK').value),betriebskosten:n(document.getElementById('mBK').value),heizkosten:n(document.getElementById('mHK').value),kaution:n(document.getElementById('mKa').value),
-      sonstiges:S,zahlungsreferenz:document.getElementById('mR').value.trim()||null,kuendigungsfrist_monate:n(document.getElementById('mKf').value),anrede:document.getElementById('mA').value.trim()||null,notizen:document.getElementById('mN').value.trim()||null,updated_at:new Date().toISOString()};
+    const P=document.getElementById('mP').value.split('\n').map(l=>l.split(';').map(s=>s.trim())).filter(a=>a[0]).map(a=>({name:a[0],email:a[1]||undefined,tel:a[2]||undefined}));
+    const rec={einheit_id:m.einheit_id,mieter:P,mieter_name:P.map(p=>p.name).join(', ')||null,beginn:document.getElementById('mB').value||null,ende:document.getElementById('mE').value||null,kaltmiete:n(document.getElementById('mK').value),kaution:n(document.getElementById('mKa').value),notizen:document.getElementById('mN').value.trim()||null,updated_at:new Date().toISOString()};
     if(!mid)rec.quelle='Im OS erfasst';
     const {error}=mid?await sb.from('obj_mietverhaeltnisse').update(rec).eq('id',mid):await sb.from('obj_mietverhaeltnisse').insert(rec);
     if(error){alert('Fehler: '+error.message);return;}zu();laden();
   };
-  if(mid)document.getElementById('mDel').onclick=async()=>{if(!confirm('Dieses Mietverhältnis wirklich löschen? Für einen Auszug bitte stattdessen das Mietende eintragen.'))return;
-    const {error}=await sb.from('obj_mietverhaeltnisse').delete().eq('id',mid);if(error){alert(error.message);return;}zu();laden();};
+  if(mid)document.getElementById('mDel').onclick=async()=>{if(!confirm('Eintrag wirklich löschen?'))return;const {error}=await sb.from('obj_mietverhaeltnisse').delete().eq('id',mid);if(error){alert(error.message);return;}zu();laden();};
 }
 
-/* ---------- Verträge ---------- */
-const THEMEN=['Versicherung','Strom','Gas','Heizung','Frischwasser','Schmutzwasser','Müll','Grundsteuer','Hausmeister','Schornsteinfeger','Internet','Wartung','Photovoltaikanlage','Hauptmietvertrag','Sonstiges'];
+/* ---------- Verträge: Quelle ist das Vertragsregister des OS ---------- */
+const VSORT=['Versicherung','Versorger','Verwaltung'];
+function zumVertrag(vid){(window.top||window).location.href='/hausverwaltung/vertraege?id='+encodeURIComponent(vid);}
 function renderVer(){
-  let h=`<div class="sec"><h2>Verträge &amp; Versorger <span class="rechts"><button class="btn kl" onclick="vtForm()">Vertrag anlegen</button></span></h2>`;
-  if(!VT.length){document.getElementById('pVer').innerHTML=h+'<div class="empty">Noch keine Verträge erfasst.</div></div>';return;}
-  const gr=[...new Set(VT.map(v=>v.thema))].sort((a,b)=>(THEMEN.indexOf(a)+99*(THEMEN.indexOf(a)<0))-(THEMEN.indexOf(b)+99*(THEMEN.indexOf(b)<0)));
-  gr.forEach(t=>{h+=`<div class="vgrp">${esc(t)}</div>`;VT.filter(v=>v.thema===t).forEach(v=>{
-    const d=[v.vertragsnummer&&'Vertrag: '+v.vertragsnummer,v.kundennummer&&'Kunde: '+v.kundennummer,v.zaehlernummer&&'Zähler: '+v.zaehlernummer,v.beginn&&'ab '+dfmt(v.beginn),v.ende&&'bis '+dfmt(v.ende),v.betrag!=null&&eur(v.betrag)+(v.intervall?' '+v.intervall:'')].filter(Boolean);
-    h+=`<div class="vk"><div class="k"><b>${esc(v.anbieter||'Anbieter offen')}</b>${v.ende&&v.ende<HEUTE?'<span class="pill">beendet</span>':''}${v.datei?`<button class="lnk" onclick="odOeffne('${esc(v.datei).replace(/'/g,"\\'")}')">Dokument</button>`:''}<button class="btn zw kl" onclick="vtForm('${v.id}')">Bearbeiten</button></div>
-      ${d.length?`<div class="d">${d.map(x=>`<span>${esc(x)}</span>`).join('')}</div>`:''}${v.notizen?`<div class="n">${esc(v.notizen)}</div>`:''}</div>`;});});
+  let h=`<div class="sec"><h2>Verträge &amp; Versorger <span class="rechts"><button class="btn kl" onclick="(window.top||window).location.href='/hausverwaltung/vertraege?neu=1&obj=${encodeURIComponent(OB.kz)}'">Vertrag anlegen</button></span></h2>
+   <div class="muted" style="font-size:12.5px;margin:-4px 0 10px">Die Verträge kommen aus dem Vertragsregister. Ein Klick öffnet den Vertrag dort.</div>`;
+  if(!VL.length){document.getElementById('pVer').innerHTML=h+'<div class="empty">Für dieses Objekt sind noch keine Verträge erfasst.</div></div>';return;}
+  const st=v=>v.quelle==='vorschlag'?'<span class="pill p-bald">zu prüfen</span>':(v.ende&&v.ende<HEUTE?'<span class="pill">beendet</span>':'<span class="pill p-ok">aktiv</span>');
+  const gr=[...new Set(VL.map(v=>v.art||'Sonstiges'))].sort((a,b)=>(VSORT.indexOf(a)<0?9:VSORT.indexOf(a))-(VSORT.indexOf(b)<0?9:VSORT.indexOf(b)));
+  gr.forEach(g=>{h+=`<div class="vgrp">${esc(g==='Verwaltung'?'Verwaltung & Sonstiges':g==='Versicherung'?'Versicherungen':g)}</div>`;
+    VL.filter(v=>(v.art||'Sonstiges')===g).sort((a,b)=>String(a.sparte||'').localeCompare(String(b.sparte||''),'de')).forEach(v=>{
+      const d=[v.vnr&&'Vertrag: '+v.vnr,v.knr&&'Kunde: '+v.knr,v.zaehler&&'Zähler: '+v.zaehler,v.start&&'ab '+dfmt(v.start),v.ende&&'bis '+dfmt(v.ende),v.betrag!=null&&v.betrag!==''&&eur(v.betrag)+(v.rhythmus?' '+v.rhythmus:'')].filter(Boolean);
+      h+=`<div class="vk" style="cursor:pointer" onclick="zumVertrag('${esc(v.id)}')"><div class="k"><b>${esc(v.sparte||'')}${v.anbieter?' · '+esc(v.anbieter):''}</b>${st(v)}</div>${d.length?`<div class="d">${d.map(x=>`<span>${esc(x)}</span>`).join('')}</div>`:''}${v.notiz?`<div class="n">${esc(String(v.notiz).slice(0,220))}</div>`:''}</div>`;});});
   document.getElementById('pVer').innerHTML=h+'</div>';
-}
-function vtForm(vid){
-  const v=vid?VT.find(x=>x.id===vid):{};
-  dialog(`<h3>${vid?'Vertrag bearbeiten':'Vertrag anlegen'}</h3><div class="fg">
-   <label>Thema<input class="inp" id="vT" list="dlThema" value="${esc(v.thema||'')}"></label>
-   <label>Anbieter<input class="inp" id="vA" value="${esc(v.anbieter||'')}"></label>
-   <label>Vertragsnummer<input class="inp" id="vV" value="${esc(v.vertragsnummer||'')}"></label>
-   <label>Kundennummer<input class="inp" id="vK" value="${esc(v.kundennummer||'')}"></label>
-   <label>Zählernummer<input class="inp" id="vZ" value="${esc(v.zaehlernummer||'')}"></label>
-   <label>Kündigungsfrist<input class="inp" id="vKf" value="${esc(v.kuendigungsfrist||'')}"></label>
-   <label>Beginn<input class="inp" type="date" id="vB" value="${esc(v.beginn||'')}"></label>
-   <label>Ende<input class="inp" type="date" id="vE" value="${esc(v.ende||'')}"></label>
-   <label>Betrag<input class="inp" id="vBe" inputmode="decimal" value="${esc(v.betrag==null?'':String(v.betrag).replace('.',','))}"></label>
-   <label>Intervall<input class="inp" id="vI" list="dlInt" value="${esc(v.intervall||'')}"></label>
-   <label class="voll">Dokument (Pfad in OneDrive)<input class="inp" id="vD" value="${esc(v.datei||'')}"></label>
-   <label class="voll">Notizen<textarea class="inp" id="vN" rows="3">${esc(v.notizen||'')}</textarea></label>
-  </div><datalist id="dlThema">${THEMEN.map(x=>`<option value="${x}">`).join('')}</datalist><datalist id="dlInt"><option value="monatlich"><option value="vierteljährlich"><option value="halbjährlich"><option value="jährlich"><option value="Abschlag monatlich"></datalist>
-  <div class="akt">${vid?'<button class="btn rot" id="vDel">Löschen</button>':''}<button class="btn zw" onclick="zu()">Abbrechen</button><button class="btn" id="vOk">Speichern</button></div>`);
-  document.getElementById('vOk').onclick=async()=>{
-    let b=document.getElementById('vBe').value.trim();if(b.includes(','))b=b.replace(/\./g,'').replace(',','.');
-    const rec={objekt_id:id,thema:document.getElementById('vT').value.trim(),anbieter:document.getElementById('vA').value.trim()||null,vertragsnummer:document.getElementById('vV').value.trim()||null,kundennummer:document.getElementById('vK').value.trim()||null,zaehlernummer:document.getElementById('vZ').value.trim()||null,kuendigungsfrist:document.getElementById('vKf').value.trim()||null,beginn:document.getElementById('vB').value||null,ende:document.getElementById('vE').value||null,betrag:b===''||isNaN(Number(b))?null:Number(b),intervall:document.getElementById('vI').value.trim()||null,datei:document.getElementById('vD').value.trim()||null,notizen:document.getElementById('vN').value.trim()||null,updated_at:new Date().toISOString()};
-    if(!rec.thema){alert('Bitte ein Thema angeben.');return;}
-    if(!vid)rec.quelle='Im OS erfasst';
-    const {error}=vid?await sb.from('obj_vertraege').update(rec).eq('id',vid):await sb.from('obj_vertraege').insert(rec);
-    if(error){alert('Fehler: '+error.message);return;}zu();laden();
-  };
-  if(vid)document.getElementById('vDel').onclick=async()=>{if(!confirm('Vertrag löschen?'))return;const {error}=await sb.from('obj_vertraege').delete().eq('id',vid);if(error){alert(error.message);return;}zu();laden();};
 }
 
 /* ---------- OneDrive ---------- */
