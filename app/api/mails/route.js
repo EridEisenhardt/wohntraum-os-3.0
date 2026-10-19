@@ -38,8 +38,23 @@ export async function POST(req) {
     const body = await req.json().catch(() => ({}))
     if (body.aktion === 'suchen') {
       const such = [...new Set((body.adressen || []).map(a => String(a).trim().toLowerCase()).filter(a => /@/.test(a)))].slice(0, 5)
-      if (!such.length) return antwort({ error: 'Beim Mieter ist keine E-Mail-Adresse hinterlegt.' }, 400)
+      // Objektsuche: Suchbegriffe (z. B. Straße und Hausnummer) im Betreff und Text
+      const texte = [...new Set((body.begriffe || []).map(t => String(t).replace(/["\\]/g, ' ').trim()).filter(t => t.length >= 3))].slice(0, 4)
+      if (!such.length && !texte.length) return antwort({ error: 'Beim Mieter ist keine E-Mail-Adresse hinterlegt.' }, 400)
       const out = [], fehler = []
+      const eigen = a => /andersmacher|wohntraum/i.test(a)
+      for (const mb of boxes) for (const t of texte) {
+        try {
+          const j = await graph('/users/' + encodeURIComponent(mb) + '/messages?$top=50&$select=id,internetMessageId,subject,from,toRecipients,ccRecipients,receivedDateTime,sentDateTime,bodyPreview,hasAttachments,isDraft&$search=' + encodeURIComponent('"' + t + '"'))
+          for (const m of j.value || []) {
+            if (m.isDraft) continue
+            const von = adr(m.from)
+            out.push({ id: m.id, mailbox: mb, msgId: m.internetMessageId || m.id, betreff: m.subject || '', von: nm(m.from) + (von ? ' <' + von + '>' : ''),
+              an: (m.toRecipients || []).map(r => nm(r) + ' <' + adr(r) + '>').join(', '), datum: m.receivedDateTime || m.sentDateTime,
+              richtung: eigen(von) ? 'Ausgang' : 'Eingang', vorschau: m.bodyPreview || '', anhang: !!m.hasAttachments, begriff: t })
+          }
+        } catch (e) { fehler.push(mb + ': ' + e.message) }
+      }
       for (const mb of boxes) for (const a of such) {
         try {
           const j = await graph('/users/' + encodeURIComponent(mb) + '/messages?$top=50&$select=id,internetMessageId,subject,from,toRecipients,ccRecipients,receivedDateTime,sentDateTime,bodyPreview,hasAttachments,isDraft&$search=' + encodeURIComponent('"participants:' + a + '"'))

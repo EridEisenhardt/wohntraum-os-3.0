@@ -77,13 +77,35 @@ button.ghost{border-color:transparent;background:transparent;color:var(--muted);
 .krume{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px;font-size:13px}
 .krume button{background:none;border:0;color:var(--accent);cursor:pointer;padding:0}
 @media(max-width:800px){.wrap{padding:12px}.hgrid{grid-template-columns:repeat(2,max-content)}.dtop{flex-direction:column}.cards{grid-template-columns:1fr}}
+.card.sec{margin-bottom:12px}
+details.sec>summary.ch{cursor:pointer;list-style:none;margin-bottom:0;justify-content:flex-start}details.sec>summary.ch::-webkit-details-marker{display:none}
+details.sec>summary.ch::before{content:'▸';margin-right:8px;color:var(--muted)}details.sec[open]>summary.ch::before{content:'▾'}details.sec[open]>summary.ch{margin-bottom:8px}
+details.sec>summary.ch .sub,details.sec>summary.ch>button{margin-left:auto}
+.kvgrid{display:grid;grid-template-columns:1fr 1fr;column-gap:36px}
+.kvgrid .kvr:nth-last-child(2):nth-child(odd){border-bottom:0}
+label.up{color:var(--accent);cursor:pointer;font-weight:600;font-size:12.5px;margin-left:8px}label.up:hover{text-decoration:underline}
+.acts label.up{margin-left:0;border:1px solid var(--line);border-radius:8px;padding:3px 8px;background:var(--card);font-weight:400;color:var(--ink)}
+.hneu{border:1px solid var(--line);border-radius:10px;padding:10px;margin:8px 0;display:grid;gap:8px;background:var(--soft)}
+.hrow{display:flex;gap:10px;flex-wrap:wrap}.hrow .fl{margin-bottom:0}
+.hlist{margin-top:8px}.hz{display:grid;grid-template-columns:150px 1fr;gap:10px;padding:7px 0;border-top:1px solid var(--line);font-size:13px}
+.hk{display:grid;gap:1px}.hd{font-variant-numeric:tabular-nums}.hw{color:var(--muted);font-size:12px}
+.ml-row{border-top:1px solid var(--line);padding:7px 0;font-size:13px}.ml-row .sub{font-size:12px}.ml-row .ml-b{white-space:pre-wrap;font-size:13px;margin-top:4px;max-height:260px;overflow:auto;background:var(--soft);border-radius:8px;padding:8px}
+table.mini{width:100%;font-size:12.5px;border-collapse:collapse}table.mini td{padding:4px;border-bottom:1px dashed var(--line)}
+.rh{font-size:12px;font-weight:700;color:var(--muted);margin-bottom:4px}
+.note.warnbox{background:var(--warn-bg);border-color:transparent;color:var(--warn)}
+.vord{border:1px solid var(--line);border-radius:10px;margin-bottom:8px;background:var(--card)}
+.vord>summary{cursor:pointer;list-style:none;display:flex;gap:10px;align-items:center;padding:9px 14px}.vord>summary::-webkit-details-marker{display:none}
+.vord>summary::before{content:'▸';color:var(--muted)}.vord[open]>summary::before{content:'▾'}.vord>summary .sub{margin-left:auto}
+.vord .vin{padding:0 14px 10px}.vord .vk{background:var(--soft)}
+.toast{position:fixed;left:50%;bottom:20px;transform:translateX(-50%);background:var(--ink);color:#fff;padding:8px 14px;border-radius:8px;font-size:13px;opacity:0;pointer-events:none;transition:opacity .2s;z-index:50}.toast.on{opacity:1}
+@media(max-width:800px){.kvgrid{grid-template-columns:1fr}.hz{grid-template-columns:1fr;gap:2px}}
 </style></head><body>
 <div class="wrap">
 <div class="dtop"><div class="dleft"><div class="foto" id="foto" hidden></div><div><div class="dname" id="titel">Objekt lädt …</div><div class="sub" id="dsub"></div><div class="hgrid" id="hgrid"></div></div></div><div class="dacts"><button onclick="(window.top||window).location.href='/verwalto/objekte'">Zurück zu Objekte</button><button onclick="wechsel('guide')">Guide</button><button class="primary" onclick="guideTeilen()">QR / Link</button></div></div>
   <div class="reiter" id="reiter">
     <button data-t="uebersicht" class="on">Übersicht</button><button data-t="einheiten">Einheiten &amp; Mieter</button><button data-t="zaehler">Zähler</button><button data-t="guide">Guide</button><button data-t="vertraege">Verträge</button><button data-t="dokumente">Dokumente</button>
   </div>
-  <div class="pane" data-p="uebersicht" id="pUeb"></div>
+  <div class="pane" data-p="uebersicht" id="pUeb"><div id="uebDaten"></div><div id="uebBereiche"></div></div>
   <div class="pane" data-p="einheiten" id="pEin" hidden></div>
   <div class="pane" data-p="zaehler" hidden><div class="sec"><h2>Zähler &amp; Verbrauchsdaten</h2><div id="zaehlerBox"></div></div></div>
   <div class="pane" data-p="guide" hidden><div class="sec"><h2>Guide Haustechnik</h2><div id="guideBox"></div></div></div>
@@ -137,20 +159,30 @@ function wechsel(t){
 }
 document.querySelectorAll('#reiter button').forEach(b=>b.onclick=()=>wechsel(b.dataset.t));
 
-/* ---------- Übersicht ---------- */
+/* ---------- Übersicht: Karten untereinander, aufklappbar wie im Mieterkonto ---------- */
 const FELDER=[
- ['Stammdaten',[['kz','Kürzel'],['name','Bezeichnung'],['strasse','Straße'],['plz','PLZ'],['ort','Ort'],['gesellschaft','Gesellschaft','dlGes'],['eigentuemer','Eigentümer'],['typ','Objektart','dlTyp'],['status','Status','dlStatus'],['hausverwaltung','Hausverwaltung'],['baujahr','Baujahr'],['wohnflaeche','Wohnfläche m²','zahl'],['grundstueck','Grundstück m²','zahl'],['heizung','Heizung']]],
- ['Kauf & Verkauf',[['kaufdatum','Kaufdatum','datum'],['besitzuebergang','Besitzübergang','datum'],['kaufpreis','Kaufpreis','eur'],['kaufnebenkosten','Kaufnebenkosten','eur'],['verkaufsdatum','Verkaufsdatum','datum'],['verkauf_uebergabe','Übergabe an Käufer','datum'],['verkaufspreis','Verkaufspreis','eur'],['kaeufer','Käufer']]],
- ['Grundbuch',[['amtsgericht','Amtsgericht'],['grundbuch_von','Grundbuch von'],['grundbuch_blatt','Blatt'],['gemarkung','Gemarkung'],['flur','Flur'],['flurstueck','Flurstück']]],
- ['Energieausweis',[['energie_klasse','Energieklasse'],['energie_gueltig_bis','Gültig bis','datum'],['energie_datei','Ausweis','datei']]],
- ['Konten',[['mietkonto_iban','Mietkonto IBAN'],['mietkonto_bank','Bank Mietkonto'],['finanzierung_bank','Finanzierende Bank']]]
+ ['stamm','Stammdaten',[['kz','Kürzel'],['strasse','Straße'],['plz','PLZ'],['ort','Ort'],['eigentuemer','Eigentümer'],['typ','Objektart','dlTyp'],['status','Status','dlStatus'],['hausverwaltung','Hausverwaltung'],['baujahr','Baujahr'],['wohnflaeche','Wohnfläche m²','zahl'],['grundstueck','Grundstück m²','zahl'],['heizung','Heizung']]],
+ ['kauf','Kauf & Verkauf',[['kaufdatum','Kaufdatum','datum'],['besitzuebergang','Besitzübergang','datum'],['kaufpreis','Kaufpreis','eur'],['kaufnebenkosten','Kaufnebenkosten','eur'],['verkaufsdatum','Verkaufsdatum','datum'],['verkauf_uebergabe','Übergabe an Käufer','datum'],['verkaufspreis','Verkaufspreis','eur'],['kaeufer','Käufer'],['kaufvertrag_datei','Kaufvertrag','dok'],['verkaufsvertrag_datei','Verkaufsvertrag','dok']]],
+ ['grundbuch','Grundbuch',[['amtsgericht','Amtsgericht'],['grundbuch_von','Grundbuch von'],['grundbuch_blatt','Blatt'],['gemarkung','Gemarkung'],['flur','Flur'],['flurstueck','Flurstück'],['grundbuch_datei','Grundbuchauszug','dok']]],
+ ['energie','Energieausweis',[['energie_klasse','Energieklasse'],['energie_gueltig_bis','Gültig bis','datum'],['energie_datei','Energieausweis','dok']]],
+ ['konten','Konten',[['mietkonto_iban','Mietkonto IBAN'],['mietkonto_bank','Bank Mietkonto'],['finanzierung_bank','Finanzierende Bank']]]
 ];
-function wert(f,typ){const v=OB[f];if(v==null||v==='')return '<span class="mut">–</span>';
+const FNAME={};FELDER.forEach(g=>g[2].forEach(([f,l])=>FNAME[f]=l));
+/* Dokumente: Ablageordner im Objektordner und Dokumentart für den Dateinamen */
+const DOKF={kaufvertrag_datei:['Kaufvertrag','01 Objekt/Kauf'],verkaufsvertrag_datei:['Verkaufsvertrag','01 Objekt/Verkauf'],grundbuch_datei:['Grundbuchauszug','01 Objekt/Grundbuch'],energie_datei:['Energieausweis','01 Objekt']};
+let SECO={stamm:true,kauf:true,grundbuch:true,energie:true,konten:true,notiz:true};
+try{Object.assign(SECO,JSON.parse(localStorage.getItem('obj_sec')||'{}')||{});}catch(e){}
+document.addEventListener('toggle',e=>{const d=e.target;if(!d||!d.matches||!d.matches('details.sec[data-sec]'))return;SECO[d.dataset.sec]=d.open;try{localStorage.setItem('obj_sec',JSON.stringify(SECO));}catch(x){}
+  if(d.open&&typeof bereichOeffnen==='function')bereichOeffnen(d.dataset.sec);},true);
+const jq=s=>esc(s).replace(/'/g,"\\'");
+function dokZelle(f){const v=OB[f];
+  return (v?`<button class="lnk" title="${esc(v)}" onclick="odOeffne('${jq(v)}')">öffnen</button>`:'<span class="mut">kein Dokument</span>')
+    +` <label class="up">${v?'ersetzen':'hochladen'}<input type="file" hidden onchange="dokHoch('${f}',this)"></label>`;}
+function wert(f,typ){if(typ==='dok')return dokZelle(f);const v=OB[f];if(v==null||v==='')return '<span class="mut">–</span>';
   if(typ==='datum'){let s=dfmt(v);if(f==='energie_gueltig_bis'&&v<HEUTE)s+=' <span class="pill mid">abgelaufen</span>';return s;}
   if(typ==='eur')return eur(v);if(typ==='zahl')return zahlF(v);
-  if(typ==='datei')return `<button class="lnk" onclick="odOeffne('${esc(v).replace(/'/g,"\\'")}')">öffnen</button>`;
   return esc(v);}
-let EDITK=-1;
+let EDITK='';
 function renderUeb(){
   const we=EIN.filter(u=>u.aktiv);const verm=we.filter(u=>mvAkt(u.id).length).length;
   const soll=we.reduce((s,u)=>s+mvAkt(u.id).reduce((a,m)=>a+Number(m.kaltmiete||0),0),0);
@@ -158,39 +190,60 @@ function renderUeb(){
   let h=OB.status==='Verkauft'?'':`<div class="kpis">${[['Einheiten',we.length],['Vermietet',verm],['Leerstand',we.length-verm],['Soll-Kaltmiete / Monat',eur(soll)],['Kautionen vereinbart',eur(kaut)]].map(k=>`<div class="kpi"><div class="l">${k[0]}</div><div class="v">${k[1]}</div></div>`).join('')}</div>`;
   const ph=(OB.pruefhinweise||[]);
   if(ph.length)h+=`<div class="note"><div class="ch">Bitte prüfen <span class="sub">Hinweise aus der Datenübernahme</span></div>${ph.map((t,i)=>`<div class="hinw"><span>${esc(t)}</span><button class="small" onclick="hinwErledigt(${i})">Erledigt</button></div>`).join('')}</div>`;
-  h+='<div class="cards">';
-  FELDER.forEach(([titel,fs],gi)=>{
-    const ed=EDITK===gi;
-    h+=`<div class="card"><div class="ch">${titel}${ed?'':`<button class="ghost small" onclick="EDITK=${gi};renderUeb()">Bearbeiten</button>`}</div>`;
-    if(ed){h+=fs.filter(x=>x[2]!=='datei').map(([f,l,t])=>`<label class="fl">${l}<input ${t==='datum'?'type="date"':''} ${t&&t.startsWith('dl')?`list="${t}"`:''} data-f="${f}" data-t="${t||''}" value="${esc(OB[f]==null?'':String(OB[f]))}"></label>`).join('')
-      +`<div class="acts"><button class="btn kl" onclick="karteSpeichern(this)">Speichern</button><button class="ghost small" onclick="EDITK=-1;renderUeb()">Abbrechen</button></div>`;}
-    else h+=fs.map(([f,l,t])=>{const q=OB.quellen&&OB.quellen[f];
-      return `<div class="kvr"><span>${l}${q?`<button class="q" title="${esc(q)}" onclick="odOeffne('${esc(q).replace(/'/g,"\\'")}')">Quelle</button>`:''}</span><b>${wert(f,t)}</b></div>`;}).join('');
-    h+='</div>';
+  FELDER.forEach(([k,titel,fs])=>{
+    const ed=EDITK===k;
+    h+=`<details class="card sec" data-sec="${k}"${SECO[k]||ed?' open':''}><summary class="ch">${titel}${ed?'':`<button class="ghost small" onclick="event.preventDefault();event.stopPropagation();EDITK='${k}';renderUeb()">Bearbeiten</button>`}</summary>`;
+    if(ed){h+='<div class="kvgrid">'+fs.filter(x=>x[2]!=='dok').map(([f,l,t])=>`<label class="fl">${l}<input ${t==='datum'?'type="date"':''} ${t&&t.startsWith('dl')?`list="${t}"`:''} data-f="${f}" data-t="${t||''}" value="${esc(OB[f]==null?'':String(OB[f]))}"></label>`).join('')+'</div>'
+      +`<div class="acts"><button class="primary" onclick="karteSpeichern(this)">Speichern</button><button onclick="EDITK='';renderUeb()">Abbrechen</button></div>`;}
+    else h+='<div class="kvgrid">'+fs.map(([f,l,t])=>{const q=t!=='dok'&&OB.quellen&&OB.quellen[f];
+      return `<div class="kvr"><span>${l}${q?`<button class="q" title="${esc(q)}" onclick="odOeffne('${jq(q)}')">Quelle</button>`:''}</span><b>${wert(f,t)}</b></div>`;}).join('')+'</div>';
+    h+='</details>';
   });
-  h+=`<div class="card"><div class="ch">Notizen</div><textarea class="inp" style="width:100%;min-height:110px" placeholder="Notizen zum Objekt" onchange="feldSpeichern('notizen',this.value)">${esc(OB.notizen||'')}</textarea></div>`;
-  h+='</div>';
-  h+=`<datalist id="dlGes"><option value="EE"><option value="WT"><option value="KiBo"></datalist><datalist id="dlTyp">${['Mehrfamilienhaus','Einfamilienhaus','Reihenhaus','Eigentumswohnung','Wohn- und Geschäftshaus','Gewerbeobjekt','Grundstück','Angemietete Wohnung (Untervermietung)'].map(x=>`<option value="${x}">`).join('')}</datalist><datalist id="dlStatus"><option value="Bestand"><option value="In Ankauf"><option value="Im Verkauf"><option value="Verkauft"></datalist>`;
-  document.getElementById('pUeb').innerHTML=h;
+  h+=`<details class="card sec" data-sec="notiz"${SECO.notiz?' open':''}><summary class="ch">Notizen</summary><textarea class="inp" style="width:100%;min-height:90px" placeholder="Notizen zum Objekt" onchange="feldSpeichern('notizen',this.value)">${esc(OB.notizen||'')}</textarea></details>`;
+  h+=`<datalist id="dlTyp">${['Mehrfamilienhaus','Einfamilienhaus','Reihenhaus','Eigentumswohnung','Wohn- und Geschäftshaus','Gewerbeobjekt','Grundstück','Angemietete Wohnung (Untervermietung)'].map(x=>`<option value="${x}">`).join('')}</datalist><datalist id="dlStatus"><option value="Bestand"><option value="In Ankauf"><option value="Im Verkauf"><option value="Verkauft"></datalist>`;
+  document.getElementById('uebDaten').innerHTML=h;
+  if(typeof bereicheInit==='function')bereicheInit();
 }
+const anzeige=(f,v)=>v==null||v===''?'leer':/datum|uebergabe|gueltig/.test(f)?dfmt(v):String(v);
 async function karteSpeichern(btn){
   const card=btn.closest('.card');const patch={};
   for(const i of card.querySelectorAll('input[data-f]')){let v=i.value.trim(),t=i.dataset.t,w=v===''?null:v;
-    if((t==='zahl'||t==='eur')&&w!=null){w=Number(w.replace(/\./g,'').replace(',','.'));if(isNaN(w)){alert('Bitte eine Zahl eingeben: '+i.parentElement.firstChild.textContent);return;}}
+    if((t==='zahl'||t==='eur')&&w!=null){w=Number(w.replace(/\./g,'').replace(',','.'));if(isNaN(w)){alert('Bitte eine Zahl eingeben: '+FNAME[i.dataset.f]);return;}}
     if(String(OB[i.dataset.f]??'')!==String(w??''))patch[i.dataset.f]=w;}
-  if(Object.keys(patch).length){patch.updated_at=new Date().toISOString();const {error}=await sb.from('obj_objekte').update(patch).eq('id',id);if(error){alert('Speichern fehlgeschlagen: '+error.message);return;}
-    Object.assign(OB,patch);OB.display_address=[OB.strasse,[OB.plz,OB.ort].filter(Boolean).join(' ')].filter(Boolean).join(', ');renderHero();}
-  EDITK=-1;renderUeb();
+  const keys=Object.keys(patch);
+  if(keys.length){const alt=Object.fromEntries(keys.map(k=>[k,OB[k]]));patch.updated_at=new Date().toISOString();const {error}=await sb.from('obj_objekte').update(patch).eq('id',id);if(error){alert('Speichern fehlgeschlagen: '+error.message);return;}
+    Object.assign(OB,patch);OB.display_address=[OB.strasse,[OB.plz,OB.ort].filter(Boolean).join(' ')].filter(Boolean).join(', ');renderHero();
+    if(typeof objLog==='function')objLog('Änderung','Objektdaten geändert – '+keys.map(k=>FNAME[k]+': '+anzeige(k,alt[k])+' → '+anzeige(k,patch[k])).join('; '));}
+  EDITK='';renderUeb();
 }
 async function feldSpeichern(f,v,t){
   v=String(v).trim();let w=v===''?null:v;
   if((t==='zahl'||t==='eur')&&w!=null){w=Number(w.replace(/\./g,'').replace(',','.'));if(isNaN(w)){alert('Bitte eine Zahl eingeben.');return;}}
   const {error}=await sb.from('obj_objekte').update({[f]:w,updated_at:new Date().toISOString()}).eq('id',id);
   if(error){alert('Speichern fehlgeschlagen: '+error.message);return;}
-  OB[f]=w;if(['name','kz','gesellschaft','typ','status','strasse','plz','ort'].includes(f)){OB.display_address=[OB.strasse,[OB.plz,OB.ort].filter(Boolean).join(' ')].filter(Boolean).join(', ');renderHero();}
+  OB[f]=w;if(f==='notizen'&&typeof objLog==='function')objLog('Notiz','Notizen zum Objekt geändert');
   if(f!=='notizen')renderUeb();
 }
-async function hinwErledigt(i){const n=(OB.pruefhinweise||[]).filter((x,j)=>j!==i);const {error}=await sb.from('obj_objekte').update({pruefhinweise:n}).eq('id',id);if(error){alert(error.message);return;}OB.pruefhinweise=n;renderUeb();}
+async function hinwErledigt(i){const n=(OB.pruefhinweise||[]).filter((x,j)=>j!==i);const t=(OB.pruefhinweise||[])[i];const {error}=await sb.from('obj_objekte').update({pruefhinweise:n}).eq('id',id);if(error){alert(error.message);return;}OB.pruefhinweise=n;renderUeb();
+  if(typeof objLog==='function')objLog('Änderung','Prüfhinweis erledigt: '+t);}
+/* Datei in den Objektordner in OneDrive hochladen (große Dateien über eine Upload-Sitzung) */
+async function odHochladen(ordner,name,blob){
+  const pfad=voll(ordner),nm=String(name).replace(/[\\/:*?"<>|#%]/g,'_').replace(/\s+/g,' ').trim();
+  await odApi({aktion:'anlegen',pfad});
+  if(blob.size<=3*1024*1024){const b64=await new Promise((res,rej)=>{const r=new FileReader();r.onload=()=>res(String(r.result).split(',')[1]||'');r.onerror=rej;r.readAsDataURL(blob);});
+    return (await odApi({aktion:'hochladen',pfad,name:nm,daten:b64,typ:blob.type||'application/octet-stream'})).item;}
+  const s=await odApi({aktion:'sitzung',pfad,name:nm});const r=await fetch(s.uploadUrl,{method:'PUT',headers:{'Content-Range':'bytes 0-'+(blob.size-1)+'/'+blob.size},body:blob});
+  if(!r.ok)throw new Error('Hochladen nach OneDrive fehlgeschlagen ('+r.status+').');const j=await r.json();return {id:j.id,name:j.name,web:j.webUrl};}
+async function dokHoch(f,inp){const datei=inp.files&&inp.files[0];inp.value='';if(!datei)return;
+  if(!OB.onedrive_pfad){alert('Für dieses Objekt ist kein OneDrive-Ordner hinterlegt.');return;}
+  const [art,unter]=DOKF[f];const ext=(datei.name.match(/\.[A-Za-z0-9]{2,5}$/)||['.pdf'])[0].toLowerCase();
+  const name=OB.kz+'_'+(OB.gesellschaft||'WT')+'_'+HEUTE+'_'+art+ext;
+  const lab=inp.parentElement;lab.firstChild.textContent='lädt hoch …';
+  try{const it=await odHochladen(OB.onedrive_pfad+'/'+unter,name,datei);
+    const pfad=OB.onedrive_pfad.replace(/^\/+|\/+$/g,'')+'/'+unter+'/'+it.name;
+    const {error}=await sb.from('obj_objekte').update({[f]:pfad,updated_at:new Date().toISOString()}).eq('id',id);if(error)throw new Error(error.message);
+    OB[f]=pfad;renderUeb();if(typeof objLog==='function')objLog('Dokument',art+' hochgeladen: '+it.name);}
+  catch(e){alert('Hochladen fehlgeschlagen: '+(e.message||e));renderUeb();}}
 
 /* ---------- Mietverhältnisse: Quelle sind die Mieterkonten (OS), ergänzend die Objektdaten ---------- */
 const aktuell=m=>(!m.beginn||m.beginn<=HEUTE)&&(!m.ende||m.ende>=HEUTE);
@@ -307,19 +360,31 @@ function mvForm(mid,uid){
   if(mid)document.getElementById('mDel').onclick=async()=>{if(!confirm('Eintrag wirklich löschen?'))return;const {error}=await sb.from('obj_mietverhaeltnisse').delete().eq('id',mid);if(error){alert(error.message);return;}zu();laden();};
 }
 
-/* ---------- Verträge: Quelle ist das Vertragsregister des OS ---------- */
-const VSORT=['Versicherung','Versorger','Verwaltung'];
+/* ---------- Verträge: Quelle ist das Vertragsregister, gegliedert wie die Ordner in OneDrive (03 Verträge / 04 Betriebskosten) ---------- */
+const VORDNER=['Frischwasser','Schmutzwasser','Gas','Heizung','Strom','Internet','Müll','Grundsteuer','Hausmeister','Schornsteinfeger','Versicherung','Sonstiges'];
+function vOrdner(v){
+  if(v.art==='Versicherung')return 'Versicherung';
+  const s=((v.sparte||'')+' '+(v.anbieter||'')+' '+(v.notiz||'').slice(0,80)).toLowerCase();
+  const T=[['Schmutzwasser',/abwasser|schmutzwasser|niederschlag/],['Frischwasser',/frischwasser|trinkwasser|wasserversorg|wasser/],['Heizung',/heizung|wärme|waerme|ista|techem|brunata|minol/],['Gas',/\bgas\b|erdgas/],['Strom',/strom/],
+    ['Internet',/internet|telefon|telekom|vodafone|1&1/],['Müll',/müll|muell|abfall/],['Grundsteuer',/grundbesitz|grundsteuer/],['Hausmeister',/hausmeister|reinigung|garten|winterdienst/],['Schornsteinfeger',/schornstein|kamin/],['Versicherung',/versicherung|haftpflicht/]];
+  for(const [o,re] of T)if(re.test(s))return o;
+  return 'Sonstiges';}
 function zumVertrag(vid){(window.top||window).location.href='/hausverwaltung/vertraege?id='+encodeURIComponent(vid);}
+function vertragNeu(){(window.top||window).location.href='/hausverwaltung/vertraege?neu=1&obj='+encodeURIComponent(OB.kz);}
+function vOrdnerOeffnen(o){if(!OB.onedrive_pfad){alert('Für dieses Objekt ist kein OneDrive-Ordner hinterlegt.');return;}wechsel('dokumente');geladen.dok=1;dokLaden(OB.onedrive_pfad+'/03 Verträge'+(o==='Sonstiges'?'':'/'+o));}
+let VOFFEN={};
 function renderVer(){
-  let h=`<div class="sec"><h2>Verträge &amp; Versorger <span class="rechts"><button class="btn kl" onclick="(window.top||window).location.href='/hausverwaltung/vertraege?neu=1&obj=${encodeURIComponent(OB.kz)}'">Vertrag anlegen</button></span></h2>
-   <div class="muted" style="font-size:12.5px;margin:-4px 0 10px">Die Verträge kommen aus dem Vertragsregister. Ein Klick öffnet den Vertrag dort.</div>`;
-  if(!VL.length){document.getElementById('pVer').innerHTML=h+'<div class="empty">Für dieses Objekt sind noch keine Verträge erfasst.</div></div>';return;}
-  const st=v=>v.quelle==='vorschlag'?'<span class="pill p-bald">zu prüfen</span>':(v.ende&&v.ende<HEUTE?'<span class="pill">beendet</span>':'<span class="pill p-ok">aktiv</span>');
-  const gr=[...new Set(VL.map(v=>v.art||'Sonstiges'))].sort((a,b)=>(VSORT.indexOf(a)<0?9:VSORT.indexOf(a))-(VSORT.indexOf(b)<0?9:VSORT.indexOf(b)));
-  gr.forEach(g=>{h+=`<div class="vgrp">${esc(g==='Verwaltung'?'Verwaltung & Sonstiges':g==='Versicherung'?'Versicherungen':g)}</div>`;
-    VL.filter(v=>(v.art||'Sonstiges')===g).sort((a,b)=>String(a.sparte||'').localeCompare(String(b.sparte||''),'de')).forEach(v=>{
-      const d=[v.vnr&&'Vertrag: '+v.vnr,v.knr&&'Kunde: '+v.knr,v.zaehler&&'Zähler: '+v.zaehler,v.start&&'ab '+dfmt(v.start),v.ende&&'bis '+dfmt(v.ende),v.betrag!=null&&v.betrag!==''&&eur(v.betrag)+(v.rhythmus?' '+v.rhythmus:'')].filter(Boolean);
-      h+=`<div class="vk" style="cursor:pointer" onclick="zumVertrag('${esc(v.id)}')"><div class="k"><b>${esc(v.sparte||'')}${v.anbieter?' · '+esc(v.anbieter):''}</b>${st(v)}</div>${d.length?`<div class="d">${d.map(x=>`<span>${esc(x)}</span>`).join('')}</div>`:''}${v.notiz?`<div class="n">${esc(String(v.notiz).slice(0,220))}</div>`:''}</div>`;});});
+  const st=v=>v.quelle==='vorschlag'?'<span class="pill p-bald">zu prüfen</span>':(v.ende&&v.ende<HEUTE?'<span class="pill">beendet</span>':'<span class="pill ok">aktiv</span>');
+  const G={};VORDNER.forEach(o=>G[o]=[]);VL.forEach(v=>G[vOrdner(v)].push(v));
+  const n=VL.length;
+  let h=`<div class="sec"><h2>Verträge &amp; Versorger <span class="sub" style="font-weight:400">${n} Vertr${n===1?'ag':'äge'}</span><span class="rechts"><button class="btn kl" onclick="vertragNeu()">Vertrag anlegen</button></span></h2>
+   <div class="sub" style="margin:-2px 0 10px">Gegliedert wie die Ordner in OneDrive (03 Verträge und 04 Betriebskosten). Die Verträge kommen aus dem Vertragsregister, ein Klick öffnet den Vertrag dort.</div>`;
+  VORDNER.forEach(o=>{const L=G[o].sort((a,b)=>String(a.anbieter||'').localeCompare(String(b.anbieter||''),'de'));if(o==='Sonstiges'&&!L.length)return;
+    const auf=VOFFEN[o]!=null?VOFFEN[o]:L.length>0;
+    h+=`<details class="vord"${auf?' open':''} ontoggle="VOFFEN['${o}']=this.open"><summary><b>${esc(o)}</b><span class="sub">${L.length?L.length+' Vertr'+(L.length===1?'ag':'äge'):'kein Vertrag erfasst'}</span></summary><div class="vin">`;
+    h+=L.map(v=>{const d=[v.vnr&&'Vertrag: '+v.vnr,v.knr&&'Kunde: '+v.knr,v.zaehler&&'Zähler: '+v.zaehler,v.start&&'ab '+dfmt(v.start),v.ende&&'bis '+dfmt(v.ende),v.betrag!=null&&v.betrag!==''&&eur(v.betrag)+(v.rhythmus?' '+v.rhythmus:'')].filter(Boolean);
+      return `<div class="vk" onclick="zumVertrag('${jq(v.id)}')"><div class="k"><b>${esc(v.anbieter||v.sparte||'Vertrag')}</b><span class="sub">${esc(v.sparte||'')}</span>${st(v)}</div>${d.length?`<div class="d">${d.map(x=>`<span>${esc(x)}</span>`).join('')}</div>`:''}${v.notiz?`<div class="n">${esc(String(v.notiz).slice(0,220))}</div>`:''}</div>`;}).join('');
+    h+=`<div class="acts" style="margin-top:${L.length?4:0}px">${o==='Sonstiges'?'':`<button class="small" onclick="vOrdnerOeffnen('${o}')">Ordner ${esc(o)} öffnen</button>`}<button class="small" onclick="vertragNeu()">Vertrag anlegen</button></div></div></details>`;});
   document.getElementById('pVer').innerHTML=h+'</div>';
 }
 
@@ -350,5 +415,7 @@ async function dokLaden(p){
 }
 laden();
 </script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="/hv-objekt-tabs.js?v=20261019f"></script>
+<script src="/os-objekt-bereiche.js?v=20261019k"></script>
 </body></html>
