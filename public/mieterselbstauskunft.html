@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="de"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Mieterselbstauskunft</title>
+<meta name="robots" content="noindex">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+:root{--bg:#f3f5f8;--card:#ffffff;--ink:#18202c;--muted:#5f6b7a;--line:#e0e5eb;--soft:#eef1f5;--accent:#2f5d8a;--accent-ink:#fff;--accent-soft:#e3ecf5;--neg:#b42318;--pos:#1d7a4c}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{min-height:100%}
+body{background:var(--bg);color:var(--ink);font:16px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+.kopf{background:var(--card);border-bottom:1px solid var(--line);padding:14px 18px}
+.kopf b{font-size:15px}.kopf div{font-size:12.5px;color:var(--muted)}
+.balken{height:4px;background:var(--line)}.balken div{height:4px;background:var(--accent);transition:width .25s}
+.wrap{max-width:620px;margin:0 auto;padding:22px 18px 60px}
+.abschnitt{font-size:12.5px;font-weight:700;color:var(--accent);text-transform:uppercase;letter-spacing:.04em;margin-bottom:6px}
+.frage{font-size:21px;font-weight:700;line-height:1.3;margin-bottom:6px}
+.hilfe{color:var(--muted);font-size:14px;margin-bottom:14px}
+input[type=text],input[type=email],input[type=tel],input[type=date],input[type=number],textarea{width:100%;font:inherit;font-size:17px;padding:13px 14px;border:1px solid var(--line);border-radius:10px;background:var(--card);color:var(--ink)}
+input:focus,textarea:focus{outline:2px solid var(--accent);outline-offset:1px;border-color:var(--accent)}
+textarea{min-height:110px;resize:vertical}
+.wahl{display:grid;gap:8px}
+.wahl button{text-align:left;font:inherit;font-size:16.5px;padding:13px 14px;border:1px solid var(--line);border-radius:10px;background:var(--card);cursor:pointer;color:var(--ink)}
+.wahl button.on{border-color:var(--accent);background:var(--accent-soft);font-weight:600}
+.knoepfe{display:flex;justify-content:space-between;gap:10px;margin-top:22px}
+.knoepfe button{font:inherit;font-size:16px;padding:12px 20px;border-radius:10px;border:1px solid var(--line);background:var(--card);cursor:pointer}
+.knoepfe button.primary{background:var(--accent);color:var(--accent-ink);border-color:var(--accent);font-weight:600;flex:1}
+.fehler{color:var(--neg);font-size:14px;margin-top:8px;min-height:20px}
+.sig{width:100%;height:190px;border:1px dashed #9aa6b5;border-radius:10px;background:#fff;touch-action:none;display:block}
+.cb{display:flex;gap:12px;align-items:flex-start;font-size:16px;padding:12px 14px;border:1px solid var(--line);border-radius:10px;background:var(--card);cursor:pointer;margin-bottom:8px}
+.cb input{width:22px;height:22px;margin-top:2px;flex:none}
+.zus{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:6px 14px;margin-bottom:12px}
+.zus h3{font-size:13px;color:var(--accent);text-transform:uppercase;letter-spacing:.04em;margin:10px 0 4px}
+.zus .z{display:grid;grid-template-columns:1fr 1fr;gap:10px;padding:6px 0;border-top:1px solid var(--line);font-size:14.5px}
+.zus .z span:first-child{color:var(--muted)}
+.zus a{color:var(--accent);font-size:13px;cursor:pointer}
+.mitte{text-align:center;padding:50px 10px}.mitte h1{font-size:24px;margin-bottom:8px}
+.klein{font-size:12.5px;color:var(--muted);margin-top:16px}
+</style></head><body>
+<div class="kopf"><b>Wohn(T)raum Rheinhessen GmbH</b><div>Mieterselbstauskunft</div></div>
+<div class="balken"><div id="balken" style="width:0"></div></div>
+<div class="wrap" id="app"><div class="mitte">Lädt …</div></div>
+<script>
+const sb=window.supabase.createClient('https://jqzxctfqvcwbctpjksvg.supabase.co','eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpxenhjdGZxdmN3YmN0cGprc3ZnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODIxMzA0MzIsImV4cCI6MjA5NzcwNjQzMn0.RKIbZxJdusKWWPjBJqlxZ8e1m8So02UslOg55YRsn3o',{auth:{persistSession:false}});
+const esc=s=>(s==null?'':String(s)).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+const TOKEN=new URLSearchParams(location.search).get('t')||'';
+const JN=['JA','NEIN'];
+/* Fragen in der Reihenfolge der Selbstauskunft. wenn: Frage nur zeigen, wenn die Bedingung erfüllt ist */
+const F=[
+ {a:'1. Objekt, Einzugstermin und Zweck',k:'objekt',f:'Für welche Wohnung ist die Selbstauskunft?',t:'text',p:'z. B. Krämerstraße 28, Oppenheim'},
+ {a:'1. Objekt, Einzugstermin und Zweck',k:'besichtigung',f:'Wann haben Sie die Wohnung besichtigt?',t:'date',opt:1,h:'Falls noch keine Besichtigung war, einfach weiter.'},
+ {a:'1. Objekt, Einzugstermin und Zweck',k:'einzug',f:'Ab wann möchten Sie einziehen?',t:'date'},
+ {a:'1. Objekt, Einzugstermin und Zweck',k:'zweck',f:'Worum geht es?',t:'wahl',o:['Neue Vermietung','Umzug innerhalb unserer Wohnungen']},
+ {a:'2. Kontaktdaten',k:'anrede',f:'Anrede',t:'wahl',o:['Frau','Herr','Divers']},
+ {a:'2. Kontaktdaten',k:'vorname',f:'Ihr Vorname',t:'text',ac:'given-name'},
+ {a:'2. Kontaktdaten',k:'nachname',f:'Ihr Nachname',t:'text',ac:'family-name'},
+ {a:'2. Kontaktdaten',k:'familienstand',f:'Familienstand',t:'wahl',o:['ledig','verheiratet','eingetragene Lebenspartnerschaft','geschieden','verwitwet']},
+ {a:'2. Kontaktdaten',k:'geburtsdatum',f:'Ihr Geburtsdatum',t:'date',ac:'bday'},
+ {a:'2. Kontaktdaten',k:'email',f:'Ihre E-Mail-Adresse',t:'email',ac:'email'},
+ {a:'2. Kontaktdaten',k:'telefon',f:'Ihre Telefonnummer',t:'tel',ac:'tel'},
+ {a:'2. Kontaktdaten',k:'adresse',f:'Ihre aktuelle Adresse',t:'text',p:'Straße Hausnummer, PLZ Ort',ac:'street-address'},
+ {a:'3. Arbeitsverhältnis',k:'arbeit',f:'Wie ist Ihr Arbeitsverhältnis?',t:'wahl',o:['Angestellt','Beamtet','Selbstständig','In Ausbildung / Studium','Rente / Pension','Arbeitssuchend','Sonstiges']},
+ {a:'3. Arbeitsverhältnis',k:'arbeitgeber',f:'Bei wem arbeiten Sie und seit wann?',t:'text',opt:1,wenn:d=>['Angestellt','Beamtet','Selbstständig','In Ausbildung / Studium'].includes(d.arbeit),p:'z. B. Firma Muster GmbH, seit 2021'},
+ {a:'3. Arbeitsverhältnis',k:'einkommen',f:'Monatliches Nettoeinkommen des Haushalts (in Euro)',t:'number',opt:1,h:'Freiwillige Angabe.'},
+ {a:'3. Arbeitsverhältnis',k:'info',f:'Gibt es wichtige Informationen, die wir wissen sollten?',t:'area',opt:1,h:'Zum Beispiel: Das Jobcenter übernimmt die Miete.'},
+ {a:'4. Weitere Daten',k:'personen',f:'Für wie viele Personen wird die Wohnung benötigt?',t:'number'},
+ {a:'4. Weitere Daten',k:'mitbewohner',f:'Wer zieht mit ein?',t:'area',opt:1,wenn:d=>Number(d.personen)>1,h:'Bitte Vor- und Nachname und Geburtsdatum je Person.'},
+ {a:'4. Weitere Daten',k:'gewerblich',f:'Wird die Wohnung gewerblich genutzt?',t:'wahl',o:JN},
+ {a:'4. Weitere Daten',k:'haustiere',f:'Haben Sie Haustiere?',t:'wahl',o:JN},
+ {a:'4. Weitere Daten',k:'haustiere_welche',f:'Welche Haustiere?',t:'text',wenn:d=>d.haustiere==='JA'},
+ {a:'4. Weitere Daten',k:'erfahren',f:'Wie haben Sie von der Wohnung erfahren?',t:'text',p:'z. B. Kreisverwaltung, Anzeige, Bekannte'},
+ {a:'4. Weitere Daten',k:'ansprechpartner',f:'Welchen konkreten Ansprechpartner hatten Sie dabei?',t:'text',opt:1},
+ {a:'4. Weitere Daten',k:'teilweise',f:'Werden Ihre aktuellen Mietkosten derzeit zum Teil übernommen?',t:'wahl',o:JN},
+ {a:'4. Weitere Daten',k:'vollstaendig',f:'Werden Ihre aktuellen Mietkosten derzeit vollständig übernommen?',t:'wahl',o:JN},
+ {a:'4. Weitere Daten',k:'amt',f:'Werden Ihre Mietzahlungen durch das Jobcenter oder das Sozialamt übernommen?',t:'wahl',o:JN},
+ {a:'4. Weitere Daten',k:'behoerde',f:'Welche Behörde übernimmt die Mietzahlungen?',t:'area',wenn:d=>d.amt==='JA',h:'Bitte die Behörde mit Adresse eintragen.'},
+ {a:'5. Bonität',k:'eidesstattlich',f:'Wurde in den letzten 3 Jahren eine eidesstattliche Versicherung abgegeben oder erging ein Haftbefehl?',t:'wahl',o:JN},
+ {a:'6. Einverständnis und Unterschrift',k:'zustimmung',f:'Einverständnis',t:'zust'},
+ {a:'6. Einverständnis und Unterschrift',k:'unterschrift',f:'Bitte unterschreiben Sie mit dem Finger oder der Maus.',t:'sig'},
+];
+let D={},I=0,VOR={},SIG='',FEHLER='',FERTIG=false,BUSY=false,ZUS=false;
+const sichtbar=()=>F.filter(q=>!q.wenn||q.wenn(D));
+const merk=()=>{try{localStorage.setItem('msa_'+TOKEN,JSON.stringify({D,I,SIG}));}catch(e){}};
+const dmy=s=>s?String(s).split('-').reverse().join('.'):'';
+
+function eingabe(q){const v=D[q.k]==null?'':D[q.k];
+  if(q.t==='wahl')return '<div class="wahl">'+q.o.map(o=>`<button type="button" data-w="${esc(o)}" class="${v===o?'on':''}">${esc(o)}</button>`).join('')+'</div>';
+  if(q.t==='area')return `<textarea id="ein" placeholder="${esc(q.p||'')}">${esc(v)}</textarea>`;
+  if(q.t==='zust')return `<label class="cb"><input type="checkbox" id="z1"${D.datenschutz==='JA'?' checked':''}> <span>Ich bin mit einer Verwendung der Daten für eigene Zwecke des Vermieters gemäß Bundesdatenschutzgesetz einverstanden.</span></label>
+    <label class="cb"><input type="checkbox" id="z2"${D.wahrheit==='JA'?' checked':''}> <span>Ich versichere, dass die Angaben wahrheitsgemäß sind und nach bestem Wissen und Gewissen gemacht wurden.</span></label>`;
+  if(q.t==='sig')return `<canvas class="sig" id="sig"></canvas><div style="text-align:right;margin-top:6px"><button type="button" id="sigweg" style="font:inherit;font-size:14px;border:0;background:none;color:var(--muted);cursor:pointer">Unterschrift löschen</button></div>`;
+  return `<input id="ein" type="${q.t==='number'?'number':q.t}" inputmode="${q.t==='number'?'numeric':q.t==='tel'?'tel':'text'}" value="${esc(v)}" placeholder="${esc(q.p||'')}" autocomplete="${q.ac||'off'}"${q.t==='number'?' min="0"':''}>`;}
+function render(){const L=sichtbar();if(I>=L.length)I=L.length;const app=document.getElementById('app');
+  document.getElementById('balken').style.width=(FERTIG?100:Math.round(I/(L.length+1)*100))+'%';
+  if(FERTIG){app.innerHTML='<div class="mitte"><h1>Vielen Dank!</h1><p>Ihre Mieterselbstauskunft ist bei uns angekommen. Wir melden uns bei Ihnen.</p><p class="klein">Sie können dieses Fenster jetzt schließen.</p></div>';return;}
+  if(I===L.length){app.innerHTML='<div class="abschnitt">Zusammenfassung</div><div class="frage">Bitte prüfen Sie Ihre Angaben</div><div class="hilfe">Mit „Ändern“ springen Sie zurück zur Frage.</div>'+zusammenfassung(L)
+      +`<div class="fehler" id="fehler">${esc(FEHLER)}</div><div class="knoepfe"><button type="button" id="zurueck">Zurück</button><button type="button" class="primary" id="senden"${BUSY?' disabled':''}>${BUSY?'Wird versendet …':'Versenden'}</button></div><p class="klein">Ihre Angaben werden verschlüsselt an die Wohn(T)raum Rheinhessen GmbH übermittelt.</p>`;return;}
+  const q=L[I];
+  app.innerHTML=`<div class="abschnitt">${esc(q.a)}</div><div class="frage">${esc(q.f)}</div>${q.h?`<div class="hilfe">${esc(q.h)}</div>`:'<div class="hilfe">'+(q.opt?'Freiwillige Angabe.':'')+'</div>'}${eingabe(q)}
+    <div class="fehler" id="fehler">${esc(FEHLER)}</div><div class="knoepfe">${I?'<button type="button" id="zurueck">Zurück</button>':'<span></span>'}<button type="button" class="primary" id="weiter">${ZUS?'Zur Zusammenfassung':'Weiter'}</button></div>
+    <p class="klein">Frage ${I+1} von ${L.length}</p>`;
+  const e=document.getElementById('ein');if(e)setTimeout(()=>e.focus(),30);if(q.t==='sig')sigInit();}
+function zusammenfassung(L){const gr={};L.forEach((q,i)=>{(gr[q.a]=gr[q.a]||[]).push([q,i]);});
+  return Object.keys(gr).map(a=>'<div class="zus"><h3>'+esc(a)+'</h3>'+gr[a].map(([q,i])=>{let v=D[q.k];
+    if(q.t==='date')v=dmy(v);if(q.t==='zust')v=(D.datenschutz==='JA'&&D.wahrheit==='JA')?'erteilt':'fehlt';if(q.t==='sig')v=SIG?'vorhanden':'fehlt';
+    return `<div class="z"><span>${esc(q.f)}</span><span>${esc(v||'–')} <a data-geh="${i}">Ändern</a></span></div>`;}).join('')+'</div>').join('');}
+function pruefen(q){const v=D[q.k];
+  if(q.t==='zust'){if(D.datenschutz!=='JA'||D.wahrheit!=='JA')return 'Bitte beide Punkte bestätigen.';return '';}
+  if(q.t==='sig')return SIG?'':'Bitte unterschreiben.';
+  if(q.opt)return '';
+  if(v==null||String(v).trim()==='')return q.t==='wahl'?'Bitte eine Antwort wählen.':'Bitte ausfüllen.';
+  if(q.t==='email'&&!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(v))return 'Bitte eine gültige E-Mail-Adresse eingeben.';
+  if(q.t==='number'&&!(Number(v)>=0))return 'Bitte eine Zahl eingeben.';
+  return '';}
+function lies(){const L=sichtbar(),q=L[I];if(!q)return;const e=document.getElementById('ein');if(e)D[q.k]=e.value.trim();
+  if(q.t==='zust'){D.datenschutz=document.getElementById('z1').checked?'JA':'NEIN';D.wahrheit=document.getElementById('z2').checked?'JA':'NEIN';}}
+function weiter(){lies();const L=sichtbar();const f=pruefen(L[I]);if(f){FEHLER=f;render();return;}FEHLER='';I=ZUS?sichtbar().length:I+1;merk();render();window.scrollTo(0,0);}
+function zurueck(){lies();FEHLER='';ZUS=false;I=Math.max(0,I-1);merk();render();}
+async function senden(){const L=sichtbar();for(let i=0;i<L.length;i++){const f=pruefen(L[i]);if(f){I=i;FEHLER=f;render();return;}}
+  BUSY=true;FEHLER='';render();
+  const daten={};L.forEach(q=>{if(q.t!=='sig'&&q.t!=='zust')daten[q.k]=D[q.k]==null?'':D[q.k];});daten.datenschutz=D.datenschutz;daten.wahrheit=D.wahrheit;daten.gesendet=new Date().toISOString();
+  const {error}=await sb.rpc('selbstauskunft_senden',{p_token:TOKEN,p_daten:daten,p_unterschrift:SIG||null});
+  BUSY=false;if(error){FEHLER='Senden hat nicht geklappt: '+(error.message||'')+' Bitte versuchen Sie es noch einmal.';render();return;}
+  FERTIG=true;try{localStorage.removeItem('msa_'+TOKEN);}catch(e){}render();}
+function sigInit(){const c=document.getElementById('sig');const r=c.getBoundingClientRect(),dpr=window.devicePixelRatio||1;c.width=r.width*dpr;c.height=r.height*dpr;const x=c.getContext('2d');x.scale(dpr,dpr);x.lineWidth=2.2;x.lineCap='round';x.lineJoin='round';x.strokeStyle='#1d2b4f';
+  if(SIG){const im=new Image();im.onload=()=>x.drawImage(im,0,0,r.width,r.height);im.src=SIG;}
+  let an=false,lx=0,ly=0;const pos=e=>{const b=c.getBoundingClientRect();return [e.clientX-b.left,e.clientY-b.top];};
+  c.onpointerdown=e=>{an=true;c.setPointerCapture(e.pointerId);[lx,ly]=pos(e);};
+  c.onpointermove=e=>{if(!an)return;const [nx,ny]=pos(e);x.beginPath();x.moveTo(lx,ly);x.lineTo(nx,ny);x.stroke();lx=nx;ly=ny;};
+  c.onpointerup=()=>{if(!an)return;an=false;const t=document.createElement('canvas');t.width=600;t.height=Math.round(600*r.height/r.width);t.getContext('2d').drawImage(c,0,0,t.width,t.height);SIG=t.toDataURL('image/png');merk();};
+  document.getElementById('sigweg').onclick=()=>{SIG='';x.clearRect(0,0,r.width,r.height);merk();};}
+document.addEventListener('click',e=>{const t=e.target;
+  const w=t.closest('[data-w]');if(w){const q=sichtbar()[I];D[q.k]=w.dataset.w;FEHLER='';merk();setTimeout(weiter,120);document.querySelectorAll('[data-w]').forEach(b=>b.classList.toggle('on',b===w));return;}
+  const g=t.closest('[data-geh]');if(g){I=+g.dataset.geh;ZUS=true;render();return;}
+  if(t.id==='weiter')weiter();if(t.id==='zurueck')zurueck();if(t.id==='senden')senden();});
+document.addEventListener('keydown',e=>{if(e.key==='Enter'&&e.target.tagName==='INPUT'){e.preventDefault();weiter();}});
+(async()=>{if(!TOKEN){document.getElementById('app').innerHTML='<div class="mitte"><h1>Link unvollständig</h1><p>Bitte öffnen Sie den Link aus unserer Nachricht vollständig oder scannen Sie den QR-Code erneut.</p></div>';return;}
+  const {data,error}=await sb.rpc('selbstauskunft_formular',{p_token:TOKEN});
+  if(error||!data){document.getElementById('app').innerHTML='<div class="mitte"><h1>Link ungültig</h1><p>Dieser Link ist nicht mehr gültig. Bitte wenden Sie sich an uns.</p></div>';return;}
+  if(data.status!=='offen'){document.getElementById('app').innerHTML='<div class="mitte"><h1>Bereits übermittelt</h1><p>Ihre Mieterselbstauskunft ist schon bei uns angekommen. Vielen Dank!</p></div>';return;}
+  VOR=data.vorbelegt||{};
+  try{const s=JSON.parse(localStorage.getItem('msa_'+TOKEN)||'null');if(s){D=s.D||{};I=s.I||0;SIG=s.SIG||'';}}catch(e){}
+  for(const k of ['objekt','einzug','vorname','nachname','email','telefon','personen'])if(VOR[k]&&D[k]==null)D[k]=VOR[k];
+  render();})();
+</script></body></html>
