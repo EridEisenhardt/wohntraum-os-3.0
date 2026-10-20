@@ -1215,6 +1215,11 @@ const OBJNR_DEF={A14:'10',E4:'11',H3:'12',K28:'13',R6:'14',S16:'15',H44:'20',K6:
 let objNrMap={};
 const objNr=kz=>kz&&kz!=='__ges'?(objNrMap[kz]||OBJNR_DEF[kz]||''):'';
 const kval=(k,s,ka)=>[k||'',k==='verw'?(s||''):'',k==='bk'?(ka||''):''].join('|');
+/* Filter Buchungen: Kategorien und einzelne Konten (z. B. 4806 Software / IT / Lizenzen), durchsuchbar */
+function katFilt(){ const L=[['__offen','ohne Kategorie']].concat(KATS.filter(([k])=>k).map(([k,l])=>[k,'Kategorie: '+l]));
+  const seen=new Set(); KONTEN.forEach(([g,l])=>l.forEach(x=>{ const v='k:'+kval(x[2],x[3],x[4]); if(!seen.has(v)){ seen.add(v); L.push([v,x[0]+' '+x[1]]); } }));
+  return L; }
+const katFiltLabel=v=>{ if(!v) return ''; const f=katFilt().find(x=>x[0]===v); return f?f[1]:''; };
 const KMAP={}; KONTEN.forEach(([g,l])=>l.forEach(x=>{ KMAP[kval(x[2],x[3],x[4])]=x; }));
 function kontoLabel(k,s,ka,obj){ if(!k) return 'nicht zugeordnet'; const x=KMAP[kval(k,s,ka)];
   if(!x){ if(k==='bk') return 'Betriebskosten – Kostenart fehlt'; if(k==='verw') return 'Verwaltung – Art fehlt'; return KATN[k]||k; }
@@ -1261,7 +1266,7 @@ function items(){
 }
 function filtered(all){ const q=norm(U.q);
   return all.filter(it=>(!U.konto||it.kkey===U.konto)&&(U.m===''||it.m===Number(U.m))
-    &&(!U.kat||(U.kat==='__offen'?it.parts.some(p=>!p.c.kat):it.parts.some(p=>p.c.kat===U.kat)))&&(U.status==='alle'||HALT.has(it.id)||(U.status==='best'&&!it.open&&!bestaetigt(it))||(U.status==='offen'&&it.open)||(U.status==='beleg'&&it.needBeleg)||(U.status==='ka'&&it.needKA)||(U.status==='zug'&&!it.open))
+    &&(!U.kat||(U.kat==='__offen'?it.parts.some(p=>!p.c.kat):U.kat.startsWith('k:')?it.parts.some(p=>'k:'+kval(p.c.kat,p.c.sub,p.c.ka)===U.kat):it.parts.some(p=>p.c.kat===U.kat)))&&(U.status==='alle'||HALT.has(it.id)||(U.status==='best'&&!it.open&&!bestaetigt(it))||(U.status==='offen'&&it.open)||(U.status==='beleg'&&it.needBeleg)||(U.status==='ka'&&it.needKA)||(U.status==='zug'&&!it.open))
     &&(!q||norm(it.tx.n+' '+it.tx.z+' '+fnum.format(Math.abs(it.tx.b))+' '+(it.c.obj||'')).includes(q))); }
 /* Sortierung der Liste: Datum, Empfänger (gruppiert), Betrag */
 const empfKey=it=>norm(it.tx.n||'').replace(/\b(gmbh|ag|kg|se|co|s a r l|et cie|s c a|e v|ohg|mbh)\b/g,'').replace(/\s+/g,' ').trim().slice(0,28)||'zzz';
@@ -1319,7 +1324,7 @@ function midHtml(all,list,cnt){
   const sum=list.reduce((a,it)=>a+it.tx.b,0);
   let mid='<div class="tbar"><div class="seg">'+[['offen','Offen'],['best','Zu bestätigen'],['ka','Kostenart prüfen'],['beleg','Beleg fehlt'],['zug','Zugeordnet'],['alle','Alle']].map(([k,l])=>'<button data-st="'+k+'" class="'+(U.status===k?'on':'')+'">'+l+' <span>'+cnt(k)+'</span></button>').join('')+'</div>'
     +'<select id="u-m" aria-label="Monat"><option value="">ganzes Jahr</option>'+MON.map((x,i)=>'<option value="'+i+'"'+(U.m!==''&&Number(U.m)===i?' selected':'')+'>'+x+'</option>').join('')+'</select>'
-    +'<select id="u-kat" aria-label="Kategorie"><option value="">alle Kategorien</option><option value="__offen"'+(U.kat==='__offen'?' selected':'')+'>ohne Kategorie</option>'+KATS.filter(([k])=>k).map(([k,l])=>'<option value="'+esc(k)+'"'+(U.kat===k?' selected':'')+'>'+esc(l)+'</option>').join('')+'</select>'
+    +'<input type="text" id="u-kat" list="u-kat-l" aria-label="Kategorie oder Konto" placeholder="alle Kategorien / Konten – suchen" value="'+esc(katFiltLabel(U.kat))+'" autocomplete="off" style="width:280px"><datalist id="u-kat-l">'+katFilt().map(([v,l])=>'<option value="'+esc(l)+'"></option>').join('')+'</datalist>'
     +'<select id="u-sort" aria-label="Sortierung">'+[['d','Datum: neueste zuerst'],['da','Datum: älteste zuerst'],['n','Empfänger A–Z'],['nh','Empfänger: häufigste zuerst'],['bh','Betrag: höchster zuerst'],['bn','Betrag: niedrigster zuerst']].map(([k,l])=>'<option value="'+k+'"'+((U.sort||'d')===k?' selected':'')+'>'+l+'</option>').join('')+'</select>'
     +'<input type="search" id="u-q" placeholder="Suchen: Name, Zweck, Betrag, Objekt" value="'+esc(U.q)+'" autocomplete="off">'
     +'<button class="ghost small" data-ansicht="1" title="Zwischen Kartenansicht und Detailansicht wechseln">'+(U.ansicht==='detail'?'Kartenansicht':'Detailansicht')+'</button></div>';
@@ -1510,7 +1515,7 @@ document.addEventListener('change',e=>{ const t=e.target;
     objNrMap=Object.assign({},objNrMap,{[t.dataset.onr]:v}); saveStamm('kontenplan',{objNr:objNrMap}); render(); return; }
   if(t.id==='u-m'){ U.m=t.value; U.sel=''; saveU(); render(); return; }
   if(t.id==='u-sort'){ U.sort=t.value; U.sel=''; saveU(); render(); return; }
-  if(t.id==='u-kat'){ U.kat=t.value; U.sel=''; saveU(); render(); return; }
+  if(t.id==='u-kat'){ const v=t.value.trim(), L=katFilt(); let f=v?(L.find(x=>x[1]===v)||L.find(x=>x[1].startsWith(v+' '))||L.find(x=>norm(x[1]).includes(norm(v)))):null; U.kat=f?f[0]:''; U.sel=''; saveU(); render(); return; }
   if(t.dataset.pk!==undefined){ const p=pending[Number(t.dataset.pk)]; p.konto=t.value; render(); return; }
   const it=items().find(x=>x.id===U.sel);
   if(it&&t.id==='z-kto'){ HALT.add(it.id); setKonto(it,t.value,{ok:0}); return; }
