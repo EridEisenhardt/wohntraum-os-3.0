@@ -1147,10 +1147,13 @@ async function asApi(body){ const sb=window.osSupabase; let tok=''; try{ const {
   let r; try{ r=await fetch('/api/asana',{method:'POST',headers:{'content-type':'application/json',authorization:'Bearer '+tok},body:JSON.stringify(body)}); }catch(e){ throw new Error('Asana nicht erreichbar.'); }
   let j=null; try{ j=await r.json(); }catch(e){} if(!j) throw new Error(r.status===404?'Die Asana-Schnittstelle ist noch nicht online.':'Asana nicht erreichbar ('+r.status+').'); if(j.error){ const e=new Error(j.error); e.setup=!!j.setup; throw e; } return j; }
 function asNachnamen(x){ const mk=ed(x.mk), out=[]; for(const n of String(mk.mieter||'').split(/,| und | & |\//).concat(x.mk.namen||[])){ const w=String(n).trim().split(/\s+/).filter(v=>v.length>=3&&!/^(herr|frau)$/i.test(v)); if(w.length) out.push(w[w.length-1]); } return [...new Set(out)].slice(0,3); }
+function asObjKz(x){ const out=[x.mk.obj]; const o=objekte.find(q=>q.kz===x.mk.obj); const e=o&&(o.einheiten||[]).find(u=>u.id===x.mk.unit); const al=e&&String(e.ref||'').trim().split(/[\/\s]/)[0]; if(al&&al.length>=2&&!out.includes(al)) out.push(al); return out; }
 async function asLaden(pid,neu){ const x=calc&&calc.res[pid]; if(!x) return; if(AS[pid]&&AS[pid].lade) return; if(AS[pid]&&!neu&&(AS[pid].L||AS[pid].err)) return;
   AS[pid]={lade:true,L:AS[pid]&&AS[pid].L||null}; render();
-  try{ const nn=asNachnamen(x); const j=await asApi({aktion:'suche',begriffe:nn}); const kz=norm(x.mk.obj);
-    const L=(j.aufgaben||[]).map(a=>Object.assign(a,{rang:(norm(a.name).includes(kz)?2:0)+(nn.some(n=>norm(a.name).includes(norm(n)))?1:0)})).filter(a=>a.rang>0||nn.some(n=>norm(a.notiz).includes(norm(n))));
+  try{ const nn=asNachnamen(x); const j=await asApi({aktion:'suche',begriffe:nn}); const kzs=asObjKz(x);
+    /* nur Aufgaben, bei denen Objekt UND Nachname im Titel oder im Projektnamen stehen */
+    const wort=(t,w)=>(' '+norm(t)+' ').includes(' '+norm(w)+' ');
+    const L=(j.aufgaben||[]).map(a=>{ const t=a.name+' '+(a.projekte||[]).join(' '); return Object.assign(a,{rang:(kzs.some(k=>wort(a.name,k))?2:0)+(nn.some(n=>wort(a.name,n))?1:0),passt:kzs.some(k=>wort(t,k))&&nn.some(n=>wort(t,n))}); }).filter(a=>a.passt);
     L.sort((a,b)=>(a.erledigt-b.erledigt)||(b.rang-a.rang)||String(b.geaendert).localeCompare(String(a.geaendert)));
     AS[pid]={L}; }
   catch(e){ AS[pid]={err:e.message||String(e),setup:!!e.setup}; }
@@ -1192,7 +1195,7 @@ function asanaCard(x){ const pid=x.mk.pid, s=AS[pid];
   if(s&&s.L&&!L.length) h+='<div class="sub">Keine Aufgaben zu '+esc(asNachnamen(x).join(', ')||'diesem Mieter')+' in Asana gefunden.</div>';
   h+=off.map(zeile).join('');
   if(fertig.length) h+='<details style="margin-top:8px"><summary class="sub" style="cursor:pointer">'+fertig.length+' erledigte Aufgabe'+(fertig.length===1?'':'n')+'</summary>'+fertig.map(zeile).join('')+'</details>';
-  h+='<div class="sub" style="margin-top:6px">Gesucht wird in Asana nach: '+esc(asNachnamen(x).join(', '))+'. Aufgaben am besten nach dem Muster „Objekt_Nachname_Thema“ benennen, dann werden sie sicher gefunden.</div>';
+  h+='<div class="sub" style="margin-top:6px">Gezeigt werden Aufgaben, bei denen Objekt ('+esc(asObjKz(x).join(' oder '))+') und Nachname ('+esc(asNachnamen(x).join(', '))+') im Namen der Aufgabe oder des Projekts stehen. Aufgaben am besten nach dem Muster „Objekt_Nachname_Thema“ benennen.</div>';
   return h+'</details>'; }
 document.addEventListener('input',e=>{ const t=e.target; if(!t||!t.id) return; if(t.id==='as-titel') ASF.titel=t.value; else if(t.id==='as-proj') asProjWahl(t.value); else if(t.id==='as-user') asNutzerWahl(t.value); else if(t.id==='as-notiz') ASF.notiz=t.value; else if(t.id==='as-due') ASF.due=t.value; });
 function asProjWahl(v){ ASF.projName=v; const p=(ASP||[]).find(q=>q.name===v); ASF.proj=p?p.gid:''; }
