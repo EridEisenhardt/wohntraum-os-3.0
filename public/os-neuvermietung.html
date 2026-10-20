@@ -151,7 +151,9 @@ function kalk(k){const c=k.kalk=k.kalk||{};c.pos=c.pos||{};
   // ältere Karten: Werte aus den einfachen Feldern übernehmen
   for(const [a,b] of [['kalt','kalt'],['bk','bk'],['hk','hk']])if(c[a]!=null&&c.pos[b]==null){c.pos[b]={neu:c[a]};}
   if(c.sonst!=null&&c.pos.garage==null&&zahl(c.sonst))c.pos.garage={neu:c.sonst};
-  POS.forEach(([p])=>{c.pos[p]=c.pos[p]||{};});return c;}
+  POS.forEach(([p])=>{c.pos[p]=c.pos[p]||{};});c.info=c.info||{};
+  if(c.kaution!=null)delete c.kaution; // Kaution = 3 Kaltmieten, wird immer ausgerechnet
+  return c;}
 const posWert=(c,p,s)=>{const v=zahl((c.pos[p]||{})[s]);return p==='hausmeister'?-Math.abs(v):v;};
 function summe(c,s){return Math.round(POS.reduce((a,[p])=>a+posWert(c,p,s),0)*100)/100;}
 const warm=k=>summe(kalk(k),'neu');
@@ -160,11 +162,12 @@ function kduGrenze(region,personen){const r=KDU[region];if(!r)return null;const 
 function regionVorschlag(k){const e=k.wohnung&&einVon(k.wohnung.einheit_id),o=e&&objVon(e.objekt_id);if(!o)return '';return ORT_REGION[String(o.ort||'').toLowerCase().trim()]||'';}
 
 async function laden(ohneSync){
-  const [k,o,e,u,m,vv]=await Promise.all([sb.from('os_docs').select('data').eq('app','oc').like('pfad','neuvermietung/%'),
-    sb.from('obj_objekte').select('id,kz,name,strasse,plz,ort,status,gesellschaft,eigentuemer').order('sort'),
+  const [k,o,e,u,m,vv,ein]=await Promise.all([sb.from('os_docs').select('data').eq('app','oc').like('pfad','neuvermietung/%'),
+    sb.from('obj_objekte').select('id,kz,name,strasse,plz,ort,status,gesellschaft,eigentuemer,mietkonto_iban,mietkonto_bank,baujahr,heizung').order('sort'),
     sb.from('obj_einheiten').select('id,objekt_id,bezeichnung,lage,art,flaeche,zimmer,nahaus_id,aktiv,sort,ausstattung').order('sort'),sb.auth.getUser(),
     sb.from('mieterselbstauskunft').select('id,token,karte_id,status,daten,unterschrift,eingegangen_at,created_at'),
-    sb.from('os_docs').select('data').eq('app','oc').like('pfad','vertragsvorlagen/%')]);
+    sb.from('os_docs').select('data').eq('app','oc').like('pfad','vertragsvorlagen/%'),sb.from('os_docs').select('data').eq('app','oc').eq('pfad','einstellungen/neuvermietung').maybeSingle()]);
+  EINST=(ein&&ein.data&&ein.data.data)||EINST;
   VORL=((vv&&vv.data)||[]).map(r=>r.data).filter(x=>x&&x.aktiv!==false).sort((a,b)=>String(a.name).localeCompare(String(b.name),'de'));
   if(k.error){document.getElementById('app').innerHTML='<div class="leer">Bitte im Wohntraum OS anmelden.</div>';return;}
   K=(k.data||[]).map(r=>r.data).filter(Boolean);O=(o.data||[]).filter(x=>x.status!=='Verkauft');E=e.data||[];
@@ -284,20 +287,37 @@ function msaKarte(k){const s=MSA[k.id];let h='<div class="card"><div class="ch">
     +(s.unterschrift?`<h4>Unterschrift</h4><img src="${esc(s.unterschrift)}" alt="Unterschrift" style="max-width:260px;border:1px solid var(--line);border-radius:6px;background:#fff">`:'')+'</div>';
   h+=`<div class="acts" style="margin-top:10px"><button data-a="msapdf">Als PDF speichern</button>${k.freigabeMsa?`<span class="ok" style="margin:0">Freigegeben von ${esc(k.freigabeMsa.von)} am ${esc(zeit(k.freigabeMsa.am))}</span>`:istEric()?'<button class="primary" data-a="msafrei">Freigeben – weiter zur Mietkalkulation</button><button class="warn" data-a="msaab">Ablehnen</button>':'<span class="sub">Wartet auf die Freigabe durch Eric.</span>'}</div></div>`;
   return h;}
-function kalkKarte(k){const c=kalk(k),e=k.wohnung&&einVon(k.wohnung.einheit_id),wfl=zahl(c.wfl)||zahl(e&&e.flaeche),region=c.region||regionVorschlag(k),pers=Number(k.personen)||0,gr=region?kduGrenze(region,pers||1):null;
-  const sAlt=summe(c,'alt'),sNeu=summe(c,'neu'),kalt=posWert(c,'kalt','neu'),bruttokalt=Math.round((kalt+posWert(c,'bk','neu'))*100)/100,ebk=posWert(c,'ebk','neu');
+let EINST={};
+const KREIHE=[['kalt','Kaltmiete'],['strom','Strom'],['hk','Heizung'],['bk','Betriebskosten'],['wlan','WLAN'],['garage','Garage / Stellplatz'],['moebel','Möblierung (bei Apartment)'],['ebk','Einbauküche (EBK)'],['hausmeister','Hausmeisterjob – Gutschrift']];
+const kaution=k=>Math.round(posWert(kalk(k),'kalt','neu')*3*100)/100;
+const ibanFmt=i=>String(i||'').replace(/\s+/g,'').toUpperCase().replace(/(.{4})/g,'$1 ').trim();
+function mietkonto(k){const e=k.wohnung&&einVon(k.wohnung.einheit_id),o=(e&&objVon(e.objekt_id))||(k.wohnung&&objVon(k.wohnung.objekt_id));return o&&o.mietkonto_iban?{kz:o.kz,iban:ibanFmt(o.mietkonto_iban),bank:o.mietkonto_bank||''}:null;}
+function kalkKarte(k){const c=kalk(k),e=k.wohnung&&einVon(k.wohnung.einheit_id),o=(e&&objVon(e.objekt_id))||(k.wohnung&&objVon(k.wohnung.objekt_id)),wfl=zahl(c.wfl)||zahl(e&&e.flaeche),region=c.region||regionVorschlag(k),pers=Number(k.personen)||0,gr=region?kduGrenze(region,pers||1):null;
+  const sNeu=summe(c,'neu'),kalt=posWert(c,'kalt','neu'),kaltAlt=posWert(c,'kalt','alt'),bruttokalt=Math.round((kalt+posWert(c,'bk','neu'))*100)/100,ebk=posWert(c,'ebk','neu'),kt=mietkonto(k);
   const pm=v=>wfl?(v/wfl).toFixed(2).replace('.',',')+' €/m²':'–';
+  const info=f=>`<td><input class="feld" style="max-width:none;text-align:left;padding:5px 7px;font-size:13px" data-kinfo="${f}" value="${esc(c.info[f]||'')}" autocomplete="off"></td>`;
+  const vid=maVorlageId(k),vl=MAV.find(x=>x.id===vid);
   let h=`<div class="card"><div class="ch">2. Mietkalkulation<span class="summe">${esc(eur(sNeu))} warm</span></div>
-    <div class="g4">${feld('k-beginn','Mietbeginn',c.beginn,'date')}${feld('k-aenderung','Änderung der Miete zum',c.aenderung,'date')}${feld('k-wfl','Wohnfläche m²',fz(wfl),'text',' inputmode="decimal"')}<label class="fl">Personen<input id="k-personen" value="${esc(k.personen||'')}" inputmode="numeric"></label></div>
-    <div class="g3">${feld('k-lage','Lage',c.lage||(e&&e.lage)||'')}${feld('k-ausstattung','Ausstattungsmerkmale',c.ausstattung||(e&&e.ausstattung)||'')}<label class="fl">Mieterzielgruppe<input id="k-zielgruppe" list="dl-zg" value="${esc(c.zielgruppe||'')}" autocomplete="off"><datalist id="dl-zg">${ZIELGRUPPEN.map(z=>`<option value="${esc(z)}">`).join('')}</datalist></label></div>
-    <table class="ktab"><thead><tr><th>Position</th><th class="r">Miete alt</th><th class="r">Miete neu</th><th class="r">Veränderung</th></tr></thead><tbody>`;
-  let grp='';for(const [p,l,g] of POS){if(g!==grp){grp=g;h+=`<tr class="grp"><td colspan="4">${g==='kdu'?'Zahlt Jobcenter / Sozialamt (Kosten der Unterkunft)':'Zahlt der Mieter'}</td></tr>`;}
-    const d=posWert(c,p,'neu')-posWert(c,p,'alt');h+=`<tr><td>${esc(l)}</td><td class="r"><input data-pos="${p}" data-s="alt" value="${esc(fz(zahl(c.pos[p].alt)))}" inputmode="decimal"></td><td class="r"><input data-pos="${p}" data-s="neu" value="${esc(fz(zahl(c.pos[p].neu)))}" inputmode="decimal"></td><td class="r">${d?esc(eur(d)):''}</td></tr>`;}
-  h+=`<tr class="sum"><td>Summe</td><td class="r">${esc(eur(sAlt))}</td><td class="r">${esc(eur(sNeu))}</td><td class="r">${esc(eur(sNeu-sAlt))}</td></tr></tbody></table>
+    <div class="g3"><label class="fl">Vorlage Mietangebot<input id="k-vorlage" list="dl-mavorl" value="${esc(vl?vl.kurz:vid==='keine'?'Keine Vorlage (Selbstzahler)':'')}" placeholder="Vorlage suchen …" autocomplete="off"><datalist id="dl-mavorl">${MAV.map(x=>`<option value="${esc(x.kurz)}">`).join('')}<option value="Keine Vorlage (Selbstzahler)"></datalist></label></div>
+    <table class="ktab"><thead><tr><th style="width:30%">Angabe</th><th class="r" style="width:20%">Wert</th><th>Info</th></tr></thead><tbody>
+      <tr><td>Gebäude</td><td class="r">${esc(o?o.kz+' · '+(o.strasse||o.name||''):'–')}</td>${info('gebaeude')}</tr>
+      <tr><td>Einheit</td><td class="r">${esc(e?einLabel(e):'–')}</td>${info('einheit')}</tr>
+      <tr><td>Wohnfläche m²</td><td class="r"><input id="k-wfl" value="${esc(fz(wfl))}" inputmode="decimal"></td>${info('wfl')}</tr>
+      <tr><td>Name, Vorname</td><td class="r">${esc([k.name,k.vorname].filter(Boolean).join(', ')||'–')}</td>${info('name')}</tr>
+      <tr><td>Personenanzahl</td><td class="r"><input id="k-personen" value="${esc(k.personen||'')}" inputmode="numeric"></td>${info('personen')}</tr>
+      <tr><td>Mietbeginn</td><td class="r"><input id="k-beginn" type="date" value="${esc(c.beginn||'')}" style="max-width:150px"></td>${info('beginn')}</tr>`
+    +KREIHE.map(([p,l])=>`<tr><td>${esc(l)}</td><td class="r"><input data-pos="${p}" data-s="neu" value="${esc(fz(zahl(c.pos[p].neu)))}" inputmode="decimal"></td>${info(p)}</tr>`).join('')
+    +`<tr class="sum"><td>Summe</td><td class="r">${esc(eur(sNeu))}</td><td>${kt?esc(kt.kz+'_'+kt.iban+(kt.bank?' · '+kt.bank:'')):'<span class="sub">Beim Objekt ist noch kein Mietkonto hinterlegt.</span>'}</td></tr>
+      <tr class="sum"><td>Kaution (3 Kaltmieten)</td><td class="r">${esc(eur(kaution(k)))}</td><td>${esc(EINST.kautionskonto||'')}</td></tr>
+      <tr><td>Ausstattungsmerkmale</td><td colspan="2"><input class="feld" style="max-width:none;text-align:left" id="k-ausstattung" value="${esc(c.ausstattung||(e&&e.ausstattung)||'')}" autocomplete="off"></td></tr>
+      <tr><td>Lage</td><td colspan="2"><input class="feld" style="max-width:none;text-align:left" id="k-lage" value="${esc(c.lage||(e&&e.lage)||'')}" autocomplete="off"></td></tr>
+      <tr><td>Mieterzielgruppe</td><td colspan="2"><input class="feld" style="max-width:none;text-align:left" id="k-zielgruppe" list="dl-zg" value="${esc(c.zielgruppe||'')}" autocomplete="off"><datalist id="dl-zg">${ZIELGRUPPEN.map(z=>`<option value="${esc(z)}">`).join('')}</datalist></td></tr>
+    </tbody></table>
+    <div class="sub" style="margin-top:4px">Gebäude, Einheit und Name werden unten bei „Mieter und Wohnung“ geändert. Das Mietkonto kommt vom Objekt.</div>
     <div class="kz"><div><b>${esc(pm(kalt))}</b><span>Kaltmiete pro m²</span></div><div><b>${esc(eur(bruttokalt))}</b><span>Bruttokaltmiete (Kalt + BK) · ${esc(pm(bruttokalt))}</span></div>
       <div><b>${esc(pm(sNeu-ebk))}</b><span>Warmmiete ohne EBK pro m²</span></div><div><b>${esc(pm(sNeu))}</b><span>Warmmiete mit EBK pro m²</span></div></div>
-    ${sAlt&&sNeu!==sAlt?`<div class="sub" style="margin-top:6px">Wertsteigerung bei Faktor 12: ${esc(eur((posWert(c,'kalt','neu')-posWert(c,'kalt','alt'))*12*12))} · Erhöhung Kaltmiete ${posWert(c,'kalt','alt')?((posWert(c,'kalt','neu')/posWert(c,'kalt','alt')-1)*100).toFixed(1).replace('.',',')+' %':'–'}</div>`:''}
-    <div class="g3" style="margin-top:12px">${feld('k-kaution','Kaution € (3 Kaltmieten)',c.kaution!=null&&c.kaution!==''?c.kaution:fz(kalt*3),'text',' inputmode="decimal"')}</div></div>`;
+    ${kaltAlt&&kalt?`<div class="sub" style="margin-top:6px">Wertsteigerung bei Faktor 12: ${esc(eur((kalt-kaltAlt)*12*12))} · Erhöhung Kaltmiete ${((kalt/kaltAlt-1)*100).toFixed(1).replace('.',',')} %</div>`:''}
+    <div class="g3" style="margin-top:12px"><label class="fl">Kaltmiete bisher (Vormieter, für die Wertsteigerung)<input data-pos="kalt" data-s="alt" value="${esc(fz(zahl(c.pos.kalt.alt)))}" inputmode="decimal"></label></div></div>`;
   // KdU-Prüfung
   h+=`<div class="card"><div class="ch">Angemessenheit für Jobcenter / Sozialamt</div>
     <label class="fl">Gebiet (Mietobergrenze)<input id="k-region" list="dl-region" value="${esc(region)}" placeholder="Ort eintippen …" autocomplete="off"><datalist id="dl-region">${Object.keys(KDU).map(r=>`<option value="${esc(r)}">`).join('')}</datalist></label>`;
@@ -321,7 +341,7 @@ const DS_EMPF={created:'wartet',sent:'Mail erhalten',delivered:'hat geöffnet',c
 function vtBasis(k){const e=k.wohnung&&einVon(k.wohnung.einheit_id),o=e&&objVon(e.objekt_id),s=MSA[k.id];
   const vermieter=(o&&(o.eigentuemer||WG_GES[o.gesellschaft]))||'Wohntraum Rheinhessen GmbH';
   return VertragPdf.werte({karte:k,msa:s&&s.daten||{},objekt:o||{},einheit:e||{},vermieter,vermieterAnschrift:WG_ANSCHRIFT});}
-function vtDaten(k){const v=k.vertrag=k.vertrag||{};if(!v.auswahl)v.auswahl=VORL.filter(x=>x.standard&&(x.bereich||'Neuvermietung')==='Neuvermietung').map(x=>x.id);v.texte=v.texte||{};
+function vtDaten(k){const v=k.vertrag=k.vertrag||{};v.texte=v.texte||{};const kt=mietkonto(k);if(kt){if(!v.texte.IBAN)v.texte.IBAN=kt.iban;if(!v.texte.Bank&&kt.bank)v.texte.Bank=kt.bank;}if(!v.auswahl)v.auswahl=VORL.filter(x=>x.standard&&(x.bereich||'Neuvermietung')==='Neuvermietung').map(x=>x.id);v.texte=v.texte||{};
   v.vermieter=v.vermieter||{name:'Eric Eisenhardt',email:ERIC};return v;}
 function vtGewaehlt(k){const v=vtDaten(k);return VORL.filter(x=>v.auswahl.includes(x.id)).sort((a,b)=>(Number(a.sort)||99)-(Number(b.sort)||99)||String(a.name).localeCompare(String(b.name),'de'));}
 function vertragKarte(k){const v=vtDaten(k),V=vtBasis(k),ro=!!k.pid;
@@ -379,11 +399,12 @@ const MAP=window.MietangebotPdf,MAV=MAP.VORLAGEN.slice().sort((a,b)=>a.kurz.loca
 let MA_DATEI=null,MA_LADEN=false;const MA_BYTES={};
 const MA_SIGNATUR='Mit freundlichen Grüßen\n\nWohn(T)raum Rheinhessen GmbH\nbewusst sozial engagiert\nE-Mail: hausverwaltung@andersmacher.info\nTelefon: 06133-9382937\nDalheimer Str. 70, 55278 Dexheim\nHRB 45997, Amtsgericht Mainz\nGeschäftsführer: Eric Eisenhardt';
 function maDateien(){if(MA_DATEI||MA_LADEN)return;MA_LADEN=true;sb.storage.from('vertraege').list('mietangebot-vorlagen',{limit:100}).then(({data})=>{MA_DATEI=new Set((data||[]).map(f=>f.name.replace(/\.pdf$/i,'')));MA_LADEN=false;panel();}).catch(()=>{MA_DATEI=new Set();MA_LADEN=false;panel();});}
-function maDaten(k){const a=k.angebot=k.angebot||{},c=kalk(k);if(!a.auswahl)a.auswahl=MAP.vorschlag(c.region||regionVorschlag(k));a.fragen=a.fragen||{};a.versand=a.versand||[];a.signiert=a.signiert||{};return a;}
+function maVorlageId(k){const c=kalk(k);if(c.vorlage)return c.vorlage;return MAP.vorschlag(c.region||regionVorschlag(k))[0]||'';}
+function maDaten(k){const a=k.angebot=k.angebot||{},c=kalk(k);if(!a.auswahl){const v=maVorlageId(k);a.auswahl=v&&v!=='keine'?[v]:[];}a.fragen=a.fragen||{};a.versand=a.versand||[];a.signiert=a.signiert||{};return a;}
 function maWerte(k){const c=kalk(k),V=vtBasis(k),e=k.wohnung&&einVon(k.wohnung.einheit_id),o=e&&objVon(e.objekt_id),pw=p=>posWert(c,p,'neu');
   return {vorname:k.vorname||'',nachname:k.name||'',anschrift:V.mieter_anschrift,personen:V.personen,mietbeginn:V.mietbeginn,wohnung:V.objekt_adresse_we,lage:V.lage,wfl:V.wohnflaeche,zimmer:V.zimmer,
     baujahr:o&&o.baujahr||'',heizungsart:o&&(o.heizungsart||o.heizung)||'',kalt:pw('kalt'),bk:pw('bk'),hk:pw('hk'),strom:pw('strom'),wlan:pw('wlan'),garage:pw('garage'),moebel:pw('moebel'),ebk:pw('ebk'),gesamt:warm(k),
-    kaution:c.kaution!=null&&c.kaution!==''?zahl(c.kaution):pw('kalt')*3,objekt_kz:V.objekt_kz,einheit:V.einheit};}
+    kaution:kaution(k),objekt_kz:V.objekt_kz,einheit:V.einheit};}
 const maGewaehlt=k=>MAV.filter(x=>maDaten(k).auswahl.includes(x.id));
 function maBetreff(k){const V=vtBasis(k);return 'Mietangebot '+(V.objekt_adresse_we||'');}
 function maText(k){const V=vtBasis(k);return (k.anrede==='Frau'?'Sehr geehrte Frau '+(k.name||''):k.anrede==='Herr'?'Sehr geehrter Herr '+(k.name||''):'Guten Tag'+(nameVoll(k)?' '+nameVoll(k):''))+',\n\nanbei erhalten Sie das Mietangebot für die Wohnung '+(V.objekt_adresse_we||'')+(V.mietbeginn?' ab dem '+V.mietbeginn:'')+'. Die Unterlagen für Ihr Amt sind von uns bereits ausgefüllt. Bitte ergänzen Sie, wo nötig, Ihre eigenen Angaben, unterschreiben Sie und reichen Sie alles bei Ihrem Amt ein.\n\nSobald Sie die Zusage haben, melden Sie sich bitte bei uns. Dann bereiten wir den Mietvertrag vor.\n\n'+MA_SIGNATUR;}
@@ -498,6 +519,7 @@ document.addEventListener('input',e=>{const t=e.target;
   if(FELD[t.id]){k[FELD[t.id]]=t.value;spaeter(k,t.id==='k-personen');return;}
   if(KALK[t.id]){c[KALK[t.id]]=t.value;spaeter(k,t.id==='k-wfl');return;}
   if(t.dataset.pos){c.pos[t.dataset.pos][t.dataset.s]=t.value;spaeter(k,true);return;}
+  if(t.dataset.kinfo!==undefined){c.info[t.dataset.kinfo]=t.value;spaeter(k,false);return;}
   if(t.dataset.vtext!==undefined){vtDaten(k).texte[t.dataset.vtext]=t.value;spaeter(k,false);return;}
   if(t.id==='vt-m2mail'){vtDaten(k).mieter2Email=t.value.trim();spaeter(k,false);return;}
   if(t.id==='vt-vname'){vtDaten(k).vermieter.name=t.value;spaeter(k,false);return;}
@@ -513,6 +535,7 @@ document.addEventListener('change',e=>{const t=e.target;if(!t.isConnected)return
   if(t.id==='f-obj'){const o=O.find(x=>objLabel(x)===t.value);if(!o){if(t.value)toast('Bitte eine Immobilie aus der Liste wählen.');return;}k.wohnung={objekt_id:o.id};speichern(k);setTimeout(()=>{zeileNeu(k);panel();});return;}
   if(t.id==='f-ein'){const o=k.wohnung&&objVon(k.wohnung.objekt_id);const ei=o&&E.find(x=>x.objekt_id===o.id&&einLabel(x)===t.value);if(!ei){if(t.value)toast('Bitte eine Einheit aus der Liste wählen.');return;}
     k.wohnung={objekt_id:o.id,einheit_id:ei.id,label:o.kz+' '+ei.bezeichnung+' · '+(o.strasse||o.name||'')};speichern(k,'Wohnung gewählt: '+k.wohnung.label);setTimeout(()=>{zeileNeu(k);panel();});return;}
+  if(t.id==='k-vorlage'){const v=t.value.trim(),x=MAV.find(m=>m.kurz===v),id=x?x.id:/^keine/i.test(v)?'keine':v?null:'';if(id===null){toast('Bitte eine Vorlage aus der Liste wählen.');return;}const c=kalk(k);if(id)c.vorlage=id;else delete c.vorlage;const a=maDaten(k);a.auswahl=id&&id!=='keine'?[id]:[];speichern(k,id?'Vorlage Mietangebot: '+(x?x.kurz:'keine'):'');setTimeout(panel);return;}
   if(t.id==='k-region'){if(t.value&&!KDU[t.value]){toast('Bitte ein Gebiet aus der Liste wählen.');return;}kalk(k).region=t.value;speichern(k);setTimeout(panel);return;}
   if(t.dataset.pos||t.id==='k-beginn'||t.id==='k-kaution'){clearTimeout(spT);speichern(k);setTimeout(()=>{zeileNeu(k);panel();});}});
 document.addEventListener('click',async e=>{const t=e.target;
