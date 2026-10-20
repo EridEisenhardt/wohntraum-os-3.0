@@ -158,6 +158,16 @@ async function senden(){if(!C||BUSY)return;if(C.anh.some(a=>a.lade)){toast('Anh�
     C=null;BUSY='';toast('Mail gesendet.');render();ordnerLaden().then(render).catch(()=>{});if(istGesendet())listeLaden();}
   catch(e){BUSY='';render();toast('Senden fehlgeschlagen: '+(e.message||e),10000);}}
 
+/* KI: nur den Text vor der Signatur verbessern, Signatur bleibt */
+function kiTeilen(t){const i=t.indexOf('Mit freundlichen Grüßen');return i>=0?[t.slice(0,i).trim(),t.slice(i)]:[t.trim(),''];}
+const htmlZuText=h=>{try{const d=new DOMParser().parseFromString(String(h||'').replace(/<br\s*\/?>/gi,'\n').replace(/<\/(p|div|tr|li|h\d)>/gi,'$&\n'),'text/html');d.querySelectorAll('style,script').forEach(x=>x.remove());return (d.body.textContent||'').replace(/\n{3,}/g,'\n\n').trim();}catch(e){return '';}};
+async function kiMail(){if(!C||BUSY)return;const [body,sig]=kiTeilen(C.text);if(!body){toast('Bitte zuerst Stichworte oder einen Entwurf eingeben.');return;}
+  BUSY='ki';render();
+  try{const bez=C.modus!=='neu'&&SEL&&SEL.id===C.bezug&&SEL.html?htmlZuText(SEL.html):'';
+    const r=await api('/api/ki',{aufgabe:'mail',text:body,kontext:{empfaenger:C.an,betreff:C.betreff,bezug:bez}});
+    C.kiAlt={text:C.text,betreff:C.betreff};C.text=String(r.text||'').trim()+(sig?'\n\n'+sig:'');if(r.betreff)C.betreff=r.betreff;}
+  catch(e){toast('KI: '+(e.message||e),8000);}
+  BUSY='';render();}
 /* Anhänge aus dem Mieterordner (OneDrive) */
 async function mieterLaden(){if(MKGELADEN)return;MKGELADEN=true;
   const [mk,me]=await Promise.all([sb.from('os_docs').select('pid:data->>pid,obj:data->>obj,einheit:data->>einheit,von:data->>von,bis:data->>bis,mieter:data->>mieter,kontakte:data->kontakte').eq('app','oc').like('pfad','mietkonten/%'),
@@ -209,12 +219,12 @@ function render(){const app=document.getElementById('app');const fokus=document.
   // Lesen / Schreiben
   h+='<div class="spalte lesen" id="rspalte" style="border-right:0">';
   if(C){const titel={neu:'Neue Mail',antworten:'Antworten',allen:'Allen antworten',weiterleiten:'Weiterleiten'}[C.modus];
-    h+='<div class="mk"><div class="acts" style="justify-content:space-between;margin-bottom:8px"><h2 style="margin:0">'+titel+'</h2><div class="acts"><button class="primary" data-a="senden"'+(BUSY?' disabled':'')+'>'+(BUSY==='senden'?'Wird gesendet …':'Senden')+'</button><button class="ghost" data-a="verwerfen">Verwerfen</button></div></div>'
+    h+='<div class="mk"><div class="acts" style="justify-content:space-between;margin-bottom:8px"><h2 style="margin:0">'+titel+'</h2><div class="acts"><button class="primary" data-a="senden"'+(BUSY?' disabled':'')+'>'+(BUSY==='senden'?'Wird gesendet …':'Senden')+'</button><button data-a="ki"'+(BUSY?' disabled':'')+'>'+(BUSY==='ki'?'KI arbeitet …':'Mit KI verbessern')+'</button>'+(C.kiAlt?'<button class="ghost" data-a="kizurueck">KI rückgängig</button>':'')+'<button class="ghost" data-a="verwerfen">Verwerfen</button></div></div>'
       +'<div class="sub" style="margin-bottom:8px">Von: '+esc(POSTFACH)+'</div>'
       +'<label class="fl">An<input id="c-an" list="dl-adr" value="'+esc(C.an)+'" placeholder="E-Mail-Adresse oder Mieter eintippen, mehrere mit Komma" autocomplete="off"></label>'
       +'<div class="g2"><label class="fl">Cc<input id="c-cc" value="'+esc(C.cc)+'" autocomplete="off"></label>'+(C.bccZeigen||C.bcc?'<label class="fl">Bcc<input id="c-bcc" value="'+esc(C.bcc)+'" autocomplete="off"></label>':'<div style="align-self:center"><button class="small ghost" data-a="bcc">Bcc hinzufügen</button></div>')+'</div>'
       +'<label class="fl">Betreff<input id="c-betreff" value="'+esc(C.betreff)+'" autocomplete="off"></label>'
-      +'<label class="fl">Text<textarea id="c-text">'+esc(C.text)+'</textarea></label>'
+      +'<label class="fl">Text <span class="sub">– Stichworte genügen, „Mit KI verbessern“ formuliert daraus die Mail</span><textarea id="c-text">'+esc(C.text)+'</textarea></label>'
       +(C.modus==='weiterleiten'?'<div class="info">Die Anhänge der ursprünglichen Mail werden automatisch mitgesendet. Die ursprüngliche Mail wird unter deinem Text angefügt.</div>':C.modus!=='neu'?'<div class="info">Die ursprüngliche Mail wird unter deinem Text angefügt.</div>':'')
       +'<div class="sub" style="margin:6px 0 4px">Anhänge</div><div>'+C.anh.map((a,i)=>'<span class="chip">'+esc(a.name)+(a.groesse?' · '+groesse(a.groesse):'')+(a.lade?' · lädt …':'')+'<button data-anhweg="'+i+'">Entfernen</button></span>').join('')+'</div>'
       +'<div class="acts"><label class="up">Vom Gerät anhängen<input type="file" id="c-file" multiple hidden></label><button data-a="picker">Aus Mieterordner anhängen</button></div>'
@@ -243,6 +253,7 @@ const A={
   neu:()=>neueMail('neu'),refresh:()=>aktualisieren(),mehr:()=>listeLaden(true),
   antworten:()=>neueMail('antworten'),allen:()=>neueMail('allen'),weiterleiten:()=>neueMail('weiterleiten'),
   verwerfen:()=>{if(C&&(C.text.trim()!==signatur().trim()||C.anh.length)&&!confirm('Mail verwerfen?'))return;C=null;render();},
+  ki:()=>kiMail(),kizurueck:()=>{if(C&&C.kiAlt){C.text=C.kiAlt.text;C.betreff=C.kiAlt.betreff;C.kiAlt=null;render();}},
   senden:()=>senden(),bcc:()=>{C.bccZeigen=true;render();},
   picker:()=>{C.picker=!C.picker;render();},pickzu:()=>{C.picker=false;render();},
   pickok:()=>{const A2=AKTE[C.pmk]||{};const alle=[].concat(A2.dateien||[],...Object.values(A2.ordner||{}));let n=0;

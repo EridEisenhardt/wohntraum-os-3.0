@@ -335,7 +335,7 @@ function renderEdit(){const ob=objVon(PR.objekt_id),ei=einVon(PR.einheit_id),m=P
       <div class="kh" style="margin-bottom:2px">Anhänge</div>
       <label class="cb"><input type="checkbox" id="mf-prot"${MAILF.prot?' checked':''}> ${esc(pdfName())}</label>
       ${!auszug?(D.wgb_pdf?`<label class="cb"><input type="checkbox" id="mf-wgb"${MAILF.wgb?' checked':''}> ${esc(D.wgb_pdf.name||wgbName())}</label>`:'<div class="sub">Noch keine Wohnungsgeberbestätigung erstellt.</div>'):''}
-      <div class="acts"><button class="primary" data-act="mailsenden"${BUSY?' disabled':''}>${BUSY==='mail'?'Wird gesendet …':'Mail senden'}</button><button class="ghost" data-act="mailform">Abbrechen</button><span class="sub">Absender: hausverwaltung@andersmacher.info</span></div></div>`:''}</div>`;
+      <div class="acts"><button class="primary" data-act="mailsenden"${BUSY?' disabled':''}>${BUSY==='mail'?'Wird gesendet …':'Mail senden'}</button><button data-act="mailki"${BUSY?' disabled':''}>${BUSY==='mailki'?'KI arbeitet …':'Mit KI verbessern'}</button>${MAILF.kiAlt?'<button class="ghost" data-act="mailkiweg">KI rückgängig</button>':''}<button class="ghost" data-act="mailform">Abbrechen</button><span class="sub">Absender: hausverwaltung@andersmacher.info</span></div></div>`:''}</div>`;
   else if(!od)h+='<div class="note">Für dieses Mietverhältnis ist kein OneDrive-Mieterordner zugeordnet. Das PDF wird dann nur im OS gespeichert. Zuordnen geht im Mieterkonto unter Dokumente.</div>';
   if(auszug&&D.einzug_id){const ein=P.find(p=>p.id===D.einzug_id);if(ein&&ein.pdf_pfad)h+=`<div class="info">Zum Vergleich: <button class="small" data-act="pdf" data-id="${ein.id}">Einzugsprotokoll vom ${dmy(ein.datum)} öffnen</button></div>`;}
   h+='<fieldset'+(zu?' disabled':'')+'>';
@@ -581,6 +581,11 @@ const ACT={
     catch(e){BUSY='';renderErhalten();toast('Erstellen fehlgeschlagen: '+(e.message||e),8000);}},
   mailform:()=>{MAILF=MAILF?null:mailVorlage();renderErhalten();},
   mailsenden:()=>mailSenden(),
+  mailki:async()=>{if(BUSY||!MAILF)return;const t=MAILF.text,i=t.indexOf('Mit freundlichen Grüßen'),body=(i>=0?t.slice(0,i):t).trim(),sig=i>=0?t.slice(i):'';
+    BUSY='mailki';renderErhalten();
+    try{const r=await api('/api/ki',{aufgabe:'mail',text:body,kontext:{empfaenger:(D.mieter.name||'')+' <'+MAILF.an+'>',betreff:MAILF.betreff}});MAILF.kiAlt={text:MAILF.text,betreff:MAILF.betreff};MAILF.text=String(r.text||'').trim()+(sig?'\n\n'+sig:'');if(r.betreff)MAILF.betreff=r.betreff;}
+    catch(e){toast('KI: '+(e.message||e),8000);}BUSY='';renderErhalten();},
+  mailkiweg:()=>{if(MAILF&&MAILF.kiAlt){MAILF.text=MAILF.kiAlt.text;MAILF.betreff=MAILF.kiAlt.betreff;MAILF.kiAlt=null;renderErhalten();}},
   wiederoeffnen:async()=>{if(!confirm('Protokoll wieder bearbeiten? Beim erneuten Abschließen wird ein neues PDF erstellt.'))return;
     const {error}=await sb.from('uebergabeprotokolle').update({status:'Entwurf'}).eq('id',PR.id);if(error){toast(error.message);return;}PR.status='Entwurf';const i=P.findIndex(p=>p.id===PR.id);if(i>=0)P[i].status='Entwurf';renderErhalten();},
   odoeffnen:async()=>{const w=window.open('','_blank');try{const r=await api('/api/onedrive',{aktion:'link',id:PR.pdf_od.id});const u=r.web||r.download;if(w)w.location.href=u;else window.open(u,'_blank');}catch(e){if(w)w.close();toast(e.message||String(e));}},

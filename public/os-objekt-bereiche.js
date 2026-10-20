@@ -255,8 +255,9 @@ async function mailSpeichern(m,mime,quelle){if(!ICH)await loadIch();const mid=OB
   await docSet('objmails/'+mid,e);OML=OML.filter(x=>x.id!==mid).concat([e]);}
 function rMails(){const box=document.getElementById('bx-mails');if(!box)return;const L=OML.slice().sort((a,b)=>String(b.d).localeCompare(String(a.d))),have=new Set(L.map(m=>m.msgId).filter(Boolean));
   document.getElementById('bs-mails').textContent=L.length+' hinterlegt'+(L.length?' · zuletzt '+dfmt(String(L[0].d).slice(0,10)):'');
-  let h=`<div class="acts" style="margin-top:0"><button class="primary small" onclick="mlSuchen()"${MLS.busy?' disabled':''}>${MLS.busy==='suche'?'Suche in Outlook …':'In Outlook suchen'}</button><label class="up">.eml-Dateien hochladen<input type="file" accept=".eml,message/rfc822" multiple hidden onchange="mlUpload([...this.files]);this.value=''"></label>
+  let h=`<div class="acts" style="margin-top:0"><button class="primary small" onclick="omNeu()">Neue Mail schreiben</button><button class="small" onclick="mlSuchen()"${MLS.busy?' disabled':''}>${MLS.busy==='suche'?'Suche in Outlook …':'In Outlook suchen'}</button><label class="up">.eml-Dateien hochladen<input type="file" accept=".eml,message/rfc822" multiple hidden onchange="mlUpload([...this.files]);this.value=''"></label>
     <span class="sub">Suchbegriffe: ${esc(mlBegriffe().join(', ')||'–')}</span></div><div class="sub">Mails aus Outlook auf den Desktop ziehen (ergibt eine .eml-Datei) und hier hochladen – oder direkt in Outlook nach Mails zu diesem Objekt suchen.</div>`;
+  if(OMC)h+=omHtml();
   if(MLS.fehler.length)h+=`<div class="note warnbox">${MLS.fehler.map(esc).join('<br>')}</div>`;
   if(MLS.res){const neu=MLS.res.filter(m=>!have.has(m.msgId));
     h+=`<div class="rh" style="margin-top:10px">Gefunden in Outlook: ${MLS.res.length} Mails, davon ${neu.length} noch nicht hinterlegt${neu.length>1?` <button class="ghost small" onclick="mlHinterlegen(MLS.res.filter(m=>!new Set(OML.map(x=>x.msgId)).has(m.msgId)).map(m=>m.id))"${MLS.busy?' disabled':''}>alle hinterlegen</button>`:''}</div>`;
@@ -277,6 +278,60 @@ async function mlUpload(files){let n=0;for(const f of files){try{const raw=await
       m.richtung=/andersmacher|wohntraum/i.test(vonA)?'Ausgang':'Eingang';if(!m.betreff)m.betreff=f.name.replace(/\.eml$/i,'');await mailSpeichern(m,raw,'upload');n++;}
     catch(e){toast(f.name+': '+(e.message||e));}}
   if(n){toast(n+' Mail'+(n>1?'s':'')+' hinterlegt.');rHist();}rMails();}
+
+/* ---------- Mail direkt aus dem Objekt senden (Absender hausverwaltung@, Anhänge aus dem Objektordner) ---------- */
+const OM_SIG='Mit freundlichen Grüßen\n\nWohn(T)raum Rheinhessen GmbH\nbewusst sozial engagiert\nE-Mail: hausverwaltung@andersmacher.info\nTelefon: 06133-9382937\nDalheimer Str. 70, 55278 Dexheim\nHRB 45997, Amtsgericht Mainz\nGeschäftsführer: Eric Eisenhardt';
+let OMC=null;
+const omGr=n=>n>1048576?(n/1048576).toFixed(1).replace('.',',')+' MB':Math.max(1,Math.round((n||0)/1024))+' KB';
+function omAdressen(){const L=[];for(const t of TEN||[])for(const k of (t.mieter||[]))if(k&&k.email)String(k.email).split(/[,;\s]+/).filter(x=>/@/.test(x)).forEach(x=>L.push(x.trim()));return [...new Set(L)].sort();}
+function omNeu(){if(OMC&&!confirm('Die angefangene Mail verwerfen?'))return;loadIch();
+  OMC={an:'',cc:'',betreff:OB.kz+' – '+(OB.strasse||OB.name||'')+': ',text:'Sehr geehrte Damen und Herren,\n\n\n\n'+OM_SIG,anh:[],picker:false,ppfad:'',pl:null,pq:'',pwahl:{},busy:false,ki:false,kiAlt:null};
+  SECO.mails=true;const d=document.querySelector('details.sec[data-sec="mails"]');if(d)d.open=true;rMails();setTimeout(()=>{const i=document.getElementById('om-an');if(i)i.focus();},50);}
+function omHtml(){const c=OMC;let h=`<div class="omc" style="border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin:10px 0;background:var(--card)">
+  <div class="rh">Neue Mail <span class="sub" style="font-weight:400">von hausverwaltung@andersmacher.info</span></div>
+  <label class="fl">An<input type="text" id="om-an" list="om-adr" value="${esc(c.an)}" placeholder="E-Mail-Adresse, mehrere mit Komma" autocomplete="off" oninput="OMC.an=this.value" style="width:100%"></label>
+  <datalist id="om-adr">${omAdressen().map(a=>`<option value="${esc(a)}">`).join('')}</datalist>
+  <label class="fl">Cc<input type="text" value="${esc(c.cc)}" autocomplete="off" oninput="OMC.cc=this.value" style="width:100%"></label>
+  <label class="fl">Betreff<input type="text" id="om-betreff" value="${esc(c.betreff)}" autocomplete="off" oninput="OMC.betreff=this.value" style="width:100%"></label>
+  <label class="fl">Text <span class="sub">– Stichworte genügen, „Mit KI verbessern“ formuliert daraus die Mail</span><textarea id="om-text" oninput="OMC.text=this.value" style="width:100%;min-height:220px;line-height:1.45">${esc(c.text)}</textarea></label>
+  <div class="sub" style="margin:4px 0">Anhänge</div><div>${c.anh.map((a,i)=>`<span class="pill" style="margin:0 6px 6px 0;display:inline-flex;gap:6px;align-items:center">${esc(a.name)} · ${omGr(a.groesse)}${a.lade?' · lädt …':''}<button class="ghost small" onclick="OMC.anh.splice(${i},1);rMails()">Entfernen</button></span>`).join('')}</div>
+  <div class="acts"><label class="up">Vom Gerät anhängen<input type="file" multiple hidden onchange="omDateien([...this.files]);this.value=''"></label><button class="small" onclick="omPicker()">Aus Objektordner anhängen</button></div>`;
+  if(c.picker){const basis=voll(OB.onedrive_pfad||'');
+    if(!OB.onedrive_pfad)h+='<div class="note warnbox">Für dieses Objekt ist kein OneDrive-Ordner hinterlegt.</div>';
+    else{const teile=c.ppfad.slice(basis.length).split('/').filter(Boolean);let acc=basis;
+      h+=`<div style="margin-top:8px;border:1px solid var(--line);border-radius:8px;padding:8px;background:var(--soft)"><div class="sub"><a href="#" class="lnk" onclick="event.preventDefault();omOrdner('${jq(basis)}')">${esc(OB.kz)}</a>${teile.map(t=>{acc+='/'+t;return ` / <a href="#" class="lnk" onclick="event.preventDefault();omOrdner('${jq(acc)}')">${esc(t)}</a>`;}).join('')}</div>
+        <input type="search" placeholder="In diesem Ordner suchen …" value="${esc(c.pq)}" oninput="OMC.pq=this.value;clearTimeout(window._omq);window._omq=setTimeout(()=>{rMails();const i=document.getElementById('om-pq');if(i){i.focus();i.setSelectionRange(i.value.length,i.value.length);}},250)" id="om-pq" style="width:100%;margin:6px 0">`;
+      if(!c.pl||c.pl==='lade')h+='<div class="sub">Lädt …</div>';
+      else if(c.pl.fehler)h+=`<div class="note warnbox">${esc(c.pl.fehler)}</div>`;
+      else{const q=c.pq.trim().toLowerCase();const L=c.pl.filter(x=>!x.name.startsWith('.')&&(!q||x.name.toLowerCase().includes(q)));
+        h+='<div style="max-height:260px;overflow:auto;background:var(--card);border:1px solid var(--line);border-radius:8px">'+(L.length?L.map(x=>x.ordner?`<div class="ml-row" style="padding:5px 8px;cursor:pointer" onclick="omOrdner('${jq(c.ppfad+'/'+x.name)}')"><b>${esc(x.name)}</b> <span class="sub">Ordner öffnen</span></div>`
+          :`<label style="display:flex;gap:8px;align-items:center;padding:5px 8px;border-top:1px solid var(--line);font-size:13px;cursor:pointer"><input type="checkbox"${c.pwahl[x.id]?' checked':''} onchange="OMC.pwahl['${jq(x.id)}']=this.checked?{id:'${jq(x.id)}',name:'${jq(x.name)}',groesse:${Number(x.size)||0}}:null"> <span style="flex:1">${esc(x.name)}</span><span class="sub">${omGr(x.size)}</span></label>`).join(''):'<div class="sub" style="padding:8px">Keine Einträge.</div>')+'</div>';}
+      h+=`<div class="acts"><button class="small primary" onclick="omPickOk()">Ausgewählte anhängen</button><button class="small ghost" onclick="OMC.picker=false;rMails()">Schließen</button></div></div>`;}}
+  return h+`<div class="acts" style="margin-top:10px"><button class="primary" onclick="omSenden()"${c.busy?' disabled':''}>${c.busy?'Wird gesendet …':'Senden'}</button><button class="small" onclick="omKi()"${c.ki||c.busy?' disabled':''}>${c.ki?'KI arbeitet …':'Mit KI verbessern'}</button>${c.kiAlt?'<button class="ghost" onclick="OMC.text=OMC.kiAlt.text;OMC.betreff=OMC.kiAlt.betreff;OMC.kiAlt=null;rMails()">KI rückgängig</button>':''}<button class="ghost" onclick="if(confirm('Mail verwerfen?')){OMC=null;rMails();}">Verwerfen</button></div></div>`;}
+function omPicker(){OMC.picker=!OMC.picker;if(OMC.picker&&!OMC.pl)omOrdner(voll(OB.onedrive_pfad||''));else rMails();}
+async function omOrdner(p){OMC.ppfad=p;OMC.pl='lade';OMC.pq='';rMails();try{const j=await odApi({aktion:'ordner',pfad:p});OMC.pl=(j.eintraege||[]).slice().sort((a,b)=>(b.ordner?1:0)-(a.ordner?1:0)||a.name.localeCompare(b.name,'de'));}catch(e){OMC.pl={fehler:e.message||String(e)};}rMails();}
+function omPickOk(){let n=0;for(const k of Object.keys(OMC.pwahl)){const f=OMC.pwahl[k];if(!f||OMC.anh.some(a=>a.id===f.id))continue;OMC.anh.push({typ:'onedrive',id:f.id,name:f.name,groesse:f.groesse});n++;}OMC.pwahl={};OMC.picker=false;rMails();if(n)toast(n+' Datei'+(n>1?'en':'')+' angehängt.');}
+async function omDateien(files){for(const f of files){const id=Date.now().toString(36)+Math.random().toString(36).slice(2,7);const pfad='mailanhaenge/'+id+'/'+f.name.replace(/[^\w.\- ]/g,'_');
+    const e={typ:'speicher',bucket:'uebergaben',pfad,name:f.name,contentType:f.type||'application/octet-stream',groesse:f.size,lade:true};OMC.anh.push(e);rMails();
+    const {error}=await sb.storage.from('uebergaben').upload(pfad,f,{contentType:e.contentType,upsert:true});if(error){OMC.anh=OMC.anh.filter(x=>x!==e);toast(f.name+': '+error.message);}else e.lade=false;rMails();}}
+function omTeilen(t){const i=t.indexOf('Mit freundlichen Grüßen');return i>=0?[t.slice(0,i).trim(),t.slice(i)]:[t.trim(),''];}
+async function omKi(){const c=OMC;if(!c||c.ki||c.busy)return;const [body,sig]=omTeilen(c.text);if(!body||body==='Sehr geehrte Damen und Herren,'){toast('Bitte zuerst Stichworte oder einen Entwurf eingeben.');return;}
+  c.ki=true;rMails();
+  try{const r=await apiPost('/api/ki',{aufgabe:'mail',text:body,kontext:{empfaenger:c.an,betreff:c.betreff,anrede:'Sehr geehrte Damen und Herren,'}},'KI');
+    c.kiAlt={text:c.text,betreff:c.betreff};c.text=String(r.text||'').trim()+(sig?'\n\n'+sig:'');if(r.betreff)c.betreff=r.betreff;}
+  catch(e){toast('KI: '+(e.message||e));}
+  c.ki=false;rMails();}
+async function omSenden(){const c=OMC;if(!c||c.busy)return;if(c.anh.some(a=>a.lade)){toast('Anhänge werden noch hochgeladen.');return;}if(!/@/.test(c.an)){toast('Bitte die E-Mail-Adresse eintragen.');return;}
+  c.busy=true;rMails();
+  try{const r=await apiPost('/api/postfach',{aktion:'senden',modus:'neu',an:c.an,cc:c.cc,betreff:c.betreff,text:c.text,mime:true,
+      anhaenge:c.anh.map(a=>a.typ==='onedrive'?{typ:'onedrive',id:a.id}:{typ:'speicher',bucket:a.bucket,pfad:a.pfad,name:a.name,contentType:a.contentType})},'Postfach');
+    const datum=new Date().toISOString();
+    const mime=r.mime||('From: Hausverwaltung <'+r.von+'>\r\nTo: '+c.an+'\r\nSubject: '+c.betreff+'\r\nDate: '+new Date().toUTCString()+'\r\nMessage-ID: '+(r.msgId||'')+'\r\nContent-Type: text/plain; charset=utf-8\r\n\r\n'+c.text);
+    try{await mailSpeichern({richtung:'Ausgang',von:'Hausverwaltung <'+r.von+'>',an:c.an,betreff:c.betreff,datum,msgId:r.msgId||'',text:c.text+(c.anh.length?'\n\nAnhänge: '+c.anh.map(a=>a.name).join(', '):'')},mime,'os');}
+    catch(e){toast('Gesendet, aber nicht beim Objekt hinterlegt: '+(e.message||e));}
+    for(const a of c.anh)if(a.typ==='speicher'&&a.pfad.startsWith('mailanhaenge/'))sb.storage.from('uebergaben').remove([a.pfad]).catch(()=>{});
+    OMC=null;toast('Mail gesendet und beim Objekt hinterlegt.');rHist();rMails();}
+  catch(e){c.busy=false;rMails();toast('Senden fehlgeschlagen: '+(e.message||e));}}
 
 /* ---------- Kosten: Fixkosten aus dem Monatswechsel und Ist-Zahlen aus dem Objekt-Controlling ---------- */
 const MON=['Jan','Feb','Mär','Apr','Mai','Jun','Jul','Aug','Sep','Okt','Nov','Dez'];

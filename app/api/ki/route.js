@@ -24,6 +24,15 @@ const AUFGABEN = {
     'Nur der Brieftext – keine Anrede, keine Grußformel, keine Unterschrift. Prüfe auch, ob der Betreff passt, und schlage sonst einen besseren vor. ' +
     'Liste in "hinweise" kurz auf, was du geändert hast und was inhaltlich fehlt oder unklar ist (z. B. fehlende Frist, fehlendes Datum, widersprüchliche Angaben, Ton zu scharf). Höchstens 6 Hinweise, leer wenn alles passt. ' +
     'Antworte ausschließlich als JSON: {"betreff": "Betreff", "text": "verbesserter Brieftext", "hinweise": ["…"]}.',
+  mail: 'Du schreibst E-Mails für die Hausverwaltung Wohn(T)raum Rheinhessen auf Deutsch: sachlich, freundlich, klar und höflich. ' +
+    'Erfinde keine Fakten, Daten, Beträge, Fristen oder Zusagen. Fehlt eine Angabe, setze einen Platzhalter in eckigen Klammern, z. B. [Datum]. ' +
+    'Aufgabe: Formuliere aus den Stichworten bzw. dem Entwurf eine fertige E-Mail oder verbessere den vorhandenen Mailtext (Rechtschreibung, Grammatik, klare Sätze, sinnvolle Absätze). ' +
+    'Behalte die Anrede aus dem Entwurf bei; fehlt sie, beginne mit der vorgegebenen Anrede. Bleibe bei Sie bzw. Du wie im Entwurf. ' +
+    'Inhalt, Namen, Daten, Beträge und Aussagen unverändert lassen – nichts hinzuerfinden und nichts Wichtiges weglassen. ' +
+    'Keine Grußformel, keine Unterschrift, keine Signatur – das ergänzt das System. ' +
+    'Ist eine ursprüngliche Mail mitgegeben, ist sie nur Hintergrund: beziehe dich passend darauf, beantworte aber nur, was im Entwurf steht. ' +
+    'Prüfe auch den Betreff und verbessere ihn bei Bedarf (kurz, ohne das Wort Betreff; ein vorhandenes AW: oder WG: beibehalten). ' +
+    'Antworte ausschließlich als JSON: {"betreff": "Betreff", "text": "Mailtext"}.',
   beleg_json: 'Du liest Belege (Rechnungen, Bescheide, Briefe) und gibst ausschließlich ein JSON-Objekt nach den Vorgaben des Nutzers zurück – ohne Erklärung, ohne Markdown.',
   verbessern: STIL + ' Aufgabe: Verbessere die folgende interne Notiz: Rechtschreibung, Grammatik, verständliche Sätze. ' +
     'Inhalt, Namen, Daten und Beträge unverändert lassen, nichts hinzufügen. Antworte nur mit dem verbesserten Text.' + NUR_TEXT,
@@ -59,6 +68,11 @@ export async function POST(req) {
       content = 'Absender: ' + (k.absender || '') + '\nEmpfänger (' + (k.empfaengerTyp || 'unbekannt') + '):\n' + (k.empfaenger || '') + '\nAnrede im Brief: ' + (k.anrede || '') +
         '\nVersandart: ' + (k.versand || '') + (k.betreff ? '\nBetreff: ' + k.betreff : '') + '\n\n' + (aufgabe === 'brief_pruefen' ? 'Brieftext zum Prüfen' : 'Stichworte / Entwurf') + ':\n<text>\n' + text + '\n</text>'
     }
+    if (aufgabe === 'mail') {
+      content = 'Empfänger: ' + (k.empfaenger || '') + (k.anrede ? '\nVorgegebene Anrede: ' + k.anrede : '') + '\nBetreff: ' + (k.betreff || '') +
+        (k.bezug ? '\n\nUrsprüngliche Mail (nur Hintergrund, nicht bearbeiten):\n<mail>\n' + String(k.bezug).slice(0, 6000) + '\n</mail>' : '') +
+        '\n\nEntwurf bzw. Stichworte:\n<text>\n' + text + '\n</text>'
+    }
     if (aufgabe === 'brief') {
       content = 'Anrede: ' + (k.anrede || 'Sehr geehrte Damen und Herren,') + '\nMieter: ' + (k.mieter || '') + '\nObjekt: ' + (k.objekt || '') +
         (k.betreff ? '\nBetreff-Vorschlag: ' + k.betreff : '') + '\n\nEntwurf:\n' + text
@@ -79,6 +93,11 @@ export async function POST(req) {
       const m = out.match(/\{[\s\S]*\}/)
       try { const o = JSON.parse(m ? m[0] : out); return antwort({ betreff: String(o.betreff || k.betreff || ''), text: String(o.text || '').replace(/<\/?text>/g, '').trim(), hinweise: Array.isArray(o.hinweise) ? o.hinweise.map(String).slice(0, 8) : [] }) }
       catch { return antwort({ betreff: k.betreff || '', text: out.replace(/<\/?text>/g, '').trim(), hinweise: [] }) }
+    }
+    if (aufgabe === 'mail') {
+      const m = out.match(/\{[\s\S]*\}/)
+      try { const o = JSON.parse(m ? m[0] : out); return antwort({ betreff: String(o.betreff || k.betreff || ''), text: String(o.text || '').replace(/<\/?text>/g, '').trim() }) }
+      catch { return antwort({ betreff: k.betreff || '', text: out.replace(/<\/?text>/g, '').trim() }) }
     }
     if (aufgabe === 'brief') {
       const m = out.match(/\{[\s\S]*\}/)

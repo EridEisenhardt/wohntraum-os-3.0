@@ -1008,13 +1008,13 @@ async function pfApi(body){ const sb=window.osSupabase; let tok=''; try{ const {
   let j=null; try{ j=await r.json(); }catch(e){} if(!j) throw new Error(r.status===404?'Die Postfach-Schnittstelle ist noch nicht online.':'Postfach nicht erreichbar ('+r.status+').'); if(j.error) throw new Error(j.error); return j; }
 function mlNeu(mk,bezug){ if(!ICH) loadIch();
   MLC={pid:mk.pid,modus:bezug?'antworten':'neu',bezugMsgId:bezug?bezug.msgId:'',an:bezug?((String(bezug.von||'').match(/[\w.+-]+@[\w.-]+/)||[''])[0]||mieterMails(mk).join(', ')):mieterMails(mk).join(', '),cc:'',
-    betreff:bezug?((/^(aw|re):/i.test(bezug.betreff||'')?'':'AW: ')+(bezug.betreff||'')):'',text:anredeZeile(mk)+'\n\n'+mlSignatur(),anh:[],picker:false,pq:'',pwahl:{},busy:false};
+    betreff:bezug?((/^(aw|re):/i.test(bezug.betreff||'')?'':'AW: ')+(bezug.betreff||'')):'',bezugText:bezug?String(bezug.text||'').slice(0,6000):'',text:anredeZeile(mk)+'\n\n'+mlSignatur(),anh:[],picker:false,pq:'',pwahl:{},busy:false};
   SEC.mails=true; render(); setTimeout(()=>{ const t=$('mlc-text'); if(t){ t.focus(); const i=t.value.indexOf('\n\n')+2; t.setSelectionRange(i,i); } },60); }
 function mlcHtml(mk){ const c=MLC; let h='<div class="mlc"><div class="rh" style="margin:0 0 6px">'+(c.modus==='antworten'?'Antworten':'Neue Mail')+' <span class="sub">von hausverwaltung@andersmacher.info'+(c.modus==='antworten'?' · die ursprüngliche Mail wird angefügt':'')+'</span></div>'
     +'<label class="fl">An<input type="text" id="mlc-an" value="'+esc(c.an)+'" placeholder="E-Mail-Adresse, mehrere mit Komma" autocomplete="off"></label>'
     +'<label class="fl">Cc<input type="text" id="mlc-cc" value="'+esc(c.cc)+'" autocomplete="off"></label>'
     +'<label class="fl">Betreff<input type="text" id="mlc-betreff" value="'+esc(c.betreff)+'" autocomplete="off"></label>'
-    +'<label class="fl">Text<textarea id="mlc-text">'+esc(c.text)+'</textarea></label>'
+    +'<label class="fl">Text <span class="sub">– Stichworte genügen, „Mit KI verbessern“ formuliert daraus die Mail</span><textarea id="mlc-text">'+esc(c.text)+'</textarea></label>'
     +'<div class="sub" style="margin:4px 0">Anhänge</div><div>'+c.anh.map((a,i)=>'<span class="chip">'+esc(a.name)+' · '+mlGr(a.groesse)+(a.lade?' · lädt …':'')+'<button data-mlcweg="'+i+'">Entfernen</button></span>').join('')+'</div>'
     +'<div class="acts"><label class="upb">Vom Gerät anhängen<input type="file" id="mlc-file" multiple hidden></label><button class="small" data-mlcpick="1">Aus Mieterordner anhängen</button></div>';
   if(c.picker){ const p=odPfad(mk), A=ODA[mk.pid];
@@ -1026,7 +1026,14 @@ function mlcHtml(mk){ const c=MLC; let h='<div class="mlc"><div class="rh" style
       for(const [g,L] of G){ const F=(L||[]).filter(f=>!q||f.name.toLowerCase().includes(q)||g.toLowerCase().includes(q)); if(!F.length) continue;
         h+='<div class="ph">'+esc(g)+'</div>'+F.map(f=>{ n++; return '<label><input type="checkbox" data-mlpw="'+esc(f.id)+'"'+(c.pwahl[f.id]?' checked':'')+'> <span style="flex:1">'+esc(f.name)+'</span><span class="sub">'+mlGr(f.size)+'</span></label>'; }).join(''); }
       h+=(n?'':'<div class="sub" style="padding:8px">Keine Dateien gefunden.</div>')+'</div><div class="acts"><button class="small primary" data-mlcpickok="1">Ausgewählte anhängen</button><button class="small ghost" data-mlcpick="1">Schließen</button></div>'; } }
-  return h+'<div class="acts" style="margin-top:10px"><button class="primary" data-mlcsend="1"'+(c.busy?' disabled':'')+'>'+(c.busy?'Wird gesendet …':'Senden')+'</button><button class="ghost" data-mlcweg2="1">Verwerfen</button></div></div>'; }
+  return h+'<div class="acts" style="margin-top:10px"><button class="primary" data-mlcsend="1"'+(c.busy?' disabled':'')+'>'+(c.busy?'Wird gesendet …':'Senden')+'</button><button class="small" data-mlcki="1"'+(c.ki||c.busy?' disabled':'')+'>'+(c.ki?'KI arbeitet …':'Mit KI verbessern')+'</button>'+(c.kiAlt?'<button class="ghost" data-mlckiweg="1">KI rückgängig</button>':'')+'<button class="ghost" data-mlcweg2="1">Verwerfen</button></div></div>'; }
+function mlKiTeilen(t){ const i=t.indexOf('Mit freundlichen Grüßen'); return i>=0?[t.slice(0,i).trim(),t.slice(i)]:[t.trim(),'']; }
+async function mlcKi(){ const mk=MK[M.sel], c=MLC; if(!mk||!c||c.busy||c.ki) return; const [body,sig]=mlKiTeilen(c.text); if(!body){ toast('Bitte zuerst Stichworte oder einen Entwurf eingeben.'); return; }
+  c.ki=true; render();
+  try{ const r=await kiCall('mail',body,{empfaenger:(ed(mk).mieter||'')+' <'+c.an+'>',anrede:anredeZeile(mk),betreff:c.betreff,bezug:c.bezugText||''});
+    c.kiAlt={text:c.text,betreff:c.betreff}; c.text=String(r.text||'').trim()+(sig?'\n\n'+sig:''); if(r.betreff) c.betreff=r.betreff; }
+  catch(e){ toast('KI: '+(e.message||e)); }
+  c.ki=false; render(); }
 async function mlcDateien(files){ const sb=window.osSupabase; for(const f of files){ const id=Date.now().toString(36)+Math.random().toString(36).slice(2,7);
     const pfad='mailanhaenge/'+id+'/'+f.name.replace(/[^\w.\- ]/g,'_'); const e={typ:'speicher',bucket:'uebergaben',pfad,name:f.name,contentType:f.type||'application/octet-stream',groesse:f.size,lade:true}; MLC.anh.push(e); render();
     const {error}=await sb.storage.from('uebergaben').upload(pfad,f,{contentType:e.contentType,upsert:true}); if(error){ MLC.anh=MLC.anh.filter(x=>x!==e); toast(f.name+': '+error.message); } else e.lade=false; render(); } }
@@ -1120,6 +1127,8 @@ document.addEventListener('click',e=>{ const t=e.target.closest('button,a[data-m
   if(d.mlcweg!==undefined){ MLC.anh.splice(+d.mlcweg,1); render(); return; }
   if(d.mlcweg2){ if((MLC.anh.length||MLC.text.length>200)&&!confirm('Mail verwerfen?')) return; MLC=null; render(); return; }
   if(d.mlcsend){ mlcSenden(); return; }
+  if(d.mlcki){ mlcKi(); return; }
+  if(d.mlckiweg&&MLC&&MLC.kiAlt){ MLC.text=MLC.kiAlt.text; MLC.betreff=MLC.kiAlt.betreff; MLC.kiAlt=null; render(); return; }
   if(d.mladd){ mlHinterlegen([d.mladd]); return; }
   if(d.mlalle){ const have=new Set((MAILS[M.sel]||[]).map(m=>m.msgId)); mlHinterlegen((MLS.res||[]).filter(m=>!have.has(m.msgId)).map(m=>m.id)); return; }
   if(d.mlopen){ e.preventDefault(); MLS.offen[d.mlopen]=!MLS.offen[d.mlopen]; render(); return; }
