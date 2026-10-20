@@ -31,6 +31,9 @@ const AUFGABEN = {
     'Inhalt, Namen, Daten und Beträge unverändert lassen, nichts hinzufügen. Antworte nur mit dem verbesserten Text.' + NUR_TEXT,
   aufgabe_stichpunkte: STIL + ' Aufgabe: Fasse die folgende Aufgabenbeschreibung für eine Aufgabe im Team (Asana) in kurzen Stichpunkten zusammen (jede Zeile beginnt mit "- "). ' +
     'Alle wichtigen Fakten behalten: Namen, Daten, Beträge, was zu tun ist. Höchstens 8 Stichpunkte. Antworte nur mit den Stichpunkten.' + NUR_TEXT,
+  raum_protokoll: STIL + ' Aufgabe: Formuliere aus den Stichworten eine sachliche Zustandsbeschreibung eines Raums für ein Wohnungsübergabeprotokoll (Einzug oder Auszug). ' +
+    'Kurze, klare, neutrale Sätze ohne Wertung. Mängel genau benennen: was, wo, Umfang. Nur beschreiben, was in den Stichworten steht – keine weiteren Zustände, Gegenstände oder Mängel hinzuerfinden. ' +
+    'Keine Überschrift, keine Aufzählungszeichen. Antworte nur mit dem Text.' + NUR_TEXT,
   stichpunkte: STIL + ' Aufgabe: Fasse die folgende interne Notiz in kurzen Stichpunkten zusammen (jede Zeile beginnt mit "- "). ' +
     'Alle wichtigen Fakten behalten: Namen, Daten, Beträge, Vereinbarungen, offene Aufgaben. Höchstens 8 Stichpunkte. Antworte nur mit den Stichpunkten.' + NUR_TEXT,
 }
