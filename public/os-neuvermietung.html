@@ -155,7 +155,7 @@ function kduGrenze(region,personen){const r=KDU[region];if(!r)return null;const 
   const bk=n<=5?r.bk[n-1]:r.bk[4]+(n-5)*(r.w||0),h=n<=5?r.h[n-1]:r.h[4]+(n-5)*(r.hw||0);return {bk,warm:Math.round((bk+h)*100)/100,h};}
 function regionVorschlag(k){const e=k.wohnung&&einVon(k.wohnung.einheit_id),o=e&&objVon(e.objekt_id);if(!o)return '';return ORT_REGION[String(o.ort||'').toLowerCase().trim()]||'';}
 
-async function laden(){
+async function laden(ohneSync){
   const [k,o,e,u,m]=await Promise.all([sb.from('os_docs').select('data').eq('app','oc').like('pfad','neuvermietung/%'),
     sb.from('obj_objekte').select('id,kz,name,strasse,plz,ort,status,gesellschaft').order('sort'),
     sb.from('obj_einheiten').select('id,objekt_id,bezeichnung,lage,art,flaeche,zimmer,nahaus_id,aktiv,sort,ausstattung').order('sort'),sb.auth.getUser(),
@@ -168,8 +168,19 @@ async function laden(){
   for(const kk of K){const s=MSA[kk.id];if(s&&s.status==='eingegangen'&&s.daten&&!kk.msaUebernommen){const d=s.daten;
       const setz=(f,v)=>{if(v&&!kk[f])kk[f]=v;};setz('anrede',d.anrede);setz('vorname',d.vorname);setz('name',d.nachname);setz('email',d.email);setz('tel',d.telefon);setz('anschrift',d.adresse);setz('personen',d.personen);setz('weitere',d.mitbewohner?String(d.mitbewohner).split(/\n+/).join(', '):'');const kc=kalk(kk);if(d.einzug&&!kc.beginn)kc.beginn=d.einzug;
       kk.msaUebernommen=s.eingegangen_at;speichern(kk,'Selbstauskunft eingegangen am '+zeit(s.eingegangen_at));}}
-  render();if(SEL)panel();}
-async function speichern(k,log){k.geaendert=new Date().toISOString();if(log)(k.verlauf=k.verlauf||[]).push({t:k.geaendert,von:ICH,text:log});
+  render();if(SEL)panel();if(!ohneSync)syncUndLaden();}
+/* Abgleich mit Asana (Aufgaben anlegen, erledigte Aufgaben übernehmen) */
+let SYNC=null;
+async function asanaSync(){if(SYNC)return SYNC;SYNC=(async()=>{try{const r=await api('/api/neuvermietung',{aktion:'sync'});if(r&&r.fehler&&r.fehler.length)console.warn('Asana',r.fehler);if(r&&r.hinweis)console.warn(r.hinweis);return r&&r.geaendert||0;}catch(e){console.warn('Asana-Abgleich',e.message||e);return 0;}finally{setTimeout(()=>{SYNC=null;},0);}})();return SYNC;}
+async function syncUndLaden(){const n=await asanaSync();if(n)await laden(true);}
+async function speichern(k,log){
+  // Änderungen, die der Asana-Abgleich inzwischen auf dem Server gemacht hat, nicht überschreiben
+  try{const {data:cur}=await sb.from('os_docs').select('data').eq('app','oc').eq('pfad','neuvermietung/'+k.id).maybeSingle();const d=cur&&cur.data;
+    if(d){const sa=d.asana||{};k.asana=k.asana||{};for(const x in sa){const a=k.asana[x],b=sa[x];if(!a||(!a.gid&&b.gid)||(b.erledigt&&!a.erledigt)||(b.gid&&a.gid!==b.gid&&!a.gid))k.asana[x]=b;}
+      if(d.freigabeMsa&&!k.freigabeMsa)k.freigabeMsa=d.freigabeMsa;
+      if(String(d.seit||'')>String(k.seit||'')){k.spalte=d.spalte;k.seit=d.seit;if(d.archiv&&!k.archiv)k.archiv=d.archiv;}
+      const da=new Set((k.verlauf||[]).map(v=>v.t+v.text));(d.verlauf||[]).forEach(v=>{if(!da.has(v.t+v.text))(k.verlauf=k.verlauf||[]).push(v);});(k.verlauf||[]).sort((a,b)=>String(a.t).localeCompare(String(b.t)));}}catch(e){}
+  k.geaendert=new Date().toISOString();if(log)(k.verlauf=k.verlauf||[]).push({t:k.geaendert,von:ICH,text:log});
   const {error}=await sb.from('os_docs').upsert({app:'oc',pfad:'neuvermietung/'+k.id,data:k,updated_at:k.geaendert});if(error){toast('Nicht gespeichert: '+error.message,6000);return false;}return true;}
 async function eriSync(k){if(!k.iid)return;const s=SP.find(x=>x[0]===k.spalte);if(!s)return;const p={status:s[2],updated_at:new Date().toISOString()};
   if(['angebot','vertrag','unterschrieben'].includes(k.spalte))p.mietangebot_erhalten='✅';if(k.spalte==='unterschrieben')p.mietvertrag_unterschrieben='✅';
@@ -181,14 +192,18 @@ async function verschieben(k,ziel){if(k.spalte===ziel)return;
   if(k.spalte==='unterschrieben'&&k.pid){toast('Das Mieterkonto ist schon angelegt. Änderungen bitte im Mieterkonto vornehmen.',6000);return;}
   const reihe=SP.map(x=>x[0]);
   if(reihe.indexOf(ziel)>0&&!k.freigabeMsa){SEL=k.id;panel();toast('Erst muss Eric die Mieterselbstauskunft freigeben.',6000);return;}
-  if(ziel==='unterschrieben'){const f=fehlt(k);if(f.length){SEL=k.id;panel();toast('Für „Mietvertrag unterschrieben“ fehlt noch: '+f.join(', '),7000);return;}
-    if(!confirm('Mietvertrag unterschrieben?\n\nDas OS legt jetzt das Mieterkonto für '+nameVoll(k)+' an. Danach erscheint der Mieter in der Einheit '+(k.wohnung&&k.wohnung.label||'')+'.'))return;
-    BUSY='mk';render();if(SEL)panel();
-    try{await mieterkontoAnlegen(k);}catch(e){BUSY='';render();if(SEL)panel();toast('Mieterkonto nicht angelegt: '+(e.message||e),8000);return;}
-    BUSY='';}
   const alt=k.spalte;k.spalte=ziel;k.seit=new Date().toISOString();
-  if(await speichern(k,'Verschoben: '+(SPN[alt]||alt)+' → '+SPN[ziel])){eriSync(k);toast(ziel==='unterschrieben'?'Mieterkonto angelegt, der Mieter steht jetzt beim Objekt.':'Nach „'+SPN[ziel]+'“ verschoben.',5000);}
-  render();if(SEL)panel();}
+  if(await speichern(k,'Verschoben: '+(SPN[alt]||alt)+' → '+SPN[ziel])){eriSync(k);toast('Nach „'+SPN[ziel]+'“ verschoben.',5000);}
+  render();if(SEL)panel();syncUndLaden();}
+/* Mietvertrag unterschrieben: Mieterkonto anlegen und Asana-Projekt 03_EINZUG aus der Vorlage */
+async function unterschreiben(k){if(k.pid)return;const f=fehlt(k);if(f.length){toast('Es fehlt noch: '+f.join(', '),7000);return;}
+  if(!confirm('Mietvertrag unterschrieben?\n\nDas OS legt jetzt das Mieterkonto für '+nameVoll(k)+' an, der Mieter erscheint in der Einheit '+(k.wohnung&&k.wohnung.label||'')+'. In Asana wird das Projekt 03_EINZUG aus der Vorlage angelegt.'))return;
+  BUSY='mk';render();
+  try{await mieterkontoAnlegen(k);}catch(e){BUSY='';render();toast('Mieterkonto nicht angelegt: '+(e.message||e),8000);return;}
+  if(k.spalte!=='unterschrieben'){k.spalte='unterschrieben';k.seit=new Date().toISOString();}
+  await speichern(k,'Mietvertrag unterschrieben – Mieterkonto angelegt');eriSync(k);
+  let hinweis='';try{const r=await api('/api/neuvermietung',{aktion:'einzug',id:k.id});if(r&&r.einzug){k.asana=k.asana||{};k.asana.einzug=r.einzug;}else if(r&&r.hinweis)hinweis=r.hinweis;}catch(e){hinweis='Asana-Projekt nicht angelegt: '+(e.message||e);}
+  BUSY='';render();toast(hinweis||'Mieterkonto angelegt und Asana-Projekt 03_EINZUG erstellt.',hinweis?9000:5000);}
 function fehlt(k){const c=kalk(k),f=[];if(!k.name&&!k.vorname)f.push('Name');if(!k.wohnung||!k.wohnung.einheit_id)f.push('Wohnung');if(!c.beginn)f.push('Mietbeginn');if(!posWert(c,'kalt','neu'))f.push('Kaltmiete');return f;}
 
 /* Mieterkonto im OS anlegen: erscheint in Mieterkonten, beim Objekt und in den Übergabeprotokollen */
@@ -236,10 +251,10 @@ function karte(k){const c=kalk(k),w=warm(k),tage=k.seit?Math.floor((Date.now()-D
   return `<div class="zeile${auf?' on':''}" draggable="${k.pid||auf?'false':'true'}" data-k="${esc(k.id)}"><span class="n">${esc(nameVoll(k))}</span>
     <span class="z">${esc(k.wohnung&&k.wohnung.label||k.ziel||'Wohnung noch offen')}</span>${st}
     ${c.beginn?`<span class="pill">ab ${esc(dmy(c.beginn))}</span>`:(k.einzug_ab?`<span class="pill">Einzug ab ${esc(k.einzug_ab)}</span>`:'')}${w?`<span class="pill">${esc(eur(w))} warm</span>`:''}
-    ${k.pid?'<span class="pill p-ok">Mieterkonto angelegt</span>':''}${!k.pid&&tage>=7?`<span class="pill p-warn">seit ${tage} Tagen hier</span>`:''}<span class="rechts">${auf?'Zuklappen':'Bearbeiten'}</span></div>${auf?'<div class="ws" id="ws"></div>':''}`;}
+    ${!k.pid&&k.asana&&k.asana[k.spalte]&&k.asana[k.spalte].gid&&!k.asana[k.spalte].erledigt?`<span class="pill p-blau">Asana: ${esc((ASW[k.spalte]||'').split(':')[0])}</span>`:''}${k.pid?'<span class="pill p-ok">Mieterkonto angelegt</span>':''}${!k.pid&&tage>=7?`<span class="pill p-warn">seit ${tage} Tagen hier</span>`:''}<span class="rechts">${auf?'Zuklappen':'Bearbeiten'}</span></div>${auf?'<div class="ws" id="ws"></div>':''}`;}
 function render(){const q=SUCHE.trim().toLowerCase();
   const L=K.filter(k=>!!k.archiv===ARCH&&(!q||[nameVoll(k),k.kontakt,k.wohnung&&k.wohnung.label,k.ziel].join(' ').toLowerCase().includes(q)));
-  let h=`<div class="kopf"><div><h1>Neuvermietung</h1><div class="sub">Mietinteressenten, die Eric an das Team übergeben hat oder die ihr mit „Neuer Mietinteressent“ selbst anlegt. Auf einen Namen klicken, dann wird in der Kachel direkt gearbeitet. Ist ein Schritt erledigt, geht es mit „Fertig – weiter“ in die nächste Kachel. Bei „Mietvertrag unterschrieben“ legt das OS das Mieterkonto an.</div></div>
+  let h=`<div class="kopf"><div><h1>Neuvermietung</h1><div class="sub">Mietinteressenten, die Eric an das Team übergeben hat oder die ihr mit „Neuer Mietinteressent“ selbst anlegt. Auf einen Namen klicken, dann wird in der Kachel direkt gearbeitet. Ist ein Schritt erledigt, geht es mit „Fertig – weiter“ in die nächste Kachel. Zu jedem Schritt legt das OS eine Asana-Aufgabe an; ist sie erledigt, springt der Mieter automatisch weiter. Bei „Unterschrieben“ legt das OS das Mieterkonto und in Asana das Projekt 03_EINZUG an.</div></div>
     <div class="acts"><input class="inp" type="search" id="suche" placeholder="Name oder Wohnung suchen …" value="${esc(SUCHE)}" style="width:220px">${ARCH?'':'<button class="primary" data-a="neu">Neuer Mietinteressent</button>'}<button data-a="arch">${ARCH?'Zum Board':'Archiv'}</button></div></div>`;
   if(BUSY==='mk')h+='<div class="note">Mieterkonto wird angelegt …</div>';
   if(ARCH)h+='<div class="spalte">'+(L.length?'<div class="zeilen">'+L.map(k=>`<div class="zeile${SEL===k.id?' on':''}" data-k="${esc(k.id)}"><span class="n">${esc(nameVoll(k))}</span><span class="z">${esc(k.archiv.grund||'')} · ${esc(dmy(k.archiv.am))} · ${esc(k.archiv.von||'')}</span><span class="rechts">${SEL===k.id?'Zuklappen':'Öffnen'}</span></div>${SEL===k.id?'<div class="ws" id="ws"></div>':''}`).join('')+'</div>':'<div class="leer">Das Archiv ist leer.</div>')+'</div>';
@@ -261,7 +276,7 @@ function msaKarte(k){const s=MSA[k.id];let h='<div class="card"><div class="ch">
   if(s.daten&&s.daten.eidesstattlich==='JA')h+='<div class="rot">Eidesstattliche Versicherung oder Haftbefehl in den letzten 3 Jahren: JA</div>';
   h+='<div class="msa">'+MSA_F.map(([t,F])=>{const z=F.filter(([f])=>s.daten&&s.daten[f]!=null&&s.daten[f]!=='');if(!z.length)return '';return `<h4>${esc(t)}</h4>`+z.map(([f,l])=>`<div class="z"><span>${esc(l)}</span><span style="white-space:pre-wrap">${esc(/^\d{4}-\d\d-\d\d$/.test(s.daten[f])?dmy(s.daten[f]):s.daten[f])}</span></div>`).join('');}).join('')
     +(s.unterschrift?`<h4>Unterschrift</h4><img src="${esc(s.unterschrift)}" alt="Unterschrift" style="max-width:260px;border:1px solid var(--line);border-radius:6px;background:#fff">`:'')+'</div>';
-  h+=`<div class="acts" style="margin-top:10px"><button data-a="msapdf">Als PDF speichern</button>${k.freigabeMsa?`<span class="ok" style="margin:0">Freigegeben von ${esc(k.freigabeMsa.von)} am ${esc(zeit(k.freigabeMsa.am))}</span>`:istEric()?'<button class="primary" data-a="msafrei">Freigeben – weiter zur Mietkalkulation</button>':'<span class="sub">Wartet auf die Freigabe durch Eric.</span>'}</div></div>`;
+  h+=`<div class="acts" style="margin-top:10px"><button data-a="msapdf">Als PDF speichern</button>${k.freigabeMsa?`<span class="ok" style="margin:0">Freigegeben von ${esc(k.freigabeMsa.von)} am ${esc(zeit(k.freigabeMsa.am))}</span>`:istEric()?'<button class="primary" data-a="msafrei">Freigeben – weiter zur Mietkalkulation</button><button class="warn" data-a="msaab">Ablehnen</button>':'<span class="sub">Wartet auf die Freigabe durch Eric.</span>'}</div></div>`;
   return h;}
 function kalkKarte(k){const c=kalk(k),e=k.wohnung&&einVon(k.wohnung.einheit_id),wfl=zahl(c.wfl)||zahl(e&&e.flaeche),region=c.region||regionVorschlag(k),pers=Number(k.personen)||0,gr=region?kduGrenze(region,pers||1):null;
   const sAlt=summe(c,'alt'),sNeu=summe(c,'neu'),kalt=posWert(c,'kalt','neu'),bruttokalt=Math.round((kalt+posWert(c,'bk','neu'))*100)/100,ebk=posWert(c,'ebk','neu');
@@ -306,10 +321,15 @@ function stammKarte(k,voll){const o=k.wohnung&&k.wohnung.objekt_id?objVon(k.wohn
     ${e?`<div class="sub">${esc([e.art,e.flaeche?String(e.flaeche).replace('.',',')+' m²':'',e.zimmer?e.zimmer+' Zimmer':''].filter(Boolean).join(' · '))}</div>`:''}
     ${k.kontakt?`<div class="sub">Kontakt aus Erics Liste: ${esc(k.kontakt)}${k.zahlungsart?' · Mietzahlung: '+esc(k.zahlungsart):''}${k.ziel?' · Zielwohnung: '+esc(k.ziel):''}</div>`:''}</div>`;}
 function eckdaten(k){const c=kalk(k);return `<div class="kz" style="margin:0 0 6px"><div><b>${esc(c.beginn?dmy(c.beginn):'–')}</b><span>Mietbeginn</span></div><div><b>${esc(eur(posWert(c,'kalt','neu')))}</b><span>Kaltmiete</span></div><div><b>${esc(eur(warm(k)))}</b><span>Gesamtmiete</span></div><div><b>${esc(eur(c.kaution!=null&&c.kaution!==''?zahl(c.kaution):posWert(c,'kalt','neu')*3))}</b><span>Kaution</span></div></div>`;}
+const ASW={selbstauskunft:'Eric: Mieterselbstauskunft prüfen (Freigeben oder Ablehnen)',kalkulation:'Eric: Mietkalkulation erstellen',angebot:'Ramona: Mietangebot erstellen',vertrag:'Ramona: Mietvertrag erstellen'};
+function asanaZeile(k,sp){const a=(k.asana||{})[sp];if(!ASW[sp])return '';
+  if(!a||!a.gid)return `<div class="sub" style="margin:-4px 0 10px">Asana: ${sp==='selbstauskunft'?'Die Aufgabe für Eric wird angelegt, sobald die Selbstauskunft eingegangen ist.':'Aufgabe „'+esc(ASW[sp])+'“ wird angelegt …'}</div>`;
+  return `<div class="sub" style="margin:-4px 0 10px">Asana-Aufgabe ${esc(ASW[sp])} · ${a.erledigt?'erledigt':'offen'} · <a href="${esc(a.link)}" target="_blank" rel="noopener">in Asana öffnen</a>. Ist sie in Asana abgehakt, springt der Mieter automatisch weiter.</div>`;}
 function weiterKnopf(k,text){const i=SP.findIndex(x=>x[0]===k.spalte),n=SP[i+1];if(!n||k.pid)return '';return `<div class="weiter"><button class="primary" data-a="weiter"${BUSY?' disabled':''}>${esc(text||('Fertig – weiter zu „'+n[1]+'“'))}</button></div>`;}
 function arbeit(k){const ro=!!k.pid,sp=k.spalte||'selbstauskunft',f=fehlt(k);let h='';
   if(k.archiv){h+=`<div class="note">Im Archiv: ${esc(k.archiv.grund||'')} (${esc(dmy(k.archiv.am))}, ${esc(k.archiv.von||'')})</div>`;}
   else h+=`<div class="acts" style="justify-content:space-between;margin-bottom:10px"><div class="seg">${SP.map(([s,t],i)=>`<button data-spalte-wahl="${s}" class="${sp===s?'on':''}"${BUSY||(i>0&&!k.freigabeMsa)?' disabled':''}>${i+1}. ${esc(t)}</button>`).join('')}</div><button data-a="zu">Zuklappen</button></div>`;
+  if(!k.archiv&&!k.pid)h+=asanaZeile(k,sp);
   const unten=[];
   if(sp==='selbstauskunft'||k.archiv){h+=`<fieldset style="border:0"${ro?' disabled':''}>`+stammKarte(k,false)+'</fieldset>'+msaKarte(k);}
   else unten.push(['msa','Mieterselbstauskunft',msaKarte(k)]);
@@ -317,9 +337,10 @@ function arbeit(k){const ro=!!k.pid,sp=k.spalte||'selbstauskunft',f=fehlt(k);let
   else if(k.freigabeMsa&&sp!=='selbstauskunft')unten.push(['kalk','Mietkalkulation',`<fieldset style="border:0"${ro?' disabled':''}>`+kalkKarte(k)+'</fieldset>']);
   if(sp==='angebot'&&!k.archiv){h+=`<div class="card"><div class="ch">3. Mietangebot</div>${eckdaten(k)}<div class="sub">Hier entsteht im nächsten Ausbauschritt das Mietangebot aus der Kalkulation: als PDF erstellen und direkt per Mail an den Mietinteressenten senden.</div></div>`+weiterKnopf(k,'Angebot angenommen – weiter zum Mietvertrag');}
   if(sp==='vertrag'&&!k.archiv){h+=`<div class="card"><div class="ch">4. Mietvertrag</div>${eckdaten(k)}<div class="sub">Für den Mietvertrag bitte unten bei „Mieter und Wohnung“ alle Angaben vervollständigen (weitere Mieter, bisherige Anschrift, IBAN).${f.length?' Es fehlt noch: '+esc(f.join(', '))+'.':''}</div></div>`
-    +`<fieldset style="border:0"${ro?' disabled':''}>`+stammKarte(k,true)+'</fieldset>'+weiterKnopf(k,'Mietvertrag ist unterschrieben – Mieterkonto anlegen');}
+    +`<fieldset style="border:0"${ro?' disabled':''}>`+stammKarte(k,true)+'</fieldset>'+weiterKnopf(k,'Mietvertrag erstellt – weiter zu „Mietvertrag unterschrieben“');}
   else if(sp!=='selbstauskunft'&&!k.archiv)unten.push(['stamm','Mieter und Wohnung',`<fieldset style="border:0"${ro?' disabled':''}>`+stammKarte(k,true)+'</fieldset>']);
-  if(sp==='unterschrieben'&&!k.archiv){h+=`<div class="card"><div class="ch">5. Mietvertrag unterschrieben</div>${eckdaten(k)}${k.pid?`<div class="ok">Mieterkonto ist angelegt. <a href="#" data-a="konto">Mieterkonto öffnen</a></div>`:''}</div>`;}
+  if(sp==='unterschrieben'&&!k.archiv){h+=`<div class="card"><div class="ch">5. Mietvertrag unterschrieben</div>${eckdaten(k)}${k.pid?`<div class="ok">Mieterkonto ist angelegt. <a href="#" data-a="konto">Mieterkonto öffnen</a></div>`:`<div class="sub">Sobald der Mietvertrag von beiden Seiten unterschrieben ist, hier klicken. Das OS legt das Mieterkonto an, der Mieter erscheint beim Objekt, und in Asana wird das Projekt 03_EINZUG aus der Vorlage erstellt.${f.length?' Es fehlt noch: '+esc(f.join(', '))+'.':''}</div><div class="weiter" style="margin-top:8px"><button class="primary" data-a="unterschreiben"${BUSY?' disabled':''}>${BUSY==='mk'?'Wird angelegt …':'Unterschrieben – Mieterkonto und Asana-Einzug anlegen'}</button></div>`}
+    ${k.asana&&k.asana.einzug&&k.asana.einzug.gid?`<div class="sub">Asana: <a href="${esc(k.asana.einzug.link)}" target="_blank" rel="noopener">${esc(k.asana.einzug.name||'03_EINZUG')}</a></div>`:k.pid?'<div class="sub">Das Asana-Projekt 03_EINZUG ist noch nicht angelegt. <a href="#" data-a="einzug">Jetzt anlegen</a></div>':''}</div>`;}
   unten.push(['notiz','Notizen',`<div class="card"><textarea id="f-notiz" placeholder="z. B. Schufa liegt vor, Mietangebot verschickt am …"${ro?' disabled':''}>${esc(k.notiz||'')}</textarea></div>`]);
   unten.push(['verlauf','Verlauf',`<div class="card verlauf">${(k.verlauf||[]).slice().reverse().map(v=>`<div>${esc(zeit(v.t))} · ${esc(v.von||'')}: ${esc(v.text)}</div>`).join('')||'<div class="sub">Noch keine Einträge.</div>'}</div>`]);
   unten.sort((a,b)=>a[1].localeCompare(b[1],'de'));h+=unten.map(([key,t,inh])=>mehr(key,t,inh)).join('');
@@ -369,10 +390,13 @@ document.addEventListener('click',async e=>{const t=e.target;
     if(w==='msaqr'&&k){const img=document.querySelector('#qrbox img,#qrbox canvas');const u=img?(img.tagName==='CANVAS'?img.toDataURL('image/png'):img.src):'';if(!u)return;const l=document.createElement('a');l.href=u;l.download='QR_Selbstauskunft_'+String(k.name||'Mieter')+'.png';l.click();return;}
     if(w==='msapdf'&&k){msaPdf(k);return;}
     if(w==='msafrei'&&k){msaFreigeben(k);return;}
+    if(w==='msaab'&&k){if(!istEric())return;if(!confirm('Mieterselbstauskunft ablehnen? Der Mietinteressent wird ins Archiv gelegt.'))return;k.archiv={grund:'Abgelehnt von Eric',am:HEUTE,von:ICH};k.seit=new Date().toISOString();await speichern(k,'Mieterselbstauskunft abgelehnt');SEL=null;render();toast('Abgelehnt und ins Archiv gelegt.');syncUndLaden();return;}
+    if(w==='unterschreiben'&&k){unterschreiben(k);return;}
+    if(w==='einzug'&&k){try{const r=await api('/api/neuvermietung',{aktion:'einzug',id:k.id});if(r.einzug){k.asana=k.asana||{};k.asana.einzug=r.einzug;panel();toast('Asana-Projekt angelegt.');}else toast(r.hinweis||'Nicht angelegt.',7000);}catch(e){toast('Nicht angelegt: '+(e.message||e),8000);}return;}
     if(w==='vgladd'&&k){const c=kalk(k);(c.vergleich=c.vergleich||[]).push({});speichern(k);panel();return;}
     if(w==='vglobj'&&k){vglAusObjekt(k);return;}
-    if(w==='archiv'&&k){const g=(document.getElementById('f-grund')||{}).value||'';if(!g.trim()){toast('Bitte einen Grund eintragen.');return;}k.archiv={grund:g.trim(),am:HEUTE,von:ICH};speichern(k,'Ins Archiv: '+g.trim()).then(()=>{SEL=null;panel();render();toast('Ins Archiv verschoben.');});return;}
-    if(w==='zurueck'&&k){delete k.archiv;speichern(k,'Aus dem Archiv zurückgeholt').then(()=>{panel();render();});return;}
+    if(w==='archiv'&&k){const g=(document.getElementById('f-grund')||{}).value||'';if(!g.trim()){toast('Bitte einen Grund eintragen.');return;}k.archiv={grund:g.trim(),am:HEUTE,von:ICH};k.seit=new Date().toISOString();speichern(k,'Ins Archiv: '+g.trim()).then(()=>{SEL=null;panel();render();toast('Ins Archiv verschoben.');});return;}
+    if(w==='zurueck'&&k){delete k.archiv;k.seit=new Date().toISOString();speichern(k,'Aus dem Archiv zurückgeholt').then(()=>{panel();render();});return;}
     return;}
   const kt=t.closest('.zeile[data-k]');if(kt){SEL=SEL===kt.dataset.k?null:kt.dataset.k;render();if(SEL)zuWs();return;}});
 /* Vergleichswohnungen aus den laufenden Mietverhältnissen desselben Objekts */

@@ -56,6 +56,17 @@ export default function AppShell({ children }) {
     return () => { cancelled = true }
   }, [session])
 
+  // Neuvermietung: Abgleich mit Asana im Hintergrund (Aufgaben anlegen, in Asana erledigte Schritte übernehmen), höchstens alle 3 Minuten
+  useEffect(() => {
+    if (!supabaseConfigured || !session) return
+    const lauf = () => {
+      try { const t = Number(localStorage.getItem('nv_asana_sync') || 0); if (Date.now() - t < 180000) return; localStorage.setItem('nv_asana_sync', String(Date.now())) } catch (e) {}
+      fetch('/api/neuvermietung', { method: 'POST', headers: { 'content-type': 'application/json', authorization: 'Bearer ' + session.access_token }, body: JSON.stringify({ aktion: 'sync' }) }).catch(() => {})
+    }
+    lauf(); const iv = setInterval(lauf, 300000)
+    return () => clearInterval(iv)
+  }, [session])
+
   if (!ready) return <div className="loading-wrap">Lädt…</div>
 
   if (supabaseConfigured && !session) return <LoginScreen />
