@@ -221,6 +221,20 @@ export async function POST(req) {
       return antwort({ uploadUrl: r.uploadUrl })
     }
 
+    if (a === 'suche') {
+      // Volltextsuche in der Prozesslandkarte (Dateinamen und, soweit von Microsoft indiziert, Inhalte)
+      const q = String(b.q || '').replace(/['\\]/g, ' ').trim().slice(0, 120); if (q.length < 2) return antwort({ treffer: [] })
+      const d = await drive()
+      const r = await graph('/drives/' + d + "/root/search(q='" + encodeURIComponent(q) + "')?$top=60&$select=id,name,size,file,folder,parentReference,webUrl,lastModifiedDateTime")
+      const L = await Promise.all((r.value || []).slice(0, 60).map(async x => {
+        let pr = x.parentReference && x.parentReference.path
+        if (!pr) { try { const y = await graph('/drives/' + d + '/items/' + encodeURIComponent(x.id) + '?$select=parentReference'); pr = y.parentReference && y.parentReference.path } catch { pr = '' } }
+        const pfad = decodeURIComponent(String(pr || '').replace(/^.*?root:\/?/, ''))
+        return { id: x.id, name: x.name, ordner: !!x.folder, size: x.size || 0, geaendert: x.lastModifiedDateTime, web: x.webUrl, pfad }
+      }))
+      return antwort({ treffer: L.filter(x => x.pfad === ROOT || x.pfad.startsWith(ROOT + '/')).slice(0, 50) })
+    }
+
     if (a === 'dateisuche') {
       // Gibt es eine Datei mit diesem Namen schon in OneDrive (unterhalb der Prozesslandkarte)? Für doppelte Belege.
       const name = String(b.name || '').trim(); if (!name) return antwort({ treffer: [] })

@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="de"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Prozesslandkarte 3.0</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+:root{--bg:#f3f5f8;--card:#ffffff;--ink:#18202c;--muted:#5f6b7a;--line:#e0e5eb;--soft:#eef1f5;--accent:#2f5d8a;--accent-ink:#ffffff;--accent-soft:#e3ecf5;--warn:#946200;--warn-bg:#fff4d6;--neg:#b42318}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--ink);font:14px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+button,input{font:inherit;color:var(--ink)}
+.wrap{max-width:1200px;margin:0 auto;padding:16px 20px 60px}
+h1{font-size:22px;font-weight:800}
+.sub{color:var(--muted);font-size:12px}
+.kopf{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;margin-bottom:12px;flex-wrap:wrap}
+.acts{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+button,label.btn{border:1px solid var(--line);background:var(--card);border-radius:8px;padding:7px 12px;cursor:pointer;min-height:36px;display:inline-flex;align-items:center}
+button:hover,label.btn:hover{border-color:var(--accent)}
+button.primary{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+button.small{font-size:12.5px;padding:3px 9px;min-height:28px}
+button.ghost{border-color:transparent;background:transparent;color:var(--muted)}
+.inp{width:100%;background:var(--card);border:1px solid var(--line);border-radius:8px;padding:9px 12px}
+.krume{display:flex;flex-wrap:wrap;gap:2px;align-items:center;margin:12px 0 8px;font-size:13.5px}
+.krume a{color:var(--accent);text-decoration:none;cursor:pointer;padding:2px 4px;border-radius:5px}.krume a:hover{background:var(--accent-soft)}
+.krume span{color:var(--muted)}
+.box{background:var(--card);border:1px solid var(--line);border-radius:12px;overflow:hidden}
+.box.ziel{outline:2px dashed var(--accent);outline-offset:-4px}
+.z{display:grid;grid-template-columns:1fr 150px 90px 120px;gap:10px;align-items:center;padding:8px 14px;border-bottom:1px solid var(--line);cursor:pointer}
+.z:last-child{border-bottom:0}
+.z:hover{background:var(--accent-soft)}
+.z.kh{cursor:default;font-size:11px;text-transform:uppercase;letter-spacing:.03em;color:var(--muted);font-weight:600;background:var(--soft)}.z.kh:hover{background:var(--soft)}
+.name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.z.ord .name{font-weight:600}
+.art{display:inline-block;min-width:54px;font-size:10.5px;font-weight:700;color:var(--muted);background:var(--soft);border-radius:5px;padding:1px 6px;margin-right:8px;text-align:center}
+.z.ord .art{background:var(--accent-soft);color:var(--accent)}
+.pf{font-size:12px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.r{text-align:right;color:var(--muted);font-size:12.5px}
+.zakt{display:flex;gap:4px;justify-content:flex-end}
+.leer{color:var(--muted);text-align:center;padding:30px}
+.note{background:var(--warn-bg);color:var(--warn);border-radius:8px;padding:8px 12px;margin:8px 0;font-size:13px}
+.toast{position:fixed;left:50%;bottom:20px;transform:translateX(-50%);background:var(--ink);color:#fff;padding:9px 16px;border-radius:8px;font-size:13px;opacity:0;pointer-events:none;transition:opacity .2s;z-index:50}.toast.on{opacity:1}
+@media(max-width:760px){.z{grid-template-columns:1fr 80px}.z>:nth-child(2),.z>:nth-child(3){display:none}}
+</style></head><body>
+<div class="wrap" id="app"><div class="leer">Lädt …</div></div>
+<div class="toast" id="toast"></div>
+<script>
+const sb=window.supabase.createClient('https://jqzxctfqvcwbctpjksvg.supabase.co','eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpxenhjdGZxdmN3YmN0cGprc3ZnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODIxMzA0MzIsImV4cCI6MjA5NzcwNjQzMn0.RKIbZxJdusKWWPjBJqlxZ8e1m8So02UslOg55YRsn3o');
+const ROOT='Prozesslandkarte 3.0';
+const esc=s=>(s==null?'':String(s)).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+const p2=n=>String(n).padStart(2,'0');
+const datum=d=>{if(!d)return '';const x=new Date(d);return p2(x.getDate())+'.'+p2(x.getMonth()+1)+'.'+x.getFullYear()+' '+p2(x.getHours())+':'+p2(x.getMinutes());};
+const gr=n=>!n?'':n>1048576?(n/1048576).toFixed(1).replace('.',',')+' MB':Math.max(1,Math.round(n/1024))+' KB';
+const art=n=>{const m=String(n).match(/\.([a-z0-9]{2,5})$/i);return m?m[1].toUpperCase():'DATEI';};
+const vergleich=(a,b)=>a.name.localeCompare(b.name,'de',{numeric:true});
+let PFAD=ROOT,L=null,FEHLER='',SUCHE='',TREFFER=null,BUSY='';
+function toast(t,ms){const el=document.getElementById('toast');el.textContent=t;el.classList.add('on');clearTimeout(toast._t);toast._t=setTimeout(()=>el.classList.remove('on'),ms||3500);}
+async function token(){const {data}=await sb.auth.getSession();return data&&data.session?data.session.access_token:'';}
+async function od(body){let r;try{r=await fetch('/api/onedrive',{method:'POST',headers:{'content-type':'application/json',authorization:'Bearer '+await token()},body:JSON.stringify(body)});}catch(e){throw new Error('OneDrive nicht erreichbar.');}
+  let j=null;try{j=await r.json();}catch(e){}if(!j)throw new Error('OneDrive nicht erreichbar ('+r.status+').');if(j.error)throw new Error(j.error);return j;}
+
+async function laden(p){PFAD=p||PFAD;L=null;FEHLER='';render();
+  try{localStorage.setItem('plk_pfad',PFAD);}catch(e){}
+  try{const u=new URL(location.href);u.searchParams.set('pfad',PFAD.slice(ROOT.length).replace(/^\//,''));history.replaceState(null,'',u);}catch(e){}
+  try{const j=await od({aktion:'ordner',pfad:PFAD});if(j.fehlt){FEHLER='Diesen Ordner gibt es nicht mehr.';L=[];}else L=(j.eintraege||[]).filter(x=>!x.name.startsWith('.')&&!x.name.startsWith('~$'));}
+  catch(e){FEHLER=e.message||String(e);L=[];}
+  render();}
+async function suchen(){const q=SUCHE.trim();if(q.length<2){TREFFER=null;render();return;}TREFFER='lade';render();
+  try{const j=await od({aktion:'suche',q});if(SUCHE.trim()===q)TREFFER=j.treffer||[];}catch(e){TREFFER={fehler:e.message||String(e)};}
+  render();}
+async function oeffnen(id,runter){const w=window.open('','_blank');
+  try{const r=await od({aktion:'link',id});const u=runter?(r.download||r.web):(r.web||r.download);if(w)w.location.href=u;else window.open(u,'_blank');}
+  catch(e){if(w)w.close();toast(e.message||String(e));}}
+async function hochladen(files){if(!files.length)return;let n=0;
+  for(const f of files){BUSY='Lade hoch: '+f.name+' …';render();
+    try{const nm=f.name.replace(/[\\/:*?"<>|#%]/g,'_');
+      if(f.size<=3*1024*1024){const b64=await new Promise((res,rej)=>{const r=new FileReader();r.onload=()=>res(String(r.result).split(',')[1]||'');r.onerror=rej;r.readAsDataURL(f);});
+        await od({aktion:'hochladen',pfad:PFAD,name:nm,daten:b64,typ:f.type||'application/octet-stream'});}
+      else{const s=await od({aktion:'sitzung',pfad:PFAD,name:nm});const r=await fetch(s.uploadUrl,{method:'PUT',headers:{'Content-Range':'bytes 0-'+(f.size-1)+'/'+f.size},body:f});if(!r.ok)throw new Error('Hochladen fehlgeschlagen ('+r.status+').');}
+      n++;}
+    catch(e){toast(f.name+': '+(e.message||e),6000);}}
+  BUSY='';if(n)toast(n+' Datei'+(n>1?'en':'')+' hochgeladen.');laden();}
+async function neuerOrdner(){const n=(prompt('Name des neuen Ordners:')||'').trim().replace(/[\\/:*?"<>|#%]/g,'_');if(!n)return;
+  try{await od({aktion:'anlegen',pfad:PFAD+'/'+n});toast('Ordner angelegt.');laden();}catch(e){toast(e.message||String(e),6000);}}
+
+function zeile(x,mitPfad){const pfad=mitPfad?(x.pfad||'').slice(ROOT.length).replace(/^\//,''):'';
+  return `<div class="z${x.ordner?' ord':''}" data-${x.ordner?'ordner':'datei'}="${esc(x.ordner?((mitPfad?x.pfad:PFAD)+'/'+x.name):x.id)}">
+    <div style="min-width:0"><div class="name"><span class="art">${x.ordner?'ORDNER':esc(art(x.name))}</span>${esc(x.name)}</div>${mitPfad?`<div class="pf"><a data-gehe="${esc(x.pfad)}" style="color:inherit">${esc(pfad||ROOT)}</a></div>`:''}</div>
+    <div class="r">${esc(datum(x.geaendert))}</div><div class="r">${x.ordner?'':gr(x.size)}</div>
+    <div class="zakt">${x.ordner?'':`<button class="small ghost" data-runter="${esc(x.id)}">Herunterladen</button>`}</div></div>`;}
+function render(){const app=document.getElementById('app');const fo=document.activeElement&&document.activeElement.id,pos=document.activeElement&&document.activeElement.selectionStart;
+  const teile=PFAD.slice(ROOT.length).split('/').filter(Boolean);let acc=ROOT;
+  let h=`<div class="kopf"><div><h1>Prozesslandkarte 3.0</h1><div class="sub">Unsere komplette Ablage aus OneDrive / SharePoint: Ordner durchklicken, Dateien öffnen und hochladen. Alles, was du hier änderst, siehst du auch im Finder.</div></div>
+    <div class="acts"><label class="btn">Dateien hochladen<input type="file" id="hoch" multiple hidden></label><button data-a="neuord">Neuer Ordner</button></div></div>
+    <input class="inp" type="search" id="suche" placeholder="In der ganzen Prozesslandkarte suchen: Dateiname oder Inhalt, z. B. Mietvertrag Keller" value="${esc(SUCHE)}" autocomplete="off">`;
+  if(BUSY)h+=`<div class="note">${esc(BUSY)}</div>`;
+  if(TREFFER!=null){h+=`<div class="krume"><span>Suchergebnisse für „${esc(SUCHE.trim())}“</span><a data-a="suchezu">Suche schließen</a></div>`;
+    if(TREFFER==='lade')h+='<div class="box"><div class="leer">Sucht …</div></div>';
+    else if(TREFFER.fehler)h+=`<div class="note">${esc(TREFFER.fehler)}</div>`;
+    else{const T=TREFFER.slice().sort((a,b)=>(b.ordner-a.ordner)||vergleich(a,b));
+      h+='<div class="box"><div class="z kh"><div>Name und Ablageort</div><div class="r">Geändert</div><div class="r">Größe</div><div></div></div>'+(T.length?T.map(x=>zeile(x,true)).join(''):'<div class="leer">Nichts gefunden.</div>')+'</div>';}}
+  else{h+=`<div class="krume"><a data-gehe="${esc(ROOT)}">Prozesslandkarte 3.0</a>${teile.map(t=>{acc+='/'+t;return `<span>/</span><a data-gehe="${esc(acc)}">${esc(t)}</a>`;}).join('')}</div>`;
+    if(FEHLER)h+=`<div class="note">${esc(FEHLER)}</div>`;
+    if(L===null)h+='<div class="box"><div class="leer">Lädt …</div></div>';
+    else{const O=L.filter(x=>x.ordner).sort(vergleich),D=L.filter(x=>!x.ordner).sort(vergleich);
+      h+='<div class="box" id="liste"><div class="z kh"><div>Name</div><div class="r">Geändert</div><div class="r">Größe</div><div></div></div>'
+        +(teile.length?`<div class="z ord" data-gehe="${esc(PFAD.split('/').slice(0,-1).join('/'))}"><div class="name"><span class="art">ZURÜCK</span>Übergeordneter Ordner</div><div></div><div></div><div></div></div>`:'')
+        +(O.length+D.length?O.concat(D).map(x=>zeile(x,false)).join(''):'<div class="leer">Dieser Ordner ist leer. Dateien kannst du hierher ziehen.</div>')+'</div>';}}
+  app.innerHTML=h;
+  if(fo){const n=document.getElementById(fo);if(n){n.focus();try{if(pos!=null)n.setSelectionRange(pos,pos);}catch(e){}}}}
+
+document.addEventListener('click',e=>{const t=e.target;
+  const g=t.closest('[data-gehe]');if(g){e.preventDefault();e.stopPropagation();TREFFER=null;SUCHE='';laden(g.dataset.gehe);return;}
+  const r=t.closest('[data-runter]');if(r){e.stopPropagation();oeffnen(r.dataset.runter,true);return;}
+  const a=t.closest('[data-a]');if(a){if(a.dataset.a==='neuord')neuerOrdner();if(a.dataset.a==='suchezu'){SUCHE='';TREFFER=null;render();}return;}
+  const o=t.closest('[data-ordner]');if(o){TREFFER=null;SUCHE='';laden(o.dataset.ordner);return;}
+  const d=t.closest('[data-datei]');if(d){oeffnen(d.dataset.datei,false);return;}});
+let sT=null;
+document.addEventListener('input',e=>{if(e.target.id==='suche'){SUCHE=e.target.value;clearTimeout(sT);if(!SUCHE.trim()){TREFFER=null;render();return;}sT=setTimeout(suchen,500);}});
+document.addEventListener('change',e=>{if(e.target.id==='hoch'){const f=[...e.target.files];e.target.value='';hochladen(f);}});
+['dragenter','dragover'].forEach(ev=>document.addEventListener(ev,e=>{if(e.dataTransfer&&[...(e.dataTransfer.types||[])].includes('Files')&&TREFFER==null){e.preventDefault();const b=document.getElementById('liste');if(b)b.classList.add('ziel');}}));
+document.addEventListener('dragleave',e=>{if(!e.relatedTarget){const b=document.getElementById('liste');if(b)b.classList.remove('ziel');}});
+document.addEventListener('drop',e=>{if(!e.dataTransfer||!e.dataTransfer.files.length||TREFFER!=null)return;e.preventDefault();const b=document.getElementById('liste');if(b)b.classList.remove('ziel');hochladen([...e.dataTransfer.files]);});
+
+(async()=>{const {data}=await sb.auth.getSession();if(!data||!data.session){document.getElementById('app').innerHTML='<div class="leer">Bitte im Wohntraum OS anmelden.</div>';return;}
+  const q=new URLSearchParams(location.search).get('pfad');let p=q!=null?ROOT+(q?'/'+q:''):null;
+  if(p==null)try{p=localStorage.getItem('plk_pfad');}catch(e){}
+  laden(p&&p.startsWith(ROOT)?p:ROOT);})();
+</script></body></html>

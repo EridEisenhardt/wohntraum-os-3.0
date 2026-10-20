@@ -44,6 +44,9 @@ export const NAV = [
   { type: 'group', key: 'v-postfach', icon: 'ti-mail', label: 'Postfach', mod: 'verwalto', items: [
     { href: '/verwalto/postfach', icon: 'ti-inbox', label: 'Postfach Hausverwaltung', perm: '/hausverwaltung/mieterkonten' },
   ] },
+  { type: 'group', key: 'v-prozesslandkarte', icon: 'ti-folders', label: 'Prozesslandkarte 3.0', mod: 'verwalto', items: [
+    { href: '/verwalto/prozesslandkarte', icon: 'ti-folder-open', label: 'Prozesslandkarte 3.0', offen: true },
+  ] },
   { type: 'group', key: 'v-stammdaten', icon: 'ti-database', label: 'Stammdaten', mod: 'verwalto', items: [
     { href: '/hausverwaltung/dienstleister', icon: 'ti-address-book', label: 'Kontakte' },
     { href: '/verwalto/gesellschaften', icon: 'ti-building', label: 'Gesellschaften', offen: true },
@@ -253,7 +256,7 @@ export const BEREICH_MAP = {
   '/jahresplaner': 'eric', '/ziele-entwicklung': 'eric', '/persoenliche-assistenz': 'eric', '/haushaltshilfe': 'eric',
   hausverwaltung: 'eric', buchhaltung: 'eric', personal: 'eric', stammdaten: 'eric', controlling: 'eric', vermietung: 'eric',
   '/hausmeisterdienst': 'eric', '/aktivitaeten': 'eric', berichte: 'eric', wissensdatenbank: 'eric', '/dokumente': 'eric', '/dms': 'eric',
-  'v-buchhaltung': 'team', 'v-dokumente': 'team', 'v-fuhrpark': 'team', 'v-hausverwaltung': 'team', 'v-mahnwesen': 'team', 'v-personal': 'team', 'v-postfach': 'team', 'v-stammdaten': 'team', 'v-verwaltung': 'team',
+  'v-buchhaltung': 'team', 'v-dokumente': 'team', 'v-fuhrpark': 'team', 'v-hausverwaltung': 'team', 'v-mahnwesen': 'team', 'v-personal': 'team', 'v-postfach': 'team', 'v-prozesslandkarte': 'team', 'v-stammdaten': 'team', 'v-verwaltung': 'team',
 }
 export const bereichOf = (n) => BEREICH_MAP[n.type === 'group' ? n.key : n.href] || 'beide'
 export const gbOf = (n) => (n.type === 'group' ? GB_MAP[n.key] : GB_MAP[n.href])
