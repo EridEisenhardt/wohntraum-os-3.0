@@ -57,13 +57,16 @@ details.sec>summary.ch .sub{margin-left:auto}
 label.up{border:1px solid var(--line);border-radius:8px;padding:3px 8px;background:var(--card);cursor:pointer;font-size:12px}
 .note{background:var(--warn-bg);color:var(--warn);border-radius:8px;padding:8px 10px;font-size:13px;margin:6px 0}
 .qr{display:inline-block;padding:8px;background:#fff;border:1px solid var(--line);border-radius:8px}
+.mrow{display:grid;grid-template-columns:130px 90px 1fr;gap:10px;padding:7px 0;border-top:1px solid var(--line);font-size:13px;cursor:pointer}.mrow:hover{background:var(--soft)}
+.mframe{width:100%;height:340px;border:1px solid var(--line);border-radius:8px;background:#fff;margin:4px 0 8px}
+.mzu{background:var(--accent-soft);border-radius:8px;padding:8px 10px;font-size:13px;margin-bottom:8px}
 .lrow{display:grid;grid-template-columns:1fr auto;gap:10px;align-items:center;padding:7px 0;border-top:1px solid var(--line);font-size:13px}
 .toast{position:fixed;left:50%;bottom:20px;transform:translateX(-50%);background:var(--ink);color:#fff;padding:8px 14px;border-radius:8px;font-size:13px;opacity:0;pointer-events:none;transition:opacity .2s;z-index:50}.toast.on{opacity:1}
 @media(max-width:800px){.wrap{padding:12px}.kvgrid{grid-template-columns:1fr}.hide-m{display:none}.hz{grid-template-columns:1fr}}
 </style></head><body>
 <div class="wrap">
-  <div class="kopf"><div><h1>Störungsmeldungen</h1><div class="sub">Erfasst im OS, über das Mieter-Formular oder vom Handwerker. Bearbeitet wird in Asana im Projekt „Mieter Meldungen“, der Stand wird hier abgeglichen.</div></div>
-    <div class="acts" style="margin-top:0"><button onclick="LINKS.offen=!LINKS.offen;render()">Mieter-Links und QR-Codes</button><button class="primary" onclick="neuOeffnen()">Störung erfassen</button></div></div>
+  <div class="kopf"><div><h1>Störungsmeldungen</h1><div class="sub">Erfasst im OS, aus einer Mail im Postfach, über das Mieter-Formular oder vom Handwerker. Jede Störung hat eine Ticketnummer (z. B. ST-00012), Mails mit dieser Nummer im Betreff erscheinen bei der Störung. Bearbeitet wird in Asana im Projekt „Mieter Meldungen“, der Stand wird hier abgeglichen.</div></div>
+    <div class="acts" style="margin-top:0"><button onclick="MVOR.offen=!MVOR.offen;render()">Standardmails</button><button onclick="LINKS.offen=!LINKS.offen;render()">Mieter-Links und QR-Codes</button><button class="primary" onclick="neuOeffnen()">Störung erfassen</button></div></div>
   <div class="kpis" id="kpis"></div>
   <div id="oben"></div>
   <div class="bar">
@@ -101,29 +104,33 @@ const objLabel=o=>o&&o.kz?o.kz+' · '+o.name:'';
 function mieterVon(u){if(!u||!u.nahaus_id)return null;const akt=m=>{const bis=(MKE[m.pid]||{}).bis||m.bis;return (!m.von||m.von<=HEUTE)&&(!bis||bis>=HEUTE);};
   const m=MK.find(x=>x.unit===u.nahaus_id&&akt(x));if(!m)return null;const e=MKE[m.pid]||{},k=(m.kontakte||[])[0]||{};return {pid:m.pid,name:e.mieter||m.mieter||(m.namen||[]).join(', '),tel:e.tel||k.tel||'',email:e.email||k.email||''};}
 async function laden(){
-  const [s,o,e,l,mk,me,f,u]=await Promise.all([sb.from('stoerungen').select('*').order('created_at',{ascending:false}),sb.from('obj_objekte').select('id,kz,name,strasse,plz,ort,status,gesellschaft').order('sort'),
+  const [s,o,e,l,mk,me,f,u,vs]=await Promise.all([sb.from('stoerungen').select('*').order('created_at',{ascending:false}),sb.from('obj_objekte').select('id,kz,name,strasse,plz,ort,status,gesellschaft').order('sort'),
     sb.from('obj_einheiten').select('id,objekt_id,bezeichnung,lage,nahaus_id,aktiv').order('sort'),sb.from('stoerung_links').select('*'),
     sb.from('os_docs').select('pid:data->>pid,unit:data->>unit,obj:data->>obj,von:data->>von,bis:data->>bis,mieter:data->>mieter,namen:data->namen,kontakte:data->kontakte').eq('app','oc').like('pfad','mietkonten/%'),
-    sb.from('os_docs').select('data').eq('app','oc').eq('pfad','stamm/mietkonten-edit').maybeSingle(),sb.from('hv_firmen').select('name').order('name'),sb.auth.getUser()]);
+    sb.from('os_docs').select('data').eq('app','oc').eq('pfad','stamm/mietkonten-edit').maybeSingle(),sb.from('hv_firmen').select('name').order('name'),sb.auth.getUser(),sb.from('os_docs').select('data').eq('app','oc').eq('pfad','einstellungen/stoerungen').maybeSingle()]);
   if(s.error){document.getElementById('liste').innerHTML='<div class="empty">Störungen konnten nicht geladen werden. Bitte im OS angemeldet sein.</div>';return;}
   S=s.data||[];O=o.data||[];E=e.data||[];LK=l.data||[];MK=mk.data||[];MKE=(me.data&&me.data.data&&me.data.data.e)||{};FIRMEN=((f&&f.data)||[]).map(x=>x.name).filter(Boolean);
+  const vd=vs&&vs.data&&vs.data.data;if(vd&&vd.mails)for(const k of Object.keys(MTPL_STD))if(vd.mails[k])MTPL[k]=Object.assign({},MTPL_STD[k],vd.mails[k]);
   const us=u&&u.data&&u.data.user;if(us){const m=String(us.email||'').toLowerCase();ICH=NUTZER[m]||(us.user_metadata&&(us.user_metadata.full_name||us.user_metadata.name))||us.email||'';}
   document.getElementById('dl-obj-f').innerHTML='<option value="Alle">'+O.map(x=>`<option value="${esc(objLabel(x))}">`).join('');
   const P=new URLSearchParams(location.search);if(P.get('id')){AUF[P.get('id')]=true;ST='';document.querySelectorAll('#seg button').forEach(x=>x.classList.toggle('on',x.dataset.s===''));}
   if(P.get('neu')){const ob=O.find(x=>x.kz===P.get('obj'));neuOeffnen(ob?objLabel(ob):'');}
+  if(P.get('ticket')){const n=Number(String(P.get('ticket')).replace(/\D/g,''));const t=S.find(x=>Number(x.nr)===n);if(t){AUF[t.id]=true;SEC['Mails']=true;ST='';document.querySelectorAll('#seg button').forEach(x=>x.classList.toggle('on',x.dataset.s===''));}}
+  if(P.get('mail'))ausMail(P.get('mail'));
+  if(P.get('mail')||P.get('ticket')){try{history.replaceState(null,'',location.pathname);}catch(x){}try{if(window.top!==window)window.top.history.replaceState(null,'',window.top.location.pathname);}catch(x){}}
   render();abgleich();asNutzer();}
 const offen=s=>s.status!=='Erledigt';
 function render(){
   const q=document.getElementById('q').value.trim().toLowerCase(),fo=document.getElementById('fobj').value.replace(/^Alle$/,'');
   const ob=O.find(x=>objLabel(x)===fo);
   let L=S.filter(s=>ST==='offen'?offen(s):ST?s.status===ST:true);if(ob)L=L.filter(s=>s.objekt_id===ob.id);
-  if(q)L=L.filter(s=>{const o=objVon(s),e=einVon(s);return [s.nr,o.kz,o.name,e&&e.bezeichnung,s.titel,s.beschreibung,s.melder_name,s.kategorie,s.handwerker].join(' ').toLowerCase().includes(q);});
+  if(q)L=L.filter(s=>{const o=objVon(s),e=einVon(s);return [s.nr,tk(s),o.kz,o.name,e&&e.bezeichnung,s.titel,s.beschreibung,s.melder_name,s.kategorie,s.handwerker].join(' ').toLowerCase().includes(q);});
   const off=S.filter(offen),d30=new Date(Date.now()-30*864e5).toISOString();
   document.getElementById('kpis').innerHTML=[['Offen',off.length],['Neu',off.filter(s=>s.status==='Neu').length],['In Arbeit',off.filter(s=>s.status==='In Arbeit').length],['Notfall / dringend offen',off.filter(s=>s.dringlichkeit&&s.dringlichkeit!=='Normal').length],['Erledigt (30 Tage)',S.filter(s=>s.status==='Erledigt'&&(s.erledigt_am||s.updated_at)>=d30).length]].map(k=>`<div class="kpi"><div class="l">${k[0]}</div><div class="v">${k[1]}</div></div>`).join('');
-  document.getElementById('oben').innerHTML=(NEU?neuForm():'')+(LINKS.offen?linksCard():'');
+  document.getElementById('oben').innerHTML=(NEU?neuForm():'')+(MVOR.offen?vorlagenCard():'')+(LINKS.offen?linksCard():'');
   if(!L.length){document.getElementById('liste').innerHTML='<div class="empty">Keine Störungen gefunden.</div>';return;}
   document.getElementById('liste').innerHTML='<div class="tbox" style="overflow-x:auto"><table class="tab"><thead><tr><th>Nr.</th><th>Gemeldet</th><th>Objekt</th><th>Störung</th><th class="hide-m">Gemeldet von</th><th>Dringlichkeit</th><th>Status</th></tr></thead><tbody>'+L.map(s=>{const o=objVon(s),e=einVon(s),auf=AUF[s.id];
-    return `<tr class="kl${auf?' auf':''}" onclick="AUF['${s.id}']=!AUF['${s.id}'];render()"><td><b>${esc(s.nr)}</b></td><td>${dfmt(s.created_at)}<div class="sub">${esc(s.quelle||'')}</div></td><td><b>${esc(o.kz||'')}</b>${e?' · '+esc(e.bezeichnung):''}<div class="sub">${esc(o.name||'')}</div></td>
+    return `<tr class="kl${auf?' auf':''}" onclick="AUF['${s.id}']=!AUF['${s.id}'];render()"><td><b>${esc(s.nr)}</b><div class="sub">${tk(s)}</div></td><td>${dfmt(s.created_at)}<div class="sub">${esc(s.quelle||'')}</div></td><td><b>${esc(o.kz||'')}</b>${e?' · '+esc(e.bezeichnung):''}<div class="sub">${esc(o.name||'')}</div></td>
       <td>${esc(s.titel)}<div class="sub">${esc(s.kategorie||'')}</div></td><td class="hide-m">${esc(s.melder_name||'–')}</td><td>${dPill(s.dringlichkeit)}</td><td>${sPill(s)}${zuText(s)?`<div class="sub">${esc(zuText(s))}</div>`:''}${s.asana_gid?'':'<div class="sub">noch nicht in Asana</div>'}</td></tr>`
       +(auf?`<tr><td colspan="7" class="det">${detail(s)}</td></tr>`:'');}).join('')+'</tbody></table></div>';
   qrZeichnen();}
@@ -140,7 +147,7 @@ function detail(s){const o=objVon(s),e=einVon(s),m=mieterVon(e);let h='';
       `<label class="fl">Gemeldet von<input id="e-mel" value="${esc(s.melder_name||'')}"></label>`,`<label class="fl">Kontakt<input id="e-kon" value="${esc(s.melder_kontakt||'')}"></label>`])}
      <label class="fl">Beschreibung<textarea id="e-text" rows="4">${esc(s.beschreibung||'')}</textarea></label>
      <div class="acts"><button class="primary" onclick="bearbeitenSpeichern('${s.id}')">Speichern</button><button onclick="EDIT=null;render()">Abbrechen</button></div></div>`;}
-  else{h+=`<div class="card"><div class="ch">Meldung Nr. ${esc(s.nr)} – ${esc(s.titel)}<button class="ghost small" onclick="EDIT='${s.id}';render()">Bearbeiten</button></div>${spalten([
+  else{h+=`<div class="card"><div class="ch">Meldung Nr. ${esc(s.nr)} (Ticket ${tk(s)}) – ${esc(s.titel)}<button class="ghost small" onclick="EDIT='${s.id}';render()">Bearbeiten</button></div>${spalten([
       kv('Objekt',esc(objLabel(o))),kv('Einheit',e?esc(e.bezeichnung)+(e.lage?' · '+esc(e.lage):''):''),kv('Kategorie',esc(s.kategorie||'')),kv('Dringlichkeit',dPill(s.dringlichkeit)),
       kv('Gemeldet von',esc(s.melder_name||'')+(s.melder_rolle&&s.melder_rolle!=='Mieter'?' ('+esc(s.melder_rolle)+')':'')),kv('Kontakt',esc(s.melder_kontakt||'')),kv('Gemeldet am',zeit(s.created_at)),kv('Quelle',esc(s.quelle||'')+(s.erfasst_von?' · '+esc(s.erfasst_von):''))])}
      ${s.beschreibung?`<div class="txt">${esc(s.beschreibung)}</div>`:''}
@@ -160,6 +167,7 @@ function detail(s){const o=objVon(s),e=einVon(s),m=mieterVon(e);let h='';
         <div class="sub" style="margin-top:6px">Über diesen Link sieht der Handwerker nur diese Störung (Adresse, Beschreibung, Fotos, Ansprechpartner) und kann eine Rückmeldung mit Fotos geben. Die Rückmeldung erscheint im Verlauf und als Kommentar in Asana.</div></div>
         <div class="kvcol"><div class="qr" data-qr="${esc(hwLink(s))}"></div></div></div>
        ${RM.map(r=>`<div class="hz"><div><div>${zeit(r.d)}</div><div class="hw">${esc(r.by)}</div></div><div>${r.erledigt?'<b>Als erledigt gemeldet.</b> ':''}${esc(r.t||'')}</div></div>`).join('')}`],
+    ['Mails',`<span class="sub">${mailZahl(s)}</span>`,mailSek(s)],
     ['Verlauf',`<span class="sub">${V.length} Eintr${V.length===1?'ag':'äge'}</span>`,`<div class="acts" style="margin-top:0"><input class="inp" id="vn-${s.id}" placeholder="Notiz hinzufügen, z. B. Mieter angerufen, Termin vereinbart" style="flex:1"><button class="small primary" onclick="notiz('${s.id}')">Hinzufügen</button></div>
       ${V.map(v=>`<div class="hz"><div><div>${zeit(v.d)}</div><div class="hw">${esc(v.by||'')}</div></div><div><b>${esc(v.art||'')}</b>${v.t?' – '+esc(v.t):''}</div></div>`).join('')}`]];
   h+=sek.map(([t,sub,inh])=>`<details class="card sec" data-sec="${t}"${SEC[t]?' open':''}><summary class="ch">${t}${sub}</summary>${inh}</details>`).join('');
@@ -216,9 +224,14 @@ async function fotosDazu(sid,inp){const s=S.find(x=>x.id===sid),L=[...inp.files]
   try{const neu=await hochladen(L);if(await speichern(s,{fotos:(s.fotos||[]).concat(neu)},eintrag('Fotos',neu.length+' Datei'+(neu.length===1?'':'en')+' hinzugefügt'))){render();toast('Hochgeladen.');}}catch(e){toast('Hochladen fehlgeschlagen: '+e.message);}}
 
 /* ---------- Neue Störung erfassen ---------- */
-function neuOeffnen(obj){asNutzer();NEU={zu:'',fa:'',obj:obj||'',ein:'',mel:'',kon:'',kat:'',dr:'Normal',titel:'',text:'',dateien:[],asana:true,busy:false,pid:''};render();window.scrollTo(0,0);}
+function neuOeffnen(obj){asNutzer();NEU={zu:'',fa:'',obj:obj||'',ein:'',mel:'',kon:'',kat:'',dr:'Normal',titel:'',text:'',dateien:[],asana:true,busy:false,pid:'',mail:null,bestaetigen:false,lade:false};render();window.scrollTo(0,0);}
 function neuForm(){const ob=O.find(x=>objLabel(x)===NEU.obj),EL=ob?E.filter(x=>x.objekt_id===ob.id&&x.aktiv):[];
-  return `<div class="card"><div class="ch">Störung erfassen<button class="ghost small" onclick="NEU=null;render()">Schließen</button></div>${spalten([
+  const offeneT=S.filter(offen);
+  return `<div class="card"><div class="ch">Störung erfassen${NEU.mail?' aus Mail':''}<button class="ghost small" onclick="NEU=null;render()">Schließen</button></div>
+   ${NEU.lade?'<div class="mzu">Mail wird gelesen …</div>':''}
+   ${NEU.mail?`<div class="mzu"><b>Mail von ${esc(NEU.mail.von.name||NEU.mail.von.mail)}</b>${NEU.mail.von.name?' &lt;'+esc(NEU.mail.von.mail)+'&gt;':''} vom ${zeit(NEU.mail.datum)}: ${esc(NEU.mail.betreff||'')}${NEU.pid?'<div class="sub">Absender gehört zu einem Mieterkonto, Objekt und Einheit sind übernommen.</div>':'<div class="sub">Absender ist keinem Mieterkonto zugeordnet, bitte Objekt und Einheit wählen.</div>'}
+     <div class="acts"><span class="sub">Gehört die Mail zu einer bestehenden Störung?</span><input class="inp" list="dl-zuord" id="zuord" placeholder="Ticket oder Störung eintippen" style="width:320px"><datalist id="dl-zuord">${offeneT.map(x=>`<option value="${esc(tk(x)+' · '+(objVon(x).kz||'')+' · '+x.titel)}">`).join('')}</datalist><button class="small" onclick="mailZuordnen()">Zuordnen</button></div></div>`:''}
+   ${spalten([
     `<label class="fl">Objekt<input list="dl-obj" value="${esc(NEU.obj)}" onchange="NEU.obj=this.value;NEU.ein='';setTimeout(render)" placeholder="Kürzel oder Straße eintippen"><datalist id="dl-obj">${O.filter(x=>x.status!=='Verkauft').map(x=>`<option value="${esc(objLabel(x))}">`).join('')}</datalist></label>`,
     `<label class="fl">Einheit<input list="dl-ein" value="${esc(NEU.ein)}" onchange="neuEinheit(this.value)" placeholder="${ob?'Einheit wählen':'erst Objekt wählen'}"><datalist id="dl-ein">${EL.map(x=>`<option value="${esc(x.bezeichnung)}">`).join('')}<option value="Gemeinschaftsfläche"></datalist></label>`,
     `<label class="fl">Gemeldet von<input value="${esc(NEU.mel)}" oninput="NEU.mel=this.value" placeholder="Name"></label>`,
@@ -230,7 +243,8 @@ function neuForm(){const ob=O.find(x=>objLabel(x)===NEU.obj),EL=ob?E.filter(x=>x
    <label class="fl">Störung (kurz)<input value="${esc(NEU.titel)}" oninput="NEU.titel=this.value" placeholder="z. B. Heizung im Bad wird nicht warm"></label>
    <label class="fl">Beschreibung<textarea rows="3" oninput="NEU.text=this.value">${esc(NEU.text)}</textarea></label>
    <div class="acts"><label class="up">Fotos hinzufügen<input type="file" accept="image/*,video/*,application/pdf" multiple hidden onchange="NEU.dateien=NEU.dateien.concat([...this.files]);render()"></label>${NEU.dateien.length?`<span class="sub">${NEU.dateien.map(f=>esc(f.name)).join(', ')}</span>`:''}
-    <label class="sub" style="display:flex;gap:4px;align-items:center;margin-left:auto"><input type="checkbox" ${NEU.asana?'checked':''} onchange="NEU.asana=this.checked"> direkt in Asana anlegen (Mieter Meldungen, Eingang)</label>
+    ${NEU.mail?`<label class="sub" style="display:flex;gap:4px;align-items:center;margin-left:auto"><input type="checkbox" ${NEU.bestaetigen?'checked':''} onchange="NEU.bestaetigen=this.checked"> Eingangsbestätigung per Mail senden</label>`:''}
+    <label class="sub" style="display:flex;gap:4px;align-items:center;${NEU.mail?'':'margin-left:auto'}"><input type="checkbox" ${NEU.asana?'checked':''} onchange="NEU.asana=this.checked"> direkt in Asana anlegen (Mieter Meldungen, Eingang)</label>
     <button class="primary" onclick="neuSpeichern()"${NEU.busy?' disabled':''}>${NEU.busy?'Speichere …':'Speichern'}</button></div></div>`;}
 function neuEinheit(v){NEU.ein=v;const ob=O.find(x=>objLabel(x)===NEU.obj),e=ob&&E.find(x=>x.objekt_id===ob.id&&x.bezeichnung===v),m=mieterVon(e);
   if(m){NEU.mel=m.name||NEU.mel;NEU.kon=[m.tel,m.email].filter(Boolean).join(' · ')||NEU.kon;NEU.pid=m.pid;}else NEU.pid='';setTimeout(render);}
@@ -239,10 +253,98 @@ const ob=O.find(x=>objLabel(x)===NEU.obj);if(!ob){toast('Bitte ein Objekt aus de
   const e=E.find(x=>x.objekt_id===ob.id&&x.bezeichnung===NEU.ein);NEU.busy=true;render();
   try{const fotos=NEU.dateien.length?await hochladen(NEU.dateien):[];
     const rec={objekt_id:ob.id,einheit_id:e?e.id:null,pid:NEU.pid||null,melder_name:NEU.mel.trim()||null,melder_kontakt:NEU.kon.trim()||null,melder_rolle:NEU.pid?'Mieter':'Sonstige',titel:NEU.titel.trim(),
-      beschreibung:((!e&&NEU.ein?'Bereich: '+NEU.ein+'\n':'')+NEU.text.trim())||null,kategorie:NEU.kat.trim()||null,dringlichkeit:NEU.dr,quelle:'OS',erfasst_von:ICH||null,zustaendig:(asuVon(NEU.zu)||{}).name||null,zustaendig_gid:(asuVon(NEU.zu)||{}).gid||null,faellig:NEU.fa||null,fotos,verlauf:[eintrag('Meldung','im OS erfasst')]};
+      beschreibung:((!e&&NEU.ein?'Bereich: '+NEU.ein+'\n':'')+NEU.text.trim())||null,kategorie:NEU.kat.trim()||null,dringlichkeit:NEU.dr,quelle:NEU.mail?'Mail':'OS',mails:NEU.mail?[NEU.mail]:[],erfasst_von:ICH||null,zustaendig:(asuVon(NEU.zu)||{}).name||null,zustaendig_gid:(asuVon(NEU.zu)||{}).gid||null,faellig:NEU.fa||null,fotos,verlauf:[eintrag('Meldung',NEU.mail?'aus der Mail von '+(NEU.mail.von.name||NEU.mail.von.mail)+' erfasst':'im OS erfasst')]};
     const {data,error}=await sb.from('stoerungen').insert(rec).select().single();if(error)throw new Error(error.message);
-    S.unshift(data);AUF[data.id]=true;const mitAsana=NEU.asana;NEU=null;render();toast('Störung Nr. '+data.nr+' gespeichert.');if(mitAsana)asanaAnlegen(data.id);}
+    S.unshift(data);AUF[data.id]=true;const mitAsana=NEU.asana,best=NEU.mail&&NEU.bestaetigen;NEU=null;if(best)SEC['Mails']=true;render();toast('Störung '+tk(data)+' gespeichert.');if(mitAsana)await asanaAnlegen(data.id);
+    if(best){const C=mailEntwurf(data,'eingang');if(C.an)await mailVersand(data,C);else toast('Keine E-Mail-Adresse für die Eingangsbestätigung gefunden.');}}
   catch(err){NEU.busy=false;render();toast('Speichern fehlgeschlagen: '+(err.message||err));}}
+
+/* ---------- Mails zur Störung (Ticketnummer im Betreff) ---------- */
+const tk=s=>'ST-'+String(s&&s.nr||0).padStart(5,'0');
+const MAIL_SIG='Mit freundlichen Grüßen\n\nWohn(T)raum Rheinhessen GmbH\nbewusst sozial engagiert\nE-Mail: hausverwaltung@andersmacher.info\nTelefon: 06133-9382937\nDalheimer Str. 70, 55278 Dexheim\nHRB 45997, Amtsgericht Mainz\nGeschäftsführer: Eric Eisenhardt';
+const MTPL_STD={
+  eingang:{titel:'Eingangsbestätigung',betreff:'Ihre Störungsmeldung {ticket}: {titel}',text:'Guten Tag {name},\n\nvielen Dank für Ihre Meldung. Ihre Störungsmeldung ist bei uns eingegangen und hat die Ticketnummer {ticket}.\n\nStörung: {titel}\nObjekt: {objekt}{einheit}\n\nWir kümmern uns darum und melden uns, sobald ein Termin mit dem Handwerker feststeht. Bei Rückfragen antworten Sie bitte einfach auf diese Mail oder nennen Sie die Ticketnummer {ticket}.\n\n'+MAIL_SIG},
+  abschluss:{titel:'Abschlussmitteilung',betreff:'Ihre Störungsmeldung {ticket} ist erledigt',text:'Guten Tag {name},\n\nIhre Störungsmeldung {ticket} ({titel}) haben wir abgeschlossen. Vielen Dank für Ihre Geduld.\n\nSollte das Problem noch bestehen oder erneut auftreten, antworten Sie bitte einfach auf diese Mail.\n\n'+MAIL_SIG}};
+let MTPL=JSON.parse(JSON.stringify(MTPL_STD)),MVOR={offen:false};const MV={};
+async function pf(body){let r;try{r=await fetch('/api/postfach',{method:'POST',headers:{'content-type':'application/json',authorization:'Bearer '+await token()},body:JSON.stringify(body)});}catch(e){throw new Error('Postfach nicht erreichbar.');}
+  let j=null;try{j=await r.json();}catch(e){}if(!j)throw new Error('Postfach nicht erreichbar ('+r.status+').');if(j.error)throw new Error(j.error);return j;}
+function mFuellen(t,s){const o=objVon(s),e=einVon(s);const V={ticket:tk(s),nr:s.nr,titel:s.titel||'',name:s.melder_name||'',objekt:[o.strasse||o.name,[o.plz,o.ort].filter(Boolean).join(' ')].filter(Boolean).join(', '),einheit:e?', '+e.bezeichnung:'',datum:dfmt(s.created_at),heute:dfmt(new Date())};
+  return String(t||'').replace(/\{(\w+)\}/g,(m,k)=>V[k]!=null?String(V[k]):m).replace(/Guten Tag ,/g,'Guten Tag,');}
+function mailAdr(s){const m1=String(s.melder_kontakt||'').match(/[^\s<>,;·]+@[^\s<>,;·]+\.[a-z]{2,}/i);if(m1)return m1[0].toLowerCase();
+  const ein=(s.mails||[]).find(m=>m.richtung==='ein'&&m.von&&m.von.mail);if(ein)return ein.von.mail;const mi=mieterVon(einVon(s));return mi&&mi.email?String(mi.email).split(/[,;\s]+/)[0]:'';}
+function mailEntwurf(s,art){const T=MTPL[art]||{betreff:'{titel}',text:'Guten Tag {name},\n\n\n\n'+MAIL_SIG};let b=mFuellen(T.betreff,s);if(!b.includes(tk(s)))b+=' ['+tk(s)+']';
+  return {art:art||'',an:mailAdr(s),betreff:b,text:mFuellen(T.text,s)};}
+const mailZahl=s=>{const st=MV[s.id];const n=st&&st.L?st.L.length:(s.mails||[]).length;return tk(s)+(n?' · '+n+' Mail'+(n===1?'':'s'):'');};
+const ausgehend=m=>/@andersmacher\.info$/i.test((m.von&&m.von.mail)||'')||m.richtung==='aus';
+function mailSek(s){const st=MV[s.id]||{};if(SEC['Mails']&&!st.L&&!st.lade&&!st.err)setTimeout(()=>mailsLaden(s.id));
+  let h=`<div class="acts" style="margin-top:0"><span class="sub">Ticketnummer <b>${tk(s)}</b>: Alle Mails mit dieser Nummer im Betreff gehören zu dieser Störung.</span></div>
+    <div class="acts"><button class="small" onclick="mailNeu('${s.id}','eingang')">Eingangsbestätigung senden</button><button class="small" onclick="mailNeu('${s.id}','abschluss')">Abschlussmitteilung senden</button><button class="small" onclick="mailNeu('${s.id}','')">Neue Mail</button><button class="small ghost" onclick="mailsLaden('${s.id}',true)">${st.lade?'Lädt …':'Aktualisieren'}</button></div>`;
+  if(st.C){const C=st.C;h+=`<div class="card" style="margin-top:8px"><div class="ch">${esc(C.art?MTPL[C.art].titel:'Neue Mail')}<button class="ghost small" onclick="MV['${s.id}'].C=null;render()">Verwerfen</button></div>
+    <label class="fl">An<input value="${esc(C.an)}" oninput="MV['${s.id}'].C.an=this.value" placeholder="E-Mail-Adresse"></label>
+    <label class="fl">Betreff<input value="${esc(C.betreff)}" oninput="MV['${s.id}'].C.betreff=this.value"></label>
+    <label class="fl">Text<textarea rows="12" oninput="MV['${s.id}'].C.text=this.value">${esc(C.text)}</textarea></label>
+    <div class="acts"><button class="primary" onclick="mailSenden('${s.id}')"${st.busy?' disabled':''}>${st.busy?'Wird gesendet …':'Senden'}</button><span class="sub">Gesendet wird von hausverwaltung@andersmacher.info${(s.mails||[]).some(m=>m.richtung==='ein'&&m.id)?' als Antwort auf die ursprüngliche Mail':''}. Die Ticketnummer muss im Betreff bleiben.</span></div></div>`;}
+  if(st.err)h+=`<div class="note">Postfach: ${esc(st.err)}</div>`;
+  const L=st.L||(s.mails||[]).slice().sort((a,b)=>String(b.datum).localeCompare(String(a.datum)));
+  if(!L.length)h+=`<div class="sub" style="margin-top:8px">${st.lade?'Suche Mails …':'Noch keine Mails zu dieser Störung.'}</div>`;
+  for(const [i,m] of L.entries()){const key=m.msgId||m.id||String(i),ofn=st.auf===key;
+    h+=`<div class="mrow" onclick="mailAuf('${s.id}','${jq(key)}')"><div>${zeit(m.datum)}</div><div>${ausgehend(m)?'<span class="pill">gesendet</span>':'<span class="pill p-neu">Eingang</span>'}</div><div><b>${esc(ausgehend(m)?(m.an||[]).map(a=>a.name||a.mail).join(', '):(m.von&&(m.von.name||m.von.mail))||'')}</b> · ${esc(m.betreff||'')}${m.vorschau&&!ofn?`<div class="sub">${esc(String(m.vorschau).slice(0,160))}</div>`:''}</div></div>`;
+    if(ofn)h+=st.html==null?'<div class="sub">Mail wird geladen …</div>':st.html===false?'<div class="sub">Die Mail ist im Postfach nicht mehr zu finden.</div>':`<iframe class="mframe" sandbox="" srcdoc="${esc(st.html)}"></iframe>`;}
+  return h;}
+async function mailsLaden(sid,neu){const s=S.find(x=>x.id===sid);if(!s)return;const st=MV[sid]=MV[sid]||{};if(st.lade)return;st.lade=true;st.err='';if(neu)render();
+  try{const r=await pf({aktion:'liste',suche:tk(s),ueberall:true,anzahl:50}),t=tk(s).toLowerCase();
+    const L=(r.mails||[]).filter(m=>String(m.betreff||'').toLowerCase().includes(t)).map(m=>({id:m.id,msgId:m.msgId,betreff:m.betreff,von:m.von,an:m.an,datum:m.datum,vorschau:m.vorschau}));
+    for(const m of s.mails||[]){const x=L.find(y=>m.msgId&&y.msgId===m.msgId);if(!x)L.push(Object.assign({},m));else if(m.richtung)x.richtung=m.richtung;}
+    st.L=L.sort((a,b)=>String(b.datum).localeCompare(String(a.datum)));}
+  catch(e){st.err=e.message||String(e);st.L=(s.mails||[]).slice().sort((a,b)=>String(b.datum).localeCompare(String(a.datum)));}
+  st.lade=false;render();}
+async function mailAuf(sid,key){const st=MV[sid]=MV[sid]||{};if(st.auf===key){st.auf=null;render();return;}st.auf=key;st.html=null;render();
+  const s=S.find(x=>x.id===sid),m=(st.L||s.mails||[]).find((x,i)=>(x.msgId||x.id||String(i))===key);
+  try{let id=m&&m.id;if(!id&&m&&m.msgId){const r=await pf({aktion:'liste',suche:tk(s),ueberall:true,anzahl:50});const f=(r.mails||[]).find(x=>x.msgId===m.msgId);id=f&&f.id;}
+    if(!id)throw new Error('nicht gefunden');const r=await pf({aktion:'lesen',id,markieren:false});if(st.auf===key)st.html=r.mail.html||'';}
+  catch(e){if(st.auf===key)st.html=false;}render();}
+function mailNeu(sid,art){const s=S.find(x=>x.id===sid);const st=MV[sid]=MV[sid]||{};st.C=mailEntwurf(s,art);SEC['Mails']=true;render();}
+async function mailSenden(sid){const s=S.find(x=>x.id===sid),st=MV[sid];if(!st||!st.C||st.busy)return;const C=st.C;
+  if(!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(String(C.an||'').trim())){toast('Bitte eine gültige E-Mail-Adresse eintragen.');return;}
+  if(!String(C.betreff).includes(tk(s))&&!confirm('Die Ticketnummer '+tk(s)+' fehlt im Betreff. Dann wird eine Antwort nicht dieser Störung zugeordnet. Trotzdem senden?'))return;
+  st.busy=true;render();const ok=await mailVersand(s,C);st.busy=false;if(ok)st.C=null;render();
+  if(ok&&C.art==='abschluss'&&s.status!=='Erledigt'&&confirm('Die Störung jetzt auf „Erledigt“ setzen?'))statusSetzen(sid,'Erledigt');}
+async function mailVersand(s,C){const ur=(s.mails||[]).find(m=>m.richtung==='ein'&&m.id);
+  const body={aktion:'senden',modus:ur?'antworten':'neu',an:String(C.an).trim(),betreff:C.betreff,text:C.text,anhaenge:[]};if(ur){body.bezug=ur.id;body.bezugMsgId=ur.msgId||'';body.fallbackNeu=true;}
+  try{const r=await pf(body);const m={msgId:r.msgId||'',betreff:C.betreff,an:[{name:'',mail:String(C.an).trim()}],von:{name:'Hausverwaltung',mail:r.von||'hausverwaltung@andersmacher.info'},datum:new Date().toISOString(),richtung:'aus',art:C.art||''};
+    await speichern(s,{mails:(s.mails||[]).concat([m])},eintrag('Mail',(C.art?MTPL[C.art].titel:'Mail')+' an '+m.an[0].mail+' gesendet'));
+    const st=MV[s.id]=MV[s.id]||{};if(st.L)st.L.unshift(m);toast((C.art?MTPL[C.art].titel:'Mail')+' gesendet.');return true;}
+  catch(e){toast('Nicht gesendet: '+(e.message||e));return false;}}
+/* Störung aus einer Mail im Postfach erfassen */
+function htmlText(h){const d=new DOMParser().parseFromString(String(h||'').replace(/<br\s*\/?>/gi,'\n').replace(/<\/(p|div|tr|li|h\d|table)>/gi,'\n'),'text/html');d.querySelectorAll('style,script,head').forEach(x=>x.remove());
+  return (d.body.textContent||'').replace(/ /g,' ').replace(/[ \t]+\n/g,'\n').replace(/\n{3,}/g,'\n\n').trim();}
+async function ausMail(id){neuOeffnen('');NEU.lade=true;render();
+  try{const r=await pf({aktion:'lesen',id,markieren:false}),m=r.mail,adr=String(m.von&&m.von.mail||'').toLowerCase();
+    NEU.titel=String(m.betreff||'').replace(/^(\s*(aw|wg|re|fw|fwd)\s*:\s*)+/i,'').slice(0,120);NEU.text=htmlText(m.html).slice(0,4000);NEU.mel=(m.von&&m.von.name)||'';NEU.kon=adr;
+    NEU.mail={id:m.id,msgId:m.msgId||'',betreff:m.betreff||'',von:m.von||{},an:m.an||[],datum:m.datum,richtung:'ein'};NEU.bestaetigen=!!adr;
+    const hat=x=>String(x||'').toLowerCase().split(/[,;\s]+/).includes(adr);
+    const akt=x=>{const bis=(MKE[x.pid]||{}).bis||x.bis;return (!x.von||x.von<=HEUTE)&&(!bis||bis>=HEUTE);};
+    const T=adr?MK.filter(x=>(x.kontakte||[]).some(k=>hat(k.email))||hat((MKE[x.pid]||{}).email)):[],mk=T.find(akt)||T[0];
+    if(mk){const e=E.find(u=>(u.nahaus_id&&u.nahaus_id===mk.unit)||u.id===mk.unit),ob=(e&&O.find(o=>o.id===e.objekt_id))||O.find(o=>o.kz===mk.obj);
+      if(ob)NEU.obj=objLabel(ob);if(e)NEU.ein=e.bezeichnung;NEU.pid=mk.pid;NEU.mel=(MKE[mk.pid]||{}).mieter||mk.mieter||NEU.mel;}
+    for(const a of (m.anhaenge||[]).filter(a=>/^(image|video)\/|pdf/i.test(a.typ||'')&&(a.groesse||0)<15e6).slice(0,10)){
+      try{const x=await pf({aktion:'anhang',id:m.id,aid:a.id}),bin=atob(x.daten),u=new Uint8Array(bin.length);for(let i=0;i<bin.length;i++)u[i]=bin.charCodeAt(i);NEU.dateien.push(new File([u],x.name||a.name,{type:x.typ||a.typ}));}catch(e){}}}
+  catch(e){toast('Mail konnte nicht gelesen werden: '+(e.message||e));}
+  if(NEU)NEU.lade=false;render();}
+async function mailZuordnen(){const v=(document.getElementById('zuord').value||'').trim(),n=Number((v.match(/ST-(\d+)/i)||[])[1]),s=S.find(x=>Number(x.nr)===n);
+  if(!s){toast('Bitte eine Störung aus der Liste wählen.');return;}if((s.mails||[]).some(m=>m.msgId&&m.msgId===NEU.mail.msgId)){toast('Die Mail ist dort schon zugeordnet.');return;}
+  if(!await speichern(s,{mails:(s.mails||[]).concat([NEU.mail])},eintrag('Mail','Mail von '+(NEU.mail.von.name||NEU.mail.von.mail)+' zugeordnet: '+NEU.mail.betreff)))return;
+  NEU=null;AUF[s.id]=true;SEC['Mails']=true;delete MV[s.id];ST='';document.querySelectorAll('#seg button').forEach(x=>x.classList.toggle('on',x.dataset.s===''));render();toast('Mail der Störung '+tk(s)+' zugeordnet.');}
+/* Standardmails bearbeiten */
+function vorlagenCard(){return `<div class="card"><div class="ch">Standardmails<button class="ghost small" onclick="MVOR.offen=false;render()">Schließen</button></div>
+  <div class="sub">Platzhalter: {ticket} Ticketnummer, {titel} Störung, {name} Name des Melders, {objekt} Anschrift, {einheit} Einheit, {datum} gemeldet am, {heute} heutiges Datum. Die Ticketnummer wird immer in den Betreff gesetzt.</div>
+  ${Object.keys(MTPL_STD).map(k=>`<div style="margin-top:10px"><b>${esc(MTPL[k].titel)}</b><label class="fl">Betreff<input id="mv-b-${k}" value="${esc(MTPL[k].betreff)}"></label><label class="fl">Text<textarea id="mv-t-${k}" rows="10">${esc(MTPL[k].text)}</textarea></label></div>`).join('')}
+  <div class="acts"><button class="primary" onclick="vorlagenSpeichern()">Speichern</button><button onclick="vorlagenStandard()">Auf Standard zurücksetzen</button></div></div>`;}
+async function vorlagenSpeichern(){const mails={};for(const k of Object.keys(MTPL_STD))mails[k]={titel:MTPL_STD[k].titel,betreff:document.getElementById('mv-b-'+k).value,text:document.getElementById('mv-t-'+k).value};
+  const {data:cur}=await sb.from('os_docs').select('data').eq('app','oc').eq('pfad','einstellungen/stoerungen').maybeSingle();
+  const {error}=await sb.from('os_docs').upsert({app:'oc',pfad:'einstellungen/stoerungen',data:Object.assign({},cur&&cur.data||{},{mails}),updated_at:new Date().toISOString()});
+  if(error){toast('Nicht gespeichert: '+error.message);return;}MTPL=mails;toast('Standardmails gespeichert.');render();}
+function vorlagenStandard(){if(!confirm('Beide Standardmails auf den ursprünglichen Text zurücksetzen?'))return;for(const k of Object.keys(MTPL_STD)){document.getElementById('mv-b-'+k).value=MTPL_STD[k].betreff;document.getElementById('mv-t-'+k).value=MTPL_STD[k].text;}}
 
 /* ---------- Mieter-Links und QR-Codes je Objekt ---------- */
 const mLink=l=>location.origin+'/stoerung.html?o='+l.token;
