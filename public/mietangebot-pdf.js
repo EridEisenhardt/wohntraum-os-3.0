@@ -177,7 +177,6 @@
       Z.kreuz(1, 249, 377, ja(V.renovierung), 10); Z.kreuz(1, 321, 377, !ja(V.renovierung), 10)
       Z.kreuz(1, 144, 404, !!zahl(V.kaution), 10); Z.text(1, 269, 413, eur(V.kaution), 8, 28, true); Z.kreuz(1, 285, 404, !zahl(V.kaution), 10)
       Z.text(1, 88, 440, VERMIETER.ort + ', ' + V.heute, 10, 100)
-      await Z.bild(1, 196, 417, 76, B && B.unterschrift_eric)
     }
   }
 
