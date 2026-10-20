@@ -188,6 +188,10 @@ details.sec>summary.ch{cursor:pointer;list-style:none;margin-bottom:0}details.se
 .hf{display:flex;flex-direction:column}.hf span{font-size:11px;color:var(--muted,#888);text-transform:uppercase;letter-spacing:.03em}.hf b{font-size:14px;font-weight:600}
 .note-e{border-top:1px solid var(--line);padding:8px 0}.note-h{font-size:12px;color:var(--muted,#666)}.note-t{white-space:pre-wrap;margin-top:3px}.note-f{margin-top:4px;font-size:13px}
 .note-k{white-space:pre-wrap;margin-top:6px;padding:8px 10px;border-left:3px solid var(--line);background:rgba(127,127,127,.07);border-radius:4px;font-size:13px}
+.mlc{border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin:10px 0;background:var(--card)}.mlc .fl input,.mlc textarea{background:var(--soft)}.mlc textarea{min-height:220px;line-height:1.45}
+.mlc .chip{display:inline-flex;gap:6px;align-items:center;background:var(--chip,#edf1f6);border-radius:999px;padding:2px 4px 2px 10px;font-size:12.5px;margin:0 6px 6px 0}.mlc .chip button{border:0;background:transparent;color:var(--muted);padding:0 6px}
+.mlc .pl{max-height:240px;overflow:auto;border:1px solid var(--line);border-radius:8px;margin-top:6px}.mlc .pl label{display:flex;gap:8px;align-items:center;padding:4px 8px;border-bottom:1px solid var(--line);font-size:13px;cursor:pointer}.mlc .pl .ph{padding:4px 8px;font-size:11px;font-weight:700;color:var(--muted);background:var(--soft)}
+.mlc label.upb{display:inline-flex;align-items:center;border:1px solid var(--line);border-radius:8px;padding:5px 10px;background:var(--card);cursor:pointer;font-size:13px}
 .ml-row{border-top:1px solid var(--line);padding:7px 0}.ml-row .sub{font-size:12px}.ml-row .ml-b{white-space:pre-wrap;font-size:13px;margin-top:4px;max-height:260px;overflow:auto}
 button.vmtog{border:none;background:none;padding:2px 0;font-size:12px;color:var(--accent);cursor:pointer}tr.vm td{background:#f3f4f6;opacity:.8}tr.vm td:nth-child(3){padding-left:18px}tr.vmhead td{background:#fafafa}
 .cards{display:grid;grid-template-columns:1fr;gap:12px;margin-bottom:14px}
@@ -995,6 +999,49 @@ document.addEventListener('input',e=>{ const t=e.target; if(!t||!t.id) return;
 
 /* ---------- Mails zum Mieter (Outlook über /api/mails, oder .eml-Dateien hochladen) ---------- */
 var MAILS={}, MLS={pid:null,res:null,busy:'',fehler:[],offen:{}};
+/* Mail direkt aus dem Mieterkonto senden (über /api/postfach, Absender hausverwaltung@) */
+var MLC=null;
+const mlSignatur=()=>'\n\nMit freundlichen Grüßen\n'+(ICH||'')+'\nWohntraum Rheinhessen GmbH\nHausverwaltung';
+const mlGr=n=>n>1048576?(n/1048576).toFixed(1).replace('.',',')+' MB':Math.max(1,Math.round((n||0)/1024))+' KB';
+async function pfApi(body){ const sb=window.osSupabase; let tok=''; try{ const {data}=await sb.auth.getSession(); tok=(data&&data.session&&data.session.access_token)||''; }catch(e){}
+  let r; try{ r=await fetch('/api/postfach',{method:'POST',headers:{'content-type':'application/json',authorization:'Bearer '+tok},body:JSON.stringify(body)}); }catch(e){ throw new Error('Postfach nicht erreichbar.'); }
+  let j=null; try{ j=await r.json(); }catch(e){} if(!j) throw new Error(r.status===404?'Die Postfach-Schnittstelle ist noch nicht online.':'Postfach nicht erreichbar ('+r.status+').'); if(j.error) throw new Error(j.error); return j; }
+function mlNeu(mk,bezug){ if(!ICH) loadIch().then(()=>{ if(MLC&&MLC.text.indexOf('Grüßen\n\n')>=0){ MLC.text=MLC.text.replace('Grüßen\n\n','Grüßen\n'+ICH+'\n'); render(); } });
+  MLC={pid:mk.pid,modus:bezug?'antworten':'neu',bezugMsgId:bezug?bezug.msgId:'',an:bezug?((String(bezug.von||'').match(/[\w.+-]+@[\w.-]+/)||[''])[0]||mieterMails(mk).join(', ')):mieterMails(mk).join(', '),cc:'',
+    betreff:bezug?((/^(aw|re):/i.test(bezug.betreff||'')?'':'AW: ')+(bezug.betreff||'')):'',text:anredeZeile(mk)+'\n\n'+mlSignatur(),anh:[],picker:false,pq:'',pwahl:{},busy:false};
+  SEC.mails=true; render(); setTimeout(()=>{ const t=$('mlc-text'); if(t){ t.focus(); const i=t.value.indexOf('\n\n')+2; t.setSelectionRange(i,i); } },60); }
+function mlcHtml(mk){ const c=MLC; let h='<div class="mlc"><div class="rh" style="margin:0 0 6px">'+(c.modus==='antworten'?'Antworten':'Neue Mail')+' <span class="sub">von hausverwaltung@andersmacher.info'+(c.modus==='antworten'?' · die ursprüngliche Mail wird angefügt':'')+'</span></div>'
+    +'<label class="fl">An<input type="text" id="mlc-an" value="'+esc(c.an)+'" placeholder="E-Mail-Adresse, mehrere mit Komma" autocomplete="off"></label>'
+    +'<label class="fl">Cc<input type="text" id="mlc-cc" value="'+esc(c.cc)+'" autocomplete="off"></label>'
+    +'<label class="fl">Betreff<input type="text" id="mlc-betreff" value="'+esc(c.betreff)+'" autocomplete="off"></label>'
+    +'<label class="fl">Text<textarea id="mlc-text">'+esc(c.text)+'</textarea></label>'
+    +'<div class="sub" style="margin:4px 0">Anhänge</div><div>'+c.anh.map((a,i)=>'<span class="chip">'+esc(a.name)+' · '+mlGr(a.groesse)+(a.lade?' · lädt …':'')+'<button data-mlcweg="'+i+'">Entfernen</button></span>').join('')+'</div>'
+    +'<div class="acts"><label class="upb">Vom Gerät anhängen<input type="file" id="mlc-file" multiple hidden></label><button class="small" data-mlcpick="1">Aus Mieterordner anhängen</button></div>';
+  if(c.picker){ const p=odPfad(mk), A=ODA[mk.pid];
+    if(!p) h+='<div class="note warnbox">Für diesen Mieter ist noch kein OneDrive-Mieterordner zugeordnet (unter Dokumente).</div>';
+    else if(!A||A==='lade'){ if(!A) setTimeout(()=>odLadeAkte(mk)); h+='<div class="sub">Mieterordner wird geladen …</div>'; }
+    else if(A.fehler) h+='<div class="note warnbox">'+esc(A.fehler)+'</div>';
+    else { const q=String(c.pq||'').trim().toLowerCase(); const G=[['Hauptordner',A.dateien||[]]].concat(Object.keys(A.ordner||{}).sort((a,b)=>a.localeCompare(b,'de')).map(k=>[k,A.ordner[k]])); let n=0;
+      h+='<input type="search" id="mlc-pq" placeholder="Datei suchen, z. B. Mietvertrag" value="'+esc(c.pq)+'" style="width:100%;margin-top:8px" autocomplete="off"><div class="pl">';
+      for(const [g,L] of G){ const F=(L||[]).filter(f=>!q||f.name.toLowerCase().includes(q)||g.toLowerCase().includes(q)); if(!F.length) continue;
+        h+='<div class="ph">'+esc(g)+'</div>'+F.map(f=>{ n++; return '<label><input type="checkbox" data-mlpw="'+esc(f.id)+'"'+(c.pwahl[f.id]?' checked':'')+'> <span style="flex:1">'+esc(f.name)+'</span><span class="sub">'+mlGr(f.size)+'</span></label>'; }).join(''); }
+      h+=(n?'':'<div class="sub" style="padding:8px">Keine Dateien gefunden.</div>')+'</div><div class="acts"><button class="small primary" data-mlcpickok="1">Ausgewählte anhängen</button><button class="small ghost" data-mlcpick="1">Schließen</button></div>'; } }
+  return h+'<div class="acts" style="margin-top:10px"><button class="primary" data-mlcsend="1"'+(c.busy?' disabled':'')+'>'+(c.busy?'Wird gesendet …':'Senden')+'</button><button class="ghost" data-mlcweg2="1">Verwerfen</button></div></div>'; }
+async function mlcDateien(files){ const sb=window.osSupabase; for(const f of files){ const id=Date.now().toString(36)+Math.random().toString(36).slice(2,7);
+    const pfad='mailanhaenge/'+id+'/'+f.name.replace(/[^\w.\- ]/g,'_'); const e={typ:'speicher',bucket:'uebergaben',pfad,name:f.name,contentType:f.type||'application/octet-stream',groesse:f.size,lade:true}; MLC.anh.push(e); render();
+    const {error}=await sb.storage.from('uebergaben').upload(pfad,f,{contentType:e.contentType,upsert:true}); if(error){ MLC.anh=MLC.anh.filter(x=>x!==e); toast(f.name+': '+error.message); } else e.lade=false; render(); } }
+async function mlcSenden(){ const mk=MK[M.sel], c=MLC; if(!mk||!c||c.busy) return; if(c.anh.some(a=>a.lade)){ toast('Anhänge werden noch hochgeladen.'); return; }
+  if(!/@/.test(c.an)){ toast('Bitte die E-Mail-Adresse eintragen.'); return; }
+  c.busy=true; render();
+  try{ const r=await pfApi({aktion:'senden',modus:c.modus,bezugMsgId:c.bezugMsgId,fallbackNeu:true,an:c.an,cc:c.cc,betreff:c.betreff,text:c.text,mime:true,
+      anhaenge:c.anh.map(a=>a.typ==='onedrive'?{typ:'onedrive',id:a.id}:{typ:'speicher',bucket:a.bucket,pfad:a.pfad,name:a.name,contentType:a.contentType})});
+    const datum=new Date().toISOString();
+    const mime=r.mime||('From: Hausverwaltung <'+r.von+'>\r\nTo: '+c.an+'\r\nSubject: '+c.betreff+'\r\nDate: '+new Date().toUTCString()+'\r\nMessage-ID: '+(r.msgId||'')+'\r\nContent-Type: text/plain; charset=utf-8\r\n\r\n'+c.text);
+    try{ await mailSpeichern(mk,{richtung:'Ausgang',von:'Hausverwaltung <'+r.von+'>',an:c.an,betreff:c.betreff,datum,msgId:r.msgId||'',text:c.text+(c.anh.length?'\n\nAnhänge: '+c.anh.map(a=>a.name).join(', '):'')},mime,'os'); }
+    catch(e){ toast('Gesendet, aber nicht im Mieterkonto hinterlegt: '+(e.message||e),8000); }
+    for(const a of c.anh) if(a.typ==='speicher'&&a.pfad.startsWith('mailanhaenge/')) window.osSupabase.storage.from('uebergaben').remove([a.pfad]).catch(()=>{});
+    MLC=null; toast('Mail gesendet und im Mieterkonto hinterlegt.'); render(); }
+  catch(e){ c.busy=false; render(); toast('Senden fehlgeschlagen: '+(e.message||e),10000); } }
 const mlHash=s=>{ let h=5381; for(let i=0;i<s.length;i++) h=((h*33)^s.charCodeAt(i))>>>0; return h.toString(36); };
 function mieterMails(mk){ const e=ed(mk), K=mk.kontakte||[]; const s=e.email!=null&&e.email!==''?String(e.email):K.map(k=>k.email).filter(Boolean).join(','); return s.split(/[,;\s]+/).map(x=>x.trim().toLowerCase()).filter(x=>/@/.test(x)); }
 async function mlApi(body){ const sb=window.osSupabase; let tok=''; try{ const {data}=await sb.auth.getSession(); tok=(data&&data.session&&data.session.access_token)||''; }catch(e){}
@@ -1029,10 +1076,12 @@ async function mailSpeichern(mk,m,mime,quelle){ const sb=window.osSupabase; if(!
 function mailsCard(x){ const mk=x.mk; if(MLS.pid!==mk.pid) MLS={pid:mk.pid,res:null,busy:'',fehler:[],offen:{}};
   const L=(MAILS[mk.pid]||[]).slice().sort((a,b)=>String(b.d).localeCompare(String(a.d))), have=new Set(L.map(m=>m.msgId).filter(Boolean)), adr=mieterMails(mk);
   let h='<details class="card wide sec" data-sec="mails"'+(SEC.mails?' open':'')+'><summary class="ch">Mails<span class="sub">'+L.length+' hinterlegt'+(L.length?' · zuletzt '+esc(dmy(String(L[0].d).slice(0,10))):'')+'</span></summary>';
-  h+='<div class="acts"><button class="primary small" data-mlsuch="1"'+(MLS.busy?' disabled':'')+'>'+(MLS.busy==='suche'?'Suche in Outlook …':'In Outlook suchen')+'</button>'
+  h+='<div class="acts"><button class="primary small" data-mlneu="1">Neue Mail schreiben</button><button class="small" data-mlsuch="1"'+(MLS.busy?' disabled':'')+'>'+(MLS.busy==='suche'?'Suche in Outlook …':'In Outlook suchen')+'</button>'
     +'<label class="ghost small up">.eml-Dateien hochladen<input type="file" id="ml-file" accept=".eml,message/rfc822" multiple hidden></label>'
     +'<span class="sub">'+(adr.length?'Mieter-Adresse: '+esc(adr.join(', ')):'Keine E-Mail-Adresse beim Mieter hinterlegt (Mieterinformationen bearbeiten).')+'</span></div>'
     +'<div class="sub">Mails aus Outlook auf den Desktop ziehen (ergibt eine .eml-Datei) und hier hochladen – oder direkt in Outlook suchen, sobald Outlook verbunden ist.</div>';
+  if(MLC&&MLC.pid!==mk.pid) MLC=null;
+  if(MLC) h+=mlcHtml(mk);
   if(MLS.fehler.length) h+='<div class="note warnbox">'+MLS.fehler.map(esc).join('<br>')+'</div>';
   if(MLS.res){ const neu=MLS.res.filter(m=>!have.has(m.msgId));
     h+='<div class="rh" style="margin-top:10px">Gefunden in Outlook: '+MLS.res.length+' Mails, davon '+neu.length+' noch nicht hinterlegt'+(neu.length>1?' <button class="ghost small" data-mlalle="1"'+(MLS.busy?' disabled':'')+'>alle hinterlegen</button>':'')+'</div>';
@@ -1040,7 +1089,7 @@ function mailsCard(x){ const mk=x.mk; if(MLS.pid!==mk.pid) MLS={pid:mk.pid,res:n
   h+='<div class="rh" style="margin-top:12px">Hinterlegte Mails</div>';
   if(!L.length) h+='<div class="sub">Noch keine Mails hinterlegt.</div>';
   for(const m of L){ const o=MLS.offen[m.id]; h+='<div class="ml-row"><a href="#" data-mlopen="'+esc(m.id)+'"><b>'+esc(m.betreff||'ohne Betreff')+'</b></a> <span class="pill '+(m.richtung==='Eingang'?'mid':'src')+'">'+esc(m.richtung)+'</span><div class="sub">'+esc(new Date(m.d).toLocaleString('de-DE'))+' · von '+esc(m.von)+' · an '+esc(m.an)+' · hinterlegt von '+esc(nutzerName(m.mail||m.by))+'</div>'
-    +(o?'<div class="ml-b">'+esc(m.text||'(kein Text)')+'</div><div class="acts"><a href="#" '+(m.odId?'data-odopen="'+esc(m.odId):'data-nfopen="'+esc(m.datei))+'">Original-Mail (.eml) öffnen</a></div>':'')+'</div>'; }
+    +(o?'<div class="ml-b">'+esc(m.text||'(kein Text)')+'</div><div class="acts">'+(m.msgId?'<button class="small" data-mlant="'+esc(m.id)+'">Antworten</button>':'')+'<a href="#" '+(m.odId?'data-odopen="'+esc(m.odId):'data-nfopen="'+esc(m.datei))+'">Original-Mail (.eml) öffnen</a></div>':'')+'</div>'; }
   return h+'</details>'; }
 
 async function mlSuchen(){ const mk=MK[M.sel]; if(!mk) return; const adr=mieterMails(mk); if(!adr.length){ toast('Beim Mieter ist keine E-Mail-Adresse hinterlegt.'); return; }
@@ -1062,11 +1111,25 @@ async function mlUpload(files){ const mk=MK[M.sel]; if(!mk||!files.length) retur
 
 document.addEventListener('click',e=>{ const t=e.target.closest('button,a[data-mlopen]'); if(!t) return; const d=t.dataset;
   if(d.mlsuch){ mlSuchen(); return; }
+  if(d.mlneu){ const mk=MK[M.sel]; if(mk){ if(MLC&&MLC.pid===mk.pid&&!confirm('Die angefangene Mail verwerfen?')) return; mlNeu(mk); } return; }
+  if(d.mlant){ const mk=MK[M.sel]; const m=(MAILS[M.sel]||[]).find(x=>x.id===d.mlant); if(mk&&m) mlNeu(mk,m); return; }
+  if(d.mlcpick){ MLC.picker=!MLC.picker; render(); return; }
+  if(d.mlcpickok){ const A=ODA[M.sel]||{}; const alle=[].concat(A.dateien||[],...Object.values(A.ordner||{})); let n=0;
+    for(const id of Object.keys(MLC.pwahl)){ if(!MLC.pwahl[id]||MLC.anh.some(a=>a.id===id)) continue; const f=alle.find(x=>x.id===id); if(f){ MLC.anh.push({typ:'onedrive',id,name:f.name,groesse:f.size||0}); n++; } }
+    MLC.pwahl={}; MLC.picker=false; render(); if(n) toast(n+' Datei'+(n>1?'en':'')+' angehängt.'); return; }
+  if(d.mlcweg!==undefined){ MLC.anh.splice(+d.mlcweg,1); render(); return; }
+  if(d.mlcweg2){ if((MLC.anh.length||MLC.text.length>200)&&!confirm('Mail verwerfen?')) return; MLC=null; render(); return; }
+  if(d.mlcsend){ mlcSenden(); return; }
   if(d.mladd){ mlHinterlegen([d.mladd]); return; }
   if(d.mlalle){ const have=new Set((MAILS[M.sel]||[]).map(m=>m.msgId)); mlHinterlegen((MLS.res||[]).filter(m=>!have.has(m.msgId)).map(m=>m.id)); return; }
   if(d.mlopen){ e.preventDefault(); MLS.offen[d.mlopen]=!MLS.offen[d.mlopen]; render(); return; }
 });
-document.addEventListener('change',e=>{ if(e.target.id==='ml-file'){ const f=[...e.target.files]; e.target.value=''; mlUpload(f); } });
+document.addEventListener('change',e=>{ if(e.target.id==='ml-file'){ const f=[...e.target.files]; e.target.value=''; mlUpload(f); }
+  if(e.target.id==='mlc-file'&&MLC){ const f=[...e.target.files]; e.target.value=''; mlcDateien(f); }
+  if(e.target.dataset&&e.target.dataset.mlpw!==undefined&&MLC){ MLC.pwahl[e.target.dataset.mlpw]=e.target.checked; } });
+document.addEventListener('input',e=>{ const t=e.target; if(!MLC||!t.id||!t.id.startsWith('mlc-')) return; const k=t.id.slice(4);
+  if(k==='pq'){ MLC.pq=t.value; clearTimeout(mlcSearchT); mlcSearchT=setTimeout(render,250); } else if(['an','cc','betreff','text'].includes(k)) MLC[k]=t.value; });
+var mlcSearchT=null;
 
 /* ---------- Aufgaben aus Asana (ersetzen das Ticketsystem im Mieterkonto) ---------- */
 var AS={}, ASP=null, ASPlade=false, ASU=null, ASUlade=false, AST=null, ASTlade=false, ASKI={busy:'',orig:null,fehler:''}, ASF={neu:false,titel:'',proj:'',due:'',notiz:'',busy:false};

@@ -28,6 +28,8 @@ export async function graph(pfad, opt = {}) {
     try { const j = await r.json(); m = (j.error && j.error.message) || m } catch {}
     const e = new Error('Microsoft: ' + m); e.status = r.status; throw e
   }
-  if (r.status === 204) return {}
-  return opt.roh ? r.text() : r.json()
+  if (r.status === 204 || r.status === 202) return {}
+  if (opt.roh) return r.text()
+  const t = await r.text()
+  return t ? JSON.parse(t) : {}
 }
