@@ -164,7 +164,7 @@ function regionVorschlag(k){const e=k.wohnung&&einVon(k.wohnung.einheit_id),o=e&
 async function laden(ohneSync){
   const [k,o,e,u,m,vv,ein]=await Promise.all([sb.from('os_docs').select('data').eq('app','oc').like('pfad','neuvermietung/%'),
     sb.from('obj_objekte').select('id,kz,name,strasse,plz,ort,status,gesellschaft,eigentuemer,mietkonto_iban,mietkonto_bank,baujahr,heizung').order('sort'),
-    sb.from('obj_einheiten').select('id,objekt_id,bezeichnung,lage,art,flaeche,zimmer,nahaus_id,aktiv,sort,ausstattung').order('sort'),sb.auth.getUser(),
+    sb.from('obj_einheiten').select('id,objekt_id,bezeichnung,lage,art,flaeche,zimmer,nahaus_id,aktiv,sort,ausstattung,heizung').order('sort'),sb.auth.getUser(),
     sb.from('mieterselbstauskunft').select('id,token,karte_id,status,daten,unterschrift,eingegangen_at,created_at'),
     sb.from('os_docs').select('data').eq('app','oc').like('pfad','vertragsvorlagen/%'),sb.from('os_docs').select('data').eq('app','oc').eq('pfad','einstellungen/neuvermietung').maybeSingle()]);
   EINST=(ein&&ein.data&&ein.data.data)||EINST;
@@ -217,7 +217,7 @@ function fehlt(k){const c=kalk(k),f=[];if(!k.name&&!k.vorname)f.push('Name');if(
 
 /* Mieterkonto im OS anlegen: erscheint in Mieterkonten, beim Objekt und in den Übergabeprotokollen */
 async function mieterkontoAnlegen(k){const e=einVon(k.wohnung.einheit_id),o=e&&objVon(e.objekt_id);if(!e||!o)throw new Error('Wohnung nicht gefunden.');
-  const c=kalk(k),pid='os'+rid(),von=c.beginn,kaution=zahl(c.kaution)||posWert(c,'kalt','neu')*3;
+  const c=kalk(k),pid='os'+rid(),von=c.beginn,kaution=Math.round(posWert(c,'kalt','neu')*3*100)/100;
   const namen=[nameVoll(k)].concat(String(k.weitere||'').split(/\s*,\s*/).filter(Boolean));
   const others=POS.filter(([p])=>!['kalt','bk','hk','strom'].includes(p)).map(([p,l])=>({t:l.replace(/ \(.*\)$/,''),b:posWert(c,p,'neu')})).filter(x=>x.b);
   const st={ab:von,kalt:posWert(c,'kalt','neu'),bk:posWert(c,'bk','neu'),hk:posWert(c,'hk','neu'),strom:posWert(c,'strom','neu'),sonst:Math.round(others.reduce((a,x)=>a+x.b,0)*100)/100,others,total:warm(k)};
@@ -291,12 +291,31 @@ let EINST={};
 const KREIHE=[['kalt','Kaltmiete'],['strom','Strom'],['hk','Heizung'],['bk','Betriebskosten'],['wlan','WLAN'],['garage','Garage / Stellplatz'],['moebel','Möblierung (bei Apartment)'],['ebk','Einbauküche (EBK)'],['hausmeister','Hausmeisterjob – Gutschrift']];
 const kaution=k=>Math.round(posWert(kalk(k),'kalt','neu')*3*100)/100;
 const ibanFmt=i=>String(i||'').replace(/\s+/g,'').toUpperCase().replace(/(.{4})/g,'$1 ').trim();
-function mietkonto(k){const e=k.wohnung&&einVon(k.wohnung.einheit_id),o=(e&&objVon(e.objekt_id))||(k.wohnung&&objVon(k.wohnung.objekt_id));return o&&o.mietkonto_iban?{kz:o.kz,iban:ibanFmt(o.mietkonto_iban),bank:o.mietkonto_bank||''}:null;}
+const BIC={'43060967':'GENODEM1GLS','12030000':'BYLADEM1001','50050201':'HELADEF1822','55091200':'GENODE61AZY'};
+function mietkonto(k){const e=k.wohnung&&einVon(k.wohnung.einheit_id),o=(e&&objVon(e.objekt_id))||(k.wohnung&&objVon(k.wohnung.objekt_id));if(!o||!o.mietkonto_iban)return null;const i=String(o.mietkonto_iban).replace(/\s+/g,'').toUpperCase();return {kz:o.kz,iban:ibanFmt(i),bank:o.mietkonto_bank||'',bic:BIC[i.slice(4,12)]||''};}
+/* Miete des letzten Mietverhältnisses dieser Einheit (Mieterkonten im OS) als „Miete alt“ übernehmen */
+const VM_LAEUFT=new Set();
+const VM_TEXT={wlan:/wlan|internet/i,garage:/garage|stellplatz/i,moebel:/möbl|moebl/i,ebk:/küche|kueche|ebk/i,hausmeister:/hausmeister/i};
+async function vormiete(k,erzwingen){const c=kalk(k),e=k.wohnung&&einVon(k.wohnung.einheit_id),o=e&&objVon(e.objekt_id);if(!e||!o||k.pid||VM_LAEUFT.has(k.id))return;
+  if(!erzwingen&&c.vormiete&&c.vormiete.einheit===e.id)return;VM_LAEUFT.add(k.id);
+  try{const {data}=await sb.from('os_docs').select('data').eq('app','oc').like('pfad','mietkonten/%').eq('data->>obj',o.kz);
+    const L=(data||[]).map(r=>r.data).filter(m=>m&&m.neuvermietung!==k.id&&(m.einheit_id===e.id||(e.nahaus_id&&m.unit===e.nahaus_id)||m.unit===e.id)).sort((a,b)=>String(b.von||'').localeCompare(String(a.von||'')));
+    const m=L[0],st=m&&(m.stufen||[]).filter(x=>x&&x.total>0).sort((a,b)=>String(a.ab).localeCompare(String(b.ab))).pop();
+    if(!st){c.vormiete={einheit:e.id,keine:true};}
+    else{const w={kalt:zahl(st.kalt),bk:zahl(st.bk),hk:zahl(st.hk),strom:zahl(st.strom)};
+      for(const x of st.others||[]){const p=Object.keys(VM_TEXT).find(q=>VM_TEXT[q].test(String(x.t||'')));if(p)w[p]=Math.round(((w[p]||0)+Math.abs(zahl(x.b)))*100)/100;}
+      const leer=POS.every(([p])=>!zahl(c.pos[p].neu));
+      POS.forEach(([p])=>{c.pos[p].alt=w[p]||'';if(leer&&w[p])c.pos[p].neu=w[p];});
+      c.vormiete={einheit:e.id,mieter:m.mieter||'',von:m.von||'',bis:m.bis||'',total:st.total,ab:st.ab,neuUebernommen:leer};}
+    await speichern(k,c.vormiete.keine?'':'Miete des letzten Mietverhältnisses übernommen ('+eur(c.vormiete.total)+' warm)');}
+  catch(x){c.vormiete={einheit:e.id,keine:true};}
+  VM_LAEUFT.delete(k.id);if(SEL===k.id)panel();}
 function kalkKarte(k){const c=kalk(k),e=k.wohnung&&einVon(k.wohnung.einheit_id),o=(e&&objVon(e.objekt_id))||(k.wohnung&&objVon(k.wohnung.objekt_id)),wfl=zahl(c.wfl)||zahl(e&&e.flaeche),region=c.region||regionVorschlag(k),pers=Number(k.personen)||0,gr=region?kduGrenze(region,pers||1):null;
   const sNeu=summe(c,'neu'),kalt=posWert(c,'kalt','neu'),kaltAlt=posWert(c,'kalt','alt'),bruttokalt=Math.round((kalt+posWert(c,'bk','neu'))*100)/100,ebk=posWert(c,'ebk','neu'),kt=mietkonto(k);
   const pm=v=>wfl?(v/wfl).toFixed(2).replace('.',',')+' €/m²':'–';
   const info=f=>`<td><input class="feld" style="max-width:none;text-align:left;padding:5px 7px;font-size:13px" data-kinfo="${f}" value="${esc(c.info[f]||'')}" autocomplete="off"></td>`;
   const vid=maVorlageId(k),vl=MAV.find(x=>x.id===vid);
+  if(!k.pid&&e&&!(c.vormiete&&c.vormiete.einheit===e.id))setTimeout(()=>vormiete(k));
   let h=`<div class="card"><div class="ch">2. Mietkalkulation<span class="summe">${esc(eur(sNeu))} warm</span></div>
     <div class="g3"><label class="fl">Vorlage Mietangebot<input id="k-vorlage" list="dl-mavorl" value="${esc(vl?vl.kurz:vid==='keine'?'Keine Vorlage (Selbstzahler)':'')}" placeholder="Vorlage suchen …" autocomplete="off"><datalist id="dl-mavorl">${MAV.map(x=>`<option value="${esc(x.kurz)}">`).join('')}<option value="Keine Vorlage (Selbstzahler)"></datalist></label></div>
     <table class="ktab"><thead><tr><th style="width:30%">Angabe</th><th class="r" style="width:20%">Wert</th><th>Info</th></tr></thead><tbody>
@@ -317,6 +336,7 @@ function kalkKarte(k){const c=kalk(k),e=k.wohnung&&einVon(k.wohnung.einheit_id),
     <div class="kz"><div><b>${esc(pm(kalt))}</b><span>Kaltmiete pro m²</span></div><div><b>${esc(eur(bruttokalt))}</b><span>Bruttokaltmiete (Kalt + BK) · ${esc(pm(bruttokalt))}</span></div>
       <div><b>${esc(pm(sNeu-ebk))}</b><span>Warmmiete ohne EBK pro m²</span></div><div><b>${esc(pm(sNeu))}</b><span>Warmmiete mit EBK pro m²</span></div></div>
     ${kaltAlt&&kalt?`<div class="sub" style="margin-top:6px">Wertsteigerung bei Faktor 12: ${esc(eur((kalt-kaltAlt)*12*12))} · Erhöhung Kaltmiete ${((kalt/kaltAlt-1)*100).toFixed(1).replace('.',',')} %</div>`:''}
+    ${c.vormiete&&!c.vormiete.keine?`<div class="sub" style="margin-top:8px">Letztes Mietverhältnis dieser Wohnung: ${esc(c.vormiete.mieter)}${c.vormiete.von?', '+esc(dmy(c.vormiete.von))+(c.vormiete.bis?' bis '+esc(dmy(c.vormiete.bis)):' bis heute'):''}, zuletzt ${esc(eur(c.vormiete.total))} warm. ${c.vormiete.neuUebernommen?'Die Beträge oben sind als Startwerte übernommen.':''} <a href="#" data-a="vormiete">Erneut übernehmen</a></div>`:c.vormiete&&c.vormiete.keine?'<div class="sub" style="margin-top:8px">Für diese Wohnung gibt es im OS noch kein früheres Mietverhältnis. Die Beträge bitte selbst eintragen.</div>':''}
     <div class="g3" style="margin-top:12px"><label class="fl">Kaltmiete bisher (Vormieter, für die Wertsteigerung)<input data-pos="kalt" data-s="alt" value="${esc(fz(zahl(c.pos.kalt.alt)))}" inputmode="decimal"></label></div></div>`;
   // KdU-Prüfung
   h+=`<div class="card"><div class="ch">Angemessenheit für Jobcenter / Sozialamt</div>
@@ -341,7 +361,7 @@ const DS_EMPF={created:'wartet',sent:'Mail erhalten',delivered:'hat geöffnet',c
 function vtBasis(k){const e=k.wohnung&&einVon(k.wohnung.einheit_id),o=e&&objVon(e.objekt_id),s=MSA[k.id];
   const vermieter=(o&&(o.eigentuemer||WG_GES[o.gesellschaft]))||'Wohntraum Rheinhessen GmbH';
   return VertragPdf.werte({karte:k,msa:s&&s.daten||{},objekt:o||{},einheit:e||{},vermieter,vermieterAnschrift:WG_ANSCHRIFT});}
-function vtDaten(k){const v=k.vertrag=k.vertrag||{};v.texte=v.texte||{};const kt=mietkonto(k);if(kt){if(!v.texte.IBAN)v.texte.IBAN=kt.iban;if(!v.texte.Bank&&kt.bank)v.texte.Bank=kt.bank;}if(!v.auswahl)v.auswahl=VORL.filter(x=>x.standard&&(x.bereich||'Neuvermietung')==='Neuvermietung').map(x=>x.id);v.texte=v.texte||{};
+function vtDaten(k){const v=k.vertrag=k.vertrag||{};v.texte=v.texte||{};const kt=mietkonto(k);if(kt){if(!v.texte.IBAN)v.texte.IBAN=kt.iban;if(!v.texte.Bank&&kt.bank)v.texte.Bank=kt.bank;if(!v.texte.BIC&&kt.bic)v.texte.BIC=kt.bic;}if(!v.auswahl)v.auswahl=VORL.filter(x=>x.standard&&(x.bereich||'Neuvermietung')==='Neuvermietung').map(x=>x.id);v.texte=v.texte||{};
   v.vermieter=v.vermieter||{name:'Eric Eisenhardt',email:ERIC};return v;}
 function vtGewaehlt(k){const v=vtDaten(k);return VORL.filter(x=>v.auswahl.includes(x.id)).sort((a,b)=>(Number(a.sort)||99)-(Number(b.sort)||99)||String(a.name).localeCompare(String(b.name),'de'));}
 function vertragKarte(k){const v=vtDaten(k),V=vtBasis(k),ro=!!k.pid;
@@ -403,7 +423,7 @@ function maVorlageId(k){const c=kalk(k);if(c.vorlage)return c.vorlage;return MAP
 function maDaten(k){const a=k.angebot=k.angebot||{},c=kalk(k);if(!a.auswahl){const v=maVorlageId(k);a.auswahl=v&&v!=='keine'?[v]:[];}a.fragen=a.fragen||{};a.versand=a.versand||[];a.signiert=a.signiert||{};return a;}
 function maWerte(k){const c=kalk(k),V=vtBasis(k),e=k.wohnung&&einVon(k.wohnung.einheit_id),o=e&&objVon(e.objekt_id),pw=p=>posWert(c,p,'neu');
   return {vorname:k.vorname||'',nachname:k.name||'',anschrift:V.mieter_anschrift,personen:V.personen,mietbeginn:V.mietbeginn,wohnung:V.objekt_adresse_we,lage:V.lage,wfl:V.wohnflaeche,zimmer:V.zimmer,
-    baujahr:o&&o.baujahr||'',heizungsart:o&&(o.heizungsart||o.heizung)||'',kalt:pw('kalt'),bk:pw('bk'),hk:pw('hk'),strom:pw('strom'),wlan:pw('wlan'),garage:pw('garage'),moebel:pw('moebel'),ebk:pw('ebk'),gesamt:warm(k),
+    baujahr:o&&o.baujahr||'',heizungsart:(e&&e.heizung)||(o&&(o.heizungsart||o.heizung))||'',kalt:pw('kalt'),bk:pw('bk'),hk:pw('hk'),strom:pw('strom'),wlan:pw('wlan'),garage:pw('garage'),moebel:pw('moebel'),ebk:pw('ebk'),gesamt:warm(k),
     kaution:kaution(k),objekt_kz:V.objekt_kz,einheit:V.einheit};}
 const maGewaehlt=k=>MAV.filter(x=>maDaten(k).auswahl.includes(x.id));
 function maBetreff(k){const V=vtBasis(k);return 'Mietangebot '+(V.objekt_adresse_we||'');}
@@ -562,6 +582,7 @@ document.addEventListener('click',async e=>{const t=e.target;
     if(w==='unterschreiben'&&k){unterschreiben(k);return;}
     if(w==='vtsenden'&&k){vtSenden(k);return;}
     if(w==='masenden'&&k){maSenden(k);return;}
+    if(w==='vormiete'&&k){const c=kalk(k);if(!confirm('Die Beträge des letzten Mietverhältnisses erneut als Miete alt und als Startwerte übernehmen? Die jetzigen Beträge werden überschrieben.'))return;POS.forEach(([p])=>{c.pos[p].neu='';});delete c.vormiete;vormiete(k,true);return;}
     if(w==='matext'&&k){const a=maDaten(k);delete a.betreff;delete a.text;speichern(k);panel();return;}
     if(w==='vtstand'&&k){vtStand(k);return;}
     if(w==='vtstorno'&&k){vtStorno(k);return;}
