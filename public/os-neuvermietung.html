@@ -5,6 +5,8 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="/vertrag-pdf.js?v=20261020b"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js"></script>
+<script src="/mietangebot-pdf.js?v=20261020a"></script>
 <style>
 :root{--bg:#f3f5f8;--card:#ffffff;--ink:#18202c;--muted:#5f6b7a;--line:#e0e5eb;--soft:#eef1f5;--accent:#2f5d8a;--accent-ink:#ffffff;--accent-soft:#e3ecf5;--pos:#1d7a4c;--pos-bg:#e5f4ec;--warn:#946200;--warn-bg:#fff4d6;--neg:#b42318;--neg-bg:#fcebe9;--chip:#edf1f6}
 *{box-sizing:border-box;margin:0;padding:0}
@@ -372,6 +374,55 @@ async function vtStorno(k){const v=vtDaten(k);if(!confirm('Den Vertrag in DocuSi
   catch(e){toast('Nicht zurückgezogen: '+(e.message||e),8000);}BUSY='';panel();}
 async function vtPdf(k){const v=vtDaten(k);if(!v.pdf)return;const {data,error}=await sb.storage.from('vertraege').createSignedUrl(v.pdf,600);if(error){toast('Nicht geöffnet: '+error.message,6000);return;}window.open(data.signedUrl,'_blank');}
 
+/* ---------- Mietangebot: Original-Vorlagen der Ämter befüllen und per Mail senden ---------- */
+const MAP=window.MietangebotPdf,MAV=MAP.VORLAGEN.slice().sort((a,b)=>a.kurz.localeCompare(b.kurz,'de'));
+let MA_DATEI=null,MA_LADEN=false;const MA_BYTES={};
+const MA_SIGNATUR='Mit freundlichen Grüßen\n\nWohn(T)raum Rheinhessen GmbH\nbewusst sozial engagiert\nE-Mail: hausverwaltung@andersmacher.info\nTelefon: 06133-9382937\nDalheimer Str. 70, 55278 Dexheim\nHRB 45997, Amtsgericht Mainz\nGeschäftsführer: Eric Eisenhardt';
+function maDateien(){if(MA_DATEI||MA_LADEN)return;MA_LADEN=true;sb.storage.from('vertraege').list('mietangebot-vorlagen',{limit:100}).then(({data})=>{MA_DATEI=new Set((data||[]).map(f=>f.name.replace(/\.pdf$/i,'')));MA_LADEN=false;panel();}).catch(()=>{MA_DATEI=new Set();MA_LADEN=false;panel();});}
+function maDaten(k){const a=k.angebot=k.angebot||{},c=kalk(k);if(!a.auswahl)a.auswahl=MAP.vorschlag(c.region||regionVorschlag(k));a.fragen=a.fragen||{};a.versand=a.versand||[];return a;}
+function maWerte(k){const c=kalk(k),V=vtBasis(k),e=k.wohnung&&einVon(k.wohnung.einheit_id),o=e&&objVon(e.objekt_id),pw=p=>posWert(c,p,'neu');
+  return {vorname:k.vorname||'',nachname:k.name||'',anschrift:V.mieter_anschrift,personen:V.personen,mietbeginn:V.mietbeginn,wohnung:V.objekt_adresse_we,lage:V.lage,wfl:V.wohnflaeche,zimmer:V.zimmer,
+    baujahr:o&&o.baujahr||'',heizungsart:o&&(o.heizungsart||o.heizung)||'',kalt:pw('kalt'),bk:pw('bk'),hk:pw('hk'),strom:pw('strom'),wlan:pw('wlan'),garage:pw('garage'),moebel:pw('moebel'),ebk:pw('ebk'),gesamt:warm(k),
+    kaution:c.kaution!=null&&c.kaution!==''?zahl(c.kaution):pw('kalt')*3,objekt_kz:V.objekt_kz,einheit:V.einheit};}
+const maGewaehlt=k=>MAV.filter(x=>maDaten(k).auswahl.includes(x.id));
+function maBetreff(k){const V=vtBasis(k);return 'Mietangebot '+(V.objekt_adresse_we||'');}
+function maText(k){const V=vtBasis(k);return (k.anrede==='Frau'?'Sehr geehrte Frau '+(k.name||''):k.anrede==='Herr'?'Sehr geehrter Herr '+(k.name||''):'Guten Tag'+(nameVoll(k)?' '+nameVoll(k):''))+',\n\nanbei erhalten Sie das Mietangebot für die Wohnung '+(V.objekt_adresse_we||'')+(V.mietbeginn?' ab dem '+V.mietbeginn:'')+'. Die Unterlagen für Ihr Amt sind von uns bereits ausgefüllt. Bitte ergänzen Sie, wo nötig, Ihre eigenen Angaben, unterschreiben Sie und reichen Sie alles bei Ihrem Amt ein.\n\nSobald Sie die Zusage haben, melden Sie sich bitte bei uns. Dann bereiten wir den Mietvertrag vor.\n\n'+MA_SIGNATUR;}
+function angebotKarte(k){const a=maDaten(k),ro=!!k.pid,F=MA_DATEI;if(!F)maDateien();
+  let h=`<div class="card"><div class="ch">Vorlagen der Ämter</div><div class="sub" style="margin-bottom:6px">Auswählen (mehrere möglich). Das OS füllt die Original-Vorlagen mit den Daten aus der Kalkulation aus. Die Vorlagen selbst bleiben unverändert.</div><div class="vtwahl">`
+    +MAV.map(x=>{const da=!F||F.has(x.id);return `<label><input type="checkbox" data-mawahl="${esc(x.id)}"${a.auswahl.includes(x.id)?' checked':''}${ro||!da?' disabled':''}> ${esc(x.name)}${da?'':' <span class="sub">(Datei fehlt, bitte unter „Vertragsvorlagen“ hochladen)</span>'}</label>`;}).join('')+'</div>';
+  const gew=maGewaehlt(k),fr=MAP.fragenFuer(gew.map(x=>x.id)),W=MAP.aufbereiten(maWerte(k),a.fragen);
+  if(fr.length)h+='<div class="ch" style="font-size:13.5px;margin-top:10px">Angaben für die Vorlagen</div><div class="g3">'+fr.map(f=>`<label class="fl">${esc(f.label)}<input data-mafrage="${esc(f.key)}" value="${esc(a.fragen[f.key]!=null?a.fragen[f.key]:(W[f.key]||''))}"${f.liste?` list="dl-ma-${f.key}"`:''} autocomplete="off"${ro?' disabled':''}>${f.liste?`<datalist id="dl-ma-${f.key}">${f.liste.map(o=>`<option value="${esc(o)}">`).join('')}</datalist>`:''}</label>`).join('')+'</div>';
+  if(gew.length)h+='<div class="acts" style="margin-top:8px">'+gew.map(x=>`<button data-mavor="${esc(x.id)}"${F&&!F.has(x.id)?' disabled':''}>Vorschau ${esc(x.kurz)}</button>`).join('')+'</div>';
+  h+='</div>';
+  const mail=/@/.test(k.email||'');
+  h+=`<div class="card"><div class="ch">Per Mail an den Mietinteressenten</div><div class="g2"><label class="fl">An<input value="${esc(k.email||'')}" disabled></label><label class="fl">Betreff<input id="ma-betreff" value="${esc(a.betreff!=null?a.betreff:maBetreff(k))}"${ro?' disabled':''}></label></div>
+    <label class="fl">Text<textarea id="ma-text" style="min-height:200px"${ro?' disabled':''}>${esc(a.text!=null?a.text:maText(k))}</textarea></label>
+    ${mail?'':'<div class="note">Die E-Mail-Adresse fehlt noch. Bitte unten bei „Mieter und Wohnung“ eintragen.</div>'}
+    <div class="acts" style="margin-top:8px"><button class="primary" data-a="masenden"${gew.length&&mail&&!BUSY&&!ro?'':' disabled'}>${BUSY==='ma'?'Wird gesendet …':'Per Mail an '+esc(k.email||'den Mietinteressenten')+' senden'}</button>${a.betreff!=null||a.text!=null?'<button data-a="matext">Text zurücksetzen</button>':''}</div>
+    <div class="sub" style="margin-top:6px">Die ausgefüllten PDFs gehen als Anhang mit. Sie werden beim Mietinteressenten abgelegt und erscheinen unten in der Liste.</div></div>`;
+  return h+maVerlauf(k);}
+function maVerlauf(k){const a=maDaten(k);if(!a.versand.length)return '';
+  return '<div class="card"><div class="ch">Gesendete Mietangebote</div><table class="ktab"><thead><tr><th>Gesendet</th><th>An</th><th>Unterlagen</th></tr></thead><tbody>'+a.versand.slice().reverse().map(v=>`<tr><td>${esc(zeit(v.t))}</td><td>${esc(v.an)}</td><td>${(v.dateien||[]).map(d=>`<a href="#" data-mapdf="${esc(d.pfad)}">${esc(d.name)}</a>`).join('<br>')}</td></tr>`).join('')+'</tbody></table></div>';}
+async function maVorlage(id){if(MA_BYTES[id])return MA_BYTES[id];const x=MAV.find(v=>v.id===id);const {data,error}=await sb.storage.from('vertraege').download(x.datei);if(error||!data)throw new Error('Vorlage „'+x.kurz+'“ ist noch nicht hochgeladen.');return MA_BYTES[id]=new Uint8Array(await data.arrayBuffer());}
+async function maBilder(){if(MA_BYTES._sig!==undefined)return {unterschrift_eric:MA_BYTES._sig};try{const {data}=await sb.storage.from('uebergaben').download('vorlagen/unterschrift-eric.png');MA_BYTES._sig=data?new Uint8Array(await data.arrayBuffer()):null;}catch(e){MA_BYTES._sig=null;}return {unterschrift_eric:MA_BYTES._sig};}
+async function maErzeugen(k,id){return MAP.ausfuellen(id,await maVorlage(id),maWerte(k),maDaten(k).fragen,await maBilder());}
+const maName=(k,x)=>('Mietangebot_'+x.kurz+'_'+String(k.name||'').toUpperCase()+(k.vorname?'_'+k.vorname:'')).replace(/[^0-9A-Za-zÄÖÜäöüß-]+/g,'_').replace(/_+/g,'_')+'.pdf';
+async function maSenden(k){const a=maDaten(k),gew=maGewaehlt(k);if(!gew.length){toast('Bitte mindestens eine Vorlage auswählen.');return;}
+  if(!/@/.test(k.email||'')){toast('Bitte zuerst die E-Mail-Adresse eintragen.');return;}
+  if(!confirm('Mietangebot per Mail senden?\n\n'+gew.map(x=>x.name).join('\n')+'\n\nAn: '+k.email))return;
+  BUSY='ma';panel();
+  try{const ts=Date.now(),dateien=[];
+    for(const x of gew){const b=await maErzeugen(k,x.id),pfad=k.id+'/mietangebot/'+ts+'_'+x.id+'.pdf';
+      const {error}=await sb.storage.from('vertraege').upload(pfad,new Blob([b],{type:'application/pdf'}),{contentType:'application/pdf'});
+      if(error)throw new Error('Ablage nicht möglich: '+error.message);dateien.push({name:maName(k,x),pfad,vorlage:x.id});}
+    await api('/api/postfach',{aktion:'senden',modus:'neu',an:k.email,betreff:a.betreff!=null?a.betreff:maBetreff(k),text:a.text!=null?a.text:maText(k),
+      anhaenge:dateien.map(d=>({typ:'speicher',bucket:'vertraege',pfad:d.pfad,name:d.name,contentType:'application/pdf'}))});
+    a.versand.push({t:new Date().toISOString(),an:k.email,von:ICH,dateien});
+    await speichern(k,'Mietangebot per Mail an '+k.email+' gesendet: '+gew.map(x=>x.kurz).join(', '));toast('Mietangebot gesendet.');}
+  catch(e){toast('Nicht gesendet: '+(e.message||e),9000);}
+  BUSY='';panel();}
+async function maPdf(pfad){const {data,error}=await sb.storage.from('vertraege').createSignedUrl(pfad,600);if(error){toast('Nicht geöffnet: '+error.message,6000);return;}window.open(data.signedUrl,'_blank');}
+
 /* Arbeitsbereich in der Kachel */
 const MEHR=new Set();
 function mehr(key,titel,inhalt){return `<details class="mehr" data-mehr="${key}"${MEHR.has(key)?' open':''}><summary>${esc(titel)}</summary><div class="innen">${inhalt}</div></details>`;}
@@ -399,7 +450,8 @@ function arbeit(k){const ro=!!k.pid,sp=k.spalte||'selbstauskunft',f=fehlt(k);let
   else unten.push(['msa','Mieterselbstauskunft',msaKarte(k)]);
   if(sp==='kalkulation'&&!k.archiv){h+=`<fieldset style="border:0"${ro?' disabled':''}>`+kalkKarte(k)+'</fieldset>'+weiterKnopf(k,'Kalkulation fertig – weiter zum Mietangebot');}
   else if(k.freigabeMsa&&sp!=='selbstauskunft')unten.push(['kalk','Mietkalkulation',`<fieldset style="border:0"${ro?' disabled':''}>`+kalkKarte(k)+'</fieldset>']);
-  if(sp==='angebot'&&!k.archiv){h+=`<div class="card"><div class="ch">3. Mietangebot</div>${eckdaten(k)}<div class="sub">Hier entsteht im nächsten Ausbauschritt das Mietangebot aus der Kalkulation: als PDF erstellen und direkt per Mail an den Mietinteressenten senden.</div></div>`+weiterKnopf(k,'Angebot angenommen – weiter zum Mietvertrag');}
+  if(sp==='angebot'&&!k.archiv){h+=`<div class="card"><div class="ch">3. Mietangebot</div>${eckdaten(k)}<div class="sub">Die Werte kommen aus der Mietkalkulation. Fehlt etwas, bitte dort oder unten bei „Mieter und Wohnung“ ergänzen.</div></div>`+angebotKarte(k)+weiterKnopf(k,'Angebot angenommen – weiter zum Mietvertrag');}
+  if(sp!=='angebot'&&!k.archiv&&k.angebot&&(k.angebot.versand||[]).length)unten.push(['angebot','Mietangebot',maVerlauf(k)]);
   if(sp==='vertrag'&&!k.archiv){h+=`<div class="card"><div class="ch">4. Mietvertrag</div>${eckdaten(k)}<div class="sub">Die Verträge erstellt das OS aus den Vertragsvorlagen und sendet sie über DocuSign zur Unterschrift. Vorher bitte unten bei „Mieter und Wohnung“ alle Angaben vervollständigen (weitere Mieter, bisherige Anschrift).${f.length?' Es fehlt noch: '+esc(f.join(', '))+'.':''}</div></div>`
     +vertragKarte(k)+`<fieldset style="border:0"${ro?' disabled':''}>`+stammKarte(k,true)+'</fieldset>'+weiterKnopf(k,'Ohne DocuSign weiter zu „Mietvertrag unterschrieben“');}
   else if(sp!=='selbstauskunft'&&!k.archiv)unten.push(['stamm','Mieter und Wohnung',`<fieldset style="border:0"${ro?' disabled':''}>`+stammKarte(k,true)+'</fieldset>']);
@@ -437,9 +489,14 @@ document.addEventListener('input',e=>{const t=e.target;
   if(t.id==='vt-m2mail'){vtDaten(k).mieter2Email=t.value.trim();spaeter(k,false);return;}
   if(t.id==='vt-vname'){vtDaten(k).vermieter.name=t.value;spaeter(k,false);return;}
   if(t.id==='vt-vmail'){vtDaten(k).vermieter.email=t.value.trim();spaeter(k,false);return;}
+  if(t.dataset.mafrage!==undefined){maDaten(k).fragen[t.dataset.mafrage]=t.value;spaeter(k,false);return;}
+  if(t.id==='ma-betreff'){maDaten(k).betreff=t.value;spaeter(k,false);return;}
+  if(t.id==='ma-text'){maDaten(k).text=t.value;spaeter(k,false);return;}
   if(t.dataset.vgl!==undefined){c.vergleich[+t.dataset.vgl][t.dataset.f]=t.value;spaeter(k,['kalt','wfl'].includes(t.dataset.f));return;}});
 document.addEventListener('change',e=>{const t=e.target;if(!t.isConnected)return;
-  if(t.dataset&&t.dataset.vwahl){const k=K.find(x=>x.id===SEL);if(!k)return;const v=vtDaten(k);v.auswahl=v.auswahl.filter(x=>x!==t.dataset.vwahl);if(t.checked)v.auswahl.push(t.dataset.vwahl);speichern(k);setTimeout(panel);return;}const k=K.find(x=>x.id===SEL);if(!k||k.pid)return;
+  if(t.dataset&&t.dataset.vwahl){const k=K.find(x=>x.id===SEL);if(!k)return;const v=vtDaten(k);v.auswahl=v.auswahl.filter(x=>x!==t.dataset.vwahl);if(t.checked)v.auswahl.push(t.dataset.vwahl);speichern(k);setTimeout(panel);return;}
+  if(t.dataset&&t.dataset.mawahl){const k=K.find(x=>x.id===SEL);if(!k||k.pid)return;const a=maDaten(k);a.auswahl=a.auswahl.filter(x=>x!==t.dataset.mawahl);if(t.checked)a.auswahl.push(t.dataset.mawahl);speichern(k);setTimeout(panel);return;}
+  const k=K.find(x=>x.id===SEL);if(!k||k.pid)return;
   if(t.id==='f-obj'){const o=O.find(x=>objLabel(x)===t.value);if(!o){if(t.value)toast('Bitte eine Immobilie aus der Liste wählen.');return;}k.wohnung={objekt_id:o.id};speichern(k);setTimeout(()=>{zeileNeu(k);panel();});return;}
   if(t.id==='f-ein'){const o=k.wohnung&&objVon(k.wohnung.objekt_id);const ei=o&&E.find(x=>x.objekt_id===o.id&&einLabel(x)===t.value);if(!ei){if(t.value)toast('Bitte eine Einheit aus der Liste wählen.');return;}
     k.wohnung={objekt_id:o.id,einheit_id:ei.id,label:o.kz+' '+ei.bezeichnung+' · '+(o.strasse||o.name||'')};speichern(k,'Wohnung gewählt: '+k.wohnung.label);setTimeout(()=>{zeileNeu(k);panel();});return;}
@@ -447,6 +504,8 @@ document.addEventListener('change',e=>{const t=e.target;if(!t.isConnected)return
   if(t.dataset.pos||t.id==='k-beginn'||t.id==='k-kaution'){clearTimeout(spT);speichern(k);setTimeout(()=>{zeileNeu(k);panel();});}});
 document.addEventListener('click',async e=>{const t=e.target;
   const sw=t.closest('[data-spalte-wahl]');if(sw){const k=K.find(x=>x.id===SEL);if(k)verschieben(k,sw.dataset.spalteWahl);return;}
+  const mv=t.closest('[data-mavor]');if(mv){const k=K.find(x=>x.id===SEL);if(!k)return;const fen=window.open('','_blank');try{const b=await maErzeugen(k,mv.dataset.mavor);const u=URL.createObjectURL(new Blob([b],{type:'application/pdf'}));if(fen)fen.location.href=u;else window.open(u,'_blank');}catch(x){if(fen)fen.close();toast('Vorschau nicht möglich: '+(x.message||x),7000);}return;}
+  const mp=t.closest('[data-mapdf]');if(mp){e.preventDefault();maPdf(mp.dataset.mapdf);return;}
   const vd=t.closest('[data-vgldel]');if(vd){const k=K.find(x=>x.id===SEL);kalk(k).vergleich.splice(+vd.dataset.vgldel,1);speichern(k);panel();return;}
   const a=t.closest('[data-a]');if(a){e.preventDefault();const k=K.find(x=>x.id===SEL),w=a.dataset.a;
     if(w==='zu'){SEL=null;render();return;}
@@ -463,6 +522,8 @@ document.addEventListener('click',async e=>{const t=e.target;
     if(w==='msaab'&&k){if(!istEric())return;if(!confirm('Mieterselbstauskunft ablehnen? Der Mietinteressent wird ins Archiv gelegt.'))return;k.archiv={grund:'Abgelehnt von Eric',am:HEUTE,von:ICH};k.seit=new Date().toISOString();await speichern(k,'Mieterselbstauskunft abgelehnt');SEL=null;render();toast('Abgelehnt und ins Archiv gelegt.');syncUndLaden();return;}
     if(w==='unterschreiben'&&k){unterschreiben(k);return;}
     if(w==='vtsenden'&&k){vtSenden(k);return;}
+    if(w==='masenden'&&k){maSenden(k);return;}
+    if(w==='matext'&&k){const a=maDaten(k);delete a.betreff;delete a.text;speichern(k);panel();return;}
     if(w==='vtstand'&&k){vtStand(k);return;}
     if(w==='vtstorno'&&k){vtStorno(k);return;}
     if(w==='vtpdf'&&k){vtPdf(k);return;}

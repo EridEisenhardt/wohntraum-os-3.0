@@ -10,7 +10,7 @@ export const maxDuration = 60
 const POSTFACH = () => process.env.MS_POSTFACH || 'hausverwaltung@andersmacher.info'
 const BOX = () => '/users/' + encodeURIComponent(POSTFACH())
 const KLEIN = 3 * 1024 * 1024
-const BUCKETS = ['uebergaben', 'mieterakten']
+const BUCKETS = ['uebergaben', 'mieterakten', 'vertraege']
 const ROOT = 'Prozesslandkarte 3.0'
 const WELL = { inbox: 'Posteingang', drafts: 'Entwürfe', sentitems: 'Gesendete Elemente', deleteditems: 'Gelöschte Elemente', junkemail: 'Junk-E-Mail', archive: 'Archiv', outbox: 'Postausgang' }
 const LISTFELDER = 'id,subject,from,toRecipients,ccRecipients,receivedDateTime,sentDateTime,bodyPreview,isRead,hasAttachments,flag,importance,isDraft,conversationId,parentFolderId,internetMessageId'

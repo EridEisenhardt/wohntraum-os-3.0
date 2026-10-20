@@ -4,6 +4,8 @@
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="/vertrag-pdf.js?v=20261020b"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js"></script>
+<script src="/mietangebot-pdf.js?v=20261020a"></script>
 <style>
 :root{--bg:#f3f5f8;--card:#ffffff;--ink:#18202c;--muted:#5f6b7a;--line:#e0e5eb;--soft:#eef1f5;--accent:#2f5d8a;--accent-ink:#ffffff;--accent-soft:#e3ecf5;--pos:#1d7a4c;--pos-bg:#e5f4ec;--warn:#946200;--warn-bg:#fff4d6;--neg:#b42318}
 *{box-sizing:border-box;margin:0;padding:0}
@@ -40,6 +42,7 @@ details.hilfe[open]>summary::after{content:'zuklappen'}
 iframe.vs{width:100%;height:760px;border:1px solid var(--line);border-radius:8px;background:#fff}
 .leer{color:var(--muted);padding:14px}
 .toast{position:fixed;left:50%;bottom:20px;transform:translateX(-50%);background:var(--ink);color:#fff;padding:9px 16px;border-radius:8px;font-size:13px;opacity:0;pointer-events:none;transition:opacity .2s;z-index:60}.toast.on{opacity:1}
+.mat{width:100%;border-collapse:collapse;font-size:13.5px}.mat th{text-align:left;font-size:12px;color:var(--muted);font-weight:600;padding:6px 8px;border-bottom:1px solid var(--line)}.mat td{padding:8px;border-bottom:1px solid var(--line);vertical-align:middle}.mat tr:last-child td{border-bottom:0}.mat .acts{justify-content:flex-end;flex-wrap:wrap}
 @media(max-width:900px){.grid{grid-template-columns:1fr}.g4{grid-template-columns:1fr 1fr}}
 </style></head><body>
 <div class="wrap" id="app"><div class="leer">Lädt …</div></div>
@@ -81,8 +84,8 @@ function render(){const v=L.find(x=>x.id===SEL);
       ${v.geaendert?`<div class="sub" style="margin-top:6px">Zuletzt gespeichert: ${esc(new Date(v.geaendert).toLocaleString('de-DE'))}</div>`:''}</div>
     <div id="vs"></div>`;}
   else h+='<div class="card leer">Links eine Vorlage wählen oder eine neue anlegen.</div>';
-  h+='</div></div>';
-  document.getElementById('app').innerHTML=h;}
+  h+='</div></div><div id="ma"></div>';
+  document.getElementById('app').innerHTML=h;maZeichnen();}
 function einfuegen(s){const t=document.getElementById('text');if(!t)return;const a=t.selectionStart,b=t.selectionEnd;t.value=t.value.slice(0,a)+s+t.value.slice(b);t.focus();t.selectionStart=t.selectionEnd=a+s.length;DIRTY=true;}
 function uebernehmen(){const v=L.find(x=>x.id===SEL);if(!v)return null;const g=id=>document.getElementById(id);
   v.name=g('v-name').value.trim()||'Vorlage';v.titel=g('v-titel').value.trim();v.bereich=g('v-bereich').value.trim();v.standard=g('v-standard').checked;v.aktiv=g('v-aktiv').checked;v.text=g('text').value;return v;}
@@ -104,6 +107,35 @@ document.addEventListener('click',async e=>{const t=e.target;
   if(w==='speichern'){const v=uebernehmen();if(v&&await speichern(v)){L.sort((a,b)=>String(a.name).localeCompare(String(b.name),'de'));render();toast('Gespeichert.');}return;}
   if(w==='loeschen'){const v=L.find(x=>x.id===SEL);if(!v||!confirm('Vorlage „'+v.name+'“ löschen?'))return;const {error}=await sb.from('os_docs').delete().eq('app','oc').eq('pfad','vertragsvorlagen/'+v.id);
     if(error){toast('Nicht gelöscht: '+error.message,6000);return;}L=L.filter(x=>x.id!==v.id);SEL=L[0]&&L[0].id;DIRTY=false;render();toast('Gelöscht.');return;}});
+/* Mietangebote: Original-Vorlagen der Ämter (PDF), werden nur befüllt, nie verändert */
+const MAP=window.MietangebotPdf;let MA=null;
+const MA_BSP={vorname:'Max',nachname:'Muster',anschrift:'Musterweg 1, 55276 Oppenheim',personen:'1',mietbeginn:'01.11.2026',wohnung:'Musterstraße 28, 55276 Oppenheim, WE 2',lage:'1. OG',wfl:'62,5',zimmer:'2',
+  kalt:520,bk:110,hk:70,strom:30,wlan:15,garage:0,moebel:0,ebk:0,gesamt:745,kaution:1560,objekt_kz:'K28',einheit:'WE 2'};
+async function maLaden(){const {data,error}=await sb.storage.from('vertraege').list('mietangebot-vorlagen',{limit:100});MA={};if(!error)(data||[]).forEach(f=>{MA[f.name.replace(/\.pdf$/i,'')]=f;});maZeichnen();}
+function maZeichnen(){const el=document.getElementById('ma');if(!el)return;if(!MA){el.innerHTML='';return;}
+  const L2=MAP.VORLAGEN.slice().sort((a,b)=>a.kurz.localeCompare(b.kurz,'de'));
+  el.innerHTML=`<div class="card"><div class="ch">Mietangebote – Original-Vorlagen der Ämter</div><div class="sub" style="margin-bottom:8px">Diese PDFs werden in der Neuvermietung (Kachel Mietangebot) mit den Daten aus der Kalkulation ausgefüllt und per Mail an den Mietinteressenten gesendet. Die Vorlagen selbst werden dabei nicht verändert. Zum Austauschen einfach das neue PDF hochladen.</div>
+    <table class="mat"><thead><tr><th>Vorlage</th><th>Stand</th><th></th></tr></thead><tbody>${L2.map(x=>{const f=MA[x.id];return `<tr><td><b>${esc(x.kurz)}</b><div class="sub">${esc(x.name)}${x.gebiet?'':' · wird nicht automatisch vorausgewählt'}</div></td>
+      <td>${f?['hochgeladen',(d=>isNaN(d)?'':'am '+d.toLocaleDateString('de-DE'))(new Date(f.updated_at||f.created_at||'')),(f.metadata||{}).size?Math.round(f.metadata.size/1024)+' KB':''].filter(Boolean).join(' · '):'<span style="color:var(--warn,#b45309)">fehlt noch</span>'}</td>
+      <td><div class="acts"><button data-maup="${esc(x.id)}"${f?'':' class="primary"'}>${f?'Ersetzen':'PDF hochladen'}</button>${f?`<button data-maopen="${esc(x.id)}">Öffnen</button><button data-matest="${esc(x.id)}">Mit Beispieldaten testen</button>`:''}</div></td></tr>`;}).join('')}</tbody></table>
+    <input type="file" id="ma-datei" accept="application/pdf" style="display:none"></div>`;}
+async function maHoch(id,datei){const x=MAP.VORLAGEN.find(v=>v.id===id);if(!datei)return;
+  if(!/\.pdf$/i.test(datei.name)&&datei.type!=='application/pdf'){toast('Bitte ein PDF wählen.');return;}
+  if(MA[id]&&!confirm('Die Vorlage „'+x.kurz+'“ durch „'+datei.name+'“ ersetzen?'))return;
+  const {error}=await sb.storage.from('vertraege').upload(x.datei,datei,{upsert:true,contentType:'application/pdf'});
+  if(error){toast('Nicht hochgeladen: '+error.message,7000);return;}toast('Hochgeladen: '+x.kurz);maLaden();}
+async function maOeffnen(id,test){const x=MAP.VORLAGEN.find(v=>v.id===id);const fen=window.open('','_blank');
+  try{const {data,error}=await sb.storage.from('vertraege').download(x.datei);if(error||!data)throw new Error(error?error.message:'nicht gefunden');let b=new Uint8Array(await data.arrayBuffer());
+    if(test){let sig=null;try{const r=await sb.storage.from('uebergaben').download('vorlagen/unterschrift-eric.png');if(r.data)sig=new Uint8Array(await r.data.arrayBuffer());}catch(e){}
+      b=await MAP.ausfuellen(id,b,MA_BSP,{bg_nummer:'12345',baujahr:'1965'},{unterschrift_eric:sig});}
+    const u=URL.createObjectURL(new Blob([b],{type:'application/pdf'}));if(fen)fen.location.href=u;else window.open(u,'_blank');}
+  catch(e){if(fen)fen.close();toast('Nicht geöffnet: '+(e.message||e),7000);}}
+let MA_ZIEL='';
+document.addEventListener('change',e=>{if(e.target.id==='ma-datei'){const f=e.target.files[0];e.target.value='';maHoch(MA_ZIEL,f);}});
+document.addEventListener('click',e=>{const t=e.target;
+  const u=t.closest('[data-maup]');if(u){MA_ZIEL=u.dataset.maup;document.getElementById('ma-datei').click();return;}
+  const o=t.closest('[data-maopen]');if(o){maOeffnen(o.dataset.maopen,false);return;}
+  const g=t.closest('[data-matest]');if(g){maOeffnen(g.dataset.matest,true);return;}});
 window.addEventListener('beforeunload',e=>{if(DIRTY){e.preventDefault();e.returnValue='';}});
-laden();
+laden();maLaden();
 </script></body></html>
