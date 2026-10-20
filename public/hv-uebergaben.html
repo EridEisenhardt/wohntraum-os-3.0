@@ -62,6 +62,8 @@ textarea{resize:vertical;min-height:90px;line-height:1.45}
 .zeile{display:grid;gap:8px;align-items:end;margin-bottom:6px}
 .zs{grid-template-columns:1.4fr .6fr 1fr auto}
 .zz{grid-template-columns:1.2fr 1.2fr 1.1fr .8fr auto auto}
+.zp{grid-template-columns:1fr 1fr auto}
+.mailf{border-top:1px solid var(--line);margin-top:10px;padding-top:10px}
 .zeile .feld{font-size:14.5px}
 .kh{font-size:11px;color:var(--muted);font-weight:600;text-transform:uppercase;letter-spacing:.03em}
 .thumbs{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}
@@ -100,7 +102,10 @@ const SCHL=['Haustürschlüssel','Wohnungsschlüssel','Briefkastenschlüssel','K
 const STANDARD_OK='Der Raum ist sauber und in gutem Zustand. Keine sichtbaren Schäden festgestellt. Wände, Decke, Boden, Fenster und Türen sind in Ordnung, die Beleuchtung funktioniert.';
 const HINWEIS_VERSORGER='Der Mieter bestätigt hiermit, dass er sämtliche Versorger- und Zählerverträge innerhalb von 14 Tagen nach Auszug abmeldet bzw. bei Neueinzug entsprechend anmeldet. Für etwaige dem Vermieter entstehende Kosten, die durch unterlassene Ab- oder Anmeldungen entstehen, haftet der Mieter.';
 
-let O=[],E=[],MK=[],MKE={},Z=[],P=[],ICH='',ICHMAIL='',ICHID='';
+/* Wohnungsgeberbestätigung: Wohnungsgeber ist immer der Eigentümer der Immobilie (obj_objekte.eigentuemer), unterschrieben mit Erics Unterschrift */
+const WG_ANSCHRIFT='Dalheimer Straße 70, 55278 Dexheim',WG_ORT='Dexheim';
+const WG_GES={EE:'Eric Eisenhardt',WT:'Wohntraum Rheinhessen GmbH',KiBo:'Wohn(T)raum KiBo GmbH'};
+let O=[],E=[],MK=[],MKE={},Z=[],P=[],ICH='',ICHMAIL='',ICHID='',MAILF=null,SIGC=null,SIGSTAT=null;
 let ANS='liste',W=null,PR=null,D=null,U=null,STF='',FILTER_OBJ='',SUCHE='',SPEICHER='',BUSY='';
 const URLC={};
 
@@ -127,6 +132,81 @@ function mkFuerEinheit(e){if(!e)return [];const o=objVon(e.objekt_id);
   return MK.filter(m=>(e.nahaus_id&&m.unit===e.nahaus_id)||(!e.nahaus_id&&m.obj===o.kz&&uName(m.einheit)===uName(e.bezeichnung))).sort((a,b)=>String(b.von||'').localeCompare(String(a.von||'')));}
 function nameAkte(n){n=String(n||'').trim();const w=n.split(/\s+/);return w.length>1?w[w.length-1].toUpperCase()+' '+w.slice(0,-1).join(' '):n.toUpperCase();}
 const odSafe=s=>String(s).replace(/[\\/:*?"<>|#%]/g,'_').replace(/\s+/g,' ').trim();
+/* ---------- Wohnungsgeberbestätigung ---------- */
+function nameTeilen(n){n=String(n||'').trim();if(!n)return {vorname:'',nachname:''};if(n.includes(',')){const [a,b]=n.split(',');return {vorname:(b||'').trim(),nachname:a.trim()};}
+  const w=n.split(/\s+/);return w.length>1?{vorname:w.slice(0,-1).join(' '),nachname:w[w.length-1]}:{vorname:'',nachname:n};}
+function wgbStandardPersonen(){const m=PR&&PR.pid?MK.find(x=>x.pid===PR.pid):null;const n=(m&&mkName(m))||(D&&D.mieter&&D.mieter.name)||(PR&&PR.mieter_name)||'';
+  const L=n.split(/\s*(?:,|;|\s+und\s+|\s*&\s*)\s*/).map(x=>x.trim()).filter(Boolean);
+  return (L.length&&L.every(x=>/\s/.test(x))?L:[n]).map(nameTeilen).filter(p=>p.vorname||p.nachname);}
+function wgbGeber(ob){return ob.eigentuemer||WG_GES[ob.gesellschaft]||ob.hausverwaltung||'Wohntraum Rheinhessen GmbH';}
+const wgbEinzug=()=>D.wgb_einzug||PR.mietbeginn||String(PR.datum||'').slice(0,10);
+/* Unterschrift und Stempel liegen nur im geschützten Speicher (Bucket uebergaben/vorlagen), nicht im Code */
+const VORLAGE={unterschrift:'vorlagen/unterschrift-eric.png',stempel:'vorlagen/stempel-wohntraum.png'};
+async function sigLaden(){if(SIGC&&SIGC.unterschrift)return SIGC;const [u,st]=await Promise.all([bildDaten(VORLAGE.unterschrift),bildDaten(VORLAGE.stempel)]);
+  SIGC={unterschrift:u,stempel:st};if(!u)throw new Error('Die Unterschrift von Eric ist noch nicht hinterlegt (Karte Wohnungsgeberbestätigung, „Unterschrift hinterlegen“).');return SIGC;}
+async function sigPruefen(){try{const {data}=await sb.storage.from(BUCKET).list('vorlagen');const n=(data||[]).map(x=>x.name);SIGSTAT={unterschrift:n.includes('unterschrift-eric.png'),stempel:n.includes('stempel-wohntraum.png')};}catch(e){SIGSTAT={};}}
+async function vorlageHoch(inp){const f=inp.files&&inp.files[0],k=inp.dataset.vorlage;inp.value='';if(!f||!VORLAGE[k])return;
+  if(!/png$/i.test(f.type)&&!/\.png$/i.test(f.name)){toast('Bitte eine PNG-Datei mit transparentem Hintergrund wählen.');return;}
+  const {error}=await sb.storage.from(BUCKET).upload(VORLAGE[k],f,{contentType:'image/png',upsert:true});if(error){toast('Hochladen fehlgeschlagen: '+error.message);return;}
+  SIGC=null;await sigPruefen();renderErhalten();toast((k==='stempel'?'Stempel':'Unterschrift')+' hinterlegt.');}
+async function wgbPdf(){const {jsPDF}=window.jspdf,doc=new jsPDF({unit:'mm',format:'a4'});
+  const ob=objVon(PR.objekt_id),ei=einVon(PR.einheit_id),L=20,B=170;let y=24;const t=(s,x,yy,o)=>doc.text(String(s==null?'':s),x,yy,o);
+  const pers=(D.wgb_personen||[]).filter(p=>p.vorname||p.nachname);
+  doc.setFont('helvetica','bold');doc.setFontSize(15.5);t('Wohnungsgeberbestätigung nach § 19 des',L,y);y+=7;t('Bundesmeldegesetzes zur Vorlage bei der Meldebehörde',L,y);y+=13;
+  doc.setFont('helvetica','normal');doc.setFontSize(10);t('Hiermit wird ein Einzug in folgende Wohnung bestätigt:',L,y);y+=7;
+  const zeile=(werte,breiten,h,fett)=>{let x=L;doc.setFont('helvetica',fett?'bold':'normal');werte.forEach((w,i)=>{doc.rect(x,y,breiten[i],h);const z=doc.splitTextToSize(String(w==null?'':w),breiten[i]-3);t(z[0]||'',x+1.5,y+h-2.2);x+=breiten[i];});y+=h;doc.setFont('helvetica','normal');};
+  const adr=[ob.strasse,[ob.plz,ob.ort].filter(Boolean).join(' ')].filter(Boolean).join(', ');
+  const einh=(ei?ei.bezeichnung:'')+(ei&&ei.lage?' – '+ei.lage:'');
+  const w1=20,w2=Math.min(B-w1,Math.max(60,doc.getTextWidth(adr)+6,doc.getTextWidth(einh)+6));
+  [['Einzug',dmy(wgbEinzug())],['Einheit',einh],['Adresse',adr]].forEach(r=>zeile(r,[w1,w2],6.5));y+=8;
+  t('für die folgenden Personen:',L,y);y+=4;
+  zeile(['','Vorname','Nachname'],[7,(B-7)/2,(B-7)/2],6.5);(pers.length?pers:[{vorname:'',nachname:''}]).forEach((p,i)=>zeile([String(i+1),p.vorname,p.nachname],[7,(B-7)/2,(B-7)/2],6.5));y+=8;
+  const misch=(teile,x,yy)=>{teile.forEach(([s,f])=>{doc.setFont('helvetica',f||'normal');t(s,x,yy);x+=doc.getTextWidth(s);});doc.setFont('helvetica','normal');};
+  misch([['Name und Anschrift des '],['Wohnungsgebers','bold'],[' lauten:']],L,y);y+=9;
+  doc.setFont('helvetica','bolditalic');t(wgbGeber(ob)+', '+WG_ANSCHRIFT,L,y);y+=2;doc.setDrawColor(0);doc.line(L,y,L+B,y);y+=4.5;
+  doc.setFont('helvetica','italic');doc.setFontSize(9.5);t('(Name und Adresse des Wohnungsgebers)',L,y);y+=4.5;t('- als Wohnungsgeber -',L+B,y,{align:'right'});y+=9;doc.setFontSize(10);doc.setFont('helvetica','normal');
+  const box=(x,yy,an)=>{doc.setLineWidth(.35);doc.roundedRect(x,yy-4,4.5,4.5,.6,.6);if(an){doc.setLineWidth(.6);doc.line(x+1,yy-1.8,x+2,yy-.7);doc.line(x+2,yy-.7,x+3.6,yy-3);}doc.setLineWidth(.2);};
+  box(L,y,true);misch([['Der Wohnungsgeber ist gleichzeitig '],['Eigentümer','bold'],[' der Wohnung oder']],L+9,y);y+=6.5;
+  box(L,y,false);misch([['Der Wohnungsgeber ist nicht '],['Eigentümer','bold'],[' der Wohnung']],L+9,y);y+=4.5;misch([['Name und Anschrift des '],['Eigentümers','bold'],[' lauten:']],L+9,y);y+=11;
+  doc.line(L+9,y,L+B,y);y+=4.5;doc.setFont('helvetica','italic');doc.setFontSize(9.5);t('(Name und Adresse des Eigentümers)',L+9,y);y+=4.5;t('- als Eigentümer(in) -',L+B,y,{align:'right'});y+=10;
+  doc.setFontSize(9.5);doc.setFont('helvetica','bold');t('Ich bestätige mit meiner Unterschrift, dass die oben gemachten Angaben den Tatsachen entsprechen.',L,y);y+=4.5;doc.setFont('helvetica','normal');
+  doc.splitTextToSize('Mir ist bekannt, dass es verboten ist, eine Wohnanschrift für eine Anmeldung einem Dritten anzubieten oder zur Verfügung zu stellen, obwohl ein tatsächlicher Bezug der Wohnung durch diesen weder stattfindet noch beabsichtigt ist. Ein Verstoß gegen das Verbot stellt ebenso eine Ordnungswidrigkeit dar wie die Ausstellung dieser Bestätigung ohne dazu als Wohnungsgeber oder dessen Beauftragter berechtigt zu sein (§ 54 i.V.m. § 19 BMG).',B).forEach(z=>{t(z,L,y);y+=4.3;});y+=8;
+  doc.setFontSize(10);const sw=B/2;zeile(['Ort, Datum','Unterschrift Vermieter/Verwaltung'],[sw,sw],6.5);
+  doc.rect(L,y,sw,24);doc.rect(L+sw,y,sw,24);t(WG_ORT+', '+dmy(PR.datum),L+1.5,y+5);
+  {const s=await sigLaden();if(s.unterschrift){const h=15,w=h*s.unterschrift.w/s.unterschrift.h;doc.addImage(s.unterschrift.url,'PNG',L+sw+4,y+5,Math.min(w,sw-30),Math.min(w,sw-30)*s.unterschrift.h/s.unterschrift.w);}
+    if(s.stempel){const h=26,w=h*s.stempel.w/s.stempel.h;doc.addImage(s.stempel.url,'PNG',L+B-w+4,y-5,w,h);}}
+  doc.setFontSize(8);doc.setTextColor(90);doc.line(L+60,284,L+B-60,284);t('1 von 1',L+B/2,288,{align:'center'});doc.setTextColor(0);
+  return doc.output('blob');}
+function wgbName(){return pdfName().replace(/_Übergabeprotokoll [^_]*\.pdf$/,'_Wohnungsgeberbescheinigung.pdf');}
+async function wgbAblegen(){const blob=await wgbPdf(),name=wgbName(),pfad=PR.id+'/'+speicherName(name);
+  const up=await sb.storage.from(BUCKET).upload(pfad,blob,{contentType:'application/pdf',upsert:true});if(up.error)throw up.error;
+  let od=null,hinw='';const odm=PR.pid?(MKE[PR.pid]||{}).od:'';
+  if(odm){try{const ziel=odm+'/01 Mietbeginn';od=await odHochladen(ziel,name,blob);od.pfad=ziel+'/'+name;}catch(e){hinw='OneDrive: '+(e.message||e);}}
+  D.wgb_pdf={pfad,od,name,erstellt:new Date().toISOString()};D.wgb=true;return hinw;}
+const speicherName=n=>n.replace(/Ä/g,'Ae').replace(/Ö/g,'Oe').replace(/Ü/g,'Ue').replace(/ä/g,'ae').replace(/ö/g,'oe').replace(/ü/g,'ue').replace(/ß/g,'ss').replace(/[^\w.\- ]/g,'_');
+/* ---------- Mail an den Mieter ---------- */
+function anredeText(m,name){const a=String(m&&(MKE[m.pid]||{}).anrede||m&&m.anrede||'').trim();
+  const T=a.split(/\s*,\s*/).map(x=>{const r=x.match(/^(Frau|Herr)\s+(.+)$/i);if(!r)return '';const nn=nameTeilen(r[2]).nachname;return (r[1].toLowerCase()==='frau'?'geehrte Frau ':'geehrter Herr ')+nn;}).filter(Boolean);
+  if(T.length)return 'Sehr '+T.join(', sehr ')+',';return 'Guten Tag'+(name?' '+name:'')+',';}
+function mailVorlage(){const ob=objVon(PR.objekt_id),ei=einVon(PR.einheit_id),m=PR.pid?MK.find(x=>x.pid===PR.pid):null,wg=PR.typ==='Einzug'&&D.wgb_pdf;
+  const k=m?mkKontakt(m):{};const name=D.mieter.name||PR.mieter_name||'';
+  const wo=(ob.strasse||'')+', '+[ob.plz,ob.ort].filter(Boolean).join(' ')+(ei?' ('+ei.bezeichnung+')':'');
+  return {an:D.mieter.email||k.email||'',betreff:'Übergabeprotokoll '+PR.typ+(wg?' und Wohnungsgeberbestätigung':'')+' – '+(ob.strasse||'')+(ei?', '+ei.bezeichnung:''),
+    text:anredeText(m,name)+'\n\nanbei erhalten Sie das Übergabeprotokoll zur Wohnungsübergabe ('+PR.typ+') vom '+dmy(PR.datum)+' für die Wohnung '+wo+'.'
+      +(wg?'\n\nAußerdem finden Sie im Anhang die Wohnungsgeberbestätigung, die Sie für die Anmeldung bei der Meldebehörde benötigen.':'')
+      +'\n\nBei Fragen melden Sie sich gerne bei uns.\n\nMit freundlichen Grüßen\n'+(ICH||'')+'\n'+(ob.hausverwaltung||'Wohntraum Rheinhessen GmbH'),
+    prot:true,wgb:!!wg};}
+async function mailSenden(){if(BUSY)return;const f=MAILF;if(!f)return;const anh=[];
+  if(f.prot&&PR.pdf_pfad)anh.push({pfad:PR.pdf_pfad,name:pdfName()});if(f.wgb&&D.wgb_pdf)anh.push({pfad:D.wgb_pdf.pfad,name:D.wgb_pdf.name||wgbName()});
+  if(!anh.length){toast('Bitte mindestens einen Anhang auswählen.');return;}if(!String(f.an||'').includes('@')){toast('Bitte die E-Mail-Adresse des Mieters eintragen.');return;}
+  BUSY='mail';renderErhalten();
+  try{const r=await api('/api/uebergabe',{aktion:'mail',an:f.an,betreff:f.betreff,text:f.text,anhaenge:anh});
+    const ts=new Date();D.versand=(D.versand||[]).concat([{an:r.an.join(', '),von:r.von,zeit:ts.toISOString(),durch:ICH,anhaenge:anh.map(a=>a.name)}]);
+    if(!D.mieter.email)D.mieter.email=r.an[0];
+    await sb.from('uebergabeprotokolle').update({daten:D,updated_at:ts.toISOString()}).eq('id',PR.id);
+    if(PR.pid){try{const id=PR.pid+'__'+ts.getTime()+rid().slice(0,3);await sb.from('os_docs').upsert({app:'oc',pfad:'historie/'+id,data:{pid:PR.pid,id,d:ts.toISOString(),erfasst:ts.toISOString(),art:'E-Mail',t:'Per Mail an '+r.an.join(', ')+' gesendet: '+anh.map(a=>a.name).join(', '),by:ICH||'unbekannt',mail:ICHMAIL,uid:ICHID,manuell:false},updated_at:ts.toISOString()});}catch(e){}}
+    MAILF=null;BUSY='';renderErhalten();toast('Mail an '+r.an.join(', ')+' gesendet.',6000);}
+  catch(e){BUSY='';renderErhalten();toast('Senden fehlgeschlagen: '+(e.message||e),10000);}}
 
 /* ---------- Laden ---------- */
 async function laden(){
@@ -142,6 +222,7 @@ async function laden(){
   O=o.data||[];E=e.data||[];MK=mk.data||[];MKE=(me.data&&me.data.data&&me.data.data.e)||{};Z=z.data||[];P=p.data||[];
   const us=u&&u.data&&u.data.user;if(us){ICHMAIL=String(us.email||'').toLowerCase();ICHID=us.id;ICH=NUTZER[ICHMAIL]||(us.user_metadata&&(us.user_metadata.full_name||us.user_metadata.name))||us.email||'';}
   const Q=new URLSearchParams(location.search);
+  await sigPruefen();
   if(Q.get('id')){await oeffnen(Q.get('id'));return;}
   if(Q.get('pid')){const m=MK.find(x=>x.pid===Q.get('pid'));if(m){const ob=O.find(x=>x.kz===m.obj);const ei=ob&&E.find(x=>x.objekt_id===ob.id&&((m.unit&&x.nahaus_id===m.unit)||uName(x.bezeichnung)===uName(m.einheit)));
     W={obj:ob?ob.id:'',ein:ei?ei.id:'',pid:m.pid,typ:vorschlagTyp(m),q:''};ANS='neu';}}
@@ -222,7 +303,8 @@ function standardZaehler(e){const L=Z.filter(z=>e&&z.unit_id===e.id&&z.aktiv!==f
 /* ---------- Erfassung ---------- */
 async function oeffnen(id,vorhanden){let row=vorhanden&&vorhanden.daten?vorhanden:null;
   if(!row){const {data,error}=await sb.from('uebergabeprotokolle').select('*').eq('id',id).maybeSingle();if(error||!data){toast('Protokoll nicht gefunden.');ANS='liste';render();return;}row=data;}
-  PR=row;D=Object.assign({schluessel:[],raeume:[],zaehler:[],mieter:{},teilnehmer:{}},row.daten||{});U=row.unterschriften||{};
+  PR=row;D=Object.assign({schluessel:[],raeume:[],zaehler:[],mieter:{},teilnehmer:{}},row.daten||{});U=row.unterschriften||{};MAILF=null;
+  if(PR.typ==='Einzug'){if(!Array.isArray(D.wgb_personen))D.wgb_personen=wgbStandardPersonen();if(D.wgb_erstellen==null)D.wgb_erstellen=true;}
   try{const lok=JSON.parse(localStorage.getItem('ueb_'+id)||'null');if(lok&&lok.t>Date.parse(row.updated_at||0)+2000&&row.status!=='Abgeschlossen'){D=lok.d;U=lok.u||U;SPEICHER='lokal';speichernBald(10);}}catch(e){}
   ANS='edit';render();window.scrollTo(0,0);}
 const gesperrt=()=>PR&&PR.status==='Abgeschlossen';
@@ -230,8 +312,16 @@ function renderEdit(){const ob=objVon(PR.objekt_id),ei=einVon(PR.einheit_id),m=P
   const od=PR.pid?(MKE[PR.pid]||{}).od:'';
   let h=`<div class="ekopf"><div class="kopf" style="margin-bottom:0"><div><h1>Übergabeprotokoll ${esc(PR.typ)}</h1><div class="sub">${esc(ob.kz||'')} · ${esc(ei?ei.bezeichnung:'')} · ${esc(ob.strasse||'')}, ${esc((ob.plz||'')+' '+(ob.ort||''))} · ${esc(PR.mieter_name||'')}</div></div>
     <div class="acts" style="margin-top:0"><span class="status" id="spst">${zu?'':speicherText()}</span><button data-act="liste">Zur Liste</button>${m?`<button data-act="konto">Mieterkonto</button>`:''}${zu?'':`<button class="primary" data-act="abschliessen"${BUSY?' disabled':''}>${BUSY==='ab'?'Wird abgeschlossen …':'Protokoll abschließen'}</button>`}</div></div></div>`;
-  if(zu)h+=`<div class="card"><div class="ch">Abgeschlossen am ${zeit(PR.abgeschlossen_am)}</div><div class="acts" style="margin-top:0"><button class="primary" data-act="pdf" data-id="${PR.id}">PDF öffnen</button>${PR.pdf_od&&PR.pdf_od.id?'<button data-act="odoeffnen">In OneDrive öffnen</button>':''}<button class="ghost" data-act="wiederoeffnen">Wieder bearbeiten</button></div>
-    ${PR.pdf_od&&PR.pdf_od.pfad?'<div class="sub" style="margin-top:6px">Abgelegt in OneDrive: '+esc(PR.pdf_od.pfad)+'</div>':'<div class="sub" style="margin-top:6px">Das PDF liegt im OS. Für dieses Mieterkonto ist kein OneDrive-Mieterordner zugeordnet.</div>'}</div>`;
+  if(zu)h+=`<div class="card"><div class="ch">Abgeschlossen am ${zeit(PR.abgeschlossen_am)}</div><div class="acts" style="margin-top:0"><button class="primary" data-act="pdf" data-id="${PR.id}">PDF öffnen</button>${PR.pdf_od&&PR.pdf_od.id?'<button data-act="odoeffnen">In OneDrive öffnen</button>':''}${!auszug?(D.wgb_pdf?'<button data-act="wgboeffnen">Wohnungsgeberbestätigung öffnen</button>':`<button data-act="wgbneu"${BUSY?' disabled':''}>${BUSY==='wgb'?'Wird erstellt …':'Wohnungsgeberbestätigung erstellen'}</button>`):''}${!auszug&&!D.wgb_pdf&&SIGSTAT&&!SIGSTAT.unterschrift?'<label class="up">Unterschrift Eric hinterlegen<input type="file" accept="image/png" hidden data-vorlage="unterschrift"></label>':''}${!auszug&&!D.wgb_pdf&&SIGSTAT&&!SIGSTAT.stempel?'<label class="up">Stempel hinterlegen<input type="file" accept="image/png" hidden data-vorlage="stempel"></label>':''}<button data-act="mailform"${MAILF?' class="on"':''}>Per Mail an Mieter senden</button><button class="ghost" data-act="wiederoeffnen">Wieder bearbeiten</button></div>
+    ${PR.pdf_od&&PR.pdf_od.pfad?'<div class="sub" style="margin-top:6px">Abgelegt in OneDrive: '+esc(PR.pdf_od.pfad)+'</div>':'<div class="sub" style="margin-top:6px">Das PDF liegt im OS. Für dieses Mieterkonto ist kein OneDrive-Mieterordner zugeordnet.</div>'}
+    ${D.wgb_pdf&&D.wgb_pdf.od&&D.wgb_pdf.od.pfad?'<div class="sub">Wohnungsgeberbestätigung abgelegt in OneDrive: '+esc(D.wgb_pdf.od.pfad)+'</div>':''}
+    ${(D.versand||[]).map(v=>'<div class="sub">Per Mail gesendet am '+zeit(v.zeit)+' an '+esc(v.an)+(v.durch?' ('+esc(v.durch)+')':'')+'</div>').join('')}
+    ${MAILF?`<div class="mailf"><div class="g2"><label class="fl">An (E-Mail des Mieters, mehrere mit Komma)<input type="email" multiple id="mf-an" value="${esc(MAILF.an)}"></label><label class="fl">Betreff<input id="mf-betreff" value="${esc(MAILF.betreff)}"></label></div>
+      <label class="fl">Text<textarea id="mf-text" style="min-height:200px">${esc(MAILF.text)}</textarea></label>
+      <div class="kh" style="margin-bottom:2px">Anhänge</div>
+      <label class="cb"><input type="checkbox" id="mf-prot"${MAILF.prot?' checked':''}> ${esc(pdfName())}</label>
+      ${!auszug?(D.wgb_pdf?`<label class="cb"><input type="checkbox" id="mf-wgb"${MAILF.wgb?' checked':''}> ${esc(D.wgb_pdf.name||wgbName())}</label>`:'<div class="sub">Noch keine Wohnungsgeberbestätigung erstellt.</div>'):''}
+      <div class="acts"><button class="primary" data-act="mailsenden"${BUSY?' disabled':''}>${BUSY==='mail'?'Wird gesendet …':'Mail senden'}</button><button class="ghost" data-act="mailform">Abbrechen</button><span class="sub">Absender: hausverwaltung@andersmacher.info</span></div></div>`:''}</div>`;
   else if(!od)h+='<div class="note">Für dieses Mietverhältnis ist kein OneDrive-Mieterordner zugeordnet. Das PDF wird dann nur im OS gespeichert. Zuordnen geht im Mieterkonto unter Dokumente.</div>';
   if(auszug&&D.einzug_id){const ein=P.find(p=>p.id===D.einzug_id);if(ein&&ein.pdf_pfad)h+=`<div class="info">Zum Vergleich: <button class="small" data-act="pdf" data-id="${ein.id}">Einzugsprotokoll vom ${dmy(ein.datum)} öffnen</button></div>`;}
   h+='<fieldset'+(zu?' disabled':'')+'>';
@@ -272,6 +362,15 @@ function renderEdit(){const ob=objVon(PR.objekt_id),ei=einVon(PR.einheit_id),m=P
   h+=`<div class="card"><div class="ch">Angaben des Mieters</div><div class="g2">
     <label class="fl">Name<input data-f="mieter.name" value="${esc(D.mieter.name||'')}"></label><label class="fl">Telefon<input type="tel" data-f="mieter.tel" value="${esc(D.mieter.tel||'')}"></label>
     <label class="fl">E-Mail<input type="email" data-f="mieter.email" value="${esc(D.mieter.email||'')}"></label><label class="fl">${auszug?'Neue Anschrift':'Bisherige Anschrift'}<input data-f="mieter.adresse" value="${esc(D.mieter.adresse||'')}"></label></div></div>`;
+  // Wohnungsgeberbestätigung (nur Einzug)
+  if(!auszug){h+=`<div class="card"><div class="ch">Wohnungsgeberbestätigung<span class="sub">Wohnungsgeber: ${esc(wgbGeber(ob))}, ${esc(WG_ANSCHRIFT)} (Eigentümer) · Unterschrift Eric Eisenhardt</span></div>
+    ${SIGSTAT&&(!SIGSTAT.unterschrift||!SIGSTAT.stempel)?`<div class="note">${SIGSTAT.unterschrift?'':'Erics Unterschrift ist noch nicht hinterlegt. '}${SIGSTAT.stempel?'':'Der Stempel ist noch nicht hinterlegt. '}Bitte einmalig als PNG hochladen.</div>
+      <div class="acts" style="margin:0 0 6px">${SIGSTAT.unterschrift?'':'<label class="up">Unterschrift hinterlegen<input type="file" accept="image/png" hidden data-vorlage="unterschrift"></label>'}${SIGSTAT.stempel?'':'<label class="up">Stempel hinterlegen<input type="file" accept="image/png" hidden data-vorlage="stempel"></label>'}</div>`:''}
+    <label class="cb"><input type="checkbox" data-f="wgb_erstellen"${D.wgb_erstellen!==false?' checked':''}> Beim Abschließen automatisch erstellen und im Mieterordner unter „01 Mietbeginn“ ablegen</label>
+    <div class="g3"><label class="fl">Einzugsdatum<input type="date" data-f="wgb_einzug" value="${esc(wgbEinzug())}"></label></div>
+    <div class="kh" style="margin:4px 0">Meldepflichtige Personen</div><div class="zeile zp kh"><span>Vorname</span><span>Nachname</span><span></span></div>`
+    +(D.wgb_personen||[]).map((p,i)=>`<div class="zeile zp"><input class="feld" data-f="wgb_personen.${i}.vorname" value="${esc(p.vorname)}"><input class="feld" data-f="wgb_personen.${i}.nachname" value="${esc(p.nachname)}"><button class="small ghost" data-act="del" data-l="wgb_personen" data-i="${i}">Entfernen</button></div>`).join('')
+    +`<div class="acts"><button class="small" data-act="add" data-l="wgb_personen">Person hinzufügen</button></div></div>`;}
   // Bemerkungen
   h+=`<div class="card"><div class="ch">Vereinbarungen und Bemerkungen</div><textarea class="feld" data-f="bemerkungen" placeholder="z. B. Mängel werden bis zum … behoben, Schönheitsreparaturen, Absprachen zur Kaution">${esc(D.bemerkungen||'')}</textarea></div>`;
   // Unterschriften
@@ -287,13 +386,15 @@ document.addEventListener('input',e=>{const t=e.target;
   if(t.id==='q'){SUCHE=t.value;render();const q=document.getElementById('q');q.focus();q.setSelectionRange(q.value.length,q.value.length);return;}
   if(t.id==='w-q'){W.q=t.value;render();const q=document.getElementById('w-q');q.focus();q.setSelectionRange(q.value.length,q.value.length);return;}
   if(t.id==='w-name'){W.name=t.value;return;}
+  if(MAILF&&t.id&&t.id.startsWith('mf-')){const k=t.id.slice(3);MAILF[k]=t.type==='checkbox'?t.checked:t.value;return;}
   if(ANS==='edit'&&t.dataset.f&&!gesperrt()){setze(t.dataset.f,t.type==='checkbox'?t.checked:t.value);
     if(t.dataset.f==='teilnehmer.mieter'&&!D.mieter.name)D.mieter.name=t.value;speichernBald();}});
 document.addEventListener('change',e=>{const t=e.target;
   if(t.id==='fobj'){FILTER_OBJ=t.value==='Alle'?'':t.value;setTimeout(render);return;}
   if(t.id==='w-obj'){const ob=O.find(x=>objLabel(x)===t.value);if(ob){W.obj=ob.id;W.ein='';W.pid=null;setTimeout(render);}return;}
   if(t.type==='checkbox'&&t.dataset.f&&ANS==='edit'&&!gesperrt()){setze(t.dataset.f,t.checked);speichernBald();}
-  if(t.dataset.foto)fotosHoch(t);});
+  if(MAILF&&t.type==='checkbox'&&t.id&&t.id.startsWith('mf-')){MAILF[t.id.slice(3)]=t.checked;}
+  if(t.dataset.foto)fotosHoch(t);if(t.dataset.vorlage)vorlageHoch(t);});
 let _sp=null;
 function speicherText(){return SPEICHER==='laeuft'?'Speichert …':SPEICHER==='fehler'?'Nicht gespeichert, neuer Versuch folgt':SPEICHER==='lokal'?'Auf diesem Gerät zwischengespeichert':SPEICHER?'Gespeichert '+SPEICHER:'';}
 function spStatus(s){SPEICHER=s;const el=document.getElementById('spst');if(el)el.textContent=speicherText();}
@@ -397,15 +498,17 @@ async function abschliessen(){if(BUSY)return;
   if(!(D.raeume||[]).length)fehlt.push('mindestens ein Raum');
   if(fehlt.length&&!confirm('Es fehlt noch: '+fehlt.join(', ')+'.\n\nTrotzdem abschließen?'))return;
   BUSY='ab';renderErhalten();const hinw=[];
+  const mitWgb=PR.typ==='Einzug'&&D.wgb_erstellen!==false;
   try{if(!(await speichern()))throw new Error('Speichern fehlgeschlagen. Bitte Internetverbindung prüfen.');
-    const blob=await pdfErstellen(),name=pdfName(),pfad=PR.id+'/'+name.replace(/Ä/g,'Ae').replace(/Ö/g,'Oe').replace(/Ü/g,'Ue').replace(/ä/g,'ae').replace(/ö/g,'oe').replace(/ü/g,'ue').replace(/ß/g,'ss').replace(/[^\w.\- ]/g,'_');
+    if(mitWgb){try{const h=await wgbAblegen();if(h)hinw.push(h);}catch(e){hinw.push('Wohnungsgeberbestätigung: '+(e.message||e));}}
+    const blob=await pdfErstellen(),name=pdfName(),pfad=PR.id+'/'+speicherName(name);
     const up=await sb.storage.from(BUCKET).upload(pfad,blob,{contentType:'application/pdf',upsert:true});if(up.error)throw up.error;
     let pdfOd=null;const od=PR.pid?(MKE[PR.pid]||{}).od:'';
     if(od){try{const ziel=od+'/'+(PR.typ==='Auszug'?'06 Mietende':'01 Mietbeginn');pdfOd=await odHochladen(ziel,name,blob);pdfOd.pfad=ziel+'/'+name;}catch(e){hinw.push('OneDrive: '+(e.message||e));}}
     try{const n=await zaehlerUebernehmen();if(n)hinw.push(n+' Zählerstand'+(n===1?'':'e')+' übernommen');}catch(e){hinw.push('Zählerstände: '+(e.message||e));}
     if(PR.pid){try{const ts=new Date(),id=PR.pid+'__'+ts.getTime()+rid().slice(0,3);
-      await sb.from('os_docs').upsert({app:'oc',pfad:'historie/'+id,data:{pid:PR.pid,id,d:PR.datum,erfasst:ts.toISOString(),art:'Übergabeprotokoll',t:'Übergabeprotokoll '+PR.typ+' erstellt'+(pdfOd?' und im Mieterordner abgelegt':'')+': '+name,by:ICH||'unbekannt',mail:ICHMAIL,uid:ICHID,manuell:false},updated_at:ts.toISOString()});}catch(e){}}
-    const zeile={status:'Abgeschlossen',pdf_pfad:pfad,pdf_od:pdfOd,abgeschlossen_am:new Date().toISOString(),updated_at:new Date().toISOString()};
+      await sb.from('os_docs').upsert({app:'oc',pfad:'historie/'+id,data:{pid:PR.pid,id,d:PR.datum,erfasst:ts.toISOString(),art:'Übergabeprotokoll',t:'Übergabeprotokoll '+PR.typ+' erstellt'+(pdfOd?' und im Mieterordner abgelegt':'')+': '+name+(D.wgb_pdf&&mitWgb?' · Wohnungsgeberbestätigung: '+D.wgb_pdf.name:''),by:ICH||'unbekannt',mail:ICHMAIL,uid:ICHID,manuell:false},updated_at:ts.toISOString()});}catch(e){}}
+    const zeile={status:'Abgeschlossen',pdf_pfad:pfad,pdf_od:pdfOd,daten:D,abgeschlossen_am:new Date().toISOString(),updated_at:new Date().toISOString()};
     const {error}=await sb.from('uebergabeprotokolle').update(zeile).eq('id',PR.id);if(error)throw error;
     Object.assign(PR,zeile);const i=P.findIndex(p=>p.id===PR.id);if(i>=0)Object.assign(P[i],zeile);
     BUSY='';renderErhalten();window.scrollTo(0,0);toast('Protokoll abgeschlossen'+(pdfOd?' und im Mieterordner abgelegt':'')+'.'+(hinw.length?' '+hinw.join(' · '):''),8000);}
@@ -424,6 +527,8 @@ async function odHochladen(ordner,name,blob){const nm=odSafe(name);await api('/a
     return (await api('/api/onedrive',{aktion:'hochladen',pfad:ordner,name:nm,daten:b64,typ:'application/pdf'})).item||{};}
   const s=await api('/api/onedrive',{aktion:'sitzung',pfad:ordner,name:nm});const r=await fetch(s.uploadUrl,{method:'PUT',headers:{'Content-Range':'bytes 0-'+(blob.size-1)+'/'+blob.size},body:blob});
   if(!r.ok)throw new Error('Hochladen fehlgeschlagen ('+r.status+').');const j=await r.json();return {id:j.id,name:j.name,web:j.webUrl};}
+async function pfadOeffnen(pfad){if(!pfad){toast('Datei nicht gefunden.');return;}const w=window.open('','_blank');const {data,error}=await sb.storage.from(BUCKET).createSignedUrl(pfad,3600);
+  if(error||!data){if(w)w.close();toast('PDF konnte nicht geöffnet werden.');return;}if(w)w.location.href=data.signedUrl;else window.open(data.signedUrl,'_blank');}
 async function pdfOeffnen(id){const p=P.find(x=>x.id===id)||(PR&&PR.id===id?PR:null);if(!p||!p.pdf_pfad){toast('Für dieses Protokoll gibt es noch kein PDF.');return;}
   const w=window.open('','_blank');const {data,error}=await sb.storage.from(BUCKET).createSignedUrl(p.pdf_pfad,3600);
   if(error||!data){if(w)w.close();toast('PDF konnte nicht geöffnet werden.');return;}if(w)w.location.href=data.signedUrl;else window.open(data.signedUrl,'_blank');}
@@ -444,7 +549,7 @@ const ACT={
   pdf:(d,b,e)=>{e.stopPropagation();pdfOeffnen(d.id);},
   liste:async()=>{if(PR&&!gesperrt())await speichern();ANS='liste';PR=null;history.replaceState(null,'',location.pathname);render();window.scrollTo(0,0);},
   konto:()=>{(window.top||window).location.href='/hausverwaltung/mieterkonten?pid='+encodeURIComponent(PR.pid);},
-  add:d=>{if(d.l==='schluessel')D.schluessel.push({typ:'',anzahl:'',nummer:''});else D.zaehler.push({zid:'',typ:'',nummer:'',malo:'',stand:'',foto:''});speichernBald();renderErhalten();},
+  add:d=>{if(d.l==='wgb_personen')(D.wgb_personen=D.wgb_personen||[]).push({vorname:'',nachname:''});else if(d.l==='schluessel')D.schluessel.push({typ:'',anzahl:'',nummer:''});else D.zaehler.push({zid:'',typ:'',nummer:'',malo:'',stand:'',foto:''});speichernBald();renderErhalten();},
   del:d=>{const L=D[d.l],i=+d.i;if(d.l==='raeume'&&(L[i].text||(L[i].fotos||[]).length)&&!confirm('Raum „'+(L[i].name||'')+'“ mit Text und Fotos entfernen?'))return;L.splice(i,1);speichernBald();renderErhalten();},
   hoch:d=>{const i=+d.i;if(i<1)return;const L=D.raeume;[L[i-1],L[i]]=[L[i],L[i-1]];speichernBald();renderErhalten();},
   zustand:d=>{D.raeume[+d.i].zustand=d.v;speichernBald();renderErhalten();},
@@ -455,6 +560,12 @@ const ACT={
   fotoweg:(d,b,e)=>{e.stopPropagation();if(!confirm('Foto entfernen?'))return;D.raeume[+d.i].fotos.splice(+d.j,1);speichernBald();renderErhalten();},
   sigweg:d=>{delete U[d.k];speichernBald(300);renderErhalten();},
   abschliessen:()=>abschliessen(),
+  wgboeffnen:()=>pfadOeffnen(D.wgb_pdf&&D.wgb_pdf.pfad),
+  wgbneu:async()=>{if(BUSY)return;if(!Array.isArray(D.wgb_personen)||!D.wgb_personen.length)D.wgb_personen=wgbStandardPersonen();BUSY='wgb';renderErhalten();
+    try{const h=await wgbAblegen();await sb.from('uebergabeprotokolle').update({daten:D,updated_at:new Date().toISOString()}).eq('id',PR.id);BUSY='';renderErhalten();toast('Wohnungsgeberbestätigung erstellt'+(D.wgb_pdf.od?' und im Mieterordner abgelegt':'')+'.'+(h?' '+h:''),6000);}
+    catch(e){BUSY='';renderErhalten();toast('Erstellen fehlgeschlagen: '+(e.message||e),8000);}},
+  mailform:()=>{MAILF=MAILF?null:mailVorlage();renderErhalten();},
+  mailsenden:()=>mailSenden(),
   wiederoeffnen:async()=>{if(!confirm('Protokoll wieder bearbeiten? Beim erneuten Abschließen wird ein neues PDF erstellt.'))return;
     const {error}=await sb.from('uebergabeprotokolle').update({status:'Entwurf'}).eq('id',PR.id);if(error){toast(error.message);return;}PR.status='Entwurf';const i=P.findIndex(p=>p.id===PR.id);if(i>=0)P[i].status='Entwurf';renderErhalten();},
   odoeffnen:async()=>{const w=window.open('','_blank');try{const r=await api('/api/onedrive',{aktion:'link',id:PR.pdf_od.id});const u=r.web||r.download;if(w)w.location.href=u;else window.open(u,'_blank');}catch(e){if(w)w.close();toast(e.message||String(e));}},
