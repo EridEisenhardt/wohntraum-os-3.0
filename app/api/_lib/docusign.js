@@ -7,13 +7,24 @@ export const dsBereit = () => !!(process.env.DOCUSIGN_INTEGRATION_KEY && process
 const AUTH = () => (process.env.DOCUSIGN_AUTH_SERVER || 'account-d.docusign.com').replace(/^https?:\/\//, '').replace(/\/$/, '')
 export const zustimmungsLink = redirect => 'https://' + AUTH() + '/oauth/auth?response_type=code&scope=signature%20impersonation&client_id=' + encodeURIComponent(process.env.DOCUSIGN_INTEGRATION_KEY || '') + '&redirect_uri=' + encodeURIComponent(redirect)
 
-// Privaten Schlüssel aus der Umgebungsvariable in ein sauberes PEM bringen (Zeilenumbrüche können beim Einfügen verloren gehen)
+// Privaten Schlüssel aus der Umgebungsvariable in ein sauberes PEM bringen.
+// Erlaubt: kompletter Schlüssel mit BEGIN-/END-Zeile (auch ohne Zeilenumbrüche oder in Anführungszeichen),
+// nur der Schlüsselinhalt ohne BEGIN-/END-Zeile, oder der ganze Schlüssel base64-kodiert.
 function pem() {
-  let k = String(process.env.DOCUSIGN_PRIVATE_KEY || '').trim().replace(/\\n/g, '\n')
+  let k = String(process.env.DOCUSIGN_PRIVATE_KEY || '').trim().replace(/^["']|["']$/g, '').replace(/\\n/g, '\n').trim()
+  if (!k) throw new Error('DOCUSIGN_PRIVATE_KEY fehlt in Vercel.')
+  if (!/-----BEGIN/.test(k)) { try { const d = Buffer.from(k.replace(/\s+/g, ''), 'base64').toString('utf8'); if (/-----BEGIN [A-Z ]*PRIVATE KEY-----/.test(d)) k = d } catch {} }
+  const kandidaten = []
   const m = k.match(/-----BEGIN ([A-Z ]+)-----([\s\S]*?)-----END \1-----/)
-  if (!m) throw new Error('DOCUSIGN_PRIVATE_KEY ist nicht vollständig (BEGIN- und END-Zeile fehlen).')
-  const body = m[2].replace(/\s+/g, '').match(/.{1,64}/g).join('\n')
-  return '-----BEGIN ' + m[1] + '-----\n' + body + '\n-----END ' + m[1] + '-----\n'
+  const zeilen = b => b.replace(/[^A-Za-z0-9+/=]/g, '').match(/.{1,64}/g).join('\n')
+  if (m) kandidaten.push('-----BEGIN ' + m[1] + '-----\n' + zeilen(m[2]) + '\n-----END ' + m[1] + '-----\n')
+  else {
+    const body = k.replace(/-----[A-Z ]+-----/g, '')
+    if (!body.replace(/[^A-Za-z0-9+/=]/g, '')) throw new Error('DOCUSIGN_PRIVATE_KEY enthält keinen Schlüssel, vermutlich wurde nur die erste Zeile eingefügt. Bitte in Vercel den ganzen Schlüssel aus DocuSign einfügen.')
+    for (const t of ['RSA PRIVATE KEY', 'PRIVATE KEY']) kandidaten.push('-----BEGIN ' + t + '-----\n' + zeilen(body) + '\n-----END ' + t + '-----\n')
+  }
+  for (const c of kandidaten) { try { crypto.createPrivateKey(c); return c } catch {} }
+  throw new Error('DOCUSIGN_PRIVATE_KEY ist nicht lesbar. Bitte in Vercel den privaten Schlüssel aus DocuSign vollständig einfügen, von „-----BEGIN RSA PRIVATE KEY-----“ bis „-----END RSA PRIVATE KEY-----“.')
 }
 const b64u = b => Buffer.from(b).toString('base64').replace(/=+$/, '').replace(/\+/g, '-').replace(/\//g, '_')
 
