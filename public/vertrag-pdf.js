@@ -7,7 +7,7 @@
      **fett**                    ---seite  Seitenumbruch
      {quelle}                    Wert aus dem OS (siehe QUELLEN)
      {text:Bezeichnung|Vorgabe}  freier Text, wird vor dem Versenden im OS ausgefüllt
-     {feld:rolle:Bezeichnung}    Feld, das der Unterzeichner in DocuSign selbst ausfüllt
+     {feld:rolle:Bezeichnung}    Feld, das der Unterzeichner in DocuSign selbst ausfüllt (Pflichtfeld; endet die Bezeichnung mit ?, ist es freiwillig)
      ?{quelle} ...               Zeile nur, wenn der Wert vorhanden ist (z. B. ?{mieter2_name})
      :::unterschriften mieter=Gast, vermieter=Beherberger   Unterschriftenblock (DocuSign)
    Benötigt jsPDF (window.jspdf). */
@@ -116,8 +116,8 @@
     const ersetzen = s => String(s).replace(/\{(text|feld):([^}]*)\}|\{(\w+)\}/g, (m, art, rest, q) => {
       if (q) return V[q] != null && V[q] !== '' ? String(V[q]) : (opt.vorschau ? '[' + q + ']' : '')
       if (art === 'text') { const [l, v] = rest.split('|'); const t = T && T[l.trim()]; return t != null && String(t).trim() !== '' ? String(t) : (v != null && v !== '' ? v.replace(/;/g, ', ') : '____________________') }
-      const [rolle, label] = rest.split(':'); feldNr++; const anker = '/f' + feldNr + '_' + rolle + '/'
-      felder.push({ rolle, anker, label: (label || 'Feld').trim() }); return '\u0001' + anker + '\u0002'
+      const [rolle, label] = rest.split(':'); feldNr++; const anker = '/f' + (opt.dok ? opt.dok + 'x' : '') + feldNr + '_' + rolle + '/'
+      const l = (label || 'Feld').trim(); felder.push({ rolle, anker, label: l.replace(/\?$/, '').trim(), pflicht: !/\?$/.test(l) }); return '\u0001' + anker + '\u0002'
     })
     const neueSeite = () => { doc.addPage(); y = TOP }
     const platz = h => { if (y + h > BOT) neueSeite() }
@@ -274,7 +274,7 @@
         tabs: {
           signHereTabs: [anker('/u_' + r + '/', -1, -2)],
           dateSignedTabs: [Object.assign(anker('/d_' + r + '/', 0, -2.5), { font: 'helvetica', fontSize: 'size9' })],
-          textTabs: felder.filter(f => f.rolle === r).map(f => Object.assign(anker(f.anker, 0, -3.5), { tabLabel: f.label, width: '190', height: '14', required: 'false', font: 'helvetica', fontSize: 'size9' }))
+          textTabs: felder.filter(f => f.rolle === r).map(f => Object.assign(anker(f.anker, 0, -3.5), { tabLabel: f.label, width: '220', height: '16', required: f.pflicht === false ? 'false' : 'true', font: 'helvetica', fontSize: 'size9' }))
         }
       }
     })

@@ -4,7 +4,7 @@
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
-<script src="/vertrag-pdf.js?v=20261020b"></script>
+<script src="/vertrag-pdf.js?v=20261020c"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js"></script>
 <script src="/mietangebot-pdf.js?v=20261020c"></script>
 <style>
@@ -228,7 +228,15 @@ async function mieterkontoAnlegen(k){const e=einVon(k.wohnung.einheit_id),o=e&&o
   const ts=new Date().toISOString();
   const {error}=await sb.from('os_docs').upsert({app:'oc',pfad:'mietkonten/'+pid,data:daten,updated_at:ts});if(error)throw error;
   try{await sb.from('os_docs').upsert({app:'oc',pfad:'historie/'+pid+'__'+Date.now(),data:{pid,id:pid+'__'+Date.now(),d:ts,erfasst:ts,art:'Neuvermietung',t:'Mieterkonto aus der Neuvermietung angelegt (Mietvertrag unterschrieben). Mietbeginn '+dmy(von)+', Warmmiete '+eur(st.total)+', Kaution '+eur(kaution)+'.',by:ICH||'unbekannt',manuell:false},updated_at:ts});}catch(x){}
+  try{await stammEintragen(o,e,daten,st);}catch(x){}
   k.pid=pid;}
+/* Objekt und Einheit in den Stammdaten der Mieterkonten (stamm/objekte) eintragen, falls sie dort noch fehlen */
+async function stammEintragen(o,e,mk,st){const {data}=await sb.from('os_docs').select('data').eq('app','oc').eq('pfad','stamm/objekte').maybeSingle();if(!data||!data.data)return;
+  const d=data.data,L=d.objekte=d.objekte||[];let ob=L.find(x=>x.kz===o.kz),neu=false;
+  if(!ob){ob={kz:o.kz,ges:o.gesellschaft||'',name:[o.strasse||o.name,o.ort].filter(Boolean).join(', '),aktiv:true,einheiten:[]};L.push(ob);neu=true;}
+  ob.einheiten=ob.einheiten||[];let ein=ob.einheiten.find(x=>x.id===mk.unit);
+  if(!ein){ob.einheiten.push({id:mk.unit,label:e.bezeichnung,kalt:st.kalt,nk:Math.round((st.total-st.kalt)*100)/100,mieter:mk.mieter,ref:o.kz+' '+e.bezeichnung.replace(/\s+/g,'')+' '+(mk.namen[0]||''),umlage:true});neu=true;}
+  if(neu)await sb.from('os_docs').upsert({app:'oc',pfad:'stamm/objekte',data:d,updated_at:new Date().toISOString()});}
 
 /* ---------- Mieterselbstauskunft: Link, QR-Code, Freigabe ---------- */
 const msaLink=t=>location.origin+'/mieterselbstauskunft.html?t='+encodeURIComponent(t);
@@ -388,7 +396,7 @@ function vertragKarte(k){const v=vtDaten(k),V=vtBasis(k),ro=!!k.pid;
   return h;}
 function vtErstellen(k,vorschau){const v=vtDaten(k),V=vtBasis(k),gew=vtGewaehlt(k);const fuss=k.wohnung&&k.wohnung.label?k.wohnung.label.split(' · ')[0]:'';
   const dok=[],felder=[],rollen=new Set();let gesamt=null;
-  for(const x of gew){const r=VertragPdf.erstellen(x.text,V,v.texte,{titel:x.titel||x.name,fuss,vorschau,start:vorschau?gesamt:null});
+  for(const [i,x] of gew.entries()){const r=VertragPdf.erstellen(x.text,V,v.texte,{titel:x.titel||x.name,fuss,vorschau,start:vorschau?gesamt:null,dok:i+1});
     if(vorschau)gesamt=r.doc;else dok.push({name:x.name,base64:r.doc.output('datauristring').split(',').pop()});
     felder.push(...r.felder);VertragPdf.rollenIn(x.text,V).forEach(z=>rollen.add(z));}
   return {dok,felder,rollen:[...rollen],gesamt,V};}
