@@ -3,12 +3,33 @@ import { useEffect, useState } from 'react'
 import { supabase, supabaseConfigured } from '@/lib/supabaseClient'
 import Sidebar from './Sidebar'
 import FavToggle from './FavToggle'
+import TabShell from './TabShell'
 
 export default function AppShell({ children }) {
   const [session, setSession] = useState(null)
   const [ready, setReady] = useState(false)
   const [role, setRole] = useState(null)
   const [perms, setPerms] = useState(null)
+  // eingebettet = Seite läuft in einem Tab des OS (ohne eigenes Menü)
+  const [embed, setEmbed] = useState(false)
+  useEffect(() => {
+    let e = false
+    try { e = window.self !== window.top && /[?&]ostab=1/.test(window.location.search) } catch (x) { e = true }
+    setEmbed(e)
+    if (!e) return
+    // Links innerhalb eines Tabs öffnen einen eigenen Tab im OS
+    const klick = (ev) => {
+      const a = ev.target && ev.target.closest && ev.target.closest('a[href]')
+      if (!a || a.target === '_blank' || ev.metaKey || ev.ctrlKey || ev.shiftKey || ev.button !== 0 || a.hasAttribute('download')) return
+      const u = new URL(a.href, window.location.href)
+      if (u.origin !== window.location.origin || u.pathname.startsWith('/api/') || /\.[a-z0-9]{2,5}$/i.test(u.pathname)) return
+      if (u.pathname === window.location.pathname && u.hash) return
+      ev.preventDefault(); ev.stopPropagation()
+      window.parent.postMessage({ osOeffne: u.pathname + u.search }, window.location.origin)
+    }
+    document.addEventListener('click', klick, true)
+    return () => document.removeEventListener('click', klick, true)
+  }, [])
 
   useEffect(() => {
     if (!supabaseConfigured) { setReady(true); return }
@@ -40,11 +61,18 @@ export default function AppShell({ children }) {
   if (supabaseConfigured && !session) return <LoginScreen />
 
   const user = session ? session.user : null
+  if (embed) return (
+    <div className="app">
+      <div className="app-body">
+        <main className="main">{children}</main>
+      </div>
+    </div>
+  )
   return (
     <div className="app">
       <div className="app-body">
         <Sidebar user={user} demo={!supabaseConfigured} onLogout={() => supabase.auth.signOut()} role={role} perms={perms} />
-        <main className="main"><FavToggle />{children}</main>
+        <main className="main"><FavToggle /><TabShell /></main>
       </div>
     </div>
   )
