@@ -37,10 +37,15 @@ export default function TabShell() {
   const [aktiv, setAktiv] = useState('')
   const geladen = useRef(false)
   const rahmen = useRef({})
+  const umleiten = useRef(false)
 
   // gespeicherte Tabs nach dem Neuladen wiederherstellen
+  // Neuer Start des OS (frische Browsersitzung): immer mit dem Cockpit beginnen, außer bei einem gezielten Link (mit ?…)
   useEffect(() => {
-    try { const s = JSON.parse(sessionStorage.getItem(SPEICHER) || 'null'); if (s && Array.isArray(s.tabs)) setTabs(s.tabs.slice(0, MAX)) } catch (e) {}
+    let s = null
+    try { s = JSON.parse(sessionStorage.getItem(SPEICHER) || 'null') } catch (e) {}
+    if (s && Array.isArray(s.tabs)) setTabs(s.tabs.slice(0, MAX))
+    else if (window.location.pathname !== '/' && !window.location.search) { geladen.current = true; umleiten.current = true; router.replace('/'); return }
     geladen.current = true
   }, [])
   useEffect(() => { if (geladen.current) try { sessionStorage.setItem(SPEICHER, JSON.stringify({ tabs })) } catch (e) {} }, [tabs])
@@ -62,7 +67,7 @@ export default function TabShell() {
     setAktiv(k)
   }
   const oeffneRef = useRef(oeffne); oeffneRef.current = oeffne
-  useEffect(() => { oeffne(pfadname + window.location.search) }, [pfadname])
+  useEffect(() => { if (umleiten.current) { if (pfadname !== '/') return; umleiten.current = false } oeffne(pfadname + window.location.search) }, [pfadname])
   const geh = (p) => { const v = ohneTab(p); router.push(v); oeffneRef.current(v) }
 
   // Navigation aus eingebetteten Seiten abfangen: statt die ganze Seite neu zu laden, Tab öffnen
