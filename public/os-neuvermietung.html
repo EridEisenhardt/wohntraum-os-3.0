@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="de"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Neuvermietung</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+:root{--bg:#f3f5f8;--card:#ffffff;--ink:#18202c;--muted:#5f6b7a;--line:#e0e5eb;--soft:#eef1f5;--accent:#2f5d8a;--accent-ink:#ffffff;--accent-soft:#e3ecf5;--pos:#1d7a4c;--pos-bg:#e5f4ec;--warn:#946200;--warn-bg:#fff4d6;--neg:#b42318;--neg-bg:#fcebe9;--chip:#edf1f6}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--ink);font:14px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+button,input,select,textarea{font:inherit;color:var(--ink)}
+.wrap{padding:16px 20px 40px}
+h1{font-size:22px;font-weight:800}
+.sub{color:var(--muted);font-size:12px}
+.kopf{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;margin-bottom:12px;flex-wrap:wrap}
+.acts{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+button{border:1px solid var(--line);background:var(--card);border-radius:8px;padding:7px 12px;cursor:pointer;min-height:34px}
+button:hover{border-color:var(--accent)}
+button.primary{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+button.small{font-size:12.5px;padding:3px 9px;min-height:28px}
+button.ghost{border-color:transparent;background:transparent;color:var(--muted)}
+button.warn{color:var(--neg)}
+button:disabled{opacity:.55;cursor:default}
+.inp{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:8px 10px}
+.board{display:grid;grid-template-columns:repeat(5,minmax(220px,1fr));gap:10px;align-items:start;overflow-x:auto}
+.spalte{background:var(--soft);border:1px solid var(--line);border-radius:12px;padding:8px;min-height:200px}
+.spalte.ziel{outline:2px dashed var(--accent);outline-offset:-3px}
+.sk{display:flex;justify-content:space-between;align-items:center;font-weight:700;font-size:13px;padding:2px 4px 8px}
+.anz{font-size:11px;font-weight:700;color:var(--muted);background:var(--card);border-radius:999px;padding:1px 8px}
+.karte{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:9px 10px;margin-bottom:8px;cursor:pointer}
+.karte:hover{border-color:var(--accent)}
+.karte .n{font-weight:700}
+.karte .z{font-size:12px;color:var(--muted)}
+.pill{display:inline-block;font-size:11px;padding:1px 8px;border-radius:999px;font-weight:600;background:var(--chip);color:var(--muted);margin:4px 4px 0 0}
+.p-ok{background:var(--pos-bg);color:var(--pos)}.p-warn{background:var(--warn-bg);color:var(--warn)}
+.leer{color:var(--muted);text-align:center;padding:18px 6px;font-size:12.5px}
+.ov{position:fixed;inset:0;background:rgba(10,14,20,.45);display:flex;justify-content:flex-end;z-index:40}
+.panel{background:var(--bg);width:min(760px,100%);height:100%;overflow:auto;padding:16px 20px 40px;box-shadow:-10px 0 30px rgba(0,0,0,.15)}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px 16px;margin-bottom:12px}
+.ch{font-weight:700;font-size:15px;margin-bottom:8px;display:flex;justify-content:space-between;align-items:center;gap:8px}
+.g2{display:grid;grid-template-columns:1fr 1fr;column-gap:14px}.g3{display:grid;grid-template-columns:repeat(3,1fr);column-gap:14px}
+.fl{display:grid;gap:3px;font-size:12px;color:var(--muted);margin-bottom:8px}
+.fl input,.fl select,.fl textarea{width:100%;background:var(--soft);border:1px solid var(--line);border-radius:7px;padding:8px 10px;font-size:14px;color:var(--ink)}
+textarea{resize:vertical;min-height:70px}
+.seg{display:inline-flex;border:1px solid var(--line);border-radius:8px;overflow:hidden;background:var(--card);flex-wrap:wrap}
+.seg button{border:0;border-radius:0;padding:6px 10px;font-size:12.5px}.seg button+button{border-left:1px solid var(--line)}
+.seg button.on{background:var(--accent);color:var(--accent-ink)}
+.summe{font-size:20px;font-weight:800}
+.note{background:var(--warn-bg);color:var(--warn);border-radius:8px;padding:8px 10px;font-size:13px;margin:6px 0}
+.ok{background:var(--pos-bg);color:var(--pos);border-radius:8px;padding:8px 10px;font-size:13px;margin:6px 0}
+.verlauf div{font-size:12.5px;border-top:1px solid var(--line);padding:5px 0}
+.toast{position:fixed;left:50%;bottom:20px;transform:translateX(-50%);background:var(--ink);color:#fff;padding:9px 16px;border-radius:8px;font-size:13px;opacity:0;pointer-events:none;transition:opacity .2s;z-index:60}.toast.on{opacity:1}
+@media(max-width:760px){.g2,.g3{grid-template-columns:1fr}}
+</style></head><body>
+<div class="wrap" id="app"><div class="leer">Lädt …</div></div>
+<div id="ovbox"></div>
+<div class="toast" id="toast"></div>
+<script>
+const sb=window.supabase.createClient('https://jqzxctfqvcwbctpjksvg.supabase.co','eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpxenhjdGZxdmN3YmN0cGprc3ZnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODIxMzA0MzIsImV4cCI6MjA5NzcwNjQzMn0.RKIbZxJdusKWWPjBJqlxZ8e1m8So02UslOg55YRsn3o');
+const esc=s=>(s==null?'':String(s)).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+const p2=n=>String(n).padStart(2,'0');
+const HEUTE=(d=>d.getFullYear()+'-'+p2(d.getMonth()+1)+'-'+p2(d.getDate()))(new Date());
+const dmy=x=>{const s=String(x||'').slice(0,10);return s?s.split('-').reverse().join('.'):'';};
+const zeit=d=>{if(!d)return '';const x=new Date(d);return p2(x.getDate())+'.'+p2(x.getMonth()+1)+'.'+x.getFullYear()+', '+p2(x.getHours())+':'+p2(x.getMinutes())+' Uhr';};
+const eur=n=>(Number(n)||0).toLocaleString('de-DE',{style:'currency',currency:'EUR'});
+const zahl=v=>{const x=parseFloat(String(v==null?'':v).replace(/\s/g,'').replace(/\.(?=\d{3}(\D|$))/g,'').replace(',','.'));return isNaN(x)?0:Math.round(x*100)/100;};
+const NUTZER={'ramona@andersmacher.info':'Ramona Romanelli','juergen@andersmacher.info':'Jürgen Reuter','eric@andersmacher.info':'Eric Eisenhardt'};
+/* Spalten und der passende Schritt in Erics Mietinteressenten-Tool */
+const SP=[['selbstauskunft','Mieterselbstauskunft','2 · Selbstauskunft'],['kalkulation','Mietkalkulation','6 · Kalkulation Mietangebot'],['angebot','Mietangebot','7 · Mietangebot'],['vertrag','Mietvertrag','8 · Mietvertragsentwurf'],['unterschrieben','Mietvertrag unterschrieben','11 · Schlüsselübergabe']];
+const SPN=Object.fromEntries(SP.map(x=>[x[0],x[1]]));
+let K=[],O=[],E=[],ICH='',SEL=null,BUSY='',ARCH=false,SUCHE='';
+
+function toast(t,ms){const el=document.getElementById('toast');el.textContent=t;el.classList.add('on');clearTimeout(toast._t);toast._t=setTimeout(()=>el.classList.remove('on'),ms||3500);}
+const rid=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,9);
+const nameVoll=k=>[k.vorname,k.name].filter(Boolean).join(' ')||k.kontakt||'Interessent';
+const objVon=id=>O.find(o=>o.id===id)||null;
+const einVon=id=>E.find(e=>e.id===id)||null;
+const objLabel=o=>o?o.kz+' · '+(o.strasse||o.name||''):'';
+const einLabel=e=>e?e.bezeichnung+(e.lage?' · '+e.lage:''):'';
+const warm=k=>{const c=k.kalk||{};return Math.round((zahl(c.kalt)+zahl(c.bk)+zahl(c.hk)+zahl(c.sonst))*100)/100;};
+
+async function laden(){
+  const [k,o,e,u]=await Promise.all([sb.from('os_docs').select('data').eq('app','oc').like('pfad','neuvermietung/%'),
+    sb.from('obj_objekte').select('id,kz,name,strasse,plz,ort,status,gesellschaft').order('sort'),
+    sb.from('obj_einheiten').select('id,objekt_id,bezeichnung,lage,art,flaeche,zimmer,nahaus_id,aktiv,sort').order('sort'),sb.auth.getUser()]);
+  if(k.error){document.getElementById('app').innerHTML='<div class="leer">Bitte im Wohntraum OS anmelden.</div>';return;}
+  K=(k.data||[]).map(r=>r.data).filter(Boolean);O=(o.data||[]).filter(x=>x.status!=='Verkauft');E=e.data||[];
+  const us=u&&u.data&&u.data.user;if(us)ICH=NUTZER[String(us.email||'').toLowerCase()]||us.email||'';
+  render();if(SEL)panel();}
+async function speichern(k,log){k.geaendert=new Date().toISOString();if(log)(k.verlauf=k.verlauf||[]).push({t:k.geaendert,von:ICH,text:log});
+  const {error}=await sb.from('os_docs').upsert({app:'oc',pfad:'neuvermietung/'+k.id,data:k,updated_at:k.geaendert});if(error){toast('Nicht gespeichert: '+error.message,6000);return false;}return true;}
+/* Erics Mietinteressenten-Tool auf dem gleichen Stand halten */
+async function eriSync(k){if(!k.iid)return;const s=SP.find(x=>x[0]===k.spalte);if(!s)return;const p={status:s[2],updated_at:new Date().toISOString()};
+  if(k.spalte==='angebot'||k.spalte==='vertrag'||k.spalte==='unterschrieben')p.mietangebot_erhalten='✅';if(k.spalte==='unterschrieben')p.mietvertrag_unterschrieben='✅';
+  if(k.wohnung&&k.wohnung.label)p.zielwohnung_label=k.wohnung.label;
+  try{await sb.from('mietinteressenten').update(p).eq('id',k.iid);}catch(e){}}
+
+async function verschieben(k,ziel){if(k.spalte===ziel)return;
+  if(k.spalte==='unterschrieben'&&k.pid){toast('Das Mieterkonto ist schon angelegt. Änderungen bitte im Mieterkonto vornehmen.',6000);return;}
+  if(ziel==='unterschrieben'){const f=fehlt(k);if(f.length){SEL=k.id;panel();toast('Für „Mietvertrag unterschrieben“ fehlt noch: '+f.join(', '),7000);return;}
+    if(!confirm('Mietvertrag unterschrieben?\n\nDas OS legt jetzt das Mieterkonto für '+nameVoll(k)+' an. Danach erscheint der Mieter in der Einheit '+(k.wohnung&&k.wohnung.label||'')+'.'))return;
+    BUSY='mk';render();if(SEL)panel();
+    try{await mieterkontoAnlegen(k);}catch(e){BUSY='';render();if(SEL)panel();toast('Mieterkonto nicht angelegt: '+(e.message||e),8000);return;}
+    BUSY='';}
+  const alt=k.spalte;k.spalte=ziel;k.seit=new Date().toISOString();
+  if(await speichern(k,'Verschoben: '+(SPN[alt]||alt)+' → '+SPN[ziel])){eriSync(k);toast(ziel==='unterschrieben'?'Mieterkonto angelegt, der Mieter steht jetzt beim Objekt.':'Nach „'+SPN[ziel]+'“ verschoben.',5000);}
+  render();if(SEL)panel();}
+function fehlt(k){const c=k.kalk||{},f=[];if(!k.name&&!k.vorname)f.push('Name');if(!k.wohnung||!k.wohnung.einheit_id)f.push('Wohnung');if(!c.beginn)f.push('Mietbeginn');if(!zahl(c.kalt))f.push('Kaltmiete');return f;}
+
+/* Mieterkonto im OS anlegen: erscheint in Mieterkonten, beim Objekt und in den Übergabeprotokollen */
+async function mieterkontoAnlegen(k){const e=einVon(k.wohnung.einheit_id),o=e&&objVon(e.objekt_id);if(!e||!o)throw new Error('Wohnung nicht gefunden.');
+  const c=k.kalk||{},pid='os'+rid(),von=c.beginn,kaution=zahl(c.kaution);
+  const namen=[nameVoll(k)].concat(String(k.weitere||'').split(/\s*,\s*/).filter(Boolean));
+  const st={ab:von,kalt:zahl(c.kalt),bk:zahl(c.bk),hk:zahl(c.hk),sonst:zahl(c.sonst),strom:0,others:zahl(c.sonst)?[{t:c.sonstText||'Sonstiges',b:zahl(c.sonst)}]:[],total:warm(k)};
+  const daten={pid,obj:o.kz,ges:o.gesellschaft||'',einheit:e.bezeichnung,unit:e.nahaus_id||e.id,einheit_id:e.id,von,bis:null,mieter:namen.join(', '),
+    namen:namen.map(n=>n.trim().split(/\s+/).pop()),anrede:k.anrede?(k.anrede+' '+nameVoll(k)):'',kontakte:[{name:nameVoll(k),email:k.email||'',tel:k.tel||''}],
+    ref:e.bezeichnung+' '+nameVoll(k),kaution,ibans:k.iban?[String(k.iban).replace(/\s+/g,'').toUpperCase()]:[],stufen:[st],
+    soll:kaution?[{b:kaution,d:von,m:von.slice(0,7),t:'Kaution',id:pid+'_kaution',art:'KAUTION',typ:'PAYMENT',src:'os'}]:[],nhIst:[],ueb:'',quelle:'os',neuvermietung:k.id,angelegt:new Date().toISOString(),angelegtVon:ICH};
+  const ts=new Date().toISOString();
+  const {error}=await sb.from('os_docs').upsert({app:'oc',pfad:'mietkonten/'+pid,data:daten,updated_at:ts});if(error)throw error;
+  try{await sb.from('os_docs').upsert({app:'oc',pfad:'historie/'+pid+'__'+Date.now(),data:{pid,id:pid+'__'+Date.now(),d:ts,erfasst:ts,art:'Neuvermietung',t:'Mieterkonto aus der Neuvermietung angelegt (Mietvertrag unterschrieben). Mietbeginn '+dmy(von)+', Warmmiete '+eur(st.total)+', Kaution '+eur(kaution)+'.',by:ICH||'unbekannt',manuell:false},updated_at:ts});}catch(x){}
+  k.pid=pid;}
+
+/* ---------- Darstellung ---------- */
+function karte(k){const c=k.kalk||{},w=warm(k),tage=k.seit?Math.floor((Date.now()-Date.parse(k.seit))/864e5):0;
+  return `<div class="karte" draggable="${k.pid?'false':'true'}" data-k="${esc(k.id)}"><div class="n">${esc(nameVoll(k))}</div>
+    <div class="z">${esc(k.wohnung&&k.wohnung.label||k.ziel||'Wohnung noch offen')}</div>
+    ${c.beginn?`<span class="pill">ab ${esc(dmy(c.beginn))}</span>`:(k.einzug_ab?`<span class="pill">Einzug ab ${esc(k.einzug_ab)}</span>`:'')}${w?`<span class="pill">${esc(eur(w))} warm</span>`:''}
+    ${k.pid?'<span class="pill p-ok">Mieterkonto angelegt</span>':''}${!k.pid&&tage>=7?`<span class="pill p-warn">seit ${tage} Tagen hier</span>`:''}</div>`;}
+function render(){const q=SUCHE.trim().toLowerCase();
+  const L=K.filter(k=>!!k.archiv===ARCH&&(!q||[nameVoll(k),k.kontakt,k.wohnung&&k.wohnung.label,k.ziel].join(' ').toLowerCase().includes(q)));
+  let h=`<div class="kopf"><div><h1>Neuvermietung</h1><div class="sub">Mietinteressenten, die Eric an das Team übergeben hat. Karten mit der Maus in die nächste Spalte ziehen oder in der Karte den Schritt wählen. Bei „Mietvertrag unterschrieben“ legt das OS das Mieterkonto an.</div></div>
+    <div class="acts"><input class="inp" type="search" id="suche" placeholder="Name oder Wohnung suchen …" value="${esc(SUCHE)}" style="width:220px"><button data-a="arch">${ARCH?'Zum Board':'Archiv'}</button></div></div>`;
+  if(BUSY==='mk')h+='<div class="note">Mieterkonto wird angelegt …</div>';
+  if(ARCH){h+='<div class="card">'+(L.length?L.map(k=>`<div class="karte" data-k="${esc(k.id)}"><div class="n">${esc(nameVoll(k))}</div><div class="z">${esc(k.archiv.grund||'')} · ${esc(dmy(k.archiv.am))} · ${esc(k.archiv.von||'')}</div></div>`).join(''):'<div class="leer">Das Archiv ist leer.</div>')+'</div>';}
+  else h+='<div class="board">'+SP.map(([s,t])=>{const S=L.filter(k=>(k.spalte||'selbstauskunft')===s).sort((a,b)=>String(a.seit||'').localeCompare(String(b.seit||'')));
+    return `<div class="spalte" data-spalte="${s}"><div class="sk"><span>${esc(t)}</span><span class="anz">${S.length}</span></div>${S.map(karte).join('')||'<div class="leer">Keine Karten</div>'}</div>`;}).join('')+'</div>';
+  const app=document.getElementById('app');const f=document.activeElement&&document.activeElement.id,pos=document.activeElement&&document.activeElement.selectionStart;app.innerHTML=h;
+  if(f==='suche'){const n=document.getElementById('suche');n.focus();try{n.setSelectionRange(pos,pos);}catch(e){}}}
+
+function feld(id,label,wert,typ,extra){return `<label class="fl">${label}<input id="${id}" type="${typ||'text'}" value="${esc(wert==null?'':wert)}" autocomplete="off"${extra||''}></label>`;}
+function panel(){const k=K.find(x=>x.id===SEL);const box=document.getElementById('ovbox');if(!k){box.innerHTML='';return;}
+  const c=k.kalk||{},w=warm(k),ro=!!k.pid,o=k.wohnung&&k.wohnung.objekt_id?objVon(k.wohnung.objekt_id):null,e=k.wohnung&&k.wohnung.einheit_id?einVon(k.wohnung.einheit_id):null,f=fehlt(k);
+  let h=`<div class="ov" id="ov"><div class="panel"><div class="kopf"><div><h1 style="font-size:20px">${esc(nameVoll(k))}</h1><div class="sub">${esc(SPN[k.spalte]||'')}${k.freigabe?' · übergeben von '+esc(k.freigabe.von||'Eric')+' am '+esc(zeit(k.freigabe.am)):''}</div></div><div class="acts"><button data-a="zu">Schließen</button></div></div>`;
+  if(!k.archiv)h+=`<div class="card"><div class="ch">Schritt</div><div class="seg">${SP.map(([s,t])=>`<button data-spalte-wahl="${s}" class="${k.spalte===s?'on':''}"${BUSY?' disabled':''}>${esc(t)}</button>`).join('')}</div>
+    ${k.pid?`<div class="ok">Mieterkonto ist angelegt. <a href="#" data-a="konto">Mieterkonto öffnen</a></div>`:f.length?`<div class="sub" style="margin-top:6px">Für „Mietvertrag unterschrieben“ fehlt noch: ${esc(f.join(', '))}</div>`:''}</div>`;
+  h+=`<fieldset style="border:0"${ro?' disabled':''}><div class="card"><div class="ch">Mieter</div>
+    <div class="g3"><label class="fl">Anrede<input id="f-anrede" list="dl-anrede" value="${esc(k.anrede||'')}" autocomplete="off"><datalist id="dl-anrede"><option value="Frau"><option value="Herr"><option value="Familie"></datalist></label>${feld('f-vorname','Vorname',k.vorname)}${feld('f-name','Nachname',k.name)}</div>
+    ${feld('f-weitere','Weitere Mieter (Vor- und Nachname, mehrere mit Komma)',k.weitere)}
+    <div class="g3">${feld('f-email','E-Mail',k.email,'email')}${feld('f-tel','Telefon',k.tel,'tel')}${feld('f-personen','Personen',k.personen)}</div>
+    <div class="g2">${feld('f-anschrift','Bisherige Anschrift',k.anschrift)}${feld('f-iban','IBAN des Mieters (für die Zuordnung der Zahlungen)',k.iban)}</div>
+    ${k.kontakt?`<div class="sub">Kontakt aus Erics Liste: ${esc(k.kontakt)}${k.zahlungsart?' · Mietzahlung: '+esc(k.zahlungsart):''}${k.ziel?' · Zielwohnung: '+esc(k.ziel):''}</div>`:''}</div>
+    <div class="card"><div class="ch">Wohnung</div><div class="g2">
+      <label class="fl">Immobilie<input id="f-obj" list="dl-obj" value="${esc(objLabel(o))}" placeholder="Kürzel oder Straße eintippen …" autocomplete="off"><datalist id="dl-obj">${O.slice().sort((a,b)=>a.kz.localeCompare(b.kz,'de')).map(x=>`<option value="${esc(objLabel(x))}">`).join('')}</datalist></label>
+      <label class="fl">Einheit<input id="f-ein" list="dl-ein" value="${esc(einLabel(e))}" placeholder="${o?'Einheit eintippen …':'zuerst die Immobilie wählen'}" autocomplete="off"${o?'':' disabled'}><datalist id="dl-ein">${o?E.filter(x=>x.objekt_id===o.id&&x.aktiv!==false).map(x=>`<option value="${esc(einLabel(x))}">`).join(''):''}</datalist></label></div>
+      ${e?`<div class="sub">${esc([e.art,e.flaeche?e.flaeche+' m²':'',e.zimmer?e.zimmer+' Zimmer':''].filter(Boolean).join(' · '))}</div>`:''}</div>
+    <div class="card"><div class="ch">Mietkalkulation<span class="summe">${esc(eur(w))} warm</span></div>
+      <div class="g3">${feld('f-beginn','Mietbeginn',c.beginn,'date')}${feld('f-kalt','Kaltmiete €',c.kalt,'text',' inputmode="decimal"')}${feld('f-bk','Betriebskosten-Vorauszahlung €',c.bk,'text',' inputmode="decimal"')}</div>
+      <div class="g3">${feld('f-hk','Heizkosten-Vorauszahlung €',c.hk,'text',' inputmode="decimal"')}${feld('f-sonst','Sonstiges € (z. B. Stellplatz)',c.sonst,'text',' inputmode="decimal"')}${feld('f-sonstText','Sonstiges: wofür?',c.sonstText)}</div>
+      <div class="g3">${feld('f-kaution','Kaution €',c.kaution,'text',' inputmode="decimal" placeholder="'+(zahl(c.kalt)?'3 Kaltmieten: '+esc(String(zahl(c.kalt)*3).replace('.',',')):'')+'"')}</div></div>
+    <div class="card"><div class="ch">Notizen</div><textarea id="f-notiz" placeholder="z. B. Selbstauskunft vollständig, Schufa liegt vor, Mietangebot verschickt am …">${esc(k.notiz||'')}</textarea></div></fieldset>
+    <div class="card verlauf"><div class="ch">Verlauf</div>${(k.verlauf||[]).slice().reverse().map(v=>`<div>${esc(zeit(v.t))} · ${esc(v.von||'')}: ${esc(v.text)}</div>`).join('')||'<div class="sub">Noch keine Einträge.</div>'}</div>
+    ${k.pid?'':k.archiv?`<div class="acts"><button data-a="zurueck">Wieder ins Board holen</button></div>`:`<div class="acts" style="justify-content:flex-end"><input class="inp" id="f-grund" list="dl-grund" placeholder="Grund, z. B. Absage Mieter" style="width:240px" autocomplete="off"><datalist id="dl-grund"><option value="Absage Mieter"><option value="Absage Vermieter"><option value="Selbstauskunft unvollständig"><option value="Andere Wohnung gefunden"></datalist><button class="warn" data-a="archiv">Ins Archiv</button></div>`}
+  </div></div>`;
+  const sc=(document.querySelector('.panel')||{}).scrollTop||0;box.innerHTML=h;const p=document.querySelector('.panel');if(p)p.scrollTop=sc;}
+
+/* ---------- Eingaben ---------- */
+const FELD={'f-anrede':'anrede','f-vorname':'vorname','f-name':'name','f-weitere':'weitere','f-email':'email','f-tel':'tel','f-personen':'personen','f-anschrift':'anschrift','f-iban':'iban','f-notiz':'notiz'};
+const KALK={'f-beginn':'beginn','f-kalt':'kalt','f-bk':'bk','f-hk':'hk','f-sonst':'sonst','f-sonstText':'sonstText','f-kaution':'kaution'};
+let spT=null;
+document.addEventListener('input',e=>{const t=e.target;
+  if(t.id==='suche'){SUCHE=t.value;render();return;}
+  const k=K.find(x=>x.id===SEL);if(!k||k.pid)return;
+  if(FELD[t.id]){k[FELD[t.id]]=t.value;}
+  else if(KALK[t.id]){k.kalk=k.kalk||{};k.kalk[KALK[t.id]]=t.value;const s=document.querySelector('.summe');if(s)s.textContent=eur(warm(k))+' warm';}
+  else return;
+  clearTimeout(spT);spT=setTimeout(()=>{speichern(k);render();},700);});
+document.addEventListener('change',e=>{const t=e.target;const k=K.find(x=>x.id===SEL);if(!k||k.pid)return;
+  if(t.id==='f-obj'){const o=O.find(x=>objLabel(x)===t.value);if(!o){if(t.value)toast('Bitte eine Immobilie aus der Liste wählen.');return;}k.wohnung={objekt_id:o.id};speichern(k);setTimeout(()=>{panel();render();});return;}
+  if(t.id==='f-ein'){const o=k.wohnung&&objVon(k.wohnung.objekt_id);const ei=o&&E.find(x=>x.objekt_id===o.id&&einLabel(x)===t.value);if(!ei){if(t.value)toast('Bitte eine Einheit aus der Liste wählen.');return;}
+    k.wohnung={objekt_id:o.id,einheit_id:ei.id,label:o.kz+' '+ei.bezeichnung+' · '+(o.strasse||o.name||'')};speichern(k,'Wohnung gewählt: '+k.wohnung.label);setTimeout(()=>{panel();render();});return;}
+  if(t.id==='f-kalt'&&!zahl((k.kalk||{}).kaution)&&zahl(t.value)){k.kalk.kaution=String(Math.round(zahl(t.value)*300)/100).replace('.',',');speichern(k);setTimeout(panel);}});
+document.addEventListener('click',e=>{const t=e.target;
+  const sw=t.closest('[data-spalte-wahl]');if(sw){const k=K.find(x=>x.id===SEL);if(k)verschieben(k,sw.dataset.spalteWahl);return;}
+  const a=t.closest('[data-a]');if(a){e.preventDefault();const k=K.find(x=>x.id===SEL),w=a.dataset.a;
+    if(w==='zu'){SEL=null;panel();return;}
+    if(w==='arch'){ARCH=!ARCH;render();return;}
+    if(w==='konto'&&k&&k.pid){(window.top||window).location.href='/hausverwaltung/mieterkonten?pid='+encodeURIComponent(k.pid);return;}
+    if(w==='archiv'&&k){const g=(document.getElementById('f-grund')||{}).value||'';if(!g.trim()){toast('Bitte einen Grund eintragen.');return;}k.archiv={grund:g.trim(),am:HEUTE,von:ICH};speichern(k,'Ins Archiv: '+g.trim()).then(()=>{SEL=null;panel();render();toast('Ins Archiv verschoben.');});return;}
+    if(w==='zurueck'&&k){delete k.archiv;speichern(k,'Aus dem Archiv zurückgeholt').then(()=>{panel();render();});return;}
+    return;}
+  const kt=t.closest('[data-k]');if(kt){SEL=kt.dataset.k;panel();return;}
+  if(t.id==='ov'){SEL=null;panel();}});
+document.addEventListener('keydown',e=>{if(e.key==='Escape'&&SEL){SEL=null;panel();}});
+/* Ziehen und Ablegen */
+let ZIEH=null;
+document.addEventListener('dragstart',e=>{const k=e.target.closest&&e.target.closest('[data-k]');if(!k)return;ZIEH=k.dataset.k;e.dataTransfer.effectAllowed='move';});
+document.addEventListener('dragover',e=>{const s=e.target.closest&&e.target.closest('[data-spalte]');if(!s||!ZIEH)return;e.preventDefault();document.querySelectorAll('.spalte.ziel').forEach(x=>x!==s&&x.classList.remove('ziel'));s.classList.add('ziel');});
+document.addEventListener('drop',e=>{const s=e.target.closest&&e.target.closest('[data-spalte]');document.querySelectorAll('.spalte.ziel').forEach(x=>x.classList.remove('ziel'));if(!s||!ZIEH)return;e.preventDefault();const k=K.find(x=>x.id===ZIEH);ZIEH=null;if(k)verschieben(k,s.dataset.spalte);});
+document.addEventListener('dragend',()=>{ZIEH=null;document.querySelectorAll('.spalte.ziel').forEach(x=>x.classList.remove('ziel'));});
+setInterval(()=>{if(document.visibilityState==='visible'&&!SEL)laden();},60000);
+laden();
+</script></body></html>

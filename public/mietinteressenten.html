@@ -220,8 +220,23 @@ function renderLeadInfo(){const r=ROWS.find(x=>x.id===NT_CUR);if(!r){$('opInfo')
     F('Ergebnis',opSel(r,'ergebnis',ERGEBNIS.filter(Boolean),true))+F('Selbstauskunft vorhanden',opSel(r,'selbstauskunft_vorhanden',SELBST.filter(Boolean),true))+F('Freigabe Schlüsselübergabe',opSel(r,'freigabe_schluessel',FREIGABE.filter(Boolean),true))+
     F('Art des Interessenten',opSel(r,'typ',['neu','umzug'],false))+
     (r.typ==='umzug'?F('Aktuelles Objekt',opTxt(r,'aktuelles_objekt'))+F('Grund des Umzugswunsches',opTxt(r,'umzug_grund')):'')+
-    MILEF.map(m=>F(m[1],mile(m[0]))).join('');
+    MILEF.map(m=>F(m[1],mile(m[0]))).join('')+
+    F('Team (Neuvermietung)',`<button class="btn" type="button" onclick="anTeam()">An Team übergeben</button>`);
 }
+/* Freigabe an das Team: der Interessent erscheint im Board „Neuvermietung“ (Verwalto) */
+async function anTeam(){const r=ROWS.find(x=>x.id===NT_CUR);if(!r)return;
+  const {data:da}=await sb.from('os_docs').select('data').eq('app','oc').eq('pfad','neuvermietung/'+r.id).maybeSingle();
+  if(da&&da.data&&!da.data.archiv){toast('Schon an das Team übergeben.');return;}
+  if(!confirm((r.vorname?r.vorname+' ':'')+(r.name||r.kontakt||'Interessent')+' an das Team übergeben?\n\nDer Interessent erscheint dann im Board „Neuvermietung“ in der Spalte Mieterselbstauskunft.'))return;
+  let von='Eric';try{const {data}=await sb.auth.getUser();const m=String(data&&data.user&&data.user.email||'').toLowerCase();von=({'eric@andersmacher.info':'Eric Eisenhardt','ramona@andersmacher.info':'Ramona Romanelli','juergen@andersmacher.info':'Jürgen Reuter'})[m]||m||'Eric';}catch(e){}
+  const ts=new Date().toISOString();
+  const k=Object.assign(da&&da.data?da.data:{},{id:r.id,iid:r.id,nummer:r.nummer,vorname:r.vorname||'',name:r.name||'',kontakt:r.kontakt||'',personen:r.personen||'',einzug_ab:r.einzug_ab||'',zahlungsart:r.zahlungsart||'',ziel:r.zielwohnung_label||'',spalte:'selbstauskunft',seit:ts,freigabe:{von,am:ts},geaendert:ts});
+  delete k.archiv;(k.verlauf=k.verlauf||[]).push({t:ts,von,text:'An das Team übergeben'});
+  const m=String(r.kontakt||'').match(/[\w.+-]+@[\w.-]+\.[a-z]{2,}/i);if(m&&!k.email)k.email=m[0];
+  const t=String(r.kontakt||'').match(/(\+?\d[\d\s\/-]{6,})/);if(t&&!k.tel)k.tel=t[1].trim();
+  const {error}=await sb.from('os_docs').upsert({app:'oc',pfad:'neuvermietung/'+r.id,data:k,updated_at:ts});
+  if(error){toast('Fehler: '+error.message);return;}
+  toast('An das Team übergeben.');}
 async function opUpd(field,val){
   if(!NT_CUR)return;
   await upd(NT_CUR,field,val);
