@@ -14,6 +14,7 @@
 
   // Zusätzliche Angaben, die nicht in der Kalkulation stehen (je nach gewählter Vorlage)
   const FRAGEN = [
+    { key: 'ort_datum', label: 'Ort, Datum', vorlagen: ['jc_alzey_worms', 'kreis_bad_kreuznach', 'kreis_mainz_bingen', 'sozialamt_alzey_worms'] },
     { key: 'bg_nummer', label: 'BG-Nummer / Aktenzeichen', vorlagen: ['jc_alzey_worms', 'kreis_bad_kreuznach', 'kreis_mainz_bingen', 'sozialamt_alzey_worms'] },
     { key: 'baujahr', label: 'Baujahr / Jahr der Bezugsfertigkeit', vorlagen: ['jc_alzey_worms', 'kreis_bad_kreuznach', 'kreis_mainz_bingen'] },
     { key: 'zimmer', label: 'Anzahl Zimmer', vorlagen: ['jc_alzey_worms', 'kreis_mainz_bingen'] },
@@ -47,6 +48,7 @@
     const a = Object.assign({}, A || {})
     if (!a.baujahr && D.baujahr) a.baujahr = String(D.baujahr)
     if (!a.heizungsart && D.heizungsart) a.heizungsart = String(D.heizungsart)
+    if (!a.ort_datum) a.ort_datum = VERMIETER.ort + ', ' + heute()
     FRAGEN.forEach(f => { if ((a[f.key] == null || a[f.key] === '') && f.vorgabe) a[f.key] = f.vorgabe })
     if (!a.zimmer && D.zimmer) a.zimmer = String(D.zimmer)
     if (!a.einbaukueche) a.einbaukueche = zahl(D.ebk) ? 'ja' : 'nein'
@@ -109,7 +111,7 @@
       const dl = ja(V.kaution_darlehen)
       F.text('BG-Nummer_2', dl ? bg : ''); F.text('Name_Antragsteller_2', dl ? V.name_vn : ''); F.text('Adresse 1_2', dl ? V.adr1 : ''); F.text('Adresse 2_2', dl ? V.adr2 : '')
       F.text('Textfeld 3_2', dl ? anschrift : ''); F.text('Textfeld 4', dl ? eur(V.kaution) : '')
-      F.text('Textfeld 5_5', dl ? [V.objekt_kz, V.einheit, 'Kaution', V.nachname].filter(Boolean).join(' ') : ''); F.text('Textfeld 4_2', V.heute)
+      F.text('Textfeld 5_5', dl ? [V.objekt_kz, V.einheit, 'Kaution', V.nachname].filter(Boolean).join(' ') : ''); F.text('Textfeld 4_2', V.ort_datum)
       // Seite 4: Wohnungsangebot
       F.text('Datum Antragstellung', V.name_nv); F.text('Textfeld 2', V.personen); F.text('Textfeld 3_3', V.mietbeginn); F.text('Textfeld 6', anschrift)
       F.text('Datum Antragstellung_7', String(V.wfl || '').replace('.', ','))
@@ -140,7 +142,7 @@
       F.text('Größe der Wohnung m²', String(V.wfl || '').replace('.', ',')); F.text('Anzahl der Zimmer', V.zimmer)
       F.kreuz('ja_5', ja(V.einbaukueche)); F.kreuz('nein_5', !ja(V.einbaukueche))
       F.kreuz('EG', V.geschoss === 'EG'); F.kreuz('OG', V.geschoss === 'OG'); F.kreuz('DG', V.geschoss === 'DG')
-      F.kreuz('vollteilmöbliert', ja(V.moebliert)); F.text('Ort DatumRow1', V.heute)
+      F.kreuz('vollteilmöbliert', ja(V.moebliert)); F.text('Ort DatumRow1', V.ort_datum)
       F.leer('Name Vorname Vermieter', VERMIETER.name); F.leer('Anschrift Vermieter Straße Hausnummer PLZ Wohnort', VERMIETER.anschrift)
       return F
     },
@@ -163,6 +165,7 @@
       Z.kreuz(1, 347, 575.5, bk, 6); Z.kreuz(1, 417, 575.5, bk, 6); Z.kreuz(1, 347, 599, !bk, 6)
       Z.text(1, 527, 619, eur(zahl(V.kalt) + zahl(V.hk) + zahl(V.bk)), 10, 44, true)
       Z.text(1, 349, 667, V.baujahr, 10, 50); Z.text(1, 349, 690, V.mietbeginn, 10, 50); Z.text(1, 349, 714, String(V.wfl || '').replace('.', ','), 10, 50)
+      Z.text(1, 54, 759, V.ort_datum, 9, 220)
     },
     async sozialamt_alzey_worms(doc, V, Z, B) {
       Z.text(1, 410, 78, V.bg_nummer, 8, 95)
@@ -176,7 +179,7 @@
       Z.kreuz(1, 249, 350, V.ww_zentral, 10); Z.kreuz(1, 321, 350, !V.ww_zentral, 10)
       Z.kreuz(1, 249, 377, ja(V.renovierung), 10); Z.kreuz(1, 321, 377, !ja(V.renovierung), 10)
       Z.kreuz(1, 144, 404, !!zahl(V.kaution), 10); Z.text(1, 269, 413, eur(V.kaution), 8, 28, true); Z.kreuz(1, 285, 404, !zahl(V.kaution), 10)
-      Z.text(1, 88, 440, VERMIETER.ort + ', ' + V.heute, 10, 100)
+      Z.text(1, 88, 440, V.ort_datum, 10, 100)
     }
   }
 
