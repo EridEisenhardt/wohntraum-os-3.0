@@ -57,6 +57,8 @@ details.sec>summary.ch .sub{margin-left:auto}
 label.up{border:1px solid var(--line);border-radius:8px;padding:3px 8px;background:var(--card);cursor:pointer;font-size:12px}
 .note{background:var(--warn-bg);color:var(--warn);border-radius:8px;padding:8px 10px;font-size:13px;margin:6px 0}
 .qr{display:inline-block;padding:8px;background:#fff;border:1px solid var(--line);border-radius:8px}
+.nt{border-top:1px solid var(--line);padding:8px 0;font-size:13px}.nt .k{color:var(--muted);font-size:12px;margin-bottom:3px}.nt .t{white-space:pre-wrap}
+.chip{display:inline-flex;gap:6px;align-items:center;background:var(--chip);border-radius:999px;padding:2px 10px;font-size:12px;margin:4px 6px 0 0}
 .mrow{display:grid;grid-template-columns:130px 90px 1fr;gap:10px;padding:7px 0;border-top:1px solid var(--line);font-size:13px;cursor:pointer}.mrow:hover{background:var(--soft)}
 .mframe{width:100%;height:340px;border:1px solid var(--line);border-radius:8px;background:#fff;margin:4px 0 8px}
 .mzu{background:var(--accent-soft);border-radius:8px;padding:8px 10px;font-size:13px;margin-bottom:8px}
@@ -168,6 +170,7 @@ function detail(s){const o=objVon(s),e=einVon(s),m=mieterVon(e);let h='';
         <div class="kvcol"><div class="qr" data-qr="${esc(hwLink(s))}"></div></div></div>
        ${RM.map(r=>`<div class="hz"><div><div>${zeit(r.d)}</div><div class="hw">${esc(r.by)}</div></div><div>${r.erledigt?'<b>Als erledigt gemeldet.</b> ':''}${esc(r.t||'')}</div></div>`).join('')}`],
     ['Mails',`<span class="sub">${mailZahl(s)}</span>`,mailSek(s)],
+    ['Notizen und Dokumente',`<span class="sub">${ntZahl(s)}</span>`,notizSek(s)],
     ['Verlauf',`<span class="sub">${V.length} Eintr${V.length===1?'ag':'äge'}</span>`,`<div class="acts" style="margin-top:0"><input class="inp" id="vn-${s.id}" placeholder="Notiz hinzufügen, z. B. Mieter angerufen, Termin vereinbart" style="flex:1"><button class="small primary" onclick="notiz('${s.id}')">Hinzufügen</button></div>
       ${V.map(v=>`<div class="hz"><div><div>${zeit(v.d)}</div><div class="hw">${esc(v.by||'')}</div></div><div><b>${esc(v.art||'')}</b>${v.t?' – '+esc(v.t):''}</div></div>`).join('')}`]];
   h+=sek.map(([t,sub,inh])=>`<details class="card sec" data-sec="${t}"${SEC[t]?' open':''}><summary class="ch">${t}${sub}</summary>${inh}</details>`).join('');
@@ -258,6 +261,36 @@ const ob=O.find(x=>objLabel(x)===NEU.obj);if(!ob){toast('Bitte ein Objekt aus de
     S.unshift(data);AUF[data.id]=true;const mitAsana=NEU.asana,best=NEU.mail&&NEU.bestaetigen;NEU=null;if(best)SEC['Mails']=true;render();toast('Störung '+tk(data)+' gespeichert.');if(mitAsana)await asanaAnlegen(data.id);
     if(best){const C=mailEntwurf(data,'eingang');if(C.an)await mailVersand(data,C);else toast('Keine E-Mail-Adresse für die Eingangsbestätigung gefunden.');}}
   catch(err){NEU.busy=false;render();toast('Speichern fehlgeschlagen: '+(err.message||err));}}
+
+/* ---------- Notizen und Dokumente (KI-gestützt, mit Dateien) ---------- */
+const NT={};
+const ntZahl=s=>{const n=(s.notizen||[]).length,d=(s.notizen||[]).reduce((a,x)=>a+(x.dateien||[]).length,0);return n?n+' Notiz'+(n===1?'':'en')+(d?' · '+d+' Dokument'+(d===1?'':'e'):''):'noch nichts hinterlegt';};
+function notizSek(s){const st=NT[s.id]=NT[s.id]||{text:'',dateien:[],asana:true};const L=(s.notizen||[]).slice().sort((a,b)=>String(b.d).localeCompare(String(a.d)));
+  let h=`<label class="fl">Neue Notiz<textarea id="nt-${s.id}" rows="5" placeholder="z. B. Mieter angerufen, Handwerker kommt Donnerstag 9 Uhr, Schlüssel liegt beim Nachbarn. Stichworte genügen, die KI macht daraus einen sauberen Text." oninput="NT['${s.id}'].text=this.value">${esc(st.text)}</textarea></label>
+   <div class="acts" style="margin-top:0"><button class="small" onclick="ntKi('${s.id}','verbessern')"${st.busy?' disabled':''}>${st.busy==='verbessern'?'KI arbeitet …':'Mit KI verbessern'}</button><button class="small" onclick="ntKi('${s.id}','stichpunkte')"${st.busy?' disabled':''}>${st.busy==='stichpunkte'?'KI arbeitet …':'In Stichpunkten'}</button>${st.alt!=null?`<button class="small ghost" onclick="NT['${s.id}'].text=NT['${s.id}'].alt;NT['${s.id}'].alt=null;render()">KI rückgängig</button>`:''}
+    <label class="up">Dokumente anhängen<input type="file" multiple hidden onchange="NT['${s.id}'].dateien=NT['${s.id}'].dateien.concat([...this.files]);render()"></label>
+    ${s.asana_gid?`<label class="sub" style="display:flex;gap:4px;align-items:center"><input type="checkbox" ${st.asana?'checked':''} onchange="NT['${s.id}'].asana=this.checked"> auch als Kommentar in Asana</label>`:''}
+    <button class="small primary" style="margin-left:auto" onclick="ntSpeichern('${s.id}')"${st.busy?' disabled':''}>${st.busy==='speichern'?'Speichere …':'Speichern'}</button></div>
+   ${st.dateien.length?`<div>${st.dateien.map((f,i)=>`<span class="chip">${esc(f.name)}<button class="ghost small" onclick="NT['${s.id}'].dateien.splice(${i},1);render()">entfernen</button></span>`).join('')}</div>`:''}`;
+  h+=L.length?L.map(n=>`<div class="nt"><div class="k">${zeit(n.d)} · ${esc(n.by||'')}</div>${n.text?`<div class="t">${esc(n.text)}</div>`:''}${(n.dateien||[]).length?`<div>${n.dateien.map(f=>`<span class="chip"><button class="lnk" onclick="ntDatei('${jq(f.pfad)}')">${esc(f.name)}</button></span>`).join('')}</div>`:''}</div>`).join(''):'<div class="sub" style="margin-top:6px">Noch keine Notizen oder Dokumente.</div>';
+  return h;}
+async function kiApi(body){let r;try{r=await fetch('/api/ki',{method:'POST',headers:{'content-type':'application/json',authorization:'Bearer '+await token()},body:JSON.stringify(body)});}catch(e){throw new Error('KI nicht erreichbar.');}
+  let j=null;try{j=await r.json();}catch(e){}if(!j)throw new Error('KI nicht erreichbar ('+r.status+').');if(j.error)throw new Error(j.error);return j;}
+async function ntKi(sid,art){const st=NT[sid];if(!st||!st.text.trim()){toast('Bitte zuerst Stichworte eingeben.');return;}st.busy=art;render();
+  try{const r=await kiApi({aufgabe:art,text:st.text});st.alt=st.text;st.text=String(r.text||'').trim()||st.text;}catch(e){toast('KI: '+(e.message||e));}
+  st.busy='';render();}
+async function ntSpeichern(sid){const s=S.find(x=>x.id===sid),st=NT[sid];if(!s||!st)return;const t=st.text.trim();if(!t&&!st.dateien.length){toast('Bitte einen Text eingeben oder ein Dokument anhängen.');return;}
+  st.busy='speichern';render();
+  try{const dateien=[];for(const f of st.dateien){const pfad='stoerungen/'+s.id+'/'+Date.now()+'_'+f.name.replace(/[^\w.\-]+/g,'_').slice(-80);
+      const {error}=await sb.storage.from('vertraege').upload(pfad,f,{contentType:f.type||undefined});if(error)throw new Error(f.name+': '+error.message);dateien.push({pfad,name:f.name,typ:f.type||'',groesse:f.size||0});}
+    const n={id:Date.now().toString(36),d:new Date().toISOString(),by:ICH||'OS',text:t,dateien};
+    const kurz=(t.length>140?t.slice(0,140)+' …':t)+(dateien.length?(t?' · ':'')+dateien.length+' Dokument'+(dateien.length===1?'':'e')+': '+dateien.map(f=>f.name).join(', '):'');
+    if(!await speichern(s,{notizen:(s.notizen||[]).concat([n])},eintrag('Notiz',kurz)))throw new Error('nicht gespeichert');
+    if(s.asana_gid&&st.asana){try{await asApi({aktion:'kommentar',gid:s.asana_gid,text:(t||'Dokumente hinzugefügt')+(dateien.length?'\nDokumente im OS: '+dateien.map(f=>f.name).join(', '):'')+'\n('+(ICH||'OS')+' im Wohntraum OS)'});}catch(e){}}
+    NT[sid]={text:'',dateien:[],asana:st.asana};toast('Gespeichert.');}
+  catch(e){st.busy='';toast('Speichern fehlgeschlagen: '+(e.message||e));}
+  render();}
+async function ntDatei(pfad){const w=window.open('','_blank');const {data,error}=await sb.storage.from('vertraege').createSignedUrl(pfad,600);if(error){if(w)w.close();toast('Nicht geöffnet: '+error.message);return;}if(w)w.location.href=data.signedUrl;else window.open(data.signedUrl,'_blank');}
 
 /* ---------- Mails zur Störung (Ticketnummer im Betreff) ---------- */
 const tk=s=>'ST-'+String(s&&s.nr||0).padStart(5,'0');
