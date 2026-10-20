@@ -62,6 +62,8 @@ textarea{resize:vertical;min-height:90px;line-height:1.45}
 .zeile{display:grid;gap:8px;align-items:end;margin-bottom:6px}
 .zs{grid-template-columns:1.4fr .6fr 1fr auto}
 .zz{grid-template-columns:1.2fr 1.2fr 1.1fr .8fr auto auto}
+.zz.za{grid-template-columns:1.1fr 1.1fr 1fr .75fr .75fr auto auto}
+.feld[readonly]{background:var(--card);color:var(--muted)}
 .zp{grid-template-columns:1fr 1fr auto}
 .mailf{border-top:1px solid var(--line);margin-top:10px;padding-top:10px}
 .zeile .feld{font-size:14.5px}
@@ -81,7 +83,7 @@ label.up:hover{border-color:var(--accent)}
 .toast{position:fixed;left:50%;bottom:20px;transform:translateX(-50%);background:var(--ink);color:#fff;padding:9px 16px;border-radius:8px;font-size:13px;opacity:0;pointer-events:none;transition:opacity .2s;z-index:120;max-width:90vw}.toast.on{opacity:1}
 fieldset{border:0;min-width:0}
 fieldset[disabled] .acts,fieldset[disabled] [data-act="del"],fieldset[disabled] [data-act="hoch"],fieldset[disabled] .th button,fieldset[disabled] label.up,fieldset[disabled] #neuraum{display:none}
-@media(max-width:820px){.wrap{padding:12px}.g2,.g3{grid-template-columns:1fr}.hide-m{display:none}.zs{grid-template-columns:1fr 70px auto}.zs>:nth-child(3){grid-column:1/3}.zz{grid-template-columns:1fr 1fr}.zz>:nth-last-child(-n+2){grid-column:auto}}
+@media(max-width:820px){.wrap{padding:12px}.g2,.g3{grid-template-columns:1fr}.hide-m{display:none}.zs{grid-template-columns:1fr 70px auto}.zs>:nth-child(3){grid-column:1/3}.zz,.zz.za{grid-template-columns:1fr 1fr}.zz>:nth-last-child(-n+2){grid-column:auto}}
 </style></head><body>
 <div class="wrap" id="app"><div class="empty">Lädt …</div></div>
 <div class="toast" id="toast"></div>
@@ -288,7 +290,7 @@ async function erstellen(){const ei=einVon(W.ein),ob=objVon(W.obj),m=W.pid?MK.fi
       if(vorher){const {data}=await sb.from('uebergabeprotokolle').select('daten').eq('id',vorher.id).maybeSingle();const v=(data&&data.daten)||{};
         if(v.schluessel)d.schluessel=v.schluessel.map(s=>({typ:s.typ,anzahl:s.anzahl,nummer:s.nummer}));
         if(v.raeume&&v.raeume.length)d.raeume=v.raeume.map(r=>neuerRaum(r.name));
-        if(v.zaehler&&v.zaehler.length)d.zaehler=v.zaehler.map(z=>({zid:z.zid||'',typ:z.typ,nummer:z.nummer,malo:z.malo||'',stand:'',foto:''}));
+        if(v.zaehler&&v.zaehler.length)d.zaehler=v.zaehler.map(z=>({zid:z.zid||'',typ:z.typ,nummer:z.nummer,malo:z.malo||'',einzug:z.stand||'',stand:'',foto:''}));
         d.einzug_id=vorher.id;}}
     const zeile={typ:W.typ,status:'Entwurf',objekt_id:ob.id,einheit_id:ei.id,pid:W.pid||null,mieter_name:k.name,mietbeginn:m&&m.von?m.von.slice(0,10):null,mietende:m&&mkBis(m)?mkBis(m).slice(0,10):null,datum:new Date().toISOString(),daten:d,unterschriften:{},erstellt_von:ICH};
     const {data,error}=await sb.from('uebergabeprotokolle').insert(zeile).select().single();if(error)throw error;
@@ -306,7 +308,19 @@ async function oeffnen(id,vorhanden){let row=vorhanden&&vorhanden.daten?vorhande
   PR=row;D=Object.assign({schluessel:[],raeume:[],zaehler:[],mieter:{},teilnehmer:{}},row.daten||{});U=row.unterschriften||{};MAILF=null;
   if(PR.typ==='Einzug'){if(!Array.isArray(D.wgb_personen))D.wgb_personen=wgbStandardPersonen();if(D.wgb_erstellen==null)D.wgb_erstellen=true;}
   try{const lok=JSON.parse(localStorage.getItem('ueb_'+id)||'null');if(lok&&lok.t>Date.parse(row.updated_at||0)+2000&&row.status!=='Abgeschlossen'){D=lok.d;U=lok.u||U;SPEICHER='lokal';speichernBald(10);}}catch(e){}
-  ANS='edit';render();window.scrollTo(0,0);}
+  ANS='edit';render();window.scrollTo(0,0);
+  if(PR.typ==='Auszug'&&!gesperrt())einzugStaende().then(n=>{if(n){speichernBald();renderErhalten();}});}
+/* Auszug: Zählerstände vom Einzug übernehmen – aus dem Einzugsprotokoll, sonst aus den Zählerständen des Objekts (Anlass „Übergabe Einzug“) */
+async function einzugStaende(){const L=(D.zaehler||[]).filter(z=>String(z.einzug==null?'':z.einzug).trim()==='');if(!L.length)return 0;let n=0;
+  try{let ez=D.einzug_id;if(!ez){const v=P.filter(p=>p.typ==='Einzug'&&p.einheit_id===PR.einheit_id&&(PR.pid?p.pid===PR.pid:true)).sort((a,b)=>String(b.datum).localeCompare(String(a.datum)))[0];if(v)ez=D.einzug_id=v.id;}
+    if(ez){const {data}=await sb.from('uebergabeprotokolle').select('daten').eq('id',ez).maybeSingle();const EZ=(data&&data.daten&&data.daten.zaehler)||[];
+      for(const z of L){const t=EZ.find(x=>(z.zid&&x.zid===z.zid)||(z.nummer&&x.nummer&&String(x.nummer).trim()===String(z.nummer).trim()));if(t&&String(t.stand||'').trim()){z.einzug=t.stand;n++;}}}
+    const R=L.filter(z=>!String(z.einzug||'').trim()&&z.zid);
+    if(R.length){const {data}=await sb.from('objekt_zaehlerstaende').select('zaehler_id,wert,datum').in('zaehler_id',R.map(z=>z.zid)).eq('anlass','Übergabe Einzug').order('datum',{ascending:false});
+      for(const z of R){const t=(data||[]).find(x=>x.zaehler_id===z.zid);if(t&&t.wert!=null){z.einzug=String(t.wert).replace('.',',');n++;}}}}catch(e){}
+  return n;}
+const zahl=v=>{const x=parseFloat(String(v==null?'':v).replace(/\./g,'').replace(',','.'));return isNaN(x)?null:x;};
+function verbrauch(z){const a=zahl(z.einzug),b=zahl(z.stand);if(a==null||b==null)return '';const d=Math.round((b-a)*1000)/1000;return String(d).replace('.',',');}
 const gesperrt=()=>PR&&PR.status==='Abgeschlossen';
 function renderEdit(){const ob=objVon(PR.objekt_id),ei=einVon(PR.einheit_id),m=PR.pid?MK.find(x=>x.pid===PR.pid):null,auszug=PR.typ==='Auszug',zu=gesperrt();
   const od=PR.pid?(MKE[PR.pid]||{}).od:'';
@@ -353,8 +367,8 @@ function renderEdit(){const ob=objVon(PR.objekt_id),ei=einVon(PR.einheit_id),m=P
     +`<div class="acts"><input class="feld" id="neuraum" list="dl-raum" placeholder="Weiteren Raum wählen oder eintippen …" style="max-width:320px"><button class="small" data-act="raumneu">Raum hinzufügen</button></div></div>`;
   // Zähler
   h+=`<div class="card"><div class="ch">Zählerstände<span class="sub">werden beim Abschließen in die Zähler des Objekts übernommen</span></div><datalist id="dl-ztyp">${ZTYPEN.map(t=>`<option value="${t}">`).join('')}</datalist>
-    <div class="zeile zz kh"><span>Zählertyp</span><span>Zählernummer</span><span>Marktlokation</span><span>Stand</span><span></span><span></span></div>`
-    +D.zaehler.map((z,i)=>`<div class="zeile zz"><input class="feld" list="dl-ztyp" data-f="zaehler.${i}.typ" value="${esc(z.typ)}"><input class="feld" data-f="zaehler.${i}.nummer" value="${esc(z.nummer)}"><input class="feld" data-f="zaehler.${i}.malo" value="${esc(z.malo)}" placeholder="optional"><input class="feld" inputmode="decimal" data-f="zaehler.${i}.stand" value="${esc(z.stand)}">
+    <div class="zeile zz${auszug?' za':''} kh"><span>Zählertyp</span><span>Zählernummer</span><span>Marktlokation</span>${auszug?'<span>Stand Einzug</span><span>Stand Auszug</span>':'<span>Stand</span>'}<span></span><span></span></div>`
+    +D.zaehler.map((z,i)=>`<div class="zeile zz${auszug?' za':''}"><input class="feld" list="dl-ztyp" data-f="zaehler.${i}.typ" value="${esc(z.typ)}"><input class="feld" data-f="zaehler.${i}.nummer" value="${esc(z.nummer)}"><input class="feld" data-f="zaehler.${i}.malo" value="${esc(z.malo)}" placeholder="optional">${auszug?`<input class="feld" inputmode="decimal" data-f="zaehler.${i}.einzug" value="${esc(z.einzug||'')}" placeholder="nicht gefunden" title="vom Einzug übernommen, bei Bedarf korrigieren">`:''}<input class="feld" inputmode="decimal" data-f="zaehler.${i}.stand" value="${esc(z.stand)}"${auszug?' placeholder="Stand Auszug"':''}>
       <label class="up">${z.foto?'Foto ändern':'Foto'}<input type="file" accept="image/*" hidden data-foto="zaehler" data-i="${i}"></label><button class="small ghost" data-act="del" data-l="zaehler" data-i="${i}">Entfernen</button></div>
       ${z.foto?`<div class="thumbs" style="margin:0 0 8px"><div class="th"><img data-pfad="${esc(z.foto)}" alt=""></div></div>`:''}`).join('')
     +`<div class="acts"><button class="small" data-act="add" data-l="zaehler">Zähler hinzufügen</button></div><div class="hinweis" style="margin-top:10px">${esc(HINWEIS_VERSORGER)}</div></div>`;
@@ -473,8 +487,9 @@ async function pdfErstellen(){const {jsPDF}=window.jspdf,doc=new jsPDF({unit:'mm
     doc.setFont('helvetica','normal');doc.setFontSize(9);if(r.zustand==='maengel'){doc.setTextColor(180,35,24);txt('Mängel festgestellt',L+B,y,{align:'right'});}else{doc.setTextColor(29,122,76);txt('In Ordnung',L+B,y,{align:'right'});}doc.setTextColor(0);y+=5.5;
     if(r.text)absatz(r.text);else absatz('Keine Anmerkungen.');y+=2;await bilder(r.fotos||[],4);y+=2;}
   titel('Zählerstände');
-  const ZL=(D.zaehler||[]).filter(z=>z.typ||z.nummer||z.stand);
-  tabelle(['Zählertyp','Zählernummer','Marktlokation','Stand','Datum'],ZL.map(z=>[z.typ,z.nummer,z.malo,z.stand,dmy(PR.datum)]),[42,46,40,26,B-154]);
+  const ZL=(D.zaehler||[]).filter(z=>z.typ||z.nummer||z.stand||z.einzug);
+  if(auszug)tabelle(['Zählertyp','Zählernummer','Marktlokation','Stand Einzug','Stand Auszug','Verbrauch'],ZL.map(z=>[z.typ,z.nummer,z.malo,z.einzug,z.stand,verbrauch(z)]),[34,34,30,27,27,B-152]);
+  else tabelle(['Zählertyp','Zählernummer','Marktlokation','Stand','Datum'],ZL.map(z=>[z.typ,z.nummer,z.malo,z.stand,dmy(PR.datum)]),[42,46,40,26,B-154]);
   const zf=ZL.filter(z=>z.foto);if(zf.length)await bilder(zf.map(z=>z.foto),4);
   absatz(HINWEIS_VERSORGER,9);y+=2;
   titel('Angaben des Mieters');
@@ -549,7 +564,7 @@ const ACT={
   pdf:(d,b,e)=>{e.stopPropagation();pdfOeffnen(d.id);},
   liste:async()=>{if(PR&&!gesperrt())await speichern();ANS='liste';PR=null;history.replaceState(null,'',location.pathname);render();window.scrollTo(0,0);},
   konto:()=>{(window.top||window).location.href='/hausverwaltung/mieterkonten?pid='+encodeURIComponent(PR.pid);},
-  add:d=>{if(d.l==='wgb_personen')(D.wgb_personen=D.wgb_personen||[]).push({vorname:'',nachname:''});else if(d.l==='schluessel')D.schluessel.push({typ:'',anzahl:'',nummer:''});else D.zaehler.push({zid:'',typ:'',nummer:'',malo:'',stand:'',foto:''});speichernBald();renderErhalten();},
+  add:d=>{if(d.l==='wgb_personen')(D.wgb_personen=D.wgb_personen||[]).push({vorname:'',nachname:''});else if(d.l==='schluessel')D.schluessel.push({typ:'',anzahl:'',nummer:''});else D.zaehler.push({zid:'',typ:'',nummer:'',malo:'',einzug:'',stand:'',foto:''});speichernBald();renderErhalten();},
   del:d=>{const L=D[d.l],i=+d.i;if(d.l==='raeume'&&(L[i].text||(L[i].fotos||[]).length)&&!confirm('Raum „'+(L[i].name||'')+'“ mit Text und Fotos entfernen?'))return;L.splice(i,1);speichernBald();renderErhalten();},
   hoch:d=>{const i=+d.i;if(i<1)return;const L=D.raeume;[L[i-1],L[i]]=[L[i],L[i-1]];speichernBald();renderErhalten();},
   zustand:d=>{D.raeume[+d.i].zustand=d.v;speichernBald();renderErhalten();},
