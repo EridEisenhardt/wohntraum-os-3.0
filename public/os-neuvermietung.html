@@ -4,6 +4,7 @@
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="/vertrag-pdf.js?v=20261020a"></script>
 <style>
 :root{--bg:#f3f5f8;--card:#ffffff;--ink:#18202c;--muted:#5f6b7a;--line:#e0e5eb;--soft:#eef1f5;--accent:#2f5d8a;--accent-ink:#ffffff;--accent-soft:#e3ecf5;--pos:#1d7a4c;--pos-bg:#e5f4ec;--warn:#946200;--warn-bg:#fff4d6;--neg:#b42318;--neg-bg:#fcebe9;--chip:#edf1f6}
 *{box-sizing:border-box;margin:0;padding:0}
@@ -52,6 +53,7 @@ details.mehr>summary::after{content:'aufklappen';float:right;font-size:12px;font
 details.mehr[open]>summary::after{content:'zuklappen'}
 details.mehr>.innen{padding:0 12px 4px}
 details.mehr>.innen>.card{border:0;padding:4px 4px 10px;margin:0}
+.vtwahl{display:flex;flex-wrap:wrap;gap:6px 18px}.vtwahl label{display:flex;gap:6px;align-items:center;font-size:13.5px}
 /* Detail */
 .ov{position:fixed;inset:0;background:rgba(10,14,20,.45);display:flex;justify-content:flex-end;z-index:40}
 .panel{background:var(--bg);width:min(900px,100%);height:100%;overflow:auto;padding:16px 20px 40px;box-shadow:-10px 0 30px rgba(0,0,0,.15)}
@@ -128,7 +130,7 @@ const MSA_F=[['1. Objekt, Einzugstermin und Zweck',[['objekt','Objekt'],['besich
  ['4. Weitere Daten',[['personen','Personen'],['mitbewohner','Weitere Personen'],['gewerblich','Gewerbliche Nutzung'],['haustiere','Haustiere'],['haustiere_welche','Welche Haustiere'],['erfahren','Wie von der Wohnung erfahren'],['ansprechpartner','Ansprechpartner'],['teilweise','Mietkosten derzeit teilweise übernommen'],['vollstaendig','Mietkosten derzeit vollständig übernommen'],['amt','Miete zahlt Jobcenter / Sozialamt'],['behoerde','Zuständige Behörde']]],
  ['5. Bonität',[['eidesstattlich','Eidesstattliche Versicherung oder Haftbefehl in den letzten 3 Jahren']]],
  ['6. Einverständnis',[['datenschutz','Einverständnis Datenschutz'],['wahrheit','Angaben wahrheitsgemäß']]]];
-let K=[],O=[],E=[],MSA={},MKO=[],ICH='',ICHMAIL='',SEL=null,BUSY='',ARCH=false,SUCHE='';
+let VORL=[],K=[],O=[],E=[],MSA={},MKO=[],ICH='',ICHMAIL='',SEL=null,BUSY='',ARCH=false,SUCHE='';
 
 function toast(t,ms){const el=document.getElementById('toast');el.textContent=t;el.classList.add('on');clearTimeout(toast._t);toast._t=setTimeout(()=>el.classList.remove('on'),ms||3500);}
 const rid=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,9);
@@ -156,10 +158,12 @@ function kduGrenze(region,personen){const r=KDU[region];if(!r)return null;const 
 function regionVorschlag(k){const e=k.wohnung&&einVon(k.wohnung.einheit_id),o=e&&objVon(e.objekt_id);if(!o)return '';return ORT_REGION[String(o.ort||'').toLowerCase().trim()]||'';}
 
 async function laden(ohneSync){
-  const [k,o,e,u,m]=await Promise.all([sb.from('os_docs').select('data').eq('app','oc').like('pfad','neuvermietung/%'),
-    sb.from('obj_objekte').select('id,kz,name,strasse,plz,ort,status,gesellschaft').order('sort'),
+  const [k,o,e,u,m,vv]=await Promise.all([sb.from('os_docs').select('data').eq('app','oc').like('pfad','neuvermietung/%'),
+    sb.from('obj_objekte').select('id,kz,name,strasse,plz,ort,status,gesellschaft,eigentuemer').order('sort'),
     sb.from('obj_einheiten').select('id,objekt_id,bezeichnung,lage,art,flaeche,zimmer,nahaus_id,aktiv,sort,ausstattung').order('sort'),sb.auth.getUser(),
-    sb.from('mieterselbstauskunft').select('id,token,karte_id,status,daten,unterschrift,eingegangen_at,created_at')]);
+    sb.from('mieterselbstauskunft').select('id,token,karte_id,status,daten,unterschrift,eingegangen_at,created_at'),
+    sb.from('os_docs').select('data').eq('app','oc').like('pfad','vertragsvorlagen/%')]);
+  VORL=((vv&&vv.data)||[]).map(r=>r.data).filter(x=>x&&x.aktiv!==false).sort((a,b)=>String(a.name).localeCompare(String(b.name),'de'));
   if(k.error){document.getElementById('app').innerHTML='<div class="leer">Bitte im Wohntraum OS anmelden.</div>';return;}
   K=(k.data||[]).map(r=>r.data).filter(Boolean);O=(o.data||[]).filter(x=>x.status!=='Verkauft');E=e.data||[];
   MSA={};(m.data||[]).forEach(r=>{if(r.karte_id&&(!MSA[r.karte_id]||String(r.created_at)>String(MSA[r.karte_id].created_at)))MSA[r.karte_id]=r;});
@@ -308,6 +312,66 @@ function kalkKarte(k){const c=kalk(k),e=k.wohnung&&einVon(k.wohnung.einheit_id),
     <table class="ktab"><thead><tr><th>Gebäude</th><th>WE</th><th>Lage</th><th>Name / Quelle</th><th class="r">Kaltmiete</th><th class="r">WFL</th><th class="r">Zimmer</th><th class="r">€/m²</th><th></th></tr></thead><tbody>`
     +(V.length?V.map((v,i)=>`<tr>${['geb','we','lage','name'].map(f=>`<td><input class="feld" style="max-width:none;text-align:left" data-vgl="${i}" data-f="${f}" value="${esc(v[f]||'')}"></td>`).join('')}${['kalt','wfl','zimmer'].map(f=>`<td class="r"><input data-vgl="${i}" data-f="${f}" value="${esc(fz(zahl(v[f])))}" inputmode="decimal" style="max-width:80px"></td>`).join('')}<td class="r">${zahl(v.wfl)?(zahl(v.kalt)/zahl(v.wfl)).toFixed(2).replace('.',','):'–'}</td><td><button class="small ghost" data-vgldel="${i}">Entfernen</button></td></tr>`).join(''):'<tr><td colspan="9" class="sub">Noch keine Vergleichswohnungen.</td></tr>')+'</tbody></table></div>';
   return h;}
+/* ---------- Verträge über DocuSign ---------- */
+const WG_GES={EE:'Eric Eisenhardt',WT:'Wohntraum Rheinhessen GmbH',KiBo:'Wohn(T)raum KiBo GmbH'},WG_ANSCHRIFT='Dalheimer Straße 70, 55278 Dexheim';
+const DS_STATUS={sent:'versendet, wartet auf Unterschriften',delivered:'geöffnet, wartet auf Unterschriften',completed:'von allen unterschrieben',declined:'Unterschrift abgelehnt',voided:'zurückgezogen',created:'angelegt'};
+const DS_EMPF={created:'wartet',sent:'Mail erhalten',delivered:'hat geöffnet',completed:'hat unterschrieben',signed:'hat unterschrieben',declined:'hat abgelehnt',autoresponded:'Mail nicht zustellbar'};
+function vtBasis(k){const e=k.wohnung&&einVon(k.wohnung.einheit_id),o=e&&objVon(e.objekt_id),s=MSA[k.id];
+  const vermieter=(o&&(o.eigentuemer||WG_GES[o.gesellschaft]))||'Wohntraum Rheinhessen GmbH';
+  return VertragPdf.werte({karte:k,msa:s&&s.daten||{},objekt:o||{},einheit:e||{},vermieter,vermieterAnschrift:WG_ANSCHRIFT});}
+function vtDaten(k){const v=k.vertrag=k.vertrag||{};if(!v.auswahl)v.auswahl=VORL.filter(x=>x.standard&&(x.bereich||'Neuvermietung')==='Neuvermietung').map(x=>x.id);v.texte=v.texte||{};
+  v.vermieter=v.vermieter||{name:'Eric Eisenhardt',email:ERIC};return v;}
+function vtGewaehlt(k){const v=vtDaten(k);return VORL.filter(x=>v.auswahl.includes(x.id)).sort((a,b)=>(Number(a.sort)||99)-(Number(b.sort)||99)||String(a.name).localeCompare(String(b.name),'de'));}
+function vertragKarte(k){const v=vtDaten(k),V=vtBasis(k),ro=!!k.pid;
+  let h='<div class="card"><div class="ch">Verträge über DocuSign</div>';
+  if(v.envelopeId&&!v.storniert){
+    h+=`<div class="${v.status==='completed'?'ok':'note'}">${esc(DS_STATUS[v.status]||v.status||'versendet')}${v.gesendet?' · gesendet am '+esc(zeit(v.gesendet)):''}${v.fertig?' · fertig am '+esc(zeit(v.fertig)):''}</div>
+      <div class="sub" style="margin:6px 0">${esc((v.namen||[]).join(', '))}</div>
+      <table class="ktab"><thead><tr><th>Unterzeichner</th><th>E-Mail</th><th>Stand</th></tr></thead><tbody>${(v.unterzeichner||v.empfaenger||[]).map(u=>`<tr><td>${esc(u.name)}</td><td>${esc(u.email)}</td><td>${esc(DS_EMPF[u.status]||u.status||'wartet')}${u.unterschrieben?' am '+esc(zeit(u.unterschrieben)):''}</td></tr>`).join('')}</tbody></table>
+      <div class="acts" style="margin-top:10px">${v.pdf?'<button class="primary" data-a="vtpdf">Unterschriebenen Vertrag öffnen</button>':'<button data-a="vtstand"'+(BUSY?' disabled':'')+'>Stand aktualisieren</button>'}${!v.fertig&&!ro?'<button class="warn" data-a="vtstorno"'+(BUSY?' disabled':'')+'>Zurückziehen</button>':''}</div>
+      <div class="sub" style="margin-top:6px">Haben alle unterschrieben, legt das OS den Vertrag ab und schiebt den Mieter automatisch zu „Mietvertrag unterschrieben“.</div></div>`;
+    return h;}
+  if(v.storniert)h+=`<div class="note">Der zuletzt gesendete Vertrag wurde zurückgezogen oder abgelehnt (${esc(zeit(v.storniert))}). Er kann neu gesendet werden.</div>`;
+  if(!VORL.length)return h+'<div class="sub">Es gibt noch keine Vertragsvorlagen. Sie werden unter „Dokumente erstellen“, „Vertragsvorlagen“ angelegt.</div></div>';
+  const neuv=VORL.filter(x=>(x.bereich||'Neuvermietung')==='Neuvermietung');
+  h+=`<div class="sub" style="margin-bottom:6px">Verträge auswählen (mehrere möglich):</div><div class="vtwahl">${neuv.map(x=>`<label><input type="checkbox" data-vwahl="${esc(x.id)}"${v.auswahl.includes(x.id)?' checked':''}${ro?' disabled':''}> ${esc(x.name)}</label>`).join('')}</div>`;
+  const gew=vtGewaehlt(k),frei=[],seen=new Set();gew.forEach(x=>VertragPdf.freieTexte(x.text,V).forEach(f=>{if(!seen.has(f.label)){seen.add(f.label);frei.push(f);}}));
+  if(frei.length)h+='<div class="ch" style="font-size:13.5px;margin-top:10px">Angaben für die Verträge</div><div class="g2">'+frei.map(f=>{const val=v.texte[f.label]!=null?v.texte[f.label]:f.vorgabe;return f.vorgabe.includes('\n')||/Vereinbarung|Gegenstände/.test(f.label)?`<label class="fl" style="grid-column:1/-1">${esc(f.label)}<textarea data-vtext="${esc(f.label)}">${esc(val)}</textarea></label>`:`<label class="fl">${esc(f.label)}<input data-vtext="${esc(f.label)}" value="${esc(val)}" autocomplete="off"></label>`;}).join('')+'</div>';
+  const rollen=new Set();gew.forEach(x=>VertragPdf.rollenIn(x.text,V).forEach(r=>rollen.add(r)));
+  h+='<div class="ch" style="font-size:13.5px;margin-top:10px">Wer unterschreibt</div><div class="g3">';
+  if(rollen.has('mieter1'))h+=`<label class="fl">Mieter 1<input value="${esc(V.mieter_name)}" disabled></label><label class="fl">E-Mail Mieter 1<input value="${esc(k.email||'')}" disabled></label><div class="sub" style="margin-top:20px">${/@/.test(k.email||'')?'':'E-Mail bitte unten bei „Mieter und Wohnung“ eintragen.'}</div>`;
+  if(rollen.has('mieter2'))h+=`<label class="fl">Mieter 2<input value="${esc(V.mieter2_name)}" disabled></label><label class="fl">E-Mail Mieter 2<input id="vt-m2mail" value="${esc(v.mieter2Email||'')}" autocomplete="off"></label><div></div>`;
+  if(rollen.has('vermieter'))h+=`<label class="fl">Für den Vermieter unterschreibt<input id="vt-vname" value="${esc(v.vermieter.name)}" autocomplete="off"></label><label class="fl">E-Mail<input id="vt-vmail" value="${esc(v.vermieter.email)}" autocomplete="off"></label><div class="sub" style="margin-top:20px">unterschreibt nach den Mietern</div>`;
+  h+=`</div><div class="acts" style="margin-top:6px"><button data-a="vtvorschau"${gew.length?'':' disabled'}>Vorschau</button><button class="primary" data-a="vtsenden"${gew.length&&!BUSY&&!ro?'':' disabled'}>${BUSY==='ds'?'Wird gesendet …':'Über DocuSign senden'}</button></div></div>`;
+  return h;}
+function vtErstellen(k,vorschau){const v=vtDaten(k),V=vtBasis(k),gew=vtGewaehlt(k);const fuss=k.wohnung&&k.wohnung.label?k.wohnung.label.split(' · ')[0]:'';
+  const dok=[],felder=[],rollen=new Set();let gesamt=null;
+  for(const x of gew){const r=VertragPdf.erstellen(x.text,V,v.texte,{titel:x.titel||x.name,fuss,vorschau,start:vorschau?gesamt:null});
+    if(vorschau)gesamt=r.doc;else dok.push({name:x.name,base64:r.doc.output('datauristring').split(',').pop()});
+    felder.push(...r.felder);VertragPdf.rollenIn(x.text,V).forEach(z=>rollen.add(z));}
+  return {dok,felder,rollen:[...rollen],gesamt,V};}
+async function vtSenden(k){const v=vtDaten(k);if(!vtGewaehlt(k).length){toast('Bitte mindestens einen Vertrag auswählen.');return;}
+  const {dok,felder,rollen,V}=vtErstellen(k,false);
+  const P={};if(rollen.includes('mieter1'))P.mieter1={name:V.mieter_name,email:k.email||''};if(rollen.includes('mieter2'))P.mieter2={name:V.mieter2_name,email:v.mieter2Email||''};if(rollen.includes('vermieter'))P.vermieter={name:v.vermieter.name,email:v.vermieter.email};
+  const fehltM=Object.entries(P).filter(([,p])=>!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(p.email||'')).map(([r])=>({mieter1:'Mieter 1',mieter2:'Mieter 2',vermieter:'Vermieter'}[r]));
+  if(fehltM.length){toast('E-Mail-Adresse fehlt: '+fehltM.join(', '),6000);return;}
+  const namen=vtGewaehlt(k).map(x=>x.name);
+  if(!confirm('Über DocuSign senden?\n\n'+namen.join('\n')+'\n\nAn: '+Object.values(P).map(p=>p.name+' <'+p.email+'>').join(', ')))return;
+  const signer=VertragPdf.unterzeichner(P,felder);
+  BUSY='ds';panel();
+  try{const r=await api('/api/docusign',{aktion:'senden',dokumente:dok,unterzeichner:signer,betreff:(namen.length>1?'Verträge':namen[0])+' '+(V.objekt_adresse_we||'')+' – bitte unterschreiben',
+      nachricht:'Guten Tag,\n\nanbei erhalten Sie '+(namen.length>1?'die Verträge':'den Vertrag')+' für die Wohnung '+V.objekt_adresse_we+' zur Unterschrift. Bitte lesen Sie alles in Ruhe durch und unterschreiben Sie an den markierten Stellen.\n\nMit freundlichen Grüßen\nWohn(T)raum Rheinhessen GmbH'});
+    if(r.zustimmung){toast('DocuSign braucht noch einmal die Zustimmung. Es öffnet sich ein Fenster.',8000);window.open(r.zustimmung,'_blank');BUSY='';panel();return;}
+    Object.assign(v,{envelopeId:r.envelopeId,status:r.status||'sent',gesendet:new Date().toISOString(),namen,fertig:null,storniert:null,pdf:null,unterzeichner:null,empfaenger:signer.map(s=>({name:s.name,email:s.email,status:'sent'}))});
+    await speichern(k,'Über DocuSign gesendet: '+namen.join(', '));toast('Über DocuSign gesendet.');}
+  catch(e){toast('Nicht gesendet: '+(e.message||e),9000);}
+  BUSY='';panel();render();}
+async function vtStand(k){BUSY='ds';panel();await asanaSync();await laden(true);BUSY='';panel();toast('Stand aktualisiert.');}
+async function vtStorno(k){const v=vtDaten(k);if(!confirm('Den Vertrag in DocuSign zurückziehen? Die Unterzeichner können dann nicht mehr unterschreiben.'))return;
+  BUSY='ds';panel();try{await api('/api/docusign',{aktion:'stornieren',envelopeId:v.envelopeId});v.storniert=new Date().toISOString();v.status='voided';await speichern(k,'DocuSign-Vertrag zurückgezogen');toast('Zurückgezogen.');}
+  catch(e){toast('Nicht zurückgezogen: '+(e.message||e),8000);}BUSY='';panel();}
+async function vtPdf(k){const v=vtDaten(k);if(!v.pdf)return;const {data,error}=await sb.storage.from('vertraege').createSignedUrl(v.pdf,600);if(error){toast('Nicht geöffnet: '+error.message,6000);return;}window.open(data.signedUrl,'_blank');}
+
 /* Arbeitsbereich in der Kachel */
 const MEHR=new Set();
 function mehr(key,titel,inhalt){return `<details class="mehr" data-mehr="${key}"${MEHR.has(key)?' open':''}><summary>${esc(titel)}</summary><div class="innen">${inhalt}</div></details>`;}
@@ -336,9 +400,10 @@ function arbeit(k){const ro=!!k.pid,sp=k.spalte||'selbstauskunft',f=fehlt(k);let
   if(sp==='kalkulation'&&!k.archiv){h+=`<fieldset style="border:0"${ro?' disabled':''}>`+kalkKarte(k)+'</fieldset>'+weiterKnopf(k,'Kalkulation fertig – weiter zum Mietangebot');}
   else if(k.freigabeMsa&&sp!=='selbstauskunft')unten.push(['kalk','Mietkalkulation',`<fieldset style="border:0"${ro?' disabled':''}>`+kalkKarte(k)+'</fieldset>']);
   if(sp==='angebot'&&!k.archiv){h+=`<div class="card"><div class="ch">3. Mietangebot</div>${eckdaten(k)}<div class="sub">Hier entsteht im nächsten Ausbauschritt das Mietangebot aus der Kalkulation: als PDF erstellen und direkt per Mail an den Mietinteressenten senden.</div></div>`+weiterKnopf(k,'Angebot angenommen – weiter zum Mietvertrag');}
-  if(sp==='vertrag'&&!k.archiv){h+=`<div class="card"><div class="ch">4. Mietvertrag</div>${eckdaten(k)}<div class="note">Der Mietvertrag wird über DocuSign versendet und unterschrieben.</div><div class="sub">Für den Mietvertrag bitte unten bei „Mieter und Wohnung“ alle Angaben vervollständigen (weitere Mieter, bisherige Anschrift, IBAN).${f.length?' Es fehlt noch: '+esc(f.join(', '))+'.':''}</div></div>`
-    +`<fieldset style="border:0"${ro?' disabled':''}>`+stammKarte(k,true)+'</fieldset>'+weiterKnopf(k,'Mietvertrag über DocuSign versendet – weiter zu „Mietvertrag unterschrieben“');}
+  if(sp==='vertrag'&&!k.archiv){h+=`<div class="card"><div class="ch">4. Mietvertrag</div>${eckdaten(k)}<div class="sub">Die Verträge erstellt das OS aus den Vertragsvorlagen und sendet sie über DocuSign zur Unterschrift. Vorher bitte unten bei „Mieter und Wohnung“ alle Angaben vervollständigen (weitere Mieter, bisherige Anschrift).${f.length?' Es fehlt noch: '+esc(f.join(', '))+'.':''}</div></div>`
+    +vertragKarte(k)+`<fieldset style="border:0"${ro?' disabled':''}>`+stammKarte(k,true)+'</fieldset>'+weiterKnopf(k,'Ohne DocuSign weiter zu „Mietvertrag unterschrieben“');}
   else if(sp!=='selbstauskunft'&&!k.archiv)unten.push(['stamm','Mieter und Wohnung',`<fieldset style="border:0"${ro?' disabled':''}>`+stammKarte(k,true)+'</fieldset>']);
+  if(sp==='unterschrieben'&&!k.archiv&&k.vertrag&&k.vertrag.envelopeId)h+=vertragKarte(k);
   if(sp==='unterschrieben'&&!k.archiv){h+=`<div class="card"><div class="ch">5. Mietvertrag unterschrieben</div>${eckdaten(k)}${k.pid?`<div class="ok">Mieterkonto ist angelegt. <a href="#" data-a="konto">Mieterkonto öffnen</a></div>`:`<div class="sub">Sobald der Mietvertrag von beiden Seiten unterschrieben ist, hier klicken. Das OS legt das Mieterkonto an, der Mieter erscheint beim Objekt, und in Asana wird das Projekt 03_EINZUG aus der Vorlage erstellt.${f.length?' Es fehlt noch: '+esc(f.join(', '))+'.':''}</div><div class="weiter" style="margin-top:8px"><button class="primary" data-a="unterschreiben"${BUSY?' disabled':''}>${BUSY==='mk'?'Wird angelegt …':'Unterschrieben – Mieterkonto und Asana-Einzug anlegen'}</button></div>`}
     ${k.asana&&k.asana.einzug&&k.asana.einzug.gid?`<div class="sub">Asana: <a href="${esc(k.asana.einzug.link)}" target="_blank" rel="noopener">${esc(k.asana.einzug.name||'03_EINZUG')}</a></div>`:k.pid?'<div class="sub">Das Asana-Projekt 03_EINZUG ist noch nicht angelegt. <a href="#" data-a="einzug">Jetzt anlegen</a></div>':''}</div>`;}
   unten.push(['notiz','Notizen',`<div class="card"><textarea id="f-notiz" placeholder="z. B. Schufa liegt vor, Mietangebot verschickt am …"${ro?' disabled':''}>${esc(k.notiz||'')}</textarea></div>`]);
@@ -368,8 +433,13 @@ document.addEventListener('input',e=>{const t=e.target;
   if(FELD[t.id]){k[FELD[t.id]]=t.value;spaeter(k,t.id==='k-personen');return;}
   if(KALK[t.id]){c[KALK[t.id]]=t.value;spaeter(k,t.id==='k-wfl');return;}
   if(t.dataset.pos){c.pos[t.dataset.pos][t.dataset.s]=t.value;spaeter(k,true);return;}
+  if(t.dataset.vtext!==undefined){vtDaten(k).texte[t.dataset.vtext]=t.value;spaeter(k,false);return;}
+  if(t.id==='vt-m2mail'){vtDaten(k).mieter2Email=t.value.trim();spaeter(k,false);return;}
+  if(t.id==='vt-vname'){vtDaten(k).vermieter.name=t.value;spaeter(k,false);return;}
+  if(t.id==='vt-vmail'){vtDaten(k).vermieter.email=t.value.trim();spaeter(k,false);return;}
   if(t.dataset.vgl!==undefined){c.vergleich[+t.dataset.vgl][t.dataset.f]=t.value;spaeter(k,['kalt','wfl'].includes(t.dataset.f));return;}});
-document.addEventListener('change',e=>{const t=e.target;if(!t.isConnected)return;const k=K.find(x=>x.id===SEL);if(!k||k.pid)return;
+document.addEventListener('change',e=>{const t=e.target;if(!t.isConnected)return;
+  if(t.dataset&&t.dataset.vwahl){const k=K.find(x=>x.id===SEL);if(!k)return;const v=vtDaten(k);v.auswahl=v.auswahl.filter(x=>x!==t.dataset.vwahl);if(t.checked)v.auswahl.push(t.dataset.vwahl);speichern(k);setTimeout(panel);return;}const k=K.find(x=>x.id===SEL);if(!k||k.pid)return;
   if(t.id==='f-obj'){const o=O.find(x=>objLabel(x)===t.value);if(!o){if(t.value)toast('Bitte eine Immobilie aus der Liste wählen.');return;}k.wohnung={objekt_id:o.id};speichern(k);setTimeout(()=>{zeileNeu(k);panel();});return;}
   if(t.id==='f-ein'){const o=k.wohnung&&objVon(k.wohnung.objekt_id);const ei=o&&E.find(x=>x.objekt_id===o.id&&einLabel(x)===t.value);if(!ei){if(t.value)toast('Bitte eine Einheit aus der Liste wählen.');return;}
     k.wohnung={objekt_id:o.id,einheit_id:ei.id,label:o.kz+' '+ei.bezeichnung+' · '+(o.strasse||o.name||'')};speichern(k,'Wohnung gewählt: '+k.wohnung.label);setTimeout(()=>{zeileNeu(k);panel();});return;}
@@ -392,6 +462,11 @@ document.addEventListener('click',async e=>{const t=e.target;
     if(w==='msafrei'&&k){msaFreigeben(k);return;}
     if(w==='msaab'&&k){if(!istEric())return;if(!confirm('Mieterselbstauskunft ablehnen? Der Mietinteressent wird ins Archiv gelegt.'))return;k.archiv={grund:'Abgelehnt von Eric',am:HEUTE,von:ICH};k.seit=new Date().toISOString();await speichern(k,'Mieterselbstauskunft abgelehnt');SEL=null;render();toast('Abgelehnt und ins Archiv gelegt.');syncUndLaden();return;}
     if(w==='unterschreiben'&&k){unterschreiben(k);return;}
+    if(w==='vtsenden'&&k){vtSenden(k);return;}
+    if(w==='vtstand'&&k){vtStand(k);return;}
+    if(w==='vtstorno'&&k){vtStorno(k);return;}
+    if(w==='vtpdf'&&k){vtPdf(k);return;}
+    if(w==='vtvorschau'&&k){try{const {gesamt}=vtErstellen(k,true);if(gesamt)window.open(URL.createObjectURL(gesamt.output('blob')),'_blank');}catch(x){toast('Vorschau nicht möglich: '+(x.message||x),7000);}return;}
     if(w==='einzug'&&k){try{const r=await api('/api/neuvermietung',{aktion:'einzug',id:k.id});if(r.einzug){k.asana=k.asana||{};k.asana.einzug=r.einzug;panel();toast('Asana-Projekt angelegt.');}else toast(r.hinweis||'Nicht angelegt.',7000);}catch(e){toast('Nicht angelegt: '+(e.message||e),8000);}return;}
     if(w==='vgladd'&&k){const c=kalk(k);(c.vergleich=c.vergleich||[]).push({});speichern(k);panel();return;}
     if(w==='vglobj'&&k){vglAusObjekt(k);return;}

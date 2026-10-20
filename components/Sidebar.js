@@ -20,6 +20,7 @@ export const NAV = [
     { href: '/verwalto/dokumente', icon: 'ti-file', label: 'Dokumente', offen: true },
     { href: '/vermietung/zahlungsvereinbarung', icon: 'ti-file-dollar', label: 'Ratenzahlung' },
     { href: '/mahnprozess/generator', icon: 'ti-file-invoice', label: 'Mahnungen' },
+    { href: '/verwalto/vertragsvorlagen', icon: 'ti-file-certificate', label: 'Vertragsvorlagen', offen: true },
   ] },
   { type: 'group', key: 'v-fuhrpark', icon: 'ti-car', label: 'Fuhrpark', mod: 'verwalto', items: [
     { href: '/verwalto/fuhrpark', icon: 'ti-car', label: 'Fahrzeuge', offen: true },

@@ -10,6 +10,7 @@
 // - aktion 'einzug' (angemeldet): legt nach „Mietvertrag unterschrieben“ das Asana-Projekt 03_EINZUG aus der Vorlage an
 // Benötigt in Vercel: ASANA_TOKEN. Optional: NV_ASANA_ERIC, NV_ASANA_RAMONA (Asana-Nutzer-IDs)
 import { angemeldet, antwort } from '../_lib/auth'
+import { dsBereit, dsStand, ds } from '../_lib/docusign'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60
@@ -34,7 +35,7 @@ const AUFG = {
     text: 'Was zu tun ist:\n1. Mietangebot aus der Mietkalkulation erstellen (Neuvermietung, Kachel „Mietangebot“).\n2. Das Angebot an den Mietinteressenten senden.\n3. Zusage des Mietinteressenten einholen.\n\nSobald die Zusage da ist, diese Aufgabe abhaken. Der Mieter springt dann automatisch zum Mietvertrag.',
     unter: ['Mietangebot erstellt', 'An den Mietinteressenten gesendet', 'Zusage erhalten'] },
   vertrag: { wer: RAMONA, titel: 'Mietvertrag erstellen',
-    text: 'Was zu tun ist:\n1. Mietvertrag mit den Daten aus der Mietkalkulation erstellen (Neuvermietung, Kachel „Mietvertrag“). Vorher im OS unter „Mieter und Wohnung“ weitere Mieter, bisherige Anschrift und IBAN vervollständigen.\n2. WICHTIG: Der Mietvertrag wird über DocuSign versendet und unterschrieben.\n3. Den unterschriebenen Mietvertrag im Mieterordner ablegen.\n\nWenn der Vertrag über DocuSign versendet ist, diese Aufgabe abhaken. Der Mieter springt dann zu „Mietvertrag unterschrieben“. Sobald beide Seiten unterschrieben haben, im OS auf „Unterschrieben – Mieterkonto und Asana-Einzug anlegen“ klicken.',
+    text: 'Was zu tun ist:\n1. Mietvertrag mit den Daten aus der Mietkalkulation erstellen (Neuvermietung, Kachel „Mietvertrag“). Vorher im OS unter „Mieter und Wohnung“ weitere Mieter, bisherige Anschrift und IBAN vervollständigen.\n2. WICHTIG: Der Mietvertrag wird über DocuSign versendet und unterschrieben. Im OS in der Kachel „Mietvertrag“ die Verträge auswählen (Mietvertrag, Beherbergungsvertrag, Leihvertrag, Tod des Mieters), offene Angaben ausfüllen und auf „Über DocuSign senden“ klicken.\n3. Haben alle unterschrieben, legt das OS den unterschriebenen Vertrag ab und schiebt den Mieter automatisch zu „Mietvertrag unterschrieben“.\n\nWenn der Vertrag über DocuSign versendet ist, kann diese Aufgabe abgehakt werden. Sobald beide Seiten unterschrieben haben, im OS auf „Unterschrieben – Mieterkonto und Asana-Einzug anlegen“ klicken.',
     unter: ['Mietvertrag erstellt', 'Über DocuSign zur Unterschrift versendet', 'Unterschriebenen Vertrag im Mieterordner abgelegt'] },
 }
 // Aufgabenname: Abschnitt_Objekt_Einheit_NACHNAME Vorname, z. B. OS_Mieterselbstauskunft_R6_WE6_MÜLLER Max
@@ -186,6 +187,29 @@ export async function POST(req) {
               a.erledigt = new Date().toISOString(); neu = true
               if (k.spalte === 'selbstauskunft') { k.spalte = 'kalkulation'; k.seit = new Date().toISOString(); await eriSync(k) }
             }
+          }
+          // DocuSign: Stand des Vertrags; alle haben unterschrieben -> PDF ablegen und weiter zu „Mietvertrag unterschrieben“
+          const v = k.vertrag
+          if (v && v.envelopeId && !v.fertig && !v.storniert && dsBereit() && ['vertrag', 'unterschrieben'].includes(k.spalte)) {
+            try {
+              const st = await dsStand(v.envelopeId)
+              const vorher = JSON.stringify([v.status, v.unterzeichner])
+              v.status = st.status; v.unterzeichner = st.unterzeichner.map(u => ({ id: u.id, name: u.name, email: u.email, status: u.status, unterschrieben: u.unterschrieben }))
+              if (st.status === 'completed') {
+                const pdf = await ds('/envelopes/' + encodeURIComponent(v.envelopeId) + '/documents/combined', { roh: true })
+                const pfad = k.id + '/' + v.envelopeId + '.pdf'
+                const url = process.env.NEXT_PUBLIC_SUPABASE_URL, key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+                const up = await fetch(url + '/storage/v1/object/vertraege/' + pfad, { method: 'POST', headers: { apikey: key, Authorization: AUTH, 'Content-Type': 'application/pdf', 'x-upsert': 'true' }, body: pdf })
+                if (!up.ok) throw new Error('Unterschriebener Vertrag nicht gespeichert (' + up.status + ')')
+                v.fertig = st.fertig || new Date().toISOString(); v.pdf = pfad
+                ;(k.verlauf = k.verlauf || []).push({ t: new Date().toISOString(), von: 'DocuSign', text: 'Alle haben unterschrieben. Der unterschriebene Vertrag ist gespeichert.' })
+                if (k.spalte === 'vertrag') { k.spalte = 'unterschrieben'; k.seit = new Date().toISOString(); log(k, 'Verschoben: Mietvertrag → Mietvertrag unterschrieben (DocuSign)'); await eriSync(k) }
+              } else if (st.status === 'declined' || st.status === 'voided') {
+                v.storniert = st.storniert || new Date().toISOString()
+                ;(k.verlauf = k.verlauf || []).push({ t: new Date().toISOString(), von: 'DocuSign', text: st.status === 'declined' ? 'Ein Unterzeichner hat die Unterschrift abgelehnt.' : 'Der Vertrag wurde in DocuSign storniert.' })
+              }
+              if (JSON.stringify([v.status, v.unterzeichner]) !== vorher || v.fertig || v.storniert) neu = true
+            } catch (e) { fehler.push(nameVoll(k) + ' (DocuSign): ' + (e.message || e)) }
           }
           // 3. Mietkalkulation, Mietangebot, Mietvertrag: Aufgabe anlegen, erledigt -> weiter
           for (let runde = 0; runde < 3; runde++) {
