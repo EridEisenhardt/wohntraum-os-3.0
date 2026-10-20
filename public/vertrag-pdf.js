@@ -40,7 +40,12 @@
     ['objekt_adresse', 'Objekt: Adresse'], ['objekt_adresse_we', 'Objekt: Adresse mit Einheit'], ['objekt_kz', 'Objekt: Kürzel'],
     ['personen', 'Personen (Zahl)'], ['personen_text', 'Personen (z. B. 2 Personen)'], ['strom_zahl', 'Strom (Betrag)'],
     ['vermieter', 'Vermieter: Name'], ['vermieter_anschrift', 'Vermieter: Anschrift'], ['vertragsdatum', 'Vertragsdatum (heute)'],
-    ['verwendungszweck', 'Verwendungszweck Miete'], ['wlan_zahl', 'WLAN (Betrag)'], ['wohnflaeche', 'Wohnfläche (m²)'], ['zimmer', 'Zimmer']]
+    ['verwendungszweck', 'Verwendungszweck Miete'], ['wlan_zahl', 'WLAN (Betrag)'], ['wohnflaeche', 'Wohnfläche (m²)'], ['zimmer', 'Zimmer'],
+    ['rz_anlage', 'Ratenzahlung: Bezeichnung der Forderung (kurz)'], ['rz_basiszins', 'Ratenzahlung: Basiszins'], ['rz_datum', 'Ratenzahlung: Erstellungsdatum'], ['rz_erste_rate', 'Ratenzahlung: erste Rate am'],
+    ['rz_forderung', 'Ratenzahlung: Forderung (Betrag)'], ['rz_forderung_worte', 'Ratenzahlung: Forderung in Worten'], ['rz_forderungsart', 'Ratenzahlung: Art der Forderung'], ['rz_gesamtzahlung', 'Ratenzahlung: Gesamtzahlung'],
+    ['rz_laufzeit', 'Ratenzahlung: Anzahl Raten'], ['rz_mietstatus', 'Ratenzahlung: Status des Mietvertrags'], ['rz_nachtrag', 'Ratenzahlung: Hinweis Nachtrag'], ['rz_objekt', 'Ratenzahlung: Objekt'],
+    ['rz_offene_forderung', 'Ratenzahlung: „Die offene Forderung“'], ['rz_rate', 'Ratenzahlung: Rate'], ['rz_schlussrate', 'Ratenzahlung: Schlussrate'], ['rz_untertitel', 'Ratenzahlung: Untertitel'],
+    ['rz_wohnung', 'Ratenzahlung: Wohnung'], ['rz_zahlungsziel', 'Ratenzahlung: Zahlungsziel (Konto)'], ['rz_zinsen', 'Ratenzahlung: Zinsen gesamt'], ['rz_zinssatz', 'Ratenzahlung: Zinssatz'], ['rz_zuschlag', 'Ratenzahlung: Zuschlag (Prozentpunkte)']]
 
   // Werte aus Karte (Neuvermietung), Selbstauskunft, Objekt und Einheit
   function werte({ karte, msa, objekt, einheit, vermieter, vermieterAnschrift }) {
@@ -174,7 +179,7 @@
         }
         y += h
       }
-      y += 2.5
+      y += 6
     }
     function unterschriften(arg) {
       const rollen = []
@@ -212,6 +217,7 @@
       if (!z.trim()) continue
       if (z === '---seite') { neueSeite(); continue }
       if (/^:::unterschriften/.test(z)) { unterschriften(z.replace(/^:::unterschriften\s*/, '')); continue }
+      if (/^:::tabelle\s+\w+/.test(z)) { const t = (opt.tabellen || {})[z.replace(/^:::tabelle\s+/, '').trim()]; if (t && t.zeilen && t.zeilen.length) tabelle(t.zeilen, t.breiten); else if (opt.vorschau) { platz(LH); absatz('[Tabelle ' + z.replace(/^:::tabelle\s+/, '') + ']', L, B, FS, true, MUT); y += 1.8 } continue }
       if (/^# /.test(z)) { platz(16); doc.setTextColor(...INK); doc.setFontSize(16); font(true); const t = ersetzen(z.slice(2)); for (const zl of doc.splitTextToSize(t, B)) { doc.text(zl, L, y + 4); y += 7 } doc.setDrawColor(...AKZ); doc.setLineWidth(0.6); doc.line(L, y, L + 30, y); y += 7; continue }
       if (/^## /.test(z)) { platz(16); y += 2.5; absatz('**' + ersetzen(z.slice(3)) + '**', L, B, 11, true, AKZ); y += 1.2; continue }
       if (/^### /.test(z)) { platz(12); y += 1; absatz('**' + ersetzen(z.slice(4)) + '**', L, B, FS, true); y += 0.6; continue }
@@ -245,8 +251,8 @@
     for (let p = startSeite; p <= ende; p++) {
       doc.setPage(p)
       doc.setDrawColor(...AKZ); doc.setLineWidth(0.5); doc.line(L, 14, R, 14)
-      doc.setTextColor(...INK); doc.setFontSize(8.5); font(true); doc.text(opt.kopf || V.vermieter || '', L, 11.5)
-      font(false); doc.setTextColor(...MUT); doc.setFontSize(7.5); doc.text(V.vermieter_anschrift || '', L + doc.getTextWidth(opt.kopf || V.vermieter || '') * 8.5 / 7.5 + 3, 11.5)
+      doc.setTextColor(...INK); doc.setFontSize(8.5); font(true); doc.text(opt.kopf || V.vermieter || '', L, 11.5); const kb = doc.getTextWidth(opt.kopf || V.vermieter || '')
+      font(false); doc.setTextColor(...MUT); doc.setFontSize(7.5); doc.text(V.vermieter_anschrift || '', L + kb + 3, 11.5)
       doc.text(opt.titel || '', R, 11.5, { align: 'right' })
       doc.setDrawColor(...LINE); doc.setLineWidth(0.2); doc.line(L, 283, R, 283)
       doc.setFontSize(7.5); doc.text([opt.titel, opt.fuss].filter(Boolean).join(' · '), L, 287)
@@ -274,5 +280,12 @@
     })
   }
 
-  G.VertragPdf = { erstellen, werte, freieTexte, rollenIn, unterzeichner, worte, betrag, QUELLEN, BEISPIEL, zeilenAktiv }
+  // Beispielwerte für die Vorschau einer Ratenzahlungsvereinbarung
+  const BEISPIEL_RZ = { rz_untertitel: 'Vereinbarung über eine bestehende Forderung aus einem Mietverhältnis', rz_nachtrag: '', rz_objekt: 'Musterstraße 28, 55276 Oppenheim', rz_wohnung: 'WE 2',
+    rz_mietstatus: 'laufend (ungekündigt)', rz_datum: '20.10.2026', rz_forderungsart: 'Gesamtforderung', rz_offene_forderung: 'Die offene Forderung', rz_anlage: 'Forderung',
+    rz_forderung: '1.200,00', rz_forderung_worte: 'eintausendzweihundert', rz_rate: '200,00', rz_erste_rate: '01.11.2026', rz_zahlungsziel: 'kostenfrei auf das Mietkonto des Gläubigers zu zahlen: IBAN DE00 0000 0000 0000 0000 00',
+    rz_laufzeit: '7', rz_schlussrate: '21,34', rz_zuschlag: '5', rz_basiszins: '1,27', rz_zinssatz: '6,27', rz_gesamtzahlung: '1.221,34', rz_zinsen: '21,34' }
+  const BEISPIEL_TABELLEN = { tilgungsplan: { breiten: [12, 16, 18, 18, 18, 18], zeilen: [{ kopf: true, zellen: ['Nr.', 'Fällig', 'Zahlung', 'davon Zinsen', 'davon Tilgung', 'Restforderung'] }, { zellen: ['1', '11/2026', '200,00', '6,27', '193,73', '1.006,27'] }, { zellen: ['2', '12/2026', '200,00', '5,26', '194,74', '811,53'] }, { zellen: ['…', '', '', '', '', ''] }] } }
+
+  G.VertragPdf = { erstellen, werte, freieTexte, rollenIn, unterzeichner, worte, betrag, QUELLEN, BEISPIEL, BEISPIEL_RZ, BEISPIEL_TABELLEN, zeilenAktiv }
 })(typeof window !== 'undefined' ? window : globalThis)

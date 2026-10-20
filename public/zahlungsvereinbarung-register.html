@@ -161,7 +161,7 @@ function listeHTML(list){
   h+=list.map(r=>{const c=calcOf(r);const ok=c&&!c.withSz.fail;const lz=ok?c.withSz.rows.length+' Raten':'—';const zi=ok?eur(c.withSz.totalZins):'—';const sz=(r.sonderzahlungen||[]).filter(s=>num(s.betrag)>0).length;
     return '<tr><td style="text-align:left;font-weight:600">'+esc(r.mieter||'')+'</td>'+'<td style="text-align:left">'+artBadge(r.art)+'</td>'
       +'<td style="text-align:left">'+esc((r.objekt||'')+(r.wohnung?' · '+r.wohnung:''))+'</td>'
-      +'<td style="text-align:left">'+esc(r.status||'')+'</td>'+'<td style="text-align:left">'+rateBadge(r)+'</td>'
+      +'<td style="text-align:left">'+esc(r.status||'')+dsBadge(r)+'</td>'+'<td style="text-align:left">'+rateBadge(r)+'</td>'
       +'<td style="white-space:nowrap"><span style="cursor:pointer;font-weight:700" onclick="togF(\''+r.id+'\')" title="Details ein-/ausklappen"><span id="ft_'+r.id+'" style="color:var(--accent);font-size:11px;margin-right:5px">'+(OPENF.has(r.id)?'▾':'▸')+'</span>'+eur(Number(r.forderung)||0)+'</span></td>'
       +'<td style="text-align:left">'+(r.pdf_url?'<a class="pdf" href="'+esc(r.pdf_url)+'" target="_blank">PDF</a> ':'')+(r.schreiben||[]).filter(x=>x&&x.url).map(x=>'<a class="pdf" href="'+esc(x.url)+'" target="_blank" title="'+esc(x.name+' vom '+x.datum)+'">'+(x.typ==='dokument'?'Dok.':''+esc(['','Erinnerung','Mahnung','Inkasso'][x.stufe]||'Schreiben'))+' '+esc(new Date(x.datum+'T00:00:00').toLocaleDateString('de-DE',{day:'2-digit',month:'2-digit'}))+'</a> ').join('')+(r.asana_url?'<a class="pdf" href="'+esc(extUrl(r.asana_url))+'" target="_blank" rel="noopener">Asana öffnen</a>':'')+'</td>'
       +'<td style="white-space:nowrap"><button class="btn" style="padding:4px 9px;font-size:12px" onclick="openDetail(\''+r.id+'\')" title="Vereinbarung öffnen: Details, Zahlungen, Dokumente">Öffnen</button> '
@@ -567,7 +567,26 @@ function render(){
 }
 let MIETKONTEN=[], PORTFOLIO=[];
 async function loadKonten(){try{const pr=await sb.from('portfolio_immobilien').select('kennung,adresse');PORTFOLIO=(pr&&!pr.error&&pr.data)||[];}catch(e){}const res=await sb.from('portfolio_immobilien').select('kennung,mietkonto').not('mietkonto','is',null).order('kennung');MIETKONTEN=(res.error?[]:(res.data||[])).filter(k=>k.mietkonto&&k.mietkonto.trim());}
-async function load(){await loadKonten();const res=await sb.from('zahlungsvereinbarungen').select('*').order('pos',{nullsFirst:false}).order('created_at',{ascending:false});ROWS=res.error?[]:(res.data||[]);render();}
+async function load(){await loadKonten();const res=await sb.from('zahlungsvereinbarungen').select('*').order('pos',{nullsFirst:false}).order('created_at',{ascending:false});ROWS=res.error?[]:(res.data||[]);render();dsAbgleich();}
+/* DocuSign: Stand der versendeten Vereinbarungen; ist alles unterschrieben, wird das PDF bei den Dokumenten abgelegt */
+const DS_TXT={sent:'DocuSign: wartet auf Unterschrift',delivered:'DocuSign: vom Mieter geöffnet',completed:'DocuSign: unterschrieben',declined:'DocuSign: abgelehnt',voided:'DocuSign: zurückgezogen'};
+function dsBadge(r){const d=r.docusign;if(!d||!d.envelopeId)return '';const ok=d.status==='completed',bad=d.status==='declined'||d.status==='voided';
+  return '<div style="font-size:10.5px;margin-top:2px;color:'+(ok?'var(--green,#1f7a4d)':bad?'var(--red,#c0392b)':'#9a6700')+'">'+esc(DS_TXT[d.status]||('DocuSign: '+d.status))+'</div>';}
+async function dsApi(body){const s=await sb.auth.getSession();const t=s&&s.data&&s.data.session?s.data.session.access_token:'';
+  const r=await fetch('/api/docusign',{method:'POST',headers:{'content-type':'application/json',authorization:'Bearer '+t},body:JSON.stringify(body)});let j=null;try{j=await r.json();}catch(e){}if(!j||j.error)throw new Error((j&&j.error)||('Fehler '+r.status));return j;}
+let DS_LAEUFT=false;
+async function dsAbgleich(){if(DS_LAEUFT)return;DS_LAEUFT=true;let neu=false;
+  try{for(const r of ROWS){const d=r.docusign;if(!d||!d.envelopeId||d.fertig||d.storniert)continue;
+    try{const st=(await dsApi({aktion:'stand',envelopeId:d.envelopeId})).stand;const nd=Object.assign({},d,{status:st.status,unterzeichner:st.unterzeichner});
+      if(st.status==='completed'){const pdf=await dsApi({aktion:'dokument',envelopeId:d.envelopeId});const bin=atob(pdf.base64),u8=new Uint8Array(bin.length);for(let i=0;i<bin.length;i++)u8[i]=bin.charCodeAt(i);
+        const path='zahlungsvereinbarungen/'+r.id+'_unterschrieben_'+Date.now()+'.pdf';const up=await sb.storage.from('darlehen').upload(path,new Blob([u8],{type:'application/pdf'}),{contentType:'application/pdf',upsert:true});
+        if(up.error)throw up.error;const url=sb.storage.from('darlehen').getPublicUrl(path).data.publicUrl;
+        const sch=(r.schreiben||[]).concat([{typ:'dokument',name:'Ratenzahlungsvereinbarung (unterschrieben über DocuSign)',datei:'Ratenzahlungsvereinbarung_unterschrieben.pdf',url,datum:new Date().toISOString().slice(0,10)}]);
+        nd.fertig=st.fertig||new Date().toISOString();nd.pdf=url;await sb.from('zahlungsvereinbarungen').update({docusign:nd,schreiben:sch}).eq('id',r.id);r.schreiben=sch;}
+      else{if(st.status==='declined'||st.status==='voided')nd.storniert=st.storniert||new Date().toISOString();if(JSON.stringify(nd)!==JSON.stringify(d))await sb.from('zahlungsvereinbarungen').update({docusign:nd}).eq('id',r.id);}
+      if(JSON.stringify(nd)!==JSON.stringify(d)){r.docusign=nd;neu=true;}}
+    catch(e){console.warn('DocuSign',r.id,e.message||e);}}}
+  finally{DS_LAEUFT=false;}if(neu)render();}
 load();
 </script>
 </body></html>

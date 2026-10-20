@@ -6,6 +6,8 @@
 <title>Ratenzahlung erstellen – Macher OS</title>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.2/html2pdf.bundle.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="/vertrag-pdf.js?v=20261020b"></script>
 <style>
 :root{
   --ink:#1a2332;--muted:#5b6b82;--line:#d8dee8;--bg:#fff;--soft:#f4f6fa;
@@ -133,6 +135,7 @@ body{font-family:'DM Sans',-apple-system,Segoe UI,Roboto,Arial,sans-serif;color:
       </div>
     </div>
     <div class="fld" style="margin-top:12px"><label>Ort (für Unterschrift)</label><input id="ort" placeholder="z. B. Worms"></div>
+    <div class="fld"><label>E-Mail des Mieters (für die Unterschrift über DocuSign)</label><input id="mail" type="email" placeholder="name@beispiel.de" autocomplete="off"></div>
 
     <div class="warnbox" id="warn"></div>
     <button class="btn" onclick="gen()">Vereinbarung erzeugen</button>
@@ -146,6 +149,7 @@ body{font-family:'DM Sans',-apple-system,Segoe UI,Roboto,Arial,sans-serif;color:
       <button class="btn sec" onclick="zurueckZurEingabe()">Zurück / Korrigieren</button>
       <button class="primary" onclick="finalSave()">Vertrag final erstellen &amp; ins Register</button>
       <button class="btn sec" onclick="window.print()">Drucken / PDF</button>
+      <button class="btn sec" id="dsBtn" onclick="dsSenden()" disabled title="Erst „Vertrag final erstellen“ klicken">Über DocuSign senden</button>
       <span id="saveInfo" style="font-size:12px;color:var(--muted);align-self:center"></span>
     </div>
     <div class="sheet" id="sheet">
@@ -192,7 +196,7 @@ function vorbelegen(){
   PRE={pid:q.get('pid')||'',obj:q.get('obj')||''};
   const setv=(id,v)=>{ const el=document.getElementById(id); if(el&&v) el.value=v; };
   setv('art',q.get('art')); setv('glaeubiger',q.get('glaeubiger')); setv('objekt',q.get('objekt')); setv('whg',q.get('whg'));
-  setv('mieter',q.get('mieter')); setv('forderung',q.get('forderung')); setv('ort',q.get('ort'));
+  setv('mieter',q.get('mieter')); setv('forderung',q.get('forderung')); setv('ort',q.get('ort')); setv('mail',q.get('mail'));
   const sel=document.getElementById('konto');
   if(sel&&PRE.obj){ const k=KONTEN.find(function(k){ return String(k.kennung||'').toLowerCase()===PRE.obj.toLowerCase(); }); if(k) sel.value=k.id; }
   try{ artChg(); }catch(e){}
@@ -206,6 +210,46 @@ function vorbelegen(){
   const r=document.getElementById('rate'); if(r) setTimeout(function(){ r.focus(); },50);
 }
 loadKonten().then(vorbelegen,vorbelegen);
+/* ---------- Einheitliches Vertragsdesign und DocuSign ---------- */
+let RZ_VORLAGE=null, LETZTE_ID=null;
+_sb.from('os_docs').select('data').eq('app','oc').eq('pfad','vertragsvorlagen/ratenzahlung').maybeSingle().then(r=>{ if(r&&r.data&&r.data.data&&r.data.data.aktiv!==false) RZ_VORLAGE=r.data.data; });
+const betragDE=n=>(Number(n)||0).toLocaleString('de-DE',{minimumFractionDigits:2,maximumFractionDigits:2});
+function rzDaten(){
+  const g=id=>document.getElementById(id).value.trim();
+  const forderung=numDE(g('forderung')), rate=numDE(g('rate')), basis=numDE(g('basis'))||0, zuschlag=numDE(g('zuschlag'))||0, zins=basis+zuschlag;
+  const datum=document.getElementById('datum').value, erste=document.getElementById('erste').value;
+  const plan=schedule(forderung,rate,zins,erste); if(plan.fail||!plan.rows.length) return null;
+  const nachtrag=document.getElementById('nachtrag').checked, gezahlt=nachtrag?Math.max(0,Math.min(parseInt(document.getElementById('gezahlt').value,10)||0,plan.rows.length)):0, urspr=document.getElementById('urspr').value;
+  const restNow=gezahlt>0?plan.rows[gezahlt-1].rest:forderung, summe=plan.rows.reduce((s,r)=>s+r.zahlung,0), last=plan.rows[plan.rows.length-1];
+  const k=kontoById((document.getElementById('konto')||{}).value);
+  const V={vermieter:g('glaeubiger'),vermieter_anschrift:'Dalheimer Straße 70, 55278 Dexheim',mieter_name:g('mieter'),
+    rz_untertitel:'Vereinbarung '+(nachtrag?'(Nachtrag) ':'')+A().sub,rz_nachtrag:nachtrag?('Diese Urkunde dokumentiert eine bereits bestehende'+(urspr?(', am '+dt(urspr)+' getroffene'):'')+' Ratenzahlungsvereinbarung. Bislang wurden '+gezahlt+' Rate(n) geleistet; die aktuelle Restforderung beträgt '+betragDE(restNow)+' EUR.'):'',
+    rz_objekt:g('objekt'),rz_wohnung:g('whg'),rz_mietstatus:g('status'),rz_datum:dt(datum),rz_forderungsart:A().ford,rz_offene_forderung:A().offen,rz_anlage:A().anl,
+    rz_forderung:betragDE(forderung),rz_forderung_worte:VertragPdf.worte(forderung),rz_rate:betragDE(rate),rz_erste_rate:dt(erste),
+    rz_zahlungsziel:k?('kostenfrei auf das Mietkonto des Gläubigers zu zahlen: IBAN '+k.iban+(objLabel(k).trim()?(' (Objekt '+objLabel(k).trim()+')'):'')):'kostenfrei auf ein vom Gläubiger benanntes Konto zu zahlen',
+    rz_laufzeit:String(plan.rows.length),rz_schlussrate:betragDE(last.zahlung),rz_zuschlag:zuschlag.toLocaleString('de-DE'),rz_basiszins:betragDE(basis),rz_zinssatz:betragDE(zins),
+    rz_gesamtzahlung:betragDE(summe),rz_zinsen:betragDE(plan.totalZins)};
+  const zeilen=[{kopf:true,zellen:['Nr.','Fällig','Zahlung','davon Zinsen','davon Tilgung','Restforderung']}].concat(plan.rows.map(r=>({zellen:[String(r.nr)+(r.nr<=gezahlt?' (bezahlt)':''),r.datum.toLocaleDateString('de-DE',{month:'2-digit',year:'numeric'}),betragDE(r.zahlung),betragDE(r.zins),betragDE(r.tilg),betragDE(r.rest)]})));
+  zeilen.push({zellen:['**Summe**','',  '**'+betragDE(summe)+'**','**'+betragDE(plan.totalZins)+'**','**'+betragDE(forderung)+'**','**0,00**']});
+  return {V,tabellen:{tilgungsplan:{breiten:[12,16,18,18,18,18],zeilen}},datei:A().file+(g('mieter')||'Mieter').replace(/[^a-zA-Z0-9]/g,'_')};
+}
+function rzPdf(){const d=rzDaten();if(!d||!RZ_VORLAGE)throw new Error('Vereinbarung unvollständig.');return VertragPdf.erstellen(RZ_VORLAGE.text,d.V,{},{titel:RZ_VORLAGE.titel||'Ratenzahlungsvereinbarung',fuss:d.V.rz_objekt+(d.V.rz_wohnung?', '+d.V.rz_wohnung:''),tabellen:d.tabellen}).doc;}
+async function dsApi(body){const s=await _sb.auth.getSession();const t=s&&s.data&&s.data.session?s.data.session.access_token:'';
+  const r=await fetch('/api/docusign',{method:'POST',headers:{'content-type':'application/json',authorization:'Bearer '+t},body:JSON.stringify(body)});let j=null;try{j=await r.json();}catch(e){}if(!j)throw new Error('Dienst nicht erreichbar ('+r.status+').');if(j.error&&!j.zustimmung)throw new Error(j.error);return j;}
+async function dsSenden(){const info=document.getElementById('saveInfo'),btn=document.getElementById('dsBtn');
+  if(!LETZTE_ID){info.textContent='Bitte zuerst „Vertrag final erstellen“.';return;}
+  const mail=document.getElementById('mail').value.trim(),mieter=document.getElementById('mieter').value.trim();
+  if(!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(mail)){info.textContent='Bitte die E-Mail-Adresse des Mieters eintragen.';document.getElementById('mail').focus();return;}
+  if(!confirm('Ratenzahlungsvereinbarung über DocuSign senden?\n\nErst unterschreibt '+mieter+' <'+mail+'>, danach Eric Eisenhardt.'))return;
+  btn.disabled=true;info.textContent='Wird über DocuSign gesendet …';
+  try{const doc=rzPdf(),d=rzDaten();
+    const signer=VertragPdf.unterzeichner({mieter1:{name:mieter,email:mail},vermieter:{name:'Eric Eisenhardt',email:'eric@andersmacher.info'}},[]);
+    const r=await dsApi({aktion:'senden',dokumente:[{name:'Ratenzahlungsvereinbarung',base64:doc.output('datauristring').split(',').pop()}],unterzeichner:signer,betreff:'Ratenzahlungsvereinbarung '+d.V.rz_objekt+' – bitte unterschreiben',
+      nachricht:'Guten Tag,\n\nanbei erhalten Sie die besprochene Ratenzahlungsvereinbarung zur Unterschrift. Bitte lesen Sie sie in Ruhe durch und unterschreiben Sie an der markierten Stelle.\n\nMit freundlichen Grüßen\n'+d.V.vermieter});
+    if(r.zustimmung){window.open(r.zustimmung,'_blank');info.textContent='DocuSign braucht noch einmal die Zustimmung. Danach bitte erneut senden.';btn.disabled=false;return;}
+    await _sb.from('zahlungsvereinbarungen').update({docusign:{envelopeId:r.envelopeId,status:r.status||'sent',gesendet:new Date().toISOString(),email:mail,unterzeichner:signer.map(s=>({name:s.name,email:s.email,status:'sent'}))}}).eq('id',LETZTE_ID);
+    info.innerHTML='Über DocuSign gesendet. Den Stand siehst du im <a href="/vermietung/zahlungsvereinbarung-register" target="_top" style="color:var(--accent);font-weight:600">Register</a>.';}
+  catch(e){info.textContent='Nicht gesendet: '+(e.message||e);btn.disabled=false;}}
 async function finalSave(){
   const warn=document.getElementById('warn'); warn.style.display='none';
   if(!validate()){ warn.style.display='block'; warn.textContent='Bitte alle rot markierten Pflichtfelder ausfüllen.'; return; }
@@ -229,10 +273,10 @@ async function finalSave(){
   const id=res.data&&res.data[0]&&res.data[0].id;
   // Vertrag als PDF erzeugen und übernehmen
   try{
-    if(id && window.html2pdf){
+    if(id && (RZ_VORLAGE || window.html2pdf)){
       info.textContent='Erzeuge Vertrags-PDF …';
       const el=document.getElementById('sheet');
-      const blob=await html2pdf().set({margin:8,image:{type:'jpeg',quality:0.95},html2canvas:{scale:2,useCORS:true},jsPDF:{unit:'mm',format:'a4',orientation:'portrait'},pagebreak:{mode:['css','legacy']}}).from(el).outputPdf('blob');
+      const blob=RZ_VORLAGE?rzPdf().output('blob'):await html2pdf().set({margin:8,image:{type:'jpeg',quality:0.95},html2canvas:{scale:2,useCORS:true},jsPDF:{unit:'mm',format:'a4',orientation:'portrait'},pagebreak:{mode:['css','legacy']}}).from(el).outputPdf('blob');
       const fname=A().file+(g('mieter')||'Mieter').replace(/[^a-zA-Z0-9]/g,'_')+'.pdf';
       const path='zahlungsvereinbarungen/'+id+'_'+Date.now()+'.pdf';
       const up=await _sb.storage.from('darlehen').upload(path,blob,{contentType:'application/pdf',upsert:true});
@@ -240,6 +284,7 @@ async function finalSave(){
     }
   }catch(e){}
   if(PRE&&PRE.pid&&id){ try{ localStorage.setItem('zv_neu',JSON.stringify({pid:PRE.pid,id:id})); }catch(e){} }
+  LETZTE_ID=id; const db=document.getElementById('dsBtn'); if(db&&id&&RZ_VORLAGE){ db.disabled=false; db.title='Vertrag an den Mieter und an Eric zur Unterschrift senden'; }
   info.innerHTML='Ins Register übernommen (inkl. Vertrags-PDF). <a href="/vermietung/zahlungsvereinbarung-register" target="_top" style="color:var(--accent);font-weight:600">Register öffnen</a>'
     +(PRE&&PRE.pid?' · <a href="/hausverwaltung/mieterkonten" target="_top" style="color:var(--accent);font-weight:600">Zurück zum Mieterkonto</a> (wird dort automatisch verknüpft)':'');
 }
