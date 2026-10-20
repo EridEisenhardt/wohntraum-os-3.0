@@ -18,14 +18,32 @@ const WS = () => process.env.ASANA_WORKSPACE || '1206683226417804'
 const ERIC = () => process.env.NV_ASANA_ERIC || '1206683791343678'
 const RAMONA = () => process.env.NV_ASANA_RAMONA || '1210557015422572'
 const VORLAGE_EINZUG = '1211754418883042', TEAM_VERMIETUNG = '1208033134144722'
+// Asana-Projekt „OS_Neuvermietung“ mit einem Abschnitt je Schritt
+const PROJEKT = () => process.env.NV_ASANA_PROJEKT || '1219652014847418'
+const ABSCHNITT = { selbstauskunft: '1219652014847422', kalkulation: '1219652014847423', angebot: '1219652014847424', vertrag: '1219652014847425' }
+const ABN = { selbstauskunft: 'OS_Mieterselbstauskunft', kalkulation: 'OS_Mietkalkulation', angebot: 'OS_Mietangebot', vertrag: 'OS_Mietvertrag' }
 const SP = ['selbstauskunft', 'kalkulation', 'angebot', 'vertrag', 'unterschrieben']
 const SPN = { selbstauskunft: 'Mieterselbstauskunft', kalkulation: 'Mietkalkulation', angebot: 'Mietangebot', vertrag: 'Mietvertrag', unterschrieben: 'Mietvertrag unterschrieben' }
 const ERI = { selbstauskunft: '2 · Selbstauskunft', kalkulation: '6 · Kalkulation Mietangebot', angebot: '7 · Mietangebot', vertrag: '8 · Mietvertragsentwurf', unterschrieben: '11 · Schlüsselübergabe' }
 // Aufgabe je Schritt: wer, Titel
 const AUFG = {
-  kalkulation: { wer: ERIC, titel: 'Mietkalkulation erstellen', text: 'Bitte die Mietkalkulation im Wohntraum OS erstellen (Neuvermietung, Kachel „Mietkalkulation“). Wenn sie fertig ist, diese Aufgabe abhaken – der Mieter springt dann automatisch zum Mietangebot.' },
-  angebot: { wer: RAMONA, titel: 'Mietangebot erstellen', text: 'Die Mietkalkulation ist fertig. Bitte das Mietangebot erstellen und an den Mietinteressenten senden (Neuvermietung, Kachel „Mietangebot“). Danach diese Aufgabe abhaken – der Mieter springt dann automatisch zum Mietvertrag.' },
-  vertrag: { wer: RAMONA, titel: 'Mietvertrag erstellen', text: 'Das Mietangebot ist angenommen. Bitte den Mietvertrag erstellen (Neuvermietung, Kachel „Mietvertrag“). Danach diese Aufgabe abhaken – der Mieter springt dann zu „Mietvertrag unterschrieben“.' },
+  kalkulation: { wer: ERIC, titel: 'Mietkalkulation erstellen',
+    text: 'Was zu tun ist:\n1. Im Wohntraum OS unter Neuvermietung den Mieter in der Kachel „Mietkalkulation“ öffnen.\n2. Mietbeginn, Wohnfläche und die Positionen (Kaltmiete, Betriebskosten, Heizung und Zusatzkosten) eintragen.\n3. Die Angemessenheit für Jobcenter / Sozialamt und die Vergleichswohnungen prüfen.\n\nWenn die Kalkulation fertig ist, diese Aufgabe abhaken. Der Mieter springt dann automatisch zum Mietangebot, und Ramona bekommt die nächste Aufgabe.',
+    unter: ['Kalkulation im OS ausgefüllt', 'Angemessenheit (KdU) geprüft'] },
+  angebot: { wer: RAMONA, titel: 'Mietangebot erstellen',
+    text: 'Was zu tun ist:\n1. Mietangebot aus der Mietkalkulation erstellen (Neuvermietung, Kachel „Mietangebot“).\n2. Das Angebot an den Mietinteressenten senden.\n3. Zusage des Mietinteressenten einholen.\n\nSobald die Zusage da ist, diese Aufgabe abhaken. Der Mieter springt dann automatisch zum Mietvertrag.',
+    unter: ['Mietangebot erstellt', 'An den Mietinteressenten gesendet', 'Zusage erhalten'] },
+  vertrag: { wer: RAMONA, titel: 'Mietvertrag erstellen',
+    text: 'Was zu tun ist:\n1. Mietvertrag mit den Daten aus der Mietkalkulation erstellen (Neuvermietung, Kachel „Mietvertrag“). Vorher im OS unter „Mieter und Wohnung“ weitere Mieter, bisherige Anschrift und IBAN vervollständigen.\n2. WICHTIG: Der Mietvertrag wird über DocuSign versendet und unterschrieben.\n3. Den unterschriebenen Mietvertrag im Mieterordner ablegen.\n\nWenn der Vertrag über DocuSign versendet ist, diese Aufgabe abhaken. Der Mieter springt dann zu „Mietvertrag unterschrieben“. Sobald beide Seiten unterschrieben haben, im OS auf „Unterschrieben – Mieterkonto und Asana-Einzug anlegen“ klicken.',
+    unter: ['Mietvertrag erstellt', 'Über DocuSign zur Unterschrift versendet', 'Unterschriebenen Vertrag im Mieterordner abgelegt'] },
+}
+// Aufgabenname: Abschnitt_Objekt_Einheit_NACHNAME Vorname, z. B. OS_Mieterselbstauskunft_R6_WE6_MÜLLER Max
+function aufgabenName(schritt, k, d) {
+  const lab = String((k.wohnung && k.wohnung.label) || '').split(' · ')[0].trim()
+  const [kz, ...ein] = lab ? lab.split(/\s+/) : []
+  const nach = String((d && d.nachname) || k.name || '').trim().toUpperCase(), vor = String((d && d.vorname) || k.vorname || '').trim()
+  const person = [nach, vor].filter(Boolean).join(' ') || String(k.kontakt || 'Interessent')
+  return [ABN[schritt], kz || '', ein.join(''), person].filter(Boolean).join('_')
 }
 const MSA_ZEILEN = [['objekt', 'Objekt'], ['einzug', 'Einzug'], ['personen', 'Personen'], ['arbeit', 'Arbeitsverhältnis'], ['arbeitgeber', 'Arbeitgeber / seit'], ['einkommen', 'Nettoeinkommen Haushalt'], ['amt', 'Miete zahlt Jobcenter / Sozialamt'], ['behoerde', 'Behörde'], ['haustiere', 'Haustiere'], ['haustiere_welche', 'Welche Haustiere'], ['eidesstattlich', 'Eidesstattliche Versicherung / Haftbefehl (3 Jahre)'], ['info', 'Wichtige Informationen']]
 
@@ -56,8 +74,10 @@ async function db(pfad, opt = {}, auth) {
 const rpc = (fn, args) => db('rpc/' + fn, { method: 'POST', body: args })
 const osLink = req => { const o = req.headers.get('origin') || ('https://' + (req.headers.get('host') || '')); return o.replace(/\/$/, '') + '/verwalto/neuvermietung' }
 
-async function aufgabeAnlegen({ name, notes, wer, faellig, unter }) {
-  const t = await asana('/tasks?opt_fields=permalink_url', { method: 'POST', json: { name, notes, workspace: WS(), assignee: wer, due_on: faellig || plusTage(2) } })
+async function aufgabeAnlegen({ name, notes, wer, faellig, unter, schritt }) {
+  const d = { name, notes, workspace: WS(), assignee: wer, due_on: faellig || plusTage(2) }
+  if (PROJEKT()) d.memberships = [ABSCHNITT[schritt] && !process.env.NV_ASANA_PROJEKT ? { project: PROJEKT(), section: ABSCHNITT[schritt] } : { project: PROJEKT() }]
+  const t = await asana('/tasks?opt_fields=permalink_url', { method: 'POST', json: d })
   for (const u of unter || []) await asana('/tasks/' + t.gid + '/subtasks', { method: 'POST', json: { name: u, assignee: wer } })
   return { gid: t.gid, link: t.permalink_url || ('https://app.asana.com/0/0/' + t.gid), erstellt: new Date().toISOString() }
 }
@@ -65,12 +85,11 @@ function msaText(d, link) {
   d = d || {}
   const z = MSA_ZEILEN.filter(([f]) => d[f] != null && d[f] !== '').map(([f, l]) => l + ': ' + (/^\d{4}-\d\d-\d\d$/.test(d[f]) ? dmy(d[f]) : d[f]))
   const warn = [d.amt === 'JA' ? 'Hinweis: Die Miete übernimmt das Jobcenter / Sozialamt.' : '', d.eidesstattlich === 'JA' ? 'ACHTUNG: Eidesstattliche Versicherung oder Haftbefehl in den letzten 3 Jahren: JA' : ''].filter(Boolean)
-  return [(warn.length ? warn.join('\n') + '\n' : '') + 'Die Mieterselbstauskunft ist eingegangen. Bitte prüfen und eine der Unteraufgaben abhaken:\n- „Freigeben“: der Mieter springt im OS weiter zur Mietkalkulation\n- „Ablehnen“: der Mieter wird im OS ins Archiv gelegt',
+  return [(warn.length ? warn.join('\n') + '\n' : '') + 'Die Mieterselbstauskunft ist eingegangen.\n\nWas zu tun ist:\n1. Die Selbstauskunft prüfen (Angaben unten, vollständig mit Unterschrift im Wohntraum OS).\n2. Eine der Unteraufgaben abhaken:\n- „Freigeben“: der Mieter springt im OS weiter zur Mietkalkulation, und du bekommst dort die nächste Aufgabe.\n- „Ablehnen“: der Mieter wird im OS ins Archiv gelegt.',
     z.join('\n'), 'Vollständige Selbstauskunft mit Unterschrift im Wohntraum OS: ' + link].filter(Boolean).join('\n\n')
 }
 async function msaAufgabe(k, d, link) {
-  const name = 'Mieterselbstauskunft prüfen: ' + ([d && d.vorname, d && d.nachname].filter(Boolean).join(' ') || nameVoll(k)) + (k.wohnung && k.wohnung.label ? ' – ' + k.wohnung.label.split(' · ')[0] : '')
-  return aufgabeAnlegen({ name, notes: msaText(d, link), wer: ERIC(), unter: ['Freigeben', 'Ablehnen'] })
+  return aufgabeAnlegen({ name: aufgabenName('selbstauskunft', k, d), notes: msaText(d, link), wer: ERIC(), unter: ['Freigeben', 'Ablehnen'], schritt: 'selbstauskunft' })
 }
 
 export async function POST(req) {
@@ -173,8 +192,7 @@ export async function POST(req) {
             const s = k.spalte, def = AUFG[s]; if (!def || k.archiv) break
             const a = A[s]
             if (!a || !a.gid) {
-              const name = def.titel + ': ' + nameVoll(k) + (k.wohnung && k.wohnung.label ? ' – ' + k.wohnung.label.split(' · ')[0] : '')
-              A[s] = await aufgabeAnlegen({ name, notes: def.text + '\n\nIm Wohntraum OS öffnen: ' + link, wer: def.wer() })
+              A[s] = await aufgabeAnlegen({ name: aufgabenName(s, k), notes: def.text + '\n\nIm Wohntraum OS öffnen: ' + link, wer: def.wer(), unter: def.unter, schritt: s })
               log(k, 'Aufgabe angelegt: ' + def.titel); neu = true; break
             }
             if (a.erledigt) break
