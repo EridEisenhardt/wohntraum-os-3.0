@@ -41,6 +41,12 @@ h1{font-size:20px;font-weight:800}
 .msg.ich{align-self:flex-end;background:var(--accent-soft);border-color:#c9d8ea}
 .msg .w{font-size:11.5px;color:var(--muted);margin-bottom:2px}
 .msg a{color:var(--accent)}
+.datei{display:flex;gap:8px;align-items:center;margin-top:4px;padding:7px 10px;background:var(--soft);border:1px solid var(--line);border-radius:8px;cursor:pointer;font-size:13px}
+.datei:hover{border-color:var(--accent)}.datei .dn{font-weight:600;overflow-wrap:anywhere}
+.bild{display:block;max-width:280px;max-height:220px;border-radius:8px;margin-top:4px;cursor:zoom-in;border:1px solid var(--line)}
+.voll{position:fixed;inset:0;background:rgba(10,14,20,.85);display:flex;align-items:center;justify-content:center;z-index:100;cursor:zoom-out}.voll img{max-width:94vw;max-height:92vh;border-radius:8px}
+.anh{display:flex;gap:6px;flex-wrap:wrap;margin-top:4px;grid-column:1/-1}.anh span{background:var(--soft);border:1px solid var(--line);border-radius:999px;padding:1px 8px;font-size:12px}
+label.up{display:inline-flex;align-items:center;border:1px solid var(--line);border-radius:8px;padding:6px 12px;background:var(--card);cursor:pointer;min-height:34px}
 .tag{align-self:center;font-size:11.5px;color:var(--muted);margin:6px 0}
 .eingabe{border-top:1px solid var(--line);background:var(--card);padding:10px 16px;display:grid;grid-template-columns:1fr auto;gap:8px;align-items:end}
 .eingabe textarea{width:100%;min-height:44px;max-height:180px;resize:vertical;background:var(--soft);border:1px solid var(--line);border-radius:8px;padding:9px 11px}
@@ -60,6 +66,7 @@ const esc=s=>(s==null?'':String(s)).replace(/&/g,'&amp;').replace(/</g,'&lt;').r
 const p2=n=>String(n).padStart(2,'0');
 let GR=null,GROFFEN={},UID='';try{GROFFEN=JSON.parse(localStorage.getItem('cliq_gr_offen')||'{}')||{};}catch(e){}
 const STANDARDGRUPPEN={'Allgemein':[],'Kollegen':['Eric Eisenhardt','Jürgen Reuter','Mustafa Frotan','Stephan Klopsch'],'Private Immobilien EE':[],'Wohntraum':[]};
+let ANH=[],BILD={};
 let ST=null,CHATS=[],ICH='',AKT='',MSG=[],SUCHE='',BUSY='',FEHLER='',ENTWURF={};
 let GELESEN={};try{GELESEN=JSON.parse(localStorage.getItem('cliq_gelesen')||'{}')||{};}catch(e){}
 const merkeGelesen=()=>{try{localStorage.setItem('cliq_gelesen',JSON.stringify(GELESEN));}catch(e){}};
@@ -92,6 +99,17 @@ async function gruppenLaden(){try{const {data:u}=await sb.auth.getUser();UID=u&&
     gruppenSpeichern();}}
 async function gruppenSpeichern(){if(!UID)return;try{await sb.from('os_docs').upsert({app:'oc',pfad:'cliq/gruppen/'+UID,data:GR,updated_at:new Date().toISOString()});}catch(e){}}
 function gruppeSetzen(id,g){g=String(g||'').trim();if(g===gruppeVon(id))return;for(const k in GR.gruppen)GR.gruppen[k]=GR.gruppen[k].filter(x=>x!==id);if(g){if(!GR.gruppen[g])GR.gruppen[g]=[];GR.gruppen[g].push(id);GROFFEN[g]=true;}gruppenSpeichern();render();toast(g?'In Gruppe „'+g+'“ verschoben.':'Aus der Gruppe genommen.');}
+const groesse=b=>!b?'':b<1024*1024?Math.max(1,Math.round(b/1024))+' KB':(b/1024/1024).toFixed(1).replace('.',',')+' MB';
+const istBild=d=>/^image\//.test(d.typ||'')||/\.(jpe?g|png|gif|webp|heic)$/i.test(d.name||'');
+function dateiHtml(d){if(istBild(d)){const u=BILD[d.id];if(u===undefined){BILD[d.id]=null;dateiLaden(d,true);}
+    return u?'<img class="bild" src="'+u+'" data-voll="'+esc(d.id)+'" alt="'+esc(d.name)+'">':'<div class="datei" data-datei="'+esc(d.id)+'" data-dn="'+esc(d.name)+'"><span class="dn">'+esc(d.name)+'</span><span class="sub">'+(u===false?'Bild nicht ladbar, klicken zum Öffnen':'Bild lädt …')+'</span></div>';}
+  return '<div class="datei" data-datei="'+esc(d.id)+'" data-dn="'+esc(d.name)+'"><span class="dn">'+esc(d.name)+'</span><span class="sub">'+groesse(d.groesse)+' · öffnen</span></div>';}
+async function dateiHolen(id){const r=await fetch('/api/cliq/datei',{method:'POST',headers:{'content-type':'application/json',authorization:'Bearer '+await token()},body:JSON.stringify({id})});
+  if(!r.ok){let j={};try{j=await r.json();}catch(e){}throw new Error(j.error||('Datei nicht ladbar ('+r.status+').'));}return await r.blob();}
+async function dateiLaden(d,still){try{const b=await dateiHolen(d.id);BILD[d.id]=URL.createObjectURL(b);render();}catch(e){BILD[d.id]=false;if(!still)toast(e.message);render();}}
+async function dateiOeffnen(id,name){const w=window.open('','_blank');try{const b=await dateiHolen(id);const u=URL.createObjectURL(b);
+    if(/pdf|image|text/.test(b.type)&&w){w.location.href=u;}else{if(w)w.close();const a=document.createElement('a');a.href=u;a.download=name||'Datei';document.body.appendChild(a);a.click();a.remove();}}
+  catch(e){if(w)w.close();toast(e.message||String(e),8000);}}
 function render(){const app=document.getElementById('app');const fokus=document.activeElement&&document.activeElement.id,pos=fokus&&document.activeElement.selectionStart,fwert=fokus==='gruppe'?document.activeElement.value:null;
   if(!ST){app.innerHTML='<div class="leer">Lädt …</div>';return;}
   let h='<div class="kopf"><div><h1>Cliq</h1><div class="sub">'+(ST.verbunden?'verbunden als '+esc(ST.name||ST.mail||''):'Chats mit den Kollegen direkt im OS')+'</div></div><div class="acts">'
@@ -114,14 +132,15 @@ function render(){const app=document.getElementById('app');const fokus=document.
   else{h+='<div class="rk acts" style="justify-content:space-between"><div class="acts"><button class="ghost" data-a="zurueck" style="padding:4px 6px">Zurück</button><b>'+esc(ak.name)+'</b>'+(ak.typ==='channel'?'<span class="sub">Kanal</span>':'')+'</div>'+(GR?'<div class="acts"><span class="sub">Gruppe</span><input class="inp" id="gruppe" list="dl-gr" value="'+esc(gruppeVon(ak.id))+'" placeholder="Gruppe wählen oder neu eintippen …" style="width:230px;padding:5px 9px" autocomplete="off"><datalist id="dl-gr">'+Object.keys(GR.gruppen).sort((a,b)=>a.localeCompare(b,'de')).map(g=>'<option value="'+esc(g)+'">').join('')+'</datalist></div>':'')+'</div><div class="verlauf" id="verlauf">';
     let letzterTag='';
     for(const m of MSG){const t=tagText(m.zeit);if(t!==letzterTag){h+='<div class="tag">'+esc(t)+'</div>';letzterTag=t;}
-      const ich=m.vonId===ICH;h+='<div class="msg'+(ich?' ich':'')+'"><div class="w">'+(ich?'Du':esc(m.von))+' · '+wann(m.zeit,true)+'</div>'+verlinken(m.text||'('+m.typ+')')+'</div>';}
+      const ich=m.vonId===ICH;h+='<div class="msg'+(ich?' ich':'')+'"><div class="w">'+(ich?'Du':esc(m.von))+' · '+wann(m.zeit,true)+'</div>'+(m.text?verlinken(m.text):'')+(m.datei?dateiHtml(m.datei):(!m.text?'('+esc(m.typ)+')':''))+'</div>';}
     if(!MSG.length)h+='<div class="leer">'+(BUSY==='msg'?'Lädt …':'Noch keine Nachrichten.')+'</div>';
-    h+='</div><div class="eingabe"><textarea id="text" placeholder="Nachricht schreiben … (Enter sendet, Umschalt+Enter für neue Zeile)">'+esc(ENTWURF[AKT]||'')+'</textarea><button class="primary" data-a="senden"'+(BUSY==='senden'?' disabled':'')+'>'+(BUSY==='senden'?'Sendet …':'Senden')+'</button></div>';}
+    h+='</div><div class="eingabe"><textarea id="text" placeholder="Nachricht schreiben … (Enter sendet, Umschalt+Enter für neue Zeile)">'+esc(ENTWURF[AKT]||'')+'</textarea><div class="acts" style="flex-direction:column;align-items:stretch"><label class="up">Datei<input type="file" id="dateiwahl" multiple hidden></label><button class="primary" data-a="senden"'+(BUSY==='senden'?' disabled':'')+'>'+(BUSY==='senden'?'Sendet …':'Senden')+'</button></div>'+(ANH.length?'<div class="anh">'+ANH.map((f,i)=>'<span>'+esc(f.name)+' <button class="ghost" style="min-height:0;padding:0 4px" data-anhweg="'+i+'">x</button></span>').join('')+'</div>':'')+'</div>';}
   h+='</div></div>';
   const cl0=document.querySelector('.chats'),clTop=cl0?cl0.scrollTop:0;
   const v0=document.getElementById('verlauf'),unten=!v0||v0.scrollHeight-v0.scrollTop-v0.clientHeight<60,alt=v0?v0.scrollTop:0;
   app.innerHTML=h;
   const v=document.getElementById('verlauf');if(v)v.scrollTop=unten?v.scrollHeight:alt;
+  if(v&&unten)v.querySelectorAll('img').forEach(im=>{if(!im.complete)im.addEventListener('load',()=>{v.scrollTop=v.scrollHeight;},{once:true});});
   const cl=document.querySelector('.chats');if(cl)cl.scrollTop=clTop;
   if(fokus){const n=document.getElementById(fokus);if(n){if(fwert!=null)n.value=fwert;n.focus();try{n.setSelectionRange(pos,pos);}catch(e){}}}}
 
@@ -134,7 +153,12 @@ async function nachrichtenLaden(still){if(!AKT)return;const id=AKT;if(!still){BU
     GELESEN[id]=Math.max(GELESEN[id]||0,last?last.zeit:Date.now());merkeGelesen();}
   catch(e){if(!still)toast(e.message||String(e),6000);}
   if(BUSY==='msg')BUSY='';render();}
-async function senden(){const ta=document.getElementById('text');const t=(ta&&ta.value||'').trim();if(!t||!AKT)return;
+async function senden(){const ta=document.getElementById('text');const t=(ta&&ta.value||'').trim();if(!AKT)return;
+  if(ANH.length){const gr=ANH.reduce((a,f)=>a+f.size,0);if(gr>4*1024*1024){toast('Zusammen höchstens 4 MB. Größere Dateien bitte direkt in Cliq senden.',6000);return;}
+    BUSY='senden';render();try{const fd=new FormData();fd.append('chat',AKT);if(t)fd.append('text',t);for(const f of ANH)fd.append('file',f,f.name);
+      const r=await fetch('/api/cliq/datei',{method:'POST',headers:{authorization:'Bearer '+await token()},body:fd});const j=await r.json().catch(()=>({}));if(!r.ok||j.error)throw new Error(j.error||('Fehler '+r.status));
+      ANH=[];ENTWURF[AKT]='';await nachrichtenLaden(true);}catch(e){toast(e.message||String(e),8000);}BUSY='';render();return;}
+  if(!t)return;
   BUSY='senden';ENTWURF[AKT]=t;render();
   try{await api({aktion:'senden',chat:AKT,text:t});ENTWURF[AKT]='';await nachrichtenLaden(true);}catch(e){toast(e.message||String(e),6000);}
   BUSY='';render();const n=document.getElementById('text');if(n)n.focus();}
@@ -149,13 +173,16 @@ const A={
   senden:()=>senden(),zurueck:()=>{AKT='';render();},
 };
 document.addEventListener('click',e=>{const l=e.target.closest('a[href]');if(l){try{const u=new URL(l.href);if(u.origin===location.origin&&window.top!==window){e.preventDefault();window.top.postMessage({osOeffne:u.pathname+u.search},location.origin);}}catch(x){}return;}
+  const dv=e.target.closest('[data-voll]');if(dv){const v=document.createElement('div');v.className='voll';v.innerHTML='<img src="'+dv.src+'">';v.onclick=()=>v.remove();document.body.appendChild(v);return;}
+  const dd=e.target.closest('[data-datei]');if(dd){dateiOeffnen(dd.dataset.datei,dd.dataset.dn);return;}
+  const aw=e.target.closest('[data-anhweg]');if(aw){ANH.splice(+aw.dataset.anhweg,1);render();return;}
   const gw=e.target.closest('[data-grweg]');if(gw){e.preventDefault();const g=gw.dataset.grweg;if(confirm('Gruppe „'+g+'“ entfernen?')){delete GR.gruppen[g];gruppenSpeichern();render();}return;}
   const b=e.target.closest('[data-a],[data-chat]');if(!b||b.disabled)return;
   if(b.dataset.a&&A[b.dataset.a]){A[b.dataset.a]();return;}
   if(b.dataset.chat){const ta=document.getElementById('text');if(ta&&AKT)ENTWURF[AKT]=ta.value;AKT=b.dataset.chat;nachrichtenLaden();}});
 document.addEventListener('focusin',e=>{const t=e.target;if(t.matches&&t.matches('input[list]')){t.dataset.alt=t.value;t.value='';}});
 document.addEventListener('focusout',e=>{const t=e.target;if(t.matches&&t.matches('input[list]')&&!t.value&&t.dataset.alt){t.value=t.dataset.alt;}});
-document.addEventListener('change',e=>{const t=e.target;if(t.id==='gruppe'&&AKT){gruppeSetzen(AKT,t.value);}});
+document.addEventListener('change',e=>{const t=e.target;if(t.id==='dateiwahl'){ANH=ANH.concat([...t.files]);t.value='';render();return;}if(t.id==='gruppe'&&AKT){gruppeSetzen(AKT,t.value);}});
 document.addEventListener('toggle',e=>{const d=e.target;if(d&&d.matches&&d.matches('details.grp')){GROFFEN[d.dataset.gr]=d.open;try{localStorage.setItem('cliq_gr_offen',JSON.stringify(GROFFEN));}catch(x){}}},true);
 document.addEventListener('input',e=>{const t=e.target;if(t.id==='suche'){SUCHE=t.value;render();}else if(t.id==='text'&&AKT)ENTWURF[AKT]=t.value;});
 document.addEventListener('keydown',e=>{if(e.target.id==='text'&&e.key==='Enter'&&!e.shiftKey&&!e.isComposing){e.preventDefault();senden();}});

@@ -1,62 +1,10 @@
 // Zoho Cliq im Wohntraum OS: jeder Nutzer verbindet sein eigenes Cliq-Konto (OAuth), danach Chats lesen und schreiben.
 // Benötigt in Vercel: CLIQ_CLIENT_ID, CLIQ_CLIENT_SECRET, optional CLIQ_DC (Standard: eu für zoho.eu)
 // Weiterleitungs-URL in der Zoho API Console: https://<OS-Domain>/api/cliq/rueckkehr
-import crypto from 'crypto'
 import { angemeldet, antwort } from '../_lib/auth'
+import { DC, ACCOUNTS, SCOPES, bereit, rueckkehr, TEAM, db, konto, stateNeu, statePruefen, tokenTausch, CACHE, zugang, cliq, zeit, text, datei, chatKurz } from '../_lib/cliq'
 
 export const dynamic = 'force-dynamic'
-
-const DC = () => String(process.env.CLIQ_DC || 'eu').replace(/^\.+/, '')
-const ACCOUNTS = () => 'https://accounts.zoho.' + DC()
-const CLIQ = () => 'https://cliq.zoho.' + DC()
-const SCOPES = 'ZohoCliq.Chats.READ,ZohoCliq.Messages.READ,ZohoCliq.Webhooks.CREATE,ZohoCliq.Channels.READ,ZohoCliq.Users.READ,AaaServer.profile.Read'
-const bereit = () => !!(process.env.CLIQ_CLIENT_ID && process.env.CLIQ_CLIENT_SECRET)
-// feste Rücksprung-Adresse (muss genau so in der Zoho API Console stehen); andere Adresse über CLIQ_REDIRECT möglich
-const rueckkehr = () => process.env.CLIQ_REDIRECT || 'https://os-wohntraumrheinhessen.de/api/cliq/rueckkehr'
-const TEAM = [['Ramona', 'ramona@andersmacher.info'], ['Jürgen', 'juergen@andersmacher.info'], ['Eric', 'eric@andersmacher.info']]
-
-// Konto des Nutzers in Supabase (mit seinem eigenen Zugang, RLS: nur eigene Zeile)
-async function db(pfad, auth, opt = {}) {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL, key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
-  const r = await fetch(url + '/rest/v1/' + pfad, { method: opt.method || 'GET', headers: { apikey: key, Authorization: auth, 'Content-Type': 'application/json', ...(opt.prefer ? { Prefer: opt.prefer } : {}) }, body: opt.body ? JSON.stringify(opt.body) : undefined, cache: 'no-store' })
-  const t = await r.text(); let j = null; try { j = t ? JSON.parse(t) : null } catch (e) { }
-  if (!r.ok) throw new Error((j && j.message) || ('Datenbankfehler ' + r.status))
-  return j
-}
-const konto = async auth => ((await db('cliq_konten?select=*', auth)) || [])[0] || null
-
-// state absichern: Nutzer-ID + Ablauf, signiert
-const sig = s => crypto.createHmac('sha256', process.env.CLIQ_CLIENT_SECRET || 'x').update(s).digest('hex').slice(0, 32)
-const stateNeu = uid => { const s = uid + '.' + (Date.now() + 600e3); return s + '.' + sig(s) }
-const statePruefen = (st, uid) => { const [u, bis, h] = String(st || '').split('.'); return u === uid && Number(bis) > Date.now() && h === sig(u + '.' + bis) }
-
-async function tokenTausch(params, server) {
-  const basis = /^https:\/\/accounts\.zoho\.[a-z.]+$/.test(server || '') ? server : ACCOUNTS()
-  const r = await fetch(basis + '/oauth/v2/token', { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams(Object.assign({ client_id: process.env.CLIQ_CLIENT_ID, client_secret: process.env.CLIQ_CLIENT_SECRET }, params)).toString(), cache: 'no-store' })
-  const j = await r.json().catch(() => ({}))
-  if (!r.ok || j.error) throw new Error('Zoho-Anmeldung fehlgeschlagen: ' + (j.error || r.status))
-  return j
-}
-const CACHE = new Map()
-async function zugang(uid, k) {
-  const c = CACHE.get(uid)
-  if (c && c.bis > Date.now() && c.rt === k.refresh_token) return c.token
-  const j = await tokenTausch({ grant_type: 'refresh_token', refresh_token: k.refresh_token })
-  CACHE.set(uid, { token: j.access_token, bis: Date.now() + (Number(j.expires_in || 3600) - 300) * 1000, rt: k.refresh_token })
-  return j.access_token
-}
-async function cliq(token, pfad, opt = {}) {
-  const r = await fetch(CLIQ() + pfad, { method: opt.method || 'GET', headers: { Authorization: 'Zoho-oauthtoken ' + token, Accept: 'application/json', ...(opt.json ? { 'Content-Type': 'application/json' } : {}) }, body: opt.json ? JSON.stringify(opt.json) : undefined, cache: 'no-store' })
-  if (r.status === 204) return {}
-  const t = await r.text(); let j = {}; try { j = t ? JSON.parse(t) : {} } catch (e) { }
-  if (r.status === 429) throw new Error('Cliq: zu viele Anfragen, bitte kurz warten.')
-  if (!r.ok) throw new Error('Cliq: ' + (j.message || r.status))
-  return j
-}
-const zeit = x => typeof x === 'number' ? x : Date.parse(x || '') || 0
-const text = m => { const c = m.content || {}; if (typeof c === 'string') return c; return c.text || c.comment || (c.file && ('Datei: ' + (c.file.name || ''))) || (m.type === 'file' ? 'Datei' : '') || '' }
-const chatKurz = c => ({ id: c.chat_id, name: c.name || c.title || '', typ: c.chat_type || '', geaendert: zeit(c.last_modified_time),
-  letzte: c.last_message_info ? { von: (c.last_message_info.sender || {}).name || '', vonId: String((c.last_message_info.sender || {}).id || ''), zeit: zeit(c.last_message_info.time), text: text(c.last_message_info) } : null })
 
 export async function POST(req) {
   try {
@@ -121,7 +69,7 @@ export async function POST(req) {
       const id = encodeURIComponent(String(b.chat || ''))
       const q = new URLSearchParams({ limit: String(Math.min(Number(b.anzahl) || 50, 100)) }); if (b.bis) q.set('totime', String(b.bis))
       const j = await cliq(token, '/api/v2/chats/' + id + '/messages?' + q.toString())
-      const L = (j.data || []).map(m => ({ id: m.id, von: (m.sender || {}).name || '', vonId: String((m.sender || {}).id || ''), zeit: zeit(m.time), typ: m.type || 'text', text: text(m) })).sort((x, y) => x.zeit - y.zeit)
+      const L = (j.data || []).map(m => ({ id: m.id, von: (m.sender || {}).name || '', vonId: String((m.sender || {}).id || ''), zeit: zeit(m.time), typ: m.type || 'text', text: (datei(m) ? ((m.content || {}).comment || '') : text(m)), datei: datei(m) })).sort((x, y) => x.zeit - y.zeit)
       return antwort({ nachrichten: L, ich: k.zoho_id || '' })
     }
     if (a === 'senden') {
