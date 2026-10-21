@@ -11,7 +11,8 @@ const ACCOUNTS = () => 'https://accounts.zoho.' + DC()
 const CLIQ = () => 'https://cliq.zoho.' + DC()
 const SCOPES = 'ZohoCliq.Chats.READ,ZohoCliq.Messages.READ,ZohoCliq.Webhooks.CREATE,ZohoCliq.Channels.READ,ZohoCliq.Users.READ,AaaServer.profile.Read'
 const bereit = () => !!(process.env.CLIQ_CLIENT_ID && process.env.CLIQ_CLIENT_SECRET)
-const rueckkehr = req => { const o = req.headers.get('origin') || ('https://' + (req.headers.get('host') || '')); return o.replace(/\/$/, '') + '/api/cliq/rueckkehr' }
+// feste Rücksprung-Adresse (muss genau so in der Zoho API Console stehen); andere Adresse über CLIQ_REDIRECT möglich
+const rueckkehr = () => process.env.CLIQ_REDIRECT || 'https://os-wohntraumrheinhessen.de/api/cliq/rueckkehr'
 const TEAM = [['Ramona', 'ramona@andersmacher.info'], ['Jürgen', 'juergen@andersmacher.info'], ['Eric', 'eric@andersmacher.info']]
 
 // Konto des Nutzers in Supabase (mit seinem eigenen Zugang, RLS: nur eigene Zeile)
@@ -66,9 +67,9 @@ export async function POST(req) {
     const a = b.aktion
 
     if (a === 'status') {
-      if (!bereit()) return antwort({ eingerichtet: false, verbunden: false })
+      if (!bereit()) return antwort({ eingerichtet: false, verbunden: false, rueckkehr: rueckkehr() })
       const k = await konto(auth)
-      return antwort({ eingerichtet: true, verbunden: !!k, name: k && k.zoho_name, mail: k && k.zoho_mail, id: k && k.zoho_id })
+      return antwort({ eingerichtet: true, rueckkehr: rueckkehr(), client: String(process.env.CLIQ_CLIENT_ID || '').slice(0, 8), dc: DC(), verbunden: !!k, name: k && k.zoho_name, mail: k && k.zoho_mail, id: k && k.zoho_id })
     }
     if (!bereit()) return antwort({ error: 'Cliq ist noch nicht eingerichtet (CLIQ_CLIENT_ID und CLIQ_CLIENT_SECRET fehlen in Vercel).' }, 400)
 
