@@ -89,6 +89,8 @@ const zeit=d=>d?new Date(d).toLocaleString('de-DE',{day:'2-digit',month:'2-digit
 const HEUTE=new Date().toISOString().slice(0,10);
 const FOTO_URL='https://jqzxctfqvcwbctpjksvg.supabase.co/storage/v1/object/public/stoerungen/';
 const PROJEKT='1211451233949578',ABSCHNITT={'Neu':'1211451233949579','In Arbeit':'1211552684972106','Erledigt':'1211451233949592'};
+const EINGANG=['Telefon','Mail','Persönlich','Hausmeister','Handwerker','WhatsApp / SMS','Sonstiges'];
+const eingangVon=s=>s.eingang||(s.quelle==='OS'?'':s.quelle)||'';
 const KATS=['Heizung / Warmwasser','Wasser / Sanitär / Abfluss','Elektrik / Licht','Fenster / Türen / Schlösser','Dach / Fassade / Feuchtigkeit','Schimmel','Küche / Geräte','Treppenhaus / Gemeinschaftsflächen','Außenanlage / Müll','Ungeziefer','Sonstiges'];
 const NUTZER={'ramona@andersmacher.info':'Ramona','juergen@andersmacher.info':'Jürgen','eric@andersmacher.info':'Eric'};
 let ASU=null,ASUL=false,S=[],O=[],E=[],LK=[],MK=[],MKE={},FIRMEN=[],ICH='',ST='offen',AUF={},NEU=null,EDIT=null,LINKS={offen:false},SEC={};
@@ -132,7 +134,7 @@ function render(){
   document.getElementById('oben').innerHTML=(NEU?neuForm():'')+(MVOR.offen?vorlagenCard():'')+(LINKS.offen?linksCard():'');
   if(!L.length){document.getElementById('liste').innerHTML='<div class="empty">Keine Störungen gefunden.</div>';return;}
   document.getElementById('liste').innerHTML='<div class="tbox" style="overflow-x:auto"><table class="tab"><thead><tr><th>Nr.</th><th>Gemeldet</th><th>Objekt</th><th>Störung</th><th class="hide-m">Gemeldet von</th><th>Dringlichkeit</th><th>Status</th></tr></thead><tbody>'+L.map(s=>{const o=objVon(s),e=einVon(s),auf=AUF[s.id];
-    return `<tr class="kl${auf?' auf':''}" onclick="AUF['${s.id}']=!AUF['${s.id}'];render()"><td><b>${esc(s.nr)}</b><div class="sub">${tk(s)}</div></td><td>${dfmt(s.created_at)}<div class="sub">${esc(s.quelle||'')}</div></td><td><b>${esc(o.kz||'')}</b>${e?' · '+esc(e.bezeichnung):''}<div class="sub">${esc(o.name||'')}</div></td>
+    return `<tr class="kl${auf?' auf':''}" onclick="AUF['${s.id}']=!AUF['${s.id}'];render()"><td><b>${esc(s.nr)}</b><div class="sub">${tk(s)}</div></td><td>${dfmt(s.created_at)}<div class="sub">${esc(eingangVon(s)||s.quelle||'')}</div></td><td><b>${esc(o.kz||'')}</b>${e?' · '+esc(e.bezeichnung):''}<div class="sub">${esc(o.name||'')}</div></td>
       <td>${esc(s.titel)}<div class="sub">${esc(s.kategorie||'')}</div></td><td class="hide-m">${esc(s.melder_name||'–')}</td><td>${dPill(s.dringlichkeit)}</td><td>${sPill(s)}${zuText(s)?`<div class="sub">${esc(zuText(s))}</div>`:''}${s.asana_gid?'':'<div class="sub">noch nicht in Asana</div>'}</td></tr>`
       +(auf?`<tr><td colspan="7" class="det">${detail(s)}</td></tr>`:'');}).join('')+'</tbody></table></div>';
   qrZeichnen();}
@@ -146,12 +148,12 @@ function detail(s){const o=objVon(s),e=einVon(s),m=mieterVon(e);let h='';
   if(EDIT===s.id){h+=`<div class="card"><div class="ch">Meldung bearbeiten</div>${spalten([
       `<label class="fl">Störung<input id="e-titel" value="${esc(s.titel)}"></label>`,`<label class="fl">Kategorie<input id="e-kat" list="dl-kat" value="${esc(s.kategorie||'')}"></label>`,
       `<label class="fl">Dringlichkeit<input id="e-dr" list="dl-dr" value="${esc(s.dringlichkeit||'Normal')}"></label>`,`<label class="fl">Einheit<input id="e-ein" list="dl-ein-${s.id}" value="${esc(e?einLabel(e):'')}"><datalist id="dl-ein-${s.id}">${E.filter(x=>x.objekt_id===s.objekt_id).map(x=>`<option value="${esc(einLabel(x))}">`).join('')}</datalist></label>`,
-      `<label class="fl">Gemeldet von<input id="e-mel" value="${esc(s.melder_name||'')}"></label>`,`<label class="fl">Kontakt<input id="e-kon" value="${esc(s.melder_kontakt||'')}"></label>`])}
+      `<label class="fl">Gemeldet von<input id="e-mel" value="${esc(s.melder_name||'')}"></label>`,`<label class="fl">Kontakt<input id="e-kon" value="${esc(s.melder_kontakt||'')}"></label>`,`<label class="fl">Eingang über<input id="e-eing" list="dl-eing" value="${esc(eingangVon(s))}"><datalist id="dl-eing">${EINGANG.concat(['Mieter-Formular']).map(x=>`<option value="${esc(x)}">`).join('')}</datalist></label>`])}
      <label class="fl">Beschreibung<textarea id="e-text" rows="4">${esc(s.beschreibung||'')}</textarea></label>
-     <div class="acts"><button class="primary" onclick="bearbeitenSpeichern('${s.id}')">Speichern</button><button onclick="EDIT=null;render()">Abbrechen</button></div></div>`;}
+     <div class="acts"><button class="primary" onclick="bearbeitenSpeichern('${s.id}')">Speichern</button><button onclick="EDIT=null;render()">Abbrechen</button><button class="ghost" style="margin-left:auto;color:var(--neg)" onclick="stoerungLoeschen('${s.id}')">Störung löschen</button></div></div>`;}
   else{h+=`<div class="card"><div class="ch">Meldung Nr. ${esc(s.nr)} (Ticket ${tk(s)}) – ${esc(s.titel)}<button class="ghost small" onclick="EDIT='${s.id}';render()">Bearbeiten</button></div>${spalten([
       kv('Objekt',esc(objLabel(o))),kv('Einheit',e?esc(e.bezeichnung)+(e.lage?' · '+esc(e.lage):''):''),kv('Kategorie',esc(s.kategorie||'')),kv('Dringlichkeit',dPill(s.dringlichkeit)),
-      kv('Gemeldet von',esc(s.melder_name||'')+(s.melder_rolle&&s.melder_rolle!=='Mieter'?' ('+esc(s.melder_rolle)+')':'')),kv('Kontakt',esc(s.melder_kontakt||'')),kv('Gemeldet am',zeit(s.created_at)),kv('Quelle',esc(s.quelle||'')+(s.erfasst_von?' · '+esc(s.erfasst_von):''))])}
+      kv('Gemeldet von',esc(s.melder_name||'')+(s.melder_rolle&&s.melder_rolle!=='Mieter'?' ('+esc(s.melder_rolle)+')':'')),kv('Kontakt',esc(s.melder_kontakt||'')),kv('Gemeldet am',zeit(s.created_at)),kv('Eingang über',esc(eingangVon(s)||'–')+(s.erfasst_von?' · erfasst von '+esc(s.erfasst_von):''))])}
      ${s.beschreibung?`<div class="txt">${esc(s.beschreibung)}</div>`:''}
      <div class="acts"><span class="sub" style="width:72px">Zuständig</span><input class="inp" id="zu-${s.id}" list="dl-asu" data-wahl="1" value="${esc(s.zustaendig||'')}" placeholder="${ASU?'Name eintippen':'Lade Personen aus Asana …'}" style="width:220px">
       <span class="sub" style="margin-left:8px">Fällig am</span><input class="inp" type="date" id="fa-${s.id}" value="${esc(s.faellig||'')}"><button class="small primary" onclick="zuSpeichern('${s.id}')">Übernehmen</button>
@@ -217,17 +219,21 @@ async function hwSpeichern(sid){const s=S.find(x=>x.id===sid);const v=(document.
   if(s.asana_gid&&v){try{await asApi({aktion:'kommentar',gid:s.asana_gid,text:'Handwerker beauftragt: '+v+'\nRückmelde-Link für den Handwerker: '+hwLink(s)});if(s.status==='In Arbeit')await asApi({aktion:'abschnitt',gid:s.asana_gid,abschnitt:ABSCHNITT['In Arbeit']});}catch(e){}}}
 async function notiz(sid){const s=S.find(x=>x.id===sid),el=document.getElementById('vn-'+sid),t=(el.value||'').trim();if(!s||!t)return;
   if(!await speichern(s,{},eintrag('Notiz',t)))return;render();if(s.asana_gid){try{await asApi({aktion:'kommentar',gid:s.asana_gid,text:t+'\n('+(ICH||'OS')+' im Wohntraum OS)'});}catch(e){}}}
+async function stoerungLoeschen(sid){const s=S.find(x=>x.id===sid);if(!s)return;
+  if(!confirm('Störung '+tk(s)+' „'+s.titel+'“ endgültig löschen?'+(s.asana_gid?'\n\nDie Aufgabe in Asana bleibt bestehen und muss dort bei Bedarf gelöscht werden.':'')))return;
+  const {error}=await sb.from('stoerungen').delete().eq('id',sid);if(error){toast('Löschen fehlgeschlagen: '+error.message);return;}
+  S=S.filter(x=>x.id!==sid);EDIT=null;delete AUF[sid];render();toast('Störung gelöscht.');}
 async function bearbeitenSpeichern(sid){const s=S.find(x=>x.id===sid);const v=i=>(document.getElementById(i).value||'').trim();const e=einAus(s.objekt_id,v('e-ein'));
   if(!v('e-titel')){toast('Bitte die Störung kurz benennen.');return;}
   const dr=['Normal','Dringend','Notfall'].includes(v('e-dr'))?v('e-dr'):'Normal';
-  if(await speichern(s,{titel:v('e-titel'),kategorie:v('e-kat')||null,dringlichkeit:dr,einheit_id:e?e.id:s.einheit_id,melder_name:v('e-mel')||null,melder_kontakt:v('e-kon')||null,beschreibung:v('e-text')||null},eintrag('Änderung','Meldung bearbeitet'))){EDIT=null;render();toast('Gespeichert.');}}
+  if(await speichern(s,{titel:v('e-titel'),kategorie:v('e-kat')||null,dringlichkeit:dr,einheit_id:e?e.id:s.einheit_id,melder_name:v('e-mel')||null,melder_kontakt:v('e-kon')||null,eingang:v('e-eing')||null,beschreibung:v('e-text')||null},eintrag('Änderung','Meldung bearbeitet'))){EDIT=null;render();toast('Gespeichert.');}}
 async function hochladen(dateien){const out=[],ordner='meldungen/'+(crypto.randomUUID?crypto.randomUUID():Date.now());
   for(const f of dateien){const pfad=ordner+'/'+out.length+'_'+f.name.replace(/[^\w.\-]+/g,'_').slice(-80);const {error}=await sb.storage.from('stoerungen').upload(pfad,f,{contentType:f.type||undefined});if(error)throw new Error(f.name+': '+error.message);out.push({pfad,name:f.name,typ:f.type||''});}return out;}
 async function fotosDazu(sid,inp){const s=S.find(x=>x.id===sid),L=[...inp.files];inp.value='';if(!L.length)return;toast('Lädt hoch …');
   try{const neu=await hochladen(L);if(await speichern(s,{fotos:(s.fotos||[]).concat(neu)},eintrag('Fotos',neu.length+' Datei'+(neu.length===1?'':'en')+' hinzugefügt'))){render();toast('Hochgeladen.');}}catch(e){toast('Hochladen fehlgeschlagen: '+e.message);}}
 
 /* ---------- Neue Störung erfassen ---------- */
-function neuOeffnen(obj){asNutzer();NEU={zu:'',fa:'',obj:obj||'',ein:'',mel:'',kon:'',kat:'',dr:'Normal',titel:'',text:'',dateien:[],asana:true,busy:false,pid:'',mail:null,bestaetigen:false,lade:false};render();window.scrollTo(0,0);}
+function neuOeffnen(obj){asNutzer();NEU={zu:'',fa:'',obj:obj||'',ein:'',mel:'',kon:'',kat:'',dr:'Normal',titel:'',text:'',dateien:[],asana:true,busy:false,pid:'',mail:null,eing:'',bestaetigen:false,lade:false};render();window.scrollTo(0,0);}
 function neuForm(){const ob=O.find(x=>objLabel(x)===NEU.obj),EL=ob?E.filter(x=>x.objekt_id===ob.id&&x.aktiv):[];
   const offeneT=S.filter(offen);
   return `<div class="card"><div class="ch">Störung erfassen${NEU.mail?' aus Mail':''}<button class="ghost small" onclick="NEU=null;render()">Schließen</button></div>
@@ -243,6 +249,7 @@ function neuForm(){const ob=O.find(x=>objLabel(x)===NEU.obj),EL=ob?E.filter(x=>x
     `<label class="fl">Zuständig<input list="dl-asu" data-wahl="1" value="${esc(NEU.zu)}" onchange="NEU.zu=this.value" placeholder="${ASU?'Name eintippen':'Lade Personen aus Asana …'}"></label>`,
     `<label class="fl">Fällig am<input type="date" value="${esc(NEU.fa)}" onchange="NEU.fa=this.value"></label>`,
     `<div class="fl">Dringlichkeit<div class="seg" style="width:max-content">${['Normal','Dringend','Notfall'].map(x=>`<button class="${NEU.dr===x?'on':''}" onclick="NEU.dr='${x}';render()">${x}</button>`).join('')}</div></div>`])}
+   <div class="fl">Eingang über<div class="seg" style="width:max-content;max-width:100%;flex-wrap:wrap">${EINGANG.map(x=>`<button class="${NEU.eing===x?'on':''}" onclick="NEU.eing='${x}';render()">${x}</button>`).join('')}</div></div>
    <label class="fl">Störung (kurz)<input value="${esc(NEU.titel)}" oninput="NEU.titel=this.value" placeholder="z. B. Heizung im Bad wird nicht warm"></label>
    <label class="fl">Beschreibung<textarea rows="3" oninput="NEU.text=this.value">${esc(NEU.text)}</textarea></label>
    <div class="acts"><label class="up">Fotos hinzufügen<input type="file" accept="image/*,video/*,application/pdf" multiple hidden onchange="NEU.dateien=NEU.dateien.concat([...this.files]);render()"></label>${NEU.dateien.length?`<span class="sub">${NEU.dateien.map(f=>esc(f.name)).join(', ')}</span>`:''}
@@ -254,11 +261,11 @@ const einAus=(oid,v)=>E.find(x=>x.objekt_id===oid&&(x.bezeichnung===v||einLabel(
 function neuEinheit(v){NEU.ein=v;const ob=O.find(x=>objLabel(x)===NEU.obj),e=ob&&einAus(ob.id,v),m=mieterVon(e);
   if(m){NEU.mel=m.name||NEU.mel;NEU.kon=[m.tel,m.email].filter(Boolean).join(' · ')||NEU.kon;NEU.pid=m.pid;}else NEU.pid='';setTimeout(render);}
 async function neuSpeichern(){if(NEU.zu&&!asuVon(NEU.zu)){toast('Person nicht gefunden – bitte einen Namen aus der Liste wählen oder das Feld leeren.');return;}
-const ob=O.find(x=>objLabel(x)===NEU.obj);if(!ob){toast('Bitte ein Objekt aus der Liste wählen.');return;}if(!NEU.titel.trim()){toast('Bitte die Störung kurz benennen.');return;}
+const ob=O.find(x=>objLabel(x)===NEU.obj);if(!ob){toast('Bitte ein Objekt aus der Liste wählen.');return;}if(!NEU.titel.trim()){toast('Bitte die Störung kurz benennen.');return;}if(!NEU.eing&&!NEU.mail){toast('Bitte auswählen, wie die Meldung eingegangen ist.');return;}
   const e=einAus(ob.id,NEU.ein);NEU.busy=true;render();
   try{const fotos=NEU.dateien.length?await hochladen(NEU.dateien):[];
     const rec={objekt_id:ob.id,einheit_id:e?e.id:null,pid:NEU.pid||null,melder_name:NEU.mel.trim()||null,melder_kontakt:NEU.kon.trim()||null,melder_rolle:NEU.pid?'Mieter':'Sonstige',titel:NEU.titel.trim(),
-      beschreibung:((!e&&NEU.ein?'Bereich: '+NEU.ein+'\n':'')+NEU.text.trim())||null,kategorie:NEU.kat.trim()||null,dringlichkeit:NEU.dr,quelle:NEU.mail?'Mail':'OS',mails:NEU.mail?[NEU.mail]:[],erfasst_von:ICH||null,zustaendig:(asuVon(NEU.zu)||{}).name||null,zustaendig_gid:(asuVon(NEU.zu)||{}).gid||null,faellig:NEU.fa||null,fotos,verlauf:[eintrag('Meldung',NEU.mail?'aus der Mail von '+(NEU.mail.von.name||NEU.mail.von.mail)+' erfasst':'im OS erfasst')]};
+      beschreibung:((!e&&NEU.ein?'Bereich: '+NEU.ein+'\n':'')+NEU.text.trim())||null,kategorie:NEU.kat.trim()||null,dringlichkeit:NEU.dr,quelle:NEU.mail?'Mail':'OS',eingang:NEU.eing||(NEU.mail?'Mail':null),mails:NEU.mail?[NEU.mail]:[],erfasst_von:ICH||null,zustaendig:(asuVon(NEU.zu)||{}).name||null,zustaendig_gid:(asuVon(NEU.zu)||{}).gid||null,faellig:NEU.fa||null,fotos,verlauf:[eintrag('Meldung',NEU.mail?'aus der Mail von '+(NEU.mail.von.name||NEU.mail.von.mail)+' erfasst':'im OS erfasst')]};
     const {data,error}=await sb.from('stoerungen').insert(rec).select().single();if(error)throw new Error(error.message);
     S.unshift(data);AUF[data.id]=true;const mitAsana=NEU.asana,best=NEU.mail&&NEU.bestaetigen;NEU=null;if(best)SEC['Mails']=true;render();toast('Störung '+tk(data)+' gespeichert.');if(mitAsana)await asanaAnlegen(data.id);
     if(best){const C=mailEntwurf(data,'eingang');if(C.an)await mailVersand(data,C);else toast('Keine E-Mail-Adresse für die Eingangsbestätigung gefunden.');}}
@@ -356,7 +363,7 @@ function htmlText(h){const d=new DOMParser().parseFromString(String(h||'').repla
 async function ausMail(id){neuOeffnen('');NEU.lade=true;render();
   try{const r=await pf({aktion:'lesen',id,markieren:false}),m=r.mail,adr=String(m.von&&m.von.mail||'').toLowerCase();
     NEU.titel=String(m.betreff||'').replace(/^(\s*(aw|wg|re|fw|fwd)\s*:\s*)+/i,'').slice(0,120);NEU.text=htmlText(m.html).slice(0,4000);NEU.mel=(m.von&&m.von.name)||'';NEU.kon=adr;
-    NEU.mail={id:m.id,msgId:m.msgId||'',betreff:m.betreff||'',von:m.von||{},an:m.an||[],datum:m.datum,richtung:'ein'};NEU.bestaetigen=!!adr;
+    NEU.mail={id:m.id,msgId:m.msgId||'',betreff:m.betreff||'',von:m.von||{},an:m.an||[],datum:m.datum,richtung:'ein'};NEU.eing='Mail';NEU.bestaetigen=!!adr;
     const hat=x=>String(x||'').toLowerCase().split(/[,;\s]+/).includes(adr);
     const akt=x=>{const bis=(MKE[x.pid]||{}).bis||x.bis;return (!x.von||x.von<=HEUTE)&&(!bis||bis>=HEUTE);};
     const T=adr?MK.filter(x=>(x.kontakte||[]).some(k=>hat(k.email))||hat((MKE[x.pid]||{}).email)):[],mk=T.find(akt)||T[0];
