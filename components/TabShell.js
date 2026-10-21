@@ -60,7 +60,8 @@ export default function TabShell() {
         if (da.pfad !== voll && voll.includes('?')) return alt.map((t) => (t.key === k ? Object.assign({}, t, { pfad: voll, v: (t.v || 0) + 1 }) : t))
         return alt
       }
-      let L = alt.concat([{ key: k, pfad: voll, titel: labelFuer(voll) }])
+      const pos = alt.reduce((m, t, i) => Math.max(m, t.pos || i + 1), 0) + 1
+      let L = alt.concat([{ key: k, pfad: voll, titel: labelFuer(voll), pos }])
       if (L.length > MAX) { const weg = L.find((t) => t.key !== k); L = L.filter((t) => t !== weg) }
       return L
     })
@@ -119,11 +120,29 @@ export default function TabShell() {
     if (t.key === aktiv) { const n = rest[Math.min(i, rest.length - 1)]; setAktiv(n.key); router.push(n.pfad) }
   }
 
+  // Reiter mit der Maus verschieben: nur die Reihenfolge in der Leiste ändert sich (pos), die Seiten bleiben geladen
+  const [zieh, setZieh] = useState(null)
+  const [ziel, setZiel] = useState(null)
+  const reihe = tabs.map((t, i) => Object.assign({ _i: i }, t)).sort((a, b) => (a.pos || a._i + 1) - (b.pos || b._i + 1))
+  const ablegen = (k, vor) => {
+    if (!zieh || zieh === k) return
+    const keys = reihe.map(t => t.key).filter(x => x !== zieh)
+    let i = keys.indexOf(k); if (!vor) i++
+    keys.splice(i, 0, zieh)
+    setTabs(alt => alt.map(t => Object.assign({}, t, { pos: keys.indexOf(t.key) + 1 })))
+  }
+
   return (
     <div className="ostabs-wrap">
       <div className="ostabs" role="tablist">
-        {tabs.map((t) => (
-          <div key={t.key} role="tab" aria-selected={t.key === aktiv} className={'ostab' + (t.key === aktiv ? ' on' : '')} onClick={() => wechseln(t)} onAuxClick={(e) => { if (e.button === 1) schliessen(t, e) }} title={t.titel}>
+        {reihe.map((t) => (
+          <div key={t.key} role="tab" aria-selected={t.key === aktiv}
+            className={'ostab' + (t.key === aktiv ? ' on' : '') + (zieh === t.key ? ' zieht' : '') + (ziel && ziel.k === t.key && zieh !== t.key ? (ziel.vor ? ' drop-l' : ' drop-r') : '')}
+            draggable onDragStart={(e) => { setZieh(t.key); try { e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', t.titel) } catch (x) {} }}
+            onDragOver={(e) => { if (!zieh) return; e.preventDefault(); const b = e.currentTarget.getBoundingClientRect(); const vor = e.clientX < b.left + b.width / 2; if (!ziel || ziel.k !== t.key || ziel.vor !== vor) setZiel({ k: t.key, vor }) }}
+            onDrop={(e) => { e.preventDefault(); if (ziel) ablegen(t.key, ziel.vor); setZieh(null); setZiel(null) }}
+            onDragEnd={() => { setZieh(null); setZiel(null) }}
+            onClick={() => wechseln(t)} onAuxClick={(e) => { if (e.button === 1) schliessen(t, e) }} title={t.titel}>
             <span className="ostab-t">{t.titel}</span>
             <button className="ostab-x" onClick={(e) => schliessen(t, e)} aria-label={t.titel + ' schließen'}>×</button>
           </div>
