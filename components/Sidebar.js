@@ -51,7 +51,7 @@ export const NAV = [
   ] },
   { type: 'group', key: 'v-stammdaten', icon: 'ti-database', label: 'Stammdaten', mod: 'verwalto', items: [
     { href: '/hausverwaltung/dienstleister', icon: 'ti-address-book', label: 'Kontakte' },
-    { href: '/verwalto/gesellschaften', icon: 'ti-building', label: 'Gesellschaften', offen: true },
+    { href: '/verwalto/gesellschaften', icon: 'ti-building', label: 'Gesellschaften', perm: '/hausverwaltung/mieterkonten' },
   ] },
   { type: 'group', key: 'v-verwaltung', icon: 'ti-folders', label: 'Verwaltung', mod: 'verwalto', items: [
     { href: '/hausverwaltung/vertraege', icon: 'ti-file-certificate', label: 'Verträge' },

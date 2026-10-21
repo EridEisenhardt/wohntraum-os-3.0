@@ -206,11 +206,21 @@ function renderUeb(){
       return `<div class="kvr"><span>${l}${q?`<button class="q" title="${esc(q)}" onclick="odOeffne('${jq(q)}')">Quelle</button>`:''}</span><b>${wert(f,t)}</b></div>`;}));
     h+=fest?'</div>':'</details>';
   });
+  h+=vorOrtHtml();
   h+=`<datalist id="dlTyp">${['Mehrfamilienhaus','Einfamilienhaus','Reihenhaus','Eigentumswohnung','Wohn- und Geschäftshaus','Gewerbeobjekt','Grundstück','Angemietete Wohnung (Untervermietung)'].map(x=>`<option value="${x}">`).join('')}</datalist><datalist id="dlStatus"><option value="Bestand"><option value="In Ankauf"><option value="Im Verkauf"><option value="Verkauft"></datalist>`;
   document.getElementById('uebDaten').innerHTML=h;
   if(typeof bereicheInit==='function')bereicheInit();
   ueberOrdnen();
 }
+/* Dienstleister und Ansprechpartner vor Ort (aus Notion übernommen, hier pflegbar) */
+const VO=[['hausmeister','Hausmeister'],['ansprechpartner','Ansprechpartner vor Ort'],['mieterkommunikation','Mieterkommunikation'],['heizung','Heizungsfirma'],['sanitaer','Sanitär'],['elektro','Elektro'],['schornsteinfeger','Schornsteinfeger'],['bk_abrechnung','Betriebskostenabrechnung']];
+function vorOrtHtml(){const v=OB.vor_ort||{},ed=EDITK==='vor_ort';
+  let h=`<details class="card sec" data-sec="vor_ort"${SECO.vor_ort||ed?' open':''}><summary class="ch">Dienstleister vor Ort${ed?'':`<button class="ghost small" onclick="event.preventDefault();event.stopPropagation();EDITK='vor_ort';renderUeb()">Bearbeiten</button>`}</summary>`;
+  if(ed)h+=spalten(VO.map(([k,l])=>`<label class="fl">${l}<input data-vo="${k}" value="${esc(v[k]||'')}"></label>`))+`<div class="acts"><button class="primary" onclick="vorOrtSpeichern()">Speichern</button><button onclick="EDITK='';renderUeb()">Abbrechen</button></div>`;
+  else h+=spalten(VO.map(([k,l])=>`<div class="kvr"><span>${l}</span><b>${v[k]?esc(v[k]):'<span class="sub">–</span>'}</b></div>`))+(v.quelle?`<div class="sub" style="margin-top:6px">übernommen aus ${esc(v.quelle)}</div>`:'');
+  return h+'</details>';}
+async function vorOrtSpeichern(){const v={};document.querySelectorAll('[data-vo]').forEach(i=>{const t=i.value.trim();if(t)v[i.dataset.vo]=t;});
+  const {error}=await sb.from('obj_objekte').update({vor_ort:v,updated_at:new Date().toISOString()}).eq('id',OB.id);if(error){alert(error.message);return;}OB.vor_ort=v;EDITK='';renderUeb();}
 /* aufklappbare Bereiche immer alphabetisch nach ihrer Überschrift (feste Karten wie Stammdaten bleiben oben) */
 function ueberOrdnen(){const L=[...document.querySelectorAll('#pUeb details.sec[data-sec]')];const t=d=>((d.querySelector('summary')||{}).firstChild||{}).textContent||'';
   L.sort((a,b)=>t(a).trim().localeCompare(t(b).trim(),'de')).forEach((d,i)=>d.style.order=10+i);}
