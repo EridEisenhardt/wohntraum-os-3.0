@@ -145,7 +145,7 @@ const hwLink=s=>location.origin+'/stoerung.html?h='+s.hw_token;
 function detail(s){const o=objVon(s),e=einVon(s),m=mieterVon(e);let h='';
   if(EDIT===s.id){h+=`<div class="card"><div class="ch">Meldung bearbeiten</div>${spalten([
       `<label class="fl">Störung<input id="e-titel" value="${esc(s.titel)}"></label>`,`<label class="fl">Kategorie<input id="e-kat" list="dl-kat" value="${esc(s.kategorie||'')}"></label>`,
-      `<label class="fl">Dringlichkeit<input id="e-dr" list="dl-dr" value="${esc(s.dringlichkeit||'Normal')}"></label>`,`<label class="fl">Einheit<input id="e-ein" list="dl-ein-${s.id}" value="${esc(e?e.bezeichnung:'')}"><datalist id="dl-ein-${s.id}">${E.filter(x=>x.objekt_id===s.objekt_id).map(x=>`<option value="${esc(x.bezeichnung)}">`).join('')}</datalist></label>`,
+      `<label class="fl">Dringlichkeit<input id="e-dr" list="dl-dr" value="${esc(s.dringlichkeit||'Normal')}"></label>`,`<label class="fl">Einheit<input id="e-ein" list="dl-ein-${s.id}" value="${esc(e?einLabel(e):'')}"><datalist id="dl-ein-${s.id}">${E.filter(x=>x.objekt_id===s.objekt_id).map(x=>`<option value="${esc(einLabel(x))}">`).join('')}</datalist></label>`,
       `<label class="fl">Gemeldet von<input id="e-mel" value="${esc(s.melder_name||'')}"></label>`,`<label class="fl">Kontakt<input id="e-kon" value="${esc(s.melder_kontakt||'')}"></label>`])}
      <label class="fl">Beschreibung<textarea id="e-text" rows="4">${esc(s.beschreibung||'')}</textarea></label>
      <div class="acts"><button class="primary" onclick="bearbeitenSpeichern('${s.id}')">Speichern</button><button onclick="EDIT=null;render()">Abbrechen</button></div></div>`;}
@@ -217,7 +217,7 @@ async function hwSpeichern(sid){const s=S.find(x=>x.id===sid);const v=(document.
   if(s.asana_gid&&v){try{await asApi({aktion:'kommentar',gid:s.asana_gid,text:'Handwerker beauftragt: '+v+'\nRückmelde-Link für den Handwerker: '+hwLink(s)});if(s.status==='In Arbeit')await asApi({aktion:'abschnitt',gid:s.asana_gid,abschnitt:ABSCHNITT['In Arbeit']});}catch(e){}}}
 async function notiz(sid){const s=S.find(x=>x.id===sid),el=document.getElementById('vn-'+sid),t=(el.value||'').trim();if(!s||!t)return;
   if(!await speichern(s,{},eintrag('Notiz',t)))return;render();if(s.asana_gid){try{await asApi({aktion:'kommentar',gid:s.asana_gid,text:t+'\n('+(ICH||'OS')+' im Wohntraum OS)'});}catch(e){}}}
-async function bearbeitenSpeichern(sid){const s=S.find(x=>x.id===sid);const v=i=>(document.getElementById(i).value||'').trim();const e=E.find(x=>x.objekt_id===s.objekt_id&&x.bezeichnung===v('e-ein'));
+async function bearbeitenSpeichern(sid){const s=S.find(x=>x.id===sid);const v=i=>(document.getElementById(i).value||'').trim();const e=einAus(s.objekt_id,v('e-ein'));
   if(!v('e-titel')){toast('Bitte die Störung kurz benennen.');return;}
   const dr=['Normal','Dringend','Notfall'].includes(v('e-dr'))?v('e-dr'):'Normal';
   if(await speichern(s,{titel:v('e-titel'),kategorie:v('e-kat')||null,dringlichkeit:dr,einheit_id:e?e.id:s.einheit_id,melder_name:v('e-mel')||null,melder_kontakt:v('e-kon')||null,beschreibung:v('e-text')||null},eintrag('Änderung','Meldung bearbeitet'))){EDIT=null;render();toast('Gespeichert.');}}
@@ -236,7 +236,7 @@ function neuForm(){const ob=O.find(x=>objLabel(x)===NEU.obj),EL=ob?E.filter(x=>x
      <div class="acts"><span class="sub">Gehört die Mail zu einer bestehenden Störung?</span><input class="inp" list="dl-zuord" id="zuord" placeholder="Ticket oder Störung eintippen" style="width:320px"><datalist id="dl-zuord">${offeneT.map(x=>`<option value="${esc(tk(x)+' · '+(objVon(x).kz||'')+' · '+x.titel)}">`).join('')}</datalist><button class="small" onclick="mailZuordnen()">Zuordnen</button></div></div>`:''}
    ${spalten([
     `<label class="fl">Objekt<input list="dl-obj" value="${esc(NEU.obj)}" onchange="NEU.obj=this.value;NEU.ein='';setTimeout(render)" placeholder="Kürzel oder Straße eintippen"><datalist id="dl-obj">${O.filter(x=>x.status!=='Verkauft').map(x=>`<option value="${esc(objLabel(x))}">`).join('')}</datalist></label>`,
-    `<label class="fl">Einheit<input list="dl-ein" value="${esc(NEU.ein)}" onchange="neuEinheit(this.value)" placeholder="${ob?'Einheit wählen':'erst Objekt wählen'}"><datalist id="dl-ein">${EL.map(x=>`<option value="${esc(x.bezeichnung)}">`).join('')}<option value="Gemeinschaftsfläche"></datalist></label>`,
+    `<label class="fl">Einheit<input list="dl-ein" value="${esc(NEU.ein)}" onchange="neuEinheit(this.value)" placeholder="${ob?'Einheit wählen':'erst Objekt wählen'}"><datalist id="dl-ein">${EL.map(x=>`<option value="${esc(einLabel(x))}">`).join('')}<option value="Gemeinschaftsfläche"></datalist></label>`,
     `<label class="fl">Gemeldet von<input value="${esc(NEU.mel)}" oninput="NEU.mel=this.value" placeholder="Name"></label>`,
     `<label class="fl">Kontakt<input value="${esc(NEU.kon)}" oninput="NEU.kon=this.value" placeholder="Telefon oder E-Mail"></label>`,
     `<label class="fl">Kategorie<input list="dl-kat-n" value="${esc(NEU.kat)}" onchange="NEU.kat=this.value"><datalist id="dl-kat-n">${KATS.map(k=>`<option value="${esc(k)}">`).join('')}</datalist></label>`,
@@ -249,11 +249,13 @@ function neuForm(){const ob=O.find(x=>objLabel(x)===NEU.obj),EL=ob?E.filter(x=>x
     ${NEU.mail?`<label class="sub" style="display:flex;gap:4px;align-items:center;margin-left:auto"><input type="checkbox" ${NEU.bestaetigen?'checked':''} onchange="NEU.bestaetigen=this.checked"> Eingangsbestätigung per Mail senden</label>`:''}
     <label class="sub" style="display:flex;gap:4px;align-items:center;${NEU.mail?'':'margin-left:auto'}"><input type="checkbox" ${NEU.asana?'checked':''} onchange="NEU.asana=this.checked"> direkt in Asana anlegen (Mieter Meldungen, Eingang)</label>
     <button class="primary" onclick="neuSpeichern()"${NEU.busy?' disabled':''}>${NEU.busy?'Speichere …':'Speichern'}</button></div></div>`;}
-function neuEinheit(v){NEU.ein=v;const ob=O.find(x=>objLabel(x)===NEU.obj),e=ob&&E.find(x=>x.objekt_id===ob.id&&x.bezeichnung===v),m=mieterVon(e);
+const einLabel=x=>{if(!x)return '';const m=mieterVon(x);return x.bezeichnung+(m&&m.name?' · '+m.name:'');};
+const einAus=(oid,v)=>E.find(x=>x.objekt_id===oid&&(x.bezeichnung===v||einLabel(x)===v));
+function neuEinheit(v){NEU.ein=v;const ob=O.find(x=>objLabel(x)===NEU.obj),e=ob&&einAus(ob.id,v),m=mieterVon(e);
   if(m){NEU.mel=m.name||NEU.mel;NEU.kon=[m.tel,m.email].filter(Boolean).join(' · ')||NEU.kon;NEU.pid=m.pid;}else NEU.pid='';setTimeout(render);}
 async function neuSpeichern(){if(NEU.zu&&!asuVon(NEU.zu)){toast('Person nicht gefunden – bitte einen Namen aus der Liste wählen oder das Feld leeren.');return;}
 const ob=O.find(x=>objLabel(x)===NEU.obj);if(!ob){toast('Bitte ein Objekt aus der Liste wählen.');return;}if(!NEU.titel.trim()){toast('Bitte die Störung kurz benennen.');return;}
-  const e=E.find(x=>x.objekt_id===ob.id&&x.bezeichnung===NEU.ein);NEU.busy=true;render();
+  const e=einAus(ob.id,NEU.ein);NEU.busy=true;render();
   try{const fotos=NEU.dateien.length?await hochladen(NEU.dateien):[];
     const rec={objekt_id:ob.id,einheit_id:e?e.id:null,pid:NEU.pid||null,melder_name:NEU.mel.trim()||null,melder_kontakt:NEU.kon.trim()||null,melder_rolle:NEU.pid?'Mieter':'Sonstige',titel:NEU.titel.trim(),
       beschreibung:((!e&&NEU.ein?'Bereich: '+NEU.ein+'\n':'')+NEU.text.trim())||null,kategorie:NEU.kat.trim()||null,dringlichkeit:NEU.dr,quelle:NEU.mail?'Mail':'OS',mails:NEU.mail?[NEU.mail]:[],erfasst_von:ICH||null,zustaendig:(asuVon(NEU.zu)||{}).name||null,zustaendig_gid:(asuVon(NEU.zu)||{}).gid||null,faellig:NEU.fa||null,fotos,verlauf:[eintrag('Meldung',NEU.mail?'aus der Mail von '+(NEU.mail.von.name||NEU.mail.von.mail)+' erfasst':'im OS erfasst')]};
@@ -359,7 +361,7 @@ async function ausMail(id){neuOeffnen('');NEU.lade=true;render();
     const akt=x=>{const bis=(MKE[x.pid]||{}).bis||x.bis;return (!x.von||x.von<=HEUTE)&&(!bis||bis>=HEUTE);};
     const T=adr?MK.filter(x=>(x.kontakte||[]).some(k=>hat(k.email))||hat((MKE[x.pid]||{}).email)):[],mk=T.find(akt)||T[0];
     if(mk){const e=E.find(u=>(u.nahaus_id&&u.nahaus_id===mk.unit)||u.id===mk.unit),ob=(e&&O.find(o=>o.id===e.objekt_id))||O.find(o=>o.kz===mk.obj);
-      if(ob)NEU.obj=objLabel(ob);if(e)NEU.ein=e.bezeichnung;NEU.pid=mk.pid;NEU.mel=(MKE[mk.pid]||{}).mieter||mk.mieter||NEU.mel;}
+      if(ob)NEU.obj=objLabel(ob);if(e)NEU.ein=einLabel(e);NEU.pid=mk.pid;NEU.mel=(MKE[mk.pid]||{}).mieter||mk.mieter||NEU.mel;}
     for(const a of (m.anhaenge||[]).filter(a=>/^(image|video)\/|pdf/i.test(a.typ||'')&&(a.groesse||0)<15e6).slice(0,10)){
       try{const x=await pf({aktion:'anhang',id:m.id,aid:a.id}),bin=atob(x.daten),u=new Uint8Array(bin.length);for(let i=0;i<bin.length;i++)u[i]=bin.charCodeAt(i);NEU.dateien.push(new File([u],x.name||a.name,{type:x.typ||a.typ}));}catch(e){}}}
   catch(e){toast('Mail konnte nicht gelesen werden: '+(e.message||e));}
