@@ -145,6 +145,7 @@ td.wrapc{white-space:normal;min-width:120px}
 table.kb td{vertical-align:top}
 tr.erg td{font-style:italic;color:var(--muted)}
 tr.kaut td{opacity:.75}
+tr.vt td{border-top:0;padding-top:0;font-size:12px;color:var(--muted)}tr.vt td.wrapc{padding-left:22px}
 .note.warnbox{background:var(--warn-bg);border-color:transparent;color:var(--warn)}
 .note.small{font-size:12px}
 h3{font-size:14px;margin:14px 0 6px}
@@ -657,11 +658,14 @@ function compute(opt){ opt=opt||{}; const ZMAP={}, BU={};
     x.spaet=pay.filter(r=>r.d>=sechs&&Number(r.d.slice(8,10))>10&&Number(r.d.slice(8,10))<25).length;
     { const offen={}, rid=r=>r.id||('r'+r.d+r.t); for(const r of x.rows){ if(r.s) offen[rid(r)]=r.s; }
       /* 1. ausdrückliche Zuordnungen aus den Buchungen */
-      for(const r of x.rows){ if(!r.h) continue; let rest=r.h; for(const a of (r.alloc||[])){ if(offen[a.id]==null) continue; const c=Math.min(offen[a.id],Number(a.b)||0,rest); offen[a.id]=r2(offen[a.id]-c); rest=r2(rest-c); } r.rest=rest; r.ia=null; }
+      for(const r of x.rows){ if(!r.h) continue; let rest=r.h; r.vt=null; for(const a of (r.alloc||[])){ if(offen[a.id]==null) continue; const c=Math.min(offen[a.id],Number(a.b)||0,rest); offen[a.id]=r2(offen[a.id]-c); rest=r2(rest-c); if(c>0.005) (r.vt=r.vt||[]).push({id:a.id,b:r2(c)}); } r.rest=rest; r.ia=null; r.va=null; r.uebrig=0; }
       /* 2. Periodenzuordnung: Zahlung zuerst auf die Miete des Monats, für den sie gedacht ist */
       for(const r of x.rows){ if(!r.h||r.alloc||r.k||!r.zm||r.rest<=0.005) continue;
         for(const zm of r.zm) for(const q of x.rows){ if(r.rest<=0.005) break; if(!q.s||q.k||q.art!=='WARM_MIETE'||q.d.slice(0,7)!==zm) continue; const id=rid(q), c=r2(Math.min(offen[id],r.rest)); if(c<=0.005) continue; offen[id]=r2(offen[id]-c); r.rest=r2(r.rest-c); (r.ia=r.ia||[]).push({id,b:c}); } }
       /* 3. Rest der Reihe nach auf die ältesten offenen Posten */
+      /* Anzeige: welcher Teil jeder Zahlung auf welche Sollstellung entfällt (älteste zuerst) */
+      { const o2=Object.assign({},offen), sl=x.rows.filter(q=>q.s&&!q.fut);
+        for(const r of x.rows){ if(!r.h||r.fut) continue; let rest=r.rest; for(const q of sl){ if(rest<=0.005) break; if(!!q.k!==!!r.k) continue; const id=rid(q), c=r2(Math.min(o2[id]||0,rest)); if(c<=0.005) continue; o2[id]=r2(o2[id]-c); rest=r2(rest-c); (r.va=r.va||[]).push({id,b:c}); } r.uebrig=rest; } }
       const pool={n:0,k:0}; for(const r of x.rows){ if(!r.h||r.fut) continue; pool[r.k?'k':'n']+=r.rest; }
       const opF=[]; for(const r of x.rows){ if(!r.s||!r.fut) continue; const id=rid(r), o=offen[id]; r.offen=o; if(o>0.005) opF.push({id,d:r.d,t:r.t,b:o,voll:r.s,k:r.k?1:0,fut:1}); }
       const op=[]; for(const r of x.rows){ if(!r.s||r.fut) continue; const id=rid(r), w=r.k?'k':'n'; const c=Math.min(pool[w],offen[id]); pool[w]=r2(pool[w]-c); const o=r2(offen[id]-c); r.offen=o; if(o>0.005) op.push({id,d:r.d,t:r.t,b:o,voll:r.s,k:r.k?1:0}); }
@@ -1708,8 +1712,11 @@ function renderDash(x){ const mk=ed(x.mk), sn=STN[x.status], a=ampel(x), K=mk.ko
   /* Mieterkonto */
   if(x.erg) h+='<div class="note warnbox">'+x.erg+' Monatsmiete'+(x.erg>1?'n fehlen':' fehlt')+' in Nahaus als Sollstellung und '+(x.erg>1?'wurden':'wurde')+' aus dem Mietvertrag ergänzt (kursiv).</div>';
   h+='<details class="card wide sec" data-sec="konto"'+(SEC.konto?' open':'')+'><summary class="ch">Mieterkonto<span class="sub">'+(zrAktiv('konto')?esc(zrText('konto'))+' · ':'')+'Saldo '+eur(x.saldo)+' · '+x.rows.length+' Buchungen</span></summary>'+zrBox('konto')+(zrAktiv('konto')?(()=>{ const Z=zrKonto(x); return '<div class="zrsum">'+(ZR.konto.von?'<span>Saldovortrag zum '+esc(dmy(ZR.konto.von))+': <b>'+eur(Z.vor)+'</b></span>':'')+'<span>Soll im Zeitraum: <b>'+eur(Z.soll)+'</b></span><span>Ist im Zeitraum: <b>'+eur(Z.ist)+'</b></span><span>Saldo'+(ZR.konto.bis?' am '+esc(dmy(ZR.konto.bis>today?today:ZR.konto.bis)):'')+': <b>'+eur(Z.ende)+'</b></span></div>'; })():'')+pdfButtons('konto')+'<div class="tablewrap"><table class="kb"><thead><tr><th>Datum</th><th>Buchung</th><th class="n">Soll</th><th class="n">Ist</th><th class="n">Saldo</th></tr></thead><tbody>';
-  const idT={}; for(const r of x.rows) if(r.id) idT[r.id]=r.t;
-  for(const r of x.rows.filter(r=>zrIn('konto',r.d)).reverse()){ h+='<tr class="'+(r.e?'erg':'')+(r.fut?' fut':'')+(r.k?' kaut':'')+'"><td>'+esc(dmy(r.d))+'</td><td class="wrapc">'+esc(r.t)+'<div class="sub">'+esc(r.src)+(r.fut?' · fällig ab '+esc(dmy(r.d))+', zählt noch nicht im Saldo':'')+(r.k?' · Kaution (getrennt)':'')+(r.man?' · manuell zugeordnet':'')+(r.alloc&&r.alloc.length?' · zugeordnet auf: '+r.alloc.map(q=>esc(idT[q.id]||'Posten')+' '+eur(q.b)).join(', '):r.ia&&r.ia.length?' · für '+r.ia.map(q=>esc(idT[q.id]||'Posten')+' '+eur(q.b)).join(', '):'')+(r.s&&r.fut&&r.offen!=null&&r.offen<=0.005?' · bereits bezahlt':'')+(r.s&&r.offen!=null&&!r.fut?(r.offen>0.005?(r.offen<r.s-0.005?' · teilweise bezahlt, offen '+eur(r.offen):' · offen'):' · bezahlt'):'')+'</div>'+(r.key?zuordSel(r,x.mk):'')+'</td><td class="n">'+(r.s?eur(r.s):'')+'</td><td class="n pos">'+(r.h?eur(r.h):'')+'</td><td class="n">'+(r.saldo==null?'':'<b class="'+(r.saldo>0.5?'neg':'')+'">'+eur(r.saldo)+'</b>')+'</td></tr>'; }
+  const idT={}; for(const r of x.rows){ if(r.id) idT[r.id]=r.t; if(r.s) idT['r'+r.d+r.t]=r.t; }
+  const verteil=r=>[...(r.vt||[]),...(r.ia||[]),...(r.va||[])];
+  const mehrfach=r=>!!r.h&&!r.fut&&(verteil(r).length>1||(r.uebrig>0.005&&verteil(r).length>0));
+  for(const r of x.rows.filter(r=>zrIn('konto',r.d)).reverse()){ h+='<tr class="'+(r.e?'erg':'')+(r.fut?' fut':'')+(r.k?' kaut':'')+'"><td>'+esc(dmy(r.d))+'</td><td class="wrapc">'+esc(r.t)+'<div class="sub">'+esc(r.src)+(r.fut?' · fällig ab '+esc(dmy(r.d))+', zählt noch nicht im Saldo':'')+(r.k?' · Kaution (getrennt)':'')+(r.man?' · manuell zugeordnet':'')+(mehrfach(r)?'':r.h&&!r.fut&&!verteil(r).length&&r.uebrig>0.005?' · nicht verteilt (Guthaben)':r.h&&!r.fut&&verteil(r).length===1?' · für '+esc(idT[verteil(r)[0].id]||'Sollstellung'):r.alloc&&r.alloc.length?' · zugeordnet auf: '+r.alloc.map(q=>esc(idT[q.id]||'Posten')+' '+eur(q.b)).join(', '):r.ia&&r.ia.length?' · für '+r.ia.map(q=>esc(idT[q.id]||'Posten')+' '+eur(q.b)).join(', '):'')+(r.s&&r.fut&&r.offen!=null&&r.offen<=0.005?' · bereits bezahlt':'')+(r.s&&r.offen!=null&&!r.fut?(r.offen>0.005?(r.offen<r.s-0.005?' · teilweise bezahlt, offen '+eur(r.offen):' · offen'):' · bezahlt'):'')+'</div>'+(r.key?zuordSel(r,x.mk):'')+'</td><td class="n">'+(r.s?eur(r.s):'')+'</td><td class="n pos">'+(r.h?eur(r.h):'')+'</td><td class="n">'+(r.saldo==null?'':'<b class="'+(r.saldo>0.5?'neg':'')+'">'+eur(r.saldo)+'</b>')+'</td></tr>'
+    +(mehrfach(r)?verteil(r).map(q=>'<tr class="vt'+(r.k?' kaut':'')+'"><td></td><td class="wrapc">davon für '+esc(idT[q.id]||'Sollstellung')+'</td><td></td><td class="n">'+eur(q.b)+'</td><td></td></tr>').join('')+(r.uebrig>0.005&&!r.fut&&verteil(r).length?'<tr class="vt'+(r.k?' kaut':'')+'"><td></td><td class="wrapc">davon nicht verteilt (Guthaben)</td><td></td><td class="n">'+eur(r.uebrig)+'</td><td></td></tr>':''):''); }
   h+='</tbody></table></div>'+zuordList(x.mk)+'<div class="sub" style="margin-top:6px">Neueste Buchungen oben.</div></details>';
   KARTEN.push(h); return H0+sortiereKarten(KARTEN); }
 /* aufklappbare Bereiche immer alphabetisch nach ihrer Überschrift */
