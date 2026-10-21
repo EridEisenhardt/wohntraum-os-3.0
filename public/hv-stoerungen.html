@@ -150,6 +150,7 @@ function detail(s){const o=objVon(s),e=einVon(s),m=mieterVon(e);let h='';
       `<label class="fl">Dringlichkeit<input id="e-dr" list="dl-dr" value="${esc(s.dringlichkeit||'Normal')}"></label>`,`<label class="fl">Einheit<input id="e-ein" list="dl-ein-${s.id}" value="${esc(e?einLabel(e):'')}"><datalist id="dl-ein-${s.id}">${E.filter(x=>x.objekt_id===s.objekt_id).map(x=>`<option value="${esc(einLabel(x))}">`).join('')}</datalist></label>`,
       `<label class="fl">Gemeldet von<input id="e-mel" value="${esc(s.melder_name||'')}"></label>`,`<label class="fl">Kontakt<input id="e-kon" value="${esc(s.melder_kontakt||'')}"></label>`,`<label class="fl">Eingang über<input id="e-eing" list="dl-eing" value="${esc(eingangVon(s))}"><datalist id="dl-eing">${EINGANG.concat(['Mieter-Formular']).map(x=>`<option value="${esc(x)}">`).join('')}</datalist></label>`])}
      <label class="fl">Beschreibung<textarea id="e-text" rows="4">${esc(s.beschreibung||'')}</textarea></label>
+     <div class="acts" style="margin-top:-4px;margin-bottom:6px"><button class="small" id="e-ki" onclick="editKi()">Mit KI formulieren</button></div>
      <div class="acts"><button class="primary" onclick="bearbeitenSpeichern('${s.id}')">Speichern</button><button onclick="EDIT=null;render()">Abbrechen</button><button class="ghost" style="margin-left:auto;color:var(--neg)" onclick="stoerungLoeschen('${s.id}')">Störung löschen</button></div></div>`;}
   else{h+=`<div class="card"><div class="ch">Meldung Nr. ${esc(s.nr)} (Ticket ${tk(s)}) – ${esc(s.titel)}<button class="ghost small" onclick="EDIT='${s.id}';render()">Bearbeiten</button></div>${spalten([
       kv('Objekt',esc(objLabel(o))),kv('Einheit',e?esc(e.bezeichnung)+(e.lage?' · '+esc(e.lage):''):''),kv('Kategorie',esc(s.kategorie||'')),kv('Dringlichkeit',dPill(s.dringlichkeit)),
@@ -251,7 +252,8 @@ function neuForm(){const ob=O.find(x=>objLabel(x)===NEU.obj),EL=ob?E.filter(x=>x
     `<div class="fl">Dringlichkeit<div class="seg" style="width:max-content">${['Normal','Dringend','Notfall'].map(x=>`<button class="${NEU.dr===x?'on':''}" onclick="NEU.dr='${x}';render()">${x}</button>`).join('')}</div></div>`])}
    <div class="fl">Eingang über<div class="seg" style="width:max-content;max-width:100%;flex-wrap:wrap">${EINGANG.map(x=>`<button class="${NEU.eing===x?'on':''}" onclick="NEU.eing='${x}';render()">${x}</button>`).join('')}</div></div>
    <label class="fl">Störung (kurz)<input value="${esc(NEU.titel)}" oninput="NEU.titel=this.value" placeholder="z. B. Heizung im Bad wird nicht warm"></label>
-   <label class="fl">Beschreibung<textarea rows="3" oninput="NEU.text=this.value">${esc(NEU.text)}</textarea></label>
+   <label class="fl">Beschreibung<textarea rows="3" oninput="NEU.text=this.value" placeholder="Stichworte genügen, z. B. Bad Heizkörper kalt seit Montag, Thermostat schon gedreht, Mieter ab 16 Uhr erreichbar">${esc(NEU.text)}</textarea></label>
+   <div class="acts" style="margin-top:-4px;margin-bottom:6px"><button class="small" onclick="neuKi()"${NEU.ki?' disabled':''}>${NEU.ki?'KI formuliert …':'Mit KI formulieren'}</button>${NEU.kiAlt?'<button class="small ghost" onclick="neuKiZurueck()">Rückgängig</button>':''}<span class="sub">macht aus den Stichworten eine klare Beschreibung und schlägt Titel und Kategorie vor, wenn sie noch leer sind</span></div>
    <div class="acts"><label class="up">Fotos hinzufügen<input type="file" accept="image/*,video/*,application/pdf" multiple hidden onchange="NEU.dateien=NEU.dateien.concat([...this.files]);render()"></label>${NEU.dateien.length?`<span class="sub">${NEU.dateien.map(f=>esc(f.name)).join(', ')}</span>`:''}
     ${NEU.mail?`<label class="sub" style="display:flex;gap:4px;align-items:center;margin-left:auto"><input type="checkbox" ${NEU.bestaetigen?'checked':''} onchange="NEU.bestaetigen=this.checked"> Eingangsbestätigung per Mail senden</label>`:''}
     <label class="sub" style="display:flex;gap:4px;align-items:center;${NEU.mail?'':'margin-left:auto'}"><input type="checkbox" ${NEU.asana?'checked':''} onchange="NEU.asana=this.checked"> direkt in Asana anlegen (Mieter Meldungen, Eingang)</label>
@@ -285,6 +287,16 @@ function notizSek(s){const st=NT[s.id]=NT[s.id]||{text:'',dateien:[],asana:true}
   return h;}
 async function kiApi(body){let r;try{r=await fetch('/api/ki',{method:'POST',headers:{'content-type':'application/json',authorization:'Bearer '+await token()},body:JSON.stringify(body)});}catch(e){throw new Error('KI nicht erreichbar.');}
   let j=null;try{j=await r.json();}catch(e){}if(!j)throw new Error('KI nicht erreichbar ('+r.status+').');if(j.error)throw new Error(j.error);return j;}
+async function neuKi(){const t=(NEU.text||'').trim()||(NEU.titel||'').trim();if(!t){toast('Bitte zuerst ein paar Stichworte in die Beschreibung schreiben.');return;}
+  NEU.ki=true;render();
+  try{const r=await kiApi({aufgabe:'stoerung',text:(NEU.titel?'Kurztitel: '+NEU.titel+'\n':'')+(NEU.ein?'Einheit: '+NEU.ein+'\n':'')+'Notizen: '+(NEU.text||'')});
+    NEU.kiAlt={text:NEU.text,titel:NEU.titel,kat:NEU.kat};if(r.text)NEU.text=r.text;if(!NEU.titel.trim()&&r.titel)NEU.titel=r.titel;if(!NEU.kat&&r.kategorie&&KATS.includes(r.kategorie))NEU.kat=r.kategorie;}
+  catch(e){toast('KI: '+(e.message||e));}NEU.ki=false;render();}
+function neuKiZurueck(){if(!NEU.kiAlt)return;Object.assign(NEU,NEU.kiAlt);NEU.kiAlt=null;render();}
+async function editKi(){const ta=document.getElementById('e-text'),b=document.getElementById('e-ki');const t=(ta.value||'').trim();if(!t){toast('Bitte zuerst ein paar Stichworte eingeben.');return;}
+  b.disabled=true;b.textContent='KI formuliert …';
+  try{const r=await kiApi({aufgabe:'stoerung',text:'Kurztitel: '+(document.getElementById('e-titel').value||'')+'\nNotizen: '+t});if(r.text){ta.dataset.alt=t;ta.value=r.text;}}
+  catch(e){toast('KI: '+(e.message||e));}b.disabled=false;b.textContent='Mit KI formulieren';}
 async function ntKi(sid,art){const st=NT[sid];if(!st||!st.text.trim()){toast('Bitte zuerst Stichworte eingeben.');return;}st.busy=art;render();
   try{const r=await kiApi({aufgabe:art,text:st.text});st.alt=st.text;st.text=String(r.text||'').trim()||st.text;}catch(e){toast('KI: '+(e.message||e));}
   st.busy='';render();}
