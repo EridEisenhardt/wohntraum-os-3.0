@@ -23,6 +23,10 @@ h1{font-size:20px;font-weight:800}
 .lk{padding:8px;border-bottom:1px solid var(--line)}
 .inp{width:100%;background:var(--soft);border:1px solid var(--line);border-radius:7px;padding:7px 10px}
 .chats{overflow:auto;flex:1}
+.grp>summary{list-style:none;cursor:pointer;padding:8px 12px;font-weight:700;font-size:13px;color:var(--accent);display:flex;justify-content:space-between;gap:8px;border-bottom:1px solid var(--line);background:var(--soft)}
+.grp>summary::-webkit-details-marker{display:none}.grp>summary::before{content:'▸';color:var(--muted);margin-right:6px}.grp[open]>summary::before{content:'▾'}
+.grp>summary span:first-child{flex:1}.grp .n{background:var(--accent);color:#fff;border-radius:999px;font-size:11px;padding:0 7px}
+.gleer{padding:8px 12px;font-size:12px;color:var(--muted);border-bottom:1px solid var(--line)}
 .chat{display:block;width:100%;text-align:left;border:0;border-bottom:1px solid var(--line);border-radius:0;background:transparent;padding:9px 12px;min-height:0}
 .chat:hover{background:var(--soft)}.chat.on{background:var(--accent-soft)}
 .chat .z1{display:flex;justify-content:space-between;gap:8px}
@@ -54,6 +58,8 @@ code{background:var(--soft);border-radius:4px;padding:1px 5px;font-size:13px}
 const sb=window.supabase.createClient('https://jqzxctfqvcwbctpjksvg.supabase.co','eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpxenhjdGZxdmN3YmN0cGprc3ZnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODIxMzA0MzIsImV4cCI6MjA5NzcwNjQzMn0.RKIbZxJdusKWWPjBJqlxZ8e1m8So02UslOg55YRsn3o');
 const esc=s=>(s==null?'':String(s)).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 const p2=n=>String(n).padStart(2,'0');
+let GR=null,GROFFEN={},UID='';try{GROFFEN=JSON.parse(localStorage.getItem('cliq_gr_offen')||'{}')||{};}catch(e){}
+const STANDARDGRUPPEN={'Allgemein':[],'Kollegen':['Eric Eisenhardt','Jürgen Reuter','Mustafa Frotan','Stephan Klopsch'],'Private Immobilien EE':[],'Wohntraum':[]};
 let ST=null,CHATS=[],ICH='',AKT='',MSG=[],SUCHE='',BUSY='',FEHLER='',ENTWURF={};
 let GELESEN={};try{GELESEN=JSON.parse(localStorage.getItem('cliq_gelesen')||'{}')||{};}catch(e){}
 const merkeGelesen=()=>{try{localStorage.setItem('cliq_gelesen',JSON.stringify(GELESEN));}catch(e){}};
@@ -69,7 +75,24 @@ function tagText(ms){const d=new Date(ms),h=new Date();const g=new Date(h.getFul
 function verlinken(t){return esc(t).replace(/(https?:\/\/[^\s<]+)/g,u=>'<a href="'+u+'" target="_blank" rel="noopener">'+u+'</a>');}
 const ungelesen=c=>c.letzte&&c.letzte.vonId!==ICH&&c.letzte.zeit>(GELESEN[c.id]||0);
 
-function render(){const app=document.getElementById('app');const fokus=document.activeElement&&document.activeElement.id,pos=fokus&&document.activeElement.selectionStart;
+const chatBtn=c=>'<button class="chat'+(c.id===AKT?' on':'')+(ungelesen(c)?' neu':'')+'" data-chat="'+esc(c.id)+'"><div class="z1"><b>'+esc(c.name||'Chat')+'</b><span class="sub">'+wann(c.letzte?c.letzte.zeit:c.geaendert)+'</span></div><div class="vor">'+(c.letzte?esc((c.letzte.vonId===ICH?'Du: ':c.letzte.von&&c.typ!=='direct_message'?c.letzte.von.split(' ')[0]+': ':'')+c.letzte.text):(c.typ==='channel'?'Kanal':''))+'</div></button>';
+const gruppeVon=id=>{if(!GR)return '';for(const g in GR.gruppen)if(GR.gruppen[g].includes(id))return g;return '';};
+function listeHtml(L,q){if(!L.length)return '<div class="leer">'+(BUSY==='chats'?'Lädt …':'Keine Chats gefunden.')+'</div>';
+  if(q||!GR)return L.map(chatBtn).join('');
+  let h='';const namen=Object.keys(GR.gruppen).sort((a,b)=>a.localeCompare(b,'de'));
+  for(const g of namen){const C=L.filter(c=>GR.gruppen[g].includes(c.id)),nu=C.filter(ungelesen).length,offen=GROFFEN[g]!==false;
+    h+='<details class="grp" data-gr="'+esc(g)+'"'+(offen?' open':'')+'><summary><span>'+esc(g)+'</span>'+(nu?'<span class="n">'+nu+'</span>':'')+'</summary>'
+      +(C.length?C.map(chatBtn).join(''):'<div class="gleer">Noch leer. Chat öffnen und oben rechts die Gruppe „'+esc(g)+'“ wählen. <button class="ghost" style="min-height:0;padding:0 4px;font-size:12px" data-grweg="'+esc(g)+'">Gruppe entfernen</button></div>')+'</details>';}
+  const rest=L.filter(c=>!gruppeVon(c.id));
+  if(rest.length)h+='<details class="grp" data-gr="__rest"'+(GROFFEN.__rest!==false?' open':'')+'><summary><span>Weitere Chats</span>'+(rest.filter(ungelesen).length?'<span class="n">'+rest.filter(ungelesen).length+'</span>':'')+'</summary>'+rest.map(chatBtn).join('')+'</details>';
+  return h;}
+async function gruppenLaden(){try{const {data:u}=await sb.auth.getUser();UID=u&&u.user&&u.user.id||'';
+    const {data}=await sb.from('os_docs').select('data').eq('app','oc').eq('pfad','cliq/gruppen/'+UID).maybeSingle();GR=data&&data.data&&data.data.gruppen?data.data:null;}catch(e){GR=null;}
+  if(!GR){GR={gruppen:{}};for(const g in STANDARDGRUPPEN){GR.gruppen[g]=CHATS.filter(c=>c.name.toLowerCase()===g.toLowerCase()||(c.typ!=='channel'&&STANDARDGRUPPEN[g].some(n=>c.name.toLowerCase().includes(n.toLowerCase().split(' ').slice(-1)[0])))).map(c=>c.id);}
+    gruppenSpeichern();}}
+async function gruppenSpeichern(){if(!UID)return;try{await sb.from('os_docs').upsert({app:'oc',pfad:'cliq/gruppen/'+UID,data:GR,updated_at:new Date().toISOString()});}catch(e){}}
+function gruppeSetzen(id,g){g=String(g||'').trim();if(g===gruppeVon(id))return;for(const k in GR.gruppen)GR.gruppen[k]=GR.gruppen[k].filter(x=>x!==id);if(g){if(!GR.gruppen[g])GR.gruppen[g]=[];GR.gruppen[g].push(id);GROFFEN[g]=true;}gruppenSpeichern();render();toast(g?'In Gruppe „'+g+'“ verschoben.':'Aus der Gruppe genommen.');}
+function render(){const app=document.getElementById('app');const fokus=document.activeElement&&document.activeElement.id,pos=fokus&&document.activeElement.selectionStart,fwert=fokus==='gruppe'?document.activeElement.value:null;
   if(!ST){app.innerHTML='<div class="leer">Lädt …</div>';return;}
   let h='<div class="kopf"><div><h1>Cliq</h1><div class="sub">'+(ST.verbunden?'verbunden als '+esc(ST.name||ST.mail||''):'Chats mit den Kollegen direkt im OS')+'</div></div><div class="acts">'
     +(ST.verbunden?'<button data-a="neu"'+(BUSY?' disabled':'')+'>Aktualisieren</button><button class="ghost" data-a="trennen">Verbindung trennen</button>':'')+'</div></div>';
@@ -85,10 +108,10 @@ function render(){const app=document.getElementById('app');const fokus=document.
   const ak=CHATS.find(c=>c.id===AKT);
   h+='<div class="haupt'+(AKT?' offen':'')+'"><div class="liste"><div class="lk"><input class="inp" type="search" id="suche" placeholder="Chat suchen …" value="'+esc(SUCHE)+'" autocomplete="off"></div><div class="chats">'
     +(FEHLER?'<div class="note">'+esc(FEHLER)+'</div>':'')
-    +(L.length?L.map(c=>'<button class="chat'+(c.id===AKT?' on':'')+(ungelesen(c)?' neu':'')+'" data-chat="'+esc(c.id)+'"><div class="z1"><b>'+esc(c.name||'Chat')+'</b><span class="sub">'+wann(c.letzte?c.letzte.zeit:c.geaendert)+'</span></div><div class="vor">'+(c.letzte?esc((c.letzte.vonId===ICH?'Du: ':c.letzte.von&&c.typ!=='direct_message'?c.letzte.von.split(' ')[0]+': ':'')+c.letzte.text):'')+'</div></button>').join(''):'<div class="leer">'+(BUSY==='chats'?'Lädt …':'Keine Chats gefunden.')+'</div>')
+    +listeHtml(L,q)
     +'</div></div><div class="rechts">';
   if(!ak)h+='<div class="leer">Einen Chat auswählen.</div>';
-  else{h+='<div class="rk acts" style="justify-content:space-between"><div class="acts"><button class="ghost" data-a="zurueck" style="padding:4px 6px">Zurück</button><b>'+esc(ak.name)+'</b></div></div><div class="verlauf" id="verlauf">';
+  else{h+='<div class="rk acts" style="justify-content:space-between"><div class="acts"><button class="ghost" data-a="zurueck" style="padding:4px 6px">Zurück</button><b>'+esc(ak.name)+'</b>'+(ak.typ==='channel'?'<span class="sub">Kanal</span>':'')+'</div>'+(GR?'<div class="acts"><span class="sub">Gruppe</span><input class="inp" id="gruppe" list="dl-gr" value="'+esc(gruppeVon(ak.id))+'" placeholder="Gruppe wählen oder neu eintippen …" style="width:230px;padding:5px 9px" autocomplete="off"><datalist id="dl-gr">'+Object.keys(GR.gruppen).sort((a,b)=>a.localeCompare(b,'de')).map(g=>'<option value="'+esc(g)+'">').join('')+'</datalist></div>':'')+'</div><div class="verlauf" id="verlauf">';
     let letzterTag='';
     for(const m of MSG){const t=tagText(m.zeit);if(t!==letzterTag){h+='<div class="tag">'+esc(t)+'</div>';letzterTag=t;}
       const ich=m.vonId===ICH;h+='<div class="msg'+(ich?' ich':'')+'"><div class="w">'+(ich?'Du':esc(m.von))+' · '+wann(m.zeit,true)+'</div>'+verlinken(m.text||'('+m.typ+')')+'</div>';}
@@ -100,7 +123,7 @@ function render(){const app=document.getElementById('app');const fokus=document.
   app.innerHTML=h;
   const v=document.getElementById('verlauf');if(v)v.scrollTop=unten?v.scrollHeight:alt;
   const cl=document.querySelector('.chats');if(cl)cl.scrollTop=clTop;
-  if(fokus){const n=document.getElementById(fokus);if(n){n.focus();try{n.setSelectionRange(pos,pos);}catch(e){}}}}
+  if(fokus){const n=document.getElementById(fokus);if(n){if(fwert!=null)n.value=fwert;n.focus();try{n.setSelectionRange(pos,pos);}catch(e){}}}}
 
 async function chatsLaden(still){if(!still){BUSY='chats';render();}
   try{const j=await api({aktion:'chats'});CHATS=j.chats||[];ICH=j.ich||ICH;FEHLER='';}catch(e){FEHLER=e.message||String(e);}
@@ -117,7 +140,7 @@ async function senden(){const ta=document.getElementById('text');const t=(ta&&ta
   BUSY='';render();const n=document.getElementById('text');if(n)n.focus();}
 async function verbinden(){const w=window.open('','cliqlogin','width=620,height=760');try{const j=await api({aktion:'verbinden'});if(w)w.location.href=j.url;else location.href=j.url;}catch(e){if(w)w.close();toast(e.message||String(e),6000);}}
 async function status(){try{ST=await api({aktion:'status'});try{const {data}=await sb.auth.getSession();ST.osMail=data&&data.session&&data.session.user&&data.session.user.email||'';}catch(x){}}catch(e){ST={eingerichtet:true,verbunden:false};FEHLER=e.message;}
-  if(ST.verbunden){ICH=ST.id||'';await chatsLaden();const c=new URLSearchParams(location.search).get('chat');if(c&&CHATS.some(x=>x.id===c)){AKT=c;nachrichtenLaden();}}else render();}
+  if(ST.verbunden){ICH=ST.id||'';await chatsLaden();await gruppenLaden();render();const c=new URLSearchParams(location.search).get('chat');if(c&&CHATS.some(x=>x.id===c)){AKT=c;nachrichtenLaden();}}else render();}
 
 const A={
   verbinden:()=>verbinden(),
@@ -126,9 +149,14 @@ const A={
   senden:()=>senden(),zurueck:()=>{AKT='';render();},
 };
 document.addEventListener('click',e=>{const l=e.target.closest('a[href]');if(l){try{const u=new URL(l.href);if(u.origin===location.origin&&window.top!==window){e.preventDefault();window.top.postMessage({osOeffne:u.pathname+u.search},location.origin);}}catch(x){}return;}
+  const gw=e.target.closest('[data-grweg]');if(gw){e.preventDefault();const g=gw.dataset.grweg;if(confirm('Gruppe „'+g+'“ entfernen?')){delete GR.gruppen[g];gruppenSpeichern();render();}return;}
   const b=e.target.closest('[data-a],[data-chat]');if(!b||b.disabled)return;
   if(b.dataset.a&&A[b.dataset.a]){A[b.dataset.a]();return;}
   if(b.dataset.chat){const ta=document.getElementById('text');if(ta&&AKT)ENTWURF[AKT]=ta.value;AKT=b.dataset.chat;nachrichtenLaden();}});
+document.addEventListener('focusin',e=>{const t=e.target;if(t.matches&&t.matches('input[list]')){t.dataset.alt=t.value;t.value='';}});
+document.addEventListener('focusout',e=>{const t=e.target;if(t.matches&&t.matches('input[list]')&&!t.value&&t.dataset.alt){t.value=t.dataset.alt;}});
+document.addEventListener('change',e=>{const t=e.target;if(t.id==='gruppe'&&AKT){gruppeSetzen(AKT,t.value);}});
+document.addEventListener('toggle',e=>{const d=e.target;if(d&&d.matches&&d.matches('details.grp')){GROFFEN[d.dataset.gr]=d.open;try{localStorage.setItem('cliq_gr_offen',JSON.stringify(GROFFEN));}catch(x){}}},true);
 document.addEventListener('input',e=>{const t=e.target;if(t.id==='suche'){SUCHE=t.value;render();}else if(t.id==='text'&&AKT)ENTWURF[AKT]=t.value;});
 document.addEventListener('keydown',e=>{if(e.target.id==='text'&&e.key==='Enter'&&!e.shiftKey&&!e.isComposing){e.preventDefault();senden();}});
 window.addEventListener('message',e=>{if(e.origin===location.origin&&e.data&&e.data.cliqVerbunden){toast('Cliq ist verbunden.');status();}});

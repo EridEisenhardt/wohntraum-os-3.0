@@ -100,8 +100,22 @@ export async function POST(req) {
     const token = await zugang(user.id, k)
 
     if (a === 'chats') {
-      const j = await cliq(token, '/api/v2/chats?limit=' + Math.min(Number(b.anzahl) || 50, 100))
-      return antwort({ chats: (j.chats || j.data || []).map(chatKurz).sort((x, y) => (y.letzte ? y.letzte.zeit : y.geaendert) - (x.letzte ? x.letzte.zeit : x.geaendert)), ich: k.zoho_id || '' })
+      // Direktchats, Gruppenchats und Kanäle zusammenführen; angeheftete Chats markieren
+      const [j, kan, pin] = await Promise.all([
+        cliq(token, '/api/v2/chats?limit=100'),
+        cliq(token, '/api/v2/channels?joined=true&limit=100').catch(() => ({})),
+        cliq(token, '/api/v2/chats?limit=100&pinned=true').catch(() => ({})),
+      ])
+      const M = new Map()
+      for (const c of (j.chats || j.data || [])) { const x = chatKurz(c); if (x.id) M.set(x.id, x) }
+      for (const c of (kan.channels || kan.data || [])) {
+        const id = c.chat_id; if (!id) continue
+        const x = M.get(id) || { id, name: c.name || '', typ: 'channel', geaendert: zeit(c.last_modified_time), letzte: null }
+        x.typ = 'channel'; x.kanal = c.unique_name || ''; if (!x.name) x.name = c.name || ''; M.set(id, x)
+      }
+      for (const c of (pin.chats || pin.data || [])) { const x = M.get(c.chat_id); if (x) x.angeheftet = true }
+      const L = [...M.values()].sort((x, y) => (y.letzte ? y.letzte.zeit : y.geaendert) - (x.letzte ? x.letzte.zeit : x.geaendert))
+      return antwort({ chats: L, ich: k.zoho_id || '' })
     }
     if (a === 'nachrichten') {
       const id = encodeURIComponent(String(b.chat || ''))
