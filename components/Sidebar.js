@@ -202,6 +202,7 @@ export const NAV = [
   { type: 'link', href: '/ziele-entwicklung', icon: 'ti-target-arrow', label: 'Zieleentwicklung', area: ['vertrieb', 'hv'], mod: 'privat' },
   { type: 'link', href: '/persoenliche-assistenz', icon: 'ti-user-heart', label: 'Persönliche Assistenz', area: ['vertrieb', 'hv'], mod: 'privat' },
   { type: 'link', href: '/haushaltshilfe', icon: 'ti-home-heart', label: 'Haushaltshilfe', area: ['vertrieb', 'hv'], mod: 'privat' },
+  { type: 'link', href: '/benachrichtigungen', icon: 'ti-bell', label: 'Benachrichtigungen', area: 'common' },
   { type: 'link', href: '/konto', icon: 'ti-user-cog', label: 'Mein Konto', area: 'common' },
   { type: 'link', href: '/nutzer', icon: 'ti-shield-lock', label: 'Nutzerverwaltung', area: 'common', mod: 'nutzer' },
   { type: 'group', key: 'berichte', icon: 'ti-report', label: 'Berichte', area: ['vertrieb', 'hv', 'backoffice'], mod: 'dashboards', items: [

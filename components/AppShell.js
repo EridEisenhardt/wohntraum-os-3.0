@@ -4,6 +4,7 @@ import { supabase, supabaseConfigured } from '@/lib/supabaseClient'
 import Sidebar from './Sidebar'
 import FavToggle from './FavToggle'
 import TabShell from './TabShell'
+import Benachrichtigungen from './Benachrichtigungen'
 
 export default function AppShell({ children }) {
   const [session, setSession] = useState(null)
@@ -84,6 +85,7 @@ export default function AppShell({ children }) {
       <div className="app-body">
         <Sidebar user={user} demo={!supabaseConfigured} onLogout={() => supabase.auth.signOut()} role={role} perms={perms} />
         <main className="main"><FavToggle /><TabShell /></main>
+        <Benachrichtigungen session={session} />
       </div>
     </div>
   )

@@ -99,6 +99,13 @@ export async function POST(req) {
     const b = await req.json().catch(() => ({}))
     const a = b.aktion, auth = req.headers.get('authorization')
 
+    // für Benachrichtigungen: neue Mails im Posteingang seit einem Zeitpunkt
+    if (a === 'neu') {
+      const seit = /^\d{4}-\d\d-\d\dT[\d:.]+Z$/.test(String(b.seit || '')) ? b.seit : new Date(Date.now() - 600e3).toISOString()
+      const j = await graph(BOX() + "/mailFolders/inbox/messages?$top=20&$orderby=receivedDateTime desc&$select=id,subject,from,receivedDateTime,isRead&$filter=receivedDateTime gt " + seit)
+      return antwort({ mails: (j.value || []).map(m => ({ id: m.id, betreff: m.subject || '', von: adr(m.from), datum: m.receivedDateTime, gelesen: !!m.isRead })) })
+    }
+
     if (a === 'ordner') return antwort({ postfach: POSTFACH(), ordner: await alleOrdner() })
 
     if (a === 'liste') {
