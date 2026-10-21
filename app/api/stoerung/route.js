@@ -24,6 +24,14 @@ async function asana(pfad, json) {
   return j.data
 }
 
+function nameAkte(voll, nach) {
+  const n = String(voll || '').trim(), l = String(nach || '').trim()
+  if (!n) return ''
+  if (l && n.endsWith(l) && n.length > l.length) return l.toUpperCase() + ' ' + n.slice(0, n.length - l.length).trim()
+  const w = n.split(/\s+/)
+  return w.length > 1 ? w[w.length - 1].toUpperCase() + ' ' + w.slice(0, -1).join(' ') : n.toUpperCase()
+}
+
 export async function POST(req) {
   try {
     if (!process.env.ASANA_TOKEN) return antwort({ ok: false, hinweis: 'Asana nicht verbunden' })
@@ -32,7 +40,8 @@ export async function POST(req) {
     if (b.aktion === 'asana') {
       const d = await rpc('stoerung_fuer_asana', { p_id: String(b.id || ''), p_token: String(b.token || '') })
       if (!d) return antwort({ ok: false })
-      const name = [d.kz, d.einheit, d.titel].filter(Boolean).join('_').replace(/\s*_\s*/g, '_')
+      // Schema: Objekt_Einheit_NACHNAME Vorname_Thema
+      const name = [d.kz, String(d.einheit || '').replace(/\s+/g, ''), nameAkte(d.mieter, d.nachname) || nameAkte(d.melder), d.titel].filter(Boolean).join('_')
       const fotos = (d.fotos || []).map(f => '- ' + (f.name || 'Foto') + ': ' + BUCKET() + f.pfad).join('\n')
       const notes = [(d.dringlichkeit && d.dringlichkeit !== 'Normal' ? 'DRINGLICHKEIT: ' + d.dringlichkeit + '\n' : '') + (d.beschreibung || ''),
         'Objekt: ' + d.kz + ' · ' + (d.adresse || '') + (d.einheit ? ' · ' + d.einheit : ''),

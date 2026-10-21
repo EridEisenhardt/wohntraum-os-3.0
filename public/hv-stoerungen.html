@@ -203,8 +203,11 @@ async function zuSpeichern(sid){const s=S.find(x=>x.id===sid);const zn=(document
   const t=[zn?'zuständig: '+zn:'ohne Zuständigen',fa?'fällig '+dfmt(fa):'ohne Fälligkeit'].join(' · ');
   if(!await speichern(s,{zustaendig:zn||null,zustaendig_gid:u?u.gid:null,faellig:fa||null},eintrag('Zuständigkeit',t)))return;render();
   if(s.asana_gid){try{await asApi({aktion:'aktualisieren',gid:s.asana_gid,zustaendig:u?u.gid:'',faellig:fa});toast('Gespeichert und in Asana übernommen.');}catch(e){toast('Gespeichert, Asana nicht aktualisiert: '+e.message);}}else toast('Gespeichert.');}
+function nameAkte(voll,nach){const n=String(voll||'').split(',')[0].trim(),l=String(nach||'').trim();if(!n)return '';if(l&&n.endsWith(l)&&n.length>l.length)return l.toUpperCase()+' '+n.slice(0,n.length-l.length).trim();const w=n.split(/\s+/);return w.length>1?w[w.length-1].toUpperCase()+' '+w.slice(0,-1).join(' '):n.toUpperCase();}
 async function asanaAnlegen(sid){const s=S.find(x=>x.id===sid);if(!s||s.asana_gid)return;const o=objVon(s),e=einVon(s);
-  try{const j=await asApi({aktion:'anlegen',name:[o.kz,e&&e.bezeichnung,s.titel].filter(Boolean).join('_'),projekt:PROJEKT,abschnitt:ABSCHNITT[s.status]||ABSCHNITT.Neu,zustaendig:s.zustaendig_gid||'',faellig:s.faellig||'',notiz:asanaNotiz(s)});
+  const mk=(s.pid&&MK.find(x=>x.pid===s.pid))||null,mv=mieterVon(e),mkx=mk||(mv&&MK.find(x=>x.pid===mv.pid))||null;
+  const person=mkx?nameAkte((MKE[mkx.pid]||{}).mieter||((mkx.kontakte||[])[0]||{}).name||mkx.mieter||'',(mkx.namen||[])[0]):(s.melder_rolle==='Mieter'?nameAkte(s.melder_name):'');
+  try{const j=await asApi({aktion:'anlegen',name:[o.kz,e&&String(e.bezeichnung||'').replace(/\s+/g,''),person,s.titel].filter(Boolean).join('_'),projekt:PROJEKT,abschnitt:ABSCHNITT[s.status]||ABSCHNITT.Neu,zustaendig:s.zustaendig_gid||'',faellig:s.faellig||'',notiz:asanaNotiz(s)});
     await speichern(s,{asana_gid:j.aufgabe.gid,asana_link:j.aufgabe.link},eintrag('Asana','Aufgabe in „Mieter Meldungen“ angelegt'));toast('In Asana angelegt.');render();}
   catch(err){toast('Asana: '+(err.message||err));}}
 async function abgleich(){const L=S.filter(s=>offen(s)&&s.asana_gid);if(!L.length)return;const el=document.getElementById('sync');el.textContent='Gleiche mit Asana ab …';

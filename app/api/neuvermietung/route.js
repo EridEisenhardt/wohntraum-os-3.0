@@ -38,13 +38,13 @@ const AUFG = {
     text: 'Was zu tun ist:\n1. Im OS unter „Mieter und Wohnung“ weitere Mieter, bisherige Anschrift und E-Mail vervollständigen.\n2. In der Kachel „Mietvertrag“ die Verträge auswählen (Mietvertrag, Beherbergungsvertrag, Leihvertrag; „Tod des Mieters“ ist immer dabei). Bank, IBAN und BIC kommen automatisch vom Mietkonto des Objekts, bitte prüfen. Offene Angaben ausfüllen und mit „Vorschau“ prüfen.\n3. WICHTIG: Der Mietvertrag wird über DocuSign versendet und unterschrieben. Dazu auf „Über DocuSign senden“ klicken. Erst unterschreiben die Mieter, dann Eric.\n4. Haben alle unterschrieben, legt das OS den unterschriebenen Vertrag selbst ab und schiebt den Mieter automatisch zu „Mietvertrag unterschrieben“.\n\nWenn der Vertrag über DocuSign versendet ist, kann diese Aufgabe abgehakt werden. Sobald beide Seiten unterschrieben haben, im OS auf „Unterschrieben – Mieterkonto und Asana-Einzug anlegen“ klicken.',
     unter: ['Mieterdaten vollständig', 'Verträge ausgewählt und Vorschau geprüft', 'Über DocuSign zur Unterschrift versendet'] },
 }
-// Aufgabenname: Abschnitt_Objekt_Einheit_NACHNAME Vorname, z. B. OS_Mieterselbstauskunft_R6_WE6_MÜLLER Max
+// Aufgabenname: Objekt_Einheit_NACHNAME Vorname_Thema, z. B. R6_WE6_MÜLLER Max_Mieterselbstauskunft
 function aufgabenName(schritt, k, d) {
   const lab = String((k.wohnung && k.wohnung.label) || '').split(' · ')[0].trim()
   const [kz, ...ein] = lab ? lab.split(/\s+/) : []
   const nach = String((d && d.nachname) || k.name || '').trim().toUpperCase(), vor = String((d && d.vorname) || k.vorname || '').trim()
   const person = [nach, vor].filter(Boolean).join(' ') || String(k.kontakt || 'Interessent')
-  return [ABN[schritt], kz || '', ein.join(''), person].filter(Boolean).join('_')
+  return [kz || '', ein.join(''), person, SPN[schritt] || String(ABN[schritt] || '').replace(/^OS_/, '')].filter(Boolean).join('_')
 }
 const MSA_ZEILEN = [['objekt', 'Objekt'], ['einzug', 'Einzug'], ['personen', 'Personen'], ['arbeit', 'Arbeitsverhältnis'], ['arbeitgeber', 'Arbeitgeber / seit'], ['einkommen', 'Nettoeinkommen Haushalt'], ['amt', 'Miete zahlt Jobcenter / Sozialamt'], ['behoerde', 'Behörde'], ['haustiere', 'Haustiere'], ['haustiere_welche', 'Welche Haustiere'], ['eidesstattlich', 'Eidesstattliche Versicherung / Haftbefehl (3 Jahre)'], ['info', 'Wichtige Informationen']]
 
