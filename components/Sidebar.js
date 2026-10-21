@@ -43,6 +43,7 @@ export const NAV = [
     { href: '/personal/zustaendigkeiten', icon: 'ti-list-check', label: 'Zuständigkeiten' },
   ] },
   { type: 'group', key: 'v-postfach', icon: 'ti-mail', label: 'Postfach', mod: 'verwalto', items: [
+    { href: '/verwalto/cliq', icon: 'ti-messages', label: 'Cliq', perm: '/hausverwaltung/mieterkonten' },
     { href: '/verwalto/postfach', icon: 'ti-inbox', label: 'Postfach Hausverwaltung', perm: '/hausverwaltung/mieterkonten' },
   ] },
   { type: 'group', key: 'v-prozesslandkarte', icon: 'ti-folders', label: 'Prozesslandkarte 3.0', mod: 'verwalto', items: [

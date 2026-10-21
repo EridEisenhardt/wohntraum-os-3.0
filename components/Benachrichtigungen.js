@@ -60,10 +60,23 @@ export default function Benachrichtigungen({ session }) {
       if (data.length) ls.set('os_notif_seit_stoerung', data[data.length - 1].created_at)
       melden('stoerung', data.filter(x => !eigene.includes(x.erfasst_von)).map(x => ({ id: x.id, text: 'ST-' + String(x.nr || 0).padStart(5, '0') + ' · ' + (x.titel || '') + (x.melder_name ? ' (' + x.melder_name + ')' : '') })))
     }
+    let cliqStatus = { verbunden: null, geprueft: 0 }
+    const cliq = async () => {
+      const e = einstellungen(); if (!e.cliq.an) return
+      const post = (body) => fetch('/api/cliq', { method: 'POST', headers: { 'content-type': 'application/json', authorization: 'Bearer ' + session.access_token }, body: JSON.stringify(body) }).then(r => r.json())
+      if (cliqStatus.verbunden === null || (!cliqStatus.verbunden && Date.now() - cliqStatus.geprueft > 600000)) { const s = await post({ aktion: 'status' }); cliqStatus = { verbunden: !!(s && s.verbunden), geprueft: Date.now() } }
+      if (!cliqStatus.verbunden) return
+      const seitMs = ls.get('os_notif_seit_cliq_ms', 0) || Date.now()
+      if (!ls.get('os_notif_seit_cliq_ms', 0)) { ls.set('os_notif_seit_cliq_ms', seitMs); return }
+      const j = await post({ aktion: 'neu', seit: seitMs }); if (!j || j.error) return
+      ls.set('os_notif_seit_cliq_ms', j.jetzt || Date.now())
+      melden('cliq', (j.neu || []).map(c => ({ id: c.id + ':' + c.letzte.zeit, text: (c.typ === 'direct_message' ? c.name : c.name + ' · ' + c.letzte.von) + ': ' + String(c.letzte.text || '').slice(0, 120) })))
+    }
     const runde = async () => {
       if (aus || !fuehrend()) return
       try { await stoerungen() } catch (x) {}
       try { await mails() } catch (x) {}
+      try { await cliq() } catch (x) {}
     }
     const t0 = setTimeout(runde, 4000), iv = setInterval(runde, 45000)
     return () => { aus = true; clearTimeout(t0); clearInterval(iv) }

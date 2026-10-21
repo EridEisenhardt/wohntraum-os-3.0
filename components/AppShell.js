@@ -5,6 +5,7 @@ import Sidebar from './Sidebar'
 import FavToggle from './FavToggle'
 import TabShell from './TabShell'
 import Benachrichtigungen from './Benachrichtigungen'
+import CliqTeilen from './CliqTeilen'
 
 export default function AppShell({ children }) {
   const [session, setSession] = useState(null)
@@ -86,6 +87,7 @@ export default function AppShell({ children }) {
         <Sidebar user={user} demo={!supabaseConfigured} onLogout={() => supabase.auth.signOut()} role={role} perms={perms} />
         <main className="main"><FavToggle /><TabShell /></main>
         <Benachrichtigungen session={session} />
+        <CliqTeilen session={session} />
       </div>
     </div>
   )

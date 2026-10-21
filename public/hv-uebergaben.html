@@ -325,7 +325,7 @@ const gesperrt=()=>PR&&PR.status==='Abgeschlossen';
 function renderEdit(){const ob=objVon(PR.objekt_id),ei=einVon(PR.einheit_id),m=PR.pid?MK.find(x=>x.pid===PR.pid):null,auszug=PR.typ==='Auszug',zu=gesperrt();
   const od=PR.pid?(MKE[PR.pid]||{}).od:'';
   let h=`<div class="ekopf"><div class="kopf" style="margin-bottom:0"><div><h1>Übergabeprotokoll ${esc(PR.typ)}</h1><div class="sub">${esc(ob.kz||'')} · ${esc(ei?ei.bezeichnung:'')} · ${esc(ob.strasse||'')}, ${esc((ob.plz||'')+' '+(ob.ort||''))} · ${esc(PR.mieter_name||'')}</div></div>
-    <div class="acts" style="margin-top:0"><span class="status" id="spst">${zu?'':speicherText()}</span><button data-act="liste">Zur Liste</button>${m?`<button data-act="konto">Mieterkonto</button>`:''}${zu?'':`<button class="primary" data-act="abschliessen"${BUSY?' disabled':''}>${BUSY==='ab'?'Wird abgeschlossen …':'Protokoll abschließen'}</button>`}</div></div></div>`;
+    <div class="acts" style="margin-top:0"><span class="status" id="spst">${zu?'':speicherText()}</span><button data-act="liste">Zur Liste</button><button data-act="cliq">An Kollegen senden</button>${m?`<button data-act="konto">Mieterkonto</button>`:''}${zu?'':`<button class="primary" data-act="abschliessen"${BUSY?' disabled':''}>${BUSY==='ab'?'Wird abgeschlossen …':'Protokoll abschließen'}</button>`}</div></div></div>`;
   if(zu)h+=`<div class="card"><div class="ch">Abgeschlossen am ${zeit(PR.abgeschlossen_am)}</div><div class="acts" style="margin-top:0"><button class="primary" data-act="pdf" data-id="${PR.id}">PDF öffnen</button>${PR.pdf_od&&PR.pdf_od.id?'<button data-act="odoeffnen">In OneDrive öffnen</button>':''}${!auszug?(D.wgb_pdf?'<button data-act="wgboeffnen">Wohnungsgeberbestätigung öffnen</button>':`<button data-act="wgbneu"${BUSY?' disabled':''}>${BUSY==='wgb'?'Wird erstellt …':'Wohnungsgeberbestätigung erstellen'}</button>`):''}${!auszug&&!D.wgb_pdf&&SIGSTAT&&!SIGSTAT.unterschrift?'<label class="up">Unterschrift Eric hinterlegen<input type="file" accept="image/png" hidden data-vorlage="unterschrift"></label>':''}${!auszug&&!D.wgb_pdf&&SIGSTAT&&!SIGSTAT.stempel?'<label class="up">Stempel hinterlegen<input type="file" accept="image/png" hidden data-vorlage="stempel"></label>':''}<button data-act="mailform"${MAILF?' class="on"':''}>Per Mail an Mieter senden</button><button class="ghost" data-act="wiederoeffnen">Wieder bearbeiten</button></div>
     ${PR.pdf_od&&PR.pdf_od.pfad?'<div class="sub" style="margin-top:6px">Abgelegt in OneDrive: '+esc(PR.pdf_od.pfad)+'</div>':'<div class="sub" style="margin-top:6px">Das PDF liegt im OS. Für dieses Mieterkonto ist kein OneDrive-Mieterordner zugeordnet.</div>'}
     ${D.wgb_pdf&&D.wgb_pdf.od&&D.wgb_pdf.od.pfad?'<div class="sub">Wohnungsgeberbestätigung abgelegt in OneDrive: '+esc(D.wgb_pdf.od.pfad)+'</div>':''}
@@ -549,6 +549,8 @@ async function pdfOeffnen(id){const p=P.find(x=>x.id===id)||(PR&&PR.id===id?PR:n
   if(error||!data){if(w)w.close();toast('PDF konnte nicht geöffnet werden.');return;}if(w)w.location.href=data.signedUrl;else window.open(data.signedUrl,'_blank');}
 
 /* ---------- Aktionen ---------- */
+function cliqTeilen(titel,pfad){try{(window.top||window).postMessage({cliqTeilen:{titel:String(titel||''),link:location.origin+pfad}},location.origin);}catch(e){}}
+
 const ACT={
   neu:()=>{W={obj:'',ein:'',pid:null,typ:'Einzug',q:''};ANS='neu';render();setTimeout(()=>{const i=document.getElementById('w-obj');if(i)i.focus();},50);},
   abbrechen:()=>{W=null;ANS='liste';render();},
@@ -563,6 +565,7 @@ const ACT={
   oeffnen:(d,b,e)=>{if(e.target.closest('[data-act="pdf"]'))return;oeffnen(d.id);},
   pdf:(d,b,e)=>{e.stopPropagation();pdfOeffnen(d.id);},
   liste:async()=>{if(PR&&!gesperrt())await speichern();ANS='liste';PR=null;history.replaceState(null,'',location.pathname);render();window.scrollTo(0,0);},
+  cliq:()=>{const ob=objVon(PR.objekt_id),ei=einVon(PR.einheit_id);cliqTeilen('Übergabeprotokoll '+PR.typ+': '+[ob.kz,ei&&ei.bezeichnung,PR.mieter_name].filter(Boolean).join(' · '),'/hausverwaltung/uebergaben?id='+PR.id);},
   konto:()=>{(window.top||window).location.href='/hausverwaltung/mieterkonten?pid='+encodeURIComponent(PR.pid);},
   add:d=>{if(d.l==='wgb_personen')(D.wgb_personen=D.wgb_personen||[]).push({vorname:'',nachname:''});else if(d.l==='schluessel')D.schluessel.push({typ:'',anzahl:'',nummer:''});else D.zaehler.push({zid:'',typ:'',nummer:'',malo:'',einzug:'',stand:'',foto:''});speichernBald();renderErhalten();},
   del:d=>{const L=D[d.l],i=+d.i;if(d.l==='raeume'&&(L[i].text||(L[i].fotos||[]).length)&&!confirm('Raum „'+(L[i].name||'')+'“ mit Text und Fotos entfernen?'))return;L.splice(i,1);speichernBald();renderErhalten();},
