@@ -13,7 +13,7 @@ const KLEIN = 3 * 1024 * 1024
 const BUCKETS = ['uebergaben', 'mieterakten', 'vertraege']
 const ROOT = 'Prozesslandkarte 3.0'
 const WELL = { inbox: 'Posteingang', drafts: 'Entwürfe', sentitems: 'Gesendete Elemente', deleteditems: 'Gelöschte Elemente', junkemail: 'Junk-E-Mail', archive: 'Archiv', outbox: 'Postausgang' }
-const LISTFELDER = 'id,subject,from,toRecipients,ccRecipients,receivedDateTime,sentDateTime,bodyPreview,isRead,hasAttachments,flag,importance,isDraft,conversationId,parentFolderId,internetMessageId'
+const LISTFELDER = 'id,subject,from,toRecipients,ccRecipients,receivedDateTime,sentDateTime,bodyPreview,isRead,hasAttachments,flag,importance,isDraft,conversationId,parentFolderId,internetMessageId,categories'
 
 let WK = { m: null, bis: 0 }
 async function wellKnown() {
@@ -43,7 +43,7 @@ async function alleOrdner() {
 const adr = x => ({ name: (x && x.emailAddress && x.emailAddress.name) || '', mail: ((x && x.emailAddress && x.emailAddress.address) || '').toLowerCase() })
 const kurz = m => ({ id: m.id, betreff: m.subject || '', von: adr(m.from), an: (m.toRecipients || []).map(adr), cc: (m.ccRecipients || []).map(adr),
   datum: m.receivedDateTime || m.sentDateTime, vorschau: m.bodyPreview || '', gelesen: !!m.isRead, anhang: !!m.hasAttachments,
-  markiert: !!(m.flag && m.flag.flagStatus === 'flagged'), wichtig: m.importance === 'high', entwurf: !!m.isDraft, ordner: m.parentFolderId, msgId: m.internetMessageId || '' })
+  markiert: !!(m.flag && m.flag.flagStatus === 'flagged'), wichtig: m.importance === 'high', entwurf: !!m.isDraft, ordner: m.parentFolderId, msgId: m.internetMessageId || '', kategorien: m.categories || [] })
 const empf = s => [...new Set(String(s || '').split(/[,;\s]+/).map(x => x.trim()).filter(x => /^[^@\s<>]+@[^@\s<>]+\.[^@\s<>]+$/.test(x)))].map(address => ({ emailAddress: { address } }))
 const htmlText = t => String(t || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\n/g, '<br>')
 const ids = b => (Array.isArray(b.ids) ? b.ids : [b.id]).filter(Boolean).slice(0, 100).map(String)
@@ -148,6 +148,25 @@ export async function POST(req) {
       if (b.markiert != null) patch.flag = { flagStatus: b.markiert ? 'flagged' : 'notFlagged' }
       for (const id of ids(b)) await graph(BOX() + '/messages/' + encodeURIComponent(id), { method: 'PATCH', json: patch })
       return antwort({ ok: true })
+    }
+
+    // Tags = Outlook-Kategorien. Liste der Kategorien des Postfachs (braucht MailboxSettings.Read, sonst leer)
+    if (a === 'tagliste') {
+      try { const j = await graph(BOX() + '/outlook/masterCategories'); return antwort({ tags: (j.value || []).map(c => ({ name: c.displayName, farbe: c.color || '' })) }) }
+      catch (e) { return antwort({ tags: [], hinweis: 'Kategorienliste nicht lesbar (Berechtigung MailboxSettings.Read fehlt).' }) }
+    }
+
+    if (a === 'tag') {
+      const hinzu = (Array.isArray(b.hinzu) ? b.hinzu : []).map(x => String(x).trim()).filter(Boolean).slice(0, 10)
+      const weg = (Array.isArray(b.weg) ? b.weg : []).map(String)
+      const out = {}
+      for (const id of ids(b)) {
+        const m = await graph(BOX() + '/messages/' + encodeURIComponent(id) + '?$select=categories')
+        const k = [...new Set((m.categories || []).filter(x => !weg.includes(x)).concat(hinzu))]
+        await graph(BOX() + '/messages/' + encodeURIComponent(id), { method: 'PATCH', json: { categories: k } })
+        out[id] = k
+      }
+      return antwort({ ok: true, kategorien: out })
     }
 
     if (a === 'verschieben') {
