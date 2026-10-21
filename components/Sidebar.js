@@ -23,7 +23,7 @@ export const NAV = [
     { href: '/verwalto/vertragsvorlagen', icon: 'ti-file-certificate', label: 'Vertragsvorlagen', offen: true },
   ] },
   { type: 'group', key: 'v-fuhrpark', icon: 'ti-car', label: 'Fuhrpark', mod: 'verwalto', items: [
-    { href: '/verwalto/fuhrpark', icon: 'ti-car', label: 'Fahrzeuge', offen: true },
+    { href: '/verwalto/fuhrpark', icon: 'ti-car', label: 'Fahrzeuge', perm: '/hausverwaltung/mieterkonten' },
   ] },
   { type: 'group', key: 'v-hausverwaltung', icon: 'ti-home-cog', label: 'Hausverwaltung', mod: 'verwalto', items: [
     { href: '/verwalto/objekte', icon: 'ti-building-skyscraper', label: 'Objekte', perm: '/hausverwaltung/objekte' },
