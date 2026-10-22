@@ -557,6 +557,10 @@ const ed=mk=>Object.assign({},mk,EDIT[mk.pid]||{});
 /* Auszug (Mietende) kann im OS eingetragen werden (EDIT.bis) und gilt dann vor dem Wert aus Nahaus */
 function applyBis(){ for(const mk of Object.values(MK)){ if(!('bisNH' in mk)) mk.bisNH=mk.bis||null; const e=EDIT[mk.pid]; mk.bis=(e&&e.bis)?e.bis:mk.bisNH; } }
 const today=new Date().toISOString().slice(0,10), curM=today.slice(0,7);
+/* Anteilige Miete im Einzugs- bzw. Auszugsmonat (nach Kalendertagen) */
+function anteil(mk,m){ const [y,mm]=m.split('-').map(Number), D=new Date(y,mm,0).getDate(); let a=1,e=D;
+  if(mk.von&&mk.von.slice(0,7)===m) a=Number(mk.von.slice(8,10))||1; if(mk.bis&&mk.bis.slice(0,7)===m) e=Number(mk.bis.slice(8,10))||D;
+  if(a<=1&&e>=D) return null; const tage=Math.max(0,e-a+1); return {f:tage/D,tage,D,text:'anteilig '+String(a).padStart(2,'0')+'.–'+String(e).padStart(2,'0')+'.'+m.slice(5)+'., '+tage+'/'+D+' Tage'}; }
 const addM=(m,n)=>{ const [y,mm]=m.split('-').map(Number); const d=new Date(y,mm-1+n,1); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0'); };
 const dnum2=s=>Date.parse(s)/864e5;
 const ART={WARM_MIETE:'Miete',KAUTION:'Kaution',DUNNING_FEES:'Mahngebühren',INTEREST_EXPENSES:'Verzugszinsen',BETRIEBSKOSTEN:'Betriebskosten',SP:'Sonstiges'};
@@ -624,7 +628,7 @@ function compute(opt){ opt=opt||{}; const ZMAP={}, BU={};
     const osM=new Set();
     const U=mk.ueb||'';
     for(const m of Object.keys(SL).sort()){ const p=(SL[m].posten||{})[mk.pid]; if(!p||m<START||(U&&m+'-01'<=U)||(mk.bis&&m>mk.bis.slice(0,7))) continue; osM.add(m); mieteMonate.add(m);
-      x.rows.push({id:'os:'+m,d:m+'-01',t:'Miete '+m.slice(5)+'/'+m.slice(0,4),s:p.b,h:0,src:'Sollstellung OS · erstellt '+dmy(SL[m].erstellt),art:'WARM_MIETE',fut:(m+'-01')>today,teile:p}); }
+      x.rows.push({id:'os:'+m,d:m+'-01',t:'Miete '+m.slice(5)+'/'+m.slice(0,4)+(p.anteil?' ('+p.anteil+')':''),s:p.b,h:0,src:'Sollstellung OS · erstellt '+dmy(SL[m].erstellt),art:'WARM_MIETE',fut:(m+'-01')>today,teile:p}); }
     const bisF=addM(curM,2)+'-01'; for(const s of mk.soll||[]){ const m=s.m||(s.d||'').slice(0,7); const sd=s.d||m+'-01'; if(m<START||sd>bisF) continue; if(U&&sd>U) continue; /* nach dem Übernahme-Stichtag wird nur noch im OS gebucht */ if(s.art==='WARM_MIETE'&&osM.has(m)) continue; const fu=sd>today; if(s.art==='WARM_MIETE'&&!fu) mieteMonate.add(m);
       x.rows.push({id:s.id,d:s.d||m+'-01',t:(s.t||ART[s.art]||s.art),s:s.b>0?s.b:0,h:s.b<0?-s.b:0,src:s.src==='AUTO_SOLL'?'Nahaus (automatisch)':s.src==='TRANSACTION_ASSIGNMENT'?'Nahaus (aus Zahlung)':'Nahaus',k:s.art==='KAUTION',art:s.art,fut:fu}); }
     /* Mahngebühren und Mahnhistorie aus den Mahnläufen im OS */
@@ -638,7 +642,8 @@ function compute(opt){ opt=opt||{}; const ZMAP={}, BU={};
     const nachf=(byUnit[mk.unit]||[]).filter(o=>o.pid!==mk.pid&&(o.von||'')>(mk.von||'')).map(o=>(o.von||'').slice(0,7)).sort()[0]||'';
     const ab=first>START?first:START; for(let m=von<ab?ab:von; m+'-01'<=today&&m<=bis; m=addM(m,1)){ if(mieteMonate.has(m)) continue; const st=stufeAt(mk,m); if(!st) continue;
       if((mk.von||'')>='2026-01-01'&&nhErst&&m<nhErst) continue; if(nachf&&m>=nachf) continue; if(U&&m+'-01'<=U) continue;
-      x.rows.push({id:'erg:'+m,d:m+'-01',t:'Miete '+m.slice(5)+'/'+m.slice(0,4),s:st.total,h:0,src:'ergänzt aus Mietvertrag',e:1,art:'WARM_MIETE'}); x.erg=(x.erg||0)+1; }
+      const an=anteil(mk,m), dm=an&&mk.von&&mk.von.slice(0,7)===m?mk.von:m+'-01';
+      x.rows.push({id:'erg:'+m,d:dm,t:'Miete '+m.slice(5)+'/'+m.slice(0,4)+(an?' ('+an.text+')':''),s:an?r2(st.total*an.f):st.total,h:0,src:'ergänzt aus Mietvertrag',e:1,art:'WARM_MIETE'}); x.erg=(x.erg||0)+1; }
     /* Nahaus-Zahlungen für Zeiträume ohne Kontoauszüge im OS */
     for(const p of mk.nhIst||[]){ const m=(p.d||'').slice(0,7); if(m<START) continue; const uebP=U&&p.d<=U; if(!uebP&&m>=first) continue;
       let pn=''; if(uebP){ const L=BU[mk.pid]||[]; const i=L.findIndex(q=>!q.u&&Math.abs(q.b-p.b)<0.01&&Math.abs(dnum2(q.d)-dnum2(p.d))<=4); if(i>=0){ L[i].u=1; pn=L[i].n; } }
@@ -1555,7 +1560,9 @@ function saveEdit(pid,patch,msg,log){ if(log!==false&&(log||msg)) { const tx=Str
 const nextMon=()=>addM(curM,1);
 function sollFuer(m){ const aktivKz=new Set(objekte.filter(o=>o.aktiv!==false).map(o=>o.kz)); const P={};
   for(const mk of Object.values(MK)){ if(!aktivKz.has(mk.obj)||mk.extern) continue; if(mk.von&&mk.von.slice(0,7)>m) continue; if(mk.bis&&mk.bis.slice(0,7)<m) continue;
-    const st=stufeAt(mk,m); if(!st||!st.total) continue; P[mk.pid]={b:st.total,kalt:st.kalt||0,bk:st.bk||0,hk:st.hk||0,strom:st.strom||0,sonst:st.sonst||0,others:st.others||[]}; }
+    const st=stufeAt(mk,m); if(!st||!st.total) continue; const an=anteil(mk,m), f=an?an.f:1;
+    P[mk.pid]={b:r2(st.total*f),kalt:r2((st.kalt||0)*f),bk:r2((st.bk||0)*f),hk:r2((st.hk||0)*f),strom:r2((st.strom||0)*f),sonst:r2((st.sonst||0)*f),others:(st.others||[]).map(o=>({t:o.t,b:r2((o.b||0)*f)}))};
+    if(an) P[mk.pid].anteil=an.text; }
   return P; }
 function runSoll(m,auto){ if(!db||!canWrite) return; const P=sollFuer(m); const n=Object.keys(P).length; if(!n){ if(!auto) toast('Keine laufenden Mietverhältnisse für '+m.slice(5)+'/'+m.slice(0,4)+'.'); return; }
   const doc={monat:m,erstellt:today,auto:!!auto,anzahl:n,summe:r2(Object.values(P).reduce((a,p)=>a+p.b,0)),posten:P};
