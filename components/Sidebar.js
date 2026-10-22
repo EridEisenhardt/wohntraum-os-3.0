@@ -2,6 +2,44 @@
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { useState, useEffect } from 'react'
+import { supabase } from '../lib/supabaseClient'
+
+/* Globale Suche: Mieter, Objekte, Kontakte, Firmen, Mietinteressenten, Störungen, Fahrzeuge, Gesellschaften */
+const normS = (t) => String(t || '').toLowerCase().replace(/ä/g, 'ae').replace(/ö/g, 'oe').replace(/ü/g, 'ue').replace(/ß/g, 'ss').replace(/\s+/g, ' ')
+let SUCHDATEN = null, SUCHSTAND = 0, SUCHLAEUFT = null
+async function suchdatenLaden() {
+  if (!supabase) return []
+  if (SUCHDATEN && Date.now() - SUCHSTAND < 5 * 60e3) return SUCHDATEN
+  if (SUCHLAEUFT) return SUCHLAEUFT
+  SUCHLAEUFT = (async () => {
+    const q = (p) => p.then((r) => (r && r.data) || []).catch(() => [])
+    const heute = new Date().toISOString().slice(0, 10)
+    const [mk, ob, ko, fi, ck, mi, st, fz, ge] = await Promise.all([
+      q(supabase.from('os_docs').select('pfad,obj:data->>obj,einheit:data->>einheit,mieter:data->>mieter,bis:data->>bis').eq('app', 'oc').like('pfad', 'mietkonten/%')),
+      q(supabase.from('obj_objekte').select('id,kz,name,strasse,plz,ort,status')),
+      q(supabase.from('hv_kontakte').select('id,vorname,name,email,telefon,position')),
+      q(supabase.from('hv_firmen').select('id,name,branche,telefon,ort')),
+      q(supabase.from('crm_kontakte').select('id,vorname,name,email,telefon,ort')),
+      q(supabase.from('mietinteressenten').select('id,vorname,name,kontakt,status,archiviert')),
+      q(supabase.from('stoerungen').select('id,nr,titel,melder_name,status').order('created_at', { ascending: false }).limit(500)),
+      q(supabase.from('fz_fahrzeuge').select('id,kennzeichen,modell,fahrer')),
+      q(supabase.from('ges_gesellschaften').select('kuerzel,name,ort')),
+    ])
+    const L = []
+    const add = (typ, label, sub, href, extra) => { if (label) L.push({ typ, label, sub: sub || '', href, text: normS([label, sub, extra].join(' ')) }) }
+    mk.forEach((m) => add('Mieter', m.mieter, [m.obj, m.einheit].filter(Boolean).join(' ') + (m.bis && m.bis < heute ? ' · ausgezogen' : ''), '/hausverwaltung/mieterkonten?pid=' + encodeURIComponent(String(m.pfad).split('/')[1])))
+    ob.forEach((o) => add('Objekt', o.kz + (o.strasse || o.name ? ' · ' + (o.strasse || o.name) : ''), [o.plz, o.ort].filter(Boolean).join(' ') + (o.status === 'Verkauft' ? ' · verkauft' : ''), '/verwalto/objekt?id=' + encodeURIComponent(o.id), o.name))
+    ko.forEach((k) => add('Kontakt', [k.vorname, k.name].filter(Boolean).join(' '), [k.position, k.telefon, k.email].filter(Boolean).join(' · '), '/hausverwaltung/dienstleister?kontakt=' + encodeURIComponent(k.id)))
+    fi.forEach((f) => add('Firma', f.name, [f.branche, f.ort, f.telefon].filter(Boolean).join(' · '), '/hausverwaltung/dienstleister?firma=' + encodeURIComponent(f.id)))
+    ck.forEach((k) => add('CRM-Kontakt', [k.vorname, k.name].filter(Boolean).join(' '), [k.ort, k.telefon, k.email].filter(Boolean).join(' · '), '/crm'))
+    mi.forEach((m) => add('Mietinteressent', [m.vorname, m.name].filter(Boolean).join(' ') || m.kontakt, [m.status, m.archiviert ? 'archiviert' : ''].filter(Boolean).join(' · '), '/vermietung/mietinteressenten?open=' + encodeURIComponent(m.id), m.kontakt))
+    st.forEach((x) => add('Störung', (x.nr ? x.nr + ' · ' : '') + (x.titel || ''), [x.melder_name, x.status].filter(Boolean).join(' · '), '/hausverwaltung/stoerungen?id=' + encodeURIComponent(x.id)))
+    fz.forEach((f) => add('Fahrzeug', f.kennzeichen, [f.modell, f.fahrer].filter(Boolean).join(' · '), '/verwalto/fuhrpark?id=' + encodeURIComponent(f.id)))
+    ge.forEach((g) => add('Gesellschaft', g.kuerzel + ' · ' + (g.name || ''), g.ort || '', '/verwalto/gesellschaften?kz=' + encodeURIComponent(g.kuerzel)))
+    SUCHDATEN = L; SUCHSTAND = Date.now(); SUCHLAEUFT = null; return L
+  })()
+  return SUCHLAEUFT
+}
 
 export const NAV = [
   { type: 'link', href: '/', icon: 'ti-layout-dashboard', label: 'Cockpit', exact: true, area: 'common' },
@@ -269,6 +307,7 @@ export const gbOf = (n) => (n.type === 'group' ? GB_MAP[n.key] : GB_MAP[n.href])
 export default function Sidebar({ user, demo, onLogout, role, perms }) {
   const path = usePathname()
   const [q, setQ] = useState('')
+  const [suchdaten, setSuchdaten] = useState(null)
   const [favs, setFavs] = useState([])
   const [dragFav, setDragFav] = useState(null)
   const [favOpen, setFavOpen] = useState(true)
@@ -388,6 +427,19 @@ export default function Sidebar({ user, demo, onLogout, role, perms }) {
   })
   const ql = q.trim().toLowerCase()
   const results = ql ? flatSearch.filter((x) => (x.label + ' ' + x.group).toLowerCase().includes(ql)) : []
+  useEffect(() => { if (q.trim().length >= 2 && !demo) suchdatenLaden().then((d) => setSuchdaten(d)) }, [q, demo])
+  const woerter = normS(q.trim()).split(' ').filter(Boolean)
+  const datenTreffer = (() => {
+    if (!suchdaten || q.trim().length < 2) return []
+    const proTyp = {}, out = []
+    for (const x of suchdaten) {
+      if (!woerter.every((w) => x.text.includes(w))) continue
+      proTyp[x.typ] = (proTyp[x.typ] || 0) + 1; if (proTyp[x.typ] > 8) continue
+      out.push(x); if (out.length >= 40) break
+    }
+    return out
+  })()
+  const datenOeffnen = (e, href) => { e.preventDefault(); setQ(''); try { window.postMessage({ osOeffne: href }, window.location.origin) } catch (er) { window.location.href = href } }
 
   // Aktive Gruppe/Link aus dem aktuellen Pfad
   const activeGroupPath = NAV.find((n) => n.type === 'group' && canSee(n) && n.items.some(isActive))
@@ -474,14 +526,22 @@ export default function Sidebar({ user, demo, onLogout, role, perms }) {
       )}
 
       <div className="sbx-search">
-        <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="🔍 Thema suchen…" />
+        <input value={q} onChange={(e) => setQ(e.target.value)} onKeyDown={(e) => { if (e.key === 'Escape') setQ('') }} placeholder="Suchen: Seite, Mieter, Objekt, Kontakt …" />
         {ql && (
           <div className="sbx-results">
-            {results.length ? results.map((x) => (
+            {results.length > 0 && <div className="sbx-reshd">Seiten</div>}
+            {results.map((x) => (
               <Link key={x.href} href={x.href} className={isActive(x) ? 'active' : ''} onClick={() => setQ('')}>
                 <i className={'ti ' + x.icon} /> {x.label}{x.group && <span className="grp">{x.group}</span>}
               </Link>
-            )) : <div className="sbx-noresult">Kein Treffer für „{q}"</div>}
+            ))}
+            {datenTreffer.length > 0 && <div className="sbx-reshd">Mieter, Objekte, Kontakte und mehr</div>}
+            {datenTreffer.map((x, i) => (
+              <a key={x.typ + i + x.href} href={x.href} className="sbx-daten" onClick={(e) => datenOeffnen(e, x.href)}>
+                <span className="dt"><b>{x.label}</b>{x.sub && <span className="ds">{x.sub}</span>}</span><span className="grp">{x.typ}</span>
+              </a>
+            ))}
+            {!results.length && !datenTreffer.length && <div className="sbx-noresult">{q.trim().length >= 2 && !suchdaten ? 'Suche läuft …' : 'Kein Treffer für „' + q + '"'}</div>}
           </div>
         )}
       </div>
