@@ -632,7 +632,7 @@ function compute(opt){ opt=opt||{}; const ZMAP={}, BU={};
     const bisF=addM(curM,2)+'-01'; for(const s of mk.soll||[]){ const m=s.m||(s.d||'').slice(0,7); const sd=s.d||m+'-01'; if(m<START||sd>bisF) continue; if(U&&sd>U) continue; /* nach dem Übernahme-Stichtag wird nur noch im OS gebucht */ if(s.art==='WARM_MIETE'&&osM.has(m)) continue; const fu=sd>today; if(s.art==='WARM_MIETE'&&!fu) mieteMonate.add(m);
       x.rows.push({id:s.id,d:s.d||m+'-01',t:(s.t||ART[s.art]||s.art),s:s.b>0?s.b:0,h:s.b<0?-s.b:0,src:s.src==='AUTO_SOLL'?'Nahaus (automatisch)':s.src==='TRANSACTION_ASSIGNMENT'?'Nahaus (aus Zahlung)':'Nahaus',k:s.art==='KAUTION',art:s.art,fut:fu}); }
     /* Mahngebühren und Mahnhistorie aus den Mahnläufen im OS */
-    x.mahn=[]; for(const k of Object.keys(MAHN).sort()){ const L=MAHN[k]; for(const p of Object.values(L.posten||{})){ if(p.pid!==mk.pid||p.storno||(U&&L.datum<=U)) continue; x.mahn.push({d:L.datum,stufe:p.stufe,nr:p.nr,b:p.betrag,frist:L.frist,zinsBis:p.zinsBis||''});
+    x.mahn=[]; for(const k of Object.keys(MAHN).sort()){ const L=MAHN[k]; for(const p of Object.values(L.posten||{})){ if(p.pid!==mk.pid||p.storno||(U&&L.datum<=U)) continue; x.mahn.push({d:L.datum,stufe:p.stufe,nr:p.nr,b:p.betrag,frist:L.frist,zinsBis:p.zinsBis||'',art:p.art||'miete'});
       if(p.zinsen>0) x.rows.push({id:'mz:'+p.nr,d:L.datum,t:'Verzugszinsen '+dmy(p.zinsVon)+' – '+dmy(p.zinsBis)+' ('+p.nr+')',s:p.zinsen,h:0,src:'Mahnlauf OS',art:'INTEREST_EXPENSES'});
       if(p.gebuehr>0) x.rows.push({id:'mg:'+p.nr,d:L.datum,t:'Mahngebühr '+p.stufe+' '+p.nr,s:p.gebuehr,h:0,src:'Mahnlauf OS',art:'DUNNING_FEES'}); } }
     /* fehlende Monatsmieten aus dem Mietvertrag ergänzen */
@@ -677,7 +677,7 @@ function compute(opt){ opt=opt||{}; const ZMAP={}, BU={};
       x.op=op.filter(o=>!o.k); x.opK=op.filter(o=>o.k); x.opF=opF; x.guthaben=r2(pool.n); }
     let ns=0; for(const s of mk.soll||[]){ if(s.art!=='KAUTION'&&(s.d||'')<=today) ns+=s.b; } for(const p of mk.nhIst||[]){ if(!kautIds.has(p.bk)) ns-=p.b; } x.nhSaldo=r2(ns);
     /* überfällig = offene Posten, deren Fälligkeit mehr als 5 Tage vor dem letzten Kontoauszug liegt */
-    x.ueber=r2((x.op||[]).filter(o=>o.d<=fäll).reduce((a,o)=>a+o.b,0));
+    x.ueber=r2((x.op||[]).filter(o=>o.d<=fäll).reduce((a,o)=>a+o.b,0)); x.ueberK=r2((x.opK||[]).filter(o=>o.d<=fäll).reduce((a,o)=>a+o.b,0));
     const st=stufeAt(mk,curM); x.miete=st?st.total:0; x.monate=x.miete?x.ueber/x.miete:0;
     x.aktiv=!mk.bis||mk.bis>=today;
     x.status=x.ueber>0.5?(x.monate>=2?'kuendigung':x.monate>=1?'mahnen':'rueckstand'):saldo>0.5?'faellig':saldo<-0.5?'guthaben':'ok';
@@ -714,21 +714,24 @@ const addD=(d,n)=>new Date(Date.parse(d)+n*864e5).toISOString().slice(0,10);
 function laufTermin(){ const d=Number(today.slice(8,10)); return d>=20?curM+'-20':d>=5?curM+'-05':addM(curM,-1)+'-20'; }
 function naechsterTermin(){ const d=Number(today.slice(8,10)); return d<5?curM+'-05':d<20?curM+'-20':addM(curM,1)+'-05'; }
 const letzterLauf=()=>Object.keys(MAHN).sort().pop()||'';
-async function loadRegM(){ const sb=window.osSupabase; if(!sb) return; try{ const {data}=await sb.from('mahn_register').select('id,nummer,datum,objekt,we,empfaenger,mahnstufe,status').order('nummer',{ascending:false}); REGM=data||[]; }catch(e){ REGM=[]; } REGload=true; render(); }
+async function loadRegM(){ const sb=window.osSupabase; if(!sb) return; try{ const {data}=await sb.from('mahn_register').select('id,nummer,datum,objekt,we,empfaenger,mahnstufe,status,ausstand_art').order('nummer',{ascending:false}); REGM=data||[]; }catch(e){ REGM=[]; } REGload=true; render(); }
 const weKey=s=>uName(s).toLowerCase();
 /* letzte Mahnung je Mieter: Mahnläufe im OS + Einzelmahnungen aus dem Mahnregister */
-function alleMahnungen(x){ const L=(x.mahn||[]).map(m=>({d:m.d,stufe:m.stufe,nr:m.nr,frist:m.frist,b:m.b,quelle:'Mahnlauf OS'})).concat((ed(x.mk).mahnungen||[]).map(m=>({d:m.d,stufe:m.stufe,nr:m.nr||'',frist:m.frist||'',b:m.b,warnung:m.warnung||'',url:m.url||'',quelle:m.quelle||'manuell'})));
-  for(const r of REGM){ if(/storniert|bezahlt|erledigt/i.test(r.status||'')) continue; if(String(r.objekt||'').toLowerCase()!==String(x.mk.obj).toLowerCase()||weKey(r.we)!==weKey(x.mk.einheit)) continue; const nr='MA-'+String(r.nummer).padStart(4,'0'); if(L.some(m=>m.nr===nr)) continue; L.push({d:r.datum,stufe:r.mahnstufe,nr,quelle:'Mahnregister'}); }
+function alleMahnungen(x,art){ const L=(x.mahn||[]).filter(m=>!art||(m.art||'miete')===art).map(m=>({d:m.d,stufe:m.stufe,nr:m.nr,frist:m.frist,b:m.b,quelle:'Mahnlauf OS',art:m.art||'miete'})).concat((ed(x.mk).mahnungen||[]).map(m=>({d:m.d,stufe:m.stufe,nr:m.nr||'',frist:m.frist||'',b:m.b,warnung:m.warnung||'',url:m.url||'',quelle:m.quelle||'manuell'})));
+  for(const r of REGM){ if(/storniert|bezahlt|erledigt/i.test(r.status||'')) continue; if(art&&((/kaution/i.test(r.ausstand_art||'')?'kaution':'miete')!==art)) continue; if(String(r.objekt||'').toLowerCase()!==String(x.mk.obj).toLowerCase()||weKey(r.we)!==weKey(x.mk.einheit)) continue; const nr='MA-'+String(r.nummer).padStart(4,'0'); if(L.some(m=>m.nr===nr)) continue; L.push({d:r.datum,stufe:r.mahnstufe,nr,quelle:'Mahnregister'}); }
   return L.sort((a,b)=>a.d<b.d?-1:a.d>b.d?1:STUFEN.indexOf(a.stufe)-STUFEN.indexOf(b.stufe)); }
-function letzteMahnung(x){ const L=alleMahnungen(x);
+function letzteMahnung(x,art){ const L=alleMahnungen(x,art);
   return L[L.length-1]||null; }
 /* Vorschlag: gilt die letzte Mahnung noch für den aktuellen Rückstand, kommt die nächste Stufe, sonst Zahlungserinnerung */
-function mahnVorschlag(x){ const ue=(x.op||[]).filter(o=>o.d<=calc.faell); const aelt=ue.length?ue[0].d:''; const lm=letzteMahnung(x); let st=STUFEN[0], grund='';
+const mrKaution=()=>MR.art==='kaution';
+const mrPosten=x=>(mrKaution()?x.opK:x.op)||[];
+const mrUeber=x=>mrKaution()?(x.ueberK||0):x.ueber;
+function mahnVorschlag(x){ const art=mrKaution()?'kaution':'miete'; const ue=mrPosten(x).filter(o=>o.d<=calc.faell); const aelt=ue.length?ue[0].d:''; const lm=letzteMahnung(x,art); let st=STUFEN[0], grund='';
   /* höchste Mahnstufe seit dem ältesten überfälligen Posten bestimmt die nächste Stufe */
-  const seit=alleMahnungen(x).filter(m=>aelt&&m.d>=aelt); if(seit.length){ const i=Math.max(0,...seit.map(m=>STUFEN.indexOf(m.stufe))); st=STUFEN[Math.min(STUFEN.length-1,i+1)]; }
-  const fr=alleMahnungen(x).map(m=>m.frist||'').filter(f=>f&&f>=MR.datum).sort().pop()||'';
+  const seit=alleMahnungen(x,art).filter(m=>aelt&&m.d>=aelt); if(seit.length){ const i=Math.max(0,...seit.map(m=>STUFEN.indexOf(m.stufe))); st=STUFEN[Math.min(STUFEN.length-1,i+1)]; }
+  const fr=alleMahnungen(x,art).map(m=>m.frist||'').filter(f=>f&&f>=MR.datum).sort().pop()||'';
   const zv=(ed(x.mk).raten||[]).length, ms=mahnsperre(x.mk), za=Number(ed(x.mk).zahltAm)||0;
-  if(ms) grund='Mahnsperre: '+(ms.grund||'ohne Grund'); else if(za&&Number(MR.datum.slice(8,10))<=za+2&&(x.op||[]).filter(o=>o.d<=calc.faell&&o.d.slice(0,7)<MR.datum.slice(0,7)).length===0) grund=ed(x.mk).mahnHinweis||('zahlt am '+za+'. des Monats'); else if(x.ueber<MR.min) grund='unter Mindestbetrag'; else if(fr) grund='Zahlungsfrist der letzten Mahnung läuft bis '+dmy(fr); else if(lm&&Date.parse(MR.datum)-Date.parse(lm.d)<10*864e5) grund='zuletzt gemahnt am '+dmy(lm.d); else if(zv) grund='Ratenzahlung hinterlegt';
+  if(ms) grund='Mahnsperre: '+(ms.grund||'ohne Grund'); else if(za&&Number(MR.datum.slice(8,10))<=za+2&&mrPosten(x).filter(o=>o.d<=calc.faell&&o.d.slice(0,7)<MR.datum.slice(0,7)).length===0) grund=ed(x.mk).mahnHinweis||('zahlt am '+za+'. des Monats'); else if(mrUeber(x)<MR.min) grund='unter Mindestbetrag'; else if(fr) grund='Zahlungsfrist der letzten Mahnung läuft bis '+dmy(fr); else if(lm&&Date.parse(MR.datum)-Date.parse(lm.d)<10*864e5) grund='zuletzt gemahnt am '+dmy(lm.d); else if(zv) grund='Ratenzahlung hinterlegt';
   return {st,lm,grund,aelt}; }
 /* Mahnsperre: aktiv, solange kein Ende gesetzt oder das Ende nicht erreicht ist */
 function mahnsperre(mk){ const s=ed(mk).mahnsperre; if(!s||!s.aktiv) return null; if(s.bis&&s.bis<today) return null; return s; }
@@ -748,45 +751,47 @@ function mahnstandCard(x){ const mk=ed(x.mk), lm=letzteMahnung(x), ms=mahnsperre
   h+='<details><summary>Mahnungen ('+L.length+')</summary>'+(L.length?'<table class="mini">'+L.map(m=>'<tr><td>'+esc(dmy(m.d))+'</td><td>'+esc(m.stufe)+(m.nr?' '+esc(m.nr):'')+(m.warnung?' <span class="pill bad">'+esc(m.warnung)+'</span>':'')+(m.frist?'<div class="sub">Frist '+esc(dmy(m.frist))+'</div>':'')+'</td><td class="n">'+(m.b?eur(m.b):'')+'</td><td class="sub">'+esc(m.quelle||'manuell')+(m.url?' · <a href="'+esc(m.url)+'" target="_blank">PDF</a>':'')+'</td><td>'+(m.i!=null&&!/^Nahaus/.test(m.quelle||'')?'<button class="ghost small" data-mnx="'+m.i+'">entfernen</button>':'')+'</td></tr>').join('')+'</table>':'<div class="sub">Noch keine Mahnung.</div>')
     +'<div class="trow"><input type="date" id="mn-d" value="'+esc(today)+'"><input type="text" id="mn-b" placeholder="Betrag €" style="width:100px"><select id="mn-st">'+STUFEN.map(s2=>'<option>'+s2+'</option>').join('')+'</select><button class="ghost small" data-mnadd="1">Mahnung nachtragen</button></div></details>';
   return h+'</div>'; }
-function mahnListe(){ if(!calc) calc=compute(); return Object.values(calc.res).filter(x=>x.aktiv&&x.ueber>0.5).sort((a,b)=>b.ueber-a.ueber); }
+function mahnListe(){ if(!calc) calc=compute(); return Object.values(calc.res).filter(x=>x.aktiv&&mrUeber(x)>0.5).sort((a,b)=>mrUeber(b)-mrUeber(a)); }
 function mahnBox(){ const lt=laufTermin(), ll=letzterLauf(), faellig=!ll||ll<lt;
   let h='<div class="note slbox"><b>Sammelmahnung</b> – jeweils am 05. und 20. des Monats. ';
   h+=(ll?'Letzter Mahnlauf am '+esc(dmy(ll))+'. ':'Noch kein Mahnlauf. ')+(faellig?'<b>Mahnlauf für den '+esc(dmy(lt))+' ist fällig.</b> ':'Nächster Mahnlauf am '+esc(dmy(naechsterTermin()))+'. ');
   h+='<button class="'+(faellig?'primary':'ghost')+' small" data-mahnopen="1">Mahnlauf öffnen</button></div>'; return h; }
-function mahnInit(){ MR.datum=today; MR.frist=addD(today,10); MR.sel={}; MR.stufe={}; MR.done=null; MR.q='';
+function mahnInit(art){ MR.art=art||'miete'; MR.datum=MR.datum&&art?MR.datum:today; MR.frist=MR.frist&&art?MR.frist:addD(today,10); MR.sel={}; MR.stufe={}; MR.done=null; MR.q='';
   for(const x of mahnListe()){ const v=mahnVorschlag(x); MR.sel[x.mk.pid]=!v.grund; MR.stufe[x.mk.pid]=v.st; } }
 function renderMahn(){ const L=mahnListe(); const q=norm(MR.q);
-  let h='<div class="dtop"><div><div class="dname">Mahnlauf</div><div class="sub">Alle Mieter mit überfälligen Posten (fällig vor mehr als 5 Tagen). Auswahl und Mahnstufe kannst du anpassen. Erstellt werden je Mieter ein Schreiben als PDF, ein Eintrag im Mahnregister, die Ablage in der Mieterakte (03 Miete & Zahlungen / Mahnungen) und ab der 1. Mahnung eine Mahngebühr von '+eur(MAHNGEB)+' als Sollstellung.</div></div><button data-mahnclose="1">Schließen</button></div>';
+  let h='<div class="dtop"><div><div class="dname">Mahnlauf</div><div class="sub">'+(mrKaution()?'Alle Mieter mit offener Kaution (fällig vor mehr als 5 Tagen). Gemahnt wird nur die Kaution, ohne Verzugszinsen.':'Alle Mieter mit überfälligen Mietforderungen (fällig vor mehr als 5 Tagen): Mieten, Nebenkosten-Nachzahlungen, frühere Mahngebühren und Zinsen. Kautionen werden hier nicht gemahnt.')+' Auswahl und Mahnstufe kannst du anpassen. Erstellt werden je Mieter ein Schreiben als PDF, ein Eintrag im Mahnregister, die Ablage in der Mieterakte (03 Miete & Zahlungen / Mahnungen) und ab der 1. Mahnung eine Mahngebühr von '+eur(MAHNGEB)+' als Sollstellung.</div></div><button data-mahnclose="1">Schließen</button></div>';
   if(MR.done){ const D=MR.done; h+='<div class="card"><div class="ch">Mahnlauf vom '+esc(dmy(D.datum))+' erstellt</div><div class="sub" style="margin-bottom:8px">'+D.list.length+' Schreiben, zusammen '+eur(D.list.reduce((a,y)=>a+y.betrag,0))+'.'+(D.fehler.length?' Fehler: '+esc(D.fehler.join('; ')):'')+'</div>'
       +'<div class="acts"><button class="primary small" data-mahnall="1">Alle Schreiben als ein PDF herunterladen</button><a class="ghost small btnlink" href="/mahnprozess/generator" target="_top">Mahnregister öffnen</a></div>'
       +'<table class="mini"><thead><tr><th>Nr.</th><th>Mieter</th><th>Stufe</th><th class="n">Betrag</th><th></th></tr></thead><tbody>'+D.list.map(y=>'<tr><td>'+esc(y.nr)+'</td><td>'+esc(y.obj+' '+uName(y.einheit)+' · '+y.name)+'</td><td>'+esc(y.stufe)+'</td><td class="n">'+eur(y.betrag)+'</td><td>'+(y.url?'<a href="'+esc(y.url)+'" target="_blank">PDF</a>':'')+'</td></tr>').join('')+'</tbody></table></div>';
     return h; }
+  { const all=Object.values(calc.res).filter(x=>x.aktiv), nM=all.filter(x=>x.ueber>0.5).length, nK=all.filter(x=>(x.ueberK||0)>0.5).length;
+    h+='<div class="seg" style="display:inline-flex;margin:0 0 10px"><button data-mrart="miete" class="'+(mrKaution()?'':'on')+'">Mieten ('+nM+')</button><button data-mrart="kaution" class="'+(mrKaution()?'on':'')+'">Kautionen ('+nK+')</button></div>'; }
   const alt=Math.round((Date.parse(MR.datum)-Date.parse(calc.stich))/864e5);
   h+='<div class="note'+(alt>3?' warnbox':'')+'">Berücksichtigt sind Zahlungen bis zum '+esc(dmy(calc.stich))+' (letzter Kontoauszug im OS). Gemahnt werden nur Posten, die bis zum '+esc(dmy(calc.faell))+' fällig waren.'+(alt>3?' <b>Bitte vor dem Mahnlauf die aktuellen Kontoauszüge importieren, sonst werden bereits bezahlte Mieten gemahnt.</b>':'')+'</div>';
   const bl=bzListe(), bzl=bl[bl.length-1];
-  h+='<div class="note">Verzugszinsen ab der 1. Mahnung: Basiszinssatz '+fnum.format(bzAm(MR.datum))+' % (seit '+esc(dmy(bl.filter(z=>z[0]<=MR.datum).pop()[0]))+') + 5 Prozentpunkte = '+fnum.format(bzAm(MR.datum)+5)+' % p.a. (Gewerbe + 9 Prozentpunkte), je offenem Posten ab Verzug (Miete: ab dem Tag nach dem 3. Werktag) bis zum Briefdatum. Bereits berechnete Zinsen (Nahaus oder frühere Mahnläufe) werden nicht doppelt berechnet. Den Rechenweg siehst du, wenn du mit der Maus auf den Zinsbetrag gehst.'
+  if(!mrKaution()) h+='<div class="note">Verzugszinsen ab der 1. Mahnung: Basiszinssatz '+fnum.format(bzAm(MR.datum))+' % (seit '+esc(dmy(bl.filter(z=>z[0]<=MR.datum).pop()[0]))+') + 5 Prozentpunkte = '+fnum.format(bzAm(MR.datum)+5)+' % p.a. (Gewerbe + 9 Prozentpunkte), je offenem Posten ab Verzug (Miete: ab dem Tag nach dem 3. Werktag) bis zum Briefdatum. Bereits berechnete Zinsen (Nahaus oder frühere Mahnläufe) werden nicht doppelt berechnet. Den Rechenweg siehst du, wenn du mit der Maus auf den Zinsbetrag gehst.'
     +'<details><summary>Neuen Basiszinssatz eintragen</summary><div class="sub">Die Bundesbank gibt ihn zum 1. Januar und 1. Juli bekannt. Zuletzt hinterlegt: ab '+esc(dmy(bzl[0]))+' '+fnum.format(bzl[1])+' %.</div><label class="fl inl">gültig ab<input type="date" id="bz-ab"></label><label class="fl inl">Satz in %<input type="text" id="bz-satz" style="width:80px"></label><button class="ghost small" data-bzsave="1">Speichern</button></details></div>';
   h+='<div class="tbar"><label class="fl inl">Briefdatum<input type="date" id="mr-datum" value="'+esc(MR.datum)+'"></label><label class="fl inl">Zahlungsfrist<input type="date" id="mr-frist" value="'+esc(MR.frist)+'"></label><label class="fl inl">Mindestbetrag (€)<input type="text" id="mr-min" value="'+esc(fnum.format(MR.min))+'" style="width:80px"></label>'
     +'<input type="search" id="mr-q" placeholder="Mieter, Objekt" value="'+esc(MR.q)+'" autocomplete="off"><button class="ghost small" data-mrall="1">alle auswählen</button><button class="ghost small" data-mrnone="1">keine</button></div>';
-  h+='<div class="tablewrap"><table class="mlist"><thead><tr><th></th><th>Objekt</th><th>Einheit</th><th>Mieter</th><th>Zahler</th><th class="n">überfällig</th><th>ältester Posten</th><th>letzte Mahnung</th><th>Mahnstufe</th><th class="n">Zinsen + Gebühr</th><th>Hinweis</th></tr></thead><tbody>';
+  h+='<div class="tablewrap"><table class="mlist"><thead><tr><th></th><th>Objekt</th><th>Einheit</th><th>Mieter</th><th>Zahler</th><th class="n">'+(mrKaution()?'Kaution offen':'Miete überfällig')+'</th><th>ältester Posten</th><th>letzte Mahnung</th><th>Mahnstufe</th><th class="n">Zinsen + Gebühr</th><th>Hinweis</th></tr></thead><tbody>';
   let n=0,sum=0;
   for(const x of L){ const pid=x.mk.pid, v=mahnVorschlag(x), on=!!MR.sel[pid]; if(q&&!norm(ed(x.mk).mieter+' '+x.mk.obj+' '+x.mk.einheit).includes(q)) continue;
-    const st=MR.stufe[pid]||v.st, geb=st===STUFEN[0]?0:MAHNGEB, Z=st===STUFEN[0]?null:zinsBerechnung(x,MR.datum), zs=Z?Z.sum:0; if(on){ n++; sum+=x.ueber+geb+zs; }
-    h+='<tr class="'+(on?'':'mut')+'"><td><input type="checkbox" data-mrsel="'+esc(pid)+'"'+(on?' checked':'')+'></td><td><b>'+esc(x.mk.obj)+'</b></td><td>'+esc(uName(x.mk.einheit))+'</td><td class="wrapc">'+esc(ed(x.mk).mieter||'')+'</td><td class="sub">'+esc(String(ed(x.mk).zahler||x.zahlerAuto||'').replace(/ \(.*\)$/,''))+'</td><td class="n neg"><b>'+eur(x.ueber)+'</b></td><td>'+esc(dmy(v.aelt))+'</td><td class="sub">'+(v.lm?esc(v.lm.stufe+' · '+dmy(v.lm.d))+(v.lm.b?'<div>'+eur(v.lm.b)+'</div>':''):'–')+'</td>'
+    const st=MR.stufe[pid]||v.st, geb=st===STUFEN[0]?0:MAHNGEB, Z=(st===STUFEN[0]||mrKaution())?null:zinsBerechnung(x,MR.datum), zs=Z?Z.sum:0; if(on){ n++; sum+=mrUeber(x)+geb+zs; }
+    h+='<tr class="'+(on?'':'mut')+'"><td><input type="checkbox" data-mrsel="'+esc(pid)+'"'+(on?' checked':'')+'></td><td><b>'+esc(x.mk.obj)+'</b></td><td>'+esc(uName(x.mk.einheit))+'</td><td class="wrapc">'+esc(ed(x.mk).mieter||'')+'</td><td class="sub">'+esc(String(ed(x.mk).zahler||x.zahlerAuto||'').replace(/ \(.*\)$/,''))+'</td><td class="n neg"><b>'+eur(mrUeber(x))+'</b></td><td>'+esc(dmy(v.aelt))+'</td><td class="sub">'+(v.lm?esc(v.lm.stufe+' · '+dmy(v.lm.d))+(v.lm.b?'<div>'+eur(v.lm.b)+'</div>':''):'–')+'</td>'
       +'<td><select data-mrst="'+esc(pid)+'">'+STUFEN.map(s=>'<option'+(s===st?' selected':'')+'>'+s+'</option>').join('')+'</select></td><td class="n" title="'+esc(Z?Z.det.map(d=>d.t+': '+eur(d.b)+' × '+d.tage+' Tage = '+eur(d.z)).join('\n'):'')+'">'+(geb?eur(zs)+' + '+eur(geb):'–')+'</td><td class="sub">'+esc(v.grund)+'</td></tr>'; }
-  if(!L.length) h+='<tr><td colspan="11" class="empty">Keine überfälligen Posten – kein Mahnlauf nötig.</td></tr>';
-  h+='</tbody></table></div><div class="acts" style="margin-top:10px"><button class="primary" data-mrgo="1"'+(n&&!MR.busy?'':' disabled')+'>'+(MR.busy?esc(MR.busy):n+' Mahnung'+(n===1?'':'en')+' erstellen ('+eur(sum)+')')+'</button><span class="sub">Ab der 1. Mahnung sind Mahngebühr und Verzugszinsen im Betrag enthalten und werden als Sollstellung gebucht.</span></div>';
+  if(!L.length) h+='<tr><td colspan="11" class="empty">'+(mrKaution()?'Keine offenen Kautionen.':'Keine überfälligen Mieten – kein Mahnlauf nötig.')+'</td></tr>';
+  h+='</tbody></table></div><div class="acts" style="margin-top:10px"><button class="primary" data-mrgo="1"'+(n&&!MR.busy?'':' disabled')+'>'+(MR.busy?esc(MR.busy):n+' Mahnung'+(n===1?'':'en')+' erstellen ('+eur(sum)+')')+'</button><span class="sub">'+(mrKaution()?'Ab der 1. Mahnung ist die Mahngebühr im Betrag enthalten und wird als Sollstellung gebucht.':'Ab der 1. Mahnung sind Mahngebühr und Verzugszinsen im Betrag enthalten und werden als Sollstellung gebucht.')+'</span></div>';
   return h; }
 /* Brief */
 function mahnBrief(x,st,nr){ const mk=ed(x.mk), o=objekte.find(q=>q.kz===x.mk.obj)||{}; const inh=INHABER[o.ges||x.mk.ges]||INHABER.WT;
   const ib=(window.__mahnIbans||[]).find(i=>String(i.kennzeichen||'').toLowerCase()===String(x.mk.obj).toLowerCase()); const kt=konten.find(k=>k.obj===x.mk.obj&&k.iban&&!/alt/i.test(k.name));
-  const iban=(ib&&ib.iban)||(kt&&kt.iban)||''; const geb=st===STUFEN[0]?0:MAHNGEB; const posten=(x.op||[]).filter(o2=>o2.d<=calc.faell).map(o2=>({d:o2.d,t:o2.t,b:o2.b}));
-  const Z=geb?zinsBerechnung(x,MR.datum):null; if(Z&&Z.sum>0) posten.push({d:MR.datum,t:'Verzugszinsen '+fnum.format(Z.satz)+' % p.a. bis '+dmy(Z.bis),b:Z.sum});
+  const iban=(ib&&ib.iban)||(kt&&kt.iban)||''; const geb=st===STUFEN[0]?0:MAHNGEB; const posten=mrPosten(x).filter(o2=>o2.d<=calc.faell).map(o2=>({d:o2.d,t:o2.t,b:o2.b}));
+  const kau=mrKaution(); const Z=geb&&!kau?zinsBerechnung(x,MR.datum):null; if(Z&&Z.sum>0) posten.push({d:MR.datum,t:'Verzugszinsen '+fnum.format(Z.satz)+' % p.a. bis '+dmy(Z.bis),b:Z.sum});
   if(geb) posten.push({d:MR.datum,t:'Mahngebühr '+st,b:geb});
   const sum=r2(posten.reduce((a,y)=>a+y.b,0)); const adr=(ADR[x.mk.obj]||'|').split('|'); const name=mk.mieter||'';
   const vz=String(mk.ref||(x.mk.obj+' '+uName(x.mk.einheit)+' '+((x.mk.namen||[])[0]||''))).trim();
   const an=String(mk.anrede||'').trim(); const kopf=an?(/^(sehr|liebe|hallo|guten)/i.test(an)?an.replace(/,?$/,','):an.split(/\s*(?:,|\bund\b)\s*/).filter(Boolean).map((t,i)=>(i?'s':'S')+'ehr geehrte'+(/^herr/i.test(t)?'r ':' ')+t).join(', ')+','):'Guten Tag '+name+',';
-  const lm=letzteMahnung(x), F=dmy(MR.frist);
+  const lm=letzteMahnung(x,kau?'kaution':'miete'), F=dmy(MR.frist);
   const konto='Kontoinhaber: '+inh+'\nIBAN: '+(iban||'[IBAN]')+'\nVerwendungszweck: '+vz;
   const raten='Sollte Ihnen die Zahlung des vollen Betrags derzeit nicht möglich sein, setzen Sie sich bitte umgehend mit uns in Verbindung, damit wir gemeinsam eine Ratenzahlung vereinbaren können.';
   const gl='Sollte der Betrag bereits beglichen worden sein, betrachten Sie dieses Schreiben bitte als gegenstandslos.';
@@ -796,9 +801,10 @@ function mahnBrief(x,st,nr){ const mk=ed(x.mk), o=objekte.find(q=>q.kz===x.mk.ob
   else if(st===STUFEN[2]){ a=(lm?'trotz unserer '+lm.stufe+' vom '+dmy(lm.d):'trotz unserer bisherigen Schreiben')+' sind folgende Beträge aus Ihrem Mietverhältnis weiterhin nicht bei uns eingegangen:'; b='Wir fordern Sie hiermit nochmals auf, den offenen Betrag von '+eur(sum)+' bis spätestens '+F+' auf folgendes Konto zu überweisen:'; }
   else { a='trotz mehrfacher Aufforderung'+(lm?' – zuletzt mit unserer '+lm.stufe+' vom '+dmy(lm.d)+' –':'')+' sind folgende Beträge aus Ihrem Mietverhältnis weiterhin offen:'; b='Wir setzen Ihnen hiermit eine letzte Frist zur Zahlung des offenen Betrags von '+eur(sum)+' bis zum '+F+' auf folgendes Konto:'; }
   let tail=(Z&&Z.sum>0?'Die Verzugszinsen betragen '+(Z.auf)+' Prozentpunkte über dem jeweiligen Basiszinssatz (§ 288 BGB) und sind für jeden offenen Betrag ab Eintritt des Verzugs bis zum '+dmy(Z.bis)+' berechnet. Für die Zeit danach behalten wir uns weitere Zinsen vor.\n\n':'')+raten;
-  if(st===STUFEN[2]) tail+='\n\nWir weisen darauf hin, dass ein Zahlungsrückstand in Höhe von zwei Monatsmieten zur fristlosen Kündigung des Mietverhältnisses berechtigen kann. Weitere Schritte behalten wir uns ausdrücklich vor.';
+  if(kau){ a=a.replace('folgende Beträge aus Ihrem Mietverhältnis','folgende Beträge der vereinbarten Mietkaution'); if(st===STUFEN[0]) a='bei der Durchsicht Ihres Mieterkontos ist uns aufgefallen, dass die vereinbarte Mietkaution noch nicht vollständig bei uns eingegangen ist:'; }
+  if(st===STUFEN[2]) tail+=kau?'\n\nWir weisen darauf hin, dass ein Rückstand mit der Mietkaution in Höhe von zwei Nettokaltmieten zur fristlosen Kündigung des Mietverhältnisses berechtigen kann (§ 569 Abs. 2a BGB). Weitere Schritte behalten wir uns ausdrücklich vor.':'\n\nWir weisen darauf hin, dass ein Zahlungsrückstand in Höhe von zwei Monatsmieten zur fristlosen Kündigung des Mietverhältnisses berechtigen kann. Weitere Schritte behalten wir uns ausdrücklich vor.';
   if(st===STUFEN[3]) tail+='\n\nSollte der Betrag nicht fristgerecht bei uns eingehen, sehen wir uns gezwungen, ohne weitere Ankündigung rechtliche Schritte einzuleiten, insbesondere die Kündigung des Mietverhältnisses und die gerichtliche Geltendmachung unserer Forderung. Die dadurch entstehenden Kosten gehen zu Ihren Lasten.';
-  return {nr,st,inh,name,anschrift:[adr[0]+(x.mk.einheit&&!/efh/i.test(x.mk.einheit)?', '+uName(x.mk.einheit):''),adr[1]].filter(Boolean),betreff:st+' · '+x.mk.obj+' '+uName(x.mk.einheit)+' · offene Mietforderungen',kopf,a,posten,sum,b,konto,tail,gl,gruss:'Mit freundlichen Grüßen\n'+inh,geb,zins:Z&&Z.sum>0?Z:null}; }
+  return {nr,st,inh,name,anschrift:[adr[0]+(x.mk.einheit&&!/efh/i.test(x.mk.einheit)?', '+uName(x.mk.einheit):''),adr[1]].filter(Boolean),betreff:st+' · '+x.mk.obj+' '+uName(x.mk.einheit)+(kau?' · offene Mietkaution':' · offene Mietforderungen'),kopf,a,posten,sum,b,konto,tail,gl,gruss:'Mit freundlichen Grüßen\n'+inh,geb,zins:Z&&Z.sum>0?Z:null}; }
 function drawBrief(doc,B){ const L=25,R=185; let y=22;
   doc.setFont('helvetica','normal'); doc.setFontSize(8); doc.setTextColor(120); doc.text(B.inh+ABS,L,y); y+=12;
   doc.setTextColor(20); doc.setFontSize(11); doc.text(B.name,L,y); y+=5; B.anschrift.forEach(l=>{ doc.text(l,L,y); y+=5; });
@@ -827,10 +833,10 @@ async function mahnlaufStarten(){ const sb=window.osSupabase; if(!sb||!db||!canW
     if(up.error) done.fehler.push(nr+': PDF-Upload '+up.error.message); else url=sb.storage.from('mahnungen').getPublicUrl((up.data&&up.data.path)||'').data.publicUrl;
     const akte=docBase(x.mk)+'/'+enc('03 Miete & Zahlungen/Mahnungen')+'/'+enc(aktenName(x.mk)+'_'+MR.datum+'_'+st+' '+nr+'.pdf').replace(/\//g,'_');
     await sb.storage.from('mieterakten').upload(akte,blob,{contentType:'application/pdf',upsert:true}).catch(()=>{});
-    const row={nummer,datum:MR.datum,empfaenger:B.name,anschrift:B.anschrift.join('\n'),objekt:x.mk.obj,we:uName(x.mk.einheit),betrag:B.sum,mahnstufe:st,ausstand_art:'Miete',eigentum_status:'Eigentümer',ampel:{gruen:'grün',gelb:'gelb',rot:'rot'}[ampel(x)]||'gelb',in_zv:!!(ed(x.mk).raten||[]).length,betreff:B.betreff,text:briefText(B),frist:MR.frist,status:'Erstellt',pdf_url:url,pdf_name:fn};
+    const row={nummer,datum:MR.datum,empfaenger:B.name,anschrift:B.anschrift.join('\n'),objekt:x.mk.obj,we:uName(x.mk.einheit),betrag:B.sum,mahnstufe:st,ausstand_art:mrKaution()?'Kaution':'Miete',eigentum_status:'Eigentümer',ampel:{gruen:'grün',gelb:'gelb',rot:'rot'}[ampel(x)]||'gelb',in_zv:!!(ed(x.mk).raten||[]).length,betreff:B.betreff,text:briefText(B),frist:MR.frist,status:'Erstellt',pdf_url:url,pdf_name:fn};
     const res=await sb.from('mahn_register').insert(row).select(); let regId=null;
     if(res.error) done.fehler.push(nr+': Register '+res.error.message); else { regId=res.data&&res.data[0]&&res.data[0].id; if(regId) await sb.from('mahn_historie').insert({register_id:regId,typ:'Erstellt',notiz:'Sammelmahnung '+nr+' vom '+dmy(MR.datum)+' ('+eur(B.sum)+')',mahnstufe:st}); }
-    lauf.posten[nr]={pid:x.mk.pid,nr,nummer,stufe:st,betrag:B.sum,gebuehr:B.geb,zinsen:B.zins?B.zins.sum:0,zinsVon:B.zins?B.zins.von:'',zinsBis:B.zins?B.zins.bis:'',zinsSatz:B.zins?B.zins.satz:0,regId,url};
+    lauf.posten[nr]={pid:x.mk.pid,art:mrKaution()?'kaution':'miete',nr,nummer,stufe:st,betrag:B.sum,gebuehr:B.geb,zinsen:B.zins?B.zins.sum:0,zinsVon:B.zins?B.zins.von:'',zinsBis:B.zins?B.zins.bis:'',zinsSatz:B.zins?B.zins.satz:0,regId,url};
     done.list.push({nr,obj:x.mk.obj,einheit:x.mk.einheit,name:B.name,stufe:st,betrag:B.sum,url}); }
   MAHN=Object.assign({},MAHN,{[MR.datum]:lauf}); calc=null;
   await queue('mahnlaeufe/'+MR.datum,()=>db.doc('mahnlaeufe/'+MR.datum).set(lauf));
@@ -1746,6 +1752,7 @@ document.addEventListener('click',async e=>{ const t=e.target.closest('button,tr
   if(t.dataset.dopen){ e.preventDefault(); const w=window.open('','_blank'); const [f,n]=t.dataset.dopen.split('|'); const mk=MK[M.sel]; const {data,error}=await window.osSupabase.storage.from('mieterakten').createSignedUrl(docBase(mk)+'/'+enc(f)+'/'+n,3600); if(error){ if(w) w.close(); toast(error.message); return; } if(w) w.location.href=data.signedUrl; else window.open(data.signedUrl,'_blank'); return; }
   if(t.dataset.mahnopen){ mahnOpen=true; modal=false; mahnInit(); if(!REGload) loadRegM(); render(); return; }
   if(t.dataset.mahnclose){ mahnOpen=false; render(); return; }
+  if(t.dataset.mrart){ if(MR.busy) return; mahnInit(t.dataset.mrart); render(); return; }
   if(t.dataset.mrall){ for(const x of mahnListe()) MR.sel[x.mk.pid]=true; render(); return; }
   if(t.dataset.mrnone){ MR.sel={}; render(); return; }
   if(t.dataset.mrgo){ if(MR.busy) return; mahnlaufStarten(); return; }
