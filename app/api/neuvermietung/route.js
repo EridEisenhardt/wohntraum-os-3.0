@@ -82,15 +82,17 @@ async function aufgabeAnlegen({ name, notes, wer, faellig, unter, schritt }) {
   for (const u of unter || []) await asana('/tasks/' + t.gid + '/subtasks', { method: 'POST', json: { name: u, assignee: wer } })
   return { gid: t.gid, link: t.permalink_url || ('https://app.asana.com/0/0/' + t.gid), erstellt: new Date().toISOString() }
 }
-function msaText(d, link) {
+function msaText(d, link, neu) {
   d = d || {}
   const z = MSA_ZEILEN.filter(([f]) => d[f] != null && d[f] !== '').map(([f, l]) => l + ': ' + (/^\d{4}-\d\d-\d\d$/.test(d[f]) ? dmy(d[f]) : d[f]))
   const warn = [d.amt === 'JA' ? 'Hinweis: Die Miete übernimmt das Jobcenter / Sozialamt.' : '', d.eidesstattlich === 'JA' ? 'ACHTUNG: Eidesstattliche Versicherung oder Haftbefehl in den letzten 3 Jahren: JA' : ''].filter(Boolean)
+  if (neu) return [(warn.length ? warn.join('\n') + '\n' : '') + 'Eine neue Mieterselbstauskunft ist eingegangen.\n\nWas zu tun ist:\n1. Im Wohntraum OS unter Selbstauskünfte die Auskunft öffnen und prüfen.\n2. „Zu Mietinteressenten übernehmen“ oder „Ablehnen“ klicken. Diese Aufgabe wird dann automatisch abgehakt.\n3. Übernommene Interessenten stehen in deinem Board Mietinteressenten. Mit „An Team übergeben“ erscheinen sie mit allen Daten in der Neuvermietung.',
+    z.join('\n'), 'Selbstauskunft im Wohntraum OS öffnen: ' + link].filter(Boolean).join('\n\n')
   return [(warn.length ? warn.join('\n') + '\n' : '') + 'Die Mieterselbstauskunft ist eingegangen.\n\nWas zu tun ist:\n1. Die Selbstauskunft prüfen (Angaben unten, vollständig mit Unterschrift im Wohntraum OS).\n2. Eine der Unteraufgaben abhaken:\n- „Freigeben“: der Mieter springt im OS weiter zur Mietkalkulation, und du bekommst dort die nächste Aufgabe.\n- „Ablehnen“: der Mieter wird im OS ins Archiv gelegt.',
     z.join('\n'), 'Vollständige Selbstauskunft mit Unterschrift im Wohntraum OS: ' + link].filter(Boolean).join('\n\n')
 }
-async function msaAufgabe(k, d, link) {
-  return aufgabeAnlegen({ name: aufgabenName('selbstauskunft', k, d), notes: msaText(d, link), wer: ERIC(), unter: ['Freigeben', 'Ablehnen'], schritt: 'selbstauskunft' })
+async function msaAufgabe(k, d, link, neu) {
+  return aufgabeAnlegen({ name: aufgabenName('selbstauskunft', k, d), notes: msaText(d, link, neu), wer: ERIC(), unter: neu ? [] : ['Freigeben', 'Ablehnen'], schritt: 'selbstauskunft' })
 }
 
 export async function POST(req) {
@@ -104,7 +106,7 @@ export async function POST(req) {
       const d = await rpc('selbstauskunft_fuer_asana', { p_token: token })
       if (!d) return antwort({ ok: true, schon: true })
       const k = Object.assign({ id: d.karte_id }, d.karte || {})
-      const t = await msaAufgabe(k, d.daten, osLink(req))
+      const t = await msaAufgabe(k, d.daten, d.neu ? osLink(req).replace(/\/verwalto\/neuvermietung$/, '/vermietung/selbstauskuenfte') + '?t=' + encodeURIComponent(token) : osLink(req), d.neu)
       await rpc('selbstauskunft_asana_setzen', { p_token: token, p_gid: t.gid, p_link: t.link })
       return antwort({ ok: true })
     }

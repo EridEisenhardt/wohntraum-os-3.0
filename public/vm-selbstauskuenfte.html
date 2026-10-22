@@ -1,0 +1,293 @@
+<!DOCTYPE html>
+<html lang="de"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Selbstauskünfte</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<style>
+:root{--bg:#f3f5f8;--card:#ffffff;--ink:#18202c;--muted:#5f6b7a;--line:#e0e5eb;--soft:#eef1f5;--accent:#2f5d8a;--accent-ink:#ffffff;--accent-soft:#e3ecf5;--pos:#1d7a4c;--pos-bg:#e5f4ec;--warn:#946200;--warn-bg:#fff4d6;--neg:#b42318;--neg-bg:#fcebe9;--chip:#edf1f6}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--ink);font:14px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+button,input,select,textarea{font:inherit;color:var(--ink)}
+.wrap{padding:16px 20px 40px;max-width:1300px;margin:0 auto}
+h1{font-size:22px;font-weight:800}
+.sub{color:var(--muted);font-size:12px}
+.kopf{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;margin-bottom:12px;flex-wrap:wrap}
+.acts{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+button{border:1px solid var(--line);background:var(--card);border-radius:8px;padding:7px 12px;cursor:pointer;min-height:34px}
+button:hover{border-color:var(--accent)}
+button.primary{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+button.small{font-size:12.5px;padding:3px 9px;min-height:28px}
+button.ghost{border-color:transparent;background:transparent;color:var(--muted)}
+button.warn{color:var(--neg)}
+button:disabled{opacity:.55;cursor:default}
+.inp{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:8px 10px}
+/* Board: Schritte untereinander */
+.spalte{background:var(--soft);border:1px solid var(--line);border-radius:12px;padding:10px 12px;margin-bottom:12px}
+.spalte.ziel{outline:2px dashed var(--accent);outline-offset:-3px}
+.sk{display:flex;align-items:center;gap:10px;font-weight:700;font-size:14px;margin-bottom:8px}
+.sk .nr{width:24px;height:24px;border-radius:50%;background:var(--accent);color:#fff;font-size:12px;display:inline-flex;align-items:center;justify-content:center}
+.anz{font-size:11px;font-weight:700;color:var(--muted);background:var(--card);border-radius:999px;padding:1px 8px}
+.karten{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:8px}
+.karte{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:9px 10px;cursor:pointer}
+.karte:hover{border-color:var(--accent)}
+.karte .n{font-weight:700}.karte .z{font-size:12px;color:var(--muted)}
+.pill{display:inline-block;font-size:11px;padding:1px 8px;border-radius:999px;font-weight:600;background:var(--chip);color:var(--muted);margin:4px 4px 0 0}
+.p-ok{background:var(--pos-bg);color:var(--pos)}.p-warn{background:var(--warn-bg);color:var(--warn)}.p-blau{background:var(--accent-soft);color:var(--accent)}
+.leer{color:var(--muted);padding:8px 4px;font-size:12.5px}
+/* Zeilen und Arbeitsbereich in der Kachel */
+.zeilen{display:grid;gap:6px}
+.zeile{display:flex;align-items:center;gap:10px;flex-wrap:wrap;background:var(--card);border:1px solid var(--line);border-radius:10px;padding:8px 12px;cursor:pointer}
+.zeile:hover{border-color:var(--accent)}
+.zeile.on{border-color:var(--accent);border-bottom-left-radius:0;border-bottom-right-radius:0;background:var(--accent-soft)}
+.zeile .n{font-weight:700}.zeile .z{font-size:12px;color:var(--muted)}.zeile .pill{margin:0}
+.zeile .rechts{margin-left:auto;font-size:12px;color:var(--accent);font-weight:600}
+.ws{border:1px solid var(--accent);border-top:0;border-radius:0 0 12px 12px;background:var(--bg);padding:12px;margin-top:-6px}
+.ws .card{margin-bottom:10px}
+.weiter{display:flex;justify-content:flex-end;gap:8px;align-items:center;flex-wrap:wrap;margin:4px 0 12px}
+details.mehr{background:var(--card);border:1px solid var(--line);border-radius:12px;margin-bottom:8px}
+details.mehr>summary{cursor:pointer;padding:10px 16px;font-weight:700;list-style:none}
+details.mehr>summary::-webkit-details-marker{display:none}
+details.mehr>summary::after{content:'aufklappen';float:right;font-size:12px;font-weight:600;color:var(--muted)}
+details.mehr[open]>summary::after{content:'zuklappen'}
+details.mehr>.innen{padding:0 12px 4px}
+details.mehr>.innen>.card{border:0;padding:4px 4px 10px;margin:0}
+.vtwahl{display:flex;flex-wrap:wrap;gap:6px 18px}.vtwahl label{display:flex;gap:6px;align-items:center;font-size:13.5px}
+/* Detail */
+.ov{position:fixed;inset:0;background:rgba(10,14,20,.45);display:flex;justify-content:flex-end;z-index:40}
+.panel{background:var(--bg);width:min(900px,100%);height:100%;overflow:auto;padding:16px 20px 40px;box-shadow:-10px 0 30px rgba(0,0,0,.15)}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px 16px;margin-bottom:12px}
+.ch{font-weight:700;font-size:15px;margin-bottom:8px;display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap}
+.g2{display:grid;grid-template-columns:1fr 1fr;column-gap:14px}.g3{display:grid;grid-template-columns:repeat(3,1fr);column-gap:14px}.g4{display:grid;grid-template-columns:repeat(4,1fr);column-gap:14px}
+.fl{display:grid;gap:3px;font-size:12px;color:var(--muted);margin-bottom:8px}
+.fl input,.fl select,.fl textarea,.feld{width:100%;background:var(--soft);border:1px solid var(--line);border-radius:7px;padding:7px 9px;font-size:14px;color:var(--ink)}
+textarea{resize:vertical;min-height:70px}
+.seg{display:inline-flex;border:1px solid var(--line);border-radius:8px;overflow:hidden;background:var(--card);flex-wrap:wrap}
+.seg button{border:0;border-radius:0;padding:6px 10px;font-size:12.5px}.seg button+button{border-left:1px solid var(--line)}
+.seg button.on{background:var(--accent);color:var(--accent-ink)}
+.summe{font-size:20px;font-weight:800}
+.note{background:var(--warn-bg);color:var(--warn);border-radius:8px;padding:8px 10px;font-size:13px;margin:6px 0}
+.ok{background:var(--pos-bg);color:var(--pos);border-radius:8px;padding:8px 10px;font-size:13px;margin:6px 0}
+.rot{background:var(--neg-bg);color:var(--neg);border-radius:8px;padding:8px 10px;font-size:13px;margin:6px 0}
+.verlauf div{font-size:12.5px;border-top:1px solid var(--line);padding:5px 0}
+.ktab{width:100%;border-collapse:collapse;font-size:13px}
+.ktab th{text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:.03em;color:var(--muted);font-weight:600;padding:6px;border-bottom:1px solid var(--line)}
+.ktab td{padding:4px 6px;border-bottom:1px solid var(--line);vertical-align:middle}
+.ktab td.r,.ktab th.r{text-align:right;white-space:nowrap}
+.ktab input{width:100%;max-width:120px;text-align:right;background:var(--soft);border:1px solid var(--line);border-radius:6px;padding:5px 7px;font-size:13.5px}
+.ktab tr.grp td{background:var(--soft);font-size:11.5px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.03em}
+.ktab tr.sum td{font-weight:800;border-top:2px solid var(--ink)}
+.kz{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-top:10px}
+.kz div{background:var(--soft);border-radius:8px;padding:8px 10px}.kz b{display:block;font-size:16px}.kz span{font-size:11.5px;color:var(--muted)}
+.msa .z{display:grid;grid-template-columns:1.2fr 1fr;gap:10px;padding:5px 0;border-top:1px solid var(--line);font-size:13px}.msa .z span:first-child{color:var(--muted)}
+.msa h4{font-size:12px;color:var(--accent);text-transform:uppercase;letter-spacing:.03em;margin:10px 0 2px}
+.qr{display:flex;gap:14px;align-items:flex-start;flex-wrap:wrap}.qr #qrbox{background:#fff;padding:8px;border:1px solid var(--line);border-radius:8px}
+.toast{position:fixed;left:50%;bottom:20px;transform:translateX(-50%);background:var(--ink);color:#fff;padding:9px 16px;border-radius:8px;font-size:13px;opacity:0;pointer-events:none;transition:opacity .2s;z-index:60}.toast.on{opacity:1}
+@media(max-width:760px){.g2,.g3,.g4,.kz{grid-template-columns:1fr 1fr}}
+
+.qrb{background:#fff;padding:8px;border:1px solid var(--line);border-radius:8px}
+.zeile .z{flex:1;min-width:180px}
+a{color:var(--accent)}
+</style></head><body>
+<div class="wrap" id="app"><div class="leer">Lädt …</div></div>
+<div class="toast" id="toast"></div>
+<script>
+const sb=window.supabase.createClient('https://jqzxctfqvcwbctpjksvg.supabase.co','eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpxenhjdGZxdmN3YmN0cGprc3ZnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODIxMzA0MzIsImV4cCI6MjA5NzcwNjQzMn0.RKIbZxJdusKWWPjBJqlxZ8e1m8So02UslOg55YRsn3o');
+const esc=s=>(s==null?'':String(s)).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+const p2=n=>String(n).padStart(2,'0');
+const dmy=x=>{const s=String(x||'').slice(0,10);return /^\d{4}-\d\d-\d\d$/.test(s)?s.split('-').reverse().join('.'):String(x||'');};
+const zeit=d=>{if(!d)return '';const x=new Date(d);return p2(x.getDate())+'.'+p2(x.getMonth()+1)+'.'+x.getFullYear()+', '+p2(x.getHours())+':'+p2(x.getMinutes())+' Uhr';};
+const tag=d=>{if(!d)return '';const x=new Date(d);return x.getFullYear()+'-'+p2(x.getMonth()+1)+'-'+p2(x.getDate());};
+const NUTZER={'ramona@andersmacher.info':'Ramona Romanelli','juergen@andersmacher.info':'Jürgen Reuter','eric@andersmacher.info':'Eric Eisenhardt'};
+const ERIC='eric@andersmacher.info';
+const MSA_F=[['1. Objekt, Einzugstermin und Zweck',[['objekt','Objekt'],['besichtigung','Besichtigung'],['einzug','Einzugstermin'],['zweck','Zweck']]],
+ ['2. Kontaktdaten',[['anrede','Anrede'],['vorname','Vorname'],['nachname','Nachname'],['familienstand','Familienstand'],['geburtsdatum','Geburtsdatum'],['email','E-Mail'],['telefon','Telefon'],['adresse','Aktuelle Adresse']]],
+ ['3. Arbeitsverhältnis',[['arbeit','Arbeitsverhältnis'],['arbeitgeber','Arbeitgeber / seit'],['einkommen','Nettoeinkommen Haushalt (€)'],['info','Wichtige Informationen']]],
+ ['4. Weitere Daten',[['personen','Personen'],['mitbewohner','Weitere Personen'],['gewerblich','Gewerbliche Nutzung'],['haustiere','Haustiere'],['haustiere_welche','Welche Haustiere'],['erfahren','Wie von der Wohnung erfahren'],['ansprechpartner','Ansprechpartner'],['teilweise','Mietkosten derzeit teilweise übernommen'],['vollstaendig','Mietkosten derzeit vollständig übernommen'],['amt','Miete zahlt Jobcenter / Sozialamt'],['behoerde','Zuständige Behörde']]],
+ ['5. Bonität',[['eidesstattlich','Eidesstattliche Versicherung oder Haftbefehl in den letzten 3 Jahren']]],
+ ['6. Einverständnis',[['datenschutz','Einverständnis Datenschutz'],['wahrheit','Angaben wahrheitsgemäß']]]];
+const SIGNATUR='Mit freundlichen Grüßen\n\nWohn(T)raum Rheinhessen GmbH\nbewusst sozial engagiert\nE-Mail: hausverwaltung@andersmacher.info\nTelefon: 06133-9382937\nDalheimer Str. 70, 55278 Dexheim\nHRB 45997, Amtsgericht Mainz\nGeschäftsführer: Eric Eisenhardt';
+const SICHT=[['eingegangen','Eingegangen'],['verschickt','Verschickt'],['uebernommen','Übernommen'],['abgelehnt','Abgelehnt'],['allgemein','Allgemeine Links']];
+const FELDER='id,token,art,bezeichnung,aktiv,quelle_token,karte_id,status,vorbelegt,daten,unterschrift,eingegangen_at,created_at,erstellt_von,asana_gid,asana_link,entscheidung,entschieden_von,entschieden_at,interessent_id';
+
+let R=[],O=[],E=[],ICH='',ICHMAIL='',SICHTW='eingegangen',SEL=null,FORM=null,AFORM=null,BUSY='',SUCHE='',NEU=null;
+const PARAM=new URLSearchParams(location.search).get('t');
+const $=id=>document.getElementById(id);
+function toast(t,ms){const el=$('toast');el.textContent=t;el.classList.add('on');clearTimeout(toast._t);toast._t=setTimeout(()=>el.classList.remove('on'),ms||3500);}
+async function token(){const {data}=await sb.auth.getSession();return data&&data.session?data.session.access_token:'';}
+async function api(pfad,body){let r;try{r=await fetch(pfad,{method:'POST',headers:{'content-type':'application/json',authorization:'Bearer '+await token()},body:JSON.stringify(body)});}catch(e){throw new Error('Dienst nicht erreichbar.');}
+  const j=await r.json().catch(()=>({}));if(!r.ok||j.error)throw new Error(j.error||('Fehler '+r.status));return j;}
+const istEric=()=>ICHMAIL===ERIC;
+const link=t=>location.origin+'/mieterselbstauskunft.html?t='+encodeURIComponent(t);
+const neuToken=()=>((crypto.randomUUID?crypto.randomUUID():Math.random().toString(36).slice(2)+Date.now().toString(36))+(crypto.randomUUID?crypto.randomUUID():Math.random().toString(36).slice(2))).replace(/-/g,'');
+const objVon=id=>O.find(o=>o.id===id);
+const wLabel=e=>{const o=objVon(e.objekt_id);return o?o.kz+' '+e.bezeichnung+' · '+(o.strasse||o.name||''):e.bezeichnung;};
+const wohnungen=()=>E.filter(e=>e.aktiv!==false&&objVon(e.objekt_id)).map(e=>({e,label:wLabel(e)})).sort((a,b)=>a.label.localeCompare(b.label,'de',{numeric:true}));
+function wohnungVon(text){const w=wohnungen().find(x=>x.label===String(text||'').trim());if(!w)return null;const o=objVon(w.e.objekt_id);
+  return {objekt_id:o.id,einheit_id:w.e.id,label:w.label,adresse:[o.strasse,[o.plz,o.ort].filter(Boolean).join(' ')].filter(Boolean).join(', ')+' – '+w.e.bezeichnung};}
+const nameVon=s=>{const d=s.daten||{},v=s.vorbelegt||{};return [d.vorname||v.vorname,d.nachname||v.nachname].filter(Boolean).join(' ')||'(ohne Namen)';};
+const quelleVon=s=>{if(s.quelle_token){const q=R.find(x=>x.token===s.quelle_token);return 'Allgemeiner Link'+(q&&q.bezeichnung?' „'+q.bezeichnung+'“':'');}return 'Persönlicher Link'+(s.erstellt_von?' von '+s.erstellt_von:'');};
+const wohnTxt=s=>{const v=s.vorbelegt||{};return (v.wohnung&&v.wohnung.label)||(s.daten&&s.daten.objekt)||v.objekt||'';};
+
+/* ---------- Daten ---------- */
+async function laden(){
+  const [m,o,e,u]=await Promise.all([sb.from('mieterselbstauskunft').select(FELDER).is('karte_id',null).order('created_at',{ascending:false}),
+    sb.from('obj_objekte').select('id,kz,name,strasse,plz,ort,status').order('sort'),sb.from('obj_einheiten').select('id,objekt_id,bezeichnung,aktiv,sort').order('sort'),sb.auth.getUser()]);
+  if(m.error){$('app').innerHTML='<div class="leer">Bitte im Wohntraum OS anmelden.</div>';return;}
+  R=m.data||[];O=(o.data||[]).filter(x=>x.status!=='Verkauft');E=e.data||[];
+  const us=u&&u.data&&u.data.user;if(us){ICHMAIL=String(us.email||'').toLowerCase();ICH=NUTZER[ICHMAIL]||us.email||'';}
+  if(PARAM&&!laden.p){laden.p=1;const s=R.find(x=>x.token===PARAM);if(s){SEL=s.id;SICHTW=gruppe(s)||SICHTW;}}
+  render();}
+function gruppe(s){if(s.art==='allgemein')return 'allgemein';if(s.entscheidung==='uebernommen')return 'uebernommen';if(s.entscheidung==='abgelehnt')return 'abgelehnt';return s.status==='eingegangen'?'eingegangen':'verschickt';}
+
+/* ---------- Darstellung ---------- */
+function render(){const L=R.filter(s=>gruppe(s)===SICHTW),q=SUCHE.trim().toLowerCase();
+  const anz=k=>R.filter(s=>gruppe(s)===k).length;
+  let h=`<div class="kopf"><div><h1>Selbstauskünfte</h1><div class="sub">Zuerst geht der Link zur Mieterselbstauskunft raus. Ist die Auskunft eingegangen, entscheidet Eric: übernehmen in sein Board Mietinteressenten oder ablehnen. Erst wenn Eric den Interessenten an das Team übergibt, erscheint er mit allen Daten in der Neuvermietung.</div></div>
+    <div class="acts"><input class="inp" type="search" id="suche" placeholder="Name oder Wohnung suchen …" value="${esc(SUCHE)}" style="width:220px"><button class="primary" data-a="form">Link verschicken</button></div></div>`;
+  if(FORM)h+=formular();
+  if(NEU)h+=neuKarte();
+  h+=`<div class="acts" style="margin-bottom:10px"><div class="seg">${SICHT.map(([k,t])=>`<button data-sicht="${k}" class="${SICHTW===k?'on':''}">${esc(t)} (${anz(k)})</button>`).join('')}</div></div>`;
+  if(SICHTW==='allgemein')h+=allgemein(L);
+  else{const F=L.filter(s=>!q||(nameVon(s)+' '+wohnTxt(s)+' '+((s.daten&&s.daten.email)||(s.vorbelegt&&s.vorbelegt.email)||'')).toLowerCase().includes(q));
+    h+=F.length?'<div class="zeilen">'+F.map(zeile).join('')+'</div>':'<div class="leer">'+(q?'Nichts gefunden.':SICHTW==='eingegangen'?'Keine neuen Selbstauskünfte.':SICHTW==='verschickt'?'Keine offenen Links.':'Keine Einträge.')+'</div>';}
+  $('app').innerHTML=h;
+  if(NEU){const b=$('qrneu');if(b&&window.QRCode)new QRCode(b,{text:link(NEU.token),width:140,height:140,correctLevel:QRCode.CorrectLevel.M});}
+  document.querySelectorAll('[data-qr]').forEach(b=>{if(window.QRCode&&!b.firstChild)new QRCode(b,{text:link(b.dataset.qr),width:120,height:120,correctLevel:QRCode.CorrectLevel.M});});}
+function zeile(s){const d=s.daten||{},auf=SEL===s.id,g=gruppe(s);let st='';
+  if(g==='eingegangen')st=`<span class="pill p-blau">eingegangen am ${esc(zeit(s.eingegangen_at))}</span>`+(d.amt==='JA'?'<span class="pill">Jobcenter / Sozialamt</span>':'')+(d.eidesstattlich==='JA'?'<span class="pill p-warn">Eidesstattliche Versicherung: JA</span>':'');
+  else if(g==='verschickt')st=`<span class="pill">verschickt am ${esc(zeit(s.created_at))}, wartet</span>`;
+  else st=`<span class="pill ${g==='uebernommen'?'p-ok':'p-warn'}">${g==='uebernommen'?'übernommen':'abgelehnt'} von ${esc(s.entschieden_von||'')} am ${esc(zeit(s.entschieden_at))}</span>`;
+  return `<div class="zeile${auf?' on':''}" data-s="${esc(s.id)}"><span class="n">${esc(nameVon(s))}</span><span class="z">${esc(wohnTxt(s)||'ohne Wohnung')} · ${esc(quelleVon(s))}</span>${st}<span class="rechts">${auf?'Zuklappen':'Öffnen'}</span></div>${auf?'<div class="ws">'+detail(s)+'</div>':''}`;}
+function detail(s){const d=s.daten||{},g=gruppe(s);let h='';
+  if(g==='verschickt'){h+=`<div class="card"><div class="ch">Link zur Selbstauskunft<span class="pill">wartet auf den Interessenten</span></div><div class="qr"><div class="qrb" data-qr="${esc(s.token)}"></div><div style="flex:1;min-width:240px">
+      <input class="feld" id="l-${esc(s.id)}" value="${esc(link(s.token))}" readonly style="margin:0 0 8px">
+      <div class="acts"><button data-a="kopie" data-id="${esc(s.id)}">Link kopieren</button>${(s.vorbelegt||{}).email?`<button data-a="mail" data-id="${esc(s.id)}"${BUSY?' disabled':''}>${BUSY==='mail'+s.id?'Wird gesendet …':'Erneut per Mail an '+esc(s.vorbelegt.email)+' senden'}</button>`:''}<button data-a="qr" data-id="${esc(s.id)}">QR-Code herunterladen</button><button class="warn" data-a="zurueck" data-id="${esc(s.id)}">Link zurückziehen</button></div>
+      <div class="sub" style="margin-top:6px">Erstellt am ${esc(zeit(s.created_at))}${s.erstellt_von?' von '+esc(s.erstellt_von):''}${(s.vorbelegt||{}).gesendet?' · per Mail gesendet am '+esc(zeit(s.vorbelegt.gesendet)):''}</div></div></div></div>`;return h;}
+  h+='<div class="card"><div class="ch">Mieterselbstauskunft<span class="pill p-ok">eingegangen am '+esc(zeit(s.eingegangen_at))+'</span></div>';
+  if(d.amt==='JA')h+=`<div class="note">Die Miete übernimmt das Jobcenter / Sozialamt: ${esc(d.behoerde||'')}</div>`;
+  if(d.eidesstattlich==='JA')h+='<div class="rot">Eidesstattliche Versicherung oder Haftbefehl in den letzten 3 Jahren: JA</div>';
+  h+='<div class="msa">'+MSA_F.map(([t,F])=>{const z=F.filter(([f])=>d[f]!=null&&d[f]!=='');if(!z.length)return '';return `<h4>${esc(t)}</h4>`+z.map(([f,l])=>`<div class="z"><span>${esc(l)}</span><span style="white-space:pre-wrap">${esc(/^\d{4}-\d\d-\d\d$/.test(d[f])?dmy(d[f]):d[f])}</span></div>`).join('');}).join('')
+    +(s.unterschrift?`<h4>Unterschrift</h4><img src="${esc(s.unterschrift)}" alt="Unterschrift" style="max-width:260px;border:1px solid var(--line);border-radius:6px;background:#fff">`:'')+'</div>';
+  h+=`<div class="sub" style="margin-top:8px">${esc(quelleVon(s))}${s.asana_link?` · <a href="${esc(s.asana_link)}" target="_blank" rel="noopener">Asana-Aufgabe</a>`:''}</div>`;
+  h+=`<div class="acts" style="margin-top:10px"><button data-a="pdf" data-id="${esc(s.id)}">Als PDF speichern</button>`;
+  if(g==='eingegangen')h+=istEric()?`<button class="primary" data-a="uebernehmen" data-id="${esc(s.id)}"${BUSY?' disabled':''}>${BUSY==='ueb'?'Wird übernommen …':'Zu Mietinteressenten übernehmen'}</button><button class="warn" data-a="ablehnen" data-id="${esc(s.id)}"${BUSY?' disabled':''}>Ablehnen</button>`:'<span class="sub">Die Entscheidung trifft Eric.</span>';
+  else if(g==='uebernommen')h+=`<button data-a="mi" data-id="${esc(s.interessent_id||'')}">Im Board Mietinteressenten öffnen</button>`;
+  else if(g==='abgelehnt'&&istEric())h+=`<button data-a="wieder" data-id="${esc(s.id)}">Ablehnung zurücknehmen</button>`;
+  return h+'</div></div>';}
+function formular(){const f=FORM;
+  return `<div class="card"><div class="ch">Persönlichen Link verschicken<button class="ghost" data-a="formzu">Schließen</button></div>
+  <div class="sub" style="margin-bottom:8px">Die Angaben werden in der Selbstauskunft schon vorausgefüllt. Name und E-Mail reichen.</div>
+  <div class="g4"><label class="fl">Vorname<input id="f-vorname" value="${esc(f.vorname)}" autocomplete="off"></label><label class="fl">Nachname<input id="f-nachname" value="${esc(f.nachname)}" autocomplete="off"></label>
+  <label class="fl">E-Mail<input id="f-email" type="email" value="${esc(f.email)}" autocomplete="off"></label><label class="fl">Telefon (freiwillig)<input id="f-telefon" value="${esc(f.telefon)}" autocomplete="off"></label></div>
+  <div class="g2"><label class="fl">Wohnung (freiwillig)<input id="f-wohnung" list="dl-w" value="${esc(f.wohnung)}" placeholder="Kürzel oder Straße eintippen …" autocomplete="off"></label><label class="fl">Einzug ab (freiwillig)<input id="f-einzug" type="date" value="${esc(f.einzug)}"></label></div>
+  <datalist id="dl-w">${wohnungen().map(w=>`<option value="${esc(w.label)}">`).join('')}</datalist>
+  <div class="acts"><button class="primary" data-a="senden"${BUSY?' disabled':''}>${BUSY==='senden'?'Wird gesendet …':'Link erstellen und per Mail senden'}</button><button data-a="nurlink"${BUSY?' disabled':''}>Nur Link erstellen</button></div></div>`;}
+function neuKarte(){return `<div class="card"><div class="ch">Link für ${esc(nameVon(NEU))}<button class="ghost" data-a="neuzu">Schließen</button></div><div class="qr"><div id="qrneu" class="qrb"></div><div style="flex:1;min-width:240px">
+  ${NEU.vorbelegt&&NEU.vorbelegt.gesendet?'<div class="ok">Per Mail an '+esc(NEU.vorbelegt.email)+' gesendet.</div>':'<div class="sub">Diesen Link oder QR-Code an den Interessenten schicken (z. B. per WhatsApp):</div>'}
+  <input class="feld" id="l-neu" value="${esc(link(NEU.token))}" readonly style="margin:6px 0">
+  <div class="acts"><button data-a="kopie" data-id="neu">Link kopieren</button><button data-a="qr" data-id="neu">QR-Code herunterladen</button></div></div></div></div>`;}
+function allgemein(L){let h=`<div class="card"><div class="ch">Allgemeine Links</div><div class="sub" style="margin-bottom:8px">Ein allgemeiner Link kann von jedem genutzt werden, z. B. in Anzeigen, auf dem Exposé oder als QR-Code bei der Besichtigung. Jede ausgefüllte Selbstauskunft erscheint einzeln unter „Eingegangen“. Ein Link kann jederzeit abgeschaltet werden.</div>
+    <div class="g3"><label class="fl">Bezeichnung<input id="a-bez" value="${esc((AFORM||{}).bez||'')}" placeholder="z. B. Immoscout, Besichtigung E4" autocomplete="off"></label><label class="fl">Wohnung (freiwillig)<input id="a-wohnung" list="dl-w2" value="${esc((AFORM||{}).wohnung||'')}" placeholder="Kürzel oder Straße eintippen …" autocomplete="off"></label><label class="fl">&nbsp;<button class="primary" data-a="aneu">Allgemeinen Link anlegen</button></label></div>
+    <datalist id="dl-w2">${wohnungen().map(w=>`<option value="${esc(w.label)}">`).join('')}</datalist></div>`;
+  const S=L.slice().sort((a,b)=>String(a.bezeichnung||'').localeCompare(String(b.bezeichnung||''),'de',{numeric:true}));
+  if(!S.length)return h+'<div class="leer">Noch kein allgemeiner Link angelegt.</div>';
+  return h+S.map(s=>{const n=R.filter(x=>x.quelle_token===s.token).length;
+    return `<div class="card"><div class="ch"><span>${esc(s.bezeichnung||'Allgemeiner Link')}${(s.vorbelegt||{}).wohnung?' <span class="sub">· '+esc(s.vorbelegt.wohnung.label)+'</span>':''}</span><span>${s.aktiv?'<span class="pill p-ok">aktiv</span>':'<span class="pill p-warn">abgeschaltet</span>'}<span class="pill">${n} Selbstauskünfte</span></span></div>
+      <div class="qr">${s.aktiv?`<div class="qrb" data-qr="${esc(s.token)}"></div>`:''}<div style="flex:1;min-width:240px"><input class="feld" id="l-${esc(s.id)}" value="${esc(link(s.token))}" readonly style="margin:0 0 8px">
+      <div class="acts">${s.aktiv?`<button data-a="kopie" data-id="${esc(s.id)}">Link kopieren</button><button data-a="qr" data-id="${esc(s.id)}">QR-Code herunterladen</button>`:''}<button data-a="aktiv" data-id="${esc(s.id)}">${s.aktiv?'Abschalten':'Wieder einschalten'}</button></div>
+      <div class="sub" style="margin-top:6px">Angelegt am ${esc(zeit(s.created_at))}${s.erstellt_von?' von '+esc(s.erstellt_von):''}</div></div></div></div>`;}).join('');}
+
+/* ---------- Aktionen ---------- */
+function formLesen(){if(!FORM)return;for(const k of ['vorname','nachname','email','telefon','wohnung','einzug']){const el=$('f-'+k);if(el)FORM[k]=el.value.trim();}}
+async function linkAnlegen(mail){formLesen();const f=FORM;
+  if(!f.vorname&&!f.nachname){toast('Bitte den Namen eintragen.');return;}
+  if(mail&&!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(f.email)){toast('Bitte eine gültige E-Mail-Adresse eintragen.');return;}
+  const w=f.wohnung?wohnungVon(f.wohnung):null;if(f.wohnung&&!w){toast('Bitte eine Wohnung aus der Liste wählen.');return;}
+  BUSY=mail?'senden':'link';render();
+  const vor={vorname:f.vorname,nachname:f.nachname,email:f.email,telefon:f.telefon,einzug:f.einzug,objekt:w?w.adresse:''};if(w)vor.wohnung={objekt_id:w.objekt_id,einheit_id:w.einheit_id,label:w.label};
+  const {data,error}=await sb.from('mieterselbstauskunft').insert({token:neuToken(),art:'person',vorbelegt:vor,erstellt_von:ICH}).select(FELDER).single();
+  if(error){BUSY='';render();toast('Link nicht erstellt: '+error.message,6000);return;}
+  R.unshift(data);NEU=data;FORM=null;
+  if(mail)await mailSenden(data);
+  BUSY='';SICHTW='verschickt';render();}
+function mailText(s){const v=s.vorbelegt||{},w=v.wohnung;
+  return 'Guten Tag'+([v.vorname,v.nachname].filter(Boolean).length?' '+[v.vorname,v.nachname].filter(Boolean).join(' '):'')+',\n\nvielen Dank für Ihr Interesse an unserer Wohnung'+(v.objekt?' ('+v.objekt+')':'')+'. Bitte füllen Sie unsere Mieterselbstauskunft aus. Sie werden Schritt für Schritt durch die Fragen geführt und können die Auskunft am Ende direkt an uns versenden:\n\n'+link(s.token)+'\n\nDas dauert nur wenige Minuten und funktioniert auch auf dem Handy.\n\n'+SIGNATUR;}
+async function mailSenden(s){const v=s.vorbelegt||{};
+  try{await api('/api/postfach',{aktion:'senden',modus:'neu',an:v.email,betreff:'Ihre Mieterselbstauskunft',text:mailText(s),anhaenge:[]});
+    const nv=Object.assign({},v,{gesendet:new Date().toISOString()});await sb.from('mieterselbstauskunft').update({vorbelegt:nv}).eq('id',s.id);s.vorbelegt=nv;toast('Mail gesendet.');}
+  catch(e){toast('Mail nicht gesendet: '+e.message+' Der Link ist trotzdem erstellt.',7000);}}
+async function asanaAb(s){if(!/^\d{5,}$/.test(String(s.asana_gid||'')))return;try{await api('/api/asana',{aktion:'erledigt',gid:s.asana_gid,wert:true});}catch(e){console.warn('Asana',e.message);}}
+function zahlart(d){if(d.amt==='JA')return /sozial/i.test(d.behoerde||'')?'Sozialamt':'Jobcenter';if(d.arbeit==='Selbstständig')return 'Selbstständig';if(['Angestellt','Beamtet','Rente / Pension'].includes(d.arbeit))return 'Selbstzahler';return 'noch nicht geklärt';}
+async function uebernehmen(s){const d=s.daten||{},v=s.vorbelegt||{};
+  if(!confirm(nameVon(s)+' in das Board Mietinteressenten übernehmen?'))return;
+  BUSY='ueb';render();
+  const q=s.quelle_token&&R.find(x=>x.token===s.quelle_token);
+  const row={vorname:d.vorname||v.vorname||null,name:d.nachname||v.nachname||null,kontakt:[d.email||v.email,d.telefon||v.telefon].filter(Boolean).join(' · ')||null,eingang:tag(s.eingegangen_at)||null,
+    quelle:(q&&q.bezeichnung)||d.erfahren||null,personen:Number(d.personen)>0?parseInt(d.personen,10):null,einzug_ab:d.einzug?dmy(d.einzug):null,zahlungsart:zahlart(d),
+    typ:/^Umzug/.test(d.zweck||'')?'umzug':'neu',status:'3 · Rückmeldung Selbstauskunft',selbstauskunft_vorhanden:'✅',zielwohnung_label:(v.wohnung&&v.wohnung.label)||d.objekt||null};
+  const {data,error}=await sb.from('mietinteressenten').insert(row).select('id,nummer').single();
+  if(error){BUSY='';render();toast('Nicht übernommen: '+error.message,6000);return;}
+  const jetzt=new Date().toISOString();
+  const {error:e2}=await sb.from('mieterselbstauskunft').update({entscheidung:'uebernommen',entschieden_von:ICH,entschieden_at:jetzt,interessent_id:data.id}).eq('id',s.id);
+  if(e2){BUSY='';render();toast('Fehler: '+e2.message,6000);return;}
+  Object.assign(s,{entscheidung:'uebernommen',entschieden_von:ICH,entschieden_at:jetzt,interessent_id:data.id});
+  const info=[d.arbeit&&'Arbeit: '+d.arbeit+(d.arbeitgeber?' ('+d.arbeitgeber+')':''),d.einkommen&&'Nettoeinkommen Haushalt: '+d.einkommen+' €',d.amt==='JA'&&'Miete zahlt: '+(d.behoerde||'Jobcenter / Sozialamt'),d.haustiere==='JA'&&'Haustiere: '+(d.haustiere_welche||'ja'),d.eidesstattlich==='JA'&&'ACHTUNG: Eidesstattliche Versicherung / Haftbefehl in den letzten 3 Jahren',d.info&&'Info: '+d.info].filter(Boolean);
+  try{await sb.from('mietinteressent_notizen').insert({interessent_id:data.id,text:'Selbstauskunft eingegangen am '+zeit(s.eingegangen_at)+' ('+quelleVon(s)+') und übernommen.'+(info.length?'\n'+info.join('\n'):''),autor:ICH||null});}catch(e){}
+  await asanaAb(s);BUSY='';render();toast('Übernommen als Mietinteressent #'+(data.nummer!=null?data.nummer:'')+'.');}
+async function ablehnen(s){if(!confirm('Selbstauskunft von '+nameVon(s)+' ablehnen?'))return;const jetzt=new Date().toISOString();
+  const {error}=await sb.from('mieterselbstauskunft').update({entscheidung:'abgelehnt',entschieden_von:ICH,entschieden_at:jetzt}).eq('id',s.id);
+  if(error){toast('Fehler: '+error.message,6000);return;}Object.assign(s,{entscheidung:'abgelehnt',entschieden_von:ICH,entschieden_at:jetzt});await asanaAb(s);render();toast('Abgelehnt.');}
+async function wieder(s){const {error}=await sb.from('mieterselbstauskunft').update({entscheidung:null,entschieden_von:null,entschieden_at:null}).eq('id',s.id);
+  if(error){toast('Fehler: '+error.message,6000);return;}Object.assign(s,{entscheidung:null,entschieden_von:null,entschieden_at:null});SICHTW='eingegangen';render();}
+async function zurueckziehen(s){if(!confirm('Den Link für '+nameVon(s)+' zurückziehen? Er funktioniert danach nicht mehr.'))return;const jetzt=new Date().toISOString();
+  const {error}=await sb.from('mieterselbstauskunft').update({status:'zurueckgezogen',entscheidung:'abgelehnt',entschieden_von:ICH,entschieden_at:jetzt}).eq('id',s.id);
+  if(error){toast('Fehler: '+error.message,6000);return;}Object.assign(s,{status:'zurueckgezogen',entscheidung:'abgelehnt',entschieden_von:ICH,entschieden_at:jetzt});render();toast('Link zurückgezogen.');}
+async function allgemeinNeu(){const bez=($('a-bez').value||'').trim(),wt=($('a-wohnung').value||'').trim();AFORM={bez,wohnung:wt};
+  if(!bez){toast('Bitte eine Bezeichnung eintragen.');return;}const w=wt?wohnungVon(wt):null;if(wt&&!w){toast('Bitte eine Wohnung aus der Liste wählen.');return;}
+  const vor=w?{objekt:w.adresse,wohnung:{objekt_id:w.objekt_id,einheit_id:w.einheit_id,label:w.label}}:{};
+  const {data,error}=await sb.from('mieterselbstauskunft').insert({token:neuToken(),art:'allgemein',bezeichnung:bez,aktiv:true,vorbelegt:vor,erstellt_von:ICH}).select(FELDER).single();
+  if(error){toast('Nicht angelegt: '+error.message,6000);return;}R.unshift(data);AFORM=null;render();toast('Allgemeiner Link angelegt.');}
+async function aktivUm(s){const {error}=await sb.from('mieterselbstauskunft').update({aktiv:!s.aktiv}).eq('id',s.id);if(error){toast('Fehler: '+error.message,6000);return;}s.aktiv=!s.aktiv;render();toast(s.aktiv?'Link eingeschaltet.':'Link abgeschaltet.');}
+function qrLaden(id){const box=id==='neu'?$('qrneu'):document.querySelector('[data-qr="'+CSS.escape((R.find(x=>x.id===id)||{}).token||'')+'"]');const img=box&&box.querySelector('img,canvas');
+  const u=img?(img.tagName==='CANVAS'?img.toDataURL('image/png'):img.src):'';if(!u)return;const s=id==='neu'?NEU:R.find(x=>x.id===id);
+  const l=document.createElement('a');l.href=u;l.download='QR_Selbstauskunft_'+String((s&&s.art==='allgemein'?s.bezeichnung:nameVon(s))||'Link').replace(/[^\wÄÖÜäöüß -]/g,'').trim()+'.png';l.click();}
+function pdf(s){const d=s.daten||{},{jsPDF}=window.jspdf,doc=new jsPDF({unit:'mm',format:'a4'});const L=18,B=174;let y=20;
+  const neu=()=>{doc.addPage();y=20;};doc.setFont('helvetica','bold');doc.setFontSize(18);doc.text('Mieterselbstauskunft',L,y);y+=10;
+  for(const [t,F] of MSA_F){if(y>260)neu();doc.setFont('helvetica','bold');doc.setFontSize(12);doc.text(t,L,y);y+=6;doc.setFontSize(10);
+    for(const [f,l] of F){const v=d[f];if(v==null||v==='')continue;const val=doc.splitTextToSize(String(/^\d{4}-\d\d-\d\d$/.test(v)?dmy(v):v),B/2);if(y+val.length*4.6>280)neu();
+      doc.setFont('helvetica','normal');doc.setTextColor(95,107,122);doc.text(doc.splitTextToSize(l,B/2-4),L,y);doc.setTextColor(0);doc.text(val,L+B/2,y);y+=Math.max(5,val.length*4.6)+1.5;}y+=3;}
+  if(s.unterschrift){if(y>240)neu();doc.setFont('helvetica','bold');doc.setFontSize(12);doc.text('Unterschrift',L,y);y+=3;try{doc.addImage(s.unterschrift,'PNG',L,y,70,22);}catch(e){}y+=26;}
+  doc.setFontSize(8.5);doc.setTextColor(120);doc.text('Übermittelt über das Wohntraum OS am '+zeit(s.eingegangen_at),L,288);
+  const w=(s.vorbelegt||{}).wohnung;doc.save((w?w.label.split(' · ')[0].replace(/\s+/g,'_'):'Selbstauskunft')+'_'+String(d.nachname||'').toUpperCase()+' '+(d.vorname||'')+'_'+tag(s.eingegangen_at)+'_Mieterselbstauskunft.pdf');}
+
+document.addEventListener('click',async e=>{const t=e.target;
+  const sv=t.closest('[data-sicht]');if(sv){SICHTW=sv.dataset.sicht;SEL=null;render();return;}
+  const z=t.closest('.zeile[data-s]');if(z&&!t.closest('a,button,input')){SEL=SEL===z.dataset.s?null:z.dataset.s;render();return;}
+  const b=t.closest('[data-a]');if(!b)return;const a=b.dataset.a,s=R.find(x=>x.id===b.dataset.id);
+  if(a==='form'){FORM=FORM||{vorname:'',nachname:'',email:'',telefon:'',wohnung:'',einzug:''};NEU=null;render();setTimeout(()=>{const f=$('f-vorname');if(f)f.focus();},30);return;}
+  if(a==='formzu'){FORM=null;render();return;}
+  if(a==='neuzu'){NEU=null;render();return;}
+  if(a==='senden'){linkAnlegen(true);return;}
+  if(a==='nurlink'){linkAnlegen(false);return;}
+  if(a==='kopie'){const i=$('l-'+b.dataset.id);try{await navigator.clipboard.writeText(i.value);}catch(x){i.select();document.execCommand('copy');}toast('Link kopiert.');return;}
+  if(a==='qr'){qrLaden(b.dataset.id);return;}
+  if(a==='mail'&&s){BUSY='mail'+s.id;render();await mailSenden(s);BUSY='';render();return;}
+  if(a==='zurueck'&&s){zurueckziehen(s);return;}
+  if(a==='pdf'&&s){pdf(s);return;}
+  if(a==='uebernehmen'&&s){uebernehmen(s);return;}
+  if(a==='ablehnen'&&s){ablehnen(s);return;}
+  if(a==='wieder'&&s){wieder(s);return;}
+  if(a==='mi'){const p='/vermietung/mietinteressenten'+(b.dataset.id?'?open='+encodeURIComponent(b.dataset.id):'');try{if(window.top!==window){window.top.postMessage({osOeffne:p},'*');return;}}catch(x){}location.href=p;return;}
+  if(a==='aneu'){allgemeinNeu();return;}
+  if(a==='aktiv'&&s){aktivUm(s);return;}});
+document.addEventListener('input',e=>{if(e.target.id==='suche'){SUCHE=e.target.value;const p=e.target.selectionStart;render();const n=$('suche');n.focus();try{n.setSelectionRange(p,p);}catch(x){}}
+  else if(FORM&&String(e.target.id).startsWith('f-'))formLesen();
+  else if(e.target.id==='a-bez'||e.target.id==='a-wohnung')AFORM={bez:$('a-bez').value,wohnung:$('a-wohnung').value};});
+/* Wohnungsfeld: beim Anklicken leeren, damit die ganze Liste erscheint */
+document.addEventListener('focusin',e=>{const t=e.target;if(t.id==='f-wohnung'||t.id==='a-wohnung'){t.dataset.alt=t.value;t.value='';}});
+document.addEventListener('focusout',e=>{const t=e.target;if((t.id==='f-wohnung'||t.id==='a-wohnung')&&!t.value&&t.dataset.alt){t.value=t.dataset.alt;}if(t.id==='f-wohnung')formLesen();});
+laden();
+setInterval(()=>{if(!BUSY&&!FORM&&document.visibilityState==='visible'&&!document.activeElement.matches('input,textarea'))laden();},60000);
+</script>
+</body></html>

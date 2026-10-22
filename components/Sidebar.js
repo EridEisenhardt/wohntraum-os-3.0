@@ -29,6 +29,7 @@ export const NAV = [
     { href: '/verwalto/objekte', icon: 'ti-building-skyscraper', label: 'Objekte', perm: '/hausverwaltung/objekte' },
     { href: '/hausverwaltung/mieterkonten', icon: 'ti-users', label: 'Mieterkonten' },
     { href: '/verwalto/neuvermietung', icon: 'ti-key', label: 'Neuvermietung', offen: true },
+    { href: '/vermietung/selbstauskuenfte', icon: 'ti-forms', label: 'Selbstauskünfte', offen: true },
     { href: '/hausverwaltung/stoerungen', icon: 'ti-tool', label: 'Störungsmeldungen', perm: '/hausverwaltung/objekte' },
     { href: '/hausverwaltung/uebergaben', icon: 'ti-clipboard-check', label: 'Übergabeprotokolle', perm: '/hausverwaltung/objekte' },
   ] },
@@ -130,6 +131,7 @@ export const NAV = [
     { href: '/ankauf/verkauf', icon: 'ti-cash-banknote', label: 'Immobilien Verkauf (Pipeline)' },
   ] },
   { type: 'group', key: 'vermietung', icon: 'ti-home-search', label: 'Vermietung', area: 'vertrieb', mod: 'vermietung', items: [
+    { href: '/vermietung/selbstauskuenfte', icon: 'ti-forms', label: 'Selbstauskünfte' },
     { href: '/vermietung/mietinteressenten', icon: 'ti-users-plus', label: 'Mietinteressenten' },
     { href: '/vermietung/vermittler', icon: 'ti-affiliate', label: 'Vermittler-Übersicht' },
     { href: '/vermietung/wohnungsvermietung', icon: 'ti-home-cog', label: 'Wohnungsvermietung' },

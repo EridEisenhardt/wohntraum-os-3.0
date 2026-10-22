@@ -163,7 +163,7 @@ const MILE_TITLE={'✅':'erledigt','⏳':'in Arbeit','⏸️':'wartet','❌':'ne
 const MILEF=[['kostenuebernahme','Zusage Kostenübernahme'],['mietangebot_erhalten','Mietangebot erhalten'],['mietvertrag_unterschrieben','Mietvertrag unterschrieben'],['schluesseluebergabe_erfolgt','Schlüsselübergabe erfolgt'],['erste_mietzahlung','1. Mietzahlung']];
 function mileCell(r,field){const lbl=(field==='erste_mietzahlung'&&(r[field]||'')==='⏳')?'<span style="font-size:11px;color:var(--muted);margin-left:5px;white-space:nowrap">Auszahlung in Arbeit</span>':'';return `<td style="text-align:center;white-space:nowrap"><select class="inl" style="text-align:center" onchange="upd('${r.id}','${field}',this.value)">${MILE.map(o=>`<option value="${o}" ${o===(r[field]||'')?'selected':''}>${o===''?'—':o}</option>`).join('')}</select>${lbl}</td>`;}
 let ROWS=[], QUELLEN=[], QROWS=[], FSTAGE='', FTYP='', NOTES=[], HIST=[], FILES=[], NT_CUR=null, ME_NAME='';
-let VWOHN=[], IWOHN=[], ITODO=[], IASANA=[];
+let VWOHN=[], IWOHN=[], ITODO=[], IASANA=[], IMSA={};
 async function loadMe(){try{const{data:{user}}=await sb.auth.getUser();if(!user)return;const p=await sb.from('profiles').select('full_name,email').eq('id',user.id).maybeSingle();ME_NAME=(p.data&&(p.data.full_name||p.data.email))||user.email||'';}catch(e){}}
 const DBUCKET='mietinteressent-dateien';
 async function uploadFiles(inp){
@@ -221,7 +221,10 @@ function renderLeadInfo(){const r=ROWS.find(x=>x.id===NT_CUR);if(!r){$('opInfo')
     F('Art des Interessenten',opSel(r,'typ',['neu','umzug'],false))+
     (r.typ==='umzug'?F('Aktuelles Objekt',opTxt(r,'aktuelles_objekt'))+F('Grund des Umzugswunsches',opTxt(r,'umzug_grund')):'')+
     MILEF.map(m=>F(m[1],mile(m[0]))).join('')+
+    (IMSA[r.id]?F('Mieterselbstauskunft',`eingegangen am ${esc(fmtDT(IMSA[r.id].eingegangen_at))} · <a href="#" onclick="msaAnsehen('${IMSA[r.id].token}');return false">Ansehen</a>`):'')+
     F('Team (Neuvermietung)',`<button class="btn" type="button" onclick="anTeam()">An Team übergeben</button>`);
+}
+function msaAnsehen(t){const p='/vermietung/selbstauskuenfte?t='+encodeURIComponent(t);try{if(window.top!==window){window.top.postMessage({osOeffne:p},'*');return;}}catch(e){}location.href=p;
 }
 /* Freigabe an das Team: der Interessent erscheint im Board „Neuvermietung“ (Verwalto) */
 async function anTeam(){const r=ROWS.find(x=>x.id===NT_CUR);if(!r)return;
@@ -234,8 +237,19 @@ async function anTeam(){const r=ROWS.find(x=>x.id===NT_CUR);if(!r)return;
   delete k.archiv;(k.verlauf=k.verlauf||[]).push({t:ts,von,text:'An das Team übergeben'});
   const m=String(r.kontakt||'').match(/[\w.+-]+@[\w.-]+\.[a-z]{2,}/i);if(m&&!k.email)k.email=m[0];
   const t=String(r.kontakt||'').match(/(\+?\d[\d\s\/-]{6,})/);if(t&&!k.tel)k.tel=t[1].trim();
+  // Selbstauskunft aus dem Bereich Selbstauskünfte: Daten übernehmen, die Auskunft gilt als freigegeben (Eric hat sie übernommen)
+  const ms=IMSA[r.id];
+  if(ms){const d=ms.daten||{},v=ms.vorbelegt||{},setz=(f,x)=>{if(x&&!k[f])k[f]=x;};
+    setz('anrede',d.anrede);setz('vorname',d.vorname);setz('name',d.nachname);setz('email',d.email);setz('tel',d.telefon);setz('anschrift',d.adresse);setz('personen',d.personen);
+    if(d.mitbewohner&&!k.weitere)k.weitere=String(d.mitbewohner).split(/\n+/).join(', ');
+    if(d.einzug){k.kalk=k.kalk||{};if(!k.kalk.beginn)k.kalk.beginn=d.einzug;}
+    if(v.wohnung&&v.wohnung.einheit_id&&!(k.wohnung&&k.wohnung.einheit_id))k.wohnung={objekt_id:v.wohnung.objekt_id,einheit_id:v.wohnung.einheit_id,label:v.wohnung.label};
+    if(!k.freigabeMsa)k.freigabeMsa={von,am:ts};
+    k.asana=k.asana||{};if(!(k.asana.selbstauskunft&&k.asana.selbstauskunft.gid))k.asana.selbstauskunft={gid:ms.asana_gid&&ms.asana_gid!=='pending'?ms.asana_gid:'ohne',link:ms.asana_link||'',erstellt:ms.eingegangen_at,erledigt:ts};
+    k.msaUebernommen=ms.eingegangen_at;k.verlauf.push({t:ts,von,text:'Mieterselbstauskunft vom '+fmtDT(ms.eingegangen_at)+' übernommen'});}
   const {error}=await sb.from('os_docs').upsert({app:'oc',pfad:'neuvermietung/'+r.id,data:k,updated_at:ts});
   if(error){toast('Fehler: '+error.message);return;}
+  if(ms&&ms.karte_id!==r.id){const {error:e2}=await sb.from('mieterselbstauskunft').update({karte_id:r.id}).eq('id',ms.id);if(e2)toast('Selbstauskunft nicht verknüpft: '+e2.message);else ms.karte_id=r.id;}
   toast('An das Team übergeben.');}
 async function opUpd(field,val){
   if(!NT_CUR)return;
@@ -338,12 +352,14 @@ async function load(){
   FILES=fd.data||[];
   const hd=await sb.from('mietinteressent_historie').select('id,interessent_id,feld,alt,neu,aktion,created_at').order('created_at',{ascending:false});
   HIST=hd.data||[];
-  const[vw,iw,it,ia]=await Promise.all([
+  const[vw,iw,it,ia,ms]=await Promise.all([
     sb.from('wohnungsvermietung').select('id,gebaeude,einheit,status,warmmiete,vermietet,einzug').order('gebaeude').order('einheit'),
     sb.from('mietinteressent_wohnungen').select('*'),
     sb.from('mietinteressent_todos').select('*').order('created_at',{ascending:true}),
-    sb.from('mietinteressent_asana').select('*').order('created_at',{ascending:true})
+    sb.from('mietinteressent_asana').select('*').order('created_at',{ascending:true}),
+    sb.from('mieterselbstauskunft').select('id,token,daten,vorbelegt,eingegangen_at,asana_gid,asana_link,interessent_id,karte_id').not('interessent_id','is',null)
   ]);
+  IMSA={};((ms&&ms.data)||[]).forEach(m=>{IMSA[m.interessent_id]=m;});
   VWOHN=(vw.data||[]).filter(w=>!w.vermietet&&!/Erledigt/i.test(w.status||''));
   IWOHN=iw.data||[]; ITODO=it.data||[]; IASANA=ia.data||[];
   render();
