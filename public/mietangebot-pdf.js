@@ -156,6 +156,8 @@
       Z.text(1, 153, 323, g ? eur(g) : '', 9, 34, true)
       Z.kreuz(1, 336.5, 317, false, 6); Z.kreuz(1, 336.5, 329, !!g, 6)
       Z.kreuz(1, 347, 352.5, g && ja(V.garage_pflicht), 6); Z.kreuz(1, 347, 364.3, g && !ja(V.garage_pflicht), 6)
+      // Eigenanteil Strom / WLAN (zahlt der Mieter selbst, nicht in den Gesamtkosten)
+      Z.text(1, 525, 360, zahl(V.strom) ? eur(V.strom) : "", 10, 40, true); Z.text(1, 525, 377, zahl(V.wlan) ? eur(V.wlan) : "", 10, 40, true)
       Z.text(1, 527, 395, eur(V.hk), 10, 44, true)
       Z.text(1, 349, 429, V.heizungsart, 10, 50)
       Z.kreuz(1, 347, 445.8, hk, 6); Z.kreuz(1, 417, 445.8, hk, 6); Z.kreuz(1, 347, 457.6, !hk, 6)
