@@ -262,9 +262,39 @@ function msaPdf(k){const s=MSA[k.id];if(!s||!s.daten)return;const {jsPDF}=window
   const name=(k.wohnung&&k.wohnung.label?k.wohnung.label.split(' · ')[0].replace(/\s+/g,'_'):'Neuvermietung')+'_'+String(k.name||'').toUpperCase()+' '+(k.vorname||'')+'_'+String(s.eingegangen_at||'').slice(0,10)+'_Mieterselbstauskunft.pdf';
   doc.save(name);}
 
+/* ---------- Dateien je Mietinteressent ---------- */
+const DT_ARTEN=['Ausweis','Einkommensnachweis','Kostenübernahme / Bescheid','Mietschuldenfreiheit','Schufa','Selbstauskunft','Sonstiges'];
+const SPNAME={selbstauskunft:'Mieterselbstauskunft',kalkulation:'Mietkalkulation',angebot:'Mietangebot',vertrag:'Mietvertrag',unterschrieben:'Mietvertrag unterschrieben'};
+function dateienKarte(k){const L=(k.dateien||[]).slice().sort((a,b)=>String(a.name).localeCompare(String(b.name),'de',{numeric:true}));
+  return `<div class="card"><div class="ch">Dateien<span class="sub">${L.length?L.length+' Datei'+(L.length===1?'':'en'):''}</span></div>
+  <div class="sub" style="margin-bottom:8px">Hier Unterlagen ablegen, die nicht über das OS gekommen sind, z. B. eine Selbstauskunft auf Papier, Ausweis, Einkommensnachweis oder Schufa. Bei Art „Selbstauskunft“ kann Eric sie in Schritt 1 freigeben.</div>
+  ${L.length?'<table class="ktab" style="margin-bottom:8px"><thead><tr><th>Datei</th><th>Art</th><th>Schritt</th><th>hochgeladen</th><th></th></tr></thead><tbody>'+L.map(d=>`<tr><td><a href="#" data-dt-oeffnen="${esc(d.pfad)}">${esc(d.name)}</a></td><td>${esc(d.art||'')}</td><td>${esc(SPNAME[d.schritt]||'')}</td><td>${esc(zeit(d.am))}${d.von?' · '+esc(d.von):''}</td><td class="r">${k.pid?'':`<button class="small ghost" data-dt-weg="${esc(d.pfad)}">Entfernen</button>`}</td></tr>`).join('')+'</tbody></table>':''}
+  ${k.pid?'':`<div class="acts"><input class="inp" id="dt-art" list="dl-dtart" placeholder="Art, z. B. Selbstauskunft" style="width:240px" autocomplete="off"><datalist id="dl-dtart">${DT_ARTEN.map(a=>`<option value="${esc(a)}">`).join('')}</datalist>
+    <label class="inp" style="cursor:pointer">${BUSY==='dt'?'Wird hochgeladen …':'Datei auswählen und hochladen'}<input type="file" id="dt-datei" multiple style="display:none"${BUSY?' disabled':''}></label></div>`}</div>`;}
+async function dateiHoch(k,files,art){if(!files.length)return;BUSY='dt';panel();let n=0;
+  for(const f of files){if(f.size>25*1024*1024){toast(f.name+' ist größer als 25 MB.',6000);continue;}
+    const sauber=String(f.name).normalize('NFKD').replace(/[\u0300-\u036f]/g,'').replace(/[^\w.\- ]+/g,'_').replace(/\s+/g,'_').slice(-120);
+    const pfad=k.id+'/dateien/'+Date.now()+'_'+sauber;
+    const {error}=await sb.storage.from('vertraege').upload(pfad,f,{contentType:f.type||'application/octet-stream'});
+    if(error){toast('Nicht hochgeladen: '+f.name+' ('+error.message+')',7000);continue;}
+    (k.dateien=k.dateien||[]).push({pfad,name:f.name,art:art||'',schritt:k.spalte||'selbstauskunft',am:new Date().toISOString(),von:ICH});n++;}
+  BUSY='';if(n)await speichern(k,n+' Datei'+(n===1?'':'en')+' hochgeladen'+(art?' ('+art+')':''));panel();zeileNeu(k);if(n)toast(n===1?'Datei hochgeladen.':n+' Dateien hochgeladen.');}
+async function dateiOeffnen(pfad){const {data,error}=await sb.storage.from('vertraege').createSignedUrl(pfad,600);if(error){toast('Nicht geöffnet: '+error.message,6000);return;}window.open(data.signedUrl,'_blank');}
+async function dateiWeg(k,pfad){const d=(k.dateien||[]).find(x=>x.pfad===pfad);if(!d||!confirm('Datei „'+d.name+'“ entfernen?'))return;
+  const {error}=await sb.storage.from('vertraege').remove([pfad]);if(error){toast('Nicht entfernt: '+error.message,6000);return;}
+  k.dateien=k.dateien.filter(x=>x.pfad!==pfad);await speichern(k,'Datei entfernt: '+d.name);panel();}
+async function loeschen(k){if(k.pid){toast('Das Mieterkonto ist schon angelegt. Diese Vermietung kann nicht gelöscht werden.',6000);return;}
+  if(!confirm(nameVoll(k)+' endgültig löschen?\n\nDie Karte mit allen Angaben und hochgeladenen Dateien wird entfernt. Offene Asana-Aufgaben werden abgehakt. Das lässt sich nicht rückgängig machen.'))return;
+  BUSY='del';panel();
+  for(const s of ['selbstauskunft','kalkulation','angebot','vertrag']){const a=(k.asana||{})[s];if(a&&/^\d+$/.test(String(a.gid||''))&&!a.erledigt){try{await api('/api/asana',{aktion:'erledigt',gid:a.gid,wert:true});}catch(e){}}}
+  const pf=(k.dateien||[]).map(d=>d.pfad);if(pf.length){try{await sb.storage.from('vertraege').remove(pf);}catch(e){}}
+  const {error}=await sb.from('os_docs').delete().eq('app','oc').eq('pfad','neuvermietung/'+k.id);
+  BUSY='';if(error){toast('Nicht gelöscht: '+error.message,7000);panel();return;}
+  K=K.filter(x=>x.id!==k.id);SEL=null;render();toast('Gelöscht.');}
+
 /* ---------- Darstellung ---------- */
 function karte(k){const c=kalk(k),w=warm(k),tage=k.seit?Math.floor((Date.now()-Date.parse(k.seit))/864e5):0,s=MSA[k.id],auf=SEL===k.id;
-  let st='';if(k.spalte==='selbstauskunft'){st=k.freigabeMsa?'<span class="pill p-ok">freigegeben</span>':s&&s.status==='eingegangen'?'<span class="pill p-blau">Selbstauskunft eingegangen – Freigabe Eric</span>':s?'<span class="pill">Link erstellt, wartet auf den Mieter</span>':'<span class="pill">Link noch nicht erstellt</span>';}
+  let st='';if(k.spalte==='selbstauskunft'){st=k.freigabeMsa?'<span class="pill p-ok">freigegeben</span>':s&&s.status==='eingegangen'?'<span class="pill p-blau">Selbstauskunft eingegangen – Freigabe Eric</span>':(k.dateien||[]).some(d=>d.art==='Selbstauskunft')?'<span class="pill p-blau">Selbstauskunft als Datei – Freigabe Eric</span>':s?'<span class="pill">Link erstellt, wartet auf den Mieter</span>':'<span class="pill">Link noch nicht erstellt</span>';}
   return `<div class="zeile${auf?' on':''}" draggable="${k.pid||auf?'false':'true'}" data-k="${esc(k.id)}"><span class="n">${esc(nameVoll(k))}</span>
     <span class="z">${esc(k.wohnung&&k.wohnung.label||k.ziel||'Wohnung noch offen')}</span>${st}
     ${c.beginn?`<span class="pill">ab ${esc(dmy(c.beginn))}</span>`:(k.einzug_ab?`<span class="pill">Einzug ab ${esc(k.einzug_ab)}</span>`:'')}${w?`<span class="pill">${esc(eur(w))} warm</span>`:''}
@@ -282,7 +312,12 @@ function render(){const q=SUCHE.trim().toLowerCase();
   wsFuellen();window.scrollTo(0,y);}
 
 function feld(id,label,wert,typ,extra){return `<label class="fl">${label}<input id="${id}" type="${typ||'text'}" value="${esc(wert==null?'':wert)}" autocomplete="off"${extra||''}></label>`;}
-function msaKarte(k){const s=MSA[k.id];let h='<div class="card"><div class="ch">1. Mieterselbstauskunft';
+function freigabeZeile(k){return k.freigabeMsa?`<span class="ok" style="margin:0">Freigegeben von ${esc(k.freigabeMsa.von)} am ${esc(zeit(k.freigabeMsa.am))}</span>`:istEric()?'<button class="primary" data-a="msafrei">Freigeben – weiter zur Mietkalkulation</button><button class="warn" data-a="msaab">Ablehnen</button>':'<span class="sub">Wartet auf die Freigabe durch Eric.</span>';}
+function msaKarte(k){const s=MSA[k.id],ext=(k.dateien||[]).filter(d=>d.art==='Selbstauskunft');
+  if(ext.length&&!(s&&s.status==='eingegangen'))return `<div class="card"><div class="ch">1. Mieterselbstauskunft<span class="pill p-ok">als Datei erhalten</span></div><div class="sub" style="margin-bottom:6px">Die Selbstauskunft ist auf einem anderen Weg eingegangen und unten bei „Dateien“ abgelegt.</div>`
+    +ext.map(d=>`<div class="z" style="font-size:13px;padding:3px 0"><a href="#" data-dt-oeffnen="${esc(d.pfad)}">${esc(d.name)}</a> <span class="sub">· ${esc(zeit(d.am))} · ${esc(d.von||'')}</span></div>`).join('')
+    +`<div class="acts" style="margin-top:10px">${freigabeZeile(k)}</div></div>`;
+  let h='<div class="card"><div class="ch">1. Mieterselbstauskunft';
   if(!s){return h+`</div><div class="sub" style="margin-bottom:8px">Der Mietinteressent füllt die Selbstauskunft selbst aus: Schritt für Schritt am Handy oder Computer, am Ende klickt er auf „Versenden“. Sie landet dann hier.</div><button class="primary" data-a="msaneu">Link zur Selbstauskunft erstellen</button></div>`;}
   if(s.status!=='eingegangen'){h+=`<span class="pill">wartet auf den Mieter</span></div><div class="qr"><div id="qrbox"></div><div style="flex:1;min-width:240px"><div class="sub">Diesen Link oder QR-Code an den Mietinteressenten schicken:</div>
       <input class="feld" id="msa-link" value="${esc(msaLink(s.token))}" readonly style="margin:6px 0">
@@ -293,7 +328,7 @@ function msaKarte(k){const s=MSA[k.id];let h='<div class="card"><div class="ch">
   if(s.daten&&s.daten.eidesstattlich==='JA')h+='<div class="rot">Eidesstattliche Versicherung oder Haftbefehl in den letzten 3 Jahren: JA</div>';
   h+='<div class="msa">'+MSA_F.map(([t,F])=>{const z=F.filter(([f])=>s.daten&&s.daten[f]!=null&&s.daten[f]!=='');if(!z.length)return '';return `<h4>${esc(t)}</h4>`+z.map(([f,l])=>`<div class="z"><span>${esc(l)}</span><span style="white-space:pre-wrap">${esc(/^\d{4}-\d\d-\d\d$/.test(s.daten[f])?dmy(s.daten[f]):s.daten[f])}</span></div>`).join('');}).join('')
     +(s.unterschrift?`<h4>Unterschrift</h4><img src="${esc(s.unterschrift)}" alt="Unterschrift" style="max-width:260px;border:1px solid var(--line);border-radius:6px;background:#fff">`:'')+'</div>';
-  h+=`<div class="acts" style="margin-top:10px"><button data-a="msapdf">Als PDF speichern</button>${k.freigabeMsa?`<span class="ok" style="margin:0">Freigegeben von ${esc(k.freigabeMsa.von)} am ${esc(zeit(k.freigabeMsa.am))}</span>`:istEric()?'<button class="primary" data-a="msafrei">Freigeben – weiter zur Mietkalkulation</button><button class="warn" data-a="msaab">Ablehnen</button>':'<span class="sub">Wartet auf die Freigabe durch Eric.</span>'}</div></div>`;
+  h+=`<div class="acts" style="margin-top:10px"><button data-a="msapdf">Als PDF speichern</button>${freigabeZeile(k)}</div></div>`;
   return h;}
 let EINST={};
 const KREIHE=[['kalt','Kaltmiete'],['strom','Strom'],['hk','Heizung'],['bk','Betriebskosten'],['wlan','WLAN'],['garage','Garage / Stellplatz'],['moebel','Möblierung (bei Apartment)'],['ebk','Einbauküche (EBK)'],['hausmeister','Hausmeisterjob – Gutschrift']];
@@ -482,6 +517,10 @@ async function maSigHoch(k,id,datei){const x=MAV.find(v=>v.id===id);if(!datei||!
   await speichern(k,'Unterschriebene Fassung hochgeladen: '+x.kurz);panel();toast('Unterschriebene Fassung hochgeladen.');}
 async function maLaden(k,id){const x=MAV.find(v=>v.id===id);try{const b=await maErzeugen(k,id);const u=URL.createObjectURL(new Blob([b],{type:'application/pdf'}));const l=document.createElement('a');l.href=u;l.download=maName(k,x);document.body.appendChild(l);l.click();l.remove();setTimeout(()=>URL.revokeObjectURL(u),60000);}
   catch(e){toast('Nicht erstellt: '+(e.message||e),7000);}}
+document.addEventListener('change',e=>{if(e.target.id!=='dt-datei')return;const fs=[...e.target.files];e.target.value='';const k=K.find(x=>x.id===SEL);if(!k||k.pid)return;
+  const art=((document.getElementById('dt-art')||{}).value||'').trim();dateiHoch(k,fs,art);});
+document.addEventListener('click',e=>{const o=e.target.closest&&e.target.closest('[data-dt-oeffnen]');if(o){e.preventDefault();dateiOeffnen(o.dataset.dtOeffnen);return;}
+  const w=e.target.closest&&e.target.closest('[data-dt-weg]');if(w){e.preventDefault();const k=K.find(x=>x.id===SEL);if(k&&!k.pid)dateiWeg(k,w.dataset.dtWeg);}});
 document.addEventListener('change',e=>{if(e.target.id!=='ma-sigdatei')return;const f=e.target.files[0];e.target.value='';const k=K.find(x=>x.id===SEL);if(k&&!k.pid&&f)maSigHoch(k,MA_SIGZIEL,f);});
 async function maPdf(pfad){const {data,error}=await sb.storage.from('vertraege').createSignedUrl(pfad,600);if(error){toast('Nicht geöffnet: '+error.message,6000);return;}window.open(data.signedUrl,'_blank');}
 
@@ -521,10 +560,11 @@ function arbeit(k){const ro=!!k.pid,sp=k.spalte||'selbstauskunft',f=fehlt(k);let
   if(sp==='unterschrieben'&&!k.archiv&&k.vertrag&&k.vertrag.envelopeId)h+=vertragKarte(k);
   if(sp==='unterschrieben'&&!k.archiv){h+=`<div class="card"><div class="ch">5. Mietvertrag unterschrieben</div>${eckdaten(k)}${k.pid?`<div class="ok">Mieterkonto ist angelegt. <a href="#" data-a="konto">Mieterkonto öffnen</a></div>`:`<div class="sub">Sobald der Mietvertrag von beiden Seiten unterschrieben ist, hier klicken. Das OS legt das Mieterkonto an, der Mieter erscheint beim Objekt, und in Asana wird das Projekt 03_EINZUG aus der Vorlage erstellt.${f.length?' Es fehlt noch: '+esc(f.join(', '))+'.':''}</div><div class="weiter" style="margin-top:8px"><button class="primary" data-a="unterschreiben"${BUSY?' disabled':''}>${BUSY==='mk'?'Wird angelegt …':'Unterschrieben – Mieterkonto und Asana-Einzug anlegen'}</button></div>`}
     ${k.asana&&k.asana.einzug&&k.asana.einzug.gid?`<div class="sub">Asana: <a href="${esc(k.asana.einzug.link)}" target="_blank" rel="noopener">${esc(k.asana.einzug.name||'03_EINZUG')}</a></div>`:k.pid?'<div class="sub">Das Asana-Projekt 03_EINZUG ist noch nicht angelegt. <a href="#" data-a="einzug">Jetzt anlegen</a></div>':''}</div>`;}
+  h+=dateienKarte(k);
   unten.push(['notiz','Notizen',`<div class="card"><textarea id="f-notiz" placeholder="z. B. Schufa liegt vor, Mietangebot verschickt am …"${ro?' disabled':''}>${esc(k.notiz||'')}</textarea></div>`]);
   unten.push(['verlauf','Verlauf',`<div class="card verlauf">${(k.verlauf||[]).slice().reverse().map(v=>`<div>${esc(zeit(v.t))} · ${esc(v.von||'')}: ${esc(v.text)}</div>`).join('')||'<div class="sub">Noch keine Einträge.</div>'}</div>`]);
   unten.sort((a,b)=>a[1].localeCompare(b[1],'de'));h+=unten.map(([key,t,inh])=>mehr(key,t,inh)).join('');
-  h+=k.archiv?`<div class="acts"><button data-a="zurueck">Wieder ins Board holen</button><button data-a="zu">Zuklappen</button></div>`:k.pid?`<div class="acts" style="justify-content:flex-end;margin-top:8px"><span class="sub" style="margin-right:auto">Die Vermietung ist abgeschlossen, das Mieterkonto ist angelegt.</span><button class="primary" data-a="abschluss">Abgeschlossen – ins Archiv</button></div>`:`<div class="acts" style="justify-content:flex-end;margin-top:8px"><input class="inp" id="f-grund" list="dl-grund" placeholder="Grund, z. B. Absage Mieter" style="width:240px" autocomplete="off"><datalist id="dl-grund"><option value="Absage Mieter"><option value="Absage Vermieter"><option value="Selbstauskunft unvollständig"><option value="Andere Wohnung gefunden"></datalist><button class="warn" data-a="archiv">Ins Archiv</button></div>`;
+  h+=k.archiv?`<div class="acts"><button data-a="zurueck">Wieder ins Board holen</button><button class="warn" data-a="loeschen">Endgültig löschen</button><button data-a="zu">Zuklappen</button></div>`:k.pid?`<div class="acts" style="justify-content:flex-end;margin-top:8px"><span class="sub" style="margin-right:auto">Die Vermietung ist abgeschlossen, das Mieterkonto ist angelegt.</span><button class="primary" data-a="abschluss">Abgeschlossen – ins Archiv</button></div>`:`<div class="acts" style="justify-content:flex-end;margin-top:8px"><input class="inp" id="f-grund" list="dl-grund" placeholder="Grund, z. B. Absage Mieter" style="width:240px" autocomplete="off"><datalist id="dl-grund"><option value="Absage Mieter"><option value="Absage Vermieter"><option value="Selbstauskunft unvollständig"><option value="Andere Wohnung gefunden"></datalist><button class="warn" data-a="archiv">Ins Archiv</button><button class="warn" data-a="loeschen">Löschen</button></div>`;
   return h;}
 function fokusMerken(){const a=document.activeElement;if(!a||!document.getElementById('ws')||!document.getElementById('ws').contains(a))return null;
   const sel=a.id?'#'+a.id:a.dataset.pos?`[data-pos="${a.dataset.pos}"][data-s="${a.dataset.s}"]`:a.dataset.vgl!==undefined?`[data-vgl="${a.dataset.vgl}"][data-f="${a.dataset.f}"]`:null;let p=null;try{p=a.selectionStart;}catch(e){}return sel?[sel,p]:null;}
@@ -587,6 +627,7 @@ document.addEventListener('click',async e=>{const t=e.target;
     if(w==='msaqr'&&k){const img=document.querySelector('#qrbox img,#qrbox canvas');const u=img?(img.tagName==='CANVAS'?img.toDataURL('image/png'):img.src):'';if(!u)return;const l=document.createElement('a');l.href=u;l.download='QR_Selbstauskunft_'+String(k.name||'Mieter')+'.png';l.click();return;}
     if(w==='msapdf'&&k){msaPdf(k);return;}
     if(w==='msafrei'&&k){msaFreigeben(k);return;}
+    if(w==='loeschen'&&k){loeschen(k);return;}
     if(w==='msaab'&&k){if(!istEric())return;if(!confirm('Mieterselbstauskunft ablehnen? Der Mietinteressent wird ins Archiv gelegt.'))return;k.archiv={grund:'Abgelehnt von Eric',am:HEUTE,von:ICH};k.seit=new Date().toISOString();await speichern(k,'Mieterselbstauskunft abgelehnt');SEL=null;render();toast('Abgelehnt und ins Archiv gelegt.');syncUndLaden();return;}
     if(w==='unterschreiben'&&k){unterschreiben(k);return;}
     if(w==='vtsenden'&&k){vtSenden(k);return;}
