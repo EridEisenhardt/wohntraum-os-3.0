@@ -43,7 +43,7 @@ async function alleOrdner() {
 const adr = x => ({ name: (x && x.emailAddress && x.emailAddress.name) || '', mail: ((x && x.emailAddress && x.emailAddress.address) || '').toLowerCase() })
 const kurz = m => ({ id: m.id, betreff: m.subject || '', von: adr(m.from), an: (m.toRecipients || []).map(adr), cc: (m.ccRecipients || []).map(adr),
   datum: m.receivedDateTime || m.sentDateTime, vorschau: m.bodyPreview || '', gelesen: !!m.isRead, anhang: !!m.hasAttachments,
-  markiert: !!(m.flag && m.flag.flagStatus === 'flagged'), wichtig: m.importance === 'high', entwurf: !!m.isDraft, ordner: m.parentFolderId, msgId: m.internetMessageId || '', kategorien: m.categories || [] })
+  markiert: !!(m.flag && m.flag.flagStatus === 'flagged'), wichtig: m.importance === 'high', entwurf: !!m.isDraft, ordner: m.parentFolderId, msgId: m.internetMessageId || '', kategorien: m.categories || [], konv: m.conversationId || '' })
 const empf = s => [...new Set(String(s || '').split(/[,;\s]+/).map(x => x.trim()).filter(x => /^[^@\s<>]+@[^@\s<>]+\.[^@\s<>]+$/.test(x)))].map(address => ({ emailAddress: { address } }))
 const htmlText = t => String(t || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\n/g, '<br>')
 const ids = b => (Array.isArray(b.ids) ? b.ids : [b.id]).filter(Boolean).slice(0, 100).map(String)
@@ -133,6 +133,17 @@ export async function POST(req) {
       }
       if (!m.isRead && b.markieren !== false) { try { await graph(BOX() + '/messages/' + id, { method: 'PATCH', json: { isRead: true } }) } catch {} }
       return antwort({ mail: Object.assign(kurz(m), { gelesen: true, bcc: (m.bccRecipients || []).map(adr), antwortAn: (m.replyTo || []).map(adr), html, anhaenge: anh.filter(x => !x.inline || x.art !== 'fileAttachment') }) })
+    }
+
+    // Unterhaltung: alle Mails mit derselben conversationId aus allen Ordnern (ohne Entwürfe und Gelöschte)
+    if (a === 'verlauf') {
+      const konv = String(b.konv || '').replace(/'/g, "''"); if (!konv) return antwort({ mails: [] })
+      const j = await graph(BOX() + "/messages?$top=50&$select=" + LISTFELDER + ",body&$filter=" + encodeURIComponent("conversationId eq '" + konv + "'"))
+      let del = ''; try { const d = await graph(BOX() + '/mailFolders/deleteditems?$select=id'); del = d.id } catch {}
+      const L = (j.value || []).filter(m => !m.isDraft && m.parentFolderId !== del).map(m => Object.assign(kurz(m), {
+        html: m.body && m.body.contentType === 'html' ? m.body.content : '<pre style="white-space:pre-wrap;font:inherit">' + htmlText(m.body && m.body.content) + '</pre>' }))
+      L.sort((x, y) => String(y.datum).localeCompare(String(x.datum)))
+      return antwort({ mails: L })
     }
 
     if (a === 'anhang') {

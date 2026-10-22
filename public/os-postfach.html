@@ -83,6 +83,11 @@ const NUTZER={'ramona@andersmacher.info':'Ramona Romanelli','juergen@andersmache
 const WK_REIHE=['inbox','drafts','sentitems','archive','deleteditems','junkemail','outbox'];
 let POSTFACH='',ORD=[],AKT='',MAILS=[],WEITER='',SUCHE='',UEBERALL=false,SEL=null,AUSW=new Set(),C=null,BUSY='',ICH='',FEHLER='';
 let MK=[],MKE={},MKGELADEN=false,AKTE={},TAGS=[],DRAG=null;
+let KONV=true;try{KONV=localStorage.getItem('pf_konv')!=='0';}catch(e){}
+/* Unterhaltungen: Mails mit derselben conversationId in der Liste zusammenfassen (neueste zuerst) */
+function gruppen(){if(!KONV)return MAILS.map(m=>({m,ids:[m.id],n:1,ung:!m.gelesen}));const G=[],idx={};
+  for(const m of MAILS){const k=m.konv||m.id;if(idx[k]==null){idx[k]=G.length;G.push({m,ids:[m.id],n:1,ung:!m.gelesen});}else{const g=G[idx[k]];g.ids.push(m.id);g.n++;if(!m.gelesen)g.ung=true;}}
+  return G;}
 /* Tags (Outlook-Kategorien): Farben wie in Outlook */
 const FARBEN={preset0:['#fde2e1','#a4262c'],preset1:['#fde7d5','#a74109'],preset2:['#f1e4d8','#6b4a2b'],preset3:['#fff4c2','#7a5c00'],preset4:['#dff3e2','#1d6b36'],preset5:['#d9f2f1','#0b6a69'],preset6:['#e9eed6','#4f5b1f'],preset7:['#dde9f7','#1f4e8c'],preset8:['#ebe1f5','#5c2e91'],preset9:['#f6dde6','#8e1e4a'],preset10:['#e3e8ee','#3b4a5a'],preset11:['#e5e9ec','#3d4b55'],preset12:['#eceef0','#4a5058'],preset13:['#e1e3e6','#33383f'],preset14:['#dedede','#222'],preset15:['#f4d3d3','#7a1a1a'],preset16:['#f6dccb','#7a3410'],preset17:['#eadccc','#4d351e'],preset18:['#f7ecbe','#5c4600'],preset19:['#cfe9d6','#124d26'],preset20:['#cdeceb','#084c4b'],preset21:['#dfe5c6','#3a4416'],preset22:['#cfdcf0','#163a69'],preset23:['#dfd2ee','#43206c'],preset24:['#efd0dc','#6b1636']};
 const STANDARDFARBEN=['preset7','preset4','preset1','preset8','preset5','preset3','preset0','preset9'];
@@ -132,8 +137,14 @@ const istGesendet=()=>['sentitems','drafts','outbox'].includes(akt().wk);
 async function oeffnen(id){C=null;SEL={id,lade:true};render();
   try{const r=await pf({aktion:'lesen',id});SEL=r.mail;const m=MAILS.find(x=>x.id===id);if(m&&!m.gelesen){m.gelesen=true;const o=akt();if(o.ungelesen)o.ungelesen--;}}
   catch(e){SEL={id,fehler:e.message||String(e)};}
-  render();}
-function koerperEinsetzen(){const f=document.getElementById('mbody');if(!f||!SEL||!SEL.html)return;
+  render();
+  if(SEL&&SEL.id===id&&SEL.konv){try{const v=await pf({aktion:'verlauf',konv:SEL.konv});if(SEL&&SEL.id===id){SEL.verlauf=(v.mails||[]).filter(x=>x.id!==id);
+      const ung=MAILS.filter(x=>x.konv===SEL.konv&&x.id!==id&&!x.gelesen);if(ung.length){ung.forEach(x=>x.gelesen=true);const o=akt();if(o.ungelesen)o.ungelesen=Math.max(0,o.ungelesen-ung.length);pf({aktion:'markieren',ids:ung.map(x=>x.id),gelesen:true}).catch(()=>{});}
+      if(!C)render();}}catch(e){}}}
+function koerperFuellen(f,html){f.srcdoc='<!DOCTYPE html><html><head><meta charset="utf-8"><base target="_blank"><style>body{font:14px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;color:#18202c;margin:12px;word-wrap:break-word}img{max-width:100%;height:auto}</style></head><body>'+html+'</body></html>';
+  f.onload=()=>{try{f.style.height=(f.contentDocument.documentElement.scrollHeight+20)+'px';}catch(e){f.style.height='50vh';}};}
+function koerperEinsetzen(){if(SEL&&SEL.verlauf&&!C)document.querySelectorAll('iframe[data-vix]').forEach(f=>{const v=SEL.verlauf[+f.dataset.vix];if(v)koerperFuellen(f,v.html||'');});
+  const f=document.getElementById('mbody');if(!f||!SEL||!SEL.html)return;
   f.srcdoc='<!DOCTYPE html><html><head><meta charset="utf-8"><base target="_blank"><style>body{font:14px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;color:#18202c;margin:12px;word-wrap:break-word}img{max-width:100%;height:auto}</style></head><body>'+SEL.html+'</body></html>';
   f.onload=()=>{try{f.style.height=(f.contentDocument.documentElement.scrollHeight+20)+'px';}catch(e){f.style.height='70vh';}};}
 async function anhangOeffnen(aid){const a=(SEL.anhaenge||[]).find(x=>x.id===aid);const w=window.open('','_blank');
@@ -220,17 +231,17 @@ function render(){const app=document.getElementById('app');const fokus=document.
   h+='<div class="spalte os"><div class="ordner">'+ordnerSortiert().map(({o:x,t})=>'<button class="ord'+(x.id===AKT?' on':'')+'" data-ord="'+esc(x.id)+'" style="padding-left:'+(8+t*14)+'px"><span>'+esc(x.name)+'</span>'+(x.ungelesen&&x.wk!=='sentitems'&&x.wk!=='deleteditems'?'<span class="n">'+x.ungelesen+'</span>':(x.wk==='drafts'&&x.gesamt?'<span class="sub">'+x.gesamt+'</span>':''))+'</button>').join('')+'</div></div>';
   // Liste
   h+='<div class="spalte liste" id="lspalte"><div class="lkopf"><input class="inp" type="search" id="suche" placeholder="Suchen in '+esc(UEBERALL?'allen Ordnern':(o.name||'Ordner'))+' …" value="'+esc(SUCHE)+'" autocomplete="off">'
-    +'<div class="acts"><label class="sub" style="display:flex;gap:5px;align-items:center"><input type="checkbox" id="ueberall"'+(UEBERALL?' checked':'')+'> alle Ordner</label>'
+    +'<div class="acts"><label class="sub" style="display:flex;gap:5px;align-items:center"><input type="checkbox" id="ueberall"'+(UEBERALL?' checked':'')+'> alle Ordner</label><label class="sub" style="display:flex;gap:5px;align-items:center"><input type="checkbox" id="konv"'+(KONV?' checked':'')+'> Unterhaltungen</label>'
     +(AUSW.size?'<span class="sub">'+AUSW.size+' ausgewählt</span><button class="small" data-a="gel">Gelesen</button><button class="small" data-a="ungel">Ungelesen</button><button class="small" data-a="mark">Markieren</button><button class="small warn" data-a="del">Löschen</button><input class="inp" list="dl-ord" id="ziel-l" placeholder="Verschieben nach …" style="width:170px;padding:4px 8px" autocomplete="off"><input class="inp" list="dl-tags" id="tag-l" placeholder="Tag hinzufügen …" style="width:150px;padding:4px 8px" autocomplete="off"><button class="small ghost" data-a="auswnone">Auswahl aufheben</button>':'<button class="small ghost" data-a="auswall">Alle auswählen</button>')
     +'</div></div>';
   if(FEHLER)h+='<div class="note">'+esc(FEHLER)+'</div>';
   if(BUSY==='liste'&&!MAILS.length)h+='<div class="leer">Lädt …</div>';
   else if(!MAILS.length&&!FEHLER)h+='<div class="leer">'+(SUCHE?'Keine Treffer.':'Dieser Ordner ist leer.')+'</div>';
   const ges=istGesendet()&&!SUCHE;
-  h+=MAILS.map(m=>'<div class="zeile'+(m.gelesen?'':' ungelesen')+(SEL&&SEL.id===m.id?' on':'')+'" data-mail="'+esc(m.id)+'" draggable="true"><input type="checkbox" data-ausw="'+esc(m.id)+'"'+(AUSW.has(m.id)?' checked':'')+'><div style="min-width:0">'
+  h+=gruppen().map(g=>{const m=g.m;return '<div class="zeile'+(g.ung?' ungelesen':'')+(SEL&&g.ids.includes(SEL.id)?' on':'')+'" data-mail="'+esc(m.id)+'" data-ids="'+esc(g.ids.join(','))+'" draggable="true"><input type="checkbox" data-ausw="'+esc(g.ids.join(','))+'"'+(g.ids.every(i=>AUSW.has(i))?' checked':'')+'><div style="min-width:0">'
     +'<div class="z1"><span class="wer">'+esc(ges?('An: '+m.an.map(personKurz).join(', ')):personKurz(m.von)||'(unbekannt)')+'</span><span class="dat">'+datum(m.datum)+'</span></div>'
-    +'<div class="betr">'+(m.entwurf?'<span class="tag rot">Entwurf</span>':'')+(m.markiert?'<span class="tag gelb">markiert</span>':'')+(m.wichtig?'<span class="tag rot">wichtig</span>':'')+(m.anhang?'<span class="tag">Anhang</span>':'')+esc(m.betreff||'(kein Betreff)')+'</div>'
-    +'<div class="vor">'+esc(m.vorschau)+'</div>'+((m.kategorien||[]).length?'<div style="margin-top:3px">'+m.kategorien.map(k=>tagChip(k)).join('')+'</div>':'')+'</div></div>').join('');
+    +'<div class="betr">'+(g.n>1?'<span class="tag">'+g.n+'</span>':'')+(m.entwurf?'<span class="tag rot">Entwurf</span>':'')+(m.markiert?'<span class="tag gelb">markiert</span>':'')+(m.wichtig?'<span class="tag rot">wichtig</span>':'')+(m.anhang?'<span class="tag">Anhang</span>':'')+esc(m.betreff||'(kein Betreff)')+'</div>'
+    +'<div class="vor">'+esc(m.vorschau)+'</div>'+((m.kategorien||[]).length?'<div style="margin-top:3px">'+m.kategorien.map(k=>tagChip(k)).join('')+'</div>':'')+'</div></div>';}).join('');
   if(WEITER)h+='<div style="padding:10px;text-align:center"><button data-a="mehr"'+(BUSY?' disabled':'')+'>'+(BUSY==='mehr'?'Lädt …':'Weitere laden')+'</button></div>';
   h+='</div>';
   // Lesen / Schreiben
@@ -265,7 +276,10 @@ function render(){const app=document.getElementById('app');const fokus=document.
       +'<span>Datum</span><span>'+esc(zeitLang(m.datum))+'</span></div>'
       +'<div class="tagzeile"><span class="sub" style="width:44px">Tags</span>'+(m.kategorien||[]).map(k=>tagChip(k,true)).join('')+'<input class="inp" list="dl-tags" id="tag-1" placeholder="Tag hinzufügen oder neu eintippen …" style="width:240px;padding:3px 8px" autocomplete="off"></div>'
       +(m.anhaenge&&m.anhaenge.length?'<div class="anh">'+m.anhaenge.map(a=>'<button data-anh="'+esc(a.id)+'">'+esc(a.name)+' · '+groesse(a.groesse)+'</button>').join('')+'</div>':'')+'</div>'
-      +'<iframe class="body" id="mbody" sandbox="allow-same-origin allow-popups allow-popups-to-escape-sandbox"></iframe>';}
+      +'<iframe class="body" id="mbody" sandbox="allow-same-origin allow-popups allow-popups-to-escape-sandbox"></iframe>';
+    if(m.verlauf&&m.verlauf.length){h+='<div class="sub" style="font-weight:700;text-transform:uppercase;letter-spacing:.04em;margin:16px 0 6px">Weitere Nachrichten in dieser Unterhaltung ('+m.verlauf.length+')</div>';
+      h+=m.verlauf.map((v,i)=>'<div class="mk" style="margin-top:8px"><div class="kv"><span>Von</span><span>'+esc(person(v.von))+'</span><span>An</span><span>'+esc((v.an||[]).map(person).join(', '))+'</span><span>Datum</span><span>'+esc(zeitLang(v.datum))+'</span></div>'
+        +'<div class="betr" style="margin-top:4px">'+esc(v.betreff||'')+'</div></div><iframe class="body" data-vix="'+i+'" sandbox="allow-same-origin allow-popups allow-popups-to-escape-sandbox"></iframe>').join('');}}
   h+='</div></div>';
   app.innerHTML=h;koerperEinsetzen();
   const l=document.getElementById('lspalte');if(l)l.scrollTop=lsc;const r=document.getElementById('rspalte');if(r&&(C||SEL&&!SEL.lade))r.scrollTop=rsc;
@@ -295,7 +309,8 @@ const A={
   del1:()=>aufMails('loeschen',{},[SEL.id]),zurueck:()=>{SEL=null;render();},
 };
 document.addEventListener('click',e=>{const t=e.target;
-  if(t.dataset&&t.dataset.ausw!==undefined){if(t.checked)AUSW.add(t.dataset.ausw);else AUSW.delete(t.dataset.ausw);render();return;}
+  if(t.dataset&&t.dataset.ausw!==undefined){for(const i of t.dataset.ausw.split(',')){if(t.checked)AUSW.add(i);else AUSW.delete(i);}render();return;}
+  if(t.id==='konv'){KONV=t.checked;try{localStorage.setItem('pf_konv',KONV?'1':'0');}catch(e){}render();return;}
   if(t.dataset&&t.dataset.pw!==undefined){C.pwahl[t.dataset.pw]=t.checked;return;}
   const tw=t.closest('[data-tagweg]');if(tw){e.preventDefault();if(SEL)tagSetzen([SEL.id],[],[tw.dataset.tagweg]);return;}
   const b=t.closest('[data-a],[data-ord],[data-mail],[data-anh],[data-anhweg]');if(!b||b.disabled)return;
@@ -320,7 +335,7 @@ document.addEventListener('keydown',e=>{if(e.key==='Escape'&&SEL&&!C&&window.inn
 
 /* ---------- Ziehen und Ablegen: Mails mit der Maus in einen Ordner schieben ---------- */
 document.addEventListener('dragstart',e=>{const z=e.target.closest&&e.target.closest('.zeile[data-mail]');if(!z)return;const id=z.dataset.mail;
-  DRAG=AUSW.has(id)?[...AUSW]:[id];try{e.dataTransfer.setData('text/plain',DRAG.join(','));e.dataTransfer.effectAllowed='move';
+  DRAG=AUSW.has(id)?[...AUSW]:(z.dataset.ids||id).split(',');try{e.dataTransfer.setData('text/plain',DRAG.join(','));e.dataTransfer.effectAllowed='move';
     const d=document.createElement('div');d.className='dragbild';d.textContent=DRAG.length===1?'1 Mail verschieben':DRAG.length+' Mails verschieben';document.body.appendChild(d);e.dataTransfer.setDragImage(d,10,10);setTimeout(()=>d.remove(),0);}catch(x){}});
 document.addEventListener('dragend',()=>{DRAG=null;document.querySelectorAll('.ord.drop').forEach(x=>x.classList.remove('drop'));});
 document.addEventListener('dragover',e=>{if(!DRAG)return;const o=e.target.closest&&e.target.closest('.ord[data-ord]');if(!o)return;e.preventDefault();e.dataTransfer.dropEffect='move';
