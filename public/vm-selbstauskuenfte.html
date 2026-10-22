@@ -110,7 +110,7 @@ const SIGNATUR='Mit freundlichen Grüßen\n\nWohn(T)raum Rheinhessen GmbH\nbewus
 const SICHT=[['eingegangen','Eingegangen'],['verschickt','Verschickt'],['uebernommen','Übernommen'],['abgelehnt','Abgelehnt'],['allgemein','Allgemeine Links']];
 const FELDER='id,token,art,bezeichnung,aktiv,quelle_token,karte_id,status,vorbelegt,daten,unterschrift,eingegangen_at,created_at,erstellt_von,asana_gid,asana_link,entscheidung,entschieden_von,entschieden_at,interessent_id';
 
-let R=[],O=[],E=[],ICH='',ICHMAIL='',SICHTW='eingegangen',SEL=null,FORM=null,AFORM=null,BUSY='',SUCHE='',NEU=null;
+let R=[],O=[],E=[],ICH='',ICHMAIL='',SICHTW='eingegangen',SEL=null,FORM=null,AFORM=null,BUSY='',SUCHE='',NEU=null,ERF=null;
 const PARAM=new URLSearchParams(location.search).get('t');
 const $=id=>document.getElementById(id);
 function toast(t,ms){const el=$('toast');el.textContent=t;el.classList.add('on');clearTimeout(toast._t);toast._t=setTimeout(()=>el.classList.remove('on'),ms||3500);}
@@ -118,6 +118,7 @@ async function token(){const {data}=await sb.auth.getSession();return data&&data
 async function api(pfad,body){let r;try{r=await fetch(pfad,{method:'POST',headers:{'content-type':'application/json',authorization:'Bearer '+await token()},body:JSON.stringify(body)});}catch(e){throw new Error('Dienst nicht erreichbar.');}
   const j=await r.json().catch(()=>({}));if(!r.ok||j.error)throw new Error(j.error||('Fehler '+r.status));return j;}
 const istEric=()=>ICHMAIL===ERIC;
+const darfFreigeben=()=>ICHMAIL===ERIC||ICHMAIL==='ramona@andersmacher.info';
 const link=t=>location.origin+'/mieterselbstauskunft.html?t='+encodeURIComponent(t);
 const neuToken=()=>((crypto.randomUUID?crypto.randomUUID():Math.random().toString(36).slice(2)+Date.now().toString(36))+(crypto.randomUUID?crypto.randomUUID():Math.random().toString(36).slice(2))).replace(/-/g,'');
 const objVon=id=>O.find(o=>o.id===id);
@@ -126,7 +127,7 @@ const wohnungen=()=>E.filter(e=>e.aktiv!==false&&objVon(e.objekt_id)).map(e=>({e
 function wohnungVon(text){const w=wohnungen().find(x=>x.label===String(text||'').trim());if(!w)return null;const o=objVon(w.e.objekt_id);
   return {objekt_id:o.id,einheit_id:w.e.id,label:w.label,adresse:[o.strasse,[o.plz,o.ort].filter(Boolean).join(' ')].filter(Boolean).join(', ')+' – '+w.e.bezeichnung};}
 const nameVon=s=>{const d=s.daten||{},v=s.vorbelegt||{};return [d.vorname||v.vorname,d.nachname||v.nachname].filter(Boolean).join(' ')||'(ohne Namen)';};
-const quelleVon=s=>{if(s.quelle_token){const q=R.find(x=>x.token===s.quelle_token);return 'Allgemeiner Link'+(q&&q.bezeichnung?' „'+q.bezeichnung+'“':'');}return 'Persönlicher Link'+(s.erstellt_von?' von '+s.erstellt_von:'');};
+const quelleVon=s=>{if(s.daten&&s.daten.manuell)return 'Manuell erfasst von '+(s.daten.manuell.von||'')+(s.created_at&&s.status==='eingegangen'&&Date.parse(s.eingegangen_at)-Date.parse(s.created_at)>60000?' (Link war verschickt)':'');if(s.quelle_token){const q=R.find(x=>x.token===s.quelle_token);return 'Allgemeiner Link'+(q&&q.bezeichnung?' „'+q.bezeichnung+'“':'');}return 'Persönlicher Link'+(s.erstellt_von?' von '+s.erstellt_von:'');};
 const wohnTxt=s=>{const v=s.vorbelegt||{};return (v.wohnung&&v.wohnung.label)||(s.daten&&s.daten.objekt)||v.objekt||'';};
 
 /* ---------- Daten ---------- */
@@ -143,8 +144,9 @@ function gruppe(s){if(s.art==='allgemein')return 'allgemein';if(s.entscheidung==
 /* ---------- Darstellung ---------- */
 function render(){const L=R.filter(s=>gruppe(s)===SICHTW),q=SUCHE.trim().toLowerCase();
   const anz=k=>R.filter(s=>gruppe(s)===k).length;
-  let h=`<div class="kopf"><div><h1>Selbstauskünfte</h1><div class="sub">Zuerst geht der Link zur Mieterselbstauskunft raus. Ist die Auskunft eingegangen, entscheidet Eric: übernehmen in sein Board Mietinteressenten oder ablehnen. Erst wenn Eric den Interessenten an das Team übergibt, erscheint er mit allen Daten in der Neuvermietung.</div></div>
-    <div class="acts"><input class="inp" type="search" id="suche" placeholder="Name oder Wohnung suchen …" value="${esc(SUCHE)}" style="width:220px"><button class="primary" data-a="form">Link verschicken</button></div></div>`;
+  let h=`<div class="kopf"><div><h1>Selbstauskünfte</h1><div class="sub">Zuerst geht der Link zur Mieterselbstauskunft raus. Ist die Auskunft eingegangen, entscheiden Eric oder Ramona: übernehmen in das Board Mietinteressenten oder ablehnen. Kam eine Selbstauskunft auf Papier oder per Mail, mit „Selbstauskunft hochladen / erfassen“ ablegen. Erst wenn Eric den Interessenten an das Team übergibt, erscheint er mit allen Daten in der Neuvermietung.</div></div>
+    <div class="acts"><input class="inp" type="search" id="suche" placeholder="Name oder Wohnung suchen …" value="${esc(SUCHE)}" style="width:220px"><button class="primary" data-a="form">Link verschicken</button><button data-a="erf">Selbstauskunft hochladen / erfassen</button></div></div>`;
+  if(ERF)h+=erfassen();
   if(FORM)h+=formular();
   if(NEU)h+=neuKarte();
   h+=`<div class="acts" style="margin-bottom:10px"><div class="seg">${SICHT.map(([k,t])=>`<button data-sicht="${k}" class="${SICHTW===k?'on':''}">${esc(t)} (${anz(k)})</button>`).join('')}</div></div>`;
@@ -162,18 +164,20 @@ function zeile(s){const d=s.daten||{},auf=SEL===s.id,g=gruppe(s);let st='';
 function detail(s){const d=s.daten||{},g=gruppe(s);let h='';
   if(g==='verschickt'){h+=`<div class="card"><div class="ch">Link zur Selbstauskunft<span class="pill">wartet auf den Interessenten</span></div><div class="qr"><div class="qrb" data-qr="${esc(s.token)}"></div><div style="flex:1;min-width:240px">
       <input class="feld" id="l-${esc(s.id)}" value="${esc(link(s.token))}" readonly style="margin:0 0 8px">
-      <div class="acts"><button data-a="kopie" data-id="${esc(s.id)}">Link kopieren</button>${(s.vorbelegt||{}).email?`<button data-a="mail" data-id="${esc(s.id)}"${BUSY?' disabled':''}>${BUSY==='mail'+s.id?'Wird gesendet …':'Erneut per Mail an '+esc(s.vorbelegt.email)+' senden'}</button>`:''}<button data-a="qr" data-id="${esc(s.id)}">QR-Code herunterladen</button><button class="warn" data-a="zurueck" data-id="${esc(s.id)}">Link zurückziehen</button></div>
+      <div class="acts"><button data-a="kopie" data-id="${esc(s.id)}">Link kopieren</button>${(s.vorbelegt||{}).email?`<button data-a="mail" data-id="${esc(s.id)}"${BUSY?' disabled':''}>${BUSY==='mail'+s.id?'Wird gesendet …':'Erneut per Mail an '+esc(s.vorbelegt.email)+' senden'}</button>`:''}<button data-a="qr" data-id="${esc(s.id)}">QR-Code herunterladen</button><button data-a="erf" data-id="${esc(s.id)}">Auf Papier / per Mail erhalten – erfassen</button><button class="warn" data-a="zurueck" data-id="${esc(s.id)}">Link zurückziehen</button></div>
       <div class="sub" style="margin-top:6px">Erstellt am ${esc(zeit(s.created_at))}${s.erstellt_von?' von '+esc(s.erstellt_von):''}${(s.vorbelegt||{}).gesendet?' · per Mail gesendet am '+esc(zeit(s.vorbelegt.gesendet)):''}</div></div></div></div>`;return h;}
   h+='<div class="card"><div class="ch">Mieterselbstauskunft<span class="pill p-ok">eingegangen am '+esc(zeit(s.eingegangen_at))+'</span></div>';
   if(d.amt==='JA')h+=`<div class="note">Die Miete übernimmt das Jobcenter / Sozialamt: ${esc(d.behoerde||'')}</div>`;
   if(d.eidesstattlich==='JA')h+='<div class="rot">Eidesstattliche Versicherung oder Haftbefehl in den letzten 3 Jahren: JA</div>';
   h+='<div class="msa">'+MSA_F.map(([t,F])=>{const z=F.filter(([f])=>d[f]!=null&&d[f]!=='');if(!z.length)return '';return `<h4>${esc(t)}</h4>`+z.map(([f,l])=>`<div class="z"><span>${esc(l)}</span><span style="white-space:pre-wrap">${esc(/^\d{4}-\d\d-\d\d$/.test(d[f])?dmy(d[f]):d[f])}</span></div>`).join('');}).join('')
     +(s.unterschrift?`<h4>Unterschrift</h4><img src="${esc(s.unterschrift)}" alt="Unterschrift" style="max-width:260px;border:1px solid var(--line);border-radius:6px;background:#fff">`:'')+'</div>';
+  if((d.dateien||[]).length)h+='<div class="msa"><h4>Dateien</h4></div>'+d.dateien.map(x=>`<div style="font-size:13px;padding:3px 0"><a href="#" data-datei="${esc(x.pfad)}">${esc(x.name)}</a></div>`).join('');
   h+=`<div class="sub" style="margin-top:8px">${esc(quelleVon(s))}${s.asana_link?` · <a href="${esc(s.asana_link)}" target="_blank" rel="noopener">Asana-Aufgabe</a>`:''}</div>`;
   h+=`<div class="acts" style="margin-top:10px"><button data-a="pdf" data-id="${esc(s.id)}">Als PDF speichern</button>`;
-  if(g==='eingegangen')h+=istEric()?`<button class="primary" data-a="uebernehmen" data-id="${esc(s.id)}"${BUSY?' disabled':''}>${BUSY==='ueb'?'Wird übernommen …':'Zu Mietinteressenten übernehmen'}</button><button class="warn" data-a="ablehnen" data-id="${esc(s.id)}"${BUSY?' disabled':''}>Ablehnen</button>`:'<span class="sub">Die Entscheidung trifft Eric.</span>';
+  if(g==='eingegangen'&&d.manuell)h+=`<button data-a="erf" data-id="${esc(s.id)}">Angaben bearbeiten</button>`;
+  if(g==='eingegangen')h+=darfFreigeben()?`<button class="primary" data-a="uebernehmen" data-id="${esc(s.id)}"${BUSY?' disabled':''}>${BUSY==='ueb'?'Wird übernommen …':'Zu Mietinteressenten übernehmen'}</button><button class="warn" data-a="ablehnen" data-id="${esc(s.id)}"${BUSY?' disabled':''}>Ablehnen</button>`:'<span class="sub">Die Entscheidung treffen Eric oder Ramona.</span>';
   else if(g==='uebernommen')h+=`<button data-a="mi" data-id="${esc(s.interessent_id||'')}">Im Board Mietinteressenten öffnen</button>`;
-  else if(g==='abgelehnt'&&istEric())h+=`<button data-a="wieder" data-id="${esc(s.id)}">Ablehnung zurücknehmen</button>`;
+  else if(g==='abgelehnt'&&darfFreigeben())h+=`<button data-a="wieder" data-id="${esc(s.id)}">Ablehnung zurücknehmen</button>`;
   return h+'</div></div>';}
 function formular(){const f=FORM;
   return `<div class="card"><div class="ch">Persönlichen Link verschicken<button class="ghost" data-a="formzu">Schließen</button></div>
@@ -183,6 +187,42 @@ function formular(){const f=FORM;
   <div class="g2"><label class="fl">Wohnung (freiwillig)<input id="f-wohnung" list="dl-w" value="${esc(f.wohnung)}" placeholder="Kürzel oder Straße eintippen …" autocomplete="off"></label><label class="fl">Einzug ab (freiwillig)<input id="f-einzug" type="date" value="${esc(f.einzug)}"></label></div>
   <datalist id="dl-w">${wohnungen().map(w=>`<option value="${esc(w.label)}">`).join('')}</datalist>
   <div class="acts"><button class="primary" data-a="senden"${BUSY?' disabled':''}>${BUSY==='senden'?'Wird gesendet …':'Link erstellen und per Mail senden'}</button><button data-a="nurlink"${BUSY?' disabled':''}>Nur Link erstellen</button></div></div>`;}
+/* ---------- Selbstauskunft hochladen / manuell erfassen ---------- */
+const MSM_TYP={besichtigung:'date',einzug:'date',geburtsdatum:'date',info:'area',mitbewohner:'area',behoerde:'area',adresse:'area'};
+const JNO=['JA','NEIN'];
+const MSM_OPT={zweck:['Neue Vermietung','Umzug innerhalb unserer Wohnungen'],anrede:['Frau','Herr','Divers'],familienstand:['ledig','verheiratet','eingetragene Lebenspartnerschaft','geschieden','verwitwet'],
+  arbeit:['Angestellt','Beamtet','Selbstständig','In Ausbildung / Studium','Rente / Pension','Arbeitssuchend','Sonstiges'],gewerblich:JNO,haustiere:JNO,teilweise:JNO,vollstaendig:JNO,amt:JNO,eidesstattlich:JNO,datenschutz:JNO,wahrheit:JNO};
+function erfStart(s){const d=(s&&s.daten)||{},v=(s&&s.vorbelegt)||{},w=v.wohnung;ERF={id:s?s.id:null,wohnung:w?w.label:'',d:{},dateien:(d.dateien||[]).slice()};
+  MSA_F.forEach(([,F])=>F.forEach(([f])=>{ERF.d[f]=d[f]!=null&&d[f]!==''?d[f]:(v[f]||'');}));FORM=null;NEU=null;}
+function erfassen(){const s=ERF.id&&R.find(x=>x.id===ERF.id);
+  return `<div class="card"><div class="ch">${s?'Selbstauskunft für '+esc(nameVon(s))+' erfassen':'Selbstauskunft hochladen / erfassen'}<button class="ghost" data-a="erfzu">Schließen</button></div>
+  <div class="sub" style="margin-bottom:8px">Für Selbstauskünfte, die auf Papier, per Mail oder auf einem anderen Weg gekommen sind: Datei hochladen und die Punkte abtippen. Mindestens der Name muss eingetragen sein. Danach steht sie unter „Eingegangen“ zur Entscheidung.</div>
+  <div class="g2"><label class="fl">Wohnung (freiwillig)<input id="e-wohnung" list="dl-we" value="${esc(ERF.wohnung)}" placeholder="Kürzel oder Straße eintippen …" autocomplete="off"></label>
+  <label class="fl">Datei(en) der Selbstauskunft<input type="file" id="e-datei" multiple></label></div><datalist id="dl-we">${wohnungen().map(w=>`<option value="${esc(w.label)}">`).join('')}</datalist>
+  ${ERF.dateien.length?'<div class="sub" style="margin-bottom:6px">Bereits abgelegt: '+ERF.dateien.map(x=>esc(x.name)).join(', ')+'</div>':''}
+  `+MSA_F.map(([t,F])=>`<div class="msa"><h4>${esc(t)}</h4></div><div class="g3">`+F.map(([f,l])=>{const v=ERF.d[f]==null?'':ERF.d[f],ty=MSM_TYP[f],o=MSM_OPT[f];
+    if(ty==='area')return `<label class="fl">${esc(l)}<textarea data-erf="${f}" rows="2">${esc(v)}</textarea></label>`;
+    if(o)return `<label class="fl">${esc(l)}<input data-erf="${f}" list="dl-e-${f}" value="${esc(v)}" autocomplete="off"><datalist id="dl-e-${f}">${o.map(x=>`<option value="${esc(x)}">`).join('')}</datalist></label>`;
+    return `<label class="fl">${esc(l)}<input data-erf="${f}" type="${ty||'text'}" value="${esc(v)}" autocomplete="off"></label>`;}).join('')+'</div>').join('')
+  +`<div class="acts" style="margin-top:8px"><button class="primary" data-a="erfsave"${BUSY?' disabled':''}>${BUSY==='erf'?'Wird gespeichert …':'Speichern – unter „Eingegangen“ ablegen'}</button><button data-a="erfzu">Abbrechen</button></div></div>`;}
+function erfLesen(){if(!ERF)return;document.querySelectorAll('[data-erf]').forEach(el=>{ERF.d[el.dataset.erf]=el.value.trim();});const w=$('e-wohnung');if(w&&document.activeElement!==w)ERF.wohnung=w.value.trim();}
+async function erfSpeichern(){erfLesen();const d=Object.assign({},ERF.d),files=[...(($('e-datei')||{}).files||[])];
+  if(!d.vorname&&!d.nachname){toast('Bitte mindestens den Namen eintragen.');return;}
+  const w=ERF.wohnung?wohnungVon(ERF.wohnung):null;if(ERF.wohnung&&!w){toast('Bitte eine Wohnung aus der Liste wählen.');return;}
+  BUSY='erf';render();const alt=ERF.id&&R.find(x=>x.id===ERF.id),tok=alt?alt.token:neuToken(),dateien=ERF.dateien.slice();
+  for(const f of files){if(f.size>25*1024*1024){toast(f.name+' ist größer als 25 MB.',6000);continue;}
+    const sauber=String(f.name).normalize('NFKD').replace(/[̀-ͯ]/g,'').replace(/[^\w.\- ]+/g,'_').replace(/\s+/g,'_').slice(-120);
+    const pfad='selbstauskunft/'+tok.slice(0,24)+'/'+Date.now()+'_'+sauber;
+    const {error}=await sb.storage.from('vertraege').upload(pfad,f,{contentType:f.type||'application/octet-stream'});
+    if(error){toast('Nicht hochgeladen: '+f.name+' ('+error.message+')',7000);continue;}dateien.push({pfad,name:f.name,am:new Date().toISOString(),von:ICH});}
+  d.dateien=dateien;d.manuell={von:ICH,am:new Date().toISOString()};if(!d.objekt&&w)d.objekt=w.adresse;
+  const vor=Object.assign({},(alt&&alt.vorbelegt)||{});if(w){vor.wohnung={objekt_id:w.objekt_id,einheit_id:w.einheit_id,label:w.label};vor.objekt=w.adresse;}
+  const jetzt=new Date().toISOString();let res;
+  if(alt)res=await sb.from('mieterselbstauskunft').update({status:'eingegangen',daten:d,vorbelegt:vor,eingegangen_at:alt.eingegangen_at||jetzt}).eq('id',alt.id).select(FELDER).single();
+  else res=await sb.from('mieterselbstauskunft').insert({token:tok,art:'person',status:'eingegangen',daten:d,vorbelegt:vor,eingegangen_at:jetzt,erstellt_von:ICH}).select(FELDER).single();
+  BUSY='';if(res.error){render();toast('Nicht gespeichert: '+res.error.message,7000);return;}
+  if(alt)Object.assign(alt,res.data);else R.unshift(res.data);ERF=null;SICHTW='eingegangen';SEL=res.data.id;render();toast('Selbstauskunft gespeichert.');}
+async function dateiOeffnen(pfad){const {data,error}=await sb.storage.from('vertraege').createSignedUrl(pfad,600);if(error){toast('Nicht geöffnet: '+error.message,6000);return;}window.open(data.signedUrl,'_blank');}
 function neuKarte(){return `<div class="card"><div class="ch">Link für ${esc(nameVon(NEU))}<button class="ghost" data-a="neuzu">Schließen</button></div><div class="qr"><div id="qrneu" class="qrb"></div><div style="flex:1;min-width:240px">
   ${NEU.vorbelegt&&NEU.vorbelegt.gesendet?'<div class="ok">Per Mail an '+esc(NEU.vorbelegt.email)+' gesendet.</div>':'<div class="sub">Diesen Link oder QR-Code an den Interessenten schicken (z. B. per WhatsApp):</div>'}
   <input class="feld" id="l-neu" value="${esc(link(NEU.token))}" readonly style="margin:6px 0">
@@ -264,8 +304,12 @@ function pdf(s){const d=s.daten||{},{jsPDF}=window.jspdf,doc=new jsPDF({unit:'mm
 document.addEventListener('click',async e=>{const t=e.target;
   const sv=t.closest('[data-sicht]');if(sv){SICHTW=sv.dataset.sicht;SEL=null;render();return;}
   const z=t.closest('.zeile[data-s]');if(z&&!t.closest('a,button,input')){SEL=SEL===z.dataset.s?null:z.dataset.s;render();return;}
+  const dl=t.closest('[data-datei]');if(dl){e.preventDefault();dateiOeffnen(dl.dataset.datei);return;}
   const b=t.closest('[data-a]');if(!b)return;const a=b.dataset.a,s=R.find(x=>x.id===b.dataset.id);
-  if(a==='form'){FORM=FORM||{vorname:'',nachname:'',email:'',telefon:'',wohnung:'',einzug:''};NEU=null;render();setTimeout(()=>{const f=$('f-vorname');if(f)f.focus();},30);return;}
+  if(a==='erf'){erfStart(s||null);render();window.scrollTo(0,0);return;}
+  if(a==='erfzu'){ERF=null;render();return;}
+  if(a==='erfsave'){erfSpeichern();return;}
+  if(a==='form'){ERF=null;FORM=FORM||{vorname:'',nachname:'',email:'',telefon:'',wohnung:'',einzug:''};NEU=null;render();setTimeout(()=>{const f=$('f-vorname');if(f)f.focus();},30);return;}
   if(a==='formzu'){FORM=null;render();return;}
   if(a==='neuzu'){NEU=null;render();return;}
   if(a==='senden'){linkAnlegen(true);return;}
@@ -283,11 +327,13 @@ document.addEventListener('click',async e=>{const t=e.target;
   if(a==='aktiv'&&s){aktivUm(s);return;}});
 document.addEventListener('input',e=>{if(e.target.id==='suche'){SUCHE=e.target.value;const p=e.target.selectionStart;render();const n=$('suche');n.focus();try{n.setSelectionRange(p,p);}catch(x){}}
   else if(FORM&&String(e.target.id).startsWith('f-'))formLesen();
+  else if(ERF&&e.target.dataset&&e.target.dataset.erf!==undefined)ERF.d[e.target.dataset.erf]=e.target.value;
+  else if(ERF&&e.target.id==='e-wohnung')ERF.wohnung=e.target.value;
   else if(e.target.id==='a-bez'||e.target.id==='a-wohnung')AFORM={bez:$('a-bez').value,wohnung:$('a-wohnung').value};});
 /* Wohnungsfeld: beim Anklicken leeren, damit die ganze Liste erscheint */
-document.addEventListener('focusin',e=>{const t=e.target;if(t.id==='f-wohnung'||t.id==='a-wohnung'){t.dataset.alt=t.value;t.value='';}});
-document.addEventListener('focusout',e=>{const t=e.target;if((t.id==='f-wohnung'||t.id==='a-wohnung')&&!t.value&&t.dataset.alt){t.value=t.dataset.alt;}if(t.id==='f-wohnung')formLesen();});
+document.addEventListener('focusin',e=>{const t=e.target;if(t.id==='f-wohnung'||t.id==='a-wohnung'||t.id==='e-wohnung'){t.dataset.alt=t.value;t.value='';}});
+document.addEventListener('focusout',e=>{const t=e.target;if((t.id==='f-wohnung'||t.id==='a-wohnung'||t.id==='e-wohnung')&&!t.value&&t.dataset.alt){t.value=t.dataset.alt;}if(t.id==='e-wohnung'&&ERF)ERF.wohnung=t.value;if(t.id==='f-wohnung')formLesen();});
 laden();
-setInterval(()=>{if(!BUSY&&!FORM&&document.visibilityState==='visible'&&!document.activeElement.matches('input,textarea'))laden();},60000);
+setInterval(()=>{if(!BUSY&&!FORM&&!ERF&&document.visibilityState==='visible'&&!document.activeElement.matches('input,textarea'))laden();},60000);
 </script>
 </body></html>
