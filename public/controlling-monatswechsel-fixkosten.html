@@ -313,36 +313,36 @@ function darlehenList(){
     return {obj:r.obj,ges:r.ges,pos:r.pos,rate:(ov!=null?ov:r.plan[m])||0,bank:i.bank||'',zahlart:i.zahlart||'',von:i.vonKonto||'',iban:i.zielIban||'',paid:paid[r.id]||'',id:r.id};});
 }
 function renderUmbuchungen(){
-  const {md,acc,order,pct,pctI}=compute(curKey);
-  const alpha=(x,y)=>String(x).localeCompare(String(y),'de',{numeric:true,sensitivity:'base'});
-  let h='<div class="note">Umbuchungen für '+esc(labelKey(curKey))+(md.kontenStand?', Kontostände vom '+esc(deDate(md.kontenStand)):'')+'. Grundlage ist die Differenz inkl. Darlehen: '+Math.round(pct*100)+' % auf Allgemein, '+Math.round(pctI*100)+' % auf Instandhaltung, '+Math.round((1-pct-pctI)*100)+' % bleiben auf dem Konto. Saldo = Kontostand nach der Umbuchung.</div>';
+  const {md,pct,pctI}=compute(curKey);
+  const z0=v=>v==null?'<span style="color:var(--warn)">Kontostand fehlt</span>':eur(v), zs=v=>v?eur(v):'–';
+  let h='<div class="note">Umbuchungen für '+esc(labelKey(curKey))+(md.kontenStand?', Kontostände vom '+esc(deDate(md.kontenStand)):'')+'. Die Prozente werden von der Differenz inkl. Darlehen berechnet (Kontostand minus offene Fixkosten, Darlehen und offene Rechnungen): '+Math.round(pct*100)+' % auf Allgemein, '+Math.round(pctI*100)+' % auf Instandhaltung, '+Math.round((1-pct-pctI)*100)+' % bleiben auf dem Konto.</div>';
   if(downloads) h+='<div class="actions"><span style="flex:1"></span><button class="primary" id="umbDl">Tabelle herunterladen (Excel)</button></div>';
-  h+='<div class="tablewrap"><table><thead><tr><th>Kürzel</th><th class="n">Allgemein</th><th class="n">Instandhaltung</th><th class="n">Saldo</th></tr></thead><tbody>';
-  let n=0;
-  for(const g of GES){ const objs=(order[g]||[]).filter(o=>!isKonto(o)&&acc[o]).sort(alpha); if(!objs.length) continue;
-    h+='<tr class="grp"><td colspan="4">'+esc(g)+'</td></tr>'; let sa=0,si=0;
-    for(const o of objs){ const a=acc[o]; n++; sa+=a.umbAllg; si+=a.umbInst;
-      h+='<tr><td>'+esc(o)+'</td><td class="n">'+(a.umbAllg?eur(a.umbAllg):'–')+'</td><td class="n">'+(a.umbInst?eur(a.umbInst):'–')+'</td><td class="n">'+(a.saldo==null?'<span style="color:var(--warn)">Kontostand fehlt</span>':eur(a.saldo))+'</td></tr>'; }
-    h+='<tr><td><b>Summe '+esc(g)+'</b></td><td class="n"><b>'+eur(r2(sa))+'</b></td><td class="n"><b>'+eur(r2(si))+'</b></td><td></td></tr>'; }
-  if(!n) h+='<tr><td colspan="4">Keine Objekte im Plan.</td></tr>';
+  h+='<div class="tablewrap"><table><thead><tr><th>Kürzel</th><th class="n">Kontostand aktuell</th><th class="n">Differenz inkl. Darlehen</th><th class="n">Allgemein</th><th class="n">Instandhaltung</th><th class="n">Kontostand nach Umbuchung</th></tr></thead><tbody>';
+  const Z=umbZeilen();
+  for(const z of Z){
+    if(z.grp) h+='<tr class="grp"><td colspan="6">'+esc(z.grp)+'</td></tr>';
+    else if(z.summe) h+='<tr><td><b>Summe '+esc(z.summe)+'</b></td><td class="n"><b>'+eur(z.konto)+'</b></td><td class="n"><b>'+eur(z.basis)+'</b></td><td class="n"><b>'+eur(z.al)+'</b></td><td class="n"><b>'+eur(z.in)+'</b></td><td class="n"><b>'+eur(z.saldo)+'</b></td></tr>';
+    else h+='<tr><td>'+esc(z.o)+'</td><td class="n">'+z0(z.konto)+'</td><td class="n'+(z.basis!=null&&z.basis<0?' neg':'')+'">'+(z.basis==null?'–':eur(z.basis))+'</td><td class="n">'+zs(z.al)+'</td><td class="n">'+zs(z.in)+'</td><td class="n">'+(z.saldo==null?'–':eur(z.saldo))+'</td></tr>'; }
+  if(!Z.length) h+='<tr><td colspan="6">Keine Objekte im Plan.</td></tr>';
   return h+'</tbody></table></div>';
 }
 function umbZeilen(){
   const {acc,order}=compute(curKey), out=[];
   const alpha=(x,y)=>String(x).localeCompare(String(y),'de',{numeric:true,sensitivity:'base'});
   for(const g of GES){ const objs=(order[g]||[]).filter(o=>!isKonto(o)&&acc[o]).sort(alpha); if(!objs.length) continue;
-    let sa=0,si=0; out.push({grp:g});
-    for(const o of objs){ const a=acc[o]; sa+=a.umbAllg; si+=a.umbInst; out.push({o,al:a.umbAllg||null,in:a.umbInst||null,saldo:a.saldo}); }
-    out.push({summe:g,al:r2(sa),in:r2(si)}); }
+    let sa=0,si=0,sk=0,sb=0,ss=0; out.push({grp:g});
+    for(const o of objs){ const a=acc[o]; sa+=a.umbAllg; si+=a.umbInst; sk+=a.kontostand||0; sb+=a.diffGes||0; ss+=a.saldo||0;
+      out.push({o,konto:a.kontostand,basis:a.diffGes,al:a.umbAllg||null,in:a.umbInst||null,saldo:a.saldo}); }
+    out.push({summe:g,konto:r2(sk),basis:r2(sb),al:r2(sa),in:r2(si),saldo:r2(ss)}); }
   return out; }
 async function umbDownload(){
   const btn=$('umbDl'); if(btn){btn.disabled=true;btn.textContent='Erstelle Tabelle …';}
   try{
     const X=await loadXLSX(), {md,pct,pctI}=compute(curKey), E='#,##0.00 "€";[Red]-#,##0.00 "€"';
-    const aoa=[['Umbuchungen – '+labelKey(curKey)],['Erstellt am '+deDate(todayISO())+(md.kontenStand?' · Kontostände vom '+deDate(md.kontenStand):'')+' · '+Math.round(pct*100)+' % Allgemein, '+Math.round(pctI*100)+' % Instandhaltung, '+Math.round((1-pct-pctI)*100)+' % bleiben (Basis: Differenz inkl. Darlehen)'],[],['Kürzel','Allgemein','Instandhaltung','Saldo']];
-    for(const z of umbZeilen()){ if(z.grp) aoa.push([z.grp]); else if(z.summe) aoa.push(['Summe '+z.summe,z.al,z.in,null],[]); else aoa.push([z.o,z.al,z.in,z.saldo==null?'Kontostand fehlt':z.saldo]); }
-    const ws=X.utils.aoa_to_sheet(aoa); ws['!cols']=[{wch:22},{wch:16},{wch:16},{wch:18}];
-    const rg=X.utils.decode_range(ws['!ref']); for(let R=4;R<=rg.e.r;R++) for(const C of [1,2,3]){const c=ws[X.utils.encode_cell({r:R,c:C})]; if(c&&c.t==='n') c.z=E;}
+    const aoa=[['Umbuchungen – '+labelKey(curKey)],['Erstellt am '+deDate(todayISO())+(md.kontenStand?' · Kontostände vom '+deDate(md.kontenStand):'')+' · '+Math.round(pct*100)+' % Allgemein, '+Math.round(pctI*100)+' % Instandhaltung, '+Math.round((1-pct-pctI)*100)+' % bleiben (Basis: Differenz inkl. Darlehen)'],[],['Kürzel','Kontostand aktuell','Differenz inkl. Darlehen','Allgemein','Instandhaltung','Kontostand nach Umbuchung']];
+    for(const z of umbZeilen()){ if(z.grp) aoa.push([z.grp]); else if(z.summe) aoa.push(['Summe '+z.summe,z.konto,z.basis,z.al,z.in,z.saldo],[]); else aoa.push([z.o,z.konto==null?'Kontostand fehlt':z.konto,z.basis,z.al,z.in,z.saldo]); }
+    const ws=X.utils.aoa_to_sheet(aoa); ws['!cols']=[{wch:22},{wch:18},{wch:22},{wch:16},{wch:16},{wch:26}];
+    const rg=X.utils.decode_range(ws['!ref']); for(let R=4;R<=rg.e.r;R++) for(const C of [1,2,3,4,5]){const c=ws[X.utils.encode_cell({r:R,c:C})]; if(c&&c.t==='n') c.z=E;}
     const wb=X.utils.book_new(); X.utils.book_append_sheet(wb,ws,'Umbuchungen');
     const buf=X.write(wb,{bookType:'xlsx',type:'array'});
     await downloads.save({filename:'WT_Umbuchungen_'+lastDay(curKey)+'_'+labelKey(curKey)+'.xlsx',data:buf}); toast('Tabelle gespeichert.');
