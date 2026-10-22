@@ -766,6 +766,8 @@ function renderMahn(){ const L=mahnListe(); const q=norm(MR.q);
     return h; }
   { const all=Object.values(calc.res).filter(x=>x.aktiv), nM=all.filter(x=>x.ueber>0.5).length, nK=all.filter(x=>(x.ueberK||0)>0.5).length;
     h+='<div class="seg" style="display:inline-flex;margin:0 0 10px"><button data-mrart="miete" class="'+(mrKaution()?'':'on')+'">Mieten ('+nM+')</button><button data-mrart="kaution" class="'+(mrKaution()?'on':'')+'">Kautionen ('+nK+')</button></div>'; }
+  { const lf=MAHN[MR.datum], np=lf?Object.values(lf.posten||{}).length:0;
+    if(np) h+='<div class="note warnbox">Für den '+esc(dmy(MR.datum))+' gibt es schon einen Mahnlauf mit '+np+' Schreiben. Zurücknehmen entfernt die Schreiben (PDF), die Ablage in den Mieterakten, die Einträge im Mahnregister sowie Mahngebühren und Zinsen. Danach kannst du den Mahnlauf neu erstellen. <button class="ghost small" data-mrzurueck="'+esc(MR.datum)+'"'+(MR.busy?' disabled':'')+'>Mahnlauf vom '+esc(dmy(MR.datum))+' zurücknehmen</button></div>'; }
   const alt=Math.round((Date.parse(MR.datum)-Date.parse(calc.stich))/864e5);
   h+='<div class="note'+(alt>3?' warnbox':'')+'">Berücksichtigt sind Zahlungen bis zum '+esc(dmy(calc.stich))+' (letzter Kontoauszug im OS). Gemahnt werden nur Posten, die bis zum '+esc(dmy(calc.faell))+' fällig waren.'+(alt>3?' <b>Bitte vor dem Mahnlauf die aktuellen Kontoauszüge importieren, sonst werden bereits bezahlte Mieten gemahnt.</b>':'')+'</div>';
   const bl=bzListe(), bzl=bl[bl.length-1];
@@ -789,7 +791,7 @@ function mahnBrief(x,st,nr){ const mk=ed(x.mk), o=objekte.find(q=>q.kz===x.mk.ob
   const kau=mrKaution(); const Z=geb&&!kau?zinsBerechnung(x,MR.datum):null; if(Z&&Z.sum>0) posten.push({d:MR.datum,t:'Verzugszinsen '+fnum.format(Z.satz)+' % p.a. bis '+dmy(Z.bis),b:Z.sum});
   if(geb) posten.push({d:MR.datum,t:'Mahngebühr '+st,b:geb});
   const sum=r2(posten.reduce((a,y)=>a+y.b,0)); const adr=(ADR[x.mk.obj]||'|').split('|'); const name=mk.mieter||'';
-  const vz=String(mk.ref||(x.mk.obj+' '+uName(x.mk.einheit)+' '+((x.mk.namen||[])[0]||''))).trim();
+  const vz=[x.mk.obj,uName(x.mk.einheit),String(name).replace(/\s+/g,' ').trim()].filter(Boolean).join(' ');
   const an=String(mk.anrede||'').trim(); const kopf=an?(/^(sehr|liebe|hallo|guten)/i.test(an)?an.replace(/,?$/,','):an.split(/\s*(?:,|\bund\b)\s*/).filter(Boolean).map((t,i)=>(i?'s':'S')+'ehr geehrte'+(/^herr/i.test(t)?'r ':' ')+t).join(', ')+','):'Guten Tag '+name+',';
   const lm=letzteMahnung(x,kau?'kaution':'miete'), F=dmy(MR.frist);
   const konto='Kontoinhaber: '+inh+'\nIBAN: '+(iban||'[IBAN]')+'\nVerwendungszweck: '+vz;
@@ -818,6 +820,15 @@ function drawBrief(doc,B){ const L=25,R=185; let y=22;
   para(B.b); para(B.konto); para(B.tail); para(B.gl); para(B.gruss); }
 function briefText(B){ return B.kopf+'\n\n'+B.a+'\n'+B.posten.map(p=>dmy(p.d)+'  '+p.t+'  '+eur(p.b)).join('\n')+'\nGesamt offen: '+eur(B.sum)+'\n\n'+B.b+'\n\n'+B.konto+'\n\n'+B.tail+'\n\n'+B.gl+'\n\n'+B.gruss; }
 let MRPDF=[];
+/* Mahnlauf eines Tages zurücknehmen: PDFs, Ablage in der Mieterakte, Mahnregister und Mahnlauf (mit Gebühren und Zinsen) entfernen */
+async function mahnlaufZurueck(datum){ const sb=window.osSupabase, lauf=MAHN[datum]; if(!sb||!db||!canWrite||!lauf){ toast('Nur Lesezugriff.'); return; }
+  const P=Object.values(lauf.posten||{}); MR.busy='Nehme zurück …'; render(); const fehler=[];
+  for(const p of P){ MR.busy='Nehme zurück: '+p.nr+' …'; render();
+    try{ if(p.url){ const i=String(p.url).indexOf('/mahnungen/'); if(i>=0){ const {error}=await sb.storage.from('mahnungen').remove([decodeURIComponent(p.url.slice(i+11))]); if(error) fehler.push(p.nr+' PDF: '+error.message); } } }catch(e){ fehler.push(p.nr+' PDF: '+e.message); }
+    const mk=MK[p.pid]; if(mk){ try{ const akte=docBase(mk)+'/'+enc('03 Miete & Zahlungen/Mahnungen')+'/'+enc(aktenName(mk)+'_'+datum+'_'+p.stufe+' '+p.nr+'.pdf').replace(/\//g,'_'); await sb.storage.from('mieterakten').remove([akte]); }catch(e){} }
+    if(p.regId){ try{ await sb.from('mahn_historie').delete().eq('register_id',p.regId); const {error}=await sb.from('mahn_register').delete().eq('id',p.regId); if(error) fehler.push(p.nr+' Register: '+error.message); }catch(e){ fehler.push(p.nr+' Register: '+e.message); } } }
+  try{ await queue('mahnlaeufe/'+datum,()=>db.doc('mahnlaeufe/'+datum).delete()); const m=Object.assign({},MAHN); delete m[datum]; MAHN=m; }catch(e){ fehler.push('Mahnlauf: '+(e.message||e)); }
+  calc=null; MR.busy=false; MR.done=null; await loadRegM(); mahnInit(MR.art); render(); toast(fehler.length?'Zurückgenommen mit Fehlern: '+fehler.join('; '):P.length+' Mahnungen vom '+dmy(datum)+' zurückgenommen.',8000); }
 async function mahnlaufStarten(){ const sb=window.osSupabase; if(!sb||!db||!canWrite){ toast('Nur Lesezugriff.'); return; } if(!window.jspdf){ toast('PDF-Bibliothek lädt noch, bitte gleich nochmal.'); return; }
   const L=mahnListe().filter(x=>MR.sel[x.mk.pid]); if(!L.length) return;
   MR.busy='Erstelle …'; render();
@@ -1752,6 +1763,7 @@ document.addEventListener('click',async e=>{ const t=e.target.closest('button,tr
   if(t.dataset.dopen){ e.preventDefault(); const w=window.open('','_blank'); const [f,n]=t.dataset.dopen.split('|'); const mk=MK[M.sel]; const {data,error}=await window.osSupabase.storage.from('mieterakten').createSignedUrl(docBase(mk)+'/'+enc(f)+'/'+n,3600); if(error){ if(w) w.close(); toast(error.message); return; } if(w) w.location.href=data.signedUrl; else window.open(data.signedUrl,'_blank'); return; }
   if(t.dataset.mahnopen){ mahnOpen=true; modal=false; mahnInit(); if(!REGload) loadRegM(); render(); return; }
   if(t.dataset.mahnclose){ mahnOpen=false; render(); return; }
+  if(t.dataset.mrzurueck){ if(MR.busy) return; if(t.dataset.sure!=='1'){ t.dataset.sure='1'; t.textContent='Wirklich zurücknehmen? Nochmal klicken.'; return; } mahnlaufZurueck(t.dataset.mrzurueck); return; }
   if(t.dataset.mrart){ if(MR.busy) return; mahnInit(t.dataset.mrart); render(); return; }
   if(t.dataset.mrall){ for(const x of mahnListe()) MR.sel[x.mk.pid]=true; render(); return; }
   if(t.dataset.mrnone){ MR.sel={}; render(); return; }
