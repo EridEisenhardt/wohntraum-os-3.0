@@ -40,7 +40,8 @@
     ['objekt_adresse', 'Objekt: Adresse'], ['objekt_adresse_we', 'Objekt: Adresse mit Einheit'], ['objekt_kz', 'Objekt: Kürzel'],
     ['personen', 'Personen (Zahl)'], ['personen_text', 'Personen (z. B. 2 Personen)'], ['strom_zahl', 'Strom (Betrag)'],
     ['vermieter', 'Vermieter: Name'], ['vermieter_anschrift', 'Vermieter: Anschrift'], ['vertragsdatum', 'Vertragsdatum (heute)'],
-    ['verwendungszweck', 'Verwendungszweck Miete'], ['wlan_zahl', 'WLAN (Betrag)'], ['wohnflaeche', 'Wohnfläche (m²)'], ['zimmer', 'Zimmer'],
+    ['verwendungszweck', 'Verwendungszweck Miete'], ['wlan_zahl', 'WLAN (Betrag)'],
+    ['garage_opt', 'Garage / Stellplatz (Betrag, leer wenn keiner)'], ['moebel_ebk_opt', 'Möblierung und Einbauküche (Betrag, leer wenn keiner)'], ['hausmeister_opt', 'Gutschrift Hausmeister (Betrag, leer wenn keine)'], ['zusatz_opt', 'Weitere Beträge vorhanden (Garage, Möblierung, Hausmeister)'], ['wohnflaeche', 'Wohnfläche (m²)'], ['zimmer', 'Zimmer'],
     ['rz_anlage', 'Ratenzahlung: Bezeichnung der Forderung (kurz)'], ['rz_basiszins', 'Ratenzahlung: Basiszins'], ['rz_datum', 'Ratenzahlung: Erstellungsdatum'], ['rz_erste_rate', 'Ratenzahlung: erste Rate am'],
     ['rz_forderung', 'Ratenzahlung: Forderung (Betrag)'], ['rz_forderung_worte', 'Ratenzahlung: Forderung in Worten'], ['rz_forderungsart', 'Ratenzahlung: Art der Forderung'], ['rz_gesamtzahlung', 'Ratenzahlung: Gesamtzahlung'],
     ['rz_laufzeit', 'Ratenzahlung: Anzahl Raten'], ['rz_mietstatus', 'Ratenzahlung: Status des Mietvertrags'], ['rz_nachtrag', 'Ratenzahlung: Hinweis Nachtrag'], ['rz_objekt', 'Ratenzahlung: Objekt'],
@@ -71,6 +72,8 @@
       personen: String(pers), personen_text: pers + (pers === 1 ? ' Person' : ' Personen'), strom_zahl: betrag(strom),
       vermieter: vermieter || '', vermieter_anschrift: vermieterAnschrift || '',
       vertragsdatum: heute, verwendungszweck: ['Miete', o.kz, e.bezeichnung, k.name].filter(Boolean).join(' '), wlan_zahl: betrag(wlan),
+      garage_opt: garage ? betrag(garage) : '', moebel_ebk_opt: (moebel + ebk) ? betrag(moebel + ebk) : '', hausmeister_opt: hm ? betrag(Math.abs(hm)) : '',
+      zusatz_opt: (garage || moebel + ebk || hm) ? 'ja' : '',
       wohnflaeche: wfl ? String(wfl).replace('.', ',') : '', zimmer: e.zimmer ? String(e.zimmer).replace('.', ',') : ''
     }
   }
