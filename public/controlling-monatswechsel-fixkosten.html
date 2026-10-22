@@ -136,6 +136,7 @@ table.plan input.txt{width:210px;background:transparent;border-color:transparent
     <button data-tab="monat" class="on">Monat</button>
     <button data-tab="darlehen">Darlehen</button>
     <button data-tab="plan">Plan (Fixkosten)</button>
+    <button data-tab="umbuchungen">Umbuchungen</button>
     <button data-tab="belege">Belege &amp; Fälligkeiten</button>
   </div>
   <div id="view"><div class="loading">Lade Daten …</div></div>
@@ -212,7 +213,7 @@ function objOrder(){ const out={EE:[],WT:[],KiBo:[]};
   return out; }
 const isKonto=o=>/-(Allgemein|Instandhaltung)$/.test(o);
 function compute(key){
-  const md=months[key]||{}, paid=md.paid||{}, rows=monthRows(key), pct=(settings&&settings.pctAllgemein!=null)?settings.pctAllgemein:0.6;
+  const md=months[key]||{}, paid=md.paid||{}, rows=monthRows(key), pct=(settings&&settings.pctAllgemein!=null)?settings.pctAllgemein:0.6, pctI=(settings&&settings.pctInstand!=null)?settings.pctInstand:0.3;
   const order=objOrder(), acc={};
   for(const g of GES) for(const o of (order[g]||[])) acc[o]={ges:g,obj:o,items:[],fixGes:0,offen:0,offenDarl:0,rech:0,kontostand:null};
   for(const r of rows){ if(!acc[r.obj]) acc[r.obj]={ges:r.ges,obj:r.obj,items:[],fixGes:0,offen:0,offenDarl:0,rech:0,kontostand:null};
@@ -224,13 +225,14 @@ function compute(key){
     a.offenOhneDarl=a.offen-a.offenDarl; a.offenGes=a.offen+a.rech;
     a.diff=a.kontostand==null?null:r2(a.kontostand-a.offenOhneDarl-a.rech);
     a.diffGes=a.kontostand==null?null:r2(a.kontostand-a.offenGes);
-    a.umbAllg=(!isKonto(o)&&a.diff>0)?r2(a.diff*pct):0; a.umbInst=(!isKonto(o)&&a.diff>0)?r2(a.diff*(1-pct)):0; }
+    a.umbAllg=(!isKonto(o)&&a.diffGes>0)?r2(a.diffGes*pct):0; a.umbInst=(!isKonto(o)&&a.diffGes>0)?r2(a.diffGes*pctI):0;
+    a.saldo=a.kontostand==null?null:r2(a.kontostand-a.umbAllg-a.umbInst); }
   const tot={}; for(const g of GES){ const list=Object.values(acc).filter(a=>a.ges===g);
     tot[g]={konto:list.reduce((s,a)=>s+(a.kontostand||0),0),offen:list.reduce((s,a)=>s+a.offen,0),darl:list.reduce((s,a)=>s+a.offenDarl,0),
       rech:list.reduce((s,a)=>s+a.rech,0),fix:list.reduce((s,a)=>s+a.fixGes,0),fehlt:list.filter(a=>a.kontostand==null&&(a.offen+a.rech)>0).length,
       umbA:list.reduce((s,a)=>s+a.umbAllg,0),umbI:list.reduce((s,a)=>s+a.umbInst,0)};
     const t=tot[g]; t.diff=r2(t.konto-(t.offen-t.darl)-t.rech); }
-  return {md,acc,tot,order,pct};
+  return {md,acc,tot,order,pct,pctI};
 }
 
 /* ---------- Render ---------- */
@@ -242,13 +244,13 @@ function render(){
   if(!loaded.plan||!loaded.set||!loaded.mon){ if(!db){ $('view').innerHTML='<div class="loading">'+(dbState==='none'?'Die Datenbank ist in dieser Ansicht nicht verfügbar.':'Lade Daten …')+'</div>'; } return; }
   if(!plan){ $('view').innerHTML='<div class="note">Noch keine Planpositionen hinterlegt.</div>'; return; }
   const f=document.activeElement, fk=f&&f.dataset&&f.dataset.f, sel=fk&&f.selectionStart!=null?[f.selectionStart,f.selectionEnd]:null, fv=fk?f.value:null;
-  if(tab==='plan') $('view').innerHTML=renderPlan(); else if(tab==='belege') $('view').innerHTML=renderBelege(); else if(tab==='darlehen') $('view').innerHTML=renderDarlehen(); else $('view').innerHTML=renderMonat();
+  if(tab==='plan') $('view').innerHTML=renderPlan(); else if(tab==='belege') $('view').innerHTML=renderBelege(); else if(tab==='darlehen') $('view').innerHTML=renderDarlehen(); else if(tab==='umbuchungen') $('view').innerHTML=renderUmbuchungen(); else $('view').innerHTML=renderMonat();
   if(fk){ const el=document.querySelector('[data-f="'+CSS.escape(fk)+'"]'); if(el){ el.focus(); if(fv!=null&&el.value!==fv) el.value=fv; if(sel){try{el.setSelectionRange(sel[0],sel[1]);}catch(e){}} } }
 }
 const dis=()=>canWrite?'':' disabled';
 function cls(v){return v==null?'':(v>=0?'pos':'neg');}
 function renderMonat(){
-  const {md,acc,tot,order,pct}=compute(curKey), closed=!!md.abgeschlossen;
+  const {md,acc,tot,order,pct,pctI}=compute(curKey), closed=!!md.abgeschlossen;
   let h='<div class="actions">';
   h+=closed?'<span class="badge closed">abgeschlossen am '+esc(deDate(md.abgeschlossenAm))+'</span>':'<span class="badge">offen</span>';
   if(md.kontenStand) h+='<span class="badge">Kontostände vom '+esc(deDate(md.kontenStand))+'</span>';
@@ -270,11 +272,11 @@ function renderMonat(){
   for(const g of GES){ const objs=order[g]||[]; if(!objs.length) continue;
     const zu=!!ZU['m:'+g], nOff=objs.reduce((s,o)=>s+((acc[o]&&acc[o].items.filter(i=>!i.paid).length)||0),0);
     h+='<section class="ges"><h2 class="gtog" data-zu="m:'+g+'"><span class="zu">'+(zu?'ausklappen':'einklappen')+'</span>'+g+' <span class="sub">'+nOff+' offene Posten</span></h2>';
-    if(!zu){ h+='<div class="grid">'; for(const o of objs){ const a=acc[o]; if(!a) continue; h+=renderCard(a,closed,pct); } h+='</div>'; }
+    if(!zu){ h+='<div class="grid">'; for(const o of objs){ const a=acc[o]; if(!a) continue; h+=renderCard(a,closed,pct,pctI); } h+='</div>'; }
     h+='</section>'; }
   return h;
 }
-function renderCard(a,closed,pct){
+function renderCard(a,closed,pct,pctI){
   const o=a.obj, konto=isKonto(o), state=a.diff==null?'':(a.diff>=0?' ok':' bad'), ro=closed||!canWrite?' disabled':'';
   const ozu=!!ZU['o:'+o], nOffen=a.items.filter(i=>!i.paid).length;
   let h='<div class="card'+state+'"><h4 class="gtog" data-zu="o:'+esc(o)+'"><span><span class="zu">'+(ozu?'ausklappen':'einklappen')+'</span>'+esc(o)+'</span><small>'+(a.items.length?nOffen+' von '+a.items.length+' offen':'')+(ozu&&a.diffGes!=null?' · Differenz inkl. Darlehen '+eur(a.diffGes):'')+'</small></h4>';
@@ -286,7 +288,7 @@ function renderCard(a,closed,pct){
   h+='</div>';
   if(a.diff!=null){ h+='<div class="diff '+cls(a.diff)+'"><span>Differenz'+(a.offenDarl?' (ohne Darlehen)':'')+'</span><span>'+eur(a.diff)+'</span></div>';
     if(a.offenDarl) h+='<div class="umb">Differenz inkl. Darlehen: <b class="'+cls(a.diffGes)+'">'+eur(a.diffGes)+'</b></div>';
-    if(a.umbAllg) h+='<div class="umb">Umbuchung: '+eur(a.umbAllg)+' → Allgemein ('+Math.round(pct*100)+' %) · '+eur(a.umbInst)+' → Instandhaltung ('+Math.round((1-pct)*100)+' %)</div>'; }
+    if(a.umbAllg) h+='<div class="umb">Umbuchung: '+eur(a.umbAllg)+' → Allgemein ('+Math.round(pct*100)+' %) · '+eur(a.umbInst)+' → Instandhaltung ('+Math.round(pctI*100)+' %) · '+Math.round((1-pct-pctI)*100)+' % bleiben auf dem Konto</div>'; }
   h+='</div><div class="right">';
   const alpha=(x,y)=>String(x.pos||'').localeCompare(String(y.pos||''),'de',{numeric:true,sensitivity:'base'});
   const items=(onlyOpen?a.items.filter(i=>!i.paid):a.items).slice().sort(alpha);
@@ -309,6 +311,20 @@ function darlehenList(){
   const m=Number(curKey.split('-')[1])-1, {md}=compute(curKey), paid=md.paid||{};
   return planRows().filter(r=>r.kat==='Darlehen').map(r=>{const i=info[r.obj]||{}; const ov=(md.betrag||{})[r.id];
     return {obj:r.obj,ges:r.ges,pos:r.pos,rate:(ov!=null?ov:r.plan[m])||0,bank:i.bank||'',zahlart:i.zahlart||'',von:i.vonKonto||'',iban:i.zielIban||'',paid:paid[r.id]||'',id:r.id};});
+}
+function renderUmbuchungen(){
+  const {md,acc,order,pct,pctI}=compute(curKey);
+  const alpha=(x,y)=>String(x).localeCompare(String(y),'de',{numeric:true,sensitivity:'base'});
+  let h='<div class="note">Umbuchungen für '+esc(labelKey(curKey))+(md.kontenStand?', Kontostände vom '+esc(deDate(md.kontenStand)):'')+'. Grundlage ist die Differenz inkl. Darlehen: '+Math.round(pct*100)+' % auf Allgemein, '+Math.round(pctI*100)+' % auf Instandhaltung, '+Math.round((1-pct-pctI)*100)+' % bleiben auf dem Konto. Saldo = Kontostand nach der Umbuchung.</div>';
+  h+='<div class="tablewrap"><table><thead><tr><th>Kürzel</th><th class="n">Allgemein</th><th class="n">Instandhaltung</th><th class="n">Saldo</th></tr></thead><tbody>';
+  let n=0;
+  for(const g of GES){ const objs=(order[g]||[]).filter(o=>!isKonto(o)&&acc[o]).sort(alpha); if(!objs.length) continue;
+    h+='<tr class="grp"><td colspan="4">'+esc(g)+'</td></tr>'; let sa=0,si=0;
+    for(const o of objs){ const a=acc[o]; n++; sa+=a.umbAllg; si+=a.umbInst;
+      h+='<tr><td>'+esc(o)+'</td><td class="n">'+(a.umbAllg?eur(a.umbAllg):'–')+'</td><td class="n">'+(a.umbInst?eur(a.umbInst):'–')+'</td><td class="n">'+(a.saldo==null?'<span style="color:var(--warn)">Kontostand fehlt</span>':eur(a.saldo))+'</td></tr>'; }
+    h+='<tr><td><b>Summe '+esc(g)+'</b></td><td class="n"><b>'+eur(r2(sa))+'</b></td><td class="n"><b>'+eur(r2(si))+'</b></td><td></td></tr>'; }
+  if(!n) h+='<tr><td colspan="4">Keine Objekte im Plan.</td></tr>';
+  return h+'</tbody></table></div>';
 }
 function renderDarlehen(){
   const L=darlehenList(); let sum=0,offen=0;
