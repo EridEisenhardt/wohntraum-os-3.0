@@ -305,7 +305,17 @@ export const BEREICH_MAP = {
 // Dezente Randfarbe je Kategorie-Kachel (feste Farbe je Kategorie, übrige reihum)
 const KACHEL_FARBEN = { 'v-buchhaltung': '#2f5d8a', 'v-dokumente': '#6d4fa3', 'v-fuhrpark': '#0f766e', 'v-hausverwaltung': '#1d7a4c', 'v-mahnwesen': '#b42318', 'v-personal': '#b45309', 'v-postfach': '#0369a1', 'v-prozesslandkarte': '#475569', 'v-stammdaten': '#92650a', 'v-verwaltung': '#9d174d' }
 const FARB_REIHE = ['#2f5d8a', '#1d7a4c', '#6d4fa3', '#0f766e', '#b45309', '#0369a1', '#b42318', '#475569', '#92650a', '#9d174d']
-const kachelFarbe = (n, i) => KACHEL_FARBEN[n.key] || FARB_REIHE[i % FARB_REIHE.length]
+const kachelFarbe = (n) => { if (KACHEL_FARBEN[n.key]) return KACHEL_FARBEN[n.key]; let h = 0; for (const c of String(n.key || '')) h = (h * 31 + c.charCodeAt(0)) % 997; return FARB_REIHE[h % FARB_REIHE.length] }
+// Farbe der Kategorie, zu der eine Seite gehört (für die Reiter oben); im Bereich Verwalto zuerst die Verwalto-Kategorien
+export function farbeFuerPfad(pfad, bereich) {
+  const p = String(pfad || '').split('?')[0]
+  const passt = (it) => it.href === p || (it.href !== '/' && p.startsWith(it.href + '/'))
+  const gruppen = NAV.filter((n) => n.type === 'group' && (n.items || []).some(passt))
+  if (!gruppen.length) return ''
+  const team = gruppen.filter((n) => String(n.key).startsWith('v-')), andere = gruppen.filter((n) => !String(n.key).startsWith('v-'))
+  const g = (bereich === 'eric' ? andere[0] || team[0] : team[0] || andere[0])
+  return kachelFarbe(g)
+}
 export const bereichOf = (n) => BEREICH_MAP[n.type === 'group' ? n.key : n.href] || 'beide'
 export const gbOf = (n) => (n.type === 'group' ? GB_MAP[n.key] : GB_MAP[n.href])
 
@@ -594,7 +604,7 @@ export default function Sidebar({ user, demo, onLogout, role, perms }) {
 
       {/* Alle Kategorien & Unterkategorien */}
       <nav className="sbx-nav">
-        {visibleNav.map((n, ni) => {
+        {visibleNav.map((n) => {
           if (n.type === 'link') return (
             <div key={n.href} {...dragProps(n)}>
             <div className="sbx-linkrow">
@@ -612,7 +622,7 @@ export default function Sidebar({ user, demo, onLogout, role, perms }) {
           const open = catOpen(n)
           return (
             <div key={n.key} {...dragProps(n)}>
-            <div className={'sbx-cat sbx-kachel' + (open ? ' offen' : '')} style={{ '--kc': kachelFarbe(n, ni) }}>
+            <div className={'sbx-cat sbx-kachel' + (open ? ' offen' : '')} style={{ '--kc': kachelFarbe(n) }}>
               <button className={'sbx-catbtn' + (n.key === activeGroupKey ? ' active' : '')} onClick={() => toggleCat(n.key)}>
                 <i className="ti ti-grip-vertical grip" />
                 <span className="kic"><i className={'ti ' + n.icon} /></span> <span className="klab">{n.label}</span>

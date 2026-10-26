@@ -3,7 +3,7 @@
 // solange der Tab offen ist (z. B. ein geöffnetes Mieterkonto, während man in den Buchungen nachschaut).
 import { useEffect, useRef, useState } from 'react'
 import { usePathname, useRouter } from 'next/navigation'
-import { NAV } from './Sidebar'
+import { NAV, farbeFuerPfad } from './Sidebar'
 
 const MAX = 10
 const SPEICHER = 'os_tabs'
@@ -142,6 +142,7 @@ export default function TabShell() {
             onDragOver={(e) => { if (!zieh) return; e.preventDefault(); const b = e.currentTarget.getBoundingClientRect(); const vor = e.clientX < b.left + b.width / 2; if (!ziel || ziel.k !== t.key || ziel.vor !== vor) setZiel({ k: t.key, vor }) }}
             onDrop={(e) => { e.preventDefault(); if (ziel) ablegen(t.key, ziel.vor); setZieh(null); setZiel(null) }}
             onDragEnd={() => { setZieh(null); setZiel(null) }}
+            style={(() => { let b = ''; try { b = localStorage.getItem('os_bereich') || '' } catch (x) {} const f = farbeFuerPfad(t.pfad, b); return f ? { '--kc': f } : undefined })()}
             onClick={() => wechseln(t)} onAuxClick={(e) => { if (e.button === 1) schliessen(t, e) }} title={t.titel}>
             <span className="ostab-t">{t.titel}</span>
             <button className="ostab-x" onClick={(e) => schliessen(t, e)} aria-label={t.titel + ' schließen'}>×</button>
