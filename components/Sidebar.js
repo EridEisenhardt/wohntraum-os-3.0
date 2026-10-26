@@ -302,6 +302,10 @@ export const BEREICH_MAP = {
   '/hausmeisterdienst': 'eric', '/aktivitaeten': 'eric', berichte: 'eric', wissensdatenbank: 'eric', '/dokumente': 'eric', '/dms': 'eric',
   'v-buchhaltung': 'team', 'v-dokumente': 'team', 'v-fuhrpark': 'team', 'v-hausverwaltung': 'team', 'v-mahnwesen': 'team', 'v-personal': 'team', 'v-postfach': 'team', 'v-prozesslandkarte': 'team', 'v-stammdaten': 'team', 'v-verwaltung': 'team',
 }
+// Dezente Randfarbe je Kategorie-Kachel (feste Farbe je Kategorie, übrige reihum)
+const KACHEL_FARBEN = { 'v-buchhaltung': '#2f5d8a', 'v-dokumente': '#6d4fa3', 'v-fuhrpark': '#0f766e', 'v-hausverwaltung': '#1d7a4c', 'v-mahnwesen': '#b42318', 'v-personal': '#b45309', 'v-postfach': '#0369a1', 'v-prozesslandkarte': '#475569', 'v-stammdaten': '#92650a', 'v-verwaltung': '#9d174d' }
+const FARB_REIHE = ['#2f5d8a', '#1d7a4c', '#6d4fa3', '#0f766e', '#b45309', '#0369a1', '#b42318', '#475569', '#92650a', '#9d174d']
+const kachelFarbe = (n, i) => KACHEL_FARBEN[n.key] || FARB_REIHE[i % FARB_REIHE.length]
 export const bereichOf = (n) => BEREICH_MAP[n.type === 'group' ? n.key : n.href] || 'beide'
 export const gbOf = (n) => (n.type === 'group' ? GB_MAP[n.key] : GB_MAP[n.href])
 
@@ -590,7 +594,7 @@ export default function Sidebar({ user, demo, onLogout, role, perms }) {
 
       {/* Alle Kategorien & Unterkategorien */}
       <nav className="sbx-nav">
-        {visibleNav.map((n) => {
+        {visibleNav.map((n, ni) => {
           if (n.type === 'link') return (
             <div key={n.href} {...dragProps(n)}>
             <div className="sbx-linkrow">
@@ -608,7 +612,7 @@ export default function Sidebar({ user, demo, onLogout, role, perms }) {
           const open = catOpen(n)
           return (
             <div key={n.key} {...dragProps(n)}>
-            <div className={'sbx-cat sbx-kachel' + (open ? ' offen' : '')}>
+            <div className={'sbx-cat sbx-kachel' + (open ? ' offen' : '')} style={{ '--kc': kachelFarbe(n, ni) }}>
               <button className={'sbx-catbtn' + (n.key === activeGroupKey ? ' active' : '')} onClick={() => toggleCat(n.key)}>
                 <i className="ti ti-grip-vertical grip" />
                 <span className="kic"><i className={'ti ' + n.icon} /></span> <span className="klab">{n.label}</span>
