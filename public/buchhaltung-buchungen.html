@@ -977,7 +977,7 @@ function renderBelegeTab(){ let h=renderKA();
   return h; }
 /* In der Buchung: passende OneDrive-Dateien vorschlagen und suchen */
 function spTreffer(it,q){ const Z=spZugeordnet(); const frei=SP.dateien.filter(f=>!Z[f.id]);
-  if(q){ const n=norm(q); return frei.filter(f=>norm(f.name+' '+f.ort).includes(n)).slice(0,8); }
+  if(q){ const n=norm(q), bt=parseNum(q), istB=bt!=null&&!isNaN(bt)&&/\d,\d{2}/.test(q); return frei.filter(f=>norm(f.name+' '+f.ort).includes(n)||(istB&&f.betrag!=null&&Math.abs(f.betrag-Math.abs(bt))<0.005)).slice(0,8); }
   return frei.map(f=>({f,s:spScore(f,it)})).filter(x=>x.s>-1&&x.f.betrag!=null).sort((a,b)=>b.s-a.s).slice(0,8).map(x=>x.f); }
 /* Ohne passenden Betrag: freie Dateien desselben Objekts und derselben Kostenart (Ordner), nach Datum sortiert */
 function spAehnlich(it){ const Z=spZugeordnet(); const obj=(it.c&&it.c.obj)||'', ka=it.c&&it.c.ka&&KAN[it.c.ka]?norm(KAN[it.c.ka][2].split(/[ (\/]/)[0]):'';
@@ -993,7 +993,18 @@ async function spBetragSuche(it){ const k=spBetragText(it); if(SP.bs[k]) return;
   catch(e){ SP.bs[k]={fehler:e.message||String(e),L:[]}; }
   for(const f of SP.bs[k].L) if(!SP.dateien.some(y=>y.id===f.id)) SP.dateien.push(f);
   const el=$('sp-erg'), cur=items().find(x=>x.id===U.sel); if(el&&cur&&cur.id===it.id&&!SP.such) el.innerHTML=spZeilen(cur,''); }
+/* Freie Suche: zusätzlich ganz OneDrive durchsuchen (Dateiname); ein Betrag wird auch ohne Tausenderpunkt gefunden */
+SP.qs={};
+async function spFreiSuche(it,q){ if(SP.qs[q]) return; SP.qs[q]={lade:true,L:[]}; const Z=spZugeordnet(), out=new Map();
+  const conv=x=>{ const rel=String(x.pfad||'').replace(/^Prozesslandkarte 3\.0\//,''); const voll=/\.[A-Za-z0-9]{2,5}$/.test(String(x.pfad||''))&&String(x.pfad).endsWith(x.name)?x.pfad:(x.pfad+'/'+x.name); const f=spMeta({id:x.id,name:x.name,pfad:voll,rel:'',bereich:'such'}); f.ort=String(voll).replace(/^Prozesslandkarte 3\.0\//,'').split('/').slice(0,-1).slice(-2).join('/'); return f; };
+  try{ const r=await odApi({aktion:'suche',q}); for(const x of (r.treffer||[])) if(!x.ordner&&!Z[x.id]) out.set(x.id,conv(x)); }catch(e){}
+  const bt=parseNum(q); if(bt!=null&&!isNaN(bt)&&/\d,\d{2}/.test(q)){ try{ const r=await odApi({aktion:'betragsuche',betrag:fnum.format(Math.abs(bt))}); for(const x of (r.treffer||[])) if(!Z[x.id]) out.set(x.id,conv(x)); }catch(e){} }
+  SP.qs[q]={L:[...out.values()]}; for(const f of SP.qs[q].L) if(!SP.dateien.some(y=>y.id===f.id)) SP.dateien.push(f);
+  const el=$('sp-erg'), cur=items().find(x=>x.id===U.sel); if(el&&cur&&cur.id===it.id&&(SP.such||'').trim()===q) el.innerHTML=spZeilen(cur,q); }
 function spZeilen(it,q){ let L=spTreffer(it,q), hin='';
+  if(q&&q.length>=3){ const S=SP.qs[q]; if(!S){ clearTimeout(spZeilen._t); spZeilen._t=setTimeout(()=>spFreiSuche(it,q),400); }
+    if(S&&S.L.length){ const ids=new Set(L.map(f=>f.id)); L=L.concat(S.L.filter(f=>!ids.has(f.id))).slice(0,15); }
+    if(!L.length) return '<div class="sub">'+(S&&!S.lade?'Keine freie Datei gefunden – auch nicht in OneDrive.':'Suche in OneDrive …')+'</div>'; }
   if(!L.length&&!q){ const k=spBetragText(it), B=SP.bs[k];
     if(!B){ setTimeout(()=>spBetragSuche(it),0); return '<div class="sub">Suche in OneDrive nach Belegen über '+esc(k)+' € …</div>'; }
     if(B.lade) return '<div class="sub">Suche in OneDrive nach Belegen über '+esc(k)+' € …</div>';

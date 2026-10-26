@@ -239,7 +239,7 @@ export async function POST(req) {
       // Belege in OneDrive (unterhalb der Prozesslandkarte), deren Dateiname genau diesen Betrag enthält, z. B. „…_134,64€.pdf“
       const betrag = String(b.betrag || '').trim(); if (!/^\d{1,3}(\.\d{3})*,\d{2}$|^\d+,\d{2}$/.test(betrag)) return antwort({ treffer: [] })
       const d = await drive(); const ohne = betrag.replace(/\./g, '')
-      const varianten = [...new Set([betrag, ohne])]
+      const varianten = [...new Set([betrag, ohne, betrag.split('.').pop(), ohne.split(',')[0]])]
       const gesehen = new Set(), treffer = []
       for (const q of varianten) {
         const r = await graph('/drives/' + d + "/root/search(q='" + encodeURIComponent(q) + "')?$top=100&$select=id,name,size,file,parentReference,webUrl")
