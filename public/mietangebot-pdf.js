@@ -9,21 +9,29 @@
     { id: 'jc_alzey_worms', name: 'Alzey-Worms Jobcenter_R6S16S58', kurz: 'Alzey-Worms Jobcenter_R6S16S58', gebiet: /^Alzey-Worms|^Stadt Worms/ },
     { id: 'kreis_bad_kreuznach', name: 'Bad Kreuznach', kurz: 'Bad Kreuznach', gebiet: /Kreuznach/ },
     { id: 'kreis_mainz_bingen', name: 'Mainz-Bingen', kurz: 'Mainz-Bingen', gebiet: /^Mainz-Bingen/ },
-    { id: 'sozialamt_alzey_worms', name: 'Alzey-Worms Sozialamt_R6-S16S58', kurz: 'Alzey-Worms Sozialamt_R6-S16S58', gebiet: null }
+    { id: 'sozialamt_alzey_worms', name: 'Alzey-Worms Sozialamt_R6-S16S58', kurz: 'Alzey-Worms Sozialamt_R6-S16S58', gebiet: null },
+    { id: 'mietbescheinigung_asyl', name: 'Mietbescheinigung Asyl', kurz: 'Mietbescheinigung Asyl', gebiet: null }
   ].map(v => Object.assign(v, { datei: 'mietangebot-vorlagen/' + v.id + '.pdf' }))
 
   // Zusätzliche Angaben, die nicht in der Kalkulation stehen (je nach gewählter Vorlage)
   const FRAGEN = [
-    { key: 'ort_datum', label: 'Ort, Datum', vorlagen: ['jc_alzey_worms', 'kreis_bad_kreuznach', 'kreis_mainz_bingen', 'sozialamt_alzey_worms'] },
+    { key: 'ort_datum', label: 'Ort, Datum', vorlagen: ['jc_alzey_worms', 'kreis_bad_kreuznach', 'kreis_mainz_bingen', 'sozialamt_alzey_worms', 'mietbescheinigung_asyl'] },
     { key: 'bg_nummer', label: 'BG-Nummer / Aktenzeichen', vorlagen: ['jc_alzey_worms', 'kreis_bad_kreuznach', 'kreis_mainz_bingen', 'sozialamt_alzey_worms'] },
-    { key: 'baujahr', label: 'Baujahr / Jahr der Bezugsfertigkeit', vorlagen: ['jc_alzey_worms', 'kreis_bad_kreuznach', 'kreis_mainz_bingen'] },
-    { key: 'zimmer', label: 'Anzahl Zimmer', vorlagen: ['jc_alzey_worms', 'kreis_mainz_bingen'] },
+    { key: 'baujahr', label: 'Baujahr / Jahr der Bezugsfertigkeit', vorlagen: ['jc_alzey_worms', 'kreis_bad_kreuznach', 'kreis_mainz_bingen', 'mietbescheinigung_asyl'] },
+    { key: 'zimmer', label: 'Anzahl Zimmer', vorlagen: ['jc_alzey_worms', 'kreis_mainz_bingen', 'mietbescheinigung_asyl'] },
     { key: 'kuechen', label: 'Anzahl Küchen', vorgabe: '1', vorlagen: ['jc_alzey_worms'] },
     { key: 'baeder', label: 'Anzahl Bäder', vorgabe: '1', vorlagen: ['jc_alzey_worms'] },
-    { key: 'heizungsart', label: 'Heizungsart', vorgabe: 'Gas', liste: ['Gas', 'Öl', 'Fernwärme', 'Strom', 'Wärmepumpe', 'Holz / Pellets'], vorlagen: ['jc_alzey_worms', 'kreis_bad_kreuznach', 'kreis_mainz_bingen'] },
+    { key: 'heizungsart', label: 'Heizungsart', vorgabe: 'Gas', liste: ['Gas', 'Öl', 'Fernwärme', 'Strom', 'Wärmepumpe', 'Holz / Pellets', 'Kohle'], vorlagen: ['jc_alzey_worms', 'kreis_bad_kreuznach', 'kreis_mainz_bingen', 'mietbescheinigung_asyl'] },
     { key: 'warmwasser', label: 'Warmwasser', vorgabe: 'zentral über die Heizung', liste: ['zentral über die Heizung', 'dezentral (Boiler / Durchlauferhitzer)'], vorlagen: ['jc_alzey_worms', 'kreis_bad_kreuznach', 'kreis_mainz_bingen', 'sozialamt_alzey_worms'] },
     { key: 'kochfeuerung', label: 'Kochfeuerung', vorgabe: 'Strom', liste: ['Strom', 'Gas'], vorlagen: ['kreis_bad_kreuznach'] },
-    { key: 'geschoss', label: 'Geschoss', liste: ['EG', 'OG', 'DG'], vorlagen: ['kreis_mainz_bingen'] },
+    { key: 'geschoss', label: 'Geschoss', liste: ['EG', 'OG', 'DG'], vorlagen: ['kreis_mainz_bingen', 'mietbescheinigung_asyl'] },
+    { key: 'etage', label: 'Etage (Zahl, z. B. 1 für 1. OG)', vorlagen: ['mietbescheinigung_asyl'] },
+    { key: 'seite', label: 'Lage im Geschoss', liste: ['links', 'Mitte', 'rechts'], vorlagen: ['mietbescheinigung_asyl'] },
+    { key: 'mitbewohner', label: 'Namen der weiteren Haushaltsangehörigen', vorlagen: ['mietbescheinigung_asyl'] },
+    { key: 'ww_art', label: 'Warmwasserbereitung über', liste: ['Heizung', 'Boiler / Untertischgerät (Strom)', 'Boiler / Untertischgerät (Gas)', 'Durchlauferhitzer (Strom)', 'Durchlauferhitzer (Gas)'], vorlagen: ['mietbescheinigung_asyl'] },
+    { key: 'ausstattung', label: 'Die Wohnung ist', liste: ['leer', 'nur Einbauküche', 'teilmöbliert', 'vollmöbliert'], vorlagen: ['mietbescheinigung_asyl'] },
+    { key: 'regelmaessig', label: 'Miete wird regelmäßig gezahlt', vorgabe: 'ja', liste: ['ja', 'nein'], vorlagen: ['mietbescheinigung_asyl'] },
+    { key: 'rueckstand', label: 'Mietrückstand in Euro (leer = keiner)', vorlagen: ['mietbescheinigung_asyl'] },
     { key: 'einbaukueche', label: 'Einbauküche vorhanden', liste: ['ja', 'nein'], vorlagen: ['kreis_mainz_bingen'] },
     { key: 'moebliert', label: 'Möbliert', liste: ['ja', 'nein'], vorlagen: ['kreis_mainz_bingen'] },
     { key: 'garage_pflicht', label: 'Anmietung Garage / Stellplatz verpflichtend', vorgabe: 'nein', liste: ['ja', 'nein'], vorlagen: ['kreis_bad_kreuznach'] },
@@ -54,6 +62,10 @@
     if (!a.einbaukueche) a.einbaukueche = zahl(D.ebk) ? 'ja' : 'nein'
     if (!a.moebliert) a.moebliert = zahl(D.moebel) ? 'ja' : 'nein'
     if (!a.geschoss) { const l = String(D.lage || '').toUpperCase(); a.geschoss = /DG|DACH/.test(l) ? 'DG' : /EG|ERDG|PARTERRE/.test(l) ? 'EG' : /OG/.test(l) ? 'OG' : '' }
+    if (!a.etage) { const m = String(D.lage || '').match(/(\d+)\s*\.?\s*(OG|Obergeschoss|Stock|Etage)/i); a.etage = m ? m[1] : '' }
+    if (!a.seite) { const l = String(D.lage || '').toLowerCase(); a.seite = /links/.test(l) ? 'links' : /rechts/.test(l) ? 'rechts' : /mitte/.test(l) ? 'Mitte' : '' }
+    if (!a.ww_art) a.ww_art = /^dezentral/i.test(a.warmwasser || '') ? 'Durchlauferhitzer (Strom)' : 'Heizung'
+    if (!a.ausstattung) a.ausstattung = zahl(D.moebel) ? 'teilmöbliert' : zahl(D.ebk) ? 'nur Einbauküche' : 'leer'
     const adr = String(D.anschrift || '').trim(), i = adr.lastIndexOf(',')
     return Object.assign({}, D, a, {
       name_nv: [String(D.nachname || '').toUpperCase(), D.vorname].filter(Boolean).join(' '),
@@ -168,6 +180,48 @@
       Z.text(1, 527, 619, eur(zahl(V.kalt) + zahl(V.hk) + zahl(V.bk)), 10, 44, true)
       Z.text(1, 349, 667, V.baujahr, 10, 50); Z.text(1, 349, 690, V.mietbeginn, 10, 50); Z.text(1, 349, 714, String(V.wfl || '').replace('.', ','), 10, 50)
       Z.text(1, 54, 759, V.ort_datum, 9, 220)
+    },
+    async mietbescheinigung_asyl(doc, V, Z, B) {
+      const k = 10.5, nk = zahl(V.bk) + zahl(V.strom) + zahl(V.wlan) + zahl(V.moebel) + zahl(V.ebk), kalt = zahl(V.kalt) + zahl(V.garage)
+      const pers = Number(V.personen) || 0
+      Z.text(1, 175, 66, V.name_vn, 10, 142); Z.text(1, 375, 66, pers > 1 ? String(pers - 1) : pers === 1 ? '0' : '', 10, 46)
+      Z.text(1, 198, 91, V.wohnung, 10, 350)
+      Z.text(1, 92, 154, V.mietbeginn, 10, 84); Z.text(1, 72, 167, V.mitbewohner, 10, 475)
+      // Lage der Wohnung
+      Z.text(1, 143, 217, V.geschoss === 'OG' ? V.etage : '', 9, 10)
+      const zeile = { EG: 208, OG: 221, DG: 233.5 }[V.geschoss]
+      if (zeile) { Z.kreuz(1, 178, zeile, true, k); Z.kreuz(1, { links: 284, mitte: 325, rechts: 367.5 }[String(V.seite || '').toLowerCase()] || 0, zeile, !!V.seite, k) }
+      Z.kreuz(1, 532, 208, true, k)
+      // Miete
+      Z.text(1, 86, 274, V.mietbeginn, 10, 66); Z.text(1, 493, 274, eur(kalt), 10, 70, true); Z.text(1, 494, 287, eur(V.garage), 10, 70, true)
+      Z.kreuz(1, 248.5, 315, !!zahl(V.hk), k); Z.text(1, 493, 324.5, eur(V.hk), 10, 60, true)
+      const h = String(V.heizungsart || '').toLowerCase(), bek = /öl|gas|fernw|kohle|^strom/.test(h)
+      Z.kreuz(1, 248.5, 340.5, /öl/.test(h), k); Z.kreuz(1, 319.5, 340.5, /gas/.test(h), k); Z.kreuz(1, 425.5, 340.5, /^strom/.test(h), k)
+      Z.kreuz(1, 248.5, 353, /kohle/.test(h), k); Z.kreuz(1, 319.5, 353, /fernw/.test(h), k)
+      if (h && !bek) { Z.kreuz(1, 425.5, 353, true, k); Z.text(1, 440, 362, V.heizungsart, 9, 70) }
+      const ww = String(V.ww_art || '')
+      Z.kreuz(1, 248.5, 366, /^heizung/i.test(ww), k)
+      Z.kreuz(1, 248.5, 378.5, /boiler/i.test(ww), k); Z.kreuz(1, 377, 378.5, /boiler/i.test(ww) && /gas/i.test(ww), 10); Z.kreuz(1, 419, 378.5, /boiler/i.test(ww) && /strom/i.test(ww), 10)
+      Z.kreuz(1, 248.5, 391, /durchlauf/i.test(ww), k); Z.kreuz(1, 355, 391, /durchlauf/i.test(ww) && /gas/i.test(ww), k); Z.kreuz(1, 390.5, 391, /durchlauf/i.test(ww) && /strom/i.test(ww), k)
+      // Nebenkosten inkl. Möblierung, Strom und WLAN
+      Z.kreuz(1, 248.5, 416.5, !!nk, k); Z.text(1, 493, 426, eur(nk), 10, 60, true)
+      const aus = String(V.ausstattung || ''), mb = zahl(V.moebel) + zahl(V.ebk), voll = /voll/.test(aus), teil = /teil|einbau/i.test(aus)
+      Z.kreuz(1, 142.5, 460, voll, k); Z.kreuz(1, 178, 460, !voll, k); Z.text(1, 491, 470, voll ? eur(mb) : '', 10, 56, true)
+      Z.kreuz(1, 142.5, 478.5, teil, k); Z.kreuz(1, 178, 478.5, !teil, k); Z.text(1, 491, 488, teil ? eur(mb) : '', 10, 56, true)
+      Z.text(1, 492, 543, eur(V.strom), 10, 56, true)
+      Z.text(1, 512, 568.5, eur(kalt + zahl(V.hk) + nk), 10, 80, true)
+      // Angaben über die Wohnung
+      Z.text(1, 432, 612, V.baujahr, 10, 60); Z.text(1, 180, 631, V.zimmer, 10, 40); Z.text(1, 344, 631, String(V.wfl || '').replace('.', ','), 10, 40, true)
+      const zh = !!zahl(V.hk) && /öl|gas|fernw|wärmepumpe|pellet|holz/.test(h)
+      Z.kreuz(1, 425.5, 639.5, zh, k); Z.kreuz(1, 461, 639.5, !zh, k)
+      Z.kreuz(1, 213.5, 658, true, k)
+      Z.kreuz(1, 177, 676.5, aus === 'leer', 10); Z.kreuz(1, 275.5, 676.5, /teil/.test(aus), k); Z.kreuz(1, 387.5, 676.5, voll, 10); Z.kreuz(1, 514.5, 676.5, /einbau/i.test(aus), 10)
+      Z.kreuz(1, 250, 695, ja(V.regelmaessig), k); Z.kreuz(1, 286.5, 695, !ja(V.regelmaessig), k)
+      Z.text(1, 337, 717, zahl(V.rueckstand) ? eur(V.rueckstand) : '', 9, 18, true)
+      Z.kreuz(1, 539, 725.5, true, k)
+      Z.text(1, 200, 754, 'Wohn(T)raum Rheinhessen GmbH, ' + VERMIETER.name, 10, 340); Z.text(1, 200, 772, VERMIETER.anschrift, 10, 340); Z.text(1, 200, 791, VERMIETER.telefon, 10, 340)
+      Z.text(1, 72, 808, V.ort_datum, 8, 95)
+      await Z.bild(1, 172, 792, 75, B.unterschrift_eric)
     },
     async sozialamt_alzey_worms(doc, V, Z, B) {
       Z.text(1, 410, 78, V.bg_nummer, 8, 95)
