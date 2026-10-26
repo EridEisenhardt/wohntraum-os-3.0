@@ -57,8 +57,9 @@ td.n{text-align:right;white-space:nowrap}
 .pill{display:inline-block;border-radius:999px;padding:1px 8px;font-size:11px;font-weight:600;white-space:nowrap}
 .pill.ok{background:var(--pos-bg);color:var(--pos)}.pill.mid{background:var(--warn-bg);color:var(--warn)}.pill.aus{background:var(--chip);color:var(--muted)}.pill.neg{background:var(--neg-bg);color:var(--neg)}
 .drw-bg{position:fixed;inset:0;background:rgba(0,0,0,.25);z-index:60}
-.drw{position:fixed;top:0;right:0;bottom:0;width:min(560px,100vw);background:var(--bg);z-index:61;overflow:auto;box-shadow:-8px 0 24px rgba(0,0,0,.15);padding:16px}
+.drw{position:fixed;top:4vh;bottom:4vh;left:50%;transform:translateX(-50%);border-radius:14px;width:min(820px,96vw);background:var(--bg);z-index:61;overflow:auto;box-shadow:-8px 0 24px rgba(0,0,0,.15);padding:16px}
 .drw h2{font-size:17px;margin:0 0 2px}
+.dz{display:block;border:1.5px dashed var(--line);border-radius:10px;padding:16px;text-align:center;color:var(--muted);font-size:13px;cursor:pointer;background:var(--card)}.dz:hover,.dz.over{border-color:var(--accent,#2f5d8a);color:var(--ink)}
 .card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:12px 14px;margin-top:12px}
 .lab{font-size:11.5px;text-transform:uppercase;letter-spacing:.03em;color:var(--muted);font-weight:700;margin-bottom:8px}
 .frm{display:grid;grid-template-columns:1fr 1fr;gap:10px 12px}
@@ -149,6 +150,7 @@ function drawer(){ if(!DRAFT) return ''; const v=DRAFT, ro=!canWrite, d=ro?' dis
   const sp=SPARTEN[v.art]||SPARTEN.Verwaltung, o=objekte.find(x=>x.kz===v.obj);
   let h='<div class="drw-bg" data-zu-drw="1"></div><section class="drw"><div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px"><div><h2>'+esc(v.anbieter||'Neuer Vertrag')+'</h2><div class="sub">'+esc([v.sparte,ortLabel(v)].filter(Boolean).join(' · '))+'</div></div><button class="ghost" data-zu-drw="1">Schließen</button></div>';
   if(v.quelle==='vorschlag') h+='<div class="note" style="margin-top:10px">'+(v.herkunft==='Dokumente'?'Vorschlag aus den Vertragsunterlagen in OneDrive':'Vorschlag aus '+(v.belege||0)+' Zahlung'+(v.belege===1?'':'en')+(v.zahlungVon?' ('+dmy(v.zahlungVon)+' bis '+dmy(v.zahlungBis)+')':''))+'. Bitte prüfen und ergänzen.'+((v.dokumente||[]).length&&v.herkunft!=='Dokumente'?'<div class="sub" style="margin-top:4px">Ergänzt aus '+v.dokumente.length+' Dokument'+(v.dokumente.length===1?'':'en')+' in OneDrive.</div>':'')+(v.weitere?'<div class="sub" style="margin-top:4px">Weitere Nummern in den Zahlungen: '+esc(v.weitere)+'</div>':'')+'</div>';
+  if(!ro) h+=pdfKarte(v);
   h+='<div class="card"><div class="lab">Vertrag</div><div class="frm">'
     +'<label>Art<select data-f="art"'+d+'>'+ARTEN.map(([k,l])=>'<option value="'+k+'"'+(v.art===k?' selected':'')+'>'+l+'</option>').join('')+'</select></label>'
     +'<label>Sparte<select data-f="sparte"'+d+'>'+(sp.includes(v.sparte)?'':'<option selected>'+esc(v.sparte||'')+'</option>')+sp.map(s=>'<option'+(v.sparte===s?' selected':'')+'>'+esc(s)+'</option>').join('')+'</select></label>'
@@ -197,7 +199,8 @@ async function ladeTX(){ if(TX) return; const sb=window.osSupabase, out=[]; let 
       if(!data||data.length<200) break; from+=200; } TX=out; }
   catch(e){ TX=[]; toast('Kontoumsätze nicht lesbar: '+(e.message||e)); }
   render(); }
-async function dokOeffnen(id){ const w=window.open('','_blank'); try{ const sb=window.osSupabase; let tok=''; try{ const {data}=await sb.auth.getSession(); tok=(data&&data.session&&data.session.access_token)||''; }catch(e){}
+async function dokOeffnen(id){ const w=window.open('','_blank'); try{
+    if(String(id).startsWith('sb:')){ const {data,error}=await window.osSupabase.storage.from('vertraege').createSignedUrl(String(id).slice(3),3600); if(error) throw error; if(w) w.location.href=data.signedUrl; else window.open(data.signedUrl,'_blank'); return; } const sb=window.osSupabase; let tok=''; try{ const {data}=await sb.auth.getSession(); tok=(data&&data.session&&data.session.access_token)||''; }catch(e){}
     if(String(id).startsWith('p:')){ let p=String(id).slice(2); if(!p.startsWith('Prozesslandkarte 3.0')) p='Prozesslandkarte 3.0/'+p; const i=p.lastIndexOf('/'); const r0=await fetch('/api/onedrive',{method:'POST',headers:{'content-type':'application/json',authorization:'Bearer '+tok},body:JSON.stringify({aktion:'ordner',pfad:p.slice(0,i)})}); const j0=await r0.json().catch(()=>null); const f=j0&&(j0.eintraege||[]).find(x=>x.name===p.slice(i+1)); if(!f) throw new Error('Datei nicht gefunden.'); id=f.id; }
     const r=await fetch('/api/onedrive',{method:'POST',headers:{'content-type':'application/json',authorization:'Bearer '+tok},body:JSON.stringify({aktion:'link',id})}); const j=await r.json().catch(()=>null);
     if(!j||j.error) throw new Error((j&&j.error)||'OneDrive nicht erreichbar.'); const u=j.web||j.download; if(w) w.location.href=u; else window.open(u,'_blank'); }
@@ -206,6 +209,60 @@ async function dokOeffnen(id){ const w=window.open('','_blank'); try{ const sb=w
 let __dl=false; function deepLink(){ if(__dl||!loaded.o) return; const q=new URLSearchParams(location.search); const vid=q.get('id'); __dl=true;
   if(vid){ const v=L.find(x=>x.id===vid); if(v){ SEL=v.id; DRAFT=JSON.parse(JSON.stringify(v)); render(); ladeTX(); } return; }
   if(q.get('neu')){ const kz=q.get('obj')||''; const o=objekte.find(x=>x.kz===kz); SEL=null; DRAFT={id:neuId(),art:'Versorger',sparte:'',anbieter:'',vnr:'',knr:'',zaehler:'',mref:'',ges:o?o.ges:'',obj:kz,einheit:'',start:'',ende:'',kuendigung:'',betrag:null,rhythmus:'monatlich',konto:'',iban:'',notiz:'',quelle:'manuell'}; render(); } }
+/* ---------- Vertrag als PDF: Daten auslesen (KI) und PDF beim Speichern ablegen ---------- */
+var PDFV=null;
+function pdfKarte(v){ const P=PDFV&&PDFV.id===v.id?PDFV:null;
+  let t=P&&P.lade?'Lese „'+esc(P.name)+'“ … das dauert einige Sekunden.':P&&P.name?'„'+esc(P.name)+'“ eingelesen – bitte die Angaben prüfen und Fehlendes ergänzen. Beim Speichern wird das PDF abgelegt.':'Vertrag als PDF hierher ziehen oder klicken – das OS liest die Vertragsdaten aus und füllt die Felder vor.';
+  return '<div class="card"><div class="lab">Vertrag als PDF</div><label class="dz" id="vt-dz" for="vt-pdf">'+t+'</label><input type="file" id="vt-pdf" accept="application/pdf,.pdf" hidden>'
+    +(P&&P.fehler?'<div class="sub" style="color:var(--neg,#b42318);margin-top:6px">'+esc(P.fehler)+'</div>':'')+(P&&P.gefuellt&&P.gefuellt.length?'<div class="sub" style="margin-top:6px">Übernommen: '+esc(P.gefuellt.join(', '))+'</div>':'')+'</div>'; }
+async function osTok(){ try{ const {data}=await window.osSupabase.auth.getSession(); return (data&&data.session&&data.session.access_token)||''; }catch(e){ return ''; } }
+const b64=f=>new Promise((res,rej)=>{ const r=new FileReader(); r.onload=()=>res(String(r.result).split(',')[1]||''); r.onerror=rej; r.readAsDataURL(f); });
+const FELDNAMEN={art:'Art',sparte:'Sparte',anbieter:'Anbieter',vnr:'Vertragsnummer',knr:'Kundennummer',zaehler:'Zählernummer',malo:'Marktlokation',mref:'Mandatsreferenz',ges:'Gesellschaft',obj:'Objekt',start:'Start',ende:'Ende',kuendigung:'Kündigungsfrist',laufzeit:'Laufzeit',rhythmus:'Rhythmus',betrag:'Betrag',iban:'IBAN',notiz:'Notiz'};
+async function pdfLesen(file){ if(!DRAFT||!file) return; if(!/\.pdf$/i.test(file.name)&&file.type!=='application/pdf'){ toast('Bitte ein PDF wählen.'); return; }
+  if(file.size>3.2e6){ toast('Das PDF ist zu groß (höchstens etwa 3 MB).'); return; }
+  const id=DRAFT.id; PDFV={id,name:file.name,lade:true,datei:file}; render();
+  try{ const daten=await b64(file); PDFV.b64=daten;
+    const prompt='Lies den angehängten Vertrag (oder Vertragsbestätigung, Police, Abschlagsplan) und gib ausschließlich ein JSON-Objekt mit diesen Feldern zurück. Unbekannte Felder leer lassen ("" bzw. null), nichts erfinden.\n'
+      +'"art": eines von '+JSON.stringify(ARTEN.map(x=>x[0]))+' (Versorger = Strom, Gas, Wasser, Müll, Internet usw.; Versicherung; Verwaltung = alles andere)\n'
+      +'"sparte": passend zur Art, eines von '+JSON.stringify(SPARTEN)+'\n'
+      +'"anbieter": Name des Anbieters/Versicherers (kurz, ohne Rechtsform-Zusätze wie GmbH nur wenn nötig)\n'
+      +'"vnr": Vertrags- oder Versicherungsscheinnummer\n"knr": Kundennummer\n"zaehler": Zähler- oder Messstellennummer\n"malo": Marktlokations-ID\n"mref": SEPA-Mandatsreferenz\n'
+      +'"obj": Kürzel des Objekts, wenn die Verbrauchs-/Versicherungsadresse zu einem dieser Objekte passt, sonst "": '+objekte.map(o=>o.kz+' = '+String(o.name||'').split(',').slice(0,2).join(',')).join('; ')+'\n'
+      +'"ges": Gesellschaft des Vertragspartners/Kunden: "WT" = Wohn(T)raum Rheinhessen GmbH, "EE" = Eric Eisenhardt (privat), "KiBo" = Wohntraum KiBo GmbH, sonst ""\n'
+      +'"start": Vertragsbeginn als JJJJ-MM-TT\n"ende": Vertragsende als JJJJ-MM-TT, falls befristet\n"kuendigung": Kündigungsfrist in Worten, z. B. "3 Monate zum Jahresende"\n"laufzeit": Laufzeit und Verlängerung in Worten\n'
+      +'"rhythmus": eines von '+JSON.stringify(RH)+'\n"betrag": Abschlag oder Beitrag pro Zahlung als Zahl (z. B. 85.5)\n"iban": IBAN des Anbieters (Zahlungsempfänger), nicht die eigene\n"notiz": höchstens 2 kurze Sätze mit wichtigen Besonderheiten (z. B. Tarif, Preisgarantie, Leistungsumfang)';
+    const r=await fetch('/api/ki',{method:'POST',headers:{'content-type':'application/json',authorization:'Bearer '+await osTok()},body:JSON.stringify({aufgabe:'beleg_json',text:prompt,pdf:{daten}})});
+    const j=await r.json().catch(()=>({})); if(!r.ok||j.error) throw new Error(j.error||('Fehler '+r.status));
+    if(!DRAFT||DRAFT.id!==id) return; const o=j.json||{}, gef=[];
+    const setz=(k,val,immer)=>{ if(val==null||String(val).trim()==='') return; if(immer||DRAFT[k]==null||String(DRAFT[k]).trim()===''){ DRAFT[k]=val; gef.push(FELDNAMEN[k]||k); } };
+    if(ARTEN.some(x=>x[0]===o.art)) setz('art',o.art,true);
+    if(o.sparte) setz('sparte',String(o.sparte),true);
+    for(const k of ['anbieter','vnr','knr','zaehler','malo','mref','kuendigung','laufzeit','iban','notiz']) setz(k,o[k]?String(o[k]).trim():'');
+    if(o.iban) DRAFT.iban=String(DRAFT.iban||'').replace(/\s+/g,'').toUpperCase();
+    if(objekte.some(x=>x.kz===o.obj)){ setz('obj',o.obj); const ob=objekte.find(x=>x.kz===DRAFT.obj); if(ob&&ob.ges&&!DRAFT.ges) DRAFT.ges=ob.ges; }
+    if(GES.includes(o.ges)) setz('ges',o.ges);
+    for(const k of ['start','ende']) if(/^\d{4}-\d{2}-\d{2}$/.test(String(o[k]||''))) setz(k,o[k]);
+    if(RH.includes(o.rhythmus)) setz('rhythmus',o.rhythmus,true);
+    const bt=typeof o.betrag==='number'?o.betrag:parseNum(o.betrag); if(bt!=null&&bt!==0) setz('betrag',Math.abs(bt));
+    PDFV=Object.assign(PDFV,{lade:false,gefuellt:gef}); render(); toast(gef.length?gef.length+' Angaben aus dem PDF übernommen.':'Im PDF wurden keine neuen Angaben gefunden.'); }
+  catch(e){ PDFV=Object.assign(PDFV||{},{lade:false,fehler:'Auslesen nicht möglich: '+(e.message||e)+' – das PDF wird trotzdem beim Speichern abgelegt.'}); render(); } }
+/* Ablage: im Objektordner unter 03 Verträge (Themenordner), ohne Objekt in der OS-Ablage */
+const THEMA={Strom:'Strom',Gas:'Gas','Wärme':'Heizung',Frischwasser:'Frischwasser',Abwasser:'Schmutzwasser','Müll':'Müll','Internet/Telefon':'Internet',Grundbesitzabgaben:'Grundsteuer'};
+const pdfSafe=s=>String(s||'').replace(/[\\/:*?"<>|#%]/g,'_').replace(/\s+/g,' ').trim();
+async function pdfAblegen(v){ const P=PDFV&&PDFV.id===v.id?PDFV:null; if(!P||!P.datei) return null;
+  const datum=v.start||heute(), name=pdfSafe((v.obj||v.ges||'WT')+'_'+(v.anbieter||'Vertrag')+'_'+datum+'_Vertrag '+(v.sparte||v.art||''))+'.pdf';
+  const daten=P.b64||await b64(P.datei), tok=await osTok(), api=async body=>{ const r=await fetch('/api/onedrive',{method:'POST',headers:{'content-type':'application/json',authorization:'Bearer '+tok},body:JSON.stringify(body)}); const j=await r.json().catch(()=>null); if(!j||j.error) throw new Error((j&&j.error)||'OneDrive nicht erreichbar.'); return j; };
+  if(v.obj){ try{ const ob=(await api({aktion:'objektbasis',kz:[v.obj]})).objekte||{}, x=ob[v.obj];
+      if(x){ const top=(x.top||[]).find(n=>/^03\s*Vertr/i.test(n))||'03 Verträge', th=v.art==='Versicherung'?'Versicherung':THEMA[v.sparte]||'';
+        const it=(await api({aktion:'hochladen',pfad:x.basis+'/'+top+(th?'/'+th:''),name,daten,typ:'application/pdf'})).item;
+        return {id:it.id,n:it.name||name,t:'Vertrag',d:datum}; } }catch(e){ toast('OneDrive: '+(e.message||e)+' – PDF wird in der OS-Ablage gespeichert.'); } }
+  const pfad='vertraege-pdf/'+v.id+'/'+Date.now()+'_'+name.replace(/[^A-Za-z0-9._-]+/g,'_');
+  const {error}=await window.osSupabase.storage.from('vertraege').upload(pfad,P.datei,{contentType:'application/pdf',upsert:true}); if(error) throw new Error('Ablage nicht möglich: '+error.message);
+  return {id:'sb:'+pfad,n:name,t:'Vertrag',d:datum}; }
+document.addEventListener('change',e=>{ if(e.target.id==='vt-pdf'){ const f=e.target.files[0]; e.target.value=''; if(f) pdfLesen(f); } });
+document.addEventListener('dragover',e=>{ const z=e.target.closest&&e.target.closest('#vt-dz'); if(z){ e.preventDefault(); z.classList.add('over'); } });
+document.addEventListener('dragleave',e=>{ const z=e.target.closest&&e.target.closest('#vt-dz'); if(z) z.classList.remove('over'); });
+document.addEventListener('drop',e=>{ const z=e.target.closest&&e.target.closest('#vt-dz'); if(!z) return; e.preventDefault(); z.classList.remove('over'); const f=e.dataTransfer.files[0]; if(f) pdfLesen(f); });
 const neuId=()=>'v'+Date.now().toString(36)+Math.random().toString(36).slice(2,6);
 function speichern(liste){ L=liste; render(); return db.doc('stamm/vertraege').set({liste,geaendert:heute()}).catch(e=>toast('Speichern fehlgeschlagen: '+(e.message||e))); }
 function parseNum(s){ s=String(s||'').trim().replace(/\s|€/g,''); if(!s) return null; if(s.includes(',')) s=s.replace(/\./g,'').replace(',','.'); const n=Number(s); return isFinite(n)?n:null; }
@@ -216,9 +273,14 @@ document.addEventListener('click',e=>{ const t=e.target.closest('button,tr,.drw-
   if(d.id){ const v=L.find(x=>x.id===d.id); if(!v) return; SEL=v.id; DRAFT=JSON.parse(JSON.stringify(v)); render(); ladeTX(); return; }
   if(d.neu){ SEL=null; DRAFT={id:neuId(),art:F.art||'Versorger',sparte:'',anbieter:'',vnr:'',knr:'',zaehler:'',mref:'',ges:F.ges||'',obj:'',einheit:'',start:'',ende:'',kuendigung:'',betrag:null,rhythmus:'monatlich',konto:'',iban:'',notiz:'',quelle:'manuell'}; render(); return; }
   if(d.dok){ dokOeffnen(d.dok); return; }
-  if(d.zuDrw){ DRAFT=null; SEL=null; render(); return; }
+  if(d.zuDrw){ DRAFT=null; SEL=null; PDFV=null; render(); return; }
   if(d.save){ const v=Object.assign({},DRAFT); if(!String(v.anbieter||'').trim()){ toast('Bitte den Anbieter eintragen.'); return; }
-    v.quelle='manuell'; v.geprueft=heute(); const i=L.findIndex(x=>x.id===v.id); const neu=L.slice(); if(i>=0) neu[i]=v; else neu.push(v);
+    v.quelle='manuell'; v.geprueft=heute();
+    if(PDFV&&PDFV.id===v.id&&PDFV.lade){ toast('Das PDF wird noch gelesen, bitte einen Moment.'); return; }
+    if(PDFV&&PDFV.id===v.id&&PDFV.datei){ t.disabled=true; t.textContent='PDF wird abgelegt …';
+      pdfAblegen(v).then(dk=>{ if(dk) v.dokumente=(v.dokumente||[]).concat([dk]); PDFV=null; const i=L.findIndex(x=>x.id===v.id); const neu=L.slice(); if(i>=0) neu[i]=v; else neu.push(v);
+        DRAFT=null; SEL=v.id; speichern(neu); toast('Vertrag gespeichert, PDF abgelegt.'); }).catch(err=>{ t.disabled=false; t.textContent='Speichern'; toast(err.message||String(err)); }); return; }
+    const i=L.findIndex(x=>x.id===v.id); const neu=L.slice(); if(i>=0) neu[i]=v; else neu.push(v);
     DRAFT=null; SEL=v.id; speichern(neu); toast('Vertrag gespeichert.'); return; }
   if(d.del){ if(t.dataset.sure!=='1'){ t.dataset.sure='1'; t.textContent='wirklich löschen?'; return; } const id=DRAFT.id; DRAFT=null; SEL=null; speichern(L.filter(x=>x.id!==id)); toast('Gelöscht.'); return; } });
 document.addEventListener('change',e=>{ const t=e.target;

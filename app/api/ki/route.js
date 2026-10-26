@@ -66,8 +66,11 @@ export async function POST(req) {
     let content = aufgabe === 'brief' ? text : '<text>\n' + text + '\n</text>'
     if (aufgabe === 'beleg_json') {
       const bild = body.bild && body.bild.daten ? body.bild : null
+      const pdf = body.pdf && body.pdf.daten ? String(body.pdf.daten) : ''
       if (bild && String(bild.daten).length > 4500000) return antwort({ error: 'Bild zu groß.' }, 413)
-      content = bild ? [{ type: 'image', source: { type: 'base64', media_type: bild.typ || 'image/jpeg', data: String(bild.daten) } }, { type: 'text', text }] : text
+      if (pdf && pdf.length > 4300000) return antwort({ error: 'PDF zu groß (höchstens etwa 3 MB).' }, 413)
+      content = pdf ? [{ type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: pdf } }, { type: 'text', text }]
+        : bild ? [{ type: 'image', source: { type: 'base64', media_type: bild.typ || 'image/jpeg', data: String(bild.daten) } }, { type: 'text', text }] : text
     }
     if (aufgabe === 'brief_allgemein' || aufgabe === 'brief_pruefen') {
       content = 'Absender: ' + (k.absender || '') + '\nEmpfänger (' + (k.empfaengerTyp || 'unbekannt') + '):\n' + (k.empfaenger || '') + '\nAnrede im Brief: ' + (k.anrede || '') +
