@@ -73,6 +73,7 @@ textarea{width:100%;resize:vertical}
 .kz-ok:hover:not(:disabled){background:var(--accent-soft)}.kz-ok.on{background:var(--accent);cursor:default}
 .kz-ok:disabled:not(.on){border-color:var(--line);cursor:not-allowed}
 .kz.ok{background:var(--card)}
+.kz-um{display:flex;flex-direction:column;gap:3px;font-size:12.5px}.kz-um label{display:flex;gap:8px;align-items:center;color:var(--muted)}.kz-um select{flex:1;min-width:0}
 /* jede zweite Buchung leicht hinterlegt */
 .klist .kz:nth-child(even){background:var(--soft)}
 .kdrw-bg{position:fixed;inset:0;background:rgba(0,0,0,.25);z-index:60}
@@ -1147,7 +1148,8 @@ function karte(it,n){ const t=it.tx, c=it.c, ok=bestaetigt(it), ro=!canWrite||it
   h+='</div>';
   if(it.split) h+='<div class="kz-f"><div class="sub">Aufgeteilt in '+it.parts.length+' Teile: '+esc(it.parts.map(p=>kontoLabel(p.c.kat,p.c.sub,p.c.ka)+(p.c.obj?' '+p.c.obj:'')).join(' · '))+'</div><a href="#" data-kdet="'+esc(it.id)+'">ändern</a></div>';
   else h+='<div class="kz-f'+(ok?'':' vs')+'">'+kontoSelect('kk-'+n,c,ro)+(['intern','ignore','ruecklast'].includes(c.kat)?'<span></span>':objSel('ko-'+n,c.obj||'',c.kat,c.sub).replace('<select ','<select data-kid="'+esc(it.id)+'"'+(ro?' disabled':'')+' title="Objekt" '))+'</div>'
-    +(ok?'':'<div class="kz-src">Vorschlag: '+esc(c.src||'automatisch')+'</div>');
+    +(ok?'':'<div class="kz-src">'+(c.src==='manuell'?'Noch nicht bestätigt – erst mit dem Kreis rechts ist die Buchung erfasst':'Vorschlag: '+esc(c.src||'automatisch'))+'</div>')
+    +(!it.split&&c.kat==='bk'&&c.obj?bkUmlage('ku-'+n,c,ro):'');
   h+='</div>';
   /* rechts: Details + Bestätigen */
   h+='<div class="kz-r"><button class="kz-d" data-kdet="'+esc(it.id)+'" title="Details, Aufteilen, Regel">Details</button>'
@@ -1180,9 +1182,10 @@ document.addEventListener('click',async e=>{ const t=e.target.closest('button,a,
   if(d.kbest){ const L=[...KS.wahl].map(kItem).filter(x=>x&&!x.open&&!bestaetigt(x)&&!x.nh); let n=0; for(const it of L){ await kBestaetigen(it); HALT.delete(it.id); n++; } KS.wahl.clear(); toast(n+' Buchung'+(n===1?'':'en')+' bestätigt.'); render(); return; }
   if(d.kol){ e.preventDefault(); const it=kItem(d.kol); if(!it) return; if(it.tx.ol){ await writeTx(it.doc,it.ix,{ol:0,olg:''}); toast('Markierung beleglos entfernt.'); } else { await writeTx(it.doc,it.ix,{ol:1}); toast('Als beleglos markiert. Den Grund kannst du in den Details eintragen.'); } return; }
   if(d.kspzu){ const f=(SP.dateien||[]).find(x=>x.id===d.kspzu), it=kItem(d.kspit); if(!f||!it) return; await spZuordnen(f,it); toast('Beleg zugeordnet.'); render(); return; } });
-document.addEventListener('change',e=>{ const t=e.target; const m=t.id&&t.id.match(/^k([ko])-(\d+)$/); if(!m) return; const card=t.closest('.kz'); const it=card&&kItem(card.dataset.kid); if(!it) return; U.sel=it.id; HALT.add(it.id);
+document.addEventListener('change',e=>{ const t=e.target; const m=t.id&&t.id.match(/^k([kou])-(\d+)$/); if(!m) return; const card=t.closest('.kz'); const it=card&&kItem(card.dataset.kid); if(!it) return; U.sel=it.id; HALT.add(it.id);
   if(m[1]==='k'){ setKonto(it,t.value,{ok:0}); return; }
-  const c=it.c; writeTx(it.doc,it.ix,{m:1,ok:0,k:c.kat||'',s:c.sub||'',ka:c.ka||'',o:t.value,u:''}); },true);
+  const c=it.c; if(m[1]==='u'){ writeTx(it.doc,it.ix,{m:1,ok:0,k:c.kat||'',s:c.sub||'',ka:c.ka||'',o:c.obj||'',u:t.value,kv:c.kv||''}); return; }
+  writeTx(it.doc,it.ix,{m:1,ok:0,k:c.kat||'',s:c.sub||'',ka:c.ka||'',o:t.value,u:'',kv:''}); },true);
 document.addEventListener('keydown',e=>{ if(e.key==='Escape'&&U.dr){ U.dr=false; render(); } });
 
 /* ---------- Verträge (Hausverwaltung › Verträge) an der Zahlung anzeigen ---------- */
@@ -1232,20 +1235,23 @@ function kontoLabel(k,s,ka,obj){ if(!k) return 'nicht zugeordnet'; const x=KMAP[
   if(!x){ if(k==='bk') return 'Betriebskosten – Kostenart fehlt'; if(k==='verw') return 'Verwaltung – Art fehlt'; return KATN[k]||k; }
   if(obj===undefined) return x[0]+' '+x[1];
   const on=objNr(obj); return (x[0]+(on||'00'))+' '+(on?obj+' ':'')+x[1]; }
-function kontoSelect(id,c,ro){ const cur=kval(c.kat,c.sub,c.ka);
-  const lab=c.kat?(KMAP[cur]?KMAP[cur][0]+' '+KMAP[cur][1]:kontoLabel(c.kat,c.sub,c.ka)):'';
+function kontoSelect(id,c,ro){ const cur=kval(c.kat,c.sub,c.ka), bx=c.kat==='bk'&&c.obj&&c.ka?bkkFuer(c,c.kv):null, curO=bx?'bk||'+bx.ka+'|'+bx.obj+'|'+bx.id:'';
+  const lab=bx?bkkNr(bx)+' '+bx.name:c.kat?(KMAP[cur]?KMAP[cur][0]+' '+KMAP[cur][1]:kontoLabel(c.kat,c.sub,c.ka)):'';
   let h='<div class="kcombo"><input type="text" class="kc-in" id="'+id+'-q" data-kc="'+id+'" value="'+esc(lab)+'" placeholder="Konto: Nummer oder Begriff" autocomplete="off"'+(ro?' disabled':'')+'><div class="kc-list" hidden></div>';
   h+='<select id="'+id+'" class="kc-sel" tabindex="-1" aria-hidden="true"'+(ro?' disabled':'')+'><option value="||"'+(c.kat?'':' selected')+'>– Konto wählen –</option>';
-  if(c.kat&&!KMAP[cur]) h+='<option value="'+esc(cur)+'" selected>'+esc(kontoLabel(c.kat,c.sub,c.ka))+'</option>';
-  for(const [g,l] of KONTEN){ h+='<optgroup label="'+esc(g)+'">'+l.map(x=>{ const v=kval(x[2],x[3],x[4]); return '<option value="'+esc(v)+'"'+(v===cur?' selected':'')+'>'+esc(x[0]+' '+x[1])+'</option>'; }).join('')+'</optgroup>'; }
+  if(c.kat&&!KMAP[cur]&&!bx) h+='<option value="'+esc(cur)+'" selected>'+esc(kontoLabel(c.kat,c.sub,c.ka))+'</option>';
+  for(const [g,l] of KONTEN){ h+='<optgroup label="'+esc(g)+'">'+l.map(x=>{ const v=kval(x[2],x[3],x[4]); return '<option value="'+esc(v)+'"'+(v===cur&&!bx?' selected':'')+'>'+esc(x[0]+' '+x[1])+'</option>'; }).join('')+'</optgroup>'; }
+  const objKzs=new Set(objekte.map(o=>o.kz));
+  h+='<optgroup label="Betriebskosten je Objekt (mit Verteilerschlüssel)">'+bkkListe().filter(x=>objKzs.has(x.obj)).slice().sort((a,b)=>a.name.localeCompare(b.name,'de',{numeric:true})).map(x=>{ const v='bk||'+x.ka+'|'+x.obj+'|'+x.id; return '<option value="'+esc(v)+'"'+(v===curO?' selected':'')+'>'+esc(bkkNr(x)+' '+x.name+(x.schl?' · '+schlLabel(x.schl):''))+'</option>'; }).join('')+'</optgroup>';
   return h+'</select></div>'; }
 const KA_RX=[['weg',/\bhausgeld\b|\bweg\b|wohnungseigentuemer/],['schornstein',/schornstein|kaminfeger/],['heizung',/heizoel|brennstoff|erdgas|\bgas\b|fluessiggas|\bista\b|techem|brunata|minol|kalo\b/],['niederschlag',/niederschlag/],['abwasser',/abwasser|schmutzwasser|entwaesser|kanalgeb/],['wasser',/wasserversorg|wassergeld|wasserzins|\bwvr\b|trinkwasser/],['muell',/abfall|muell|\bawb\b|entsorgung|wertstoff/],['grundsteuer',/grundsteuer/],['versicherung',/versicherung|signal iduna|allianz|provinzial|gebaeudevers|haftpflicht/],['garten',/garten|gruenpflege|baumpflege/],['reinigung',/treppenhausreinig|gebaeudereinig|reinigungs|schaedlings|ungeziefer/],['hauswart',/hausmeister|hauswart/],['kabel',/kabelanschluss|kabel tv|antenne|tele columbus|pyur/],['sonstige_bk',/rauchmelder|rauchwarn|wartung|dichtheitspruef|legionell/],['internet',/telekom|1 1 telecom|vodafone|telefonica|\bo2\b|starlink|congstar|\binternet\b|\bdsl\b/],['allgstrom',/allgemeinstrom|\bstrom\b|\bews\b|elektrizitaet|eon\b|e on\b/]];
 function guessKa(tx){ const t=' '+norm((tx.n||'')+' '+(tx.z||''))+' '; for(const [k,rx] of KA_RX) if(rx.test(t)) return k; return ''; }
 const ruleKa=c=>{ if(!c.rule) return ''; const r=regeln.find(x=>x.id===c.rule); return (r&&r.ka)||''; };
-function setKonto(it,val,extra){ const [k,s,ka]=val.split('|'); const c=it.c; let obj=c.obj||'', unit=c.unit||'';
-  if(k!=='miete') unit=''; if(k==='verw'&&!objKz().has(obj)) obj=''; if(['intern','ignore','ruecklast',''].includes(k)) obj='';
+function setKonto(it,val,extra){ const [k,s,ka,o2,kv]=val.split('|'); const c=it.c; let obj=c.obj||'', unit=c.unit||'';
+  if(o2&&o2!==obj){ obj=o2; unit=''; }
+  if(k!=='miete'&&k!=='bk') unit=''; if(k==='verw'&&!objKz().has(obj)) obj=''; if(['intern','ignore','ruecklast',''].includes(k)) obj='';
   if(c.kat==='ruecklast'&&k!=='ruecklast') setTx(it.id,'k',k);
-  return writeTx(it.doc,it.ix,Object.assign({m:1,k,s:s||'',ka:ka||'',o:obj,u:unit},extra||{ok:1})); }
+  return writeTx(it.doc,it.ix,Object.assign({m:1,k,s:s||'',ka:ka||'',o:obj,u:unit,kv:k==='bk'?(kv||''):''},extra||{ok:1})); }
 const BELEG_KATS=['bk','inst','umbau','obj_sonst','verw'];
 function umlageSubs(){ return new Set(SUBS_UM.map(x=>x[0])); }
 const kontoOf=key=>konten.find(x=>(x.key||x.iban)===key)||null;
@@ -1265,7 +1271,7 @@ function items(){
     if(!it){ const orig=(buch[r.doc].tx||[])[r.ix]||r.tx; it={id,doc:r.doc,ix:r.ix,tx:orig,k:r.k,kkey:r.kkey,m:r.m,parts:[],nh:!!r.nh,split:!!r.split}; map.set(id,it); }
     it.parts.push(r); }
   const out=[...map.values()];
-  for(const it of out){ it.parts=it.parts.map((p,pi)=>{ const sp=Array.isArray(it.tx.sp)&&it.tx.sp.length&&!p.nh?it.tx.sp[pi]:null; let ka=sp?(sp.ka||''):(it.tx.m?(it.tx.ka||''):ruleKa(p.c)), kg=false; if(!ka&&p.c.kat==='bk'&&!sp){ ka=guessKa(it.tx); kg=!!ka; } return Object.assign({},p,{c:Object.assign({},p.c,{ka,kg})}); });
+  for(const it of out){ it.parts=it.parts.map((p,pi)=>{ const sp=Array.isArray(it.tx.sp)&&it.tx.sp.length&&!p.nh?it.tx.sp[pi]:null; let ka=sp?(sp.ka||''):(it.tx.m?(it.tx.ka||''):ruleKa(p.c)), kg=false; if(!ka&&p.c.kat==='bk'&&!sp){ ka=guessKa(it.tx); kg=!!ka; } return Object.assign({},p,{c:Object.assign({},p.c,{ka,kg,kv:!sp&&it.tx.m?(it.tx.kv||''):''})}); });
     it.c=it.parts[0].c; it.needKA=!it.parts.some(p=>isOpen(p.c))&&it.parts.some(p=>p.c.kat==='bk'&&(!p.c.ka||p.c.kg)); it.open=it.parts.some(p=>isOpen(p.c)); it.bel=(it.tx.bl||[]).length;
     it.dauer=it.tx.b<0&&DAUER.length?dbFuer(it):null;
     it.needBeleg=it.tx.b<0&&!it.open&&it.parts.some(p=>BELEG_KATS.includes(p.c.kat)&&!(p.c.kat==='verw'&&p.c.sub==='bank'))&&!it.bel&&!it.tx.ol&&!it.dauer; }
@@ -1353,8 +1359,12 @@ function objSel(id,cur,kat,sub){ const ph=kat==='verw'?'alle Objekte (Umlage)':'
   let o='<option value="">'+ph+'</option>'+objekte.map(x=>'<option value="'+esc(x.kz)+'"'+(x.kz===cur?' selected':'')+'>'+esc(x.kz+' – '+String(x.name||'').split(',')[0])+'</option>').join('');
   if(kat==='sonst_ein'||(kat==='verw'&&sub==='kauf')) o+='<option value="__ges"'+(cur==='__ges'?' selected':'')+'>Gesellschaft (kein Objekt)</option>';
   return '<select id="'+id+'">'+o+'</select>'; }
-function unitSel(id,obj,cur){ const o=objekte.find(x=>x.kz===obj); if(!o) return '';
-  return '<select id="'+id+'"><option value="">– Einheit –</option>'+sortedUnits(o).map(x=>x.e).map(e=>'<option value="'+esc(e.id)+'"'+(e.id===cur?' selected':'')+'>'+esc(uName(e.label)+(e.mieter?' · '+e.mieter.split(',')[0]:''))+'</option>').join('')+'</select>'; }
+function unitSel(id,obj,cur,leer){ const o=objekte.find(x=>x.kz===obj); if(!o) return '';
+  return '<select id="'+id+'"><option value="">'+esc(leer||'– Einheit –')+'</option>'+sortedUnits(o).map(x=>x.e).map(e=>'<option value="'+esc(e.id)+'"'+(e.id===cur?' selected':'')+'>'+esc(uName(e.label)+(e.mieter?' · '+e.mieter.split(',')[0]:''))+'</option>').join('')+'</select>'; }
+/* Betriebskosten: auf alle Einheiten des Objekts umlegen oder nur auf eine bestimmte Einheit */
+function bkUmlage(id,c,ro){ const x=bkkFuer(c,c.kv);
+  return '<div class="kz-um"><label>Umlage auf '+unitSel(id,c.obj,c.unit,'alle Einheiten im Objekt').replace('<select','<select'+(ro?' disabled':''))+'</label>'
+    +'<span class="sub">Verteilerschlüssel: '+(c.unit?'nur diese Einheit':x&&x.schl?esc(schlLabel(x.schl)):'<span style="color:var(--warn)">noch nicht hinterlegt (Kontenplan)</span>')+'</span></div>'; }
 function renderDetail(it,list){
   const t=it.tx, c=it.c, k=it.k, ro=!canWrite||it.nh;
   const pos=list.findIndex(x=>x.id===it.id);
@@ -1371,6 +1381,7 @@ function renderDetail(it,list){
     if(c.kat==='verw'&&umlageSubs().has(c.sub)) h+='<div class="sub">Wird gleichmäßig auf alle Einheiten umgelegt, wenn kein Objekt gewählt ist.</div>';
     if(c.kat&&!['intern','ignore','ruecklast'].includes(c.kat)) h+='<label>Objekt'+objSel('z-o',c.obj,c.kat,c.sub).replace('<select','<select'+(ro?' disabled':''))+'</label>';
     if(c.kat==='miete'&&c.obj) h+='<label>Einheit / Mieter'+unitSel('z-u',c.obj,c.unit).replace('<select','<select'+(ro?' disabled':''))+'</label>';
+    if(c.kat==='bk'&&c.obj&&!it.split) h+=bkUmlage('z-u',c,ro);
     h+='</div>';
     if(c.kat==='miete'&&it.tx.b>0) h+=opBox(it);
   } else {
@@ -1403,6 +1414,17 @@ function renderRule(it){ const D=ruleDraft;
     +'<div class="sub">Konto: <b>'+esc(kontoLabel(it.c.kat,it.c.sub,it.c.ka))+'</b> (wie oben gewählt)</div>'
     +'<div class="acts"><button class="primary small" data-rsave="1">Regel speichern</button><button class="ghost small" data-rcancel="1">Abbrechen</button></div></div>'; }
 let kpObj='';
+/* Betriebskostenkonten je Objekt (aus Nahaus) mit Verteilerschlüssel – gespeichert in stamm/bkkonten */
+const BKK_SEED=[["A14","abwasser","A14 Schmutzwasser","einheiten","424420"],["A14","allgstrom","A14 Strom","einheiten","424220"],["A14","grundsteuer","A14 Grundsteuer","einheiten","231520"],["A14","hauswart","A14 Hausmeister","","424820"],["A14","heizung","A14 Öl","einheiten","424120"],["A14","internet","A14 Telefon","","492020"],["A14","muell","A14 Müllgebühren","einheiten","424620"],["A14","niederschlag","A14 Niederschlagswasser","einheiten","424520"],["A14","strassenreinigung","A14 Straßenreinigung","einheiten","424720"],["A14","versicherung","A14 Versicherungen","einheiten","436020"],["A14","wasser","A14 Frischwasser","einheiten","424320"],["E4","abwasser","E4 Schmutzwasser","personen","424421"],["E4","allgstrom","E4 Strom","personen","4242021"],["E4","grundsteuer","E4 Grundsteuer / Straßenreinigung","flaeche","231521"],["E4","hauswart","E4 Hausmeister","einheiten","424821"],["E4","heizung","E4 Gas","einheiten","424121"],["E4","internet","E4 Telefon","","492021"],["E4","muell","E4 Müllgebühren","personen","424621"],["E4","niederschlag","E4 Niederschlagswasser","flaeche","424521"],["E4","strassenreinigung","E4 Straßenreinigung","flaeche","424721"],["E4","versicherung","E4 Versicherungen","flaeche","436021"],["E4","wasser","E4 Frischwasser","personen","424321"],["H44","abwasser","H44 Schmutzwasser","","424423"],["H44","allgstrom","H44 Strom","","424223"],["H44","grundsteuer","H44 Grundsteuer","","237523"],["H44","hauswart","H44 Hausmeister","","424823"],["H44","internet","H44 Telefon","","492023"],["H44","muell","H44 Müllgebühren","","424623"],["H44","niederschlag","H44 Niederschlagswasser","","424523"],["H44","strassenreinigung","H44 Straßenreinigung","","424723"],["H44","versicherung","H44 Versicherungen","","436023"],["H44","wasser","H44 Frischwasser","","424323"],["K28","abwasser","K28 Schmutzwasser","personen","424403"],["K28","allgstrom","K28 Allgemeinstrom","personen","424224"],["K28","allgstrom","K28 Strom","verbrauch","4242024"],["K28","grundsteuer","K28 Grundsteuer","flaeche","231524"],["K28","hauswart","K28 Hausmeister","einheiten","424824"],["K28","internet","K28 Telefon","","492024"],["K28","muell","K28 Müllgebühren","personen","424624"],["K28","niederschlag","K28 Niederschlagswasser","flaeche","424524"],["K28","strassenreinigung","K28 Straßenreinigung","einheiten","424724"],["K28","versicherung","K28 Versicherungen","flaeche","436024"],["K28","wasser","K28 Frischwasser","verbrauch","4243024"],["K28","wasser","K28 Frischwasser allgemein","personen","424324"],["K6","abwasser","K6 Schmutzwasser","einheiten","424406"],["K6","allgstrom","K6 Strom","einheiten","424206"],["K6","grundsteuer","K6 Grundsteuer","einheiten","237525"],["K6","hauswart","K6 Hausmeister","","424825"],["K6","internet","K6 Telefon","","492012"],["K6","muell","K6 Müllgebühren","einheiten","424606"],["K6","niederschlag","K6 Niederschlagswasser","einheiten","424506"],["K6","strassenreinigung","K6 Straßenreinigung","einheiten","424706"],["K6","versicherung","K6 Versicherungen","einheiten","436025"],["K6","wasser","K6 Frischwasser","einheiten","424306"],["K7","abwasser","K7 Schmutzwasser","","424412"],["K7","allgstrom","K7 Strom","","424212"],["K7","grundsteuer","K7 Grundsteuer","","237526"],["K7","hauswart","K7 Hausmeister","","424826"],["K7","muell","K7 Müllgebühren","","424612"],["K7","niederschlag","K7 Niederschlagswasser","","424512"],["K7","strassenreinigung","K7 Straßenreinigung","","424726"],["K7","versicherung","K7 Versicherungen","","4316012"],["K7","wasser","K7 Frischwasser","","424326"],["Kw30","abwasser","Kw30 Schmutzwasser","personen","424427"],["Kw30","allgstrom","Kw30 Strom WE2 / WE3 / WE5","einheiten","4242027"],["Kw30","grundsteuer","Kw30 Grundsteuer","flaeche","237527"],["Kw30","hauswart","Kw30 Hausmeister","einheiten","424827"],["Kw30","internet","Kw30 Internet / WE2 / WE5","einheiten","492027"],["Kw30","muell","Kw30 Müllgebühren","personen","424627"],["Kw30","niederschlag","Kw30 Niederschlagswasser","flaeche","424527"],["Kw30","strassenreinigung","Kw30 Straßenreinigung","","424727"],["Kw30","versicherung","Kw30 Versicherungen","flaeche","436004"],["Kw30","wasser","Kw30 Frischwasser","personen","424327"],["M8","abwasser","M8 Schmutzwasser","personen","424408"],["M8","allgstrom","M8 Strom","personen","424208"],["M8","grundsteuer","M8 Grundsteuer","flaeche","237507"],["M8","hauswart","M8 Hausmeister","einheiten","424808"],["M8","muell","M8 Müllgebühren","personen","424608"],["M8","niederschlag","M8 Niederschlagswasser","flaeche","424508"],["M8","strassenreinigung","M8 Straßenreinigung","einheiten","424708"],["M8","versicherung","M8 Versicherungen","flaeche","436007"],["M8","wasser","M8 Frischwasser","personen","424308"],["R6","abwasser","R6 Schmutzwasser","","424415"],["R6","allgstrom","R6 Strom","","424215"],["R6","grundsteuer","R6 Grundsteuer","","231515"],["R6","hauswart","R6 Hausmeister","","424815"],["R6","internet","R6 Telefon","","492015"],["R6","muell","R6 Müllgebühren","","424615"],["R6","niederschlag","R6 Niederschlagswasser","","424515"],["R6","strassenreinigung","R6 Straßenreinigung","","424715"],["R6","versicherung","R6 Versicherungen","","436015"],["R6","wasser","R6 Frischwasser","","424315"],["S16","abwasser","S16 Schmutzwasser","personen","424404"],["S16","allgstrom","S16 Strom","verbrauch","424204"],["S16","grundsteuer","S16 Grundsteuer","flaeche","231505"],["S16","hauswart","S16 Hausmeister","einheiten","424804"],["S16","internet","S16 Internet","einheiten","492005"],["S16","muell","S16 Müllgebühren","personen","424604"],["S16","niederschlag","S16 Niederschlagswasser","flaeche","424504"],["S16","strassenreinigung","S16 Straßenreinigung","","424704"],["S16","versicherung","S16 Versicherungen","flaeche","436005"],["S16","wasser","S16 Frischwasser","verbrauch","424304"],["S58","abwasser","S58 Schmutzwasser","personen","424410"],["S58","allgstrom","S58 Strom","personen","424210"],["S58","allgstrom","S58 Strom WE4.1-WE4.5","verbrauch","4242101"],["S58","grundsteuer","S58 Grundsteuer","flaeche","231513"],["S58","hauswart","S58 Hausmeister","einheiten","424810"],["S58","internet","S58 Internet","einheiten","492513"],["S58","muell","S58 Müllgebühren","personen","424610"],["S58","niederschlag","S58 Niederschlagswasser","flaeche","424510"],["S58","schornstein","S58 Schornsteinfeger","","140010"],["S58","strassenreinigung","S58 Straßenreinigung","einheiten","424710"],["S58","versicherung","S58 Versicherungen","flaeche","436013"],["S58","wasser","S58 Frischwasser","personen","424310"],["U6","abwasser","U6 Schmutzwasser","","424411"],["U6","allgstrom","U6 Strom","","424211"],["U6","grundsteuer","U6 Grundsteuer","","237509"],["U6","hauswart","U6 Hausmeister","","424811"],["U6","muell","U6 Müllgebühren","","424611"],["U6","niederschlag","U6 Niederschlagswasser","","424511"],["U6","strassenreinigung","U6 Straßenreinigung","","424711"],["U6","wasser","U6 Frischwasser","","424311"],["U6","weg","U6 Hausgeld","","424009"]];
+let bkk=null;
+const SCHL=[['flaeche','Wohnfläche'],['personen','Personen x Tage'],['einheiten','Wohneinheiten'],['mea','Miteigentumsanteile'],['verbrauch','Verbrauch (Zähler)'],['direkt','direkt einem Mieter'],['nicht_umlegen','nicht umlegen']];
+const schlLabel=v=>{ const x=SCHL.find(y=>y[0]===v); return x?x[1]:''; };
+function bkkListe(){ if(bkk&&Array.isArray(bkk.konten)) return bkk.konten; return BKK_SEED.map(([obj,ka,name,schl,nh])=>({id:obj+'-'+nh,obj,ka,name,schl,nh,quelle:schl?'Verteilerschlüssel-PDF':''})); }
+function bkkNr(x){ const L=bkkListe().filter(y=>y.obj===x.obj&&y.ka===x.ka); const i=L.indexOf(x); return ((KAN[x.ka]||[])[1]||'4257')+(objNr(x.obj)||'00')+(i>0?String(i):''); }
+function bkkFuer(c,kv){ const L=bkkListe().filter(y=>y.obj===c.obj&&y.ka===c.ka); return L.find(y=>y.id===kv)||L[0]||null; }
+document.addEventListener('focusin',e=>{ const t=e.target; if(t&&t.classList&&t.classList.contains('bks')){ t.dataset.alt=t.value; t.value=''; } });
+document.addEventListener('focusout',e=>{ const t=e.target; if(t&&t.classList&&t.classList.contains('bks')&&!t.value&&t.dataset.alt) t.value=t.dataset.alt; });
+function bkkSpeichern(id,feld,wert){ const L=bkkListe().map(x=>x.id===id?Object.assign({},x,{[feld]:wert,quelle:'im OS geändert'}):x); bkk={konten:L,quelle:(bkk&&bkk.quelle)||'Nahaus und Verteilerschlüssel-PDFs'}; saveStamm('bkkonten',bkk).then(()=>toast('Verteilerschlüssel gespeichert.')); }
 function renderKontenplan(){
   const sums={};
   for(const it of items()){ for(const p of it.parts){ const c=p.c; if(!c.kat) continue; if(kpObj&&(kpObj==='__ohne'?!!objNr(c.obj):c.obj!==kpObj)) continue;
@@ -1419,6 +1441,13 @@ function renderKontenplan(){
   h+='</tbody></table></div>';
   /* Objektnummern */
   h+='<div class="tablewrap"><table><thead><tr><th>Objekt</th><th>Ges.</th><th>Objektnummer</th></tr></thead><tbody>'+objekte.map(o=>'<tr><td><b>'+esc(o.kz)+'</b> <span class="sub">'+esc(String(o.name||'').split(',')[0])+'</span></td><td>'+esc(o.ges||'')+'</td><td><input type="text" class="num" style="width:60px" maxlength="2" id="on-'+esc(o.kz)+'" data-onr="'+esc(o.kz)+'" value="'+esc(objNr(o.kz))+'"'+(canWrite?'':' disabled')+'></td></tr>').join('')+'</tbody></table><div class="sub" style="padding:8px">EE 10–19 · WT 20–29 · KiBo 30–39 · ohne Objekt = 00</div></div></div>';
+  /* Betriebskostenkonten je Objekt mit Verteilerschlüssel */
+  const BL=bkkListe().filter(x=>!kpObj||x.obj===kpObj).slice().sort((a,b)=>a.obj.localeCompare(b.obj,'de',{numeric:true})||a.name.localeCompare(b.name,'de',{numeric:true}));
+  h+='<div class="note" style="margin-top:16px"><b>Betriebskostenkonten je Objekt</b> – aus Nahaus übernommen, je Objekt und Kostenart ein Konto mit Verteilerschlüssel (aus den PDFs „Verteilerschlüssel“ in den Objektordnern). Wählst du in der Buchung so ein Konto, sind Kostenart und Objekt gesetzt. Der Verteilerschlüssel lässt sich hier ändern.</div>';
+  h+='<datalist id="dl-schl">'+SCHL.map(x=>'<option value="'+esc(x[1])+'">').join('')+'</datalist>';
+  h+='<div class="tablewrap"><table><thead><tr><th>Konto-Nr.</th><th>Konto</th><th>Kostenart</th><th>Verteilerschlüssel</th><th>Nahaus-Nr.</th><th>Quelle</th></tr></thead><tbody>'
+    +(BL.length?BL.map(x=>'<tr><td>'+esc(bkkNr(x))+'</td><td><b>'+esc(x.name)+'</b></td><td>'+esc((KAN[x.ka]||[])[2]||x.ka)+'</td><td><input type="text" class="bks" list="dl-schl" data-bks="'+esc(x.id)+'" value="'+esc(schlLabel(x.schl))+'" placeholder="noch kein Schlüssel" autocomplete="off" style="width:190px'+(x.schl?'':';border-color:var(--warn)')+'"'+(canWrite?'':' disabled')+'></td><td class="sub">'+esc(x.nh||'')+'</td><td class="sub">'+esc(x.quelle||'')+'</td></tr>').join(''):'<tr><td colspan="6" class="sub">Für dieses Objekt sind keine Betriebskostenkonten hinterlegt.</td></tr>')
+    +'</tbody></table></div>';
   return h; }
 function renderRegeln(){
   let h='<div class="note"><b>Zuordnungsregeln</b> – die erste passende Regel gilt. Gleiche Regeln wie im Objekt-Controlling. Neue Regeln legst du am schnellsten in der Buchung mit „Als Regel merken“ an.</div><div class="tablewrap"><table><thead><tr><th>Suchbegriff</th><th>Konto</th><th>Objekt</th><th>Gilt für</th><th></th></tr></thead><tbody>';
@@ -1517,6 +1546,7 @@ document.addEventListener('change',e=>{ const t=e.target;
     else { const v=parseNum(t.value); if(v>0) a.push({id,b:r2(v)}); }
     D.a=a; render(); return; }
   if(t.id==='kp-o'){ kpObj=t.value; render(); return; }
+  if(t.dataset&&t.dataset.bks){ const v=String(t.value||'').trim(), x=SCHL.find(y=>y[1].toLowerCase()===v.toLowerCase()); if(v&&!x){ toast('Bitte einen Verteilerschlüssel aus der Liste wählen.'); return; } bkkSpeichern(t.dataset.bks,'schl',x?x[0]:''); return; }
   if(t.dataset.onr){ const v=t.value.trim(); if(v&&!/^\d{2}$/.test(v)){ toast('Bitte eine zweistellige Nummer eingeben.'); render(); return; }
     const used=objekte.find(o=>o.kz!==t.dataset.onr&&objNr(o.kz)===v); if(used){ toast('Die Nummer '+v+' hat schon '+used.kz+'.'); render(); return; }
     objNrMap=Object.assign({},objNrMap,{[t.dataset.onr]:v}); saveStamm('kontenplan',{objNr:objNrMap}); render(); return; }
@@ -1526,7 +1556,7 @@ document.addEventListener('change',e=>{ const t=e.target;
   if(t.dataset.pk!==undefined){ const p=pending[Number(t.dataset.pk)]; p.konto=t.value; render(); return; }
   const it=items().find(x=>x.id===U.sel);
   if(it&&t.id==='z-kto'){ HALT.add(it.id); setKonto(it,t.value,{ok:0}); return; }
-  if(it&&(t.id==='z-o'||t.id==='z-u')){ const c=it.c; const o=t.id==='z-o'?t.value:(c.obj||''), u=t.id==='z-u'?t.value:(t.id==='z-o'?'':(c.unit||'')); writeTx(it.doc,it.ix,{m:1,k:c.kat||'',s:c.sub||'',ka:c.ka||'',o,u}); return; }
+  if(it&&(t.id==='z-o'||t.id==='z-u')){ const c=it.c; const o=t.id==='z-o'?t.value:(c.obj||''), u=t.id==='z-u'?t.value:(t.id==='z-o'?'':(c.unit||'')); writeTx(it.doc,it.ix,{m:1,ok:0,k:c.kat||'',s:c.sub||'',ka:c.ka||'',o,u,kv:t.id==='z-o'?'':(c.kv||'')}); return; }
   if(it&&t.id==='z-nt'){ writeTx(it.doc,it.ix,{nt:t.value.trim()}); return; }
   if(splitDraft){ const m=t.id.match(/^sp-([bksout])-(\d+)$/); if(m){ const p=splitDraft.parts[Number(m[2])]; if(m[1]==='k'){ const [k,s2,ka]=t.value.split('|'); p.k=k; p.s=s2||''; p.ka=ka||''; if(k!=='miete') p.u=''; } else if(m[1]==='b'){ const it2=items().find(x=>x.id===splitDraft.id); if(it2&&String(t.value).trim()){ const w=spWert({b:t.value},it2.tx.b); p.b=fnum.format(w); t.value=p.b; } else p.b=t.value; } else p[m[1]]=t.value; if(m[1]==='o') p.u=''; if(['k','o','s'].includes(m[1])) render(); return; } }
 });
@@ -1571,6 +1601,7 @@ render();
   db.doc('stamm/fixkosten').onSnapshot(s=>{ plan=(s.exists?clone(s.data()).plan:null)||[]; invalidate(); softRender(); },()=>{});
   db.doc('stamm/verwsub').onSnapshot(s=>{ vsMap=(s.exists?clone(s.data()).map:null)||{}; invalidate(); softRender(); },()=>{});
   db.doc('stamm/nahaus').onSnapshot(s=>{ const d=s.exists?clone(s.data()):{}; nhMap=d.map||{}; nhStand=d.stand||''; invalidate(); softRender(); },()=>{});
+  db.doc('stamm/bkkonten').onSnapshot(s=>{ bkk=s.exists?clone(s.data()):null; softRender(); },()=>{});
   db.doc('stamm/kontenplan').onSnapshot(s=>{ objNrMap=(s.exists?clone(s.data()).objNr:null)||{}; softRender(); },()=>{});
   db.doc('stamm/vertraege').onSnapshot(s=>{ VERTR=(s.exists?clone(s.data()).liste:null)||[]; vtCache=new Map(); softRender(); },()=>{});
   db.doc('stamm/dauerbelege').onSnapshot(s=>{ DAUER=(s.exists?clone(s.data()).liste:null)||[]; invalidate(); softRender(); },()=>{});
