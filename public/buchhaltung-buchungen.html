@@ -52,7 +52,7 @@ textarea{width:100%;resize:vertical}
 .grid3.kart .mid{border-right:none}
 .kbulk{margin-left:auto;display:inline-flex;gap:10px;align-items:center}.lsum{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
 .klist{background:var(--bg)}
-.kz{display:grid;grid-template-columns:28px minmax(200px,1fr) 110px minmax(320px,440px) 64px;gap:14px;align-items:start;background:var(--card);border-bottom:1px solid var(--line);padding:16px 14px 14px 10px}
+.kz{display:grid;grid-template-columns:28px minmax(260px,1fr) 110px minmax(280px,370px) 64px;gap:14px;align-items:start;background:var(--card);border-bottom:1px solid var(--line);padding:16px 14px 14px 10px}
 .kz.sel{box-shadow:inset 3px 0 0 var(--accent)}
 .kz-c{padding-top:2px}.kz-c input{width:16px;height:16px}
 .kz-i b{font-size:14px}.kz-l{font-size:12px;font-weight:600;margin-top:10px}
@@ -64,7 +64,7 @@ textarea{width:100%;resize:vertical}
 .kz-bel{border:1px solid var(--line);border-radius:8px;padding:8px 10px;font-size:13px}
 .kz-bf a{color:var(--accent);word-break:break-all}.kz-acts{display:flex;gap:16px;margin-top:6px}.kz-acts a{color:var(--accent);font-size:13px}
 .kz-vb{margin-top:6px;font-size:12.5px;display:flex;gap:6px;align-items:center;flex-wrap:wrap}.kz-vb span{font-weight:600;word-break:break-all}
-.kz-f{display:grid;grid-template-columns:minmax(0,1fr) 150px;gap:8px;align-items:center}.kz-f select{width:100%}
+.kz-f{display:grid;grid-template-columns:minmax(0,1fr) 138px;gap:8px;align-items:center}.kz-f select{width:100%}
 .kz-f.vs .kc-in{color:var(--warn);border-color:var(--warn)}
 .kz-src{font-size:11.5px;color:var(--warn);margin-top:-4px}
 .kz-r{display:flex;flex-direction:column;align-items:center;gap:12px}
@@ -73,6 +73,8 @@ textarea{width:100%;resize:vertical}
 .kz-ok:hover:not(:disabled){background:var(--accent-soft)}.kz-ok.on{background:var(--accent);cursor:default}
 .kz-ok:disabled:not(.on){border-color:var(--line);cursor:not-allowed}
 .kz.ok{background:var(--card)}
+/* jede zweite Buchung leicht hinterlegt */
+.klist .kz:nth-child(even){background:var(--soft)}
 .kdrw-bg{position:fixed;inset:0;background:rgba(0,0,0,.25);z-index:60}
 .kdrw{position:fixed;top:0;right:0;bottom:0;width:min(480px,100vw);background:var(--bg);z-index:61;overflow:auto;box-shadow:-8px 0 24px rgba(0,0,0,.15)}
 .kdrw-h{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px}
@@ -1103,6 +1105,11 @@ document.addEventListener('click',e=>{ const t=e.target.closest('button[data-nhs
    ganz rechts der Bestätigen-Knopf. Vorschläge des OS (Regel, Fixkosten, automatisch) erscheinen orange, bis sie bestätigt sind. */
 var KS={auf:{},wahl:new Set(),mehr:100};
 function bestaetigt(it){ return !!((it.tx.m&&it.tx.ok!==0)||it.split||it.nh||it.c.src==='Beleg'); }
+/* Eine Buchung gilt erst als erfasst, wenn sie ausdrücklich bestätigt ist. Konto oder Objekt wählen allein reicht nicht:
+   von Hand gewählte, aber nicht bestätigte Buchungen bleiben unter „Offen“. */
+const stOffen=it=>!bestaetigt(it)&&(it.open||!!(it.tx.m&&it.tx.ok===0));
+const stBest=it=>!it.open&&!bestaetigt(it)&&!(it.tx.m&&it.tx.ok===0);
+const stZug=it=>bestaetigt(it)&&!it.open;
 function kartenLayout(all,list,cnt,nav){ const it=U.dr?all.find(x=>x.id===U.sel):null;
   let h='<div class="grid3 kart'+(nav?'':' kzu')+'">'+(nav?'<aside class="knav">'+nav+'</aside>':'<aside class="knav knav-zu"><button class="knzu" data-knzu="1" title="Konten einblenden">›</button><div class="knzu-t">'+esc(U.konto?kontoName(U.konto):'Alle Konten')+'</div></aside>')
     +'<section class="mid">'+midHtml(all,list,cnt)+'</section></div>';
@@ -1144,7 +1151,7 @@ function karte(it,n){ const t=it.tx, c=it.c, ok=bestaetigt(it), ro=!canWrite||it
   h+='</div>';
   /* rechts: Details + Bestätigen */
   h+='<div class="kz-r"><button class="kz-d" data-kdet="'+esc(it.id)+'" title="Details, Aufteilen, Regel">Details</button>'
-    +'<button class="kz-ok'+(ok?' on':'')+'" data-kok="'+esc(it.id)+'"'+(ro||it.open||ok?' disabled':'')+' title="'+(ok?'bestätigt':it.open?'Erst Konto und Objekt wählen':'Vorschlag bestätigen')+'"></button></div>';
+    +'<button class="kz-ok'+(ok?' on':'')+'" data-kok="'+esc(it.id)+'"'+(ro||it.open||ok?' disabled':'')+' title="'+(ok?'bestätigt':it.open?'Erst Konto und Objekt wählen':'Buchung bestätigen – erst dann ist sie erfasst')+'"></button></div>';
   return h+'</div>'; }
 /* Mietzahlung: welcher Mieter, auf welche Sollstellung */
 function kMieter(it,ro){ const t=it.tx; if(!MKload||!Object.keys(MK).length) return '<div class="sub">Einnahme – kein Beleg nötig</div>';
@@ -1175,7 +1182,7 @@ document.addEventListener('click',async e=>{ const t=e.target.closest('button,a,
   if(d.kspzu){ const f=(SP.dateien||[]).find(x=>x.id===d.kspzu), it=kItem(d.kspit); if(!f||!it) return; await spZuordnen(f,it); toast('Beleg zugeordnet.'); render(); return; } });
 document.addEventListener('change',e=>{ const t=e.target; const m=t.id&&t.id.match(/^k([ko])-(\d+)$/); if(!m) return; const card=t.closest('.kz'); const it=card&&kItem(card.dataset.kid); if(!it) return; U.sel=it.id; HALT.add(it.id);
   if(m[1]==='k'){ setKonto(it,t.value,{ok:0}); return; }
-  const c=it.c; writeTx(it.doc,it.ix,{m:1,ok:bestaetigt(it)?1:0,k:c.kat||'',s:c.sub||'',ka:c.ka||'',o:t.value,u:''}); },true);
+  const c=it.c; writeTx(it.doc,it.ix,{m:1,ok:0,k:c.kat||'',s:c.sub||'',ka:c.ka||'',o:t.value,u:''}); },true);
 document.addEventListener('keydown',e=>{ if(e.key==='Escape'&&U.dr){ U.dr=false; render(); } });
 
 /* ---------- Verträge (Hausverwaltung › Verträge) an der Zahlung anzeigen ---------- */
@@ -1227,7 +1234,7 @@ function kontoLabel(k,s,ka,obj){ if(!k) return 'nicht zugeordnet'; const x=KMAP[
   const on=objNr(obj); return (x[0]+(on||'00'))+' '+(on?obj+' ':'')+x[1]; }
 function kontoSelect(id,c,ro){ const cur=kval(c.kat,c.sub,c.ka);
   const lab=c.kat?(KMAP[cur]?KMAP[cur][0]+' '+KMAP[cur][1]:kontoLabel(c.kat,c.sub,c.ka)):'';
-  let h='<div class="kcombo"><input type="text" class="kc-in" id="'+id+'-q" data-kc="'+id+'" value="'+esc(lab)+'" placeholder="Konto suchen: Nummer oder Begriff" autocomplete="off"'+(ro?' disabled':'')+'><div class="kc-list" hidden></div>';
+  let h='<div class="kcombo"><input type="text" class="kc-in" id="'+id+'-q" data-kc="'+id+'" value="'+esc(lab)+'" placeholder="Konto: Nummer oder Begriff" autocomplete="off"'+(ro?' disabled':'')+'><div class="kc-list" hidden></div>';
   h+='<select id="'+id+'" class="kc-sel" tabindex="-1" aria-hidden="true"'+(ro?' disabled':'')+'><option value="||"'+(c.kat?'':' selected')+'>– Konto wählen –</option>';
   if(c.kat&&!KMAP[cur]) h+='<option value="'+esc(cur)+'" selected>'+esc(kontoLabel(c.kat,c.sub,c.ka))+'</option>';
   for(const [g,l] of KONTEN){ h+='<optgroup label="'+esc(g)+'">'+l.map(x=>{ const v=kval(x[2],x[3],x[4]); return '<option value="'+esc(v)+'"'+(v===cur?' selected':'')+'>'+esc(x[0]+' '+x[1])+'</option>'; }).join('')+'</optgroup>'; }
@@ -1266,7 +1273,7 @@ function items(){
 }
 function filtered(all){ const q=norm(U.q);
   return all.filter(it=>(!U.konto||it.kkey===U.konto)&&(U.m===''||it.m===Number(U.m))
-    &&(!U.kat||(U.kat==='__offen'?it.parts.some(p=>!p.c.kat):U.kat.startsWith('k:')?it.parts.some(p=>'k:'+kval(p.c.kat,p.c.sub,p.c.ka)===U.kat):it.parts.some(p=>p.c.kat===U.kat)))&&(U.status==='alle'||HALT.has(it.id)||(U.status==='best'&&!it.open&&!bestaetigt(it))||(U.status==='offen'&&it.open)||(U.status==='beleg'&&it.needBeleg)||(U.status==='ka'&&it.needKA)||(U.status==='zug'&&!it.open))
+    &&(!U.kat||(U.kat==='__offen'?it.parts.some(p=>!p.c.kat):U.kat.startsWith('k:')?it.parts.some(p=>'k:'+kval(p.c.kat,p.c.sub,p.c.ka)===U.kat):it.parts.some(p=>p.c.kat===U.kat)))&&(U.status==='alle'||HALT.has(it.id)||(U.status==='best'&&stBest(it))||(U.status==='offen'&&stOffen(it))||(U.status==='beleg'&&it.needBeleg)||(U.status==='ka'&&it.needKA)||(U.status==='zug'&&stZug(it)))
     &&(!q||norm(it.tx.n+' '+it.tx.z+' '+fnum.format(Math.abs(it.tx.b))+' '+(it.c.obj||'')).includes(q))); }
 /* Sortierung der Liste: Datum, Empfänger (gruppiert), Betrag */
 const empfKey=it=>norm(it.tx.n||'').replace(/\b(gmbh|ag|kg|se|co|s a r l|et cie|s c a|e v|ohg|mbh)\b/g,'').replace(/\s+/g,' ').trim().slice(0,28)||'zzz';
@@ -1300,7 +1307,7 @@ function render(){
 }
 function renderListe(){
   const all=items(), list=sortiert(filtered(all));
-  const cnt=k=>all.filter(it=>(!U.konto||it.kkey===U.konto)&&(U.m===''||it.m===Number(U.m))&&(k==='best'?!it.open&&!bestaetigt(it):k==='offen'?it.open:k==='beleg'?it.needBeleg:k==='ka'?it.needKA:k==='zug'?!it.open:true)).length;
+  const cnt=k=>all.filter(it=>(!U.konto||it.kkey===U.konto)&&(U.m===''||it.m===Number(U.m))&&(k==='best'?stBest(it):k==='offen'?stOffen(it):k==='beleg'?it.needBeleg:k==='ka'?it.needKA:k==='zug'?stZug(it):true)).length;
   if(U.sel&&!all.find(x=>x.id===U.sel)) U.sel='';
   if(!U.sel&&list.length) U.sel=list[0].id;
   /* linke Spalte: Konten */
@@ -1460,7 +1467,7 @@ function uploadBelege(files){ return belQueue(files); }
 
 /* ---------- Ereignisse ---------- */
 function step(n){ const list=sortiert(filtered(items())); const i=list.findIndex(x=>x.id===U.sel); const nx=list[i+n]; if(nx){ U.sel=nx.id; splitDraft=null; ruleDraft=null; render.scrollSel=true; render(); } }
-function nextOpen(){ const list=sortiert(filtered(items())); const i=list.findIndex(x=>x.id===U.sel); const need=x=>U.status==='ka'?x.needKA:U.status==='beleg'?x.needBeleg:x.open; const nx=list.slice(i+1).find(need)||list.find(x=>need(x)&&x.id!==U.sel)||list[i+1];
+function nextOpen(){ const list=sortiert(filtered(items())); const i=list.findIndex(x=>x.id===U.sel); const need=x=>U.status==='ka'?x.needKA:U.status==='beleg'?x.needBeleg:U.status==='best'?stBest(x):stOffen(x); const nx=list.slice(i+1).find(need)||list.find(x=>need(x)&&x.id!==U.sel)||list[i+1];
   if(nx){ U.sel=nx.id; splitDraft=null; ruleDraft=null; render.scrollSel=true; render(); } }
 document.addEventListener('click',async e=>{
   const t=e.target.closest('button,a[data-bopen]'); if(!t) return;
