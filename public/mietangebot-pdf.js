@@ -182,6 +182,8 @@
       Z.kreuz(1, 249, 377, ja(V.renovierung), 10); Z.kreuz(1, 321, 377, !ja(V.renovierung), 10)
       Z.kreuz(1, 144, 404, !!zahl(V.kaution), 10); Z.text(1, 269, 413, eur(V.kaution), 8, 28, true); Z.kreuz(1, 285, 404, !zahl(V.kaution), 10)
       Z.text(1, 88, 440, V.ort_datum, 10, 100)
+      // Unterschrift Eric über „Datum / Unterschrift“ (die anderen Vorlagen enthalten sie bereits)
+      await Z.bild(1, 170, 417, 95, B.unterschrift_eric)
     }
   }
 
