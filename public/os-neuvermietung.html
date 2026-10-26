@@ -7,6 +7,7 @@
 <script src="/vertrag-pdf.js?v=20261022a"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js"></script>
 <script src="/mietangebot-pdf.js?v=20261026d"></script>
+<script src="/os-dateiname.js?v=20261026a"></script>
 <style>
 :root{--bg:#f3f5f8;--card:#ffffff;--ink:#18202c;--muted:#5f6b7a;--line:#e0e5eb;--soft:#eef1f5;--accent:#2f5d8a;--accent-ink:#ffffff;--accent-soft:#e3ecf5;--pos:#1d7a4c;--pos-bg:#e5f4ec;--warn:#946200;--warn-bg:#fff4d6;--neg:#b42318;--neg-bg:#fcebe9;--chip:#edf1f6}
 *{box-sizing:border-box;margin:0;padding:0}
@@ -139,6 +140,9 @@ const rid=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,9);
 const nameVoll=k=>[k.vorname,k.name].filter(Boolean).join(' ')||k.kontakt||'Interessent';
 const objVon=id=>O.find(o=>o.id===id)||null;
 const einVon=id=>E.find(e=>e.id===id)||null;
+/* Dateiname nach Schema Objekt_WE_NACHNAME Vorname_Datum_Beschreibung */
+function nvDatei(k,thema,datum){const w=k.wohnung||{},e=w.einheit_id&&einVon(w.einheit_id),o=(e&&objVon(e.objekt_id))||(w.objekt_id&&objVon(w.objekt_id));const lab=String(w.label||'').split(' · ')[0].split(' ');
+  return OsDateiname.mieter({kz:o?o.kz:(lab[0]||''),einheit:e?e.bezeichnung:lab.slice(1).join(' '),nachname:k.name||'',vorname:k.vorname||'',datum,thema});}
 const objLabel=o=>o?o.kz+' · '+(o.strasse||o.name||''):'';
 const einLabel=e=>e?e.bezeichnung+(e.lage?' · '+e.lage:''):'';
 const istEric=()=>ICHMAIL===ERIC;
@@ -260,7 +264,7 @@ function msaPdf(k){const s=MSA[k.id];if(!s||!s.daten)return;const {jsPDF}=window
       doc.setFont('helvetica','normal');doc.setTextColor(95,107,122);doc.text(doc.splitTextToSize(l,B/2-4),L,y);doc.setTextColor(0);doc.text(val,L+B/2,y);y+=Math.max(5,val.length*4.6)+1.5;}y+=3;}
   if(s.unterschrift){if(y>240)neu();doc.setFont('helvetica','bold');doc.setFontSize(12);doc.text('Unterschrift',L,y);y+=3;try{doc.addImage(s.unterschrift,'PNG',L,y,70,22);}catch(e){}y+=26;}
   doc.setFontSize(8.5);doc.setTextColor(120);doc.text('Übermittelt über das Wohntraum OS am '+zeit(s.eingegangen_at),L,288);
-  const name=(k.wohnung&&k.wohnung.label?k.wohnung.label.split(' · ')[0].replace(/\s+/g,'_'):'Neuvermietung')+'_'+String(k.name||'').toUpperCase()+' '+(k.vorname||'')+'_'+String(s.eingegangen_at||'').slice(0,10)+'_Mieterselbstauskunft.pdf';
+  const name=nvDatei(k,'Mieterselbstauskunft',String(s.eingegangen_at||'').slice(0,10)||undefined);
   doc.save(name);}
 
 /* ---------- Dateien je Mietinteressent ---------- */
@@ -457,7 +461,7 @@ function vertragKarte(k){const v=vtDaten(k),V=vtBasis(k),ro=!!k.pid;
 function vtErstellen(k,vorschau){const v=vtDaten(k),V=vtBasis(k),gew=vtGewaehlt(k);const fuss=k.wohnung&&k.wohnung.label?k.wohnung.label.split(' · ')[0]:'';
   const dok=[],felder=[],rollen=new Set();let gesamt=null;
   for(const [i,x] of gew.entries()){const r=VertragPdf.erstellen(x.text,V,v.texte,{titel:x.titel||x.name,fuss,vorschau,start:vorschau?gesamt:null,dok:i+1});
-    if(vorschau)gesamt=r.doc;else dok.push({name:x.name,base64:r.doc.output('datauristring').split(',').pop()});
+    if(vorschau)gesamt=r.doc;else dok.push({name:nvDatei(k,x.name).replace(/\.pdf$/,''),base64:r.doc.output('datauristring').split(',').pop()});
     felder.push(...r.felder);VertragPdf.rollenIn(x.text,V).forEach(z=>rollen.add(z));}
   return {dok,felder,rollen:[...rollen],gesamt,V};}
 async function vtSenden(k){const v=vtDaten(k);if(!vtGewaehlt(k).length){toast('Bitte mindestens einen Vertrag auswählen.');return;}
@@ -480,7 +484,7 @@ async function vtStand(k){BUSY='ds';panel();await asanaSync();await laden(true);
 async function vtStorno(k){const v=vtDaten(k);if(!confirm('Den Vertrag in DocuSign zurückziehen? Die Unterzeichner können dann nicht mehr unterschreiben.'))return;
   BUSY='ds';panel();try{await api('/api/docusign',{aktion:'stornieren',envelopeId:v.envelopeId});v.storniert=new Date().toISOString();v.status='voided';await speichern(k,'DocuSign-Vertrag zurückgezogen');toast('Zurückgezogen.');}
   catch(e){toast('Nicht zurückgezogen: '+(e.message||e),8000);}BUSY='';panel();}
-async function vtPdf(k){const v=vtDaten(k);if(!v.pdf)return;const {data,error}=await sb.storage.from('vertraege').createSignedUrl(v.pdf,600);if(error){toast('Nicht geöffnet: '+error.message,6000);return;}window.open(data.signedUrl,'_blank');}
+async function vtPdf(k){const v=vtDaten(k);if(!v.pdf)return;const {data,error}=await sb.storage.from('vertraege').createSignedUrl(v.pdf,600,{download:nvDatei(k,(v.namen||[]).join(' und ')||'Mietvertrag',String(v.fertig||'').slice(0,10)||undefined)});if(error){toast('Nicht geöffnet: '+error.message,6000);return;}window.open(data.signedUrl,'_blank');}
 
 /* ---------- Mietangebot: Original-Vorlagen der Ämter befüllen und per Mail senden ---------- */
 const MAP=window.MietangebotPdf,MAV=MAP.VORLAGEN.slice().sort((a,b)=>a.kurz.localeCompare(b.kurz,'de'));
@@ -516,7 +520,7 @@ function maVerlauf(k){const a=maDaten(k);if(!a.versand.length)return '';
 async function maVorlage(id){if(MA_BYTES[id])return MA_BYTES[id];const x=MAV.find(v=>v.id===id);const {data,error}=await sb.storage.from('vertraege').download(x.datei);if(error||!data)throw new Error('Vorlage „'+x.kurz+'“ ist noch nicht hochgeladen.');return MA_BYTES[id]=new Uint8Array(await data.arrayBuffer());}
 async function maBilder(){if(MA_BYTES._sig!==undefined)return {unterschrift_eric:MA_BYTES._sig};try{const {data}=await sb.storage.from('uebergaben').download('vorlagen/unterschrift-eric.png');MA_BYTES._sig=data?new Uint8Array(await data.arrayBuffer()):null;}catch(e){MA_BYTES._sig=null;}return {unterschrift_eric:MA_BYTES._sig};}
 async function maErzeugen(k,id){return MAP.ausfuellen(id,await maVorlage(id),maWerte(k),maDaten(k).fragen,await maBilder());}
-const maName=(k,x)=>('Mietangebot_'+x.kurz+'_'+String(k.name||'').toUpperCase()+(k.vorname?'_'+k.vorname:'')).replace(/[ÄÖÜäöüß]/g,c=>({Ä:'Ae',Ö:'Oe',Ü:'Ue',ä:'ae',ö:'oe',ü:'ue',ß:'ss'})[c]).replace(/[^0-9A-Za-z-]+/g,'_').replace(/_+/g,'_')+'.pdf';
+const maName=(k,x)=>nvDatei(k,'Mietangebot '+x.kurz);
 async function maSenden(k){const a=maDaten(k),gew=maGewaehlt(k);if(!gew.length){toast('Bitte mindestens eine Vorlage auswählen.');return;}
   if(!/@/.test(k.email||'')){toast('Bitte zuerst die E-Mail-Adresse eintragen.');return;}
   if(!confirm('Mietangebot per Mail senden?\n\n'+gew.map(x=>x.name+(a.signiert[x.id]?' (unterschrieben)':' (mit Unterschrift Eric)')).join('\n')+'\n\nAn: '+k.email))return;

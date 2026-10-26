@@ -823,6 +823,9 @@ function drawBrief(doc,B){ const L=25,R=185; let y=22;
 function briefText(B){ return B.kopf+'\n\n'+B.a+'\n'+B.posten.map(p=>dmy(p.d)+'  '+p.t+'  '+eur(p.b)).join('\n')+'\nGesamt offen: '+eur(B.sum)+'\n\n'+B.b+'\n\n'+B.konto+'\n\n'+B.tail+'\n\n'+B.gl+'\n\n'+B.gruss; }
 let MRPDF=[];
 /* Mahnlauf eines Tages zurücknehmen: PDFs, Ablage in der Mieterakte, Mahnregister und Mahnlauf (mit Gebühren und Zinsen) entfernen */
+/* Dateiname nach Schema: Objekt_WE_NACHNAME Vorname_Datum_Stufe_Miete|Kaution_Betrag€ */
+const mahnDatei=(mk,datum,stufe,art,betrag)=>odSafe(aktenName(mk)+'_'+datum+'_'+stufe+'_'+(art==='kaution'?'Kaution':'Miete')+'_'+fnum.format(betrag||0)+'€')+'.pdf';
+/* frühere Ablage im OS (Mahnungen vor der Umstellung auf OneDrive) */
 const mahnAkte=(mk,datum,p)=>docBase(mk)+'/'+enc('03 Miete & Zahlungen/Mahnungen')+'/'+enc(aktenName(mk)+'_'+datum+'_'+p.stufe+' '+p.nr+'.pdf').replace(/\//g,'_');
 /* Mahnung per Mail an den Mieter senden: PDF aus der Mieterakte als Anhang, Mail im Mieterkonto hinterlegt */
 async function mahnMail(datum,nr,still){ const lauf=MAHN[datum], p=lauf&&(lauf.posten||{})[nr], mk=p&&MK[p.pid]; if(!p||!mk){ if(!still) toast('Mahnung nicht gefunden.'); return false; }
@@ -830,8 +833,8 @@ async function mahnMail(datum,nr,still){ const lauf=MAHN[datum], p=lauf&&(lauf.p
   const o=objekte.find(q=>q.kz===mk.obj)||{}, kau=p.art==='kaution', we=uName(mk.einheit);
   const betreff=p.stufe+' · '+mk.obj+' '+we+(kau?' · offene Mietkaution':' · offene Mietforderungen');
   const text=anredeZeile(mk)+'\n\nanbei erhalten Sie unsere '+p.stufe+' vom '+dmy(datum)+' (Nr. '+nr+') mit der Aufstellung der offenen Beträge'+(kau?' Ihrer Mietkaution':'')+'. Bitte überweisen Sie den offenen Betrag von '+eur(p.betrag)+' bis zum '+dmy(lauf.frist)+'. Bankverbindung und Verwendungszweck finden Sie im Schreiben.\n\nSollte Ihnen die Zahlung des vollen Betrags derzeit nicht möglich sein, melden Sie sich bitte umgehend bei uns, damit wir gemeinsam eine Lösung finden.\n\nSollte der Betrag bereits beglichen worden sein, betrachten Sie diese Nachricht bitte als gegenstandslos.'+mlSignatur();
-  const fn='Mahnung_'+nr+'_'+mk.obj+'_'+we.replace(/[^\w.]+/g,'_')+'.pdf';
-  try{ const r=await pfApi({aktion:'senden',modus:'neu',an:an.join(', '),betreff,text,mime:true,anhaenge:[{typ:'speicher',bucket:'mieterakten',pfad:mahnAkte(mk,datum,p),name:fn,contentType:'application/pdf'}]});
+  const fn=p.datei||mahnDatei(mk,datum,p.stufe,p.art,p.betrag), anh=p.akte&&p.akte.od?{typ:'onedrive',id:p.akte.od.id,name:fn,contentType:'application/pdf'}:{typ:'speicher',bucket:'mieterakten',pfad:(p.akte&&p.akte.pfad)||mahnAkte(mk,datum,p),name:fn,contentType:'application/pdf'};
+  try{ const r=await pfApi({aktion:'senden',modus:'neu',an:an.join(', '),betreff,text,mime:true,anhaenge:[anh]});
     const am=new Date().toISOString();
     try{ await mailSpeichern(mk,{richtung:'Ausgang',von:'Hausverwaltung <'+r.von+'>',an:an.join(', '),betreff,datum:am,msgId:r.msgId||'',text:text+'\n\nAnhang: '+fn},r.mime||'','os'); }catch(e){}
     const neu=Object.assign({},MAHN[datum]); neu.posten=Object.assign({},neu.posten,{[nr]:Object.assign({},p,{mail:{an:an.join(', '),am,von:ICH||''}})});
@@ -847,7 +850,8 @@ async function mahnMailAlle(datum){ const lauf=MAHN[datum]; if(!lauf) return; co
 const mahnMailZelle=(datum,p)=>{ const mk=MK[p.pid]; if(p.mail) return '<span class="sub">per Mail '+esc(dmy(p.mail.am))+'</span>'; if(!mk||!mieterMails(mk).length) return '<span class="sub">keine E-Mail</span>'; return '<button class="ghost small" data-mmail="'+esc(datum+'|'+p.nr)+'"'+(MR.busy?' disabled':'')+'>per Mail senden</button>'; };
 async function mahnungEntfernen(datum,p,fehler){ const sb=window.osSupabase;
   try{ if(p.url){ const i=String(p.url).indexOf('/mahnungen/'); if(i>=0){ const {error}=await sb.storage.from('mahnungen').remove([decodeURIComponent(p.url.slice(i+11))]); if(error) fehler.push(p.nr+' PDF: '+error.message); } } }catch(e){ fehler.push(p.nr+' PDF: '+e.message); }
-  const mk=MK[p.pid]; if(mk){ try{ await sb.storage.from('mieterakten').remove([mahnAkte(mk,datum,p)]); }catch(e){} }
+  const mk=MK[p.pid]; if(p.akte&&p.akte.od){ try{ await odApi({aktion:'loeschen',id:p.akte.od.id}); }catch(e){ fehler.push(p.nr+' OneDrive: '+(e.message||e)); } }
+  else if(mk){ try{ await sb.storage.from('mieterakten').remove([(p.akte&&p.akte.pfad)||mahnAkte(mk,datum,p)]); }catch(e){} }
   if(p.regId){ try{ await sb.from('mahn_historie').delete().eq('register_id',p.regId); const {error}=await sb.from('mahn_register').delete().eq('id',p.regId); if(error) fehler.push(p.nr+' Register: '+error.message); }catch(e){ fehler.push(p.nr+' Register: '+e.message); } } }
 async function mahnungZurueck(datum,nr){ const lauf=MAHN[datum], p=lauf&&(lauf.posten||{})[nr]; if(!db||!canWrite||!p){ toast('Mahnung nicht gefunden.'); return; }
   const fehler=[]; toast('Nehme '+nr+' zurück …'); await mahnungEntfernen(datum,p,fehler);
@@ -864,6 +868,7 @@ async function mahnlaufZurueck(datum){ const sb=window.osSupabase, lauf=MAHN[dat
 async function mahnlaufStarten(){ const sb=window.osSupabase; if(!sb||!db||!canWrite){ toast('Nur Lesezugriff.'); return; } if(!window.jspdf){ toast('PDF-Bibliothek lädt noch, bitte gleich nochmal.'); return; }
   const L=mahnListe().filter(x=>MR.sel[x.mk.pid]); if(!L.length) return;
   MR.busy='Erstelle …'; render();
+  if(OD.status===null){ odPruefen(); for(let i=0;i<80&&OD.status===null;i++) await new Promise(r=>setTimeout(r,100)); }
   try{ const {data:ib}=await sb.from('mahn_ibans').select('kennzeichen,iban,inhaber'); window.__mahnIbans=ib||[]; }catch(e){ window.__mahnIbans=[]; }
   let nummer=0; try{ const {data}=await sb.from('mahn_register').select('nummer').order('nummer',{ascending:false}).limit(1); nummer=(data&&data[0]&&data[0].nummer)||0; }catch(e){ toast('Mahnregister nicht lesbar.'); MR.busy=false; render(); return; }
   const lauf=Object.assign({datum:MR.datum,frist:MR.frist,posten:{}},MAHN[MR.datum]?{posten:Object.assign({},MAHN[MR.datum].posten)}:{}); lauf.datum=MR.datum; lauf.frist=MR.frist; lauf.erstellt=new Date().toISOString();
@@ -871,20 +876,20 @@ async function mahnlaufStarten(){ const sb=window.osSupabase; if(!sb||!db||!canW
   for(let i=0;i<L.length;i++){ const x=L[i], st=MR.stufe[x.mk.pid]||STUFEN[0]; MR.busy='Erstelle '+(i+1)+' von '+L.length+' …'; render();
     nummer++; const nr='MA-'+String(nummer).padStart(4,'0'); const B=mahnBrief(x,st,nr); MRPDF.push(B);
     const doc=new window.jspdf.jsPDF({unit:'mm',format:'a4'}); drawBrief(doc,B); const blob=doc.output('blob');
-    const fn='Mahnung_'+nr+'_'+x.mk.obj+'_'+String(B.name).replace(/[^\wäöüÄÖÜß]+/g,'_')+'.pdf'; let url=null;
-    const up=await sb.storage.from('mahnungen').upload(Date.now()+'_'+fn,blob,{contentType:'application/pdf',upsert:true});
+    const fn=mahnDatei(x.mk,MR.datum,st,mrKaution()?'kaution':'miete',B.sum); let url=null;
+    const up=await sb.storage.from('mahnungen').upload(Date.now()+'_'+enc(fn).replace(/\//g,'_'),blob,{contentType:'application/pdf',upsert:true});
     if(up.error) done.fehler.push(nr+': PDF-Upload '+up.error.message); else url=sb.storage.from('mahnungen').getPublicUrl((up.data&&up.data.path)||'').data.publicUrl;
-    const akte=docBase(x.mk)+'/'+enc('03 Miete & Zahlungen/Mahnungen')+'/'+enc(aktenName(x.mk)+'_'+MR.datum+'_'+st+' '+nr+'.pdf').replace(/\//g,'_');
-    await sb.storage.from('mieterakten').upload(akte,blob,{contentType:'application/pdf',upsert:true}).catch(()=>{});
+    /* in die Mieterakte: OneDrive-Mieterordner, sonst Ablage im OS */
+    let akte=null; try{ const ab=await akteAblegen(x.mk,'03 Miete & Zahlungen/Mahnungen',fn,blob,'application/pdf'); akte=ab.od?{od:{id:ab.od.id,name:ab.od.name||fn}}:{pfad:ab.pfad}; }catch(e){ done.fehler.push(nr+': Ablage in der Mieterakte '+(e.message||e)); }
     const row={nummer,datum:MR.datum,empfaenger:B.name,anschrift:B.anschrift.join('\n'),objekt:x.mk.obj,we:uName(x.mk.einheit),betrag:B.sum,mahnstufe:st,ausstand_art:mrKaution()?'Kaution':'Miete',eigentum_status:'Eigentümer',ampel:{gruen:'grün',gelb:'gelb',rot:'rot'}[ampel(x)]||'gelb',in_zv:!!(ed(x.mk).raten||[]).length,betreff:B.betreff,text:briefText(B),frist:MR.frist,status:'Erstellt',pdf_url:url,pdf_name:fn};
     const res=await sb.from('mahn_register').insert(row).select(); let regId=null;
     if(res.error) done.fehler.push(nr+': Register '+res.error.message); else { regId=res.data&&res.data[0]&&res.data[0].id; if(regId) await sb.from('mahn_historie').insert({register_id:regId,typ:'Erstellt',notiz:'Sammelmahnung '+nr+' vom '+dmy(MR.datum)+' ('+eur(B.sum)+')',mahnstufe:st}); }
-    lauf.posten[nr]={pid:x.mk.pid,art:mrKaution()?'kaution':'miete',nr,nummer,stufe:st,betrag:B.sum,gebuehr:B.geb,zinsen:B.zins?B.zins.sum:0,zinsVon:B.zins?B.zins.von:'',zinsBis:B.zins?B.zins.bis:'',zinsSatz:B.zins?B.zins.satz:0,regId,url};
+    lauf.posten[nr]={pid:x.mk.pid,art:mrKaution()?'kaution':'miete',nr,nummer,stufe:st,betrag:B.sum,gebuehr:B.geb,zinsen:B.zins?B.zins.sum:0,zinsVon:B.zins?B.zins.von:'',zinsBis:B.zins?B.zins.bis:'',zinsSatz:B.zins?B.zins.satz:0,regId,url,datei:fn,akte};
     done.list.push({nr,obj:x.mk.obj,einheit:x.mk.einheit,name:B.name,stufe:st,betrag:B.sum,url}); }
   MAHN=Object.assign({},MAHN,{[MR.datum]:lauf}); calc=null;
   await queue('mahnlaeufe/'+MR.datum,()=>db.doc('mahnlaeufe/'+MR.datum).set(lauf));
   MR.busy=false; MR.done=done; loadRegM(); render(); toast(done.list.length+' Mahnungen erstellt.'); }
-function sammelPdf(){ if(!MRPDF.length||!window.jspdf) return; const doc=new window.jspdf.jsPDF({unit:'mm',format:'a4'}); MRPDF.forEach((B,i)=>{ if(i) doc.addPage(); drawBrief(doc,B); }); doc.save('Sammelmahnung_'+MR.datum+'.pdf'); }
+function sammelPdf(){ if(!MRPDF.length||!window.jspdf) return; const doc=new window.jspdf.jsPDF({unit:'mm',format:'a4'}); MRPDF.forEach((B,i)=>{ if(i) doc.addPage(); drawBrief(doc,B); }); doc.save('WT_'+MR.datum+'_Sammelmahnung '+(mrKaution()?'Kautionen':'Mieten')+'.pdf'); }
 /* ---------- Ausklappbare Bereiche und PDF-Auszüge (Sollstellungen, Mieterkonto) ---------- */
 var SEC={soll:false,docs:false,konto:false,inbox:true};
 document.addEventListener('toggle',e=>{ const d=e.target; if(d&&d.dataset&&d.dataset.sec) SEC[d.dataset.sec]=d.open; },true);
@@ -1511,7 +1516,7 @@ function exZeilen(){ return LISTE.map(x=>{ const mk=x.mk, sn=STN[x.status]||['',
   return {obj:mk.obj, einheit:uName(mk.einheit), mieter:ed(mk).mieter||'', betreuer:ed(mk).betreuer||'', zahler:String(ed(mk).zahler||x.zahlerAuto||'').replace(/ \(.*\)$/,''), von:mk.von||'', bis:mk.bis||'',
     miete:x.miete||0, saldo:r2(x.saldo), ueber:r2(Math.max(0,x.ueber)), monate:x.miete?Math.round(x.ueber/x.miete*10)/10:0, status:sn[1], mahnung:lm?lm.stufe+' '+dmy(lm.d)+(lm.b?' ('+eur(lm.b)+')':''):'',
     kaution:x.kOffen>0.5?r2(x.kOffen):0, sperre:mahnsperre(mk)?'ja':'', ampel:({gruen:'grün',gelb:'gelb',rot:'rot'})[ampel(x)]||'' }; }); }
-const exName=ext=>'Mieterkonten_'+today+'_'+exFilterText().replace(/[„“]/g,'').replace(/[^A-Za-z0-9ÄÖÜäöüß -]+/g,' ').replace(/\s+/g,' ').trim()+'.'+ext;
+const exName=ext=>'WT_'+today+'_Mieterkonten '+exFilterText().replace(/[„“]/g,'').replace(/[^A-Za-z0-9ÄÖÜäöüß -]+/g,' ').replace(/\s+/g,' ').trim()+'.'+ext;
 function exLadeXlsx(){ return window.XLSX?Promise.resolve():new Promise((res,rej)=>{ const s=document.createElement('script'); s.src='/vendor/xlsx-0.18.5.full.min.js'; s.onload=res; s.onerror=()=>rej(new Error('Excel-Bibliothek konnte nicht geladen werden.')); document.head.appendChild(s); }); }
 async function exExcel(){ try{ await exLadeXlsx(); }catch(e){ toast(e.message); return; }
   const Z=exZeilen(), d=s=>s?new Date(s+'T00:00:00'):null;

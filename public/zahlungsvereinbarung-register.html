@@ -2,6 +2,7 @@
 <html lang="de"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Ratenzahlungen</title>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="/os-dateiname.js?v=20261026a"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.2/html2pdf.bundle.min.js"></script>
 <style>
 :root{--bg:#f6f7f9;--surf:#fff;--surf2:#f1f3f6;--line:#e6e8ec;--text:#1c2024;--muted:#6b7280;--dim:#4b5563;--accent:#185fa5;--green:#1f7a4d;--red:#c0392b}
@@ -107,6 +108,8 @@ a.pdf{font-size:12px;color:var(--accent);text-decoration:none}
 <div class="toast" id="toast"></div>
 <datalist id="statusDL"><option>laufend</option><option>abgeschlossen</option><option>gekündigt</option><option>Verzug</option><option>Inkasso</option><option>ausgesetzt</option><option>in Klärung</option><option>notariell</option></datalist>
 <script>
+/* Dateiname nach Schema Objekt_WE_NACHNAME Vorname_Datum_Beschreibung; Objektkürzel aus dem Mietkonto */
+function rzDatei(r,thema,datum){const kz=String(r.konto_info||'').split(' – ')[0].trim()||String(r.objekt||'').split(/[ ,]/)[0];return OsDateiname.mieter({kz,einheit:r.wohnung||'',name:r.mieter||'Mieter',datum,thema});}
 function heuteLokal(){const d=new Date();return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');}
 
 const sb=window.supabase.createClient('https://jqzxctfqvcwbctpjksvg.supabase.co','eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpxenhjdGZxdmN3YmN0cGprc3ZnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODIxMzA0MzIsImV4cCI6MjA5NzcwNjQzMn0.RKIbZxJdusKWWPjBJqlxZ8e1m8So02UslOg55YRsn3o');
@@ -324,7 +327,7 @@ async function bestaetigeBrief(){
   try{
     const blob=await briefPdfBlob();
     if(blob){
-      const fname=STUFE_NAME[BRIEF_STUFE].replace(/[^A-Za-z0-9-]/g,'_')+'_'+(r.mieter||'Mieter').replace(/[^a-zA-Z0-9]/g,'_')+'_'+heuteIso+'.pdf';
+      const fname=rzDatei(r,STUFE_NAME[BRIEF_STUFE]+' Ratenzahlung',heuteIso);
       const path='zahlungsvereinbarungen/schreiben/'+BRIEF_ID+'_'+Date.now()+'.pdf';
       const up=await sb.storage.from('darlehen').upload(path,blob,{contentType:'application/pdf',upsert:true});
       if(!up.error){ eintrag.url=sb.storage.from('darlehen').getPublicUrl(path).data.publicUrl; eintrag.datei=fname; }
@@ -581,7 +584,7 @@ async function dsAbgleich(){if(DS_LAEUFT)return;DS_LAEUFT=true;let neu=false;
       if(st.status==='completed'){const pdf=await dsApi({aktion:'dokument',envelopeId:d.envelopeId});const bin=atob(pdf.base64),u8=new Uint8Array(bin.length);for(let i=0;i<bin.length;i++)u8[i]=bin.charCodeAt(i);
         const path='zahlungsvereinbarungen/'+r.id+'_unterschrieben_'+Date.now()+'.pdf';const up=await sb.storage.from('darlehen').upload(path,new Blob([u8],{type:'application/pdf'}),{contentType:'application/pdf',upsert:true});
         if(up.error)throw up.error;const url=sb.storage.from('darlehen').getPublicUrl(path).data.publicUrl;
-        const sch=(r.schreiben||[]).concat([{typ:'dokument',name:'Ratenzahlungsvereinbarung (unterschrieben über DocuSign)',datei:'Ratenzahlungsvereinbarung_unterschrieben.pdf',url,datum:new Date().toISOString().slice(0,10)}]);
+        const sch=(r.schreiben||[]).concat([{typ:'dokument',name:'Ratenzahlungsvereinbarung (unterschrieben über DocuSign)',datei:rzDatei(r,'Ratenzahlungsvereinbarung'+(r.art==='kaution'?' Kaution':r.art==='bka'?' BKA':'')+' unterschrieben',new Date().toISOString().slice(0,10)),url,datum:new Date().toISOString().slice(0,10)}]);
         nd.fertig=st.fertig||new Date().toISOString();nd.pdf=url;await sb.from('zahlungsvereinbarungen').update({docusign:nd,schreiben:sch}).eq('id',r.id);r.schreiben=sch;}
       else{if(st.status==='declined'||st.status==='voided')nd.storniert=st.storniert||new Date().toISOString();if(JSON.stringify(nd)!==JSON.stringify(d))await sb.from('zahlungsvereinbarungen').update({docusign:nd}).eq('id',r.id);}
       if(JSON.stringify(nd)!==JSON.stringify(d)){r.docusign=nd;neu=true;}}
