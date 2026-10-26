@@ -7,7 +7,7 @@
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.2/html2pdf.bundle.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
-<script src="/vertrag-pdf.js?v=20261022a"></script>
+<script src="/vertrag-pdf.js?v=20261026a"></script>
 <style>
 :root{
   --ink:#1a2332;--muted:#5b6b82;--line:#d8dee8;--bg:#fff;--soft:#f4f6fa;
@@ -91,10 +91,12 @@ body{font-family:'DM Sans',-apple-system,Segoe UI,Roboto,Arial,sans-serif;color:
       <div class="fld"><label>Wohnungsnummer <span class="req">*</span></label><input id="whg" placeholder="z. B. WE 6"></div>
       <div class="fld"><label>Mietername <span class="req">*</span></label><input id="mieter" placeholder="Vor- und Nachname"></div>
     </div>
+    <div class="fld"><label>Anschrift des Schuldners (Vertragsinhaber)</label><input id="anschrift" placeholder="leer = Objekt und Wohnung, z. B. Hammer Straße 3, 67575 Eich, WE6">
+      <div class="hint">Nur ausfüllen, wenn der Mieter woanders wohnt oder die Anschrift anders lauten soll.</div></div>
 
     <div class="fld"><label>Mietkonto (Objekt · IBAN) für die Zahlung</label>
-      <select id="konto" onchange="kontoChg()"><option value="">— ohne IBAN (allgemein „vom Gläubiger benanntes Konto") —</option></select>
-      <div class="hint">Mietkonten aus „Hausverwaltung · Portfolio". Die IBAN des gewählten Objekts wird in § 2 des Vertrags als Zahlungsziel eingesetzt.</div></div>
+      <input id="konto" list="dl-konto" placeholder="Objektkürzel oder Straße eintippen, leer = ohne IBAN" autocomplete="off" onchange="kontoChg()"><datalist id="dl-konto"></datalist>
+      <div class="hint">Mietkonten der Objekte (Stammdaten). Die IBAN des gewählten Objekts wird in § 2 des Vertrags als Zahlungsziel eingesetzt. Leer = allgemein „vom Gläubiger benanntes Konto“.</div></div>
 
     <div class="fld"><label>Status des Mietvertrags <span class="req">*</span></label>
       <select id="status">
@@ -170,7 +172,9 @@ function zurueckZurEingabe(){ window.scrollTo({top:0,behavior:'smooth'}); const 
 let KONTEN=[];
 function objLabel(k){return (k.kennung||'')+(k.adresse?(' – '+k.adresse):'');}
 function kontoLabel(k){return objLabel(k).trim()+' · '+esc(k.iban);}
-function kontoById(id){return KONTEN.find(function(k){return k.id===id;});}
+function kontoById(id){id=String(id||'').trim();if(!id)return null;return KONTEN.find(function(k){return k.id===id||kontoText(k)===id;})||KONTEN.find(function(k){return String(k.kennung).toLowerCase()===id.toLowerCase();})||null;}
+function kontoText(k){return objLabel(k).trim()+' · '+k.iban;}
+const ibanFmt=i=>String(i||'').replace(/\s+/g,'').toUpperCase().replace(/(.{4})/g,'$1 ').trim();
 function kontoSatz(k){
   if(!k) return 'kostenfrei auf ein vom Gläubiger benanntes Konto zu zahlen';
   return 'kostenfrei auf das Mietkonto des Gläubigers zu zahlen: <b>IBAN '+esc(k.iban)+'</b>'+(objLabel(k).trim()?(' (Objekt '+esc(objLabel(k).trim())+')'):'');
@@ -181,11 +185,17 @@ function kontoChg(){
   if(k&&o&&!o.value.trim()&&k.adresse){ o.value=k.adresse; }
 }
 async function loadKonten(){
-  const res=await _sb.from('portfolio_immobilien').select('id,kennung,adresse,mietkonto').not('mietkonto','is',null).order('kennung');
-  KONTEN=(res.error?[]:(res.data||[])).filter(function(k){return (k.mietkonto||'').trim();}).map(function(k){return {id:k.id,kennung:k.kennung,adresse:k.adresse,iban:(k.mietkonto||'').trim()};});
-  const sel=document.getElementById('konto'); if(!sel)return;
-  sel.innerHTML='<option value="">— ohne IBAN (allgemein „vom Gläubiger benanntes Konto") —</option>'
-    +KONTEN.map(function(k){return '<option value="'+k.id+'">'+kontoLabel(k)+'</option>';}).join('');
+  /* Quelle: Objekte (Stammdaten) und das Objektkonto aus der Buchhaltung, auf dem die Mieten eingehen; Portfolio nur als Ergänzung */
+  const [o,st,pf]=await Promise.all([_sb.from('obj_objekte').select('id,kz,strasse,plz,ort,status,mietkonto_iban').order('sort'),
+    _sb.from('os_docs').select('data').eq('app','oc').eq('pfad','stamm/konten').maybeSingle(),
+    _sb.from('portfolio_immobilien').select('id,kennung,adresse,mietkonto').not('mietkonto','is',null)]);
+  const kt={};((st&&st.data&&st.data.data&&st.data.data.konten)||[]).forEach(function(k){ if(k.obj&&k.iban&&!/^__/.test(k.obj)&&!/alt/i.test(k.name||'')&&!kt[String(k.obj).toLowerCase()]) kt[String(k.obj).toLowerCase()]=k.iban; });
+  const L=[],seen={};
+  ((o&&o.data)||[]).filter(function(x){return x.status!=='Verkauft';}).forEach(function(x){ const iban=kt[String(x.kz).toLowerCase()]||x.mietkonto_iban; if(!iban) return;
+    seen[String(x.kz).toLowerCase()]=1; L.push({id:x.id,kennung:x.kz,adresse:[x.strasse,[x.plz,x.ort].filter(Boolean).join(' ')].filter(Boolean).join(', '),iban:ibanFmt(iban)}); });
+  ((pf&&pf.data)||[]).forEach(function(k){ if(!(k.mietkonto||'').trim()||seen[String(k.kennung).toLowerCase()]) return; L.push({id:k.id,kennung:k.kennung,adresse:k.adresse,iban:ibanFmt(k.mietkonto)}); });
+  KONTEN=L.sort(function(a,b){return String(a.kennung).localeCompare(String(b.kennung),'de',{numeric:true});});
+  const dl=document.getElementById('dl-konto'); if(dl) dl.innerHTML=KONTEN.map(function(k){return '<option value="'+esc(kontoText(k)).replace(/"/g,'&quot;')+'">';}).join('');
 }
 /* Vorbelegung aus dem Mieterkonto (Aufruf über "Neue erstellen" in den Mieterkonten) */
 var PRE=null;
@@ -198,7 +208,7 @@ function vorbelegen(){
   setv('art',q.get('art')); setv('glaeubiger',q.get('glaeubiger')); setv('objekt',q.get('objekt')); setv('whg',q.get('whg'));
   setv('mieter',q.get('mieter')); setv('forderung',q.get('forderung')); setv('ort',q.get('ort')); setv('mail',q.get('mail'));
   const sel=document.getElementById('konto');
-  if(sel&&PRE.obj){ const k=KONTEN.find(function(k){ return String(k.kennung||'').toLowerCase()===PRE.obj.toLowerCase(); }); if(k) sel.value=k.id; }
+  if(sel&&PRE.obj){ const k=KONTEN.find(function(k){ return String(k.kennung||'').toLowerCase()===PRE.obj.toLowerCase(); }); if(k) sel.value=kontoText(k); }
   try{ artChg(); }catch(e){}
   const box=document.createElement('div');
   box.style.cssText='background:#eef4fb;border:1px solid #c9dbef;border-radius:8px;padding:10px 12px;margin:0 0 14px;font-size:13px;line-height:1.45';
@@ -222,7 +232,7 @@ function rzDaten(){
   const nachtrag=document.getElementById('nachtrag').checked, gezahlt=nachtrag?Math.max(0,Math.min(parseInt(document.getElementById('gezahlt').value,10)||0,plan.rows.length)):0, urspr=document.getElementById('urspr').value;
   const restNow=gezahlt>0?plan.rows[gezahlt-1].rest:forderung, summe=plan.rows.reduce((s,r)=>s+r.zahlung,0), last=plan.rows[plan.rows.length-1];
   const k=kontoById((document.getElementById('konto')||{}).value);
-  const V={vermieter:g('glaeubiger'),vermieter_anschrift:'Dalheimer Straße 70, 55278 Dexheim',mieter_name:g('mieter'),
+  const V={vermieter:g('glaeubiger'),vermieter_anschrift:'Dalheimer Straße 70, 55278 Dexheim',mieter_name:g('mieter'),rz_mieter_anschrift:g('anschrift')||[g('objekt'),g('whg')].filter(Boolean).join(', '),
     rz_untertitel:'Vereinbarung '+(nachtrag?'(Nachtrag) ':'')+A().sub,rz_nachtrag:nachtrag?('Diese Urkunde dokumentiert eine bereits bestehende'+(urspr?(', am '+dt(urspr)+' getroffene'):'')+' Ratenzahlungsvereinbarung. Bislang wurden '+gezahlt+' Rate(n) geleistet; die aktuelle Restforderung beträgt '+betragDE(restNow)+' EUR.'):'',
     rz_objekt:g('objekt'),rz_wohnung:g('whg'),rz_mietstatus:g('status'),rz_datum:dt(datum),rz_forderungsart:A().ford,rz_offene_forderung:A().offen,rz_anlage:A().anl,
     rz_forderung:betragDE(forderung),rz_forderung_worte:VertragPdf.worte(forderung),rz_rate:betragDE(rate),rz_erste_rate:dt(erste),
@@ -371,7 +381,7 @@ function gen(){
 
     <div class="parties">
       <div class="p"><div class="role">Gläubiger / Vermieter</div><b>${esc(glaeubiger)}</b><br>nachfolgend „Gläubiger"</div>
-      <div class="p"><div class="role">Schuldner / Mieter</div><b>${esc(mieter)}</b><br>${esc(objekt)}, ${esc(whg)}<br>nachfolgend „Schuldner"</div>
+      <div class="p"><div class="role">Schuldner / Mieter</div><b>${esc(mieter)}</b><br>${esc(g('anschrift')||(objekt+', '+whg))}<br>nachfolgend „Schuldner"</div>
     </div>
 
     <p>Zwischen den vorgenannten Parteien besteht ein Mietverhältnis über die Wohneinheit <b>${esc(whg)}</b> im Objekt <b>${esc(objekt)}</b>. Status des Mietvertrags: <b>${esc(status)}</b>. Aus diesem Mietverhältnis besteht zum <b>${dt(datum)}</b> eine fällige und rückständige ${A().ford} des Gläubigers gegen den Schuldner. Zur Beilegung wird folgende Vereinbarung getroffen:</p>

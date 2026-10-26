@@ -42,7 +42,7 @@
     ['vermieter', 'Vermieter: Name'], ['vermieter_anschrift', 'Vermieter: Anschrift'], ['vertragsdatum', 'Vertragsdatum (heute)'],
     ['verwendungszweck', 'Verwendungszweck Miete'], ['wlan_zahl', 'WLAN (Betrag)'],
     ['garage_opt', 'Garage / Stellplatz (Betrag, leer wenn keiner)'], ['moebel_ebk_opt', 'Möblierung und Einbauküche (Betrag, leer wenn keiner)'], ['hausmeister_opt', 'Gutschrift Hausmeister (Betrag, leer wenn keine)'], ['zusatz_opt', 'Weitere Beträge vorhanden (Garage, Möblierung, Hausmeister)'], ['wohnflaeche', 'Wohnfläche (m²)'], ['zimmer', 'Zimmer'],
-    ['rz_anlage', 'Ratenzahlung: Bezeichnung der Forderung (kurz)'], ['rz_basiszins', 'Ratenzahlung: Basiszins'], ['rz_datum', 'Ratenzahlung: Erstellungsdatum'], ['rz_erste_rate', 'Ratenzahlung: erste Rate am'],
+    ['rz_anlage', 'Ratenzahlung: Bezeichnung der Forderung (kurz)'], ['rz_mieter_anschrift', 'Ratenzahlung: Anschrift des Schuldners'], ['rz_basiszins', 'Ratenzahlung: Basiszins'], ['rz_datum', 'Ratenzahlung: Erstellungsdatum'], ['rz_erste_rate', 'Ratenzahlung: erste Rate am'],
     ['rz_forderung', 'Ratenzahlung: Forderung (Betrag)'], ['rz_forderung_worte', 'Ratenzahlung: Forderung in Worten'], ['rz_forderungsart', 'Ratenzahlung: Art der Forderung'], ['rz_gesamtzahlung', 'Ratenzahlung: Gesamtzahlung'],
     ['rz_laufzeit', 'Ratenzahlung: Anzahl Raten'], ['rz_mietstatus', 'Ratenzahlung: Status des Mietvertrags'], ['rz_nachtrag', 'Ratenzahlung: Hinweis Nachtrag'], ['rz_objekt', 'Ratenzahlung: Objekt'],
     ['rz_offene_forderung', 'Ratenzahlung: „Die offene Forderung“'], ['rz_rate', 'Ratenzahlung: Rate'], ['rz_schlussrate', 'Ratenzahlung: Schlussrate'], ['rz_untertitel', 'Ratenzahlung: Untertitel'],
