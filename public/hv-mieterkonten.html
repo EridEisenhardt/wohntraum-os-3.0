@@ -159,6 +159,7 @@ input.zsel{width:240px}
 .mlist{max-height:none}
 .adot{display:inline-block;width:11px;height:11px;border-radius:50%;vertical-align:-1px}.adot.big{width:16px;height:16px;vertical-align:-2px}
 .ov{position:fixed;inset:0;background:rgba(15,20,30,.45);z-index:20;overflow:auto;padding:24px 16px}
+.ov2{position:fixed;inset:0;background:rgba(15,20,30,.45);z-index:30;display:flex;align-items:center;justify-content:center;padding:16px}.ov2 .box{background:var(--bg);border-radius:14px;padding:18px 20px;max-width:460px;width:100%;box-shadow:0 20px 60px rgba(0,0,0,.3)}.ov2 .box h3{margin:0 0 8px;font-size:16px}.ov2 .acts{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px}
 .dlg{max-width:1250px;margin:0 auto;background:var(--bg);border-radius:16px;padding:18px 20px;box-shadow:0 20px 60px rgba(0,0,0,.3)}
 .dtop{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;margin-bottom:12px}
 .dname{font-size:22px;font-weight:800}
@@ -556,6 +557,7 @@ const dmy=x=>String(x||'').split('-').reverse().join('.');
 const START='2025-01';
 let MK={}, M={f:'',ges:'',obj:'',st:'alle',q:'',sel:''}; try{ const s=JSON.parse(store('mk_state')||'null'); if(s){ if(s.sv!==2){ delete s.sk; delete s.sd; } M=Object.assign(M,s,{q:''}); } }catch(e){}
 const saveM=()=>store('mk_state',JSON.stringify({ges:M.ges,obj:M.obj,betr:M.betr||'',st:M.st,sel:M.sel,sk:M.sk,sd:M.sd,sv:2}));
+let BFRAGE=null; const isoHeute=()=>{ const d=new Date(); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); };
 let MAHN={}; let SL={}, slAuto=false, loadedSL=false, ZV=[], ZVload=false, DOCS={}, docOpen={}, pend=null, mkStand='', mkUeb='', loadedMK=false, calc=null, EDIT={}, ZUORD={}, editOpen=false, modal=false, showDone=false;
 const ed=mk=>Object.assign({},mk,EDIT[mk.pid]||{});
 /* Auszug (Mietende) kann im OS eingetragen werden (EDIT.bis) und gilt dann vor dem Wert aus Nahaus */
@@ -1602,6 +1604,7 @@ function render(){
   h+='</tbody></table></div>';
   if(mahnOpen) h+='<div class="ov" id="ov"><div class="dlg">'+renderMahn()+'</div></div>';
   else if(modal&&calc.res[M.sel]) h+='<div class="ov" id="ov"><div class="dlg">'+renderDash(calc.res[M.sel])+'</div></div>';
+  if(BFRAGE) h+='<div class="ov2"><div class="box"><h3>Betreuer wechselt</h3><div>Der Betreuer wird von <b>'+esc(BFRAGE.altB)+'</b> auf <b>'+esc(BFRAGE.neuB||'(leer)')+'</b> geändert.</div><div style="margin-top:8px">Soll der bisherige Betreuer archiviert werden? Er bleibt dann im Mieterkonto unter „Frühere Betreuer“ sichtbar.</div><div class="acts"><button class="primary small" data-bfrage="ja">Ja, archivieren</button><button class="ghost small" data-bfrage="nein">Nein, nur ändern</button><button class="ghost small" data-bfrage="abbr">Abbrechen</button></div></div></div>';
   h+='<div class="sub" style="margin:10px 0">Saldo positiv = Mieter schuldet, negativ = Guthaben. '+(mkUeb?'Bis '+esc(dmy(mkUeb))+' sind Sollstellungen und Zahlungen 1 zu 1 aus Nahaus übernommen (Stand '+esc(dmy(mkStand))+'). Danach wird nur noch im OS gebucht: Sollstellungen aus dem Sollstellungslauf (fehlende Monatsmieten aus dem Mietvertrag), Zahlungen aus den Kontoauszügen.':'Soll: Sollstellungen aus Nahaus (Stand '+esc(dmy(mkStand))+'); fehlende Monatsmieten werden aus dem Mietvertrag ergänzt. Ist: Mieteingänge aus den Kontoauszügen im OS ab '+esc(calc.first.slice(5)+'/'+calc.first.slice(0,4))+', davor Zahlungen laut Nahaus.')+' Saldo = alle bis heute fälligen Sollstellungen minus Zahlungen. Überfällig = offen und mehr als 5 Tage vor dem letzten Kontoauszug ('+esc(dmy(calc.stich))+') fällig – Zahlungen danach sind noch nicht importiert. Kaution wird getrennt geführt.</div>'+'<label class="sub"><input type="checkbox" id="m-alle"'+(M.alle?' checked':'')+'> auch nicht aktive / verkaufte Objekte zeigen</label>'+inboxCard()+importCard(false);
   const keep=f&&(f.id==='inb-von'||f.id==='m-q'||f.id==='m-betr'||f.id==='mr-q'||f.id==='n-text'||f.id==='ne-text')?f:null; const sc=$('ov')?$('ov').scrollTop:0;
   $('view').innerHTML='<div class="pad">'+h+'</div>'; if($('ov')) $('ov').scrollTop=sc; document.body.style.overflow=(modal||mahnOpen)?'hidden':'';
@@ -1805,7 +1808,7 @@ function renderDash(x){ const mk=ed(x.mk), sn=STN[x.status], a=ampel(x), K=mk.ko
       +'<div class="acts"><button class="primary small" data-esave="1">Speichern</button><button class="ghost small" data-ecancel="1">Abbrechen</button></div>';
   } else {
     h+=kv('Name',esc(mk.mieter||'–'))+kv('E-Mail',(mk.email!=null?mk.email:K.map(k=>k.email).filter(Boolean).join(', '))?esc(mk.email!=null?mk.email:K.map(k=>k.email).filter(Boolean).join(', ')):'<span class="mut">–</span>')
-      +kv('Telefon',esc((mk.tel!=null?mk.tel:K.map(k=>k.tel).filter(Boolean).join(', '))||'–'))+kv('Betreuer',betrHtml(mk.betreuer))
+      +kv('Telefon',esc((mk.tel!=null?mk.tel:K.map(k=>k.tel).filter(Boolean).join(', '))||'–'))+kv('Betreuer',betrHtml(mk.betreuer)+(mk.betreuerSeit?' <span class="mut">seit '+esc(dmy(mk.betreuerSeit))+'</span>':''))+((mk.betreuerAlt||[]).length?kv('Frühere Betreuer',(mk.betreuerAlt||[]).map(b=>betrHtml(b.name)+' <span class="mut">('+(b.von?esc(dmy(b.von))+' – ':'bis ')+esc(dmy(b.bis))+')</span>').join('<br>')):'')
       +kv('Wer zahlt',esc(mk.zahler||x.zahlerAuto||'–')+(mk.zahler?'':' <span class="pill src">aus Zahlungen</span>'))
       +kv('Mieterranking',ampelDot(a)+' '+AMPEL[a][1]+(mk.ampel?' <span class="pill src">manuell</span>':' <span class="pill src" title="Automatisch aus Rückstand, Kaution und Zahlungseingang">auto</span>'))+(x.spaet?'<div class="sub">'+x.spaet+' verspätete Zahlung'+(x.spaet>1?'en':'')+' in den letzten 6 Monaten (nach dem 10.)</div>':''); }
   h+='</div>';
@@ -1929,12 +1932,18 @@ document.addEventListener('click',async e=>{ const t=e.target.closest('button,tr
     const NAM={kaution:'Kaution vereinbart',kautionBezahlt:'Kaution bezahlt',mieter:'Name',anrede:'Anrede',email:'E-Mail',tel:'Telefon',betreuer:'Betreuer',zahler:'Wer zahlt',ref:'Verwendungszweck',ampel:'Mieterranking',bis:'Auszug'};
     const eff=Object.assign({},neu); if('bis' in neu) eff.bis=neu.bis||MK[M.sel].bisNH||''; else eff.bis=alt.bis||''; const fmt=(k,v)=>k==='bis'?dmy(v):v;
     const diff=Object.keys(eff).filter(k=>String(alt[k]??'')!==String(eff[k]??'')).map(k=>NAM[k]+': '+(String(fmt(k,alt[k]??''))||'–')+' → '+(String(fmt(k,eff[k]??''))||'–'));
-    saveEdit(M.sel,neu,'Mieterdaten gespeichert.',diff.length?'Mieterdaten geändert – '+diff.join('; '):false); return; } });
+    const altB=String(alt.betreuer||'').trim(), neuB=String(neu.betreuer||'').trim(); if(altB!==neuB) neu.betreuerSeit=neuB?isoHeute():'';
+    const log=diff.length?'Mieterdaten geändert – '+diff.join('; '):false;
+    if(altB&&altB!==neuB){ BFRAGE={pid:M.sel,neu,log,altB,neuB,altSeit:alt.betreuerSeit||''}; render(); return; }
+    saveEdit(M.sel,neu,'Mieterdaten gespeichert.',log); return; }
+  if(t.dataset.bfrage){ const F=BFRAGE; BFRAGE=null; if(!F||t.dataset.bfrage==='abbr'){ render(); if(F) toast('Nichts gespeichert.'); return; }
+    let log=F.log; if(t.dataset.bfrage==='ja'){ F.neu.betreuerAlt=[{name:F.altB,von:F.altSeit,bis:isoHeute()}].concat(ed(MK[F.pid]).betreuerAlt||[]); log=(log||'Mieterdaten geändert')+'; bisheriger Betreuer archiviert: '+F.altB; }
+    saveEdit(F.pid,F.neu,'Mieterdaten gespeichert.',log); return; } });
 ['dragenter','dragover'].forEach(ev=>document.addEventListener(ev,e=>{ const d=e.target.closest&&e.target.closest('[data-fdrop]'); if(d&&e.dataTransfer&&[...(e.dataTransfer.types||[])].includes('Files')){ e.preventDefault(); document.querySelectorAll('.fold.over').forEach(x=>x!==d&&x.classList.remove('over')); d.classList.add('over'); } }));
 document.addEventListener('dragleave',e=>{ const d=e.target.closest&&e.target.closest('[data-fdrop]'); if(d&&!d.contains(e.relatedTarget)) d.classList.remove('over'); });
 document.addEventListener('drop',e=>{ const d=e.target.closest&&e.target.closest('[data-fdrop]'); if(!d||!e.dataTransfer||!e.dataTransfer.files.length) return; e.preventDefault(); d.classList.remove('over'); queueFiles(MK[M.sel],d.dataset.fdrop,e.dataTransfer.files); });
 document.addEventListener('mousedown',e=>{ if(e.target.id==='ov'&&!MR.busy){ modal=false; mahnOpen=false; editOpen=false; render(); } });
-document.addEventListener('keydown',e=>{ if(e.key==='Escape'&&(modal||mahnOpen)&&!MR.busy){ modal=false; mahnOpen=false; editOpen=false; render(); } if(e.key==='Enter'&&e.target.id==='t-neu'){ const b=document.querySelector('[data-tadd]'); if(b) b.click(); } });
+document.addEventListener('keydown',e=>{ if(e.key==='Escape'&&BFRAGE){ BFRAGE=null; render(); return; } if(e.key==='Escape'&&(modal||mahnOpen)&&!MR.busy){ modal=false; mahnOpen=false; editOpen=false; render(); } if(e.key==='Enter'&&e.target.id==='t-neu'){ const b=document.querySelector('[data-tadd]'); if(b) b.click(); } });
 document.addEventListener('change',async e=>{ const t=e.target;
   if(t.dataset.zvadd){ const id=ZVLAB[t.value]; if(!id){ if(t.value) toast('Bitte einen Eintrag aus der Liste wählen.'); return; } const r=ed(MK[M.sel]).raten||[]; if(r.includes(id)) return; saveEdit(M.sel,{raten:r.concat([id])},'Ratenzahlung verknüpft.'); return; }
   if(t.dataset.fup){ queueFiles(MK[M.sel],t.dataset.fup,t.files); t.value=''; return; }
