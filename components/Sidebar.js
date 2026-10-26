@@ -1,7 +1,7 @@
 'use client'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { supabase } from '../lib/supabaseClient'
 
 /* Globale Suche: Mieter, Objekte, Kontakte, Firmen, Mietinteressenten, Störungen, Fahrzeuge, Gesellschaften */
@@ -302,6 +302,10 @@ export const BEREICH_MAP = {
   '/hausmeisterdienst': 'eric', '/aktivitaeten': 'eric', berichte: 'eric', wissensdatenbank: 'eric', '/dokumente': 'eric', '/dms': 'eric',
   'v-buchhaltung': 'team', 'v-dokumente': 'team', 'v-fuhrpark': 'team', 'v-hausverwaltung': 'team', 'v-mahnwesen': 'team', 'v-personal': 'team', 'v-postfach': 'team', 'v-prozesslandkarte': 'team', 'v-stammdaten': 'team', 'v-verwaltung': 'team',
 }
+// Farben der Kategorie-Kacheln (feste Farbe je Kategorie, übrige reihum)
+const KACHEL_FARBEN = { 'v-buchhaltung': '#2f5d8a', 'v-dokumente': '#6d4fa3', 'v-fuhrpark': '#0f766e', 'v-hausverwaltung': '#1d7a4c', 'v-mahnwesen': '#b42318', 'v-personal': '#b45309', 'v-postfach': '#0369a1', 'v-prozesslandkarte': '#475569', 'v-stammdaten': '#92650a', 'v-verwaltung': '#9d174d' }
+const FARB_REIHE = ['#2f5d8a', '#1d7a4c', '#6d4fa3', '#0f766e', '#b45309', '#0369a1', '#b42318', '#475569', '#92650a', '#9d174d']
+const kachelFarbe = (n, i) => KACHEL_FARBEN[n.key] || FARB_REIHE[i % FARB_REIHE.length]
 export const bereichOf = (n) => BEREICH_MAP[n.type === 'group' ? n.key : n.href] || 'beide'
 export const gbOf = (n) => (n.type === 'group' ? GB_MAP[n.key] : GB_MAP[n.href])
 
@@ -314,8 +318,10 @@ export default function Sidebar({ user, demo, onLogout, role, perms }) {
   const [favOpen, setFavOpen] = useState(true)
   const [zu, setZu] = useState(false)
   const [openCats, setOpenCats] = useState(() => new Set())
+  const [farbig, setFarbig] = useState(true)
   const [catOrder, setCatOrder] = useState([])
   const [dragCat, setDragCat] = useState(null)
+  const activeGroupKeyRef = useRef(null)
   const isAdmin = role === 'admin'
   const [bereich, setBereich] = useState('')
   useEffect(() => {
@@ -371,7 +377,8 @@ export default function Sidebar({ user, demo, onLogout, role, perms }) {
     try { const f = localStorage.getItem('sidebar_favs'); if (f) setFavs(JSON.parse(f)) } catch (e) {}
     try { setZu(localStorage.getItem('sidebar_zu') === '1') } catch (e) {}
     try { const fo = localStorage.getItem('sidebar_fav_open'); if (fo != null) setFavOpen(fo !== '0') } catch (e) {}
-    try { const oc = localStorage.getItem('sidebar_open_cats'); if (oc) setOpenCats(new Set(JSON.parse(oc))) } catch (e) {}
+    try { const oc = localStorage.getItem('sidebar_open_cats'); if (oc) setOpenCats(new Set(JSON.parse(oc).slice(0, 1))) } catch (e) {}
+    try { setFarbig(localStorage.getItem('sidebar_farbig') !== '0') } catch (e) {}
     try { const co = localStorage.getItem('sidebar_cat_order'); if (co) setCatOrder(JSON.parse(co)) } catch (e) {}
   }, [])
   useEffect(() => { setQ('') }, [path])
@@ -411,12 +418,14 @@ export default function Sidebar({ user, demo, onLogout, role, perms }) {
 
   const isActive = (item) => item.exact ? path === item.href : (path === item.href || path.startsWith(item.href + '/'))
   const toggleFavOpen = () => setFavOpen((v) => { const n = !v; try { localStorage.setItem('sidebar_fav_open', n ? '1' : '0') } catch (e) {} return n })
+  // Kacheln: immer nur eine geöffnet. Ein Klick auf eine andere Kachel schließt die bisherige.
   const toggleCat = (key) => setOpenCats((prev) => {
-    const next = new Set(prev)
-    if (next.has(key)) next.delete(key); else next.add(key)
+    const offen = prev.size ? prev.has(key) : key === activeGroupKeyRef.current
+    const next = new Set([offen ? '__keine' : key])
     try { localStorage.setItem('sidebar_open_cats', JSON.stringify([...next])) } catch (e) {}
     return next
   })
+  const toggleFarbig = () => setFarbig((v) => { const n = !v; try { localStorage.setItem('sidebar_farbig', n ? '1' : '0') } catch (e) {} return n })
 
   const email = user && user.email ? user.email : null
   const initials = email ? email.slice(0, 2).toUpperCase() : 'EE'
@@ -445,6 +454,9 @@ export default function Sidebar({ user, demo, onLogout, role, perms }) {
   // Aktive Gruppe/Link aus dem aktuellen Pfad
   const activeGroupPath = NAV.find((n) => n.type === 'group' && canSee(n) && n.items.some(isActive))
   const activeGroupKey = activeGroupPath ? activeGroupPath.key : null
+  activeGroupKeyRef.current = activeGroupKey
+  // Wechselt die Seite in eine andere Kategorie (z. B. über Favoriten oder Suche), wird deren Kachel geöffnet
+  useEffect(() => { if (activeGroupKey) setOpenCats((prev) => (prev.has(activeGroupKey) ? prev : new Set([activeGroupKey]))) }, [activeGroupKey])
 
   // Favoriten
   const allLeaf = []
@@ -499,7 +511,7 @@ export default function Sidebar({ user, demo, onLogout, role, perms }) {
     }
   }
   const toggleZu = () => setZu((v) => { const n = !v; try { localStorage.setItem('sidebar_zu', n ? '1' : '0') } catch (e) {} return n })
-  const catOpen = (n) => openCats.has(n.key) || n.key === activeGroupKey
+  const catOpen = (n) => (openCats.size ? openCats.has(n.key) : n.key === activeGroupKey)
 
   if (zu) return (
     <aside className="sbx sbx-zu">
@@ -585,7 +597,7 @@ export default function Sidebar({ user, demo, onLogout, role, perms }) {
 
       {/* Alle Kategorien & Unterkategorien */}
       <nav className="sbx-nav">
-        {visibleNav.map((n) => {
+        {visibleNav.map((n, ni) => {
           if (n.type === 'link') return (
             <div key={n.href} {...dragProps(n)}>
             <div className="sbx-linkrow">
@@ -603,10 +615,10 @@ export default function Sidebar({ user, demo, onLogout, role, perms }) {
           const open = catOpen(n)
           return (
             <div key={n.key} {...dragProps(n)}>
-            <div className="sbx-cat">
+            <div className={'sbx-cat sbx-kachel' + (farbig ? ' farbig' : '') + (open ? ' offen' : '')} style={farbig ? { '--kc': kachelFarbe(n, ni) } : undefined}>
               <button className={'sbx-catbtn' + (n.key === activeGroupKey ? ' active' : '')} onClick={() => toggleCat(n.key)}>
                 <i className="ti ti-grip-vertical grip" />
-                <i className={'ti ' + n.icon} /> <span>{n.label}</span>
+                <span className="kic"><i className={'ti ' + n.icon} /></span> <span className="klab">{n.label}</span>
                 <i className={'ti ' + (open ? 'ti-chevron-down' : 'ti-chevron-right')} style={{ marginLeft: 'auto', fontSize: 14, opacity: 0.7 }} />
               </button>
               {open && (
@@ -638,6 +650,7 @@ export default function Sidebar({ user, demo, onLogout, role, perms }) {
         )}
       </nav>
 
+      <button className="sbx-farbbtn" onClick={toggleFarbig} title="Kacheln farbig oder schlicht anzeigen">{farbig ? 'Kacheln schlicht anzeigen' : 'Kacheln farbig anzeigen'}</button>
       <div className="sbx-foot">
         <div className="av" title={email || 'Demo-Modus'}>{initials}</div>
         <div className="sbx-me">{email || 'Demo-Modus'}</div>
