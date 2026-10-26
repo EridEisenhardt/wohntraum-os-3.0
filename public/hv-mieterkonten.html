@@ -1511,7 +1511,7 @@ document.addEventListener('click',e=>{ const t=e.target.closest('button[data-zrq
 /* ---------- Mieterkonten-Liste als Excel und PDF (genau die gefilterte Liste) ---------- */
 var LISTE=[];
 const EXF={alle:'Alle',aktiv:'Laufend',rueck:'Rückstand',rueck2:'Mehr als 2 Monatsmieten offen',guthaben:'Guthaben',kaution:'Kaution offen',beendet:'Beendet'};
-function exFilterText(){ return [EXF[M.st]||'Alle',M.ges?'Gesellschaft '+M.ges:'',M.obj?'Objekt '+M.obj:'',M.betr?'Betreuer „'+M.betr+'“':'',M.q?'Suche „'+M.q+'“':''].filter(Boolean).join(' · '); }
+function exFilterText(){ return [EXF[M.st]||'Alle',M.ges?'Gesellschaft '+M.ges:'',M.obj?'Objekt '+M.obj:'',M.betr?'Betreuer „'+M.betr+'“':'',M.q?'Suche „'+M.q+'“':'',M.ms?MF_MS[M.ms]:'',M.rz?MF_JN('Ratenzahlung')[M.rz]:'',M.sp?MF_JN('Mahnsperre')[M.sp]:''].filter(Boolean).join(' · '); }
 function exZeilen(){ return LISTE.map(x=>{ const mk=x.mk, sn=STN[x.status]||['',''], lm=letzteMahnung(x);
   return {obj:mk.obj, einheit:uName(mk.einheit), mieter:ed(mk).mieter||'', betreuer:ed(mk).betreuer||'', zahler:String(ed(mk).zahler||x.zahlerAuto||'').replace(/ \(.*\)$/,''), von:mk.von||'', bis:mk.bis||'',
     miete:x.miete||0, saldo:r2(x.saldo), ueber:r2(Math.max(0,x.ueber)), monate:x.miete?Math.round(x.ueber/x.miete*10)/10:0, status:sn[1], mahnung:lm?lm.stufe+' '+dmy(lm.d)+(lm.b?' ('+eur(lm.b)+')':''):'',
@@ -1562,7 +1562,7 @@ function render(){
   const q=norm(M.q);
   const betrF=norm(M.betr||'');
   const list=all.filter(x=>(!M.ges||x.mk.ges===M.ges)&&(!M.obj||x.mk.obj===M.obj)&&(!betrF||(betrF==='ohne betreuer'?!String(ed(x.mk).betreuer||'').trim():norm(ed(x.mk).betreuer).includes(betrF)))&&(M.st==='alle'||(M.st==='aktiv'&&x.aktiv)||(M.st==='rueck'&&x.ueber>0.5)||(M.st==='rueck2'&&x.ueber>0.5&&x.monate>2)||(M.st==='guthaben'&&x.saldo<-0.5)||(M.st==='beendet'&&!x.aktiv)||(M.st==='kaution'&&x.kOffen>0.5))
-    &&(!q||norm(ed(x.mk).mieter+' '+x.mk.obj+' '+x.mk.einheit+' '+uName(x.mk.einheit)+' '+ed(x.mk).ref).includes(q)))
+    &&mFilterOk(x)&&(!q||norm(ed(x.mk).mieter+' '+x.mk.obj+' '+x.mk.einheit+' '+uName(x.mk.einheit)+' '+ed(x.mk).ref).includes(q)))
     .sort(listSort);
   LISTE=list;
   const sumR=all.filter(x=>x.ueber>0.5).reduce((a,x)=>a+x.ueber,0), nR=all.filter(x=>x.ueber>0.5).length, n2=all.filter(x=>x.status==='kuendigung').length;
@@ -1575,13 +1575,14 @@ function render(){
     +'<select id="m-ges"><option value="">alle Gesellschaften</option>'+['EE','WT','KiBo'].map(g=>'<option'+(g===M.ges?' selected':'')+'>'+g+'</option>').join('')+'</select>'
     +'<select id="m-obj"><option value="">alle Objekte</option>'+objs.map(o=>'<option'+(o===M.obj?' selected':'')+'>'+esc(o)+'</option>').join('')+'</select>'
     +'<input type="search" id="m-betr" list="m-betrl" placeholder="Betreuer" value="'+esc(M.betr||'')+'" autocomplete="off" style="width:150px"><datalist id="m-betrl"><option value="ohne Betreuer"></option>'+[...new Set(all.map(x=>String(ed(x.mk).betreuer||'').trim()).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'de')).map(b=>'<option value="'+esc(b)+'"></option>').join('')+'</datalist>'
+    +mFilterFeld('m-ms',M.ms,MF_MS)+mFilterFeld('m-rz',M.rz,MF_JN('Ratenzahlung'))+mFilterFeld('m-sp',M.sp,MF_JN('Mahnsperre'))
     +'<input type="search" id="m-q" placeholder="Mieter, Objekt, Einheit" value="'+esc(M.q)+'" autocomplete="off"><span class="sub">'+list.length+' in der Liste</span><button class="ghost small" data-mex="xlsx">Excel</button><button class="ghost small" data-mex="pdf">PDF</button></div>';
   const TH=(k,l,n)=>'<th class="sortable'+(n?' n':'')+((M.sk||'einheit')===k?' on':'')+'" data-msort="'+k+'" title="Sortieren">'+l+((M.sk||'einheit')===k?((M.sd||1)>0?' ↑':' ↓'):'')+'</th>';
   h+='<div class="tablewrap mlist"><table><thead><tr><th></th>'+TH('obj','Objekt')+TH('einheit','Einheit')+TH('mieter','Mieter')+TH('zahler','Zahler')+TH('betreuer','Betreuer')+TH('von','Zeitraum')+TH('miete','Miete',1)+TH('saldo','Saldo',1)+TH('status','Status')+'</tr></thead><tbody>';
   if(!list.length) h+='<tr><td colspan="10" class="empty">Keine Mietverhältnisse für diesen Filter.</td></tr>';
   const rowH=(x,cls,vm)=>{ const mk=x.mk, sn=STN[x.status];
     return '<tr class="click'+(cls||'')+(mk.pid===M.sel?' sel':'')+'" data-mk="'+esc(mk.pid)+'"><td>'+ampelDot(ampel(x))+'</td><td><b>'+esc(mk.obj)+'</b></td><td>'+esc(uName(mk.einheit))+(vm?vm:'')+'</td><td class="wrapc">'+esc(ed(mk).mieter||'–')+(mk.gewerbe?' <span class="pill src">Gewerbe</span>':'')+'</td><td class="sub">'+esc(String(ed(mk).zahler||x.zahlerAuto||'').replace(/ \(.*\)$/,''))+'</td><td class="sub">'+betrHtml(ed(mk).betreuer,1)+'</td><td class="sub">'+esc(dmy(mk.von))+(mk.bis?' – '+esc(dmy(mk.bis)):'')+'</td><td class="n">'+(x.miete?eur(x.miete):'–')+'</td>'
-      +'<td class="n '+(x.ueber>0.5?'neg':x.saldo<-0.5?'pos':'')+'"><b>'+eur(x.saldo)+'</b>'+(x.ueber>0.5&&Math.abs(x.ueber-x.saldo)>0.5?'<div class="sub">überfällig '+eur(x.ueber)+'</div>':'')+'</td><td><span class="pill '+sn[0]+'">'+sn[1]+'</span>'+(x.kOffen>0.5?' <span class="pill mid" title="Kaution offen">K</span>':'')+(x.erg?' <span class="pill src" title="'+x.erg+' Monatsmieten aus dem Mietvertrag ergänzt">+'+x.erg+'</span>':'')+(mahnsperre(mk)?' <span class="pill bad">Mahnsperre</span>':'')+(()=>{ const lm=letzteMahnung(x); return lm&&x.ueber>0.5?'<div class="sub">'+esc(lm.stufe+' '+dmy(lm.d))+(lm.b?' · '+eur(lm.b):'')+'</div>':''; })()+'</td></tr>'; };
+      +'<td class="n '+(x.ueber>0.5?'neg':x.saldo<-0.5?'pos':'')+'"><b>'+eur(x.saldo)+'</b>'+(x.ueber>0.5&&Math.abs(x.ueber-x.saldo)>0.5?'<div class="sub">überfällig '+eur(x.ueber)+'</div>':'')+'</td><td>'+((()=>{ const lm=listMahnstufe(x), T=[lm?'<span class="pill mid" title="vom '+esc(dmy(lm.d))+(lm.b?' · '+eur(lm.b):'')+'">'+esc(lm.stufe)+'</span>':'',mahnsperre(mk)?'<span class="pill bad">Mahnsperre</span>':'',listRaten(x)?'<span class="pill src">Ratenzahlung</span>':''].filter(Boolean); return T.length?T.join(' '):'<span class="mut">–</span>'; })())+'</td></tr>'; };
   const grp=M.st==='alle'&&!q;
   if(!grp){ for(const x of list) h+=rowH(x); }
   else { const G={}; for(const x of list){ const k=x.mk.obj+'|'+uName(x.mk.einheit); (G[k]=G[k]||{k,akt:[],alt:[]})[x.aktiv?'akt':'alt'].push(x); }
@@ -1641,6 +1642,22 @@ function zvScore(z,x){ const mk=ed(x.mk), o=objekte.find(q=>q.kz===x.mk.obj); le
   for(const t of (x.mk.namen||[]).concat(String(mk.mieter||'').split(','))){ const w=norm(t).split(' ').filter(v=>v.length>=3); if(w.length&&zm.includes(' '+w[w.length-1]+' ')) sc+=2; }
   if(o){ const st=norm(String(o.name||'').split(',')[0]).split(' ')[0]; if(st&&norm(z.objekt).includes(st.slice(0,5))) sc+=1; } return sc; }
 var ZVLAB={};
+function mFilterSetzen(t){ const L=t.id==='m-ms'?MF_MS:MF_JN(t.id==='m-rz'?'Ratenzahlung':'Mahnsperre'), k=Object.keys(L).find(k=>L[k].toLowerCase()===String(t.value).trim().toLowerCase());
+  if(k==null){ if(document.activeElement!==t) t.value=L[M[t.id.slice(2)]||'']; return; } if((M[t.id.slice(2)]||'')===k) return; M[t.id.slice(2)]=k; saveM(); t.dataset.alt=''; t.blur(); setTimeout(render,0); }
+document.addEventListener('input',e=>{ const t=e.target; if(t&&(t.id==='m-ms'||t.id==='m-rz'||t.id==='m-sp')){ const L=t.id==='m-ms'?MF_MS:MF_JN(t.id==='m-rz'?'Ratenzahlung':'Mahnsperre'); if(Object.values(L).includes(t.value)) mFilterSetzen(t); } });
+/* Auswahlfelder: beim Anklicken leeren, damit die ganze Liste erscheint */
+document.addEventListener('focusin',e=>{ const t=e.target; if(t&&t.classList&&t.classList.contains('mfsel')){ t.dataset.alt=t.value; t.value=''; } });
+document.addEventListener('focusout',e=>{ const t=e.target; if(t&&t.classList&&t.classList.contains('mfsel')&&!t.value&&t.dataset.alt) t.value=t.dataset.alt; });
+/* Status in der Übersicht: nur Mahnstufe, Mahnsperre und Ratenzahlung */
+function listMahnstufe(x){ const lm=letzteMahnung(x); return lm&&x.ueber>0.5?lm:null; }
+function listRaten(x){ const ids=ed(x.mk).raten||[]; if(!ids.length) return false; if(!ZVload) return true; return ZV.some(z=>ids.includes(z.id)&&!/abgeschlossen|erledigt/i.test(z.status||'')); }
+const MF_MS={'':'alle Mahnstufen',ohne:'ohne Mahnung'}; STUFEN.forEach(st=>MF_MS[st]=st);
+const MF_JN=(w)=>({'':w+': alle',mit:'mit '+w,ohne:'ohne '+w});
+function mFilterFeld(id,wert,L){ return '<input type="text" id="'+id+'" class="mfsel" list="'+id+'-l" value="'+esc(L[wert||''])+'" autocomplete="off" style="width:170px"><datalist id="'+id+'-l">'+Object.values(L).map(v=>'<option value="'+esc(v)+'"></option>').join('')+'</datalist>'; }
+function mFilterOk(x){ const ms=listMahnstufe(x);
+  if(M.ms==='ohne'&&ms) return false; if(M.ms&&M.ms!=='ohne'&&(!ms||ms.stufe!==M.ms)) return false;
+  const rz=listRaten(x); if(M.rz==='mit'&&!rz) return false; if(M.rz==='ohne'&&rz) return false;
+  const sp=!!mahnsperre(x.mk); if(M.sp==='mit'&&!sp) return false; if(M.sp==='ohne'&&sp) return false; return true; }
 function ratenBox(x,kinds){ const mk=ed(x.mk), ids=mk.raten||[]; const L=ZV.filter(z=>ids.includes(z.id)&&kinds.includes(z.art||'mietschulden'));
   let h='<div class="rbox"><div class="rh">Ratenzahlung</div>';
   if(!ZVload) return h+'<div class="sub">Lade …</div></div>';
@@ -1925,6 +1942,7 @@ document.addEventListener('change',async e=>{ const t=e.target;
   if(t.id==='m-alle'){ M.alle=t.checked; calc=null; render(); return; }
   if(t.id==='m-ges'){ M.ges=t.value; saveM(); render(); return; }
   if(t.id==='m-obj'){ M.obj=t.value; saveM(); render(); return; }
+  if(t.id==='m-ms'||t.id==='m-rz'||t.id==='m-sp'){ mFilterSetzen(t); return; }
   if(t.id==='mk-file'){ const f=t.files[0]; if(!f) return; const st=$('mk-st');
     try{ const n=await window.osImportFile(f,x=>st.textContent=x); st.textContent='✅ '+n+' Dokumente übernommen.'; toast('Mieterkonten aktualisiert.'); }catch(err){ st.textContent='❌ '+(err.message||err); } } });
 document.addEventListener('input',e=>{ if(e.target.id==='n-text'){ NDRAFT=e.target.value; return; } if(e.target.id==='ne-text'){ NEDTXT=e.target.value; return; } if(e.target.id==='mr-q'){ MR.q=e.target.value; clearTimeout(window.__mq); window.__mq=setTimeout(render,180); return; } if(e.target.id==='m-betr'){ M.betr=e.target.value; saveM(); clearTimeout(window.__mq); window.__mq=setTimeout(render,250); return; } if(e.target.id==='m-q'){ M.q=e.target.value; clearTimeout(window.__mq); window.__mq=setTimeout(render,180); } });
