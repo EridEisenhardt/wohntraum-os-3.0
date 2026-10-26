@@ -151,7 +151,7 @@ body{font-family:'DM Sans',-apple-system,Segoe UI,Roboto,Arial,sans-serif;color:
       <button class="btn sec" onclick="zurueckZurEingabe()">Zurück / Korrigieren</button>
       <button class="primary" onclick="finalSave()">Vertrag final erstellen &amp; ins Register</button>
       <button class="btn sec" onclick="window.print()">Drucken / PDF</button>
-      <button class="btn sec" id="dsBtn" onclick="dsSenden()" disabled title="Erst „Vertrag final erstellen“ klicken">Über DocuSign senden</button>
+      <button class="btn sec" id="dsBtn" onclick="dsSenden()" title="Speichert den Vertrag im Register (falls noch nicht geschehen) und sendet ihn an den Mieter und an Eric zur Unterschrift">Über DocuSign senden</button>
       <span id="saveInfo" style="font-size:12px;color:var(--muted);align-self:center"></span>
     </div>
     <div class="sheet" id="sheet">
@@ -247,9 +247,11 @@ function rzPdf(){const d=rzDaten();if(!d||!RZ_VORLAGE)throw new Error('Vereinbar
 async function dsApi(body){const s=await _sb.auth.getSession();const t=s&&s.data&&s.data.session?s.data.session.access_token:'';
   const r=await fetch('/api/docusign',{method:'POST',headers:{'content-type':'application/json',authorization:'Bearer '+t},body:JSON.stringify(body)});let j=null;try{j=await r.json();}catch(e){}if(!j)throw new Error('Dienst nicht erreichbar ('+r.status+').');if(j.error&&!j.zustimmung)throw new Error(j.error);return j;}
 async function dsSenden(){const info=document.getElementById('saveInfo'),btn=document.getElementById('dsBtn');
-  if(!LETZTE_ID){info.textContent='Bitte zuerst „Vertrag final erstellen“.';return;}
-  const mail=document.getElementById('mail').value.trim(),mieter=document.getElementById('mieter').value.trim();
-  if(!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(mail)){info.textContent='Bitte die E-Mail-Adresse des Mieters eintragen.';document.getElementById('mail').focus();return;}
+  const mailEl=document.getElementById('mail'),mail=mailEl.value.trim(),mieter=document.getElementById('mieter').value.trim();
+  if(!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(mail)){info.textContent='Bitte links unten die E-Mail-Adresse des Mieters eintragen.';alert('Für DocuSign fehlt die E-Mail-Adresse des Mieters. Bitte links im Feld „E-Mail des Mieters“ eintragen.');mailEl.scrollIntoView({behavior:'smooth',block:'center'});mailEl.classList.add('miss');mailEl.focus();return;}
+  mailEl.classList.remove('miss');
+  if(!RZ_VORLAGE){info.textContent='Die Vertragsvorlage „Ratenzahlung“ ist nicht geladen. Bitte die Seite neu laden.';return;}
+  if(!LETZTE_ID){await finalSave();if(!LETZTE_ID)return;}
   if(!confirm('Ratenzahlungsvereinbarung über DocuSign senden?\n\nErst unterschreibt '+mieter+' <'+mail+'>, danach Eric Eisenhardt.'))return;
   btn.disabled=true;info.textContent='Wird über DocuSign gesendet …';
   try{const doc=rzPdf(),d=rzDaten();
