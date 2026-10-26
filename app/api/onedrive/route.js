@@ -235,6 +235,28 @@ export async function POST(req) {
       return antwort({ treffer: L.filter(x => x.pfad === ROOT || x.pfad.startsWith(ROOT + '/')).slice(0, 50) })
     }
 
+    if (a === 'betragsuche') {
+      // Belege in OneDrive (unterhalb der Prozesslandkarte), deren Dateiname genau diesen Betrag enthält, z. B. „…_134,64€.pdf“
+      const betrag = String(b.betrag || '').trim(); if (!/^\d{1,3}(\.\d{3})*,\d{2}$|^\d+,\d{2}$/.test(betrag)) return antwort({ treffer: [] })
+      const d = await drive(); const ohne = betrag.replace(/\./g, '')
+      const varianten = [...new Set([betrag, ohne])]
+      const gesehen = new Set(), treffer = []
+      for (const q of varianten) {
+        const r = await graph('/drives/' + d + "/root/search(q='" + encodeURIComponent(q) + "')?$top=100&$select=id,name,size,file,parentReference,webUrl")
+        for (const x of (r.value || [])) {
+          if (!x.file || gesehen.has(x.id)) continue
+          const base = String(x.name || '').replace(/\.[A-Za-z0-9]{2,5}$/, '')
+          const teile = base.split('_').map(t => t.trim().replace(/\s?€$/, '').replace(/^-/, ''))
+          if (!teile.some(t => t === betrag || t === ohne)) continue
+          let pfad = decodeURIComponent(String((x.parentReference && x.parentReference.path) || '').replace(/^.*?root:\/?/, ''))
+          if (!pfad) { const y = await graph('/drives/' + d + '/items/' + encodeURIComponent(x.id) + '?$select=id,parentReference'); pfad = decodeURIComponent(String((y.parentReference && y.parentReference.path) || '').replace(/^.*?root:\/?/, '')) }
+          if (!(pfad === ROOT || pfad.startsWith(ROOT + '/'))) continue
+          gesehen.add(x.id); treffer.push({ id: x.id, name: x.name, size: x.size, pfad: pfad + '/' + x.name, web: x.webUrl || '' })
+        }
+      }
+      return antwort({ treffer: treffer.slice(0, 30) })
+    }
+
     if (a === 'dateisuche') {
       // Gibt es eine Datei mit diesem Namen schon in OneDrive (unterhalb der Prozesslandkarte)? Für doppelte Belege.
       const name = String(b.name || '').trim(); if (!name) return antwort({ treffer: [] })
