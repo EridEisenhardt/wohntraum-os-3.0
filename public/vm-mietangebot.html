@@ -55,6 +55,10 @@ const ADR={V11:'Vorstädter Straße 11|55276 Oppenheim',A14:'Abtweilerstraße 14
 const docBase=mk=>String(mk.obj).replace(/[^A-Za-z0-9]/g,'')+'/'+mk.pid;
 const enc=f=>f.replace(/ä/g,'ae').replace(/ö/g,'oe').replace(/ü/g,'ue').replace(/Ä/g,'Ae').replace(/Ö/g,'Oe').replace(/Ü/g,'Ue').replace(/ß/g,'ss').replace(/&/g,'und').replace(/[^A-Za-z0-9 ._\/-]/g,'_');
 const ORDNER='01 Mietbeginn';
+function aktenName(mk){const e=ed(mk),K=mk.kontakte||[];const n=(K[0]&&K[0].name)||String(e.mieter||'').split(',')[0]||'';const ln=(mk.namen||[])[0]||'';let nn;if(ln&&n.endsWith(ln)&&n.length>ln.length)nn=ln.toUpperCase()+' '+n.slice(0,n.length-ln.length).trim();else{const w=n.trim().split(/\s+/);nn=w.length>1?w[w.length-1].toUpperCase()+' '+w.slice(0,-1).join(' '):n.toUpperCase();}
+  return mk.obj+'_'+uName(mk.einheit).replace(/\s+/g,'')+'_'+nn;}
+const odSafe=s=>String(s||'').replace(/[\\/:*?"<>|#%]/g,'_').replace(/\s+/g,' ').trim();
+async function odApi(body){return api('/api/onedrive',body);}
 function uName(s){s=String(s||'').trim();let m=s.match(/^we\s*(\d+)(?:\s*[.\s]\s*(\d+)(?!\d))?(.*)$/i);if(m)return 'WE '+m[1]+(m[2]?'.'+m[2]:'')+m[3];return s;}
 
 let MK=[],EDIT={},O=[],E=[],DATEIEN=null,VERLAUF=[],ICH='',ICHMAIL='',BUSY='',VORLAGE='',KONTO='',W=null,FR={},MAIL=null,TEXT=Object.assign({},STD);
@@ -115,7 +119,7 @@ function mailNeu(mk){MAIL={an:mieterMails(mk).join(', '),betreff:fuellen(TEXT.be
 
 /* ---------- Darstellung ---------- */
 function render(){const mk=kontoVon(KONTO),v=vorlageVon(VORLAGE),F=DATEIEN;
-  let h=`<div class="kopf"><h1>Mietangebot</h1><div class="sub">Vorlage und Mieterkonto auswählen. Das OS füllt die Original-Vorlage des Amts mit den Daten aus dem Mieterkonto aus, legt das PDF im Mieterkonto unter „${ORDNER}“ ab und sendet es per Mail.</div></div>`;
+  let h=`<div class="kopf"><h1>Mietangebot</h1><div class="sub">Vorlage und Mieterkonto auswählen. Das OS füllt die Original-Vorlage des Amts mit den Daten aus dem Mieterkonto aus, legt das PDF im OneDrive-Ordner des Mieterkontos unter „${ORDNER}“ ab und sendet es per Mail.</div></div>`;
   h+=`<div class="card"><div class="ch">1. Auswahl</div><div class="g2">
     <label class="fl">Vorlage<input id="vorlage" list="dl-vorlage" value="${esc(VORLAGE)}" placeholder="Vorlage suchen oder auswählen" autocomplete="off"><datalist id="dl-vorlage">${MAV.map(x=>`<option value="${esc(x.name)}">`).join('')}</datalist></label>
     <label class="fl">Mieterkonto<input id="konto" list="dl-konto" value="${esc(KONTO)}" placeholder="Objekt, Einheit oder Name eintippen" autocomplete="off"><datalist id="dl-konto">${konten().map(x=>`<option value="${esc(x.label)}">`).join('')}</datalist></label></div>`;
@@ -141,7 +145,7 @@ function render(){const mk=kontoVon(KONTO),v=vorlageVon(VORLAGE),F=DATEIEN;
   $('app').innerHTML=h;
   if(id&&$(id)&&id!=='vorlage'&&id!=='konto'){$(id).focus();try{$(id).setSelectionRange(pos,pos);}catch(x){}}}
 function verlauf(){const L=VERLAUF.slice(0,30);
-  return `<div class="card"><div class="ch">Erstellte Mietangebote</div>${L.length?'<table class="ktab"><thead><tr><th>Datum</th><th>Mieterkonto</th><th>Vorlage</th><th>Versand</th><th>Dokument</th></tr></thead><tbody>'+L.map(x=>`<tr><td>${esc(zeit(x.t))}</td><td>${esc(x.konto)}</td><td>${esc(x.vorlage)}</td><td>${x.an?'Mail an '+esc(x.an):'nur abgelegt'}<div class="sub">${esc(x.von||'')}</div></td><td><a href="#" data-pdf="${esc(x.pfad)}">${esc(x.name)}</a></td></tr>`).join('')+'</tbody></table>':'<div class="leer">Noch keine Mietangebote erstellt.</div>'}</div>`;}
+  return `<div class="card"><div class="ch">Erstellte Mietangebote</div>${L.length?'<table class="ktab"><thead><tr><th>Datum</th><th>Mieterkonto</th><th>Vorlage</th><th>Versand</th><th>Dokument</th></tr></thead><tbody>'+L.map(x=>`<tr><td>${esc(zeit(x.t))}</td><td>${esc(x.konto)}</td><td>${esc(x.vorlage)}</td><td>${x.an?'Mail an '+esc(x.an):'nur abgelegt'}<div class="sub">${esc(x.von||'')}</div></td><td><a href="#" data-pdf="${esc(x.pfad)}" data-bucket="${esc(x.bucket||'mieterakten')}">${esc(x.name)}</a>${x.od&&x.od.web?`<div class="sub"><a href="${esc(x.od.web)}" target="_blank" rel="noopener">in OneDrive öffnen</a></div>`:''}</td></tr>`).join('')+'</tbody></table>':'<div class="leer">Noch keine Mietangebote erstellt.</div>'}</div>`;}
 
 /* ---------- PDF ---------- */
 const VB={};
@@ -150,22 +154,36 @@ async function bilder(){if(VB._sig!==undefined)return {unterschrift_eric:VB._sig
 async function erzeugen(){const v=vorlageVon(VORLAGE);return MAP.ausfuellen(v.id,await vorlageBytes(v),daten(),FR,await bilder());}
 const umlaut=s=>String(s||'').replace(/[ÄÖÜäöüß]/g,c=>({Ä:'Ae',Ö:'Oe',Ü:'Ue',ä:'ae',ö:'oe',ü:'ue',ß:'ss'})[c]);
 function dateiName(){const v=vorlageVon(VORLAGE),d=new Date();return umlaut('Mietangebot_'+v.kurz+'_'+String(W.nachname||'').toUpperCase()+(W.vorname?'_'+W.vorname:'')+'_'+d.getFullYear()+'-'+p2(d.getMonth()+1)+'-'+p2(d.getDate())).replace(/[^0-9A-Za-z-]+/g,'_').replace(/_+/g,'_')+'.pdf';}
-async function ablegen(mk,bytes){const name=dateiName(),pfad=docBase(mk)+'/'+enc(ORDNER)+'/'+name;
-  const {error}=await sb.storage.from('mieterakten').upload(pfad,new Blob([bytes],{type:'application/pdf'}),{contentType:'application/pdf',upsert:true});
-  if(error)throw new Error('Ablage im Mieterkonto nicht möglich: '+error.message);return {name,pfad};}
+/* Ablage: im OneDrive-Mieterordner (wie alle Dokumente im Mieterkonto), sonst in der bisherigen Ablage im OS.
+   Zusätzlich eine Kopie im OS für den Mailanhang und die Liste unten. */
+function aktenDatei(mk){const v=vorlageVon(VORLAGE),d=new Date();return odSafe(aktenName(mk)+'_'+d.getFullYear()+'-'+p2(d.getMonth()+1)+'-'+p2(d.getDate())+'_Mietangebot '+v.kurz+'.pdf');}
+async function ablegen(mk,bytes){const name=aktenDatei(mk),blob=new Blob([bytes],{type:'application/pdf'});
+  const kopie='mietangebote/'+mk.pid+'/'+Date.now()+'_'+enc(name).replace(/\//g,'_');
+  const k=await sb.storage.from('vertraege').upload(kopie,blob,{contentType:'application/pdf',upsert:true});
+  if(k.error)throw new Error('Speichern nicht möglich: '+k.error.message);
+  const od=ed(mk).od;let it=null,hinweis='';
+  if(od){try{const pfad=od+'/'+ORDNER;
+      if(blob.size<=3*1024*1024){const b64=await new Promise((res,rej)=>{const r=new FileReader();r.onload=()=>res(String(r.result).split(',')[1]||'');r.onerror=rej;r.readAsDataURL(blob);});it=(await odApi({aktion:'hochladen',pfad,name,daten:b64,typ:'application/pdf'})).item;}
+      else{const ss=await odApi({aktion:'sitzung',pfad,name});const r=await fetch(ss.uploadUrl,{method:'PUT',headers:{'Content-Range':'bytes 0-'+(blob.size-1)+'/'+blob.size},body:blob});if(!r.ok)throw new Error('Hochladen fehlgeschlagen ('+r.status+').');const j=await r.json();it={id:j.id,name:j.name,web:j.webUrl};}}
+    catch(e){hinweis='OneDrive: '+(e.message||e);}}
+  if(!it){const pfad=docBase(mk)+'/'+enc(ORDNER)+'/'+enc(name).replace(/\//g,'_');
+    const {error}=await sb.storage.from('mieterakten').upload(pfad,blob,{contentType:'application/pdf',upsert:true});
+    if(error)throw new Error('Ablage im Mieterkonto nicht möglich: '+error.message);
+    if(!hinweis)hinweis='Für dieses Mieterkonto ist noch kein OneDrive-Ordner zugeordnet. Das PDF liegt in der Ablage im OS.';}
+  return {name,pfad:kopie,bucket:'vertraege',od:it?{id:it.id,web:it.web||''}:null,hinweis};}
 async function protokoll(mk,d,an){const ts=new Date().toISOString(),id=mk.pid+'__'+Date.now(),v=vorlageVon(VORLAGE);
-  const rec={id,t:ts,pid:mk.pid,konto:mkLabel(mk),vorlage:v.kurz,name:d.name,pfad:d.pfad,an:an||'',betreff:an?MAIL.betreff:'',von:ICH};
+  const rec={id,t:ts,pid:mk.pid,konto:mkLabel(mk),vorlage:v.kurz,name:d.name,pfad:d.pfad,bucket:d.bucket,od:d.od,an:an||'',betreff:an?MAIL.betreff:'',von:ICH};
   await sb.from('os_docs').upsert({app:'oc',pfad:'mietangebote/'+id,data:rec,updated_at:ts});VERLAUF.unshift(rec);
-  try{await sb.from('os_docs').upsert({app:'oc',pfad:'historie/'+id,data:{pid:mk.pid,id,d:ts,erfasst:ts,art:'Änderung',t:'Mietangebot ('+v.kurz+') '+(an?'per Mail an '+an+' gesendet':'erstellt und abgelegt')+': '+d.name,by:ICH||'unbekannt',mail:ICHMAIL,manuell:false},updated_at:ts});}catch(x){}}
+  try{await sb.from('os_docs').upsert({app:'oc',pfad:'historie/'+id,data:{pid:mk.pid,id,d:ts,erfasst:ts,art:'Änderung',t:'Mietangebot ('+v.kurz+') '+(an?'per Mail an '+an+' gesendet':'erstellt')+' und unter „'+ORDNER+'“ abgelegt: '+d.name,by:ICH||'unbekannt',mail:ICHMAIL,manuell:false},updated_at:ts});}catch(x){}}
 function herunter(bytes,name){const u=URL.createObjectURL(new Blob([bytes],{type:'application/pdf'}));const l=document.createElement('a');l.href=u;l.download=name;document.body.appendChild(l);l.click();l.remove();setTimeout(()=>URL.revokeObjectURL(u),60000);}
 async function vorschau(){const w=window.open('','_blank');try{const b=await erzeugen();const u=URL.createObjectURL(new Blob([b],{type:'application/pdf'}));if(w)w.location.href=u;else window.open(u,'_blank');}catch(e){if(w)w.close();toast('Nicht erstellt: '+(e.message||e),7000);}}
-async function nurAblegen(mk){BUSY='ablegen';render();try{const d=await ablegen(mk,await erzeugen());await protokoll(mk,d,'');toast('Im Mieterkonto abgelegt.');}catch(e){toast(e.message||String(e),8000);}BUSY='';render();}
+async function nurAblegen(mk){BUSY='ablegen';render();try{const d=await ablegen(mk,await erzeugen());await protokoll(mk,d,'');toast(d.hinweis||'Im Mieterkonto unter „'+ORDNER+'“ abgelegt.',d.hinweis?9000:4000);}catch(e){toast(e.message||String(e),8000);}BUSY='';render();}
 async function senden(mk){const an=MAIL.an.split(/[,;\s]+/).map(x=>x.trim()).filter(x=>/@/.test(x));if(!an.length){toast('Bitte eine E-Mail-Adresse eintragen.');return;}
   const v=vorlageVon(VORLAGE);if(!confirm('Mietangebot „'+v.kurz+'“ per Mail senden?\n\nAn: '+an.join(', ')))return;
   BUSY='senden';render();
   try{const d=await ablegen(mk,await erzeugen());
-    await api('/api/postfach',{aktion:'senden',modus:'neu',an:an.join(', '),betreff:MAIL.betreff,text:MAIL.text,anhaenge:[{typ:'speicher',bucket:'mieterakten',pfad:d.pfad,name:d.name,contentType:'application/pdf'}]});
-    await protokoll(mk,d,an.join(', '));toast('Mietangebot gesendet und im Mieterkonto abgelegt.',5000);}
+    await api('/api/postfach',{aktion:'senden',modus:'neu',an:an.join(', '),betreff:MAIL.betreff,text:MAIL.text,anhaenge:[{typ:'speicher',bucket:'vertraege',pfad:d.pfad,name:d.name,contentType:'application/pdf'}]});
+    await protokoll(mk,d,an.join(', '));toast(d.hinweis?'Mietangebot gesendet. '+d.hinweis:'Mietangebot gesendet und im Mieterkonto unter „'+ORDNER+'“ abgelegt.',d.hinweis?9000:5000);}
   catch(e){toast('Nicht gesendet: '+(e.message||e),9000);}
   BUSY='';render();}
 async function textSpeichern(){const t={betreff:MAIL.betreff,text:MAIL.text},mk=kontoVon(KONTO);
@@ -190,10 +208,10 @@ document.addEventListener('input',e=>{const t=e.target;
 document.addEventListener('focusin',e=>{const t=e.target;if(t.id==='vorlage'||t.id==='konto'||(t.dataset&&t.dataset.fr&&t.getAttribute('list'))){t.dataset.alt=t.value;t.value='';}});
 document.addEventListener('focusout',e=>{const t=e.target;if((t.id==='vorlage'||t.id==='konto'||(t.dataset&&t.dataset.fr&&t.getAttribute('list')))&&!t.value&&t.dataset.alt){t.value=t.dataset.alt;if(t.dataset.fr)FR[t.dataset.fr]=t.value;}});
 document.addEventListener('click',async e=>{const b=e.target.closest('[data-a],[data-pdf]');if(!b)return;e.preventDefault();
-  if(b.dataset.pdf){const w=window.open('','_blank');const {data,error}=await sb.storage.from('mieterakten').createSignedUrl(b.dataset.pdf,3600);if(error){if(w)w.close();toast('Nicht geöffnet: '+error.message,6000);return;}if(w)w.location.href=data.signedUrl;else window.open(data.signedUrl,'_blank');return;}
+  if(b.dataset.pdf){const w=window.open('','_blank');const {data,error}=await sb.storage.from(b.dataset.bucket||'mieterakten').createSignedUrl(b.dataset.pdf,3600);if(error){if(w)w.close();toast('Nicht geöffnet: '+error.message,6000);return;}if(w)w.location.href=data.signedUrl;else window.open(data.signedUrl,'_blank');return;}
   const a=b.dataset.a,mk=kontoVon(KONTO);if(!mk)return;
   if(a==='vorschau'){vorschau();return;}
-  if(a==='laden'){try{herunter(await erzeugen(),dateiName());}catch(x){toast('Nicht erstellt: '+(x.message||x),7000);}return;}
+  if(a==='laden'){try{herunter(await erzeugen(),aktenDatei(mk));}catch(x){toast('Nicht erstellt: '+(x.message||x),7000);}return;}
   if(a==='ablegen'){nurAblegen(mk);return;}
   if(a==='senden'){senden(mk);return;}
   if(a==='textneu'){MAIL.betreff=fuellen(TEXT.betreff,mk);MAIL.text=fuellen(TEXT.text,mk);render();return;}
