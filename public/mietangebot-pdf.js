@@ -6,10 +6,10 @@
 
   // Vorlagen: Datei liegt im Speicher (Bucket „vertraege“), hochladen über die Seite Vertragsvorlagen
   const VORLAGEN = [
-    { id: 'jc_alzey_worms', name: 'Jobcenter Alzey-Worms – Zusicherung, Mietkaution und Wohnungsangebot', kurz: 'Jobcenter Alzey-Worms', gebiet: /^Alzey-Worms|^Stadt Worms/ },
-    { id: 'kreis_bad_kreuznach', name: 'Kreis Bad Kreuznach – Anlage 2 Angemessenheit der Unterkunft', kurz: 'Bad Kreuznach Anlage 2', gebiet: /Kreuznach/ },
-    { id: 'kreis_mainz_bingen', name: 'Kreis Mainz-Bingen – Mietbescheinigung', kurz: 'Mainz-Bingen Mietbescheinigung', gebiet: /^Mainz-Bingen/ },
-    { id: 'sozialamt_alzey_worms', name: 'Sozialamt Alzey-Worms – Wohnungsangebot', kurz: 'Sozialamt Alzey-Worms', gebiet: null }
+    { id: 'jc_alzey_worms', name: 'Alzey-Worms Jobcenter_R6S16S58', kurz: 'Alzey-Worms Jobcenter_R6S16S58', gebiet: /^Alzey-Worms|^Stadt Worms/ },
+    { id: 'kreis_bad_kreuznach', name: 'Bad Kreuznach', kurz: 'Bad Kreuznach', gebiet: /Kreuznach/ },
+    { id: 'kreis_mainz_bingen', name: 'Mainz-Bingen', kurz: 'Mainz-Bingen', gebiet: /^Mainz-Bingen/ },
+    { id: 'sozialamt_alzey_worms', name: 'Alzey-Worms Sozialamt_R6-S16S58', kurz: 'Alzey-Worms Sozialamt_R6-S16S58', gebiet: null }
   ].map(v => Object.assign(v, { datei: 'mietangebot-vorlagen/' + v.id + '.pdf' }))
 
   // Zusätzliche Angaben, die nicht in der Kalkulation stehen (je nach gewählter Vorlage)
