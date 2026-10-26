@@ -1727,6 +1727,38 @@ function solAssign(pid,key,sid,b){ const x=calc&&calc.res[pid]; if(!x) return; c
   if(b>0.005) a.push({id:sid,b:r2(Math.min(b,tx.b))});
   let over=r2(a.reduce((s2,y)=>s2+y.b,0)-tx.b); for(let i=a.length-2;i>=0&&over>0.005;i--){ const c=Math.min(a[i].b,over); a[i].b=r2(a[i].b-c); over=r2(over-c); } a=a.filter(y=>y.b>0.005);
   return mkWriteTx(r.doc,r.ix,a.length?{op:{pid,a},m:1,k:'miete',s:'',ka:'',o:mk.obj||'',u:mk.unit||''}:{op:null}); }
+/* Miete ändern: neue Mietstufe ab einem Datum. Gilt für Sollstellungslauf, ergänzte Monatsmieten und Dokumente. */
+var MF=null;
+const MF_ART=['WLAN','Einbauküche','Möblierung','Garage / Stellplatz','Hausmeister','Sonstiges'];
+function mfStart(mk){ const st=stufeAt(mk,curM)||{}; MF={pid:mk.pid,ab:addM(curM,1)+'-01',kalt:st.kalt||0,bk:st.bk||0,hk:st.hk||0,strom:st.strom||0,others:(st.others||[]).map(o=>({t:o.t||'',b:o.b||0}))}; render(); }
+const mfSumme=()=>r2([MF.kalt,MF.bk,MF.hk,MF.strom].concat(MF.others.map(o=>o.b)).reduce((a,v)=>a+(Number(v)||0),0));
+function mieteForm(){ const n=(id,l,v)=>'<label class="fl">'+l+'<input type="text" inputmode="decimal" data-mf="'+id+'" value="'+esc(v?fnum.format(v):'')+'" autocomplete="off"></label>';
+  return '<div class="card"><div class="ch">Miete ändern</div><div class="sub" style="margin-bottom:6px">Die neue Miete gilt ab dem gewählten Datum für den Sollstellungslauf, das Mieterkonto und die Dokumente (z. B. Mietangebot). Bisherige Monate bleiben unverändert.</div>'
+    +'<label class="fl">Gültig ab<input type="date" data-mf="ab" value="'+esc(MF.ab)+'"></label>'
+    +n('kalt','Kaltmiete (€)',MF.kalt)+n('bk','Betriebskosten (€)',MF.bk)+n('hk','Heizkosten (€)',MF.hk)+n('strom','Strom (€)',MF.strom)
+    +MF.others.map((o,i)=>'<div style="display:flex;gap:6px;align-items:flex-end"><label class="fl" style="flex:1">Weitere Position<input type="text" list="mf-arten" data-mfo="'+i+'" data-k="t" value="'+esc(o.t)+'" autocomplete="off"></label><label class="fl" style="width:110px">Betrag (€)<input type="text" inputmode="decimal" data-mfo="'+i+'" data-k="b" value="'+esc(o.b?fnum.format(o.b):'')+'" autocomplete="off"></label><button class="ghost small" data-mfodel="'+i+'" style="margin-bottom:8px">entfernen</button></div>').join('')
+    +'<datalist id="mf-arten">'+MF_ART.map(a=>'<option value="'+esc(a)+'"></option>').join('')+'</datalist>'
+    +'<button class="ghost small" data-mfoadd="1">Weitere Position hinzufügen</button>'
+    +'<div class="kvr" style="margin-top:8px"><span>Neue Warmmiete</span><b id="mf-summe">'+eur(mfSumme())+'</b></div>'
+    +'<div class="acts"><button class="primary small" data-mfsave="1">Speichern</button><button class="ghost small" data-mfcancel="1">Abbrechen</button></div></div>'; }
+async function mfSpeichern(){ const mk=MK[MF.pid]; if(!mk||!db||!canWrite) return; if(!/^\d{4}-\d\d-\d\d$/.test(MF.ab)){ toast('Bitte ein Datum für „Gültig ab“ eintragen.'); return; }
+  const others=MF.others.filter(o=>String(o.t).trim()&&Number(o.b)).map(o=>({t:String(o.t).trim(),b:r2(Number(o.b))})), sonst=r2(others.reduce((a,o)=>a+o.b,0));
+  const neu={ab:MF.ab,kalt:r2(+MF.kalt||0),bk:r2(+MF.bk||0),hk:r2(+MF.hk||0),strom:r2(+MF.strom||0),vat:0,sonst,others,total:mfSumme(),quelle:'os',von:ICH||'',am:new Date().toISOString()};
+  if(!neu.total){ toast('Die neue Miete ist 0 €. Bitte Beträge eintragen.'); return; }
+  const alt=(mk.stufen||[]).find(z=>z.ab===MF.ab), stufen=(mk.stufen||[]).filter(z=>z.ab!==MF.ab).concat([neu]).sort((a,b)=>String(a.ab).localeCompare(String(b.ab)));
+  const vorher=stufeAt(mk,MF.ab.slice(0,7));
+  try{ await queue('mietkonten/'+mk.pid,()=>db.doc('mietkonten/'+mk.pid).update({stufen})); mk.stufen=stufen; calc=null;
+    histLog(mk.pid,'Änderung','Miete ab '+dmy(MF.ab)+' geändert: '+(vorher&&!alt?eur(vorher.total)+' → ':'')+eur(neu.total)+' (Kalt '+eur(neu.kalt)+', BK '+eur(neu.bk)+', HK '+eur(neu.hk)+(neu.strom?', Strom '+eur(neu.strom):'')+others.map(o=>', '+o.t+' '+eur(o.b)).join('')+')');
+    const m=MF.ab.slice(0,7), lauf=Object.keys(SL).filter(k=>k>=m).sort(); MF=null; render();
+    toast(lauf.length?'Miete gespeichert. Der Sollstellungslauf für '+lauf.map(k=>k.slice(5)+'/'+k.slice(0,4)).join(', ')+' ist schon erstellt – bitte dort „neu erstellen“, damit die neue Miete gilt.':'Miete gespeichert.',lauf.length?10000:4000); }
+  catch(e){ toast('Nicht gespeichert: '+(e.message||e),8000); } }
+async function mfEntfernen(mk,ab){ const stufen=(mk.stufen||[]).filter(z=>!(z.ab===ab&&z.quelle==='os')); if(stufen.length===(mk.stufen||[]).length) return;
+  try{ await queue('mietkonten/'+mk.pid,()=>db.doc('mietkonten/'+mk.pid).update({stufen})); mk.stufen=stufen; calc=null; histLog(mk.pid,'Änderung','Mietänderung ab '+dmy(ab)+' entfernt'); render(); toast('Mietänderung entfernt.'); }
+  catch(e){ toast('Nicht entfernt: '+(e.message||e),8000); } }
+document.addEventListener('input',e=>{ const t=e.target; if(!MF||!t.dataset) return;
+  if(t.dataset.mf){ const k=t.dataset.mf; if(k==='ab') MF.ab=t.value; else { const v=parseNum(t.value); MF[k]=(v==null||isNaN(v))?0:v; } }
+  else if(t.dataset.mfo!=null){ const o=MF.others[+t.dataset.mfo]; if(!o) return; if(t.dataset.k==='t') o.t=t.value; else { const v=parseNum(t.value); o.b=(v==null||isNaN(v))?0:v; } }
+  else return; const s=$('mf-summe'); if(s) s.textContent=eur(mfSumme()); });
 function renderDash(x){ const mk=ed(x.mk), sn=STN[x.status], a=ampel(x), K=mk.kontakte||[];
   const st=stufeAt(x.mk,curM)||{}; const kv=(l,v)=>'<div class="kvr"><span>'+l+'</span><b>'+v+'</b></div>';
   const adr=(ADR[x.mk.obj]||'|').split('|'), auszug=x.mk.bis?dmy(x.mk.bis):'–', fi=(l,v)=>'<div class="hf"><span>'+l+'</span><b>'+v+'</b></div>';
@@ -1762,9 +1794,12 @@ function renderDash(x){ const mk=ed(x.mk), sn=STN[x.status], a=ampel(x), K=mk.ko
     +kv('Zahlweise',(mk.kautionRaten?mk.kautionRaten+' Raten':'')+(kb>0.5&&ko>0.5?(mk.kautionRaten?' · ':'')+'<span class="pill mid">Teilzahlung</span>':ko<=0.5&&kv0?'<span class="pill ok">vollständig</span>':(mk.kautionRaten?'':'–')))+ratenBox(x,['kaution'])+'</div>';
   /* Warmmiete */
   const others=(st.others||[]);
-  h+='<div class="card"><div class="ch">Warmmiete</div><div class="big">'+(st.total?eur(st.total):'–')+'</div><span class="sub">'+(st.ab?'seit '+esc(dmy(st.ab)):'')+'</span>'
+  const kuenftig=(x.mk.stufen||[]).filter(z=>z.total>0&&(z.ab||'')>(st.ab||'')&&(z.ab||'')>today);
+  if(MF&&MF.pid===x.mk.pid){ h+=mieteForm(); }
+  else h+='<div class="card"><div class="ch">Warmmiete'+(canWrite?'<button class="ghost small" data-mfneu="1">Miete ändern</button>':'')+'</div><div class="big">'+(st.total?eur(st.total):'–')+'</div><span class="sub">'+(st.ab?'seit '+esc(dmy(st.ab)):'')+'</span>'
+    +kuenftig.map(z=>'<div class="note" style="margin:6px 0">Ab '+esc(dmy(z.ab))+': '+eur(z.total)+' (geändert'+(z.von?' von '+esc(z.von):'')+')</div>').join('')
     +'<details open><summary>Zusammensetzung</summary>'+kv('Kaltmiete',eur(st.kalt))+kv('Betriebskosten',eur(st.bk))+kv('Heizkosten',eur(st.hk))+(st.strom?kv('Strom',eur(st.strom)):'')+others.map(o=>kv(esc(o.t||'Sonstiges'),eur(o.b))).join('')+(!others.length&&st.sonst?kv('Sonstiges',eur(st.sonst)):'')+'</details>'
-    +((x.mk.stufen||[]).length>1?'<details><summary>Mietentwicklung</summary><table class="mini">'+x.mk.stufen.map(z=>'<tr><td>ab '+esc(dmy(z.ab))+'</td><td class="n">'+eur(z.total)+'</td></tr>').join('')+'</table></details>':'')+'</div>';
+    +((x.mk.stufen||[]).length>1?'<details><summary>Mietentwicklung</summary><table class="mini">'+x.mk.stufen.map(z=>'<tr><td>ab '+esc(dmy(z.ab))+(z.quelle==='os'?' <span class="pill src">im OS geändert</span>':'')+'</td><td class="n">'+eur(z.total)+'</td><td class="n">'+(z.quelle==='os'&&canWrite?'<button class="ghost small" data-mfweg="'+esc(z.ab)+'">entfernen</button>':'')+'</td></tr>').join('')+'</table></details>':'')+'</div>';
   h+=mahnstandCard(x);
   h+='</div>'; const KARTEN=[asanaCard(x),histCard(x),notizCard(x),anschreibenCard(x),mailsCard(x),akteBox(x),sollCard(x)], H0=h; h='';
   /* Mieterkonto */
@@ -1850,6 +1885,12 @@ document.addEventListener('click',async e=>{ const t=e.target.closest('button,tr
   if(t.dataset.msort){ const k=t.dataset.msort; if((M.sk||'einheit')===k) M.sd=-(M.sd||1); else { M.sk=k; M.sd=['miete','saldo'].includes(k)?-1:1; } saveM(); render(); return; }
   if(t.dataset.mst){ M.st=t.dataset.mst; saveM(); render(); return; }
   if(t.dataset.edit){ editOpen=true; render(); return; }
+  if(t.dataset.mfneu){ const mk=MK[M.sel]; if(mk) mfStart(mk); return; }
+  if(t.dataset.mfcancel){ MF=null; render(); return; }
+  if(t.dataset.mfsave){ mfSpeichern(); return; }
+  if(t.dataset.mfoadd){ MF.others.push({t:'',b:0}); render(); return; }
+  if(t.dataset.mfodel){ MF.others.splice(+t.dataset.mfodel,1); render(); return; }
+  if(t.dataset.mfweg){ if(t.dataset.sure!=='1'){ t.dataset.sure='1'; t.textContent='wirklich entfernen?'; return; } const mk=MK[M.sel]; if(mk) mfEntfernen(mk,t.dataset.mfweg); return; }
   if(t.dataset.ecancel){ editOpen=false; render(); return; }
   if(t.dataset.esave){ const g=id=>$(id).value.trim(); editOpen=false; const kz=parseNum(g('e-kaution')), kbz=parseNum(g('e-kbez')); const alt=ed(MK[M.sel]), neu={kaution:(kz==null||isNaN(kz))?(alt.kaution||0):kz,kautionBezahlt:(kbz==null||isNaN(kbz))?'':kbz,mieter:g('e-mieter'),anrede:g('e-anrede'),email:g('e-email'),tel:g('e-tel'),betreuer:g('e-betreuer'),zahler:g('e-zahler'),ref:g('e-ref'),ampel:$('e-ampel').value,bis:g('e-bis')};
     if(String(neu.bis||'')===String(MK[M.sel].bisNH||'')) neu.bis=''; if(!neu.bis&&!(EDIT[M.sel]||{}).bis) delete neu.bis;
