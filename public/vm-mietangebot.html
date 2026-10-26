@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html lang="de"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Mietangebot</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js"></script>
+<script src="/mietangebot-pdf.js?v=20261022a"></script>
+<style>
+:root{--bg:#f3f5f8;--card:#ffffff;--ink:#18202c;--muted:#5f6b7a;--line:#e0e5eb;--soft:#eef1f5;--accent:#2f5d8a;--accent-ink:#ffffff;--accent-soft:#e3ecf5;--pos:#1d7a4c;--pos-bg:#e5f4ec;--warn:#946200;--warn-bg:#fff4d6;--neg:#b42318;--neg-bg:#fcebe9}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--ink);font:14px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+button,input,select,textarea{font:inherit;color:var(--ink)}
+.wrap{padding:16px 20px 40px;max-width:1100px;margin:0 auto}
+h1{font-size:22px;font-weight:800;margin-bottom:2px}
+.sub{color:var(--muted);font-size:12px}
+.kopf{margin-bottom:12px}
+.acts{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+button{border:1px solid var(--line);background:var(--card);border-radius:8px;padding:7px 12px;cursor:pointer;min-height:34px}
+button:hover{border-color:var(--accent)}
+button.primary{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+button.small{font-size:12.5px;padding:3px 9px;min-height:28px}
+button:disabled{opacity:.55;cursor:default}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px 16px;margin-bottom:12px}
+.ch{font-weight:700;font-size:15px;margin-bottom:8px}
+.ch2{font-weight:700;font-size:13.5px;margin:6px 0 6px}
+.g2{display:grid;grid-template-columns:1fr 1fr;column-gap:14px}.g3{display:grid;grid-template-columns:repeat(3,1fr);column-gap:14px}.g4{display:grid;grid-template-columns:repeat(4,1fr);column-gap:14px}
+.fl{display:grid;gap:3px;font-size:12px;color:var(--muted);margin-bottom:8px}
+.fl input,.fl textarea{width:100%;background:var(--soft);border:1px solid var(--line);border-radius:7px;padding:7px 9px;font-size:14px;color:var(--ink)}
+textarea{resize:vertical;min-height:220px}
+.note{background:var(--warn-bg);color:var(--warn);border-radius:8px;padding:8px 10px;font-size:13px;margin:6px 0}
+.ok{background:var(--pos-bg);color:var(--pos);border-radius:8px;padding:8px 10px;font-size:13px;margin:6px 0}
+.ktab{width:100%;border-collapse:collapse;font-size:13px}
+.ktab th{text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:.03em;color:var(--muted);font-weight:600;padding:6px;border-bottom:1px solid var(--line)}
+.ktab td{padding:5px 6px;border-bottom:1px solid var(--line);vertical-align:top}
+.leer{color:var(--muted);padding:8px 4px;font-size:12.5px}
+.toast{position:fixed;left:50%;bottom:20px;transform:translateX(-50%);background:var(--ink);color:#fff;padding:9px 16px;border-radius:8px;font-size:13px;opacity:0;pointer-events:none;transition:opacity .2s;z-index:60}.toast.on{opacity:1}
+a{color:var(--accent)}
+@media(max-width:760px){.g2,.g3,.g4{grid-template-columns:1fr 1fr}}
+</style></head><body>
+<div class="wrap" id="app"><div class="leer">Lädt …</div></div>
+<div class="toast" id="toast"></div>
+<script>
+const sb=window.supabase.createClient('https://jqzxctfqvcwbctpjksvg.supabase.co','eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpxenhjdGZxdmN3YmN0cGprc3ZnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODIxMzA0MzIsImV4cCI6MjA5NzcwNjQzMn0.RKIbZxJdusKWWPjBJqlxZ8e1m8So02UslOg55YRsn3o');
+const MAP=window.MietangebotPdf,MAV=MAP.VORLAGEN.slice().sort((a,b)=>a.kurz.localeCompare(b.kurz,'de'));
+const esc=s=>(s==null?'':String(s)).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+const p2=n=>String(n).padStart(2,'0');
+const dmy=x=>{const s=String(x||'').slice(0,10);return /^\d{4}-\d\d-\d\d$/.test(s)?s.split('-').reverse().join('.'):String(x||'');};
+const zeit=d=>{if(!d)return '';const x=new Date(d);return p2(x.getDate())+'.'+p2(x.getMonth()+1)+'.'+x.getFullYear()+', '+p2(x.getHours())+':'+p2(x.getMinutes())+' Uhr';};
+const zahl=v=>{if(typeof v==='number')return v;const s=String(v==null?'':v).trim().replace(/\s|€/g,'');return Number(/,/.test(s)?s.replace(/\./g,'').replace(',','.'):s)||0;};
+const eur=n=>MAP.eur(n);
+const NUTZER={'ramona@andersmacher.info':'Ramona Romanelli','juergen@andersmacher.info':'Jürgen Reuter','eric@andersmacher.info':'Eric Eisenhardt'};
+const SIGNATUR='Mit freundlichen Grüßen\n\nWohn(T)raum Rheinhessen GmbH\nbewusst sozial engagiert\nE-Mail: hausverwaltung@andersmacher.info\nTelefon: 06133-9382937\nDalheimer Str. 70, 55278 Dexheim\nHRB 45997, Amtsgericht Mainz\nGeschäftsführer: Eric Eisenhardt';
+const STD={betreff:'Mietangebot {wohnung}',text:'{anrede},\n\nanbei erhalten Sie das Mietangebot für die Wohnung {wohnung}{ab_mietbeginn}. Die Unterlagen für Ihr Amt sind von uns bereits ausgefüllt. Bitte ergänzen Sie, wo nötig, Ihre eigenen Angaben, unterschreiben Sie und reichen Sie alles bei Ihrem Amt ein.\n\nBei Fragen melden Sie sich gerne bei uns.\n\n'+SIGNATUR};
+const ADR={V11:'Vorstädter Straße 11|55276 Oppenheim',A14:'Abtweilerstraße 14|55568 Lauschied',E4:'Eiermarkt 4|55545 Bad Kreuznach',H3:'Hammer Straße 3|67575 Eich',H44:'Hochstraße 44|55545 Bad Kreuznach',K6:'Kreuzstraße 6|55546 Fürfeld',K7:'In den Kirchgärten 7|55278 Dexheim',K28:'Krämerstraße 28|55276 Oppenheim',Kw30:'Kellerweg 30|67583 Guntersblum',M8:'Mannheimer Straße 8|55545 Bad Kreuznach',R6:'Am Römer 6|67598 Gundersheim',S16:'St.-Georgen-Straße 16|55232 Alzey',S58:'Schlossgasse 58|55232 Alzey',U6:'Uhlandstraße 6|55543 Bad Kreuznach',Rh24:'Rheinstraße 24|55283 Nierstein'};
+/* Ablage wie in den Mieterkonten (Ordner „01 Mietbeginn“) */
+const docBase=mk=>String(mk.obj).replace(/[^A-Za-z0-9]/g,'')+'/'+mk.pid;
+const enc=f=>f.replace(/ä/g,'ae').replace(/ö/g,'oe').replace(/ü/g,'ue').replace(/Ä/g,'Ae').replace(/Ö/g,'Oe').replace(/Ü/g,'Ue').replace(/ß/g,'ss').replace(/&/g,'und').replace(/[^A-Za-z0-9 ._\/-]/g,'_');
+const ORDNER='01 Mietbeginn';
+function uName(s){s=String(s||'').trim();let m=s.match(/^we\s*(\d+)(?:\s*[.\s]\s*(\d+)(?!\d))?(.*)$/i);if(m)return 'WE '+m[1]+(m[2]?'.'+m[2]:'')+m[3];return s;}
+
+let MK=[],EDIT={},O=[],E=[],DATEIEN=null,VERLAUF=[],ICH='',ICHMAIL='',BUSY='',VORLAGE='',KONTO='',W=null,FR={},MAIL=null,TEXT=Object.assign({},STD);
+const $=id=>document.getElementById(id);
+function toast(t,ms){const el=$('toast');el.textContent=t;el.classList.add('on');clearTimeout(toast._t);toast._t=setTimeout(()=>el.classList.remove('on'),ms||3500);}
+async function token(){const {data}=await sb.auth.getSession();return data&&data.session?data.session.access_token:'';}
+async function api(pfad,body){let r;try{r=await fetch(pfad,{method:'POST',headers:{'content-type':'application/json',authorization:'Bearer '+await token()},body:JSON.stringify(body)});}catch(e){throw new Error('Dienst nicht erreichbar.');}
+  const j=await r.json().catch(()=>({}));if(!r.ok||j.error)throw new Error(j.error||('Fehler '+r.status));return j;}
+const ed=mk=>Object.assign({},mk,EDIT[mk.pid]||{});
+const heuteIso=()=>new Date().toISOString().slice(0,10);
+const mkLabel=mk=>{const e=ed(mk);return [mk.obj,uName(mk.einheit||''),e.mieter||'(ohne Namen)'].filter(Boolean).join(' ');};
+const konten=()=>MK.filter(mk=>!mk.bis||mk.bis>=heuteIso()).map(mk=>({mk,label:mkLabel(mk)})).sort((a,b)=>a.label.localeCompare(b.label,'de',{numeric:true}));
+const kontoVon=t=>{const x=konten().find(k=>k.label===String(t||'').trim());return x?x.mk:null;};
+const vorlageVon=t=>MAV.find(v=>v.name===String(t||'').trim()||v.kurz===String(t||'').trim())||null;
+function mieterMails(mk){const e=ed(mk),K=mk.kontakte||[];const s=e.email!=null&&e.email!==''?String(e.email):K.map(k=>k.email).filter(Boolean).join(',');return s.split(/[,;\s]+/).map(x=>x.trim().toLowerCase()).filter(x=>/@/.test(x));}
+
+/* ---------- Daten ---------- */
+async function laden(){
+  const [m,ee,o,e,v,t,u]=await Promise.all([sb.from('os_docs').select('data').eq('app','oc').like('pfad','mietkonten/%'),
+    sb.from('os_docs').select('data').eq('app','oc').eq('pfad','stamm/mietkonten-edit').maybeSingle(),
+    sb.from('obj_objekte').select('id,kz,strasse,plz,ort,baujahr,heizung').order('sort'),
+    sb.from('obj_einheiten').select('id,objekt_id,bezeichnung,lage,flaeche,zimmer,heizung'),
+    sb.from('os_docs').select('data').eq('app','oc').like('pfad','mietangebote/%'),
+    sb.from('os_docs').select('data').eq('app','oc').eq('pfad','stamm/mietangebot-mail').maybeSingle(),
+    sb.auth.getUser()]);
+  if(m.error){$('app').innerHTML='<div class="leer">Bitte im Wohntraum OS anmelden.</div>';return;}
+  MK=(m.data||[]).map(r=>r.data).filter(x=>x&&x.pid);EDIT=(ee.data&&ee.data.data&&ee.data.data.e)||{};O=o.data||[];E=e.data||[];
+  VERLAUF=(v.data||[]).map(r=>r.data).filter(Boolean).sort((a,b)=>String(b.t).localeCompare(String(a.t)));
+  if(t.data&&t.data.data&&t.data.data.text)TEXT={betreff:t.data.data.betreff||STD.betreff,text:t.data.data.text};
+  const us=u&&u.data&&u.data.user;if(us){ICHMAIL=String(us.email||'').toLowerCase();ICH=NUTZER[ICHMAIL]||us.email||'';}
+  sb.storage.from('vertraege').list('mietangebot-vorlagen',{limit:100}).then(({data})=>{DATEIEN=new Set((data||[]).map(f=>f.name.replace(/\.pdf$/i,'')));render();}).catch(()=>{DATEIEN=new Set();render();});
+  render();}
+
+/* Werte aus dem Mieterkonto vorbelegen (alle Felder bleiben änderbar) */
+function stufe(mk){const st=(mk.stufen||[]).filter(x=>x.total>0);if(!st.length)return null;const h=heuteIso();let s=st[0];for(const x of st){if((x.ab||'')<=h)s=x;}
+  if(mk.von&&mk.von>h){for(const x of st){if((x.ab||'')<=mk.von)s=x;}}return s;}
+function vorbelegen(mk){const e=ed(mk),ein=E.find(x=>x.id===mk.einheit_id)||{},o=O.find(x=>x.kz===mk.obj)||{},s=stufe(mk)||{};
+  const teile=String(e.mieter||'').trim().split(/\s+/),nach=teile.length>1?teile.pop():teile[0]||'',vor=teile.length&&teile[0]!==nach?teile.join(' '):'';
+  const adr=(ADR[mk.obj]||[o.strasse,[o.plz,o.ort].filter(Boolean).join(' ')].join('|')).split('|'),einh=mk.einheit&&!/efh/i.test(mk.einheit)?uName(mk.einheit):'';
+  const so={wlan:0,garage:0,moebel:0,ebk:0};(s.others||[]).forEach(x=>{const t=String(x.t||'');const k=/wlan|internet/i.test(t)?'wlan':/garage|stellplatz|carport/i.test(t)?'garage':/küche|kueche|ebk/i.test(t)?'ebk':/möbel|moebel|möbl/i.test(t)?'moebel':'';if(k)so[k]+=Number(x.b)||0;});
+  const z=n=>n?eur(n):'';
+  return {vorname:vor,nachname:nach,anschrift:[adr[0]+(einh?', '+einh:''),adr[1]].filter(Boolean).join(', '),personen:'',mietbeginn:dmy(mk.von||''),
+    wohnung:[adr[0],adr[1]].filter(Boolean).join(', ')+(einh?' – '+einh:''),lage:ein.lage||'',wfl:ein.flaeche!=null?String(ein.flaeche).replace('.',','):'',zimmer:ein.zimmer!=null?String(ein.zimmer):'',
+    baujahr:o.baujahr||'',heizungsart:ein.heizung||o.heizung||'',
+    kalt:z(s.kalt),bk:z(s.bk),hk:z(s.hk),strom:z(s.strom),wlan:z(so.wlan),garage:z(so.garage),moebel:z(so.moebel),ebk:z(so.ebk),gesamt:z(s.total),
+    kaution:z(e.kaution!=null&&e.kaution!==''?e.kaution:mk.kaution),objekt_kz:mk.obj,einheit:einh};}
+const FELDER=[['vorname','Vorname'],['nachname','Nachname'],['personen','Personen im Haushalt'],['anschrift','Bisherige Anschrift'],['mietbeginn','Mietbeginn (TT.MM.JJJJ)'],['wohnung','Wohnung'],['lage','Lage / Geschoss'],['wfl','Wohnfläche (m²)'],['zimmer','Zimmer']];
+const BETRAEGE=[['kalt','Kaltmiete'],['bk','Betriebskosten'],['hk','Heizkosten'],['strom','Strom'],['wlan','WLAN'],['garage','Garage / Stellplatz'],['moebel','Möblierung'],['ebk','Einbauküche'],['gesamt','Gesamtmiete'],['kaution','Kaution']];
+function summe(){if(!W||W._gesamtHand)return;const s=['kalt','bk','hk','strom','wlan','garage','moebel','ebk'].reduce((a,k)=>a+zahl(W[k]),0);W.gesamt=s?eur(s):'';const i=document.querySelector('[data-w="gesamt"]');if(i)i.value=W.gesamt;}
+function daten(){const D=Object.assign({},W);BETRAEGE.forEach(([k])=>{D[k]=zahl(W[k]);});return D;}
+
+/* ---------- Mail ---------- */
+function anrede(mk){const e=ed(mk),a=String(e.anrede||'').trim(),n=W&&W.nachname?W.nachname:'';
+  if(/^herr/i.test(a))return 'Sehr geehrter Herr '+(n||a.replace(/^herrn?\s*/i,''));if(/^frau/i.test(a))return 'Sehr geehrte Frau '+(n||a.replace(/^frau\s*/i,''));
+  return 'Guten Tag'+(e.mieter?' '+e.mieter:'');}
+function fuellen(t,mk){const v=vorlageVon(VORLAGE);return String(t||'').replace(/\{anrede\}/g,anrede(mk)).replace(/\{wohnung\}/g,W.wohnung||'').replace(/\{ab_mietbeginn\}/g,W.mietbeginn?' ab dem '+W.mietbeginn:'').replace(/\{mietbeginn\}/g,W.mietbeginn||'').replace(/\{vorlage\}/g,v?v.kurz:'');}
+function mailNeu(mk){MAIL={an:mieterMails(mk).join(', '),betreff:fuellen(TEXT.betreff,mk),text:fuellen(TEXT.text,mk)};}
+
+/* ---------- Darstellung ---------- */
+function render(){const mk=kontoVon(KONTO),v=vorlageVon(VORLAGE),F=DATEIEN;
+  let h=`<div class="kopf"><h1>Mietangebot</h1><div class="sub">Vorlage und Mieterkonto auswählen. Das OS füllt die Original-Vorlage des Amts mit den Daten aus dem Mieterkonto aus, legt das PDF im Mieterkonto unter „${ORDNER}“ ab und sendet es per Mail.</div></div>`;
+  h+=`<div class="card"><div class="ch">1. Auswahl</div><div class="g2">
+    <label class="fl">Vorlage<input id="vorlage" list="dl-vorlage" value="${esc(VORLAGE)}" placeholder="Vorlage suchen oder auswählen" autocomplete="off"><datalist id="dl-vorlage">${MAV.map(x=>`<option value="${esc(x.name)}">`).join('')}</datalist></label>
+    <label class="fl">Mieterkonto<input id="konto" list="dl-konto" value="${esc(KONTO)}" placeholder="Objekt, Einheit oder Name eintippen" autocomplete="off"><datalist id="dl-konto">${konten().map(x=>`<option value="${esc(x.label)}">`).join('')}</datalist></label></div>`;
+  if(v&&F&&!F.has(v.id))h+=`<div class="note">Die Datei für „${esc(v.kurz)}“ ist noch nicht hochgeladen. Bitte unter „Vertragsvorlagen“ hochladen.</div>`;
+  h+='</div>';
+  if(mk&&v&&W){const fr=MAP.fragenFuer([v.id]),A=MAP.aufbereiten(daten(),FR);
+    h+=`<div class="card"><div class="ch">2. Angaben für das Mietangebot</div><div class="sub" style="margin-bottom:8px">Aus dem Mieterkonto vorbelegt. Bitte prüfen und bei Bedarf ändern.</div>
+      <div class="g3">${FELDER.map(([k,l])=>`<label class="fl">${esc(l)}<input data-w="${k}" value="${esc(W[k])}" autocomplete="off"></label>`).join('')}</div>
+      <div class="ch2">Beträge in Euro</div><div class="g4">${BETRAEGE.map(([k,l])=>`<label class="fl">${esc(l)}<input data-w="${k}" value="${esc(W[k])}" inputmode="decimal" autocomplete="off"></label>`).join('')}</div>
+      ${fr.length?'<div class="ch2">Angaben für die Vorlage</div><div class="g3">'+fr.map(f=>`<label class="fl">${esc(f.label)}<input data-fr="${esc(f.key)}" value="${esc(FR[f.key]!=null?FR[f.key]:(A[f.key]||''))}"${f.liste?` list="dl-fr-${f.key}"`:''} autocomplete="off">${f.liste?`<datalist id="dl-fr-${f.key}">${f.liste.map(o=>`<option value="${esc(o)}">`).join('')}</datalist>`:''}</label>`).join('')+'</div>':''}
+      <div class="acts"><button data-a="vorschau"${BUSY?' disabled':''}>Vorschau</button><button data-a="laden"${BUSY?' disabled':''}>PDF herunterladen</button><button data-a="ablegen"${BUSY?' disabled':''}>${BUSY==='ablegen'?'Wird abgelegt …':'Nur im Mieterkonto ablegen'}</button></div>
+      <div class="sub" style="margin-top:6px">Das OS setzt keine Unterschrift und keinen Stempel des Mieters. Die Vorlage selbst bleibt unverändert.</div></div>`;
+    const mail=MAIL&&/@/.test(MAIL.an);
+    h+=`<div class="card"><div class="ch">3. Per Mail senden</div>
+      <div class="g2"><label class="fl">An (mehrere mit Komma trennen)<input id="m-an" value="${esc(MAIL.an)}" autocomplete="off"></label><label class="fl">Betreff<input id="m-betreff" value="${esc(MAIL.betreff)}" autocomplete="off"></label></div>
+      <label class="fl">Text<textarea id="m-text">${esc(MAIL.text)}</textarea></label>
+      ${mail?'':'<div class="note">Im Mieterkonto ist keine E-Mail-Adresse hinterlegt. Bitte oben bei „An“ eintragen.</div>'}
+      <div class="acts" style="margin-top:4px"><button class="primary" data-a="senden"${mail&&!BUSY?'':' disabled'}>${BUSY==='senden'?'Wird gesendet …':'PDF erstellen, ablegen und senden'}</button><button data-a="textneu">Standardtext einsetzen</button><button data-a="textspeichern">Als Standardtext speichern</button></div>
+      <div class="sub" style="margin-top:6px">Im Standardtext werden diese Platzhalter automatisch ersetzt: {anrede}, {wohnung}, {mietbeginn}, {ab_mietbeginn}, {vorlage}.</div></div>`;}
+  else if(KONTO&&!mk)h+='<div class="card"><div class="leer">Kein passendes Mieterkonto gefunden. Bitte aus der Liste wählen.</div></div>';
+  h+=verlauf();
+  const a=document.activeElement,id=a&&a.id,pos=a&&a.selectionStart;
+  $('app').innerHTML=h;
+  if(id&&$(id)&&id!=='vorlage'&&id!=='konto'){$(id).focus();try{$(id).setSelectionRange(pos,pos);}catch(x){}}}
+function verlauf(){const L=VERLAUF.slice(0,30);
+  return `<div class="card"><div class="ch">Erstellte Mietangebote</div>${L.length?'<table class="ktab"><thead><tr><th>Datum</th><th>Mieterkonto</th><th>Vorlage</th><th>Versand</th><th>Dokument</th></tr></thead><tbody>'+L.map(x=>`<tr><td>${esc(zeit(x.t))}</td><td>${esc(x.konto)}</td><td>${esc(x.vorlage)}</td><td>${x.an?'Mail an '+esc(x.an):'nur abgelegt'}<div class="sub">${esc(x.von||'')}</div></td><td><a href="#" data-pdf="${esc(x.pfad)}">${esc(x.name)}</a></td></tr>`).join('')+'</tbody></table>':'<div class="leer">Noch keine Mietangebote erstellt.</div>'}</div>`;}
+
+/* ---------- PDF ---------- */
+const VB={};
+async function vorlageBytes(v){if(VB[v.id])return VB[v.id];const {data,error}=await sb.storage.from('vertraege').download(v.datei);if(error||!data)throw new Error('Vorlage „'+v.kurz+'“ ist noch nicht hochgeladen.');return VB[v.id]=new Uint8Array(await data.arrayBuffer());}
+async function bilder(){if(VB._sig!==undefined)return {unterschrift_eric:VB._sig};try{const {data}=await sb.storage.from('uebergaben').download('vorlagen/unterschrift-eric.png');VB._sig=data?new Uint8Array(await data.arrayBuffer()):null;}catch(e){VB._sig=null;}return {unterschrift_eric:VB._sig};}
+async function erzeugen(){const v=vorlageVon(VORLAGE);return MAP.ausfuellen(v.id,await vorlageBytes(v),daten(),FR,await bilder());}
+const umlaut=s=>String(s||'').replace(/[ÄÖÜäöüß]/g,c=>({Ä:'Ae',Ö:'Oe',Ü:'Ue',ä:'ae',ö:'oe',ü:'ue',ß:'ss'})[c]);
+function dateiName(){const v=vorlageVon(VORLAGE),d=new Date();return umlaut('Mietangebot_'+v.kurz+'_'+String(W.nachname||'').toUpperCase()+(W.vorname?'_'+W.vorname:'')+'_'+d.getFullYear()+'-'+p2(d.getMonth()+1)+'-'+p2(d.getDate())).replace(/[^0-9A-Za-z-]+/g,'_').replace(/_+/g,'_')+'.pdf';}
+async function ablegen(mk,bytes){const name=dateiName(),pfad=docBase(mk)+'/'+enc(ORDNER)+'/'+name;
+  const {error}=await sb.storage.from('mieterakten').upload(pfad,new Blob([bytes],{type:'application/pdf'}),{contentType:'application/pdf',upsert:true});
+  if(error)throw new Error('Ablage im Mieterkonto nicht möglich: '+error.message);return {name,pfad};}
+async function protokoll(mk,d,an){const ts=new Date().toISOString(),id=mk.pid+'__'+Date.now(),v=vorlageVon(VORLAGE);
+  const rec={id,t:ts,pid:mk.pid,konto:mkLabel(mk),vorlage:v.kurz,name:d.name,pfad:d.pfad,an:an||'',betreff:an?MAIL.betreff:'',von:ICH};
+  await sb.from('os_docs').upsert({app:'oc',pfad:'mietangebote/'+id,data:rec,updated_at:ts});VERLAUF.unshift(rec);
+  try{await sb.from('os_docs').upsert({app:'oc',pfad:'historie/'+id,data:{pid:mk.pid,id,d:ts,erfasst:ts,art:'Änderung',t:'Mietangebot ('+v.kurz+') '+(an?'per Mail an '+an+' gesendet':'erstellt und abgelegt')+': '+d.name,by:ICH||'unbekannt',mail:ICHMAIL,manuell:false},updated_at:ts});}catch(x){}}
+function herunter(bytes,name){const u=URL.createObjectURL(new Blob([bytes],{type:'application/pdf'}));const l=document.createElement('a');l.href=u;l.download=name;document.body.appendChild(l);l.click();l.remove();setTimeout(()=>URL.revokeObjectURL(u),60000);}
+async function vorschau(){const w=window.open('','_blank');try{const b=await erzeugen();const u=URL.createObjectURL(new Blob([b],{type:'application/pdf'}));if(w)w.location.href=u;else window.open(u,'_blank');}catch(e){if(w)w.close();toast('Nicht erstellt: '+(e.message||e),7000);}}
+async function nurAblegen(mk){BUSY='ablegen';render();try{const d=await ablegen(mk,await erzeugen());await protokoll(mk,d,'');toast('Im Mieterkonto abgelegt.');}catch(e){toast(e.message||String(e),8000);}BUSY='';render();}
+async function senden(mk){const an=MAIL.an.split(/[,;\s]+/).map(x=>x.trim()).filter(x=>/@/.test(x));if(!an.length){toast('Bitte eine E-Mail-Adresse eintragen.');return;}
+  const v=vorlageVon(VORLAGE);if(!confirm('Mietangebot „'+v.kurz+'“ per Mail senden?\n\nAn: '+an.join(', ')))return;
+  BUSY='senden';render();
+  try{const d=await ablegen(mk,await erzeugen());
+    await api('/api/postfach',{aktion:'senden',modus:'neu',an:an.join(', '),betreff:MAIL.betreff,text:MAIL.text,anhaenge:[{typ:'speicher',bucket:'mieterakten',pfad:d.pfad,name:d.name,contentType:'application/pdf'}]});
+    await protokoll(mk,d,an.join(', '));toast('Mietangebot gesendet und im Mieterkonto abgelegt.',5000);}
+  catch(e){toast('Nicht gesendet: '+(e.message||e),9000);}
+  BUSY='';render();}
+async function textSpeichern(){const t={betreff:MAIL.betreff,text:MAIL.text},mk=kontoVon(KONTO);
+  /* konkrete Werte wieder durch Platzhalter ersetzen */
+  const rueck=s=>{let r=String(s||'');const ar=anrede(mk);if(ar)r=r.split(ar).join('{anrede}');if(W.mietbeginn)r=r.split(' ab dem '+W.mietbeginn).join('{ab_mietbeginn}').split(W.mietbeginn).join('{mietbeginn}');if(W.wohnung)r=r.split(W.wohnung).join('{wohnung}');return r;};
+  TEXT={betreff:rueck(t.betreff),text:rueck(t.text)};
+  const {error}=await sb.from('os_docs').upsert({app:'oc',pfad:'stamm/mietangebot-mail',data:Object.assign({},TEXT,{von:ICH,am:new Date().toISOString()}),updated_at:new Date().toISOString()});
+  toast(error?'Nicht gespeichert: '+error.message:'Standardtext gespeichert.');}
+
+/* ---------- Ereignisse ---------- */
+function auswahl(){const vor=$('vorlage').value,kon=$('konto').value,mkAlt=kontoVon(KONTO),vAlt=VORLAGE;VORLAGE=vorlageVon(vor)?vorlageVon(vor).name:vor;KONTO=kon;const mk=kontoVon(KONTO);
+  if(mk&&mk!==mkAlt){W=vorbelegen(mk);FR={};mailNeu(mk);}else if(mk&&VORLAGE!==vAlt&&MAIL){MAIL.betreff=fuellen(TEXT.betreff,mk);MAIL.text=fuellen(TEXT.text,mk);}
+  if(!mk){W=null;MAIL=null;}render();}
+document.addEventListener('change',e=>{if(e.target.id==='vorlage'||e.target.id==='konto')auswahl();});
+document.addEventListener('input',e=>{const t=e.target;
+  if(t.dataset.w){W[t.dataset.w]=t.value;if(t.dataset.w==='gesamt')W._gesamtHand=!!t.value;else if(['kalt','bk','hk','strom','wlan','garage','moebel','ebk'].includes(t.dataset.w))summe();}
+  else if(t.dataset.fr)FR[t.dataset.fr]=t.value;
+  else if(t.id==='m-an'){MAIL.an=t.value;const b=document.querySelector('[data-a="senden"]');if(b)b.disabled=!/@/.test(t.value)||!!BUSY;}
+  else if(t.id==='m-betreff')MAIL.betreff=t.value;else if(t.id==='m-text')MAIL.text=t.value;
+  else if((t.id==='vorlage'||t.id==='konto')&&(t.id==='vorlage'?vorlageVon(t.value):kontoVon(t.value)))auswahl();});
+/* Auswahlfelder: beim Anklicken leeren, damit die ganze Liste erscheint */
+document.addEventListener('focusin',e=>{const t=e.target;if(t.id==='vorlage'||t.id==='konto'||(t.dataset&&t.dataset.fr&&t.getAttribute('list'))){t.dataset.alt=t.value;t.value='';}});
+document.addEventListener('focusout',e=>{const t=e.target;if((t.id==='vorlage'||t.id==='konto'||(t.dataset&&t.dataset.fr&&t.getAttribute('list')))&&!t.value&&t.dataset.alt){t.value=t.dataset.alt;if(t.dataset.fr)FR[t.dataset.fr]=t.value;}});
+document.addEventListener('click',async e=>{const b=e.target.closest('[data-a],[data-pdf]');if(!b)return;e.preventDefault();
+  if(b.dataset.pdf){const w=window.open('','_blank');const {data,error}=await sb.storage.from('mieterakten').createSignedUrl(b.dataset.pdf,3600);if(error){if(w)w.close();toast('Nicht geöffnet: '+error.message,6000);return;}if(w)w.location.href=data.signedUrl;else window.open(data.signedUrl,'_blank');return;}
+  const a=b.dataset.a,mk=kontoVon(KONTO);if(!mk)return;
+  if(a==='vorschau'){vorschau();return;}
+  if(a==='laden'){try{herunter(await erzeugen(),dateiName());}catch(x){toast('Nicht erstellt: '+(x.message||x),7000);}return;}
+  if(a==='ablegen'){nurAblegen(mk);return;}
+  if(a==='senden'){senden(mk);return;}
+  if(a==='textneu'){MAIL.betreff=fuellen(TEXT.betreff,mk);MAIL.text=fuellen(TEXT.text,mk);render();return;}
+  if(a==='textspeichern'){textSpeichern();return;}});
+laden();
+</script>
+</body></html>

@@ -56,8 +56,9 @@ export const NAV = [
   { type: 'group', key: 'v-dokumente', icon: 'ti-files', label: 'Dokumente erstellen', mod: 'verwalto', items: [
     { href: '/hausverwaltung/anschreiben', icon: 'ti-mail', label: 'Anschreiben' },
     { href: '/verwalto/dokumente', icon: 'ti-file', label: 'Dokumente', offen: true },
-    { href: '/vermietung/zahlungsvereinbarung', icon: 'ti-file-dollar', label: 'Ratenzahlung' },
     { href: '/mahnprozess/generator', icon: 'ti-file-invoice', label: 'Mahnungen' },
+    { href: '/vermietung/mietangebot', icon: 'ti-file-text', label: 'Mietangebot', perm: '/hausverwaltung/mieterkonten' },
+    { href: '/vermietung/zahlungsvereinbarung', icon: 'ti-file-dollar', label: 'Ratenzahlung' },
     { href: '/verwalto/vertragsvorlagen', icon: 'ti-file-certificate', label: 'Vertragsvorlagen', offen: true },
   ] },
   { type: 'group', key: 'v-fuhrpark', icon: 'ti-car', label: 'Fuhrpark', mod: 'verwalto', items: [
