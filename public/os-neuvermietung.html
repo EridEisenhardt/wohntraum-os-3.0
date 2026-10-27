@@ -101,6 +101,7 @@ const zeit=d=>{if(!d)return '';const x=new Date(d);return p2(x.getDate())+'.'+p2
 const eur=n=>(Number(n)||0).toLocaleString('de-DE',{style:'currency',currency:'EUR'});
 const zahl=v=>{if(typeof v==='number')return v;const x=parseFloat(String(v==null?'':v).replace(/\s/g,'').replace(/\.(?=\d{3}(\D|$))/g,'').replace(',','.'));return isNaN(x)?0:Math.round(x*100)/100;};
 const fz=n=>n?String(Math.round(n*100)/100).replace('.',','):'';
+const feur=n=>n?(Math.round(n*100)/100).toLocaleString('de-DE',{minimumFractionDigits:2,maximumFractionDigits:2})+' €':'';
 const NUTZER={'ramona@andersmacher.info':'Ramona Romanelli','juergen@andersmacher.info':'Jürgen Reuter','eric@andersmacher.info':'Eric Eisenhardt'};
 const ERIC='eric@andersmacher.info';
 /* Schritte und der passende Schritt in Erics Mietinteressenten-Tool */
@@ -216,6 +217,7 @@ async function unterschreiben(k){if(k.pid)return;const f=fehlt(k);if(f.length){t
   try{await mieterkontoAnlegen(k);}catch(e){BUSY='';render();toast('Mieterkonto nicht angelegt: '+(e.message||e),8000);return;}
   if(k.spalte!=='unterschrieben'){k.spalte='unterschrieben';k.seit=new Date().toISOString();}
   await speichern(k,'Mietvertrag unterschrieben – Mieterkonto angelegt');eriSync(k);
+  try{await dokumenteUebernehmen(k,true);}catch(x){}
   let hinweis='';try{const r=await api('/api/neuvermietung',{aktion:'einzug',id:k.id});if(r&&r.einzug){k.asana=k.asana||{};k.asana.einzug=r.einzug;}else if(r&&r.hinweis)hinweis=r.hinweis;}catch(e){hinweis='Asana-Projekt nicht angelegt: '+(e.message||e);}
   BUSY='';render();toast(hinweis||'Mieterkonto angelegt und Asana-Projekt 03_EINZUG erstellt.',hinweis?9000:5000);}
 function fehlt(k){const c=kalk(k),f=[];if(!k.name&&!k.vorname)f.push('Name');if(!k.wohnung||!k.wohnung.einheit_id)f.push('Wohnung');if(!c.beginn)f.push('Mietbeginn');if(!posWert(c,'kalt','neu'))f.push('Kaltmiete');return f;}
@@ -235,6 +237,45 @@ async function mieterkontoAnlegen(k){const e=einVon(k.wohnung.einheit_id),o=e&&o
   try{await sb.from('os_docs').upsert({app:'oc',pfad:'historie/'+pid+'__'+Date.now(),data:{pid,id:pid+'__'+Date.now(),d:ts,erfasst:ts,art:'Neuvermietung',t:'Mieterkonto aus der Neuvermietung angelegt (Mietvertrag unterschrieben). Mietbeginn '+dmy(von)+', Warmmiete '+eur(st.total)+', Kaution '+eur(kaution)+'.',by:ICH||'unbekannt',manuell:false},updated_at:ts});}catch(x){}
   try{await stammEintragen(o,e,daten,st);}catch(x){}
   k.pid=pid;}
+
+/* Unterlagen der Neuvermietung ins Mieterkonto übernehmen: OneDrive-Mieterordner (wird bei Bedarf angelegt), sonst Ablage im OS */
+const akEnc=f=>f.replace(/ä/g,'ae').replace(/ö/g,'oe').replace(/ü/g,'ue').replace(/Ä/g,'Ae').replace(/Ö/g,'Oe').replace(/Ü/g,'Ue').replace(/ß/g,'ss').replace(/&/g,'und').replace(/[^A-Za-z0-9 ._\/-]/g,'_');
+const MK_ORDNER=['01 Mietbeginn','02 Vertrag & Nachträge','03 Miete & Zahlungen','04 Betriebskosten','05 Schriftverkehr','06 Mietende'];
+const normN=x=>String(x||'').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/[^a-z0-9]/g,'');
+const endung=n=>{const m=String(n||'').match(/\.[A-Za-z0-9]{2,5}$/);return m?m[0].toLowerCase():'.pdf';};
+async function blobB64(b){return await new Promise((res,rej)=>{const r=new FileReader();r.onload=()=>res(String(r.result).split(',')[1]||'');r.onerror=rej;r.readAsDataURL(b);});}
+async function dokumenteUebernehmen(k,still){if(!k.pid)return;const e=k.wohnung&&einVon(k.wohnung.einheit_id),o=e&&objVon(e.objekt_id);if(!e||!o){if(!still)toast('Wohnung nicht gefunden.');return;}
+  const fertig=new Set(k.uebernommen||[]),Q=[];
+  (k.dateien||[]).forEach(d=>Q.push({key:d.pfad,pfad:d.pfad,name:nvDatei(k,d.art||String(d.name).replace(/\.[^.]+$/,''),String(d.am||'').slice(0,10)||undefined).replace(/\.pdf$/,'')+endung(d.name),ordner:'01 Mietbeginn'}));
+  const a=k.angebot||{};(a.versand||[]).forEach(x=>(x.dateien||[]).forEach(d=>Q.push({key:d.pfad,pfad:d.pfad,name:d.name,ordner:'01 Mietbeginn'})));
+  const v=k.vertrag||{};if(v.pdf)Q.push({key:v.pdf,pfad:v.pdf,name:nvDatei(k,'Mietvertrag',String(v.fertig||'').slice(0,10)||undefined),ordner:'02 Vertrag & Nachträge'});
+  try{const m=msaPdf(k,true);if(m)Q.push({key:'msa:'+k.id,blob:m.blob,name:m.name,ordner:'01 Mietbeginn'});}catch(x){}
+  const offen=[...new Map(Q.filter(q=>!fertig.has(q.key)).map(q=>[q.key,q])).values()];
+  if(!offen.length){if(!still)toast('Alle Unterlagen sind schon im Mieterkonto.');return;}
+  BUSY='uebernahme';panel();
+  // OneDrive-Mieterordner suchen oder anlegen und am Mieterkonto hinterlegen
+  let od='',hinweis='';
+  try{const {data:cur}=await sb.from('os_docs').select('data').eq('app','oc').eq('pfad','mietkonten/'+k.pid).maybeSingle();od=(cur&&cur.data&&cur.data.od)||'';
+    if(!od){const r=await api('/api/onedrive',{aktion:'mieterordner',kz:o.kz});const nn=normN(k.name);
+      const treffer=(r.ordner||[]).filter(f=>!f.archiv&&nn&&normN(f.name).includes(nn));
+      if(treffer.length)od=treffer[0].pfad;
+      else if(r.basis){od=r.basis+'/02 Mieter/01 Aktuelle Mieter/'+OsDateiname.einheit(e.bezeichnung)+'_'+OsDateiname.person(k.name||'',k.vorname||'')+'_ab '+(kalk(k).beginn||'').slice(0,10);
+        await api('/api/onedrive',{aktion:'anlegen',pfad:od,unterordner:MK_ORDNER});}
+      if(od&&cur&&cur.data){await sb.from('os_docs').upsert({app:'oc',pfad:'mietkonten/'+k.pid,data:Object.assign({},cur.data,{od}),updated_at:new Date().toISOString()});}}}
+  catch(x){od='';hinweis=' OneDrive war nicht erreichbar, die Unterlagen liegen in der Ablage im OS.';}
+  let n=0;const fehler=[];
+  for(const q of offen){try{let blob=q.blob;if(!blob){const {data,error}=await sb.storage.from('vertraege').download(q.pfad);if(error||!data)throw new Error(error?error.message:'nicht gefunden');blob=data;}
+      const name=OsDateiname.safe(q.name);
+      if(od){const pfad=od+'/'+q.ordner;
+        if(blob.size<=3*1024*1024)await api('/api/onedrive',{aktion:'hochladen',pfad,name,daten:await blobB64(blob),typ:blob.type||'application/octet-stream'});
+        else{const ss=await api('/api/onedrive',{aktion:'sitzung',pfad,name});const r=await fetch(ss.uploadUrl,{method:'PUT',headers:{'Content-Range':'bytes 0-'+(blob.size-1)+'/'+blob.size},body:blob});if(!r.ok)throw new Error('OneDrive '+r.status);}}
+      else{const pfad=String(o.kz).replace(/[^A-Za-z0-9]/g,'')+'/'+k.pid+'/'+akEnc(q.ordner)+'/'+akEnc(name).replace(/\//g,'_');
+        const {error}=await sb.storage.from('mieterakten').upload(pfad,blob,{contentType:blob.type||'application/octet-stream',upsert:true});if(error)throw new Error(error.message);}
+      fertig.add(q.key);n++;}
+    catch(x){fehler.push(q.name+' ('+(x.message||x)+')');}}
+  k.uebernommen=[...fertig];BUSY='';
+  await speichern(k,n?n+' Unterlage'+(n===1?'':'n')+' ins Mieterkonto übernommen'+(od?' (OneDrive-Mieterordner)':''):'');panel();
+  toast((n?n+' Unterlage'+(n===1?'':'n')+' ins Mieterkonto übernommen.':'')+(fehler.length?' Nicht übernommen: '+fehler.join(', '):'')+hinweis,fehler.length||hinweis?10000:5000);}
 /* Objekt und Einheit in den Stammdaten der Mieterkonten (stamm/objekte) eintragen, falls sie dort noch fehlen */
 async function stammEintragen(o,e,mk,st){const {data}=await sb.from('os_docs').select('data').eq('app','oc').eq('pfad','stamm/objekte').maybeSingle();if(!data||!data.data)return;
   const d=data.data,L=d.objekte=d.objekte||[];let ob=L.find(x=>x.kz===o.kz),neu=false;
@@ -257,7 +298,7 @@ async function msaMail(k){const s=MSA[k.id];if(!s)return;if(!/@/.test(k.email||'
   BUSY='';panel();render();}
 async function msaFreigeben(k){if(!darfFreigeben()){toast('Die Freigabe machen Eric oder Ramona.');return;}
   k.freigabeMsa={von:ICH,am:new Date().toISOString()};await speichern(k,'Mieterselbstauskunft freigegeben');await verschieben(k,'kalkulation');zuWs();}
-function msaPdf(k){const s=MSA[k.id];if(!s||!s.daten)return;const {jsPDF}=window.jspdf,doc=new jsPDF({unit:'mm',format:'a4'});const L=18,B=174;let y=20;
+function msaPdf(k,alsBlob){const s=MSA[k.id];if(!s||!s.daten)return null;const {jsPDF}=window.jspdf,doc=new jsPDF({unit:'mm',format:'a4'});const L=18,B=174;let y=20;
   const neu=()=>{doc.addPage();y=20;};doc.setFont('helvetica','bold');doc.setFontSize(18);doc.text('Mieterselbstauskunft',L,y);y+=10;
   for(const [t,F] of MSA_F){if(y>260)neu();doc.setFont('helvetica','bold');doc.setFontSize(12);doc.text(t,L,y);y+=6;doc.setFontSize(10);
     for(const [f,l] of F){const v=s.daten[f];if(v==null||v==='')continue;const val=doc.splitTextToSize(String(/^\d{4}-\d\d-\d\d$/.test(v)?dmy(v):v),B/2);if(y+val.length*4.6>280)neu();
@@ -265,6 +306,7 @@ function msaPdf(k){const s=MSA[k.id];if(!s||!s.daten)return;const {jsPDF}=window
   if(s.unterschrift){if(y>240)neu();doc.setFont('helvetica','bold');doc.setFontSize(12);doc.text('Unterschrift',L,y);y+=3;try{doc.addImage(s.unterschrift,'PNG',L,y,70,22);}catch(e){}y+=26;}
   doc.setFontSize(8.5);doc.setTextColor(120);doc.text('Übermittelt über das Wohntraum OS am '+zeit(s.eingegangen_at),L,288);
   const name=nvDatei(k,'Mieterselbstauskunft',String(s.eingegangen_at||'').slice(0,10)||undefined);
+  if(alsBlob)return {name,blob:doc.output('blob')};
   doc.save(name);}
 
 /* ---------- Dateien je Mietinteressent ---------- */
@@ -274,6 +316,7 @@ function dateienKarte(k){const L=(k.dateien||[]).slice().sort((a,b)=>String(a.na
   return `<div class="card"><div class="ch">Dateien<span class="sub">${L.length?L.length+' Datei'+(L.length===1?'':'en'):''}</span></div>
   <div class="sub" style="margin-bottom:8px">Hier Unterlagen ablegen, die nicht über das OS gekommen sind, z. B. eine Selbstauskunft auf Papier, Ausweis, Einkommensnachweis oder Schufa. Bei Art „Selbstauskunft“ können Eric oder Ramona sie in Schritt 1 freigeben.</div>
   ${L.length?'<table class="ktab" style="margin-bottom:8px"><thead><tr><th>Datei</th><th>Art</th><th>Schritt</th><th>hochgeladen</th><th></th></tr></thead><tbody>'+L.map(d=>`<tr><td><a href="#" data-dt-oeffnen="${esc(d.pfad)}">${esc(d.name)}</a></td><td>${esc(d.art||'')}</td><td>${esc(SPNAME[d.schritt]||'')}</td><td>${esc(zeit(d.am))}${d.von?' · '+esc(d.von):''}</td><td class="r">${k.pid?'':`<button class="small ghost" data-dt-weg="${esc(d.pfad)}">Entfernen</button>`}</td></tr>`).join('')+'</tbody></table>':''}
+  ${k.pid?`<div class="acts"><button data-a="uebernahme"${BUSY?' disabled':''}>${BUSY==='uebernahme'?'Wird übernommen …':'Unterlagen ins Mieterkonto übernehmen'}</button><span class="sub">${(k.uebernommen||[]).length?(k.uebernommen.length+' Unterlage'+(k.uebernommen.length===1?'':'n')+' bereits übernommen. Neue werden ergänzt.'):'Selbstauskunft, Dateien, Mietangebot und Mietvertrag kommen in den Mieterordner.'}</span></div>`:''}
   ${k.pid?'':`<div class="acts"><input class="inp" id="dt-art" list="dl-dtart" placeholder="Art, z. B. Selbstauskunft" style="width:240px" autocomplete="off"><datalist id="dl-dtart">${DT_ARTEN.map(a=>`<option value="${esc(a)}">`).join('')}</datalist>
     <label class="inp" style="cursor:pointer">${BUSY==='dt'?'Wird hochgeladen …':'Datei auswählen und hochladen'}<input type="file" id="dt-datei" multiple style="display:none"${BUSY?' disabled':''}></label></div>`}</div>`;}
 async function dateiHoch(k,files,art){if(!files.length)return;BUSY='dt';panel();let n=0;
@@ -397,7 +440,7 @@ function kalkKarte(k){const c=kalk(k),e=k.wohnung&&einVon(k.wohnung.einheit_id),
       <tr><td>Name, Vorname</td><td class="r">${esc([k.name,k.vorname].filter(Boolean).join(', ')||'–')}</td>${info('name')}</tr>
       <tr><td>Personenanzahl</td><td class="r"><input id="k-personen" value="${esc(k.personen||'')}" inputmode="numeric"></td>${info('personen')}</tr>
       <tr><td>Mietbeginn</td><td class="r"><input id="k-beginn" type="date" value="${esc(c.beginn||'')}" style="max-width:150px"></td>${info('beginn')}</tr>`
-    +KREIHE.map(([p,l])=>`<tr><td>${esc(l)}</td><td class="r"><input data-pos="${p}" data-s="neu" value="${esc(fz(zahl(c.pos[p].neu)))}" inputmode="decimal"></td>${info(p)}</tr>`).join('')
+    +KREIHE.map(([p,l])=>`<tr><td>${esc(l)}</td><td class="r"><input data-pos="${p}" data-s="neu" value="${esc(feur(zahl(c.pos[p].neu)))}" inputmode="decimal" placeholder="0,00 €"></td>${info(p)}</tr>`).join('')
     +`<tr class="sum"><td>Summe</td><td class="r">${esc(eur(sNeu))}</td><td>${kt?esc(kt.kz+'_'+kt.iban+(kt.bank?' · '+kt.bank:'')):'<span class="sub">Beim Objekt ist noch kein Mietkonto hinterlegt.</span>'}</td></tr>
       <tr class="sum"><td>Kaution (3 Kaltmieten)</td><td class="r">${esc(eur(kaution(k)))}</td><td>${esc(EINST.kautionskonto||'')}</td></tr>
       <tr><td>Ausstattungsmerkmale</td><td colspan="2"><input class="feld" style="max-width:none;text-align:left" id="k-ausstattung" value="${esc(c.ausstattung||(e&&e.ausstattung)||'')}" autocomplete="off"></td></tr>
@@ -409,7 +452,7 @@ function kalkKarte(k){const c=kalk(k),e=k.wohnung&&einVon(k.wohnung.einheit_id),
       <div><b>${esc(pm(sNeu-ebk))}</b><span>Warmmiete ohne EBK pro m²</span></div><div><b>${esc(pm(sNeu))}</b><span>Warmmiete mit EBK pro m²</span></div></div>
     ${kaltAlt&&kalt?`<div class="sub" style="margin-top:6px">Wertsteigerung bei Faktor 12: ${esc(eur((kalt-kaltAlt)*12*12))} · Erhöhung Kaltmiete ${((kalt/kaltAlt-1)*100).toFixed(1).replace('.',',')} %</div>`:''}
     ${c.vormiete&&!c.vormiete.keine?`<div class="sub" style="margin-top:8px">Letztes Mietverhältnis dieser Wohnung: ${esc(c.vormiete.mieter)}${c.vormiete.von?', '+esc(dmy(c.vormiete.von))+(c.vormiete.bis?' bis '+esc(dmy(c.vormiete.bis)):' bis heute'):''}, zuletzt ${esc(eur(c.vormiete.total))} warm. ${c.vormiete.neuUebernommen?'Die Beträge oben sind als Startwerte übernommen.':''} <a href="#" data-a="vormiete">Erneut übernehmen</a></div>`:c.vormiete&&c.vormiete.keine?'<div class="sub" style="margin-top:8px">Für diese Wohnung gibt es im OS noch kein früheres Mietverhältnis. Die Beträge bitte selbst eintragen.</div>':''}
-    <div class="g3" style="margin-top:12px"><label class="fl">Kaltmiete bisher (Vormieter, für die Wertsteigerung)<input data-pos="kalt" data-s="alt" value="${esc(fz(zahl(c.pos.kalt.alt)))}" inputmode="decimal"></label></div></div>`;
+    <div class="g3" style="margin-top:12px"><label class="fl">Kaltmiete bisher (Vormieter, für die Wertsteigerung)<input data-pos="kalt" data-s="alt" value="${esc(feur(zahl(c.pos.kalt.alt)))}" inputmode="decimal" placeholder="0,00 €"></label></div></div>`;
   // KdU-Prüfung
   h+=`<div class="card"><div class="ch">Angemessenheit für Jobcenter / Sozialamt</div>
     <label class="fl">Gebiet (Mietobergrenze)<input id="k-region" list="dl-region" value="${esc(region)}" placeholder="Ort eintippen …" autocomplete="off"><datalist id="dl-region">${Object.keys(KDU).map(r=>`<option value="${esc(r)}">`).join('')}</datalist></label>`;
@@ -610,14 +653,19 @@ const FELD={'f-anrede':'anrede','f-vorname':'vorname','f-name':'name','f-weitere
 const KALK={'k-beginn':'beginn','k-aenderung':'aenderung','k-wfl':'wfl','k-lage':'lage','k-ausstattung':'ausstattung','k-zielgruppe':'zielgruppe','k-kaution':'kaution'};
 let spT=null;
 function zeileNeu(k){const z=document.querySelector('.zeile[data-k="'+CSS.escape(k.id)+'"]');if(!z||k.archiv)return;const t=document.createElement('div');t.innerHTML=karte(k);z.replaceWith(t.firstElementChild);}
-function spaeter(k,neuZeichnen){clearTimeout(spT);spT=setTimeout(()=>{speichern(k);zeileNeu(k);if(neuZeichnen)panel();},700);}
+/* Während im Arbeitsbereich getippt wird, nur speichern; die Zeile im Board erst nach Verlassen des Feldes neu zeichnen (sonst springt z. B. das Datumsfeld zurück) */
+let ZN=null;document.addEventListener('focusin',e=>{const t=e.target;if(t&&t.dataset&&t.dataset.pos&&t.value)setTimeout(()=>{try{if(document.activeElement===t)t.select();}catch(x){}});});
+const tipptImWs=()=>{const ws=document.getElementById('ws'),a=document.activeElement;return !!(ws&&a&&ws.contains(a)&&/^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName));};
+function spaeter(k,neuZeichnen){clearTimeout(spT);spT=setTimeout(()=>{speichern(k);if(tipptImWs())ZN=k;else zeileNeu(k);if(neuZeichnen)panel();},700);}
+document.addEventListener('focusout',()=>{if(!ZN)return;setTimeout(()=>{if(!ZN||tipptImWs())return;const k=ZN;ZN=null;zeileNeu(k);},60);});
 document.addEventListener('input',e=>{const t=e.target;
   if(t.id==='suche'){SUCHE=t.value;render();return;}
   if(t.dataset&&t.dataset.msm!==undefined){MSMD[t.dataset.msm]=t.value;return;}
   const k=K.find(x=>x.id===SEL);if(!k||k.pid)return;const c=kalk(k);
   if(FELD[t.id]){k[FELD[t.id]]=t.value;spaeter(k,t.id==='k-personen');return;}
+  if(t.id==='k-beginn'){if(t.value&&!/^(19|20)\d\d-\d\d-\d\d$/.test(t.value))return;c.beginn=t.value;spaeter(k,false);return;}
   if(KALK[t.id]){c[KALK[t.id]]=t.value;spaeter(k,t.id==='k-wfl');return;}
-  if(t.dataset.pos){c.pos[t.dataset.pos][t.dataset.s]=t.value;spaeter(k,true);return;}
+  if(t.dataset.pos){c.pos[t.dataset.pos][t.dataset.s]=t.value;spaeter(k,false);return;}
   if(t.dataset.kinfo!==undefined){c.info[t.dataset.kinfo]=t.value;spaeter(k,false);return;}
   if(t.dataset.vtext!==undefined){vtDaten(k).texte[t.dataset.vtext]=t.value;spaeter(k,false);return;}
   if(t.id==='vt-m2mail'){vtDaten(k).mieter2Email=t.value.trim();spaeter(k,false);return;}
@@ -636,7 +684,9 @@ document.addEventListener('change',e=>{const t=e.target;if(!t.isConnected)return
     k.wohnung={objekt_id:o.id,einheit_id:ei.id,label:o.kz+' '+ei.bezeichnung+' · '+(o.strasse||o.name||'')};speichern(k,'Wohnung gewählt: '+k.wohnung.label);setTimeout(()=>{zeileNeu(k);panel();});return;}
   if(t.id==='k-vorlage'){const v=t.value.trim(),x=MAV.find(m=>m.kurz===v),id=x?x.id:/^keine/i.test(v)?'keine':v?null:'';if(id===null){toast('Bitte eine Vorlage aus der Liste wählen.');return;}const c=kalk(k);if(id)c.vorlage=id;else delete c.vorlage;const a=maDaten(k);a.auswahl=id&&id!=='keine'?[id]:[];speichern(k,id?'Vorlage Mietangebot: '+(x?x.kurz:'keine'):'');setTimeout(panel);return;}
   if(t.id==='k-region'){if(t.value&&!KDU[t.value]){toast('Bitte ein Gebiet aus der Liste wählen.');return;}kalk(k).region=t.value;speichern(k);setTimeout(panel);return;}
-  if(t.dataset.pos||t.id==='k-beginn'||t.id==='k-kaution'){clearTimeout(spT);speichern(k);setTimeout(()=>{zeileNeu(k);panel();});}});
+  if(t.id==='k-beginn'){if(t.value&&!/^(19|20)\d\d-\d\d-\d\d$/.test(t.value))return;kalk(k).beginn=t.value;clearTimeout(spT);speichern(k);ZN=k;return;}
+  if(t.dataset.pos||t.id==='k-kaution'){clearTimeout(spT);speichern(k);setTimeout(()=>{zeileNeu(k);panel();});}});
+document.addEventListener('focusout',e=>{const t=e.target;if(t&&t.id==='k-beginn'){const k=K.find(x=>x.id===SEL);if(k&&!k.pid)setTimeout(()=>{if(document.activeElement&&document.activeElement.id==='k-beginn')return;ZN=null;zeileNeu(k);panel();},80);}});
 document.addEventListener('click',async e=>{const t=e.target;
   const sw=t.closest('[data-spalte-wahl]');if(sw){const k=K.find(x=>x.id===SEL);if(k)verschieben(k,sw.dataset.spalteWahl);return;}
   const mv=t.closest('[data-mavor]');if(mv){const k=K.find(x=>x.id===SEL);if(!k)return;const fen=window.open('','_blank');try{const b=await maErzeugen(k,mv.dataset.mavor);const u=URL.createObjectURL(new Blob([b],{type:'application/pdf'}));if(fen)fen.location.href=u;else window.open(u,'_blank');}catch(x){if(fen)fen.close();toast('Vorschau nicht möglich: '+(x.message||x),7000);}return;}
@@ -657,6 +707,7 @@ document.addEventListener('click',async e=>{const t=e.target;
     if(w==='msaqr'&&k){const img=document.querySelector('#qrbox img,#qrbox canvas');const u=img?(img.tagName==='CANVAS'?img.toDataURL('image/png'):img.src):'';if(!u)return;const l=document.createElement('a');l.href=u;l.download='QR_Selbstauskunft_'+String(k.name||'Mieter')+'.png';l.click();return;}
     if(w==='msapdf'&&k){msaPdf(k);return;}
     if(w==='msafrei'&&k){msaFreigeben(k);return;}
+    if(w==='uebernahme'&&k){dokumenteUebernehmen(k);return;}
     if(w==='loeschen'&&k){loeschen(k);return;}
     if(w==='msaman'&&k){msmStart(k);panel();return;}
     if(w==='msmab'){MSM=null;panel();return;}
