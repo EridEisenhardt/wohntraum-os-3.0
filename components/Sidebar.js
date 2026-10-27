@@ -353,7 +353,8 @@ export default function Sidebar({ user, demo, onLogout, role, perms }) {
   const canSeeItem = (n, it) => {
     if (demo || isAdmin) return true
     if (String(n.key || '').startsWith('v-')) {
-      if (it.offen) return true
+      // "offen"-Platzhalter nur zeigen, wenn keine Rechte-Einschränkung greift (nicht für eingeschränkte Rollen)
+      if (it.offen && !perms) return true
       // Direkte Freigabe (z. B. aus der Nutzerverwaltung: sub:/hausverwaltung/stoerungen) hat Vorrang
       const directKey = 'sub:' + it.href
       if (has(directKey)) return on(directKey)
