@@ -45,6 +45,11 @@ async function token(){const {data}=await sb.auth.getSession();return data&&data
 async function api(pfad,body){let r;try{r=await fetch(pfad,{method:'POST',headers:{'content-type':'application/json',authorization:'Bearer '+await token()},body:JSON.stringify(body)});}catch(e){throw new Error('Dienst nicht erreichbar.');}
   let j=null;try{j=await r.json();}catch(e){}if(!j)throw new Error('Keine Antwort ('+r.status+').');if(j.error)throw new Error(j.error);return j;}
 const NUTZER={'ramona@andersmacher.info':'Ramona Romanelli','juergen@andersmacher.info':'Jürgen Reuter','eric@andersmacher.info':'Eric Eisenhardt'};
+const kurzBank=b=>/dkb|kreditbank/i.test(b)?'DKB':/gls/i.test(b)?'GLS':/sparkasse/i.test(b)?'Sparkasse':/1822/.test(b)?'1822direkt':String(b||'');
+const kurzInh=(k,kk)=>kk&&kk.ges?(/kibo/i.test(kk.ges)?'KiBo':kk.ges):/kibo/i.test(k.inhaber)?'KiBo':/wohn/i.test(k.inhaber)?'WT':/eisenhardt/i.test(k.inhaber)?'EE':String(k.inhaber||'');
+let STAND='';
+async function standSpeichern(){ const ts=new Date().toISOString(); STAND=ts; try{ await sb.from('os_docs').upsert({app:'oc',pfad:'bank/stand',data:{am:ts,von:ICH,konten:KONTEN||[],nahaus:NH||[],vergleich:VGL},updated_at:ts},{onConflict:'app,pfad'}); }catch(e){} }
+async function standLaden(){ try{ const {data}=await sb.from('os_docs').select('data').eq('app','oc').eq('pfad','bank/stand').maybeSingle(); const d=data&&data.data; if(d&&d.konten){ KONTEN=d.konten; NH=d.nahaus||[]; VGL=d.vergleich||{}; STAND=d.am||''; } }catch(e){} }
 let KN={},ICH='',ST=null,BANKEN=null,KONTEN=null,NH=null,VGL={},BUSY='';
 
 function render(){
@@ -60,13 +65,13 @@ function render(){
     +'<select id="b-art"><option value="business">Geschäftlich</option><option value="personal">Privat</option></select>'
     +'<button class="primary" data-a="verbinden"'+(BUSY||!ST.bereit?' disabled':'')+'>'+(BUSY==='verbinden'?'Bank wird geöffnet …':'Bank verbinden')+'</button></div></div>';
   /* Konten */
-  h+='<div class="card"><div class="ch">Konten<div class="acts"><button data-a="abruf"'+(BUSY||!V.length?' disabled':'')+'>'+(BUSY==='abruf'?'Wird abgerufen …':'Kontostände abrufen')+'</button></div></div>';
+  h+='<div class="card"><div class="ch">Konten<div class="acts"><button data-a="abruf"'+(BUSY||!V.length?' disabled':'')+'>'+(BUSY==='abruf'?'Wird abgerufen …':'Kontostände abrufen')+'</button></div></div>'+(STAND&&KONTEN?'<div class="klein" style="margin:-4px 0 8px">Stand '+esc(dmy(STAND))+', '+esc(new Date(STAND).toTimeString().slice(0,5))+' Uhr</div>':'');
   if(!KONTEN) h+='<div class="leer">'+(V.length?'Kontostände noch nicht abgerufen.':'Erst eine Bank verbinden.')+'</div>';
   else { const nh=new Map((NH||[]).map(k=>[k.iban,k]));
     const kn=k=>(KN[k.iban]||{}).name||'', L=KONTEN.slice().sort((a,b)=>(kn(a)?0:1)-(kn(b)?0:1)||kn(a).localeCompare(kn(b),'de',{numeric:true})||(a.bank+a.iban).localeCompare(b.bank+b.iban,'de'));
     h+='<table class="ktab"><thead><tr><th>Konto</th><th>Bank</th><th>IBAN</th><th>Inhaber</th><th class="n">Kontostand Bank</th><th>Stand</th><th class="n">Kontostand Nahaus</th><th class="n">Differenz</th><th></th></tr></thead><tbody>'
       +L.map(k=>{const n=nh.get(k.iban), d=n&&k.saldo!=null&&n.saldo!=null?Math.round((k.saldo-n.saldo)*100)/100:null, v=VGL[k.iban];
-        const kk=KN[k.iban]||{}; return '<tr><td class="nw"><b>'+esc(kk.name||'–')+'</b>'+(kk.ges?' <span class="klein">'+esc(kk.ges)+'</span>':'')+'</td><td class="nw">'+esc(k.bank)+'</td><td class="nw">'+esc(fiban(k.iban))+'</td><td class="klein">'+esc(k.inhaber)+'</td><td class="n"><b>'+(k.fehler?'<span class="neg">Fehler</span>':eur(k.saldo))+'</b></td><td>'+esc(dmy(k.saldoAm))+'</td><td class="n">'+(n?eur(n.saldo):'<span class="sub">nicht in Nahaus</span>')+'</td><td class="n'+(d?' neg':'')+'">'+(d==null?'':d?eur(d):'<span class="pos">gleich</span>')+'</td><td class="n"><button class="small" data-vgl="'+esc(k.iban)+'"'+(BUSY?' disabled':'')+'>Umsätze vergleichen</button></td></tr>'
+        const kk=KN[k.iban]||{}; return '<tr><td class="nw"><b>'+esc(kk.name||'–')+'</b></td><td class="nw">'+esc(kurzBank(k.bank))+'</td><td class="nw">'+esc(fiban(k.iban))+'</td><td class="nw">'+esc(kurzInh(k,kk))+'</td><td class="n"><b>'+(k.fehler?'<span class="neg">Fehler</span>':eur(k.saldo))+'</b></td><td>'+esc(dmy(k.saldoAm))+'</td><td class="n">'+(n?eur(n.saldo):'<span class="sub">nicht in Nahaus</span>')+'</td><td class="n'+(d?' neg':'')+'">'+(d==null?'':d?eur(d):'<span class="pos">gleich</span>')+'</td><td class="n"><button class="small" data-vgl="'+esc(k.iban)+'"'+(BUSY?' disabled':'')+'>Umsätze vergleichen</button></td></tr>'
           +(k.fehler?'<tr><td colspan="9"><div class="vgl neg">'+esc(k.fehler)+'</div></td></tr>':'')
           +(v?'<tr><td colspan="9"><div class="vgl">'+vglHtml(v)+'</div></td></tr>':'');}).join('')+'</tbody></table>';
     const fehlen=(NH||[]).filter(n=>!KONTEN.some(k=>k.iban===n.iban));
@@ -85,7 +90,7 @@ async function laden(){ try{ const {data}=await sb.from('os_docs').select('data'
 async function abruf(){ BUSY='abruf'; render();
   try{ KONTEN=(await api('/api/bank',{aktion:'konten'})).konten; }catch(e){ toast(e.message,8000); }
   try{ NH=(await api('/api/nahaus',{aktion:'konten'})).konten; }catch(e){ NH=[]; }
-  BUSY=''; render(); }
+  VGL={}; await standSpeichern(); BUSY=''; render(); }
 async function vergleich(ib){ const n=(NH||[]).find(k=>k.iban===ib); VGL[ib]={lade:true}; render();
   const seit=new Date(Date.now()-30*864e5).toISOString().slice(0,10);
   try{ const eb=(await api('/api/bank',{aktion:'umsaetze',iban:ib,seit})).umsaetze||[]; const nh=n?((await api('/api/nahaus',{aktion:'umsaetze',id:n.id,seit})).umsaetze||[]):[];
@@ -93,7 +98,7 @@ async function vergleich(ib){ const n=(NH||[]).find(k=>k.iban===ib); VGL[ib]={la
     for(const u of eb){ const i=frei.findIndex(x=>Math.abs(x.b-u.b)<0.005&&Math.abs((new Date(x.d)-new Date(u.d))/864e5)<=3); if(i>=0){ frei.splice(i,1); gleich++; } else nurEb.push(u); }
     VGL[ib]={eb,nh,gleich,nurEb,nurNh:frei}; }
   catch(e){ VGL[ib]={fehler:e.message}; }
-  render(); }
+  if(!VGL[ib].fehler) standSpeichern(); render(); }
 async function verbinden(bank,art){ if(!bank){ toast('Bitte eine Bank aus der Liste wählen.'); return; }
   if(BANKEN&&!BANKEN.some(b=>b.name===bank)){ toast('Diese Bank ist nicht in der Liste. Bitte aus der Liste wählen.'); return; }
   BUSY='verbinden'; render();
@@ -116,5 +121,5 @@ document.addEventListener('focusout',e=>{ const t=e.target; if(t&&t.id==='b-bank
     else { ST={bereit:true,fehlt:[],verbindungen:[]}; $('app').innerHTML='<h1>Bankkonten</h1><div class="leer">Verbindung wird angelegt …</div>';
       try{ const r=await api('/api/bank',{aktion:'sitzung',code:q.get('code'),von:ICH}); toast((r.bank||'Bank')+' verbunden: '+r.konten+' Konto'+(r.konten===1?'':'en')+'.',6000); }catch(e){ toast(e.message,10000); } }
     try{ localStorage.removeItem('bank_state'); history.replaceState(null,'',location.pathname); (window.top||window).history.replaceState(null,'',(window.top||window).location.pathname); }catch(e){} }
-  await laden(); })();
+  await standLaden(); await laden(); })();
 </script></body></html>
