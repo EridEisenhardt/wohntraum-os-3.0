@@ -79,7 +79,7 @@
       if (a.schritte && a.schritte.length) h += '<h4>So arbeitest du damit</h4><ol>' + a.schritte.map(s => '<li>' + esc(s) + '</li>').join('') + '</ol>'
       if (a.tipps && a.tipps.length) h += '<h4>Gut zu wissen</h4><ul>' + a.tipps.map(s => '<li>' + esc(s) + '</li>').join('') + '</ul>'
     }
-    const L = [...new Set([].concat(Array.isArray(window.OS_HILFE_HINWEISE) ? window.OS_HILFE_HINWEISE : [], [...TEXTE.keys()]))]
+    const L = [...TEXTE.keys()]
     if (L.length) h += '<h4>Hinweise auf dieser Seite</h4><ul>' + L.map(s => '<li>' + esc(s) + '</li>').join('') + '</ul>'
     if (!a && !L.length) h += '<div class="m">Für diese Seite gibt es noch keine Anleitung.</div>'
     h += '<div class="k">' + (a ? '<button class="p" data-h="video">' + (a.video ? 'Anleitung mit Video öffnen' : 'Anleitung öffnen') + '</button>' : '<button class="p" data-h="alle">Alle Anleitungen</button>') +
