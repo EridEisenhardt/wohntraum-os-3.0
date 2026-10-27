@@ -6,6 +6,7 @@ import FavToggle from './FavToggle'
 import TabShell from './TabShell'
 import Benachrichtigungen from './Benachrichtigungen'
 import CliqTeilen from './CliqTeilen'
+import HilfeInjektor from './HilfeInjektor'
 
 export default function AppShell({ children }) {
   const [session, setSession] = useState(null)
@@ -88,6 +89,7 @@ export default function AppShell({ children }) {
         <main className="main"><FavToggle /><TabShell /></main>
         <Benachrichtigungen session={session} />
         <CliqTeilen session={session} />
+        <HilfeInjektor />
       </div>
     </div>
   )
