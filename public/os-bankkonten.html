@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="de"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Bankkonten</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+:root{--bg:#f3f5f8;--card:#ffffff;--ink:#18202c;--muted:#5f6b7a;--line:#e0e5eb;--soft:#eef1f5;--accent:#2f5d8a;--accent-soft:#e3ecf5;--pos:#1d7a4c;--pos-bg:#e5f4ec;--warn:#946200;--warn-bg:#fff4d6;--neg:#b42318;--neg-bg:#fcebe9}
+@media (prefers-color-scheme: dark){:root{--bg:#11151b;--card:#1a1f28;--ink:#e5e9ef;--muted:#97a1af;--line:#2b323e;--soft:#222935;--accent:#8db4dc;--accent-soft:#1f2b3a;--pos:#6fcf97;--pos-bg:#16291f;--warn:#e6b34a;--warn-bg:#2e2615;--neg:#f08a80;--neg-bg:#3a2422}}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--ink);font:14px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+button,input,select{font:inherit;color:var(--ink)}
+.wrap{padding:16px 20px 40px;max-width:1500px;margin:0 auto}.nw{white-space:nowrap}.klein{font-size:12px;color:var(--muted)}
+h1{font-size:22px;font-weight:800;margin-bottom:12px}
+.sub{color:var(--muted);font-size:12px}
+.acts{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+button{border:1px solid var(--line);background:var(--card);border-radius:8px;padding:7px 12px;cursor:pointer;min-height:34px}
+button:hover{border-color:var(--accent)}button.primary{background:var(--accent);color:#fff;border-color:var(--accent)}
+button.small{font-size:12.5px;padding:3px 9px;min-height:28px}button:disabled{opacity:.55;cursor:default}
+input,select{background:var(--soft);border:1px solid var(--line);border-radius:8px;padding:7px 10px;min-height:34px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px 16px;margin-bottom:12px}
+.ch{font-weight:700;font-size:15px;margin-bottom:8px;display:flex;align-items:center;gap:10px}.ch .acts{margin-left:auto}.ch button{font-weight:400;font-size:13px}
+.ktab{width:100%;border-collapse:collapse;font-size:13px}
+.ktab th{text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:.03em;color:var(--muted);font-weight:600;padding:6px;border-bottom:1px solid var(--line)}
+.ktab td{padding:8px 6px;border-bottom:1px solid var(--line);vertical-align:top}.ktab .n{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+.pill{display:inline-block;font-size:11px;padding:1px 8px;border-radius:999px;font-weight:600}
+.p-ok{background:var(--pos-bg);color:var(--pos)}.p-warn{background:var(--warn-bg);color:var(--warn)}.p-bad{background:var(--neg-bg);color:var(--neg)}
+.neg{color:var(--neg)}.pos{color:var(--pos)}
+.note{background:var(--warn-bg);color:var(--warn);border-radius:8px;padding:8px 10px;font-size:13px;margin-bottom:12px}
+.leer{color:var(--muted);padding:8px 4px;font-size:12.5px}
+.toast{position:fixed;left:50%;bottom:20px;transform:translateX(-50%);background:var(--ink);color:var(--bg);padding:9px 16px;border-radius:8px;font-size:13px;opacity:0;pointer-events:none;transition:opacity .2s;z-index:50}.toast.on{opacity:1}
+.vgl{background:var(--soft);border-radius:8px;padding:8px 10px;margin-top:6px;font-size:12.5px}
+</style></head><body>
+<div class="wrap" id="app"><div class="leer">Lädt …</div></div>
+<div class="toast" id="toast"></div>
+<script>
+const sb=window.supabase.createClient('https://jqzxctfqvcwbctpjksvg.supabase.co','eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpxenhjdGZxdmN3YmN0cGprc3ZnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODIxMzA0MzIsImV4cCI6MjA5NzcwNjQzMn0.RKIbZxJdusKWWPjBJqlxZ8e1m8So02UslOg55YRsn3o');
+const $=id=>document.getElementById(id);
+const esc=s=>(s==null?'':String(s)).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+const dmy=x=>{const s=String(x||'').slice(0,10);return /^\d{4}-\d\d-\d\d$/.test(s)?s.split('-').reverse().join('.'):'';};
+const eur=n=>n==null||isNaN(n)?'–':Number(n).toLocaleString('de-DE',{minimumFractionDigits:2,maximumFractionDigits:2})+' €';
+const fiban=s=>String(s||'').replace(/(.{4})/g,'$1 ').trim();
+const heute=new Date().toISOString().slice(0,10);
+const tageBis=d=>d?Math.round((new Date(d+'T12:00:00')-new Date(heute+'T12:00:00'))/864e5):null;
+function toast(t,ms){const el=$('toast');el.textContent=t;el.classList.add('on');clearTimeout(toast._t);toast._t=setTimeout(()=>el.classList.remove('on'),ms||4000);}
+async function token(){const {data}=await sb.auth.getSession();return data&&data.session?data.session.access_token:'';}
+async function api(pfad,body){let r;try{r=await fetch(pfad,{method:'POST',headers:{'content-type':'application/json',authorization:'Bearer '+await token()},body:JSON.stringify(body)});}catch(e){throw new Error('Dienst nicht erreichbar.');}
+  let j=null;try{j=await r.json();}catch(e){}if(!j)throw new Error('Keine Antwort ('+r.status+').');if(j.error)throw new Error(j.error);return j;}
+const NUTZER={'ramona@andersmacher.info':'Ramona Romanelli','juergen@andersmacher.info':'Jürgen Reuter','eric@andersmacher.info':'Eric Eisenhardt'};
+const kurzBank=b=>/dkb|kreditbank/i.test(b)?'DKB':/gls/i.test(b)?'GLS':/sparkasse/i.test(b)?'Sparkasse':/1822/.test(b)?'1822direkt':String(b||'');
+const kurzInh=(k,kk)=>kk&&kk.ges?(/kibo/i.test(kk.ges)?'KiBo':kk.ges):/kibo/i.test(k.inhaber)?'KiBo':/wohn/i.test(k.inhaber)?'WT':/eisenhardt/i.test(k.inhaber)?'EE':String(k.inhaber||'');
+let STAND='';
+async function standSpeichern(){ const ts=new Date().toISOString(); STAND=ts; try{ await sb.from('os_docs').upsert({app:'oc',pfad:'bank/stand',data:{am:ts,von:ICH,konten:KONTEN||[],nahaus:NH||[],vergleich:VGL},updated_at:ts},{onConflict:'app,pfad'}); }catch(e){} }
+async function standLaden(){ try{ const {data}=await sb.from('os_docs').select('data').eq('app','oc').eq('pfad','bank/stand').maybeSingle(); const d=data&&data.data; if(d&&d.konten){ KONTEN=d.konten; NH=d.nahaus||[]; VGL=d.vergleich||{}; STAND=d.am||''; } }catch(e){} }
+let KN={},ICH='',ST=null,BANKEN=null,KONTEN=null,NH=null,VGL={},BUSY='';
+
+function render(){
+  let h='<h1>Bankkonten</h1>';
+  if(!ST){$('app').innerHTML=h+'<div class="leer">Lädt …</div>';return;}
+  if(!ST.bereit) h+='<div class="note">Die Bankanbindung ist noch nicht eingerichtet. In Vercel fehlt: '+esc(ST.fehlt.join(', '))+'</div>';
+  /* Verbindungen */
+  const V=(ST.verbindungen||[]).slice().sort((a,b)=>String(a.bank).localeCompare(String(b.bank),'de'));
+  h+='<div class="card"><div class="ch">Verbundene Banken</div>';
+  h+=V.length?'<table class="ktab"><thead><tr><th>Bank</th><th>Art</th><th>Konten</th><th>Freigabe gültig bis</th><th>Verbunden</th><th></th></tr></thead><tbody>'+V.map(v=>{const t=tageBis(v.bis);const p=t==null?'':t<0?'<span class="pill p-bad">abgelaufen</span>':t<=21?'<span class="pill p-warn">noch '+t+' Tage</span>':'';
+    return '<tr><td><b>'+esc(v.bank)+'</b></td><td>'+(v.art==='personal'?'Privat':'Geschäftlich')+'</td><td>'+v.konten.length+'</td><td>'+esc(dmy(v.bis))+' '+p+'</td><td>'+esc(dmy(v.am))+(v.von?' · '+esc(v.von):'')+'</td><td class="n"><button class="small" data-neu="'+esc(v.bank)+'|'+esc(v.art)+'"'+(BUSY||!ST.bereit?' disabled':'')+'>Neu bestätigen</button> <button class="small" data-trennen="'+esc(v.id)+'"'+(BUSY?' disabled':'')+'>Trennen</button></td></tr>';}).join('')+'</tbody></table>':'<div class="leer">Noch keine Bank verbunden.</div>';
+  h+='<div class="acts" style="margin-top:10px"><input id="b-bank" list="b-banken" placeholder="Bank suchen, z. B. DKB" autocomplete="off" style="width:280px"'+(ST.bereit?'':' disabled')+'><datalist id="b-banken">'+(BANKEN||[]).map(b=>'<option value="'+esc(b.name)+'">').join('')+'</datalist>'
+    +'<select id="b-art"><option value="business">Geschäftlich</option><option value="personal">Privat</option></select>'
+    +'<button class="primary" data-a="verbinden"'+(BUSY||!ST.bereit?' disabled':'')+'>'+(BUSY==='verbinden'?'Bank wird geöffnet …':'Bank verbinden')+'</button></div></div>';
+  /* Konten */
+  h+='<div class="card"><div class="ch">Konten<div class="acts"><button data-a="abruf"'+(BUSY||!V.length?' disabled':'')+'>'+(BUSY==='abruf'?'Wird abgerufen …':'Kontostände abrufen')+'</button></div></div>'+(STAND&&KONTEN?'<div class="klein" style="margin:-4px 0 8px">Stand '+esc(dmy(STAND))+', '+esc(new Date(STAND).toTimeString().slice(0,5))+' Uhr</div>':'');
+  if(!KONTEN) h+='<div class="leer">'+(V.length?'Kontostände noch nicht abgerufen.':'Erst eine Bank verbinden.')+'</div>';
+  else { const nh=new Map((NH||[]).map(k=>[k.iban,k]));
+    const kn=k=>(KN[k.iban]||{}).name||'', L=KONTEN.slice().sort((a,b)=>(kn(a)?0:1)-(kn(b)?0:1)||kn(a).localeCompare(kn(b),'de',{numeric:true})||(a.bank+a.iban).localeCompare(b.bank+b.iban,'de'));
+    h+='<table class="ktab"><thead><tr><th>Konto</th><th>Bank</th><th>IBAN</th><th>Inhaber</th><th class="n">Kontostand Bank</th><th>Stand</th><th class="n">Kontostand Nahaus</th><th class="n">Differenz</th><th></th></tr></thead><tbody>'
+      +L.map(k=>{const n=nh.get(k.iban), d=n&&k.saldo!=null&&n.saldo!=null?Math.round((k.saldo-n.saldo)*100)/100:null, v=VGL[k.iban];
+        const kk=KN[k.iban]||{}; return '<tr><td class="nw"><b>'+esc(kk.name||'–')+'</b></td><td class="nw">'+esc(kurzBank(k.bank))+'</td><td class="nw">'+esc(fiban(k.iban))+'</td><td class="nw">'+esc(kurzInh(k,kk))+'</td><td class="n"><b>'+(k.fehler?'<span class="neg">Fehler</span>':eur(k.saldo))+'</b></td><td>'+esc(dmy(k.saldoAm))+'</td><td class="n">'+(n?eur(n.saldo):'<span class="sub">nicht in Nahaus</span>')+'</td><td class="n'+(d?' neg':'')+'">'+(d==null?'':d?eur(d):'<span class="pos">gleich</span>')+'</td><td class="n"><button class="small" data-vgl="'+esc(k.iban)+'"'+(BUSY?' disabled':'')+'>Umsätze vergleichen</button></td></tr>'
+          +(k.fehler?'<tr><td colspan="9"><div class="vgl neg">'+esc(k.fehler)+'</div></td></tr>':'')
+          +(v?'<tr><td colspan="9"><div class="vgl">'+vglHtml(v)+'</div></td></tr>':'');}).join('')+'</tbody></table>';
+    const fehlen=(NH||[]).filter(n=>!KONTEN.some(k=>k.iban===n.iban));
+    if(fehlen.length) h+='<div class="sub" style="margin-top:8px">Nur in Nahaus: '+fehlen.map(n=>esc(n.bank+' '+fiban(n.iban))).join(' · ')+'</div>'; }
+  h+='</div>';
+  $('app').innerHTML=h;
+}
+function vglHtml(v){ if(v.lade) return 'Umsätze der letzten 30 Tage werden geladen …'; if(v.fehler) return '<span class="neg">'+esc(v.fehler)+'</span>';
+  let h='Letzte 30 Tage: '+v.eb.length+' Umsätze von der Bank, '+v.nh.length+' aus Nahaus, '+v.gleich+' stimmen überein.';
+  if(v.nurEb.length) h+='<div style="margin-top:4px"><b>Nur von der Bank:</b> '+v.nurEb.slice(0,15).map(u=>esc(dmy(u.d)+' '+eur(u.b)+' '+u.n)).join(' · ')+'</div>';
+  if(v.nurNh.length) h+='<div style="margin-top:4px"><b>Nur in Nahaus:</b> '+v.nurNh.slice(0,15).map(u=>esc(dmy(u.d)+' '+eur(u.b)+' '+u.n)).join(' · ')+'</div>';
+  return h; }
+async function laden(){ try{ const {data}=await sb.from('os_docs').select('data').eq('app','oc').eq('pfad','stamm/konten').maybeSingle(); KN={}; ((data&&data.data&&data.data.konten)||[]).forEach(k=>{ if(k&&k.iban) KN[String(k.iban).replace(/\s/g,'').toUpperCase()]={name:k.name||'',ges:k.ges||''}; }); }catch(e){}
+  try{ ST=await api('/api/bank',{aktion:'status'}); }catch(e){ ST={bereit:false,fehlt:[],verbindungen:[]}; toast(e.message,7000); }
+  render(); if(ST.bereit&&!BANKEN){ try{ BANKEN=(await api('/api/bank',{aktion:'banken'})).banken; render(); }catch(e){ toast(e.message,7000); } } }
+async function abruf(){ BUSY='abruf'; render();
+  try{ KONTEN=(await api('/api/bank',{aktion:'konten'})).konten; }catch(e){ toast(e.message,8000); }
+  try{ NH=(await api('/api/nahaus',{aktion:'konten'})).konten; }catch(e){ NH=[]; }
+  VGL={}; await standSpeichern(); BUSY=''; render(); }
+async function vergleich(ib){ const n=(NH||[]).find(k=>k.iban===ib); VGL[ib]={lade:true}; render();
+  const seit=new Date(Date.now()-30*864e5).toISOString().slice(0,10);
+  try{ const eb=(await api('/api/bank',{aktion:'umsaetze',iban:ib,seit})).umsaetze||[]; const nh=n?((await api('/api/nahaus',{aktion:'umsaetze',id:n.id,seit})).umsaetze||[]):[];
+    const frei=nh.slice(); let gleich=0; const nurEb=[];
+    for(const u of eb){ const i=frei.findIndex(x=>Math.abs(x.b-u.b)<0.005&&Math.abs((new Date(x.d)-new Date(u.d))/864e5)<=3); if(i>=0){ frei.splice(i,1); gleich++; } else nurEb.push(u); }
+    VGL[ib]={eb,nh,gleich,nurEb,nurNh:frei}; }
+  catch(e){ VGL[ib]={fehler:e.message}; }
+  if(!VGL[ib].fehler) standSpeichern(); render(); }
+async function verbinden(bank,art){ if(!bank){ toast('Bitte eine Bank aus der Liste wählen.'); return; }
+  if(BANKEN&&!BANKEN.some(b=>b.name===bank)){ toast('Diese Bank ist nicht in der Liste. Bitte aus der Liste wählen.'); return; }
+  BUSY='verbinden'; render();
+  try{ const r=await api('/api/bank',{aktion:'verbinden',bank,art}); try{ sessionStorage.setItem('bank_state',r.state); localStorage.setItem('bank_state',r.state); }catch(e){} (window.top||window).location.href=r.url; }
+  catch(e){ BUSY=''; render(); toast(e.message,9000); } }
+document.addEventListener('click',async e=>{ const t=e.target.closest('button'); if(!t) return;
+  if(t.dataset.a==='verbinden'){ verbinden($('b-bank').value.trim(),$('b-art').value); return; }
+  if(t.dataset.a==='abruf'){ abruf(); return; }
+  if(t.dataset.neu){ const [bank,art]=t.dataset.neu.split('|'); verbinden(bank,art||'business'); return; }
+  if(t.dataset.vgl){ vergleich(t.dataset.vgl); return; }
+  if(t.dataset.trennen){ if(!confirm('Diese Bankverbindung im OS trennen? Die Kontostände und Umsätze dieser Bank werden dann nicht mehr abgerufen.')) return;
+    BUSY='trennen'; render(); try{ await api('/api/bank',{aktion:'trennen',id:t.dataset.trennen}); toast('Verbindung getrennt.'); }catch(er){ toast(er.message,7000); } BUSY=''; KONTEN=null; laden(); } });
+document.addEventListener('focusin',e=>{ const t=e.target; if(t&&t.id==='b-bank'){ t.dataset.alt=t.value; t.value=''; } });
+document.addEventListener('focusout',e=>{ const t=e.target; if(t&&t.id==='b-bank'&&!t.value&&t.dataset.alt) t.value=t.dataset.alt; });
+(async()=>{ const {data}=await sb.auth.getSession(); const u=data&&data.session&&data.session.user; ICH=u?(NUTZER[u.email]||u.email):'';
+  const q=new URLSearchParams(location.search);
+  if(q.get('error')){ toast('Die Bank hat die Freigabe nicht erteilt: '+(q.get('error_description')||q.get('error')),9000); }
+  else if(q.get('code')){ let ok=true; try{ const s=localStorage.getItem('bank_state'); if(s&&q.get('state')&&s!==q.get('state')) ok=false; }catch(e){}
+    if(!ok) toast('Die Rückmeldung der Bank passt nicht zur Anfrage. Bitte erneut verbinden.',9000);
+    else { ST={bereit:true,fehlt:[],verbindungen:[]}; $('app').innerHTML='<h1>Bankkonten</h1><div class="leer">Verbindung wird angelegt …</div>';
+      try{ const r=await api('/api/bank',{aktion:'sitzung',code:q.get('code'),von:ICH}); toast((r.bank||'Bank')+' verbunden: '+r.konten+' Konto'+(r.konten===1?'':'en')+'.',6000); }catch(e){ toast(e.message,10000); } }
+    try{ localStorage.removeItem('bank_state'); history.replaceState(null,'',location.pathname); (window.top||window).history.replaceState(null,'',(window.top||window).location.pathname); }catch(e){} }
+  await standLaden(); await laden(); })();
+</script></body></html>
