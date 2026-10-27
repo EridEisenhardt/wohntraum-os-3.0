@@ -8,7 +8,7 @@
 *{box-sizing:border-box;margin:0;padding:0}
 body{background:var(--bg);color:var(--ink);font:14px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
 button,input,select{font:inherit;color:var(--ink)}
-.wrap{padding:16px 20px 40px;max-width:1200px;margin:0 auto}
+.wrap{padding:16px 20px 40px;max-width:1500px;margin:0 auto}.nw{white-space:nowrap}.klein{font-size:12px;color:var(--muted)}
 h1{font-size:22px;font-weight:800;margin-bottom:12px}
 .sub{color:var(--muted);font-size:12px}
 .acts{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
@@ -45,7 +45,7 @@ async function token(){const {data}=await sb.auth.getSession();return data&&data
 async function api(pfad,body){let r;try{r=await fetch(pfad,{method:'POST',headers:{'content-type':'application/json',authorization:'Bearer '+await token()},body:JSON.stringify(body)});}catch(e){throw new Error('Dienst nicht erreichbar.');}
   let j=null;try{j=await r.json();}catch(e){}if(!j)throw new Error('Keine Antwort ('+r.status+').');if(j.error)throw new Error(j.error);return j;}
 const NUTZER={'ramona@andersmacher.info':'Ramona Romanelli','juergen@andersmacher.info':'Jürgen Reuter','eric@andersmacher.info':'Eric Eisenhardt'};
-let ICH='',ST=null,BANKEN=null,KONTEN=null,NH=null,VGL={},BUSY='';
+let KN={},ICH='',ST=null,BANKEN=null,KONTEN=null,NH=null,VGL={},BUSY='';
 
 function render(){
   let h='<h1>Bankkonten</h1>';
@@ -63,12 +63,12 @@ function render(){
   h+='<div class="card"><div class="ch">Konten<div class="acts"><button data-a="abruf"'+(BUSY||!V.length?' disabled':'')+'>'+(BUSY==='abruf'?'Wird abgerufen …':'Kontostände abrufen')+'</button></div></div>';
   if(!KONTEN) h+='<div class="leer">'+(V.length?'Kontostände noch nicht abgerufen.':'Erst eine Bank verbinden.')+'</div>';
   else { const nh=new Map((NH||[]).map(k=>[k.iban,k]));
-    const L=KONTEN.slice().sort((a,b)=>(a.bank+a.iban).localeCompare(b.bank+b.iban,'de'));
-    h+='<table class="ktab"><thead><tr><th>Bank</th><th>IBAN</th><th>Inhaber / Name</th><th class="n">Kontostand Bank</th><th>Stand</th><th class="n">Kontostand Nahaus</th><th class="n">Differenz</th><th></th></tr></thead><tbody>'
+    const kn=k=>(KN[k.iban]||{}).name||'', L=KONTEN.slice().sort((a,b)=>(kn(a)?0:1)-(kn(b)?0:1)||kn(a).localeCompare(kn(b),'de',{numeric:true})||(a.bank+a.iban).localeCompare(b.bank+b.iban,'de'));
+    h+='<table class="ktab"><thead><tr><th>Konto</th><th>Bank</th><th>IBAN</th><th>Inhaber</th><th class="n">Kontostand Bank</th><th>Stand</th><th class="n">Kontostand Nahaus</th><th class="n">Differenz</th><th></th></tr></thead><tbody>'
       +L.map(k=>{const n=nh.get(k.iban), d=n&&k.saldo!=null&&n.saldo!=null?Math.round((k.saldo-n.saldo)*100)/100:null, v=VGL[k.iban];
-        return '<tr><td>'+esc(k.bank)+'</td><td>'+esc(fiban(k.iban))+'</td><td>'+esc(k.inhaber)+'</td><td class="n"><b>'+(k.fehler?'<span class="neg">Fehler</span>':eur(k.saldo))+'</b></td><td>'+esc(dmy(k.saldoAm))+'</td><td class="n">'+(n?eur(n.saldo):'<span class="sub">nicht in Nahaus</span>')+'</td><td class="n'+(d?' neg':'')+'">'+(d==null?'':d?eur(d):'<span class="pos">gleich</span>')+'</td><td class="n"><button class="small" data-vgl="'+esc(k.iban)+'"'+(BUSY?' disabled':'')+'>Umsätze vergleichen</button></td></tr>'
-          +(k.fehler?'<tr><td colspan="8"><div class="vgl neg">'+esc(k.fehler)+'</div></td></tr>':'')
-          +(v?'<tr><td colspan="8"><div class="vgl">'+vglHtml(v)+'</div></td></tr>':'');}).join('')+'</tbody></table>';
+        const kk=KN[k.iban]||{}; return '<tr><td class="nw"><b>'+esc(kk.name||'–')+'</b>'+(kk.ges?' <span class="klein">'+esc(kk.ges)+'</span>':'')+'</td><td class="nw">'+esc(k.bank)+'</td><td class="nw">'+esc(fiban(k.iban))+'</td><td class="klein">'+esc(k.inhaber)+'</td><td class="n"><b>'+(k.fehler?'<span class="neg">Fehler</span>':eur(k.saldo))+'</b></td><td>'+esc(dmy(k.saldoAm))+'</td><td class="n">'+(n?eur(n.saldo):'<span class="sub">nicht in Nahaus</span>')+'</td><td class="n'+(d?' neg':'')+'">'+(d==null?'':d?eur(d):'<span class="pos">gleich</span>')+'</td><td class="n"><button class="small" data-vgl="'+esc(k.iban)+'"'+(BUSY?' disabled':'')+'>Umsätze vergleichen</button></td></tr>'
+          +(k.fehler?'<tr><td colspan="9"><div class="vgl neg">'+esc(k.fehler)+'</div></td></tr>':'')
+          +(v?'<tr><td colspan="9"><div class="vgl">'+vglHtml(v)+'</div></td></tr>':'');}).join('')+'</tbody></table>';
     const fehlen=(NH||[]).filter(n=>!KONTEN.some(k=>k.iban===n.iban));
     if(fehlen.length) h+='<div class="sub" style="margin-top:8px">Nur in Nahaus: '+fehlen.map(n=>esc(n.bank+' '+fiban(n.iban))).join(' · ')+'</div>'; }
   h+='</div>';
@@ -79,7 +79,8 @@ function vglHtml(v){ if(v.lade) return 'Umsätze der letzten 30 Tage werden gela
   if(v.nurEb.length) h+='<div style="margin-top:4px"><b>Nur von der Bank:</b> '+v.nurEb.slice(0,15).map(u=>esc(dmy(u.d)+' '+eur(u.b)+' '+u.n)).join(' · ')+'</div>';
   if(v.nurNh.length) h+='<div style="margin-top:4px"><b>Nur in Nahaus:</b> '+v.nurNh.slice(0,15).map(u=>esc(dmy(u.d)+' '+eur(u.b)+' '+u.n)).join(' · ')+'</div>';
   return h; }
-async function laden(){ try{ ST=await api('/api/bank',{aktion:'status'}); }catch(e){ ST={bereit:false,fehlt:[],verbindungen:[]}; toast(e.message,7000); }
+async function laden(){ try{ const {data}=await sb.from('os_docs').select('data').eq('app','oc').eq('pfad','stamm/konten').maybeSingle(); KN={}; ((data&&data.data&&data.data.konten)||[]).forEach(k=>{ if(k&&k.iban) KN[String(k.iban).replace(/\s/g,'').toUpperCase()]={name:k.name||'',ges:k.ges||''}; }); }catch(e){}
+  try{ ST=await api('/api/bank',{aktion:'status'}); }catch(e){ ST={bereit:false,fehlt:[],verbindungen:[]}; toast(e.message,7000); }
   render(); if(ST.bereit&&!BANKEN){ try{ BANKEN=(await api('/api/bank',{aktion:'banken'})).banken; render(); }catch(e){ toast(e.message,7000); } } }
 async function abruf(){ BUSY='abruf'; render();
   try{ KONTEN=(await api('/api/bank',{aktion:'konten'})).konten; }catch(e){ toast(e.message,8000); }
