@@ -81,6 +81,16 @@ function umsatz(t, eigene) {
   return { x: 'eb:' + x, d: tag(t.booking_date) || tag(t.value_date), b, n: n.slice(0, 120), i: /^[A-Z]{2}\d{2}/.test(i) ? i : '', z }
 }
 
+async function kontenMitSaldo(auth, mitSaldo) {
+  const d = await laden(auth); const out = []
+  for (const v of d.liste || []) for (const k of v.konten || []) {
+    let s = { saldo: null, saldoAm: '' }, fehler = ''
+    if (mitSaldo) { try { s = saldoAus(await eb('/accounts/' + encodeURIComponent(k.uid) + '/balances')) } catch (e) { fehler = e.message } }
+    out.push({ id: k.uid, iban: k.iban, bank: v.bank, inhaber: k.inhaber || k.name || '', verbunden: !fehler, abgelaufen: !!(v.bis && v.bis < new Date().toISOString().slice(0, 10)), bis: v.bis, geprueft: new Date().toISOString().slice(0, 10), saldo: s.saldo, saldoAm: s.saldoAm, fehler })
+  }
+  return out
+}
+
 export async function POST(req) {
   try {
     if (!(await angemeldet(req))) return antwort({ error: 'Bitte im Wohntraum OS anmelden.' }, 401)
@@ -123,14 +133,16 @@ export async function POST(req) {
       await speichern({ liste: (d.liste || []).filter(x => x.id !== b.id) }, auth)
       return antwort({ ok: true })
     }
-    if (b.aktion === 'konten') {
-      const d = await laden(auth); const out = []
-      for (const v of d.liste || []) for (const k of v.konten || []) {
-        let s = { saldo: null, saldoAm: '' }, fehler = ''
-        if (b.mitSaldo !== false) { try { s = saldoAus(await eb('/accounts/' + encodeURIComponent(k.uid) + '/balances')) } catch (e) { fehler = e.message } }
-        out.push({ id: k.uid, iban: k.iban, bank: v.bank, inhaber: k.inhaber || k.name || '', verbunden: !fehler, abgelaufen: !!(v.bis && v.bis < new Date().toISOString().slice(0, 10)), bis: v.bis, geprueft: new Date().toISOString().slice(0, 10), saldo: s.saldo, saldoAm: s.saldoAm, fehler })
-      }
-      return antwort({ konten: out })
+    if (b.aktion === 'konten') return antwort({ konten: await kontenMitSaldo(auth, b.mitSaldo !== false) })
+    if (b.aktion === 'kontostaende') {
+      // zwischengespeicherte Kontostände (bank/stand), höchstens maxStunden alt – schont die begrenzten Abrufe je Tag
+      const max = Math.max(0.25, Number(b.maxStunden) || 4)
+      const r = await db('os_docs?select=data&app=eq.oc&pfad=eq.' + encodeURIComponent('bank/stand'), {}, auth)
+      const st = (r && r[0] && r[0].data) || {}
+      if (st.am && st.konten && st.konten.length && (Date.now() - new Date(st.am).getTime()) < max * 3600e3) return antwort({ konten: st.konten, am: st.am, zwischengespeichert: true })
+      const konten = await kontenMitSaldo(auth, true), am = new Date().toISOString()
+      await db('os_docs?on_conflict=app,pfad', { method: 'POST', prefer: 'resolution=merge-duplicates', body: { app: 'oc', pfad: 'bank/stand', data: Object.assign({}, st, { am, von: 'automatisch', konten }), updated_at: am } }, auth)
+      return antwort({ konten, am })
     }
     if (b.aktion === 'umsaetze') {
       const d = await laden(auth); const id = String(b.id || ''), ib = iban(b.iban)

@@ -512,8 +512,8 @@ async function makeReport(){
   finally{ const b=$('report'); if(b){b.disabled=false;b.textContent='Monatsreport (Excel)';} }
 }
 
-/* ---------- Automatischer Abgleich mit den Kontoumsätzen (aus Nahaus im OS) ----------
-   1. Kontostände: aktueller Bankstand je Konto aus Nahaus (nur im laufenden, offenen Monat)
+/* ---------- Automatischer Abgleich mit den Kontoumsätzen im OS ----------
+   1. Kontostände: aktueller Bankstand je Konto direkt von der Bank (Bankkonten, höchstens 4 Stunden alt; nur im laufenden, offenen Monat)
    2. Fixkosten: offene Posten werden abgehakt, wenn eine passende Abbuchung im Konto des Objekts gefunden wird.
       Erkennung über Betrag + Zeitraum; Zahlungsempfänger werden aus früher abgehakten Monaten gelernt.
    Vom Nutzer wieder geöffnete Posten (nein) werden nicht erneut automatisch abgehakt. */
@@ -597,9 +597,9 @@ async function abgleich(manuell){ if(AB.lauf||!db||!canWrite||!plan) return; AB.
     const heute=todayISO(), lfdKey=heute.slice(0,7), key=curKey, md=months[key]||{};
     if(md.abgeschlossen){ AB.info=''; AB.lauf=false; AB.ergebnis={nur:'Monat ist abgeschlossen – kein automatischer Abgleich.'}; render(); return; }
     const res={bezahlt:[],konten:0,stand:''};
-    /* 1. Kontostände aus Nahaus – nur im laufenden Monat */
+    /* 1. Kontostände direkt von der Bank – nur im laufenden Monat */
     if(key===lfdKey){ AB.info='Hole Kontostände aus der Bank …'; render();
-      try{ const r=await fetch('/api/nahaus',{method:'POST',headers:{'content-type':'application/json',authorization:'Bearer '+await abToken()},body:JSON.stringify({aktion:'konten'})}); const j=await r.json();
+      try{ const r=await fetch('/api/bank',{method:'POST',headers:{'content-type':'application/json',authorization:'Bearer '+await abToken()},body:JSON.stringify({aktion:'kontostaende',maxStunden:4})}); const j=await r.json();
         if(j.error) throw new Error(j.error);
         const byIban=new Map((j.konten||[]).filter(k=>k.saldo!=null).map(k=>[k.iban,k])); const order=objOrder(), neu={}, auto={}; let stand='';
         for(const g of GES) for(const o of (order[g]||[])){ let L=konten.filter(k=>k.name===o&&byIban.has(k.iban)); if(!L.length) L=konten.filter(k=>k.obj===o&&byIban.has(k.iban));
