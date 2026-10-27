@@ -48,6 +48,7 @@ export const NAV = [
   // alle anderen sind sichtbar, wenn die Seite (bzw. "perm") an ihrem bisherigen Platz im Menü sichtbar war.
   { type: 'link', href: '/verwalto/anleitungen', icon: 'ti-school', label: 'Anleitungen', area: 'common' },
   { type: 'group', key: 'v-buchhaltung', icon: 'ti-calculator', label: 'Buchhaltung', mod: 'verwalto', items: [
+    { href: '/buchhaltung/bankkonten', icon: 'ti-building-bank', label: 'Bankkonten' },
     { href: '/buchhaltung/buchungen', icon: 'ti-arrows-exchange', label: 'Buchungen' },
     { href: '/controlling/monatswechsel-fixkosten', icon: 'ti-calendar-check', label: 'Monatswechsel Fixkosten' },
     { href: '/betriebskosten', icon: 'ti-receipt-2', label: 'Betriebskostenabrechnung' },
