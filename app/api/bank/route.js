@@ -18,10 +18,19 @@ export const maxDuration = 60
 const API = 'https://api.enablebanking.com'
 const fehlt = () => ['ENABLEBANKING_APP_ID', 'ENABLEBANKING_PRIVATE_KEY'].filter(k => !process.env[k])
 const b64u = x => Buffer.from(x).toString('base64').replace(/=+$/, '').replace(/\+/g, '-').replace(/\//g, '_')
+// Schlüssel robust lesen: mit oder ohne BEGIN/END-Zeilen, mit Leerzeichen statt Zeilenumbrüchen, mit \n, base64-kodiert
+let KEY = null
 function schluessel() {
-  let k = String(process.env.ENABLEBANKING_PRIVATE_KEY || '').trim().replace(/\\n/g, '\n')
-  if (!k.includes('BEGIN')) k = '-----BEGIN PRIVATE KEY-----\n' + k.replace(/\s+/g, '').match(/.{1,64}/g).join('\n') + '\n-----END PRIVATE KEY-----'
-  return k
+  if (KEY) return KEY
+  let roh = String(process.env.ENABLEBANKING_PRIVATE_KEY || '').trim().replace(/^["']|["']$/g, '').replace(/\\n/g, '\n')
+  if (!/BEGIN/.test(roh) && /^[A-Za-z0-9+/=\s]+$/.test(roh)) { try { const d = Buffer.from(roh.replace(/\s+/g, ''), 'base64').toString('utf8'); if (/BEGIN/.test(d)) roh = d } catch (e) { } }
+  const versuche = []
+  const m = roh.match(/-----BEGIN ([A-Z ]*PRIVATE KEY)-----([\s\S]*?)-----END \1-----/)
+  if (m) { const kern = m[2].replace(/[^A-Za-z0-9+/=]/g, ''); versuche.push('-----BEGIN ' + m[1] + '-----\n' + kern.match(/.{1,64}/g).join('\n') + '\n-----END ' + m[1] + '-----\n') }
+  const kern = roh.replace(/-----[^-]+-----/g, '').replace(/[^A-Za-z0-9+/=]/g, '')
+  if (kern) { versuche.push({ key: Buffer.from(kern, 'base64'), format: 'der', type: 'pkcs8' }, { key: Buffer.from(kern, 'base64'), format: 'der', type: 'pkcs1' }) }
+  for (const v of versuche) { try { KEY = crypto.createPrivateKey(v); return KEY } catch (e) { } }
+  throw new Error('Der private Schlüssel in Vercel (ENABLEBANKING_PRIVATE_KEY) lässt sich nicht lesen. Bitte den kompletten Inhalt der .pem-Datei inklusive der Zeilen BEGIN und END eintragen.')
 }
 function jwt() {
   const jetzt = Math.floor(Date.now() / 1000)
