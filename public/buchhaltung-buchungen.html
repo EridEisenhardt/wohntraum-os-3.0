@@ -1077,38 +1077,45 @@ var NHS={lauf:false,info:'',fehler:'',konten:null,ergebnis:null,auto:false,stand
 async function nhApi(body){ const sb=window.osSupabase; let tok=''; try{ const {data}=await sb.auth.getSession(); tok=(data&&data.session&&data.session.access_token)||''; }catch(e){}
   let r; try{ r=await fetch('/api/nahaus',{method:'POST',headers:{'content-type':'application/json',authorization:'Bearer '+tok},body:JSON.stringify(body)}); }catch(e){ throw new Error('Nahaus nicht erreichbar.'); }
   let j=null; try{ j=await r.json(); }catch(e){} if(!j) throw new Error(r.status===404?'Die Nahaus-Schnittstelle ist noch nicht online.':'Nahaus nicht erreichbar ('+r.status+').'); if(j.error) throw new Error(j.error); return j; }
+async function bankApi(body){ const sb=window.osSupabase; let tok=''; try{ const {data}=await sb.auth.getSession(); tok=(data&&data.session&&data.session.access_token)||''; }catch(e){}
+  let r; try{ r=await fetch('/api/bank',{method:'POST',headers:{'content-type':'application/json',authorization:'Bearer '+tok},body:JSON.stringify(body)}); }catch(e){ throw new Error('Bankanbindung nicht erreichbar.'); }
+  let j=null; try{ j=await r.json(); }catch(e){} if(!j) throw new Error('Bankanbindung nicht erreichbar ('+r.status+').'); if(j.error) throw new Error(j.error); return j; }
 const nhAddTage=(d,n)=>{ const x=new Date(d+'T12:00:00'); x.setDate(x.getDate()+n); return x.toISOString().slice(0,10); };
 function nhLetzte(key){ let m=''; for(const d of Object.values(buch)) if(d&&d.konto===key) for(const t of (d.tx||[])) if(t.d>m) m=t.d; return m; }
 function nhGleich(a,u){ if(Math.abs((a.b||0)-u.b)>0.005) return false; const dd=Math.abs((new Date(a.d)-new Date(u.d))/864e5); if(dd>3) return false;
   const na=norm(a.n||''), nu=norm(u.n||''); if(!na||!nu) return true; const wa=na.split(' ').filter(w=>w.length>2), wu=nu.split(' ').filter(w=>w.length>2);
   return wa.some(w=>wu.includes(w))||na.slice(0,6)===nu.slice(0,6)||norm(a.z||'').includes(nu.split(' ')[0]||'#'); }
-async function nhKontoSync(k,nk){ const key=k.key||k.iban; const letzte=nhLetzte(key);
-  const seit=letzte?nhAddTage(letzte,-10):(year+'-01-01');
-  const r=await nhApi({aktion:'umsaetze',id:nk.id,seit}); const U=r.umsaetze||[];
+async function nhKontoSync(k,nk,quelle){ const key=k.key||k.iban; const letzte=nhLetzte(key), bank=quelle==='bank';
+  let seit=letzte?nhAddTage(letzte,-10):(year+'-01-01'); if(bank){ const min=nhAddTage(new Date().toISOString().slice(0,10),-85); if(seit<min) seit=min; }
+  const r=bank?await bankApi({aktion:'umsaetze',iban:k.iban,seit}):await nhApi({aktion:'umsaetze',id:nk.id,seit}); const U=r.umsaetze||[];
   /* vorhandene Buchungen des Kontos */
   const docs={}; for(const [id,d] of Object.entries(buch)) if(d&&d.konto===key) docs[id]={tx:(d.tx||[]).map(t=>Object.assign({},t)),neu:false,geaendert:false,monat:d.monat};
   const alle=[]; for(const [id,o] of Object.entries(docs)) o.tx.forEach(t=>alle.push({id,t}));
-  const bekannt=new Set(alle.map(a=>a.t.x).filter(Boolean)); let neu=0, verkn=0;
+  const bekannt=new Set(alle.flatMap(a=>[a.t.x,a.t.xb]).filter(Boolean)); let neu=0, verkn=0;
   for(const u of U.sort((a,b)=>a.d<b.d?-1:1)){ if(!u.d||bekannt.has(u.x)) continue;
-    const treffer=alle.find(a=>!a.t.x&&nhGleich(a.t,u));
-    if(treffer){ treffer.t.x=u.x; docs[treffer.id].geaendert=true; bekannt.add(u.x); verkn++; continue; }
+    /* Bank direkt: Umsätze, die schon aus Nahaus oder per CSV da sind, nur verknüpfen (xb), nicht doppelt anlegen */
+    let treffer=bank?alle.find(a=>!a.t.xb&&!String(a.t.x||'').startsWith('eb:')&&nhGleich(a.t,u)):alle.find(a=>!a.t.x&&nhGleich(a.t,u));
+    if(!treffer&&bank){ const K=alle.filter(a=>!a.t.xb&&!String(a.t.x||'').startsWith('eb:')&&Math.abs((a.t.b||0)-u.b)<0.005&&Math.abs((new Date(a.t.d)-new Date(u.d))/864e5)<=1); if(K.length===1) treffer=K[0]; }
+    if(treffer){ if(bank) treffer.t.xb=u.x; else treffer.t.x=u.x; docs[treffer.id].geaendert=true; bekannt.add(u.x); verkn++; continue; }
     const mon=u.d.slice(0,7), id=key+'_'+mon; if(!docs[id]) docs[id]={tx:[],neu:true,geaendert:false,monat:mon};
-    const t={h:hashStr('nh|'+u.x),d:u.d,b:u.b,n:u.n,z:u.z,i:u.i,x:u.x,q:'nh'}; docs[id].tx.push(t); docs[id].geaendert=true; alle.push({id,t}); bekannt.add(u.x); neu++; }
+    const t={h:hashStr((bank?'eb|':'nh|')+u.x),d:u.d,b:u.b,n:u.n,z:u.z,i:u.i,x:u.x,q:bank?'bank':'nh'}; docs[id].tx.push(t); docs[id].geaendert=true; alle.push({id,t}); bekannt.add(u.x); neu++; }
   for(const [id,o] of Object.entries(docs)){ if(!o.geaendert) continue; const tx=o.tx.sort((a,b)=>a.d<b.d?-1:a.d>b.d?1:0);
     if(buch[id]) buch[id]=Object.assign({},buch[id],{tx}); else buch[id]={konto:key,monat:o.monat,tx};
     await queue('buchungen/'+id,()=>o.neu?db.doc('buchungen/'+id).set({konto:key,monat:o.monat,tx}):db.doc('buchungen/'+id).update({tx})); }
   return {neu,verkn,seit}; }
 async function nhSync(manuell){ if(NHS.lauf) return; if(!db||!canWrite){ if(manuell) toast('Nur Lesezugriff.'); return; }
-  NHS.lauf=true; NHS.fehler=''; NHS.info='Frage Nahaus nach den Konten …'; if(manuell) render();
-  try{ const r=await nhApi({aktion:'konten'}); NHS.konten=r.konten||[];
-    const byIban=new Map(NHS.konten.map(k=>[k.iban,k])); const E=[]; let neu=0, verkn=0;
-    const L=konten.filter(k=>k.iban&&byIban.has(k.iban));
-    for(let i=0;i<L.length;i++){ const k=L[i]; NHS.info='Rufe ab: '+(k.name||k.iban)+' ('+(i+1)+' von '+L.length+') …'; if(manuell) render();
-      try{ const x=await nhKontoSync(k,byIban.get(k.iban)); neu+=x.neu; verkn+=x.verkn; E.push({k:k.key||k.iban,name:k.name,neu:x.neu,verkn:x.verkn,seit:x.seit}); }
-      catch(e){ E.push({k:k.key||k.iban,name:k.name,fehler:e.message||String(e)}); } }
+  NHS.lauf=true; NHS.fehler=''; NHS.info='Frage die Banken nach den Konten …'; if(manuell) render();
+  try{ let bk=[]; try{ bk=(await bankApi({aktion:'konten',mitSaldo:false})).konten||[]; }catch(e){ NHS.fehler='Bank direkt: '+(e.message||e); }
+    NHS.bank=bk; const byBank=new Map(bk.map(k=>[k.iban,k]));
+    let nk=[]; try{ nk=(await nhApi({aktion:'konten'})).konten||[]; }catch(e){ if(!bk.length) throw e; }
+    NHS.konten=nk; const byIban=new Map(nk.map(k=>[k.iban,k])); const E=[]; let neu=0, verkn=0;
+    const L=konten.filter(k=>k.iban&&(byBank.has(k.iban)||byIban.has(k.iban)));
+    for(let i=0;i<L.length;i++){ const k=L[i], q=byBank.has(k.iban)?'bank':'nh'; NHS.info='Rufe ab: '+(k.name||k.iban)+' ('+(i+1)+' von '+L.length+') …'; if(manuell) render();
+      try{ const x=await nhKontoSync(k,byIban.get(k.iban),q); neu+=x.neu; verkn+=x.verkn; E.push({k:k.key||k.iban,name:k.name,quelle:q,neu:x.neu,verkn:x.verkn,seit:x.seit}); }
+      catch(e){ E.push({k:k.key||k.iban,name:k.name,quelle:q,fehler:e.message||String(e)}); } }
     NHS.ergebnis={am:new Date().toISOString(),neu,verkn,konten:E};
     await saveStamm('nahaussync',{am:NHS.ergebnis.am,neu,verkn,konten:E,von:(typeof ICH!=='undefined'&&ICH)||''});
-    invalidate(); if(manuell||neu) toast(neu?neu+' neue Buchung'+(neu===1?'':'en')+' aus Nahaus übernommen.':'Keine neuen Buchungen in Nahaus.'); }
+    invalidate(); if(manuell||neu) toast(neu?neu+' neue Buchung'+(neu===1?'':'en')+' übernommen.':'Keine neuen Buchungen.'); }
   catch(e){ NHS.fehler=e.message||String(e); if(manuell) toast(NHS.fehler); }
   NHS.lauf=false; NHS.info=''; render(); }
 /* automatisch beim Öffnen, wenn der letzte Abruf älter als 6 Stunden ist */
@@ -1116,15 +1123,15 @@ function nhAutoPruefen(){ if(NHS.auto||!loaded.b||!loaded.k||!NHS.stand) return;
   const alt=!NHS.stand.am||(Date.now()-new Date(NHS.stand.am).getTime())>6*3600e3; if(alt&&canWrite) setTimeout(()=>nhSync(false),1500); }
 const nhZeit=iso=>{ if(!iso) return '–'; const d=new Date(iso); const p=n=>String(n).padStart(2,'0'); return p(d.getDate())+'.'+p(d.getMonth()+1)+'.'+d.getFullYear()+' '+p(d.getHours())+':'+p(d.getMinutes()); };
 function renderNahaus(){ const S=NHS.ergebnis||NHS.stand||{}; const E=new Map((S.konten||[]).map(x=>[x.k,x]));
-  let h='<h2>Kontoumsätze aus Nahaus</h2><div class="note">Das OS holt die Umsätze aller Konten, die in Nahaus mit der Bank verbunden sind, automatisch ab (beim Öffnen der Buchungen, höchstens alle 6 Stunden). Schon per CSV importierte Buchungen werden erkannt und nicht doppelt angelegt.</div>';
+  let h='<h2>Kontoumsätze von der Bank</h2><div class="note">Das OS holt die Umsätze direkt von der Bank (Bankkonten), Konten ohne direkte Verbindung weiter über Nahaus. Automatisch beim Öffnen der Buchungen, höchstens alle 6 Stunden. Schon vorhandene Buchungen aus Nahaus oder CSV werden erkannt und nicht doppelt angelegt.</div>';
   h+='<div class="fcard"><div class="row"><b>Letzter Abruf:</b> <span>'+esc(nhZeit(S.am))+(S.von?' · '+esc(S.von):'')+(S.am?' · '+(S.neu||0)+' neu':'')+'</span>'
     +'<button class="primary small" data-nhsync="1"'+(NHS.lauf||!canWrite?' disabled':'')+'>'+(NHS.lauf?esc(NHS.info||'Rufe ab …'):'Jetzt abrufen')+'</button></div>';
   if(NHS.fehler) h+='<div class="neg">'+esc(NHS.fehler)+'</div>';
-  if(NHS.konten){ const byIban=new Map(NHS.konten.map(k=>[k.iban,k]));
-    h+='<div class="tablewrap"><table><thead><tr><th>Konto</th><th>Bank</th><th>Verbindung</th><th>Letzter Abruf</th></tr></thead><tbody>';
-    for(const k of konten.filter(x=>x.iban).slice().sort(kontoSort)){ const n=byIban.get(k.iban), e=E.get(k.key||k.iban);
-      const st=!n?'<span class="neg">nicht in Nahaus verbunden</span>':n.abgelaufen?'<span class="pill mid">Freigabe in Nahaus erneuern</span>':'<span class="pill ok">verbunden</span>';
-      h+='<tr><td>'+esc(k.name)+' <span class="sub">'+esc(k.ges||'')+'</span></td><td class="sub">'+esc(n?n.bank:'')+'</td><td>'+st+'</td><td class="sub">'+(e?(e.fehler?'<span class="neg">'+esc(e.fehler)+'</span>':(e.neu||0)+' neu'+(e.verkn?', '+e.verkn+' mit CSV verknüpft':'')):'–')+'</td></tr>'; }
+  if(NHS.konten||NHS.bank){ const byIban=new Map((NHS.konten||[]).map(k=>[k.iban,k])), byBank=new Map((NHS.bank||[]).map(k=>[k.iban,k]));
+    h+='<div class="tablewrap"><table><thead><tr><th>Konto</th><th>Bank</th><th>Quelle</th><th>Letzter Abruf</th></tr></thead><tbody>';
+    for(const k of konten.filter(x=>x.iban&&x.obj!=='__aus').slice().sort(kontoSort)){ const b=byBank.get(k.iban), n=byIban.get(k.iban), e=E.get(k.key||k.iban);
+      const st=b?(b.abgelaufen?'<span class="pill mid">Freigabe unter Bankkonten erneuern</span>':'<span class="pill ok">Bank direkt</span>'):!n?'<span class="neg">nicht verbunden</span>':n.abgelaufen?'<span class="pill mid">Freigabe in Nahaus erneuern</span>':'<span class="pill mid">über Nahaus</span>';
+      h+='<tr><td>'+esc(k.name)+' <span class="sub">'+esc(k.ges||'')+'</span></td><td class="sub">'+esc(b?b.bank:n?n.bank:'')+'</td><td>'+st+'</td><td class="sub">'+(e?(e.fehler?'<span class="neg">'+esc(e.fehler)+'</span>':(e.neu||0)+' neu'+(e.verkn?', '+e.verkn+' verknüpft':'')):'–')+'</td></tr>'; }
     h+='</tbody></table></div>'; }
   else h+='<div class="sub">Verbindungsstatus erscheint nach dem ersten Abruf.</div>';
   return h+'</div>'; }
