@@ -376,12 +376,13 @@ export default function Sidebar({ user, demo, onLogout, role, perms }) {
       const base = has(catKey) ? on(catKey) : on(n.mod)
       return base || (n.items || []).some((it) => canSeeItem(n, it))
     }
-    if (roleOwnsBereich(n)) return true
-    if (!n.mod) return true
     if (demo || isAdmin) return true
-    if (NODE_ADMIN_ONLY(n.mod)) return isAdmin
+    if (roleOwnsBereich(n)) return true
     if (!perms) return true
+    if (NODE_ADMIN_ONLY(n.mod)) return isAdmin
     const lnkKey = 'lnk:' + n.href
+    // Eingeschränkte Rolle: mod-lose Basis-Links (z. B. Cockpit) nur bei expliziter Freigabe anzeigen
+    if (!n.mod) return has(lnkKey) ? on(lnkKey) : false
     return has(lnkKey) ? on(lnkKey) : on(n.mod)
   }
 
