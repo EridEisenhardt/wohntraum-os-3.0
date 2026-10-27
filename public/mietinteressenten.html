@@ -162,7 +162,7 @@ const MILE=['','✅','⏳','⏸️','❌'];
 const MILE_TITLE={'✅':'erledigt','⏳':'in Arbeit','⏸️':'wartet','❌':'nein'};
 const MILEF=[['kostenuebernahme','Zusage Kostenübernahme'],['mietangebot_erhalten','Mietangebot erhalten'],['mietvertrag_unterschrieben','Mietvertrag unterschrieben'],['schluesseluebergabe_erfolgt','Schlüsselübergabe erfolgt'],['erste_mietzahlung','1. Mietzahlung']];
 function mileCell(r,field){const lbl=(field==='erste_mietzahlung'&&(r[field]||'')==='⏳')?'<span style="font-size:11px;color:var(--muted);margin-left:5px;white-space:nowrap">Auszahlung in Arbeit</span>':'';return `<td style="text-align:center;white-space:nowrap"><select class="inl" style="text-align:center" onchange="upd('${r.id}','${field}',this.value)">${MILE.map(o=>`<option value="${o}" ${o===(r[field]||'')?'selected':''}>${o===''?'—':o}</option>`).join('')}</select>${lbl}</td>`;}
-let ROWS=[], QUELLEN=[], QROWS=[], FSTAGE='', FTYP='', NOTES=[], HIST=[], FILES=[], NT_CUR=null, ME_NAME='';
+let ROWS=[], QUELLEN=[], QROWS=[], FSTAGE='', FTYP='', NOTES=[], HIST=[], FILES=[], NT_CUR=null, ME_NAME='', EDIT_NOTE=null;
 let VWOHN=[], IWOHN=[], ITODO=[], IASANA=[], IMSA={};
 async function loadMe(){try{const{data:{user}}=await sb.auth.getUser();if(!user)return;const p=await sb.from('profiles').select('full_name,email').eq('id',user.id).maybeSingle();ME_NAME=(p.data&&(p.data.full_name||p.data.email))||user.email||'';}catch(e){}}
 const DBUCKET='mietinteressent-dateien';
@@ -271,13 +271,23 @@ function renderNotes(){
   HIST.filter(h=>h.interessent_id===NT_CUR).forEach(h=>items.push({t:h.created_at,kind:h.aktion||'geändert',feld:h.feld,alt:h.alt,neu:h.neu}));
   items.sort((a,b)=>new Date(b.t)-new Date(a.t));
   $('ntList').innerHTML=items.length?items.map(it=>{
-    if(it.kind==='note')return `<div class="note"><span class="x" onclick="delNote('${it.id}')">✕</span><div class="ts">📝 Notiz · ${fmtDT(it.t)}${it.autor?' · '+esc(it.autor):''}</div><div class="tx">${esc(it.text)}</div></div>`;
+    if(it.kind==='note'){
+      if(EDIT_NOTE===it.id)return `<div class="note"><div class="ts">📝 Notiz bearbeiten · ${fmtDT(it.t)}${it.autor?' · '+esc(it.autor):''}</div>
+        <textarea id="noteEdit_${it.id}" rows="3" style="width:100%;border:1px solid var(--line);border-radius:8px;padding:8px 10px;font:inherit;font-size:13px;resize:vertical">${esc(it.text)}</textarea>
+        <div style="display:flex;gap:8px;margin-top:6px"><button class="btn" style="font-size:12px;padding:5px 12px" onclick="saveNoteEdit('${it.id}')">Speichern</button><button class="btn sec" style="font-size:12px;padding:5px 12px" onclick="cancelNoteEdit()">Abbrechen</button></div></div>`;
+      return `<div class="note"><span class="x" onclick="delNote('${it.id}')">✕</span><span class="x" style="right:30px" title="bearbeiten" onclick="editNote('${it.id}')">✎</span><div class="ts">📝 Notiz · ${fmtDT(it.t)}${it.autor?' · '+esc(it.autor):''}</div><div class="tx">${esc(it.text).replace(/\n/g,'<br>')}</div></div>`;
+    }
     if(it.kind==='erstellt')return `<div class="note" style="border-left-color:var(--green)"><div class="ts">➕ ${fmtDT(it.t)}</div><div class="tx">Lead angelegt</div></div>`;
     return `<div class="note" style="border-left-color:var(--muted);background:var(--surf)"><div class="ts">🔄 Änderung · ${fmtDT(it.t)}</div><div class="tx"><b>${esc(it.feld)}</b>: ${esc(it.alt||'—')} → ${esc(it.neu||'—')}</div></div>`;
   }).join(''):'<div class="empty" style="padding:14px">Noch keine Einträge.</div>';
 }
 async function addNote(){const t=$('ntInput').value.trim();if(!t){toast('Bitte Text eingeben');return;}const{data,error}=await sb.from('mietinteressent_notizen').insert({interessent_id:NT_CUR,text:t,autor:ME_NAME||null}).select();if(error){toast(error.message);return;}if(data&&data[0])NOTES.unshift(data[0]);$('ntInput').value='';renderNotes();render();}
 async function delNote(nid){if(!confirm('Notiz löschen?'))return;await sb.from('mietinteressent_notizen').delete().eq('id',nid);NOTES=NOTES.filter(n=>n.id!==nid);renderNotes();render();}
+function editNote(nid){EDIT_NOTE=nid;renderNotes();setTimeout(()=>{const el=$('noteEdit_'+nid);if(el){el.focus();el.setSelectionRange(el.value.length,el.value.length);}},40);}
+function cancelNoteEdit(){EDIT_NOTE=null;renderNotes();}
+async function saveNoteEdit(nid){const el=$('noteEdit_'+nid);if(!el)return;const t=el.value.trim();if(!t){toast('Bitte Text eingeben');return;}
+  const{error}=await sb.from('mietinteressent_notizen').update({text:t}).eq('id',nid);if(error){toast(error.message);return;}
+  const n=NOTES.find(x=>x.id===nid);if(n)n.text=t;EDIT_NOTE=null;renderNotes();render();toast('Notiz aktualisiert ✓');}
 async function logHist(id,field,alt,neu){const rec={interessent_id:id,feld:(FLABEL[field]||field),alt:(alt==null||alt===''?null:String(alt)),neu:(neu==null||neu===''?null:String(neu)),aktion:'geändert'};const{data}=await sb.from('mietinteressent_historie').insert(rec).select();if(data&&data[0])HIST.unshift(data[0]);if(NT_CUR===id)renderNotes();}
 function opts(arr,sel){return arr.map(o=>`<option ${o===sel?'selected':''}>${esc(o)}</option>`).join('');}
 function clearForm(){['f_name','f_vorname','f_kontakt','f_personen','f_einzug','f_aktobj','f_ugrund'].forEach(id=>$(id).value='');$('f_eingang').value=new Date().toISOString().slice(0,10);if($('f_typ')){$('f_typ').value=FTYP==='umzug'?'umzug':'neu';typToggle();}$('msg').textContent='';}
