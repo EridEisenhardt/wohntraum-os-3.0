@@ -107,7 +107,7 @@ const STANDARD=[['Grundsteuer','1','betriebskosten','flaeche'],['Frischwasser','
 const ZTYP=k=>{const n=norm(k.name);const re=/strom/.test(n)?/strom/:/wasser/.test(n)&&!/niederschlag/.test(n)?/wasser/:/gas|heiz|warm/.test(n)?/gas|warm|warme/:null;return re?{test:t=>re.test(norm(t))}:null;};
 const LOHN=k=>/hausmeister|reinigung|garten|schornstein|winterdienst/.test(norm(k.name));
 
-let AZ=null; let EINST={jahre:{}}; let ICH='', JAHR=new Date().getFullYear()-1, OBJ=[], EIN=[], ABR=[], CUR=null, D=null, SCHRITT='kosten', K=null;
+let AZ=null, AUSZEIG=false; let EINST={jahre:{}}; let ICH='', JAHR=new Date().getFullYear()-1, OBJ=[], EIN=[], ABR=[], CUR=null, D=null, SCHRITT='kosten', K=null;
 const P=new URLSearchParams(location.search); if(/^\d{4}$/.test(P.get('jahr')||'')) JAHR=Number(P.get('jahr'));
 const frist=j=>(Number(j)+1)+'-12-31';
 
@@ -176,7 +176,7 @@ async function anlegen(){ const o=D.o; const b=$('anl'); if(b){ b.disabled=true;
     if(vor){ const [pk,pe]=await Promise.all([sb.from('bk_kostenarten').select('*').eq('abrechnung_id',vor.id),sb.from('bk_einheiten').select('id,einheit_ref').eq('abrechnung_id',vor.id)]);
       const alt2neu={}; for(const x of (pe.data||[])) if(x.einheit_ref&&em[x.einheit_ref]) alt2neu[x.id]=em[x.einheit_ref];
       rows=(pk.data||[]).map(k=>{ const ein={}; for(const [id,v] of Object.entries(k.einheiten||{})) if(alt2neu[id]) ein[alt2neu[id]]=v;
-        return {abrechnung_id:a.id,name:k.name,gruppe:k.gruppe,schluessel:k.schluessel,umlagefaehig:k.umlagefaehig,betrkv_nr:k.betrkv_nr,pos:k.pos,notiz:k.notiz,einheiten:ein,zaehler:k.zaehler||null,erledigt:false,ka_key:k.ka_key||null}; }); }
+        return {abrechnung_id:a.id,name:k.name,gruppe:k.gruppe,schluessel:k.schluessel,umlagefaehig:k.umlagefaehig,betrkv_nr:k.betrkv_nr,pos:k.pos,notiz:k.notiz,einheiten:ein,zaehler:k.zaehler||null,ausgeblendet:!!k.ausgeblendet,erledigt:false,ka_key:k.ka_key||null}; }); }
     if(!rows.length) rows=STANDARD.map((s,i)=>({abrechnung_id:a.id,name:s[0],betrkv_nr:s[1],gruppe:s[2],schluessel:E.length===1?'einheiten':s[3],umlagefaehig:true,pos:i,einheiten:{},erledigt:false}));
     const {error:e3}=await sb.from('bk_kostenarten').insert(rows); if(e3) throw e3;
     ABR.push(a); toast('Abrechnung '+o.kz+' '+JAHR+' angelegt'+(vor?' – Kostenarten und Schlüssel aus '+vor.jahr+' übernommen.':'.')); await objLaden(); }
@@ -235,7 +235,7 @@ function ergHtml(){ if(ABSD===null){ absLaden(); }
   const R=ergebnis(), pb=D.a.zeitraum_bis, frist=(Number(pb.slice(0,4))+1)+'-12-31', rest=Math.round((Date.parse(frist)-Date.parse(new Date().toISOString().slice(0,10)))/864e5);
   const L=Object.values(R.mv).sort((a,b)=>{ const ea=D.ein.findIndex(e=>e.id===a.m.einheit_id), eb=D.ein.findIndex(e=>e.id===b.m.einheit_id); return ea-eb||String(a.m.von).localeCompare(String(b.m.von)); });
   const VA=L.filter(x=>x.saldo!=null), nach=VA.filter(x=>x.saldo>0).reduce((a,x)=>a+x.saldo,0), gut=VA.filter(x=>x.saldo<0).reduce((a,x)=>a-x.saldo,0);
-  const offen=D.kas.filter(k=>!k.erledigt).length, B=briefE(), A=absenderVon(gesVon());
+  const offen=D.kas.filter(k=>!k.erledigt&&!k.ausgeblendet).length, B=briefE(), A=absenderVon(gesVon());
   let h='<div class="kpis" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px;margin-bottom:12px">'
     +[['Umlagefähige Kosten',eur(R.gesamt)],['davon Vermieter',eur(R.vermieter)],['Nachzahlungen',eur(nach)],['Guthaben',eur(gut)],['Frist','bis '+dmy(frist)+' · noch '+rest+' Tage']].map(([l,v])=>'<div class="card" style="margin:0"><div class="sub">'+l+'</div><div style="font-size:18px;font-weight:800">'+v+'</div></div>').join('')+'</div>';
   const W=[]; if(offen) W.push(offen+' Kostenart'+(offen===1?' ist':'en sind')+' noch nicht als fertig markiert.'); if(R.nichtVerteilt.length) W.push('Nicht verteilt (Schlüssel ohne Werte, z. B. fehlende Zählerstände): '+R.nichtVerteilt.join(', ')+'. Diese Kosten trägt bis zur Korrektur der Vermieter.');
@@ -305,7 +305,7 @@ async function schreibenErstellen(id,zeigen,R0){ const R=R0||ergebnis(), x=R.mv[
     const patch={schreiben_am:new Date().toISOString(),schreiben_datei:{od:up.item.id,n:up.item.name,pfad:ziel+'/'+up.item.name}}; await sb.from('bk_mietverhaeltnisse').update(patch).eq('id',id); Object.assign(x.m,patch);
     if(zeigen){ toast('Schreiben gespeichert: '+up.item.name,5000); render(); } return true; }
   catch(e){ if(w&&zeigen&&!w.location.href.startsWith('blob')) w.close(); toast('Schreiben nicht erstellt: '+(e.message||e),7000); return false; } }
-async function alleSchreiben(btn){ const R0=ergebnis(); if((R0.nichtVerteilt.length||D.kas.some(k=>!k.erledigt))&&btn.dataset.sure!=='1'){ btn.dataset.sure='1'; btn.textContent='Es sind noch Kostenarten offen oder nicht verteilt – trotzdem erstellen?'; return; } btn.dataset.sure=''; const R=R0, L=Object.values(R.mv).filter(x=>x.saldo!=null&&x.m.schreiben!==false); if(!L.length){ toast('Keine Schreiben markiert.'); return; }
+async function alleSchreiben(btn){ const R0=ergebnis(); if((R0.nichtVerteilt.length||D.kas.some(k=>!k.erledigt&&!k.ausgeblendet))&&btn.dataset.sure!=='1'){ btn.dataset.sure='1'; btn.textContent='Es sind noch Kostenarten offen oder nicht verteilt – trotzdem erstellen?'; return; } btn.dataset.sure=''; const R=R0, L=Object.values(R.mv).filter(x=>x.saldo!=null&&x.m.schreiben!==false); if(!L.length){ toast('Keine Schreiben markiert.'); return; }
   btn.disabled=true; let n=0; for(const x of L){ btn.textContent='Erstelle '+(n+1)+' von '+L.length+' …'; if(await schreibenErstellen(x.m.id,false,R)) n++; }
   toast(n+' von '+L.length+' Schreiben in OneDrive gespeichert (04 Betriebskosten/Abrechnung '+JAHR+').',7000); render(); }
 
@@ -425,18 +425,23 @@ function renderObjekt(){ const o=D.o, a=D.a;
     if(!n) h+='<div class="note">Im Objekt '+esc(o.kz)+' sind keine Einheiten hinterlegt. Du kannst die Abrechnung trotzdem anlegen und die Einheiten danach unter „Einheiten und Mieter im Detail“ ergänzen.</div>';
     h+='<div class="card"><b>Für '+esc(o.kz)+' gibt es noch keine Abrechnung '+JAHR+'.</b><div class="sub" style="margin-top:4px">Beim Anlegen übernimmt das OS die '+n+' Einheiten mit Fläche und MEA aus dem Objekt und '+(vor?'die Kostenarten mit Einheiten und Verteilerschlüsseln aus '+vor.jahr+'.':'eine Liste der üblichen Kostenarten. Nicht benötigte kannst du später entfernen.')+'</div>'
       +'<div class="acts"><button class="primary" id="anl" onclick="anlegen()">Abrechnung '+JAHR+' anlegen</button></div></div>'; $('app').innerHTML=h; return; }
-  const fertig=D.kas.filter(k=>k.erledigt).length;
-  h+='<div class="schritte">'+[['kosten','1. Kosten ('+fertig+' / '+D.kas.length+' fertig)'],['mieter','2. Mietverhältnisse'],['schuetz','3. Heizkosten Schütz'],['ergebnis','4. Ergebnis']].map(([k,l])=>'<button class="'+(SCHRITT===k?'on':'')+'" onclick="SCHRITT=\''+k+'\';render()">'+l+'</button>').join('')+'</div>';
-  if(SCHRITT==='kosten'){ const L=D.kas.slice().sort((x,y)=>String(x.name).localeCompare(String(y.name),'de'));
+  const sichtbar=D.kas.filter(k=>!k.ausgeblendet), fertig=sichtbar.filter(k=>k.erledigt).length;
+  h+='<div class="schritte">'+[['kosten','1. Kosten ('+fertig+' / '+sichtbar.length+' fertig)'],['mieter','2. Mietverhältnisse'],['schuetz','3. Heizkosten Schütz'],['ergebnis','4. Ergebnis']].map(([k,l])=>'<button class="'+(SCHRITT===k?'on':'')+'" onclick="SCHRITT=\''+k+'\';render()">'+l+'</button>').join('')+'</div>';
+  if(SCHRITT==='kosten'){ const ALLE=D.kas.slice().sort((x,y)=>String(x.name).localeCompare(String(y.name),'de')), L=ALLE.filter(k=>!k.ausgeblendet), AUS=ALLE.filter(k=>k.ausgeblendet);
     h+='<div class="acts" style="margin:0 0 10px"><button class="primary" onclick="azStart()">Belege aus OneDrive zuordnen</button><span class="sub">Sucht in 04 Betriebskosten von '+esc(D.o.kz)+' alle Rechnungen aus '+JAHR+' und '+(JAHR+1)+' und schlägt sie den Kostenarten vor.</span></div>';
     h+='<div class="kacheln">'+L.map(k=>{ const n=kostenVon(k).length, s=summe(k); const sp=Object.values(k.einheiten||{}).some(v=>v&&v.schluessel&&v.schluessel!==k.schluessel);
       return '<div class="kachel'+(k.erledigt?' fertig':'')+'" onclick="kOeffnen(\''+k.id+'\')"><div class="t">'+esc(k.name)+'</div><div class="b">'+(n?eur(s):'–')+'</div><div class="sub">'+n+' Beleg'+(n===1?'':'e')+' · Schlüssel '+esc(schlLabel(k.schluessel))+(sp?' (je Einheit verschieden)':'')+'</div>'
-        +'<div class="z">'+(k.erledigt?'<span class="pill p-ok">fertig</span>':n?'<span class="pill p-warn">in Arbeit</span>':'<span class="pill">offen</span>')+(k.umlagefaehig===false?'<span class="pill">nicht umlagefähig</span>':'')+'</div></div>'; }).join('')
-      +'<div class="kachel neu" onclick="kNeu()">Kostenart hinzufügen</div></div>'; }
+        +'<div class="z">'+(k.erledigt?'<span class="pill p-ok">fertig</span>':n?'<span class="pill p-warn">in Arbeit</span>':'<span class="pill">offen</span>')+(k.umlagefaehig===false?'<span class="pill">nicht umlagefähig</span>':'')+(n?'':'<button class="small ghost" onclick="event.stopPropagation();kaAusblenden(\''+k.id+'\',true)">ausblenden</button>')+'</div></div>'; }).join('')
+      +'<div class="kachel neu" onclick="kNeu()">Kostenart hinzufügen</div></div>';
+    if(AUS.length) h+='<div class="acts"><button class="ghost small" onclick="AUSZEIG=!AUSZEIG;render()">'+(AUSZEIG?'Ausgeblendete Kostenarten verbergen':AUS.length+' ausgeblendete Kostenart'+(AUS.length===1?'':'en')+' anzeigen')+'</button></div>'
+      +(AUSZEIG?'<div class="kacheln">'+AUS.map(k=>'<div class="kachel" style="opacity:.6;cursor:default"><div class="t">'+esc(k.name)+'</div><div class="b">–</div><div class="sub">fällt für '+esc(D.o.kz)+' nicht an</div><div class="z"><button class="small" onclick="kaAusblenden(\''+k.id+'\',false)">wieder einblenden</button></div></div>').join('')+'</div>':''); }
   else if(SCHRITT==='mieter') h+=mvHtml();
   else if(SCHRITT==='ergebnis') h+=ergHtml();
   else h+='<div class="empty">Dieser Schritt kommt als Nächstes: '+({mieter:'Mietverhältnisse und Vorauszahlungen aus den Mieterkonten übernehmen',schuetz:'Heizkostenabrechnung von Schütz hochladen und den Mietern zuordnen',ergebnis:'Berechnung je Mieter, Nachzahlung oder Guthaben, Abrechnungsschreiben'}[SCHRITT])+'.</div>';
   $('app').innerHTML=h+(K?kHtml():'')+(AZ?azHtml():''); if(K) kNachRender(); }
+async function kaAusblenden(id,aus){ const ka=D.kas.find(x=>x.id===id); if(!ka) return; if(aus&&kostenVon(ka).length){ toast('Die Kostenart hat Belege und kann nicht ausgeblendet werden.'); return; }
+  const {error}=await sb.from('bk_kostenarten').update({ausgeblendet:aus}).eq('id',id); if(error){ toast('Nicht gespeichert: '+error.message); return; } ka.ausgeblendet=aus;
+  toast(aus?ka.name+' ausgeblendet. Gilt auch für die nächsten Jahre.':ka.name+' wieder eingeblendet.'); render(); }
 async function kNeu(){ const n=(prompt('Name der neuen Kostenart, z. B. Winterdienst')||'').trim(); if(!n) return;
   const {data,error}=await sb.from('bk_kostenarten').insert({abrechnung_id:D.a.id,name:n,gruppe:'betriebskosten',schluessel:'flaeche',umlagefaehig:true,pos:D.kas.length,einheiten:{},erledigt:false}).select().single(); if(error){ toast('Nicht angelegt: '+error.message); return; }
   D.kas.push(data); kOeffnen(data.id); }
@@ -600,7 +605,7 @@ function belegForm(n,neu){ const a=anteilBerechnen(n); const f=(k,l,ph)=>{ const
     +(n.teile?'<div class="acts"><span class="sub">Je Kostenart wird ein eigener Eintrag mit dem Teilbetrag angelegt, alle mit derselben Datei.</span>':'<div class="acts"><span class="sub">Anteil für '+JAHR+': <b style="color:var(--ink)">'+(a!=null?eur(a-(parseNum(n.nicht_umlagefaehig)||0)*(a&&parseNum(n.betrag)?a/parseNum(n.betrag):1)):'–')+'</b>'+(n.von&&n.bis&&(n.von<D.a.zeitraum_von||n.bis>D.a.zeitraum_bis)?' (zeitanteilig, '+dmy(n.von)+' bis '+dmy(n.bis)+')':'')+'</span>')
     +'<button class="primary small" style="margin-left:auto" onclick="belegSpeichern()">'+(n.teile?'Aufteilung übernehmen':'Beleg übernehmen')+'</button><button class="small" onclick="K.neu=null;kNeu2()">Verwerfen</button></div></div>'; }
 /* Belege aus OneDrive automatisch den Kostenarten zuordnen */
-function kaFuerOrdner(sub){ const n=norm(sub); if(!n) return null; const L=D.kas.slice().sort((a,b)=>(a.pos||0)-(b.pos||0));
+function kaFuerOrdner(sub){ const n=norm(sub); if(!n) return null; const L=D.kas.filter(k=>!k.ausgeblendet).sort((a,b)=>(a.pos||0)-(b.pos||0));
   return L.find(k=>norm(k.name)===n)||L.find(k=>(ORDNER_WORT[norm(k.name)]||[norm(k.name).split(' ')[0]]).some(w=>n.split(' ').some(t=>t.startsWith(w))))||null; }
 async function azStart(){ AZ={lade:'Suche die Belege von '+D.o.kz+' in OneDrive …',L:[]}; render();
   try{ const benutzt=new Set(D.kos.map(c=>c.beleg&&c.beleg.od).filter(Boolean)); const seen=new Set(), L=[];
