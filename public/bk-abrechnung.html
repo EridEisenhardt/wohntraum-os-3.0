@@ -383,6 +383,12 @@ function mvHtml(){ const pv=D.a.zeitraum_von, pb=D.a.zeitraum_bis, T=tage(pv,pb)
 /* Mieter einer Einheit im Abrechnungsjahr (Mieterkonten); der zuletzt eingezogene zuerst */
 function mieterVon(be){ const oe=EIN.find(x=>x.id===be.einheit_ref); if(!oe||!oe.nahaus_id) return []; const a=D.a; const bisV=m=>(D.mke[m.pid]||{}).bis||m.bis;
   return (D.mk||[]).filter(m=>m.unit===oe.nahaus_id&&(!m.von||m.von<=a.zeitraum_bis)&&(!bisV(m)||bisV(m)>=a.zeitraum_von)).sort((x,y)=>String(y.von||'').localeCompare(String(x.von||''))); }
+/* alle Mieter einer Einheit im Abrechnungsjahr, aus Schritt 2 oder sonst aus den Mieterkonten */
+function mieterListe(be){ const pv=D.a.zeitraum_von, pb=D.a.zeitraum_bis; const kurz=d=>d?dmy(d).slice(0,6):'';
+  let L=D.mvs.filter(m=>m.einheit_id===be.id).map(m=>({n:m.mieter,v:m.von,b:m.bis}));
+  if(!L.length) L=mieterVon(be).map(m=>({n:(D.mke[m.pid]||{}).mieter||m.mieter||'',v:m.von>pv?m.von:pv,b:((D.mke[m.pid]||{}).bis||m.bis||pb)<pb?((D.mke[m.pid]||{}).bis||m.bis):pb}));
+  L.sort((a,b)=>String(a.v).localeCompare(String(b.v)));
+  return L.map(x=>'<div class="sub">'+esc(x.n||'')+(L.length>1||x.v>pv||x.b<pb?' ('+kurz(x.v)+' bis '+kurz(x.b)+')':'')+'</div>').join(''); }
 function personenVon(be){ if(be.personen!=null) return Number(be.personen); for(const m of mieterVon(be)){ const p=(D.mke[m.pid]||{}).personen; if(p!=null&&p!=='') return Number(p); } return null; }
 async function personenSetzen(eid,val){ const be=D.ein.find(x=>x.id===eid); if(!be) return; const p=String(val).trim()===''?null:parseNum(val); if(String(val).trim()!==''&&(p==null||p<0)){ toast('Bitte eine Zahl eintragen.'); return; }
   const {error}=await sb.from('bk_einheiten').update({personen:p}).eq('id',eid); if(error){ toast('Nicht gespeichert: '+error.message); return; } be.personen=p;
@@ -452,7 +458,7 @@ function kHtml(){ const k=K, ka=kKa(), Ko=kostenVon(ka), sum=summe(ka), V=vertei
     +'<label class="sub"><input type="checkbox" '+(k.umlagefaehig?'checked':'')+' onchange="K.umlagefaehig=this.checked;K.geaendert=true"> umlagefähig</label></div>';
   h+='<div class="tbox" style="margin-top:6px"><table class="tab"><thead><tr><th>nimmt teil</th><th>Einheit</th><th class="n">Fläche</th><th class="n">Personen</th><th>Schlüssel</th><th class="n">fester Anteil %</th><th class="n">Anteil</th><th class="n">Betrag</th></tr></thead><tbody>'
     +D.ein.map(e=>{ const v=k.ein[e.id], p=personenVon(e), mi=mieterVon(e)[0];
-      return '<tr><td><input type="checkbox" '+(v.teil?'checked':'')+' onchange="K.ein[\''+e.id+'\'].teil=this.checked;K.geaendert=true;kNeu2()"></td><td><b>'+esc(e.bezeichnung)+'</b> <span class="sub">'+esc(e.kategorie||'')+'</span>'+(mi?'<div class="sub">'+esc((D.mke[mi.pid]||{}).mieter||mi.mieter||'')+'</div>':'')+'</td><td class="n">'+(e.flaeche?fnum.format(e.flaeche)+' m²':'–')+'</td><td class="n"><input class="zahl" style="width:60px" inputmode="numeric" value="'+(p!=null?esc(p):'')+'" placeholder="–" onchange="personenSetzen(\''+e.id+'\',this.value)"></td>'
+      return '<tr><td><input type="checkbox" '+(v.teil?'checked':'')+' onchange="K.ein[\''+e.id+'\'].teil=this.checked;K.geaendert=true;kNeu2()"></td><td><b>'+esc(e.bezeichnung)+'</b> <span class="sub">'+esc(e.kategorie||'')+'</span>'+mieterListe(e)+'</td><td class="n">'+(e.flaeche?fnum.format(e.flaeche)+' m²':'–')+'</td><td class="n"><input class="zahl" style="width:60px" inputmode="numeric" value="'+(p!=null?esc(p):'')+'" placeholder="–" onchange="personenSetzen(\''+e.id+'\',this.value)"></td>'
         +'<td><input list="dl-schl2" data-wahl="1" value="'+esc(v.schluessel?schlLabel(v.schluessel):'wie oben')+'" onchange="schlWahl(this,\''+e.id+'\')" style="width:190px"'+(v.teil?'':' disabled')+'></td>'
         +'<td class="n"><input class="zahl" style="width:70px" value="'+esc(v.prozent)+'" inputmode="decimal" onchange="K.ein[\''+e.id+'\'].prozent=this.value;K.geaendert=true;kNeu2()"'+(v.teil?'':' disabled')+'></td>'
         +'<td class="n">'+(V[e.id]!=null?fnum.format(V[e.id]*100)+' %':'–')+'</td><td class="n">'+(V[e.id]!=null?eur(sum*V[e.id]):'–')+'</td></tr>'; }).join('')+'</tbody></table></div>';
