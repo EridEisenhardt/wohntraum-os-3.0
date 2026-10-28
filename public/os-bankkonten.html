@@ -2,6 +2,7 @@
 <html lang="de"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Bankkonten</title>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="/os-banksync.js?v=20261028a"></script>
 <style>
 :root{--bg:#f3f5f8;--card:#ffffff;--ink:#18202c;--muted:#5f6b7a;--line:#e0e5eb;--soft:#eef1f5;--accent:#2f5d8a;--accent-soft:#e3ecf5;--pos:#1d7a4c;--pos-bg:#e5f4ec;--warn:#946200;--warn-bg:#fff4d6;--neg:#b42318;--neg-bg:#fcebe9}
 @media (prefers-color-scheme: dark){:root{--bg:#11151b;--card:#1a1f28;--ink:#e5e9ef;--muted:#97a1af;--line:#2b323e;--soft:#222935;--accent:#8db4dc;--accent-soft:#1f2b3a;--pos:#6fcf97;--pos-bg:#16291f;--warn:#e6b34a;--warn-bg:#2e2615;--neg:#f08a80;--neg-bg:#3a2422}}
@@ -50,7 +51,7 @@ const kurzInh=(k,kk)=>kk&&kk.ges?(/kibo/i.test(kk.ges)?'KiBo':kk.ges):/kibo/i.te
 let STAND='';
 async function standSpeichern(){ const ts=new Date().toISOString(); STAND=ts; try{ await sb.from('os_docs').upsert({app:'oc',pfad:'bank/stand',data:{am:ts,von:ICH,konten:KONTEN||[],nahaus:NH||[],vergleich:VGL},updated_at:ts},{onConflict:'app,pfad'}); }catch(e){} }
 async function standLaden(){ try{ const {data}=await sb.from('os_docs').select('data').eq('app','oc').eq('pfad','bank/stand').maybeSingle(); const d=data&&data.data; if(d&&d.konten){ KONTEN=d.konten; NH=d.nahaus||[]; VGL=d.vergleich||{}; STAND=d.am||''; } }catch(e){} }
-let KN={},ICH='',ST=null,BANKEN=null,KONTEN=null,NH=null,VGL={},BUSY='';
+let KN={},ICH='',ST=null,BANKEN=null,KONTEN=null,NH=null,VGL={},BUSY='',BUSYINFO='';
 
 function render(){
   let h='<h1>Bankkonten</h1>';
@@ -65,40 +66,29 @@ function render(){
     +'<select id="b-art"><option value="business">Geschäftlich</option><option value="personal">Privat</option></select>'
     +'<button class="primary" data-a="verbinden"'+(BUSY||!ST.bereit?' disabled':'')+'>'+(BUSY==='verbinden'?'Bank wird geöffnet …':'Bank verbinden')+'</button></div></div>';
   /* Konten */
-  h+='<div class="card"><div class="ch">Konten<div class="acts"><button data-a="abruf"'+(BUSY||!V.length?' disabled':'')+'>'+(BUSY==='abruf'?'Wird abgerufen …':'Kontostände abrufen')+'</button></div></div>'+(STAND&&KONTEN?'<div class="klein" style="margin:-4px 0 8px">Stand '+esc(dmy(STAND))+', '+esc(new Date(STAND).toTimeString().slice(0,5))+' Uhr</div>':'');
+  h+='<div class="card"><div class="ch">Konten<div class="acts"><button data-a="abruf"'+(BUSY||!V.length?' disabled':'')+'>'+(BUSY==='abruf'?(BUSYINFO||'Wird abgerufen …'):'Kontostände und Umsätze abrufen')+'</button></div></div>'+(STAND&&KONTEN?'<div class="klein" style="margin:-4px 0 8px">Stand '+esc(dmy(STAND))+', '+esc(new Date(STAND).toTimeString().slice(0,5))+' Uhr</div>':'');
   if(!KONTEN) h+='<div class="leer">'+(V.length?'Kontostände noch nicht abgerufen.':'Erst eine Bank verbinden.')+'</div>';
-  else { const nh=new Map((NH||[]).map(k=>[k.iban,k]));
+  else {
     const kn=k=>(KN[k.iban]||{}).name||'', L=KONTEN.slice().sort((a,b)=>(kn(a)?0:1)-(kn(b)?0:1)||kn(a).localeCompare(kn(b),'de',{numeric:true})||(a.bank+a.iban).localeCompare(b.bank+b.iban,'de'));
-    h+='<table class="ktab"><thead><tr><th>Konto</th><th>Bank</th><th>IBAN</th><th>Inhaber</th><th class="n">Kontostand Bank</th><th>Stand</th><th class="n">Kontostand Nahaus</th><th class="n">Differenz</th><th></th></tr></thead><tbody>'
-      +L.map(k=>{const n=nh.get(k.iban), d=n&&k.saldo!=null&&n.saldo!=null?Math.round((k.saldo-n.saldo)*100)/100:null, v=VGL[k.iban];
-        const kk=KN[k.iban]||{}; return '<tr><td class="nw"><b>'+esc(kk.name||'–')+'</b></td><td class="nw">'+esc(kurzBank(k.bank))+'</td><td class="nw">'+esc(fiban(k.iban))+'</td><td class="nw">'+esc(kurzInh(k,kk))+'</td><td class="n"><b>'+(k.fehler?'<span class="neg">Fehler</span>':eur(k.saldo))+'</b></td><td>'+esc(dmy(k.saldoAm))+'</td><td class="n">'+(n?eur(n.saldo):'<span class="sub">nicht in Nahaus</span>')+'</td><td class="n'+(d?' neg':'')+'">'+(d==null?'':d?eur(d):'<span class="pos">gleich</span>')+'</td><td class="n"><button class="small" data-vgl="'+esc(k.iban)+'"'+(BUSY?' disabled':'')+'>Umsätze vergleichen</button></td></tr>'
-          +(k.fehler?'<tr><td colspan="9"><div class="vgl neg">'+esc(k.fehler)+'</div></td></tr>':'')
-          +(v?'<tr><td colspan="9"><div class="vgl">'+vglHtml(v)+'</div></td></tr>':'');}).join('')+'</tbody></table>';
-    const fehlen=(NH||[]).filter(n=>!KONTEN.some(k=>k.iban===n.iban));
-    if(fehlen.length) h+='<div class="sub" style="margin-top:8px">Nur in Nahaus: '+fehlen.map(n=>esc(n.bank+' '+fiban(n.iban))).join(' · ')+'</div>'; }
+    h+='<table class="ktab"><thead><tr><th>Konto</th><th>Bank</th><th>IBAN</th><th>Inhaber</th><th class="n">Kontostand</th><th>Stand</th></tr></thead><tbody>'
+      +L.map(k=>{
+        const kk=KN[k.iban]||{}; return '<tr><td class="nw"><b>'+esc(kk.name||'–')+'</b></td><td class="nw">'+esc(kurzBank(k.bank))+'</td><td class="nw">'+esc(fiban(k.iban))+'</td><td class="nw">'+esc(kurzInh(k,kk))+'</td><td class="n"><b>'+(k.fehler?'<span class="neg">Fehler</span>':eur(k.saldo))+'</b></td><td>'+esc(dmy(k.saldoAm))+'</td></tr>'
+          +(k.fehler?'<tr><td colspan="6"><div class="vgl neg">'+esc(k.fehler)+'</div></td></tr>':'');}).join('')+'</tbody></table>';
+  }
   h+='</div>';
   $('app').innerHTML=h;
 }
-function vglHtml(v){ if(v.lade) return 'Umsätze der letzten 30 Tage werden geladen …'; if(v.fehler) return '<span class="neg">'+esc(v.fehler)+'</span>';
-  let h='Letzte 30 Tage: '+v.eb.length+' Umsätze von der Bank, '+v.nh.length+' aus Nahaus, '+v.gleich+' stimmen überein.';
-  if(v.nurEb.length) h+='<div style="margin-top:4px"><b>Nur von der Bank:</b> '+v.nurEb.slice(0,15).map(u=>esc(dmy(u.d)+' '+eur(u.b)+' '+u.n)).join(' · ')+'</div>';
-  if(v.nurNh.length) h+='<div style="margin-top:4px"><b>Nur in Nahaus:</b> '+v.nurNh.slice(0,15).map(u=>esc(dmy(u.d)+' '+eur(u.b)+' '+u.n)).join(' · ')+'</div>';
-  return h; }
 async function laden(){ try{ const {data}=await sb.from('os_docs').select('data').eq('app','oc').eq('pfad','stamm/konten').maybeSingle(); KN={}; ((data&&data.data&&data.data.konten)||[]).forEach(k=>{ if(k&&k.iban) KN[String(k.iban).replace(/\s/g,'').toUpperCase()]={name:k.name||'',ges:k.ges||''}; }); }catch(e){}
   try{ ST=await api('/api/bank',{aktion:'status'}); }catch(e){ ST={bereit:false,fehlt:[],verbindungen:[]}; toast(e.message,7000); }
   render(); if(ST.bereit&&!BANKEN){ try{ BANKEN=(await api('/api/bank',{aktion:'banken'})).banken; render(); }catch(e){ toast(e.message,7000); } } }
 async function abruf(){ BUSY='abruf'; render();
   try{ KONTEN=(await api('/api/bank',{aktion:'konten'})).konten; }catch(e){ toast(e.message,8000); }
-  try{ NH=(await api('/api/nahaus',{aktion:'konten'})).konten; }catch(e){ NH=[]; }
-  VGL={}; await standSpeichern(); BUSY=''; render(); }
-async function vergleich(ib){ const n=(NH||[]).find(k=>k.iban===ib); VGL[ib]={lade:true}; render();
-  const seit=new Date(Date.now()-30*864e5).toISOString().slice(0,10);
-  try{ const eb=(await api('/api/bank',{aktion:'umsaetze',iban:ib,seit})).umsaetze||[]; const nh=n?((await api('/api/nahaus',{aktion:'umsaetze',id:n.id,seit})).umsaetze||[]):[];
-    const frei=nh.slice(); let gleich=0; const nurEb=[];
-    for(const u of eb){ const i=frei.findIndex(x=>Math.abs(x.b-u.b)<0.005&&Math.abs((new Date(x.d)-new Date(u.d))/864e5)<=3); if(i>=0){ frei.splice(i,1); gleich++; } else nurEb.push(u); }
-    VGL[ib]={eb,nh,gleich,nurEb,nurNh:frei}; }
-  catch(e){ VGL[ib]={fehler:e.message}; }
-  if(!VGL[ib].fehler) standSpeichern(); render(); }
+  NH=[]; VGL={}; await standSpeichern();
+  /* Umsätze gleich in die Buchungen übernehmen, damit Monatswechsel-Fixkosten sie abhaken kann */
+  if(window.osBankUmsaetze){ try{ const u=await window.osBankUmsaetze(sb,{von:ICH,info:t=>{ BUSYINFO=t; render(); }});
+      toast(u.neu+' neue Umsätze in die Buchungen übernommen'+(u.fehler.length?' · Fehler bei '+u.fehler.map(x=>x.name||x.k).join(', '):'')+'.',6000); }
+    catch(e){ toast('Umsätze: '+e.message,8000); } }
+  BUSY=''; BUSYINFO=''; render(); }
 async function verbinden(bank,art){ if(!bank){ toast('Bitte eine Bank aus der Liste wählen.'); return; }
   if(BANKEN&&!BANKEN.some(b=>b.name===bank)){ toast('Diese Bank ist nicht in der Liste. Bitte aus der Liste wählen.'); return; }
   BUSY='verbinden'; render();
@@ -108,7 +98,6 @@ document.addEventListener('click',async e=>{ const t=e.target.closest('button');
   if(t.dataset.a==='verbinden'){ verbinden($('b-bank').value.trim(),$('b-art').value); return; }
   if(t.dataset.a==='abruf'){ abruf(); return; }
   if(t.dataset.neu){ const [bank,art]=t.dataset.neu.split('|'); verbinden(bank,art||'business'); return; }
-  if(t.dataset.vgl){ vergleich(t.dataset.vgl); return; }
   if(t.dataset.trennen){ if(!confirm('Diese Bankverbindung im OS trennen? Die Kontostände und Umsätze dieser Bank werden dann nicht mehr abgerufen.')) return;
     BUSY='trennen'; render(); try{ await api('/api/bank',{aktion:'trennen',id:t.dataset.trennen}); toast('Verbindung getrennt.'); }catch(er){ toast(er.message,7000); } BUSY=''; KONTEN=null; laden(); } });
 document.addEventListener('focusin',e=>{ const t=e.target; if(t&&t.id==='b-bank'){ t.dataset.alt=t.value; t.value=''; } });

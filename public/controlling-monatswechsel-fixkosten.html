@@ -7,6 +7,7 @@
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script>window.OS_APP='mw';</script>
 <script src="/os-docstore.js?v=20261012b"></script>
+<script src="/os-banksync.js?v=20261028a"></script>
 </head>
 <body>
 <style>
@@ -593,6 +594,14 @@ function abPassend(t,muster){ if(!muster) return false; if(muster.i&&t.i&&muster
 async function abgleich(manuell){ if(AB.lauf||!db||!canWrite||!plan) return; AB.lauf=true; AB.fehler=''; AB.info='Lade Kontoumsätze …'; render();
   try{
     if(!LO.fertig||manuell){ LO.fertig=true; AB.info='Übernehme Lohnkosten …'; render(); try{ await loSync(); }catch(e){ AB.fehler='Lohnkosten: '+(e.message||e); } AB.info='Lade Kontoumsätze …'; render(); }
+    /* 0. neue Umsätze direkt von der Bank holen (beim Klick auf „Jetzt abgleichen“ immer, sonst höchstens alle 3 Stunden) */
+    AB.ums=null;
+    if(window.osBankUmsaetze){ let last=''; try{ const {data}=await window.osSupabase.from('os_docs').select('data').eq('app','oc').eq('pfad','stamm/nahaussync').maybeSingle(); const d=(data&&data.data)||{}; last=[d.bankAm,d.am].filter(Boolean).sort().pop()||''; }catch(e){}
+      if(manuell||!last||Date.now()-new Date(last).getTime()>3*3600e3){ AB.info='Hole Umsätze aus der Bank …'; render();
+        try{ const u=await window.osBankUmsaetze(window.osSupabase,{info:t=>{ AB.info=t; render(); }}); AB.ums=u; AB.oc=null;
+          if(u.fehler.length) AB.fehler='Umsätze: '+u.fehler.map(x=>(x.name||x.k)+': '+x.fehler).join(' · '); }
+        catch(e){ AB.fehler='Umsätze: '+(e.message||e); } } }
+    AB.info='Lade Kontoumsätze …'; render();
     if(!AB.oc||manuell) AB.oc=await abLadeOC(); const {konten,tx}=AB.oc;
     const heute=todayISO(), lfdKey=heute.slice(0,7), key=curKey, md=months[key]||{};
     if(md.abgeschlossen){ AB.info=''; AB.lauf=false; AB.ergebnis={nur:'Monat ist abgeschlossen – kein automatischer Abgleich.'}; render(); return; }
@@ -642,7 +651,7 @@ function abLeiste(){ const md=months[curKey]||{}, R=AB.ergebnis;
   let h='<div class="abl"><b>Abgleich mit den Kontoumsätzen</b><span class="sub">';
   if(AB.lauf) h+=esc(AB.info||'läuft …');
   else if(R&&R.nur) h+=esc(R.nur);
-  else if(R) h+=(R.bezahlt.length?R.bezahlt.length+' Posten automatisch abgehakt':'keine neuen Zahlungen gefunden')+(R.konten?' · '+R.konten+' Kontostände aus der Bank (Stand '+esc(deDate(R.stand))+')':'');
+  else if(R) h+=(R.bezahlt.length?R.bezahlt.length+' Posten automatisch abgehakt':'keine neuen Zahlungen gefunden')+(R.konten?' · '+R.konten+' Kontostände aus der Bank (Stand '+esc(deDate(R.stand))+')':'')+(AB.ums?' · '+AB.ums.neu+' neue Umsätze von der Bank':'');
   else h+='Fixkosten werden anhand der Abbuchungen abgehakt, Kontostände kommen aus der Bank.';
   const LR=LO.ergebnis; if(LR&&!AB.lauf){ const n=LR.neu.length+LR.aktual.length; h+=' · Lohnkosten: '+(n?esc((LR.aktual.length?LR.aktual.length+' Betr'+(LR.aktual.length===1?'ag':'äge')+' aktualisiert ('+LR.aktual.join(', ')+')':'')+(LR.aktual.length&&LR.neu.length?', ':'')+(LR.neu.length?LR.neu.length+' neu angelegt ('+LR.neu.join(', ')+')':'')):'aktuell'); }
   h+='</span>'+(AB.fehler?'<span class="neg">'+esc(AB.fehler)+'</span>':'')+(canWrite&&!md.abgeschlossen?'<button id="abgleich"'+(AB.lauf?' disabled':'')+'>Jetzt abgleichen</button>':'')+'</div>';
