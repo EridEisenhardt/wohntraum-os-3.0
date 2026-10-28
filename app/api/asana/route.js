@@ -106,7 +106,13 @@ export async function POST(req) {
       }
       if (tags.length) d.tags = tags
       const t = await asana('/tasks?opt_fields=' + FELDER, { method: 'POST', json: d })
-      return antwort({ aufgabe: aufgabe(t) })
+      // Unteraufgaben (z. B. Schadenersatz: Geltendmachung, Rechnungen, Inrechnungstellung)
+      const unter = []
+      for (const n of (b.unteraufgaben || []).map(x => String(x || '').trim()).filter(Boolean).slice(0, 20)) {
+        const u = await asana('/tasks/' + t.gid + '/subtasks?opt_fields=name', { method: 'POST', json: Object.assign({ name: n }, b.zustaendig ? { assignee: String(b.zustaendig) } : {}) })
+        unter.push({ gid: u.gid, name: u.name })
+      }
+      return antwort({ aufgabe: aufgabe(t), unteraufgaben: unter })
     }
 
     if (a === 'status') {

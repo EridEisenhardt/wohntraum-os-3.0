@@ -135,7 +135,7 @@ function render(){
   if(!L.length){document.getElementById('liste').innerHTML='<div class="empty">Keine Störungen gefunden.</div>';return;}
   document.getElementById('liste').innerHTML='<div class="tbox" style="overflow-x:auto"><table class="tab"><thead><tr><th>Nr.</th><th>Gemeldet</th><th>Objekt</th><th>Störung</th><th class="hide-m">Gemeldet von</th><th>Dringlichkeit</th><th>Status</th></tr></thead><tbody>'+L.map(s=>{const o=objVon(s),e=einVon(s),auf=AUF[s.id];
     return `<tr class="kl${auf?' auf':''}" onclick="AUF['${s.id}']=!AUF['${s.id}'];render()"><td><b>${esc(s.nr)}</b><div class="sub">${tk(s)}</div></td><td>${dfmt(s.created_at)}<div class="sub">${esc(eingangVon(s)||s.quelle||'')}</div></td><td><b>${esc(o.kz||'')}</b>${e?' · '+esc(e.bezeichnung):''}<div class="sub">${esc(o.name||'')}</div></td>
-      <td>${esc(s.titel)}<div class="sub">${esc(s.kategorie||'')}</div></td><td class="hide-m">${esc(s.melder_name||'–')}</td><td>${dPill(s.dringlichkeit)}</td><td>${sPill(s)}${zuText(s)?`<div class="sub">${esc(zuText(s))}</div>`:''}${s.asana_gid?'':'<div class="sub">noch nicht in Asana</div>'}</td></tr>`
+      <td>${esc(s.titel)}<div class="sub">${esc(s.kategorie||'')}</div></td><td class="hide-m">${esc(s.melder_name||'–')}</td><td>${dPill(s.dringlichkeit)}</td><td>${sPill(s)}${zuText(s)?`<div class="sub">${esc(zuText(s))}</div>`:''}${s.asana_gid?'':'<div class="sub">noch nicht in Asana</div>'}${s.schadenersatz&&s.schadenersatz.ja?'<div class="sub">Schadenersatz</div>':''}</td></tr>`
       +(auf?`<tr><td colspan="7" class="det">${detail(s)}</td></tr>`:'');}).join('')+'</tbody></table></div>';
   qrZeichnen();}
 const dPill=d=>d==='Notfall'?'<span class="pill p-notfall">Notfall</span>':d==='Dringend'?'<span class="pill p-dringend">Dringend</span>':'<span class="pill">Normal</span>';
@@ -173,6 +173,7 @@ function detail(s){const o=objVon(s),e=einVon(s),m=mieterVon(e);let h='';
         <div class="sub" style="margin-top:6px">Über diesen Link sieht der Handwerker nur diese Störung (Adresse, Beschreibung, Fotos, Ansprechpartner) und kann eine Rückmeldung mit Fotos geben. Die Rückmeldung erscheint im Verlauf und als Kommentar in Asana.</div></div>
         <div class="kvcol"><div class="qr" data-qr="${esc(hwLink(s))}"></div></div></div>
        ${RM.map(r=>`<div class="hz"><div><div>${zeit(r.d)}</div><div class="hw">${esc(r.by)}</div></div><div>${r.erledigt?'<b>Als erledigt gemeldet.</b> ':''}${esc(r.t||'')}</div></div>`).join('')}`],
+    ['Schadenersatz',`<span class="sub">${seText(s)}</span>`,seSek(s)],
     ['Mails',`<span class="sub">${mailZahl(s)}</span>`,mailSek(s)],
     ['Notizen und Dokumente',`<span class="sub">${ntZahl(s)}</span>`,notizSek(s)],
     ['Verlauf',`<span class="sub">${V.length} Eintr${V.length===1?'ag':'äge'}</span>`,`<div class="acts" style="margin-top:0"><input class="inp" id="vn-${s.id}" placeholder="Notiz hinzufügen, z. B. Mieter angerufen, Termin vereinbart" style="flex:1"><button class="small primary" onclick="notiz('${s.id}')">Hinzufügen</button></div>
@@ -184,6 +185,51 @@ async function qrZeichnen(){const L=[...document.querySelectorAll('[data-qr]')].
   L.forEach(x=>{x.dataset.ok='1';new QRCode(x,{text:x.dataset.qr,width:Number(x.dataset.gr||120),height:Number(x.dataset.gr||120),correctLevel:QRCode.CorrectLevel.M});});}
 function kopieren(t){navigator.clipboard.writeText(t).then(()=>toast('Link kopiert.'),()=>prompt('Link kopieren:',t));}
 const eintrag=(art,t)=>({d:new Date().toISOString(),by:ICH||'OS',art,t});
+/* ---------- Schadenersatz: ja/nein, Verursacher mit Kontaktdaten (Mieterkonto), Asana-Aufgabe mit Unteraufgaben ---------- */
+const SE_UNTER=['Geltendmachung dem Grunde nach','Rechnungen','Inrechnungstellung'];
+function seText(s){const z=s.schadenersatz||{};return z.ja===true?'Ja'+(z.name?' · '+z.name:'')+(z.asana_gid?' · in Asana':' · noch nicht in Asana'):z.ja===false?'Nein':'noch nicht geprüft';}
+function mkLabel(m){const e=MKE[m.pid]||{},n=e.mieter||m.mieter||(m.namen||[]).join(', ');const u=E.find(x=>x.nahaus_id&&x.nahaus_id===m.unit);const bis=e.bis||m.bis;
+  return n+' · '+(m.obj||'')+(u?' '+u.bezeichnung:'')+(bis&&bis<HEUTE?' (ausgezogen)':'');}
+function mkListe(){const seen=new Set(),L=[];for(const m of MK){if(!m.pid||seen.has(m.pid))continue;seen.add(m.pid);L.push({pid:m.pid,l:mkLabel(m)});}return L.sort((a,b)=>a.l.localeCompare(b.l,'de'));}
+function mkKontakt(pid){const m=MK.find(x=>x.pid===pid);if(!m)return '';const e=MKE[pid]||{},k=(m.kontakte||[])[0]||{};const n=e.mieter||m.mieter||(m.namen||[]).join(', ');
+  return [n,e.anschrift||e.adresse||'',(e.tel||k.tel)?'Tel. '+(e.tel||k.tel):'',(e.email||k.email)?'E-Mail '+(e.email||k.email):''].filter(Boolean).join('\n');}
+const SE_TMP={};
+function seSek(s){const z=s.schadenersatz||{},ja=z.ja===true,nein=z.ja===false;
+  let h=`<div class="acts" style="margin-top:0"><span class="sub" style="width:120px">Schadenersatz</span><div class="seg"><button class="${nein?'on':''}" onclick="seJa('${s.id}',false)">Nein</button><button class="${ja?'on':''}" onclick="seJa('${s.id}',true)">Ja</button></div></div>`;
+  if(!ja)return h;
+  h+=`<div class="kvgrid"><div class="kvcol"><label class="fl">Verursacher (Mieterkonto suchen oder Namen eintragen)<input id="se-n-${s.id}" list="dl-mk" data-wahl="1" value="${esc(z.name||'')}" onchange="seMieter('${s.id}',this.value)" placeholder="Name eintippen"></label>
+     <label class="fl">Kontaktdaten<textarea id="se-k-${s.id}" rows="4" placeholder="Anschrift, Telefon, E-Mail">${esc(z.kontakt||'')}</textarea></label></div>
+     <div class="kvcol"><div class="sub" style="margin-top:18px">Die Asana-Aufgabe kommt in „Mieter Meldungen“ (Schlagwort Schadenersatz) mit den Unteraufgaben ${SE_UNTER.join(', ')}. Sie verweist auf diese Störungsmeldung, und an der Störung in Asana wird ein Hinweis auf die Schadenersatz-Aufgabe ergänzt.</div></div></div>
+   <div class="acts"><button class="small primary" onclick="seSpeichern('${s.id}')">Speichern</button>
+     ${z.pid?`<button class="small" onclick="(window.top||window).location.href='/hausverwaltung/mieterkonten?pid='+encodeURIComponent('${jq(z.pid)}')">Mieterkonto öffnen</button>`:''}
+     ${z.asana_link?`<a class="lnk" href="${esc(z.asana_link)}" target="_blank" rel="noopener">Schadenersatz in Asana öffnen</a>`:`<button class="small" id="se-a-${s.id}" onclick="seAsana('${s.id}')">Asana-Aufgabe anlegen</button>`}</div>
+   <datalist id="dl-mk">${mkListe().map(x=>`<option value="${esc(x.l)}">`).join('')}</datalist>`;
+  return h;}
+async function seJa(sid,ja){const s=S.find(x=>x.id===sid);if(!s)return;const z=Object.assign({},s.schadenersatz||{});if(z.ja===ja)return;z.ja=ja;
+  if(ja&&!z.name){const m=mieterVon(einVon(s));if(m){z.name=mkLabel(MK.find(x=>x.pid===m.pid)||{pid:m.pid,mieter:m.name});z.pid=m.pid;z.kontakt=mkKontakt(m.pid)||[m.name,m.tel?'Tel. '+m.tel:'',m.email?'E-Mail '+m.email:''].filter(Boolean).join('\n');}}
+  if(await speichern(s,{schadenersatz:z},eintrag('Schadenersatz',ja?'ja':'nein'))){SEC['Schadenersatz']=true;render();}}
+function seMieter(sid,v){const x=mkListe().find(y=>y.l===v);SE_TMP[sid]={pid:x?x.pid:''};if(x){const k=document.getElementById('se-k-'+sid);if(k)k.value=mkKontakt(x.pid);}}
+async function seSpeichern(sid,leise){const s=S.find(x=>x.id===sid);if(!s)return false;const n=(document.getElementById('se-n-'+sid)||{}).value,k=(document.getElementById('se-k-'+sid)||{}).value;
+  const z=Object.assign({},s.schadenersatz||{ja:true});z.name=String(n||'').trim();z.kontakt=String(k||'').trim();
+  if(SE_TMP[sid])z.pid=SE_TMP[sid].pid;else if(z.name&&!mkListe().some(y=>y.l===z.name))z.pid='';
+  const ok=await speichern(s,{schadenersatz:z},leise?null:eintrag('Schadenersatz','Verursacher: '+(z.name||'–')));if(ok&&!leise){toast('Gespeichert.');render();}return ok;}
+async function seAsana(sid){const s=S.find(x=>x.id===sid);if(!s)return;const b=document.getElementById('se-a-'+sid);if(b){b.disabled=true;b.textContent='Lege an …';}
+  try{if(!(await seSpeichern(sid,true)))throw new Error('Speichern fehlgeschlagen');const z=s.schadenersatz||{},o=objVon(s),e=einVon(s);
+    const nm=String(z.name||'').split(' · ')[0];const person=nm?nameAkte(nm):'';
+    let tags=[{name:'Schadenersatz'}];try{const T=(await asApi({aktion:'tags'})).tags||[];const t=T.find(x=>String(x.name).toLowerCase()==='schadenersatz');if(t)tags=[{gid:t.gid}];}catch(x){}
+    const link=location.origin+'/hausverwaltung/stoerungen?id='+s.id;
+    const notiz=['Schadenersatz zur Störungsmeldung Nr. '+s.nr+' (Ticket '+tk(s)+'): '+(s.titel||''),'Objekt: '+(o.kz||'')+' · '+(o.name||'')+(e?' · '+e.bezeichnung:''),
+      'Verursacher: '+(z.name||'–'),z.kontakt?'Kontaktdaten:\n'+z.kontakt:'',s.beschreibung?'Schaden laut Meldung:\n'+s.beschreibung:'',
+      'Störungsmeldung im OS: '+link,s.asana_link?'Störungsmeldung in Asana: '+s.asana_link:''].filter(Boolean).join('\n\n');
+    const j=await asApi({aktion:'anlegen',name:[o.kz,e&&String(e.bezeichnung||'').replace(/\s+/g,''),person,'Schadenersatz '+(s.titel||'')].filter(Boolean).join('_'),projekt:PROJEKT,abschnitt:ABSCHNITT.Neu,zustaendig:s.zustaendig_gid||'',notiz,tags,unteraufgaben:SE_UNTER});
+    if(s.asana_gid){try{await asApi({aktion:'kommentar',gid:s.asana_gid,text:'Schadenersatz wird geltend gemacht: '+j.aufgabe.link});}catch(x){}}
+    const z2=Object.assign({},s.schadenersatz,{asana_gid:j.aufgabe.gid,asana_link:j.aufgabe.link,asana_am:new Date().toISOString(),asana_von:ICH||''});
+    await speichern(s,{schadenersatz:z2},eintrag('Schadenersatz','Asana-Aufgabe mit '+((j.unteraufgaben||[]).length)+' Unteraufgaben angelegt'));toast('Schadenersatz in Asana angelegt.');render();}
+  catch(err){toast('Asana: '+(err.message||err));if(b){b.disabled=false;b.textContent='Asana-Aufgabe anlegen';}}}
+/* Auswahlfelder zum Eintippen: beim Anklicken leeren, damit die ganze Liste erscheint */
+document.addEventListener('focusin',e=>{const t=e.target;if(t&&t.dataset&&t.dataset.wahl){t.dataset.alt=t.value;t.value='';}});
+document.addEventListener('focusout',e=>{const t=e.target;if(t&&t.dataset&&t.dataset.wahl&&!t.value&&t.dataset.alt)t.value=t.dataset.alt;});
+
 async function speichern(s,patch,log){if(log)patch.verlauf=(s.verlauf||[]).concat([log]);patch.updated_at=new Date().toISOString();
   const {error}=await sb.from('stoerungen').update(patch).eq('id',s.id);if(error){toast('Speichern fehlgeschlagen: '+error.message);return false;}Object.assign(s,patch);return true;}
 async function statusSetzen(sid,st,ausAsana){const s=S.find(x=>x.id===sid);if(!s||s.status===st)return;
