@@ -119,7 +119,7 @@ tbody tr:hover td{background:#fafbfc}
     </div>
     <div class="dlg-ft">
       <textarea id="noteInput" rows="2" placeholder="Notiz zum Datensatz … (Datum &amp; Uhrzeit automatisch)"></textarea>
-      <span style="display:flex;gap:8px"><button class="btn sec" id="mailBtn" onclick="openMail()">✉ Mail schreiben</button><button class="btn sec" onclick="addNote()">+ Notiz</button><button class="btn" onclick="saveEntity()">Speichern</button></span>
+      <span style="display:flex;gap:8px"><button class="btn sec" id="mailBtn" onclick="openMail()">✉ Mail schreiben</button><button class="btn sec" onclick="addNote()">+ Notiz</button><button class="btn" onclick="saveEntity()" title="Änderungen werden automatisch gespeichert">Fertig</button></span>
     </div>
   </div>
 </div>
@@ -450,11 +450,11 @@ function renderTL(){
 function fieldHtml(typ,f,val){
   const [key,label,kind]=f;
   let inp;
-  if(kind==='textarea')inp=`<textarea id="m_${key}" rows="3">${esc(val)}</textarea>`;
-  else if(kind==='firma'){const cur=val?firmaName(val):'';inp=`<input id="m_${key}" list="dl_${key}" value="${esc(cur)}" placeholder="Firma eintippen – neue werden automatisch angelegt" autocomplete="off"><datalist id="dl_${key}">${F.map(x=>`<option value="${esc(x.name)}">`).join('')}</datalist>`;}
-  else if(kind==='kontakt')inp=`<select id="m_${key}"><option value="">—</option>${K.map(x=>`<option value="${x.id}" ${x.id===val?'selected':''}>${esc(kName(x))}</option>`).join('')}</select>`;
-  else if(kind==='stufe')inp=`<select id="m_${key}">${STUFEN.map(s=>`<option ${s===val?'selected':''}>${esc(s)}</option>`).join('')}</select>`;
-  else if(kind==='pot')inp=`<select id="m_${key}"><option value="">—</option>${POT.map(x=>`<option ${x===val?'selected':''}>${esc(x)}</option>`).join('')}</select>`;
+  if(kind==='textarea')inp=`<textarea id="m_${key}" rows="3" onchange="autoSave('${key}','textarea')">${esc(val)}</textarea>`;
+  else if(kind==='firma'){const cur=val?firmaName(val):'';inp=`<input id="m_${key}" list="dl_${key}" value="${esc(cur)}" placeholder="Firma eintippen – neue werden automatisch angelegt" autocomplete="off" onchange="autoSave('${key}','firma')"><datalist id="dl_${key}">${F.map(x=>`<option value="${esc(x.name)}">`).join('')}</datalist>`;}
+  else if(kind==='kontakt')inp=`<select id="m_${key}" onchange="autoSave('${key}','kontakt')"><option value="">—</option>${K.map(x=>`<option value="${x.id}" ${x.id===val?'selected':''}>${esc(kName(x))}</option>`).join('')}</select>`;
+  else if(kind==='stufe')inp=`<select id="m_${key}" onchange="autoSave('${key}','stufe')">${STUFEN.map(s=>`<option ${s===val?'selected':''}>${esc(s)}</option>`).join('')}</select>`;
+  else if(kind==='pot')inp=`<select id="m_${key}" onchange="autoSave('${key}','pot')"><option value="">—</option>${POT.map(x=>`<option ${x===val?'selected':''}>${esc(x)}</option>`).join('')}</select>`;
   else if(kind==='kats'){
     CURKATS=Array.isArray(val)?val.slice():[];
     inp=`<div class="katsel" id="m_${key}">
@@ -469,7 +469,7 @@ function fieldHtml(typ,f,val){
       <select id="gebAdd" onchange="gebPick(this.value)"></select>
     </div>`;
   }
-  else inp=`<input id="m_${key}" type="${kind==='number'?'number':kind==='date'?'date':'text'}" value="${val==null?'':esc(val)}">`;
+  else inp=`<input id="m_${key}" type="${kind==='number'?'number':kind==='date'?'date':'text'}" value="${val==null?'':esc(val)}" onchange="autoSave('${key}','${kind}')">`;
   return `<div class="fld ${kind==='textarea'||kind==='kats'||kind==='geb'?'wide':''}"><label>${label}</label>${inp}</div>`;
 }
 
@@ -513,8 +513,8 @@ function katRender(){
     +rest.map(k=>`<option value="${esc(k.name)}">${esc(k.name)}</option>`).join('');
   sel.disabled=!rest.length;
 }
-function katPick(name){if(name&&!CURKATS.includes(name))CURKATS.push(name);katRender();}
-function katRemove(name){CURKATS=CURKATS.filter(n=>n!==name);katRender();}
+function katPick(name){if(name&&!CURKATS.includes(name))CURKATS.push(name);katRender();persistField('kategorien',CURKATS.slice(),'kats');}
+function katRemove(name){CURKATS=CURKATS.filter(n=>n!==name);katRender();persistField('kategorien',CURKATS.slice(),'kats');}
 function readKats(){return CURKATS.slice();}
 // ——— Gebäude-Auswahl im Dialog (Dropdown + entfernbare Chips) ———
 function gebRender(){
@@ -527,9 +527,46 @@ function gebRender(){
     +rest.map(n=>`<option value="${esc(n)}">${esc(n)}</option>`).join('');
   sel.disabled=!rest.length;
 }
-function gebPick(name){if(name&&!CURGEB.includes(name))CURGEB.push(name);gebRender();}
-function gebRemove(name){CURGEB=CURGEB.filter(n=>n!==name);gebRender();}
+function gebPick(name){if(name&&!CURGEB.includes(name))CURGEB.push(name);gebRender();persistField('gebaeude',CURGEB.slice(),'geb');}
+function gebRemove(name){CURGEB=CURGEB.filter(n=>n!==name);gebRender();persistField('gebaeude',CURGEB.slice(),'geb');}
 function readGeb(){return CURGEB.slice();}
+/* ---------- Auto-Save je Feld ---------- */
+async function autoSave(key,kind){
+  if(!CUR)return;
+  let v;
+  if(kind==='firma'){ v=await resolveFirma($('m_'+key).value); }
+  else { const el=$('m_'+key); if(!el)return; v=el.value; if(v===''||v==='__new__')v=null; if(kind==='number'&&v!=null)v=Number(v); }
+  await persistField(key,v,kind);
+}
+async function persistField(key,v,kind){
+  if(!CUR)return; const {typ}=CUR;
+  if(!CUR.id){
+    // Erst beim ersten echten Inhalt anlegen (Name/Firma), sonst nur im Entwurf halten
+    const hatInhalt=(typ==='firma'?(key==='name'&&v):(typ==='kontakt'?((key==='name'||key==='vorname')&&v):v));
+    CUR.rec=CUR.rec||{}; CUR.rec[key]=v;
+    if(!hatInhalt)return;
+    const row={...CUR.rec,updated_at:new Date().toISOString()};
+    const {data,error}=await sb.from(TBL[typ]).insert(row).select();
+    if(error){toast(error.message);return;}
+    if(data&&data[0]){ CUR.id=data[0].id; CUR.rec={...data[0]};
+      (typ==='kontakt'?K:typ==='firma'?F:D).unshift(data[0]);
+      await logTL(typ,data[0].id,'erstellt',{text:LBL[typ]+' angelegt'});
+      $('tckWrap').style.display='';renderTickets();$('tlWrap').style.display='';renderTL();
+      toast(LBL[typ]+' angelegt ✓'); }
+    return;
+  }
+  const arr=(typ==='kontakt'?K:typ==='firma'?F:D); const rec=arr.find(x=>x.id===CUR.id);
+  const old=CUR.rec?CUR.rec[key]:(rec?rec[key]:undefined);
+  const {error}=await sb.from(TBL[typ]).update({[key]:v,updated_at:new Date().toISOString()}).eq('id',CUR.id);
+  if(error){toast(error.message);return;}
+  if(rec)rec[key]=v; if(CUR.rec)CUR.rec[key]=v;
+  const f=SPEC[typ].find(x=>x[0]===key);
+  let alt=old,neu=v;
+  if(f){ if(f[2]==='firma'){alt=firmaName(alt);neu=firmaName(neu);} if(f[2]==='kontakt'){alt=kontaktName(alt);neu=kontaktName(neu);} if(f[2]==='kats'||f[2]==='geb'){alt=(alt||[]).join(', ')||'—';neu=(neu||[]).join(', ')||'—';} }
+  if(String(alt==null?'':alt)!==String(neu==null?'':neu)){ await logTL(typ,CUR.id,'aenderung',{feld:f?f[1]:key,alt,neu}); renderTL(); }
+  if(key==='name'||key==='vorname')$('dlgTitle').textContent=LBL[typ]+' · '+(typ==='kontakt'?kName(rec||CUR.rec):typ==='firma'?(rec?rec.name:'' ):(rec?rec.titel:''));
+  toast('Gespeichert ✓');
+}
 function openEntity(typ,id){
   const rec=(typ==='kontakt'?K:typ==='firma'?F:D).find(x=>x.id===id);if(!rec)return;
   CUR={typ,id,rec:{...rec}};
