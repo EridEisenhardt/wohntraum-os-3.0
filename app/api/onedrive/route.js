@@ -275,6 +275,20 @@ export async function POST(req) {
       return antwort({ treffer })
     }
 
+    if (a === 'miniaturen') {
+      // kleine Vorschaubilder für die Belegliste (bis 40 Dateien je Aufruf)
+      const d = await drive(); const ids = (Array.isArray(b.ids) ? b.ids : []).map(String).slice(0, 40); const out = {}
+      await Promise.all(ids.map(async id => {
+        try {
+          const x = await graph('/drives/' + d + '/items/' + encodeURIComponent(id) + '?$select=id,parentReference&$expand=thumbnails', { erlaube404: true })
+          if (!x || !(x.parentReference && decodeURIComponent(String(x.parentReference.path || '')).includes('/' + ROOT))) return
+          const t = (x.thumbnails || [])[0]; const m = t && (t.medium || t.small)
+          out[id] = m ? m.url : ''
+        } catch (e) { out[id] = '' }
+      }))
+      return antwort({ bilder: out })
+    }
+
     if (a === 'link') {
       const d = await drive(); const x = await graph('/drives/' + d + '/items/' + encodeURIComponent(b.id))
       if (!(x.parentReference && decodeURIComponent(String(x.parentReference.path || '')).includes('/' + ROOT))) return antwort({ error: 'Datei nicht erlaubt.' }, 403)
