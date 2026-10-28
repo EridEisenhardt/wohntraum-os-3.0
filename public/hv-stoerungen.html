@@ -123,7 +123,7 @@ async function laden(){
   if(P.get('ticket')){const n=Number(String(P.get('ticket')).replace(/\D/g,''));const t=S.find(x=>Number(x.nr)===n);if(t){AUF[t.id]=true;SEC['Mails']=true;ST='';document.querySelectorAll('#seg button').forEach(x=>x.classList.toggle('on',x.dataset.s===''));}}
   if(P.get('mail'))ausMail(P.get('mail'));
   if(P.get('mail')||P.get('ticket')){try{history.replaceState(null,'',location.pathname);}catch(x){}try{if(window.top!==window)window.top.history.replaceState(null,'',window.top.location.pathname);}catch(x){}}
-  render();abgleich();asNutzer();}
+  render();abgleich();asNutzer();seVerschieben();}
 const offen=s=>s.status!=='Erledigt';
 function render(){
   const q=document.getElementById('q').value.trim().toLowerCase(),fo=document.getElementById('fobj').value.replace(/^Alle$/,'');
@@ -188,6 +188,10 @@ function kopieren(t){navigator.clipboard.writeText(t).then(()=>toast('Link kopie
 const eintrag=(art,t)=>({d:new Date().toISOString(),by:ICH||'OS',art,t});
 /* ---------- Schadenersatz: ja/nein, Verursacher mit Kontaktdaten (Mieterkonto), Asana-Aufgabe mit Unteraufgaben ---------- */
 const SE_UNTER=['Geltendmachung dem Grunde nach','Rechnungen','Inrechnungstellung'];
+let SE_AB=null;async function seAbschnitt(){if(!SE_AB)SE_AB=asApi({aktion:'abschnittSicher',projekt:PROJEKT,name:'Schadenersatz'}).then(j=>j.abschnitt.gid).catch(e=>{SE_AB=null;throw e;});return SE_AB;}
+/* bereits angelegte Schadenersatz-Aufgaben einmalig in den Abschnitt „Schadenersatz“ verschieben */
+async function seVerschieben(){const L=S.filter(s=>s.schadenersatz&&s.schadenersatz.asana_gid&&!s.schadenersatz.abschnitt);if(!L.length)return;
+  try{const ab=await seAbschnitt();for(const s of L){try{await asApi({aktion:'abschnitt',gid:s.schadenersatz.asana_gid,abschnitt:ab});await speichern(s,{schadenersatz:Object.assign({},s.schadenersatz,{abschnitt:ab})});}catch(x){}}}catch(x){}}
 function seText(s){const z=s.schadenersatz||{};return z.ja===true?'Ja'+(z.name?' · '+z.name:'')+(z.asana_gid?' · in Asana':' · noch nicht in Asana'):z.ja===false?'Nein':'noch nicht geprüft';}
 function mkLabel(m){const e=MKE[m.pid]||{},n=e.mieter||m.mieter||(m.namen||[]).join(', ');const u=E.find(x=>x.nahaus_id&&x.nahaus_id===m.unit);const bis=e.bis||m.bis;
   return n+' · '+(m.obj||'')+(u?' '+u.bezeichnung:'')+(bis&&bis<HEUTE?' (ausgezogen)':'');}
@@ -200,7 +204,7 @@ function seSek(s){const z=s.schadenersatz||{},ja=z.ja===true,nein=z.ja===false;
   if(!ja)return h;
   h+=`<div class="kvgrid"><div class="kvcol"><label class="fl">Verursacher (Mieterkonto suchen oder Namen eintragen)<input id="se-n-${s.id}" list="dl-mk" data-wahl="1" value="${esc(z.name||'')}" onchange="seMieter('${s.id}',this.value)" placeholder="Name eintippen"></label>
      <label class="fl">Kontaktdaten<textarea id="se-k-${s.id}" rows="4" placeholder="Anschrift, Telefon, E-Mail">${esc(z.kontakt||'')}</textarea></label></div>
-     <div class="kvcol"><div class="sub" style="margin-top:18px">Die Asana-Aufgabe kommt in „Mieter Meldungen“ (Schlagwort Schadenersatz) mit den Unteraufgaben ${SE_UNTER.join(', ')}. Sie verweist auf diese Störungsmeldung, und an der Störung in Asana wird ein Hinweis auf die Schadenersatz-Aufgabe ergänzt.</div></div></div>
+     <div class="kvcol"><div class="sub" style="margin-top:18px">Die Asana-Aufgabe kommt in „Mieter Meldungen“ in den Abschnitt „Schadenersatz“ (Schlagwort Schadenersatz) mit den Unteraufgaben ${SE_UNTER.join(', ')}. Sie verweist auf diese Störungsmeldung, und an der Störung in Asana wird ein Hinweis auf die Schadenersatz-Aufgabe ergänzt.</div></div></div>
    <div class="acts"><button class="small primary" onclick="seSpeichern('${s.id}')">Speichern</button>
      ${z.pid?`<button class="small" onclick="(window.top||window).location.href='/hausverwaltung/mieterkonten?pid='+encodeURIComponent('${jq(z.pid)}')">Mieterkonto öffnen</button>`:''}
      ${z.asana_link?`<a class="lnk" href="${esc(z.asana_link)}" target="_blank" rel="noopener">Schadenersatz in Asana öffnen</a>`:`<button class="small" id="se-a-${s.id}" onclick="seAsana('${s.id}')">Asana-Aufgabe anlegen</button>`}</div>
@@ -222,9 +226,9 @@ async function seAsana(sid){const s=S.find(x=>x.id===sid);if(!s)return;const b=d
     const notiz=['Schadenersatz zur Störungsmeldung Nr. '+s.nr+' (Ticket '+tk(s)+'): '+(s.titel||''),'Objekt: '+(o.kz||'')+' · '+(o.name||'')+(e?' · '+e.bezeichnung:''),
       'Verursacher: '+(z.name||'–'),z.kontakt?'Kontaktdaten:\n'+z.kontakt:'',s.beschreibung?'Schaden laut Meldung:\n'+s.beschreibung:'',
       'Störungsmeldung im OS: '+link,s.asana_link?'Störungsmeldung in Asana: '+s.asana_link:''].filter(Boolean).join('\n\n');
-    const j=await asApi({aktion:'anlegen',name:[o.kz,e&&String(e.bezeichnung||'').replace(/\s+/g,''),person,'Schadenersatz '+(s.titel||'')].filter(Boolean).join('_'),projekt:PROJEKT,abschnitt:ABSCHNITT.Neu,zustaendig:s.zustaendig_gid||'',notiz,tags,unteraufgaben:SE_UNTER});
+    const j=await asApi({aktion:'anlegen',name:[o.kz,e&&String(e.bezeichnung||'').replace(/\s+/g,''),person,'Schadenersatz '+(s.titel||'')].filter(Boolean).join('_'),projekt:PROJEKT,abschnitt:await seAbschnitt(),zustaendig:s.zustaendig_gid||'',notiz,tags,unteraufgaben:SE_UNTER});
     if(s.asana_gid){try{await asApi({aktion:'kommentar',gid:s.asana_gid,text:'Schadenersatz wird geltend gemacht: '+j.aufgabe.link});}catch(x){}}
-    const z2=Object.assign({},s.schadenersatz,{asana_gid:j.aufgabe.gid,asana_link:j.aufgabe.link,asana_am:new Date().toISOString(),asana_von:ICH||''});
+    const z2=Object.assign({},s.schadenersatz,{abschnitt:await seAbschnitt(),asana_gid:j.aufgabe.gid,asana_link:j.aufgabe.link,asana_am:new Date().toISOString(),asana_von:ICH||''});
     await speichern(s,{schadenersatz:z2},eintrag('Schadenersatz','Asana-Aufgabe mit '+((j.unteraufgaben||[]).length)+' Unteraufgaben angelegt'));toast('Schadenersatz in Asana angelegt.');render();}
   catch(err){toast('Asana: '+(err.message||err));if(b){b.disabled=false;b.textContent='Asana-Aufgabe anlegen';}}}
 /* Auswahlfelder zum Eintippen: beim Anklicken leeren, damit die ganze Liste erscheint */

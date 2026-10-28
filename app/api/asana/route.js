@@ -91,6 +91,15 @@ export async function POST(req) {
       return antwort({ tags: L.sort((x, y) => String(x.name).localeCompare(String(y.name), 'de')) })
     }
 
+    if (a === 'abschnittSicher') {
+      // Abschnitt eines Projekts nach Namen suchen, sonst anlegen (z. B. „Schadenersatz“ in „Mieter Meldungen“)
+      const p = String(b.projekt || ''), n = String(b.name || '').trim(); if (!/^\d+$/.test(p) || !n) return antwort({ error: 'Projekt oder Name fehlt.' }, 400)
+      const L = await asana('/projects/' + p + '/sections?opt_fields=name&limit=100')
+      let x = (L || []).find(y => String(y.name).trim().toLowerCase() === n.toLowerCase())
+      if (!x) x = await asana('/projects/' + p + '/sections', { method: 'POST', json: { name: n } })
+      return antwort({ abschnitt: { gid: x.gid, name: x.name } })
+    }
+
     if (a === 'anlegen') {
       const name = String(b.name || '').trim(); if (!name) return antwort({ error: 'Bitte einen Titel eingeben.' }, 400)
       const d = { name, workspace: WS(), notes: String(b.notiz || '') }
