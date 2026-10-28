@@ -29,6 +29,7 @@ input,select{background:var(--soft);border:1px solid var(--line);border-radius:8
 .leer{color:var(--muted);padding:8px 4px;font-size:12.5px}
 .toast{position:fixed;left:50%;bottom:20px;transform:translateX(-50%);background:var(--ink);color:var(--bg);padding:9px 16px;border-radius:8px;font-size:13px;opacity:0;pointer-events:none;transition:opacity .2s;z-index:50}.toast.on{opacity:1}
 .vgl{background:var(--soft);border-radius:8px;padding:8px 10px;margin-top:6px;font-size:12.5px}
+.ktab tr.gkopf td{background:#f1f4f8;font-weight:700;font-size:12px;letter-spacing:.04em;padding-top:10px}
 </style></head><body>
 <div class="wrap" id="app"><div class="leer">Lädt …</div></div>
 <div class="toast" id="toast"></div>
@@ -69,10 +70,14 @@ function render(){
   h+='<div class="card"><div class="ch">Konten<div class="acts"><button data-a="abruf"'+(BUSY||!V.length?' disabled':'')+'>'+(BUSY==='abruf'?(BUSYINFO||'Wird abgerufen …'):'Kontostände und Umsätze abrufen')+'</button></div></div>'+(STAND&&KONTEN?'<div class="klein" style="margin:-4px 0 8px">Stand '+esc(dmy(STAND))+', '+esc(new Date(STAND).toTimeString().slice(0,5))+' Uhr</div>':'');
   if(!KONTEN) h+='<div class="leer">'+(V.length?'Kontostände noch nicht abgerufen.':'Erst eine Bank verbinden.')+'</div>';
   else {
-    const kn=k=>(KN[k.iban]||{}).name||'', L=KONTEN.slice().sort((a,b)=>(kn(a)?0:1)-(kn(b)?0:1)||kn(a).localeCompare(kn(b),'de',{numeric:true})||(a.bank+a.iban).localeCompare(b.bank+b.iban,'de'));
+    /* Reihenfolge wie in Monatswechsel-Fixkosten: Gesellschaft EE, WT, KiBo; darin Objekte alphabetisch, dann Allgemein, Instandhaltung, übrige Gesellschaftskonten */
+    const kn=k=>(KN[k.iban]||{}).name||'', gs=k=>kurzInh(k,KN[k.iban]), GO=['EE','WT','KiBo'], gi=k=>{ const i=GO.indexOf(gs(k)); return i<0?GO.length:i; };
+    const art=k=>{ const n=kn(k); if(!n) return 4; if(/-Allgemein|-Allg\b/i.test(n)) return 1; if(/-Instandhaltung$/i.test(n)) return 2; if(/^(EE|WT|KiBo)-/i.test(n)) return 3; return 0; };
+    const L=KONTEN.slice().sort((a,b)=>gi(a)-gi(b)||String(gs(a)).localeCompare(String(gs(b)),'de')||art(a)-art(b)||kn(a).localeCompare(kn(b),'de',{numeric:true})||(a.bank+a.iban).localeCompare(b.bank+b.iban,'de'));
+    let gAlt=null;
     h+='<table class="ktab"><thead><tr><th>Konto</th><th>Bank</th><th>IBAN</th><th>Inhaber</th><th class="n">Kontostand</th><th>Stand</th></tr></thead><tbody>'
       +L.map(k=>{
-        const kk=KN[k.iban]||{}; return '<tr><td class="nw"><b>'+esc(kk.name||'–')+'</b></td><td class="nw">'+esc(kurzBank(k.bank))+'</td><td class="nw">'+esc(fiban(k.iban))+'</td><td class="nw">'+esc(kurzInh(k,kk))+'</td><td class="n"><b>'+(k.fehler?'<span class="neg">Fehler</span>':eur(k.saldo))+'</b></td><td>'+esc(dmy(k.saldoAm))+'</td></tr>'
+        const kk=KN[k.iban]||{}, g=gs(k)||'Ohne Gesellschaft', kopf=g!==gAlt?'<tr class="gkopf"><td colspan="6">'+esc(g)+'</td></tr>':''; gAlt=g; return kopf+'<tr><td class="nw"><b>'+esc(kk.name||'–')+'</b></td><td class="nw">'+esc(kurzBank(k.bank))+'</td><td class="nw">'+esc(fiban(k.iban))+'</td><td class="nw">'+esc(kurzInh(k,kk))+'</td><td class="n"><b>'+(k.fehler?'<span class="neg">Fehler</span>':eur(k.saldo))+'</b></td><td>'+esc(dmy(k.saldoAm))+'</td></tr>'
           +(k.fehler?'<tr><td colspan="6"><div class="vgl neg">'+esc(k.fehler)+'</div></td></tr>':'');}).join('')+'</tbody></table>';
   }
   h+='</div>';
