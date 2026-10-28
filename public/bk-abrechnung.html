@@ -218,19 +218,34 @@ function ergebnis(){ const pv=D.a.zeitraum_von, pb=D.a.zeitraum_bis, T=tage(pv,p
           x[heiz?'hk':'bk']+=part; if(lohnGes){ const lb=lohnGes*part/s; x.lohn+=lb; const lp=x.lohnPos.find(q=>q.name===ka.name); if(lp) lp.b+=lb; else x.lohnPos.push({name:ka.name,b:lb}); }
           if(m.art!=='vorauszahlung') R.vermieter+=part; } } } }
   for(const x of Object.values(R.mv)){ const m=x.m, va=m.art==='vorauszahlung'; x.bk=r2(x.bk); x.hk=r2(x.hk); x.vzb=va?(num(m.vz_bk_gezahlt)||0):0; x.vzh=va?(num(m.vz_hk_gezahlt)||0):0;
-    x.saldo=va?r2(x.bk+x.hk-x.vzb-x.vzh):null; x.aktuell=(m.bis||pb)>=pb;
+    x.saldo=va?r2(x.bk+x.hk-x.vzb-x.vzh):null; x.aktuell=(m.bis||pb)>=pb&&mvLaeuft(m);
     if(va&&x.aktuell&&x.tage>0){ x.vorBk=Math.ceil(x.bk*T/x.tage/12); x.vorHk=Math.ceil(x.hk*T/x.tage/12); } }
   return R; }
 const briefE=()=>Object.assign({bank:{},guthaben:'ueberweisen',unterschrift:''},EINST.brief||{});
 const gesVon=()=>D.o.gesellschaft||'WT';
 const absenderVon=g=>Object.assign({},GES_DEF[g]||{},(ABSD||{})[g]||{});
-const vzAb=()=>{ const J=EINST.jahre[String(JAHR)]||{}; if(J.vzAb) return J.vzAb; const d=new Date(); d.setMonth(d.getMonth()+2,1); return d.toISOString().slice(0,10); };
+/* läuft das Mietverhältnis heute noch? (Auszug laut Mieterkonto) */
+function mvLaeuft(m){ const heute=new Date().toISOString().slice(0,10); if(!m.mk_pid) return true; const mk=(D.mk||[]).find(x=>x.pid===m.mk_pid); if(!mk) return true; const b=(D.mke[mk.pid]||{}).bis||mk.bis; return !b||b>=heute; }
+/* neue Vorauszahlung je Objekt: Datum oder 'keine' */
+const vzAb=()=>{ const J=EINST.jahre[String(JAHR)]||{}, v=(J.vzAbObj||{})[D.o.kz]; if(v) return v; if(J.vzAb) return J.vzAb; const d=new Date(); d.setMonth(d.getMonth()+2,1); return d.toISOString().slice(0,10); };
+const vzKeine=()=>vzAb()==='keine';
+/* Konten aus dem OS (stamm/konten) */
+let KONTEN=null;
+const BLZ_BANK={'43060967':'GLS Bank','12030000':'DKB','50050201':'Frankfurter Sparkasse','55350010':'Sparkasse Worms-Alzey-Ried','55040022':'Commerzbank','56050180':'Sparkasse Rhein-Nahe','55050120':'Sparkasse Mainz','55090500':'Sparda-Bank Südwest','60050101':'BW-Bank'};
+const ibanFmt=i=>String(i||'').replace(/\s+/g,'').replace(/(.{4})/g,'$1 ').trim();
+const bankVon=i=>BLZ_BANK[String(i||'').replace(/\s+/g,'').slice(4,12)]||'';
+const kontoText=k=>k?ibanFmt(k.iban)+(bankVon(k.iban)?' ('+bankVon(k.iban)+')':''):'';
+const kontoLabel=k=>k.name+' · '+ibanFmt(k.iban)+(bankVon(k.iban)?' · '+bankVon(k.iban):'');
+async function kontenLaden(){ if(KONTEN) return; KONTEN=[]; try{ const {data}=await sb.from('os_docs').select('data').eq('app','oc').eq('pfad','stamm/konten').maybeSingle(); KONTEN=((data&&data.data&&data.data.konten)||[]).filter(k=>k&&k.iban); }catch(e){} render(); }
+function kontoObj(){ const B=briefE(), iban=(B.bankObj||{})[D.o.kz]; if(iban) return (KONTEN||[]).find(k=>k.iban===iban)||{name:'',iban}; const L=(KONTEN||[]).filter(k=>k.obj===D.o.kz); return L.find(k=>!/alt/i.test(k.name))||L[0]||null; }
+async function kontoSetzen(inp){ const v=inp.value.trim(); const k=(KONTEN||[]).find(x=>kontoLabel(x)===v||x.iban===v.replace(/\s+/g,'')||x.name.toLowerCase()===v.toLowerCase()); if(!k){ toast('Bitte ein Konto aus der Liste wählen.'); render(); return; }
+  const B=briefE(); B.bankObj=Object.assign({},B.bankObj||{},{[D.o.kz]:k.iban}); EINST.brief=B; await einstSpeichern(); render(); }
 async function absLaden(){ if(ABSD) return; try{ const {data}=await sb.from('os_docs').select('data').eq('app','oc').eq('pfad','stamm/briefabsender').maybeSingle(); ABSD=(data&&data.data&&data.data.g)||{}; }catch(e){ ABSD={}; } render(); }
 async function briefSetzen(feld,wert){ const B=briefE(); if(feld==='bank') B.bank[gesVon()]=String(wert).trim(); else if(feld==='guthaben'){ const t=norm(wert); B.guthaben=/verrech/.test(t)?'verrechnen':'ueberweisen'; } else B[feld]=String(wert).trim(); EINST.brief=B; await einstSpeichern(); render(); }
-async function vzAbSetzen(v){ if(!/^\d{4}-\d{2}-\d{2}$/.test(v)){ toast('Bitte ein Datum wählen.'); return; } const J=jahrSichern(); J.vzAb=v; await einstSpeichern(); render(); }
+async function vzAbSetzen(t){ t=String(t||'').trim(); let v=/keine|kein /i.test(t)?'keine':datIso(t); if(!v){ toast('Bitte ein Datum eintragen oder „keine Anpassung“ wählen.'); render(); return; } const J=jahrSichern(); J.vzAbObj=Object.assign({},J.vzAbObj||{},{[D.o.kz]:v}); await einstSpeichern(); render(); }
 async function mvFeld(id,feld,wert){ const m=D.mvs.find(x=>x.id===id); if(!m) return; let v=wert; if(feld==='vz_neu_bk'||feld==='vz_neu_hk'){ v=String(wert).trim()===''?null:parseNum(wert); if(String(wert).trim()!==''&&v==null){ toast('Bitte eine Zahl eintragen.'); return; } }
   const {error}=await sb.from('bk_mietverhaeltnisse').update({[feld]:v}).eq('id',id); if(error){ toast('Nicht gespeichert: '+error.message); return; } m[feld]=v; setTimeout(render,0); }
-function ergHtml(){ if(ABSD===null){ absLaden(); }
+function ergHtml(){ if(ABSD===null){ absLaden(); } if(KONTEN===null) kontenLaden();
   if(!D.mvs.length) return '<div class="empty">Bitte zuerst in Schritt 2 die Mietverhältnisse übernehmen.</div>';
   const R=ergebnis(), pb=D.a.zeitraum_bis, frist=(Number(pb.slice(0,4))+1)+'-12-31', rest=Math.round((Date.parse(frist)-Date.parse(new Date().toISOString().slice(0,10)))/864e5);
   const L=Object.values(R.mv).sort((a,b)=>{ const ea=D.ein.findIndex(e=>e.id===a.m.einheit_id), eb=D.ein.findIndex(e=>e.id===b.m.einheit_id); return ea-eb||String(a.m.von).localeCompare(String(b.m.von)); });
@@ -244,9 +259,9 @@ function ergHtml(){ if(ABSD===null){ absLaden(); }
   for(const w of W) h+='<div class="note">'+esc(w)+'</div>';
   h+='<div class="card"><b>Angaben für die Schreiben</b><div class="fg" style="margin-top:8px">'
     +'<label class="fl">Absender<input value="'+esc(A.name||gesVon())+'" disabled></label>'
-    +'<label class="fl">Bankverbindung für Nachzahlungen ('+esc(gesVon())+')<input value="'+esc(B.bank[gesVon()]||'')+'" placeholder="IBAN und Bank" onchange="briefSetzen(\'bank\',this.value)"></label>'
+    +'<label class="fl">Konto für Nachzahlungen<input list="dl-konten" data-wahl="1" value="'+esc(kontoObj()?kontoLabel(kontoObj()):'')+'" placeholder="Konto wählen" onchange="kontoSetzen(this)"><datalist id="dl-konten">'+(KONTEN||[]).filter(k=>k.ges===gesVon()&&k.obj!=='__aus').sort((a,b)=>(b.obj===D.o.kz)-(a.obj===D.o.kz)||a.name.localeCompare(b.name,'de')).map(k=>'<option value="'+esc(kontoLabel(k))+'">').join('')+'</datalist></label>'
     +'<label class="fl">Guthaben<input list="dl-gut" data-wahl="1" value="'+(B.guthaben==='verrechnen'?'mit der nächsten Miete verrechnen':'überweisen')+'" onchange="briefSetzen(\'guthaben\',this.value)"><datalist id="dl-gut"><option value="überweisen"><option value="mit der nächsten Miete verrechnen"></datalist></label>'
-    +'<label class="fl">Neue Vorauszahlung ab<input value="'+esc(dmyL(vzAb()))+'" placeholder="TT.MM.JJJJ" onchange="vzAbSetzen(datIso(this.value)||\'\')"></label>'
+    +'<label class="fl">Neue Vorauszahlung<input list="dl-vzab" data-wahl="1" value="'+esc(vzKeine()?'keine Anpassung':'ab '+dmyL(vzAb()))+'" placeholder="Datum oder keine Anpassung" onchange="vzAbSetzen(this.value)"><datalist id="dl-vzab"><option value="keine Anpassung"><option value="ab '+esc(dmyL(new Date(new Date().getFullYear(),new Date().getMonth()+2,1,12).toISOString().slice(0,10)))+'"></datalist></label>'
     +'<label class="fl">Unterschrift<input value="'+esc(B.unterschrift||ICH||'')+'" onchange="briefSetzen(\'unterschrift\',this.value)"></label></div></div>';
   h+='<div class="tbox"><table class="tab"><thead><tr><th>Schreiben</th><th>Einheit / Mieter</th><th class="n">Tage</th><th class="n">Kosten BK</th><th class="n">VZ BK</th><th class="n">Kosten HK</th><th class="n">VZ HK</th><th class="n">Ergebnis</th><th class="n">neue VZ BK / HK mtl.</th><th></th></tr></thead><tbody>';
   for(const x of L){ const m=x.m, e=D.ein.find(z=>z.id===m.einheit_id)||{}, va=m.art==='vorauszahlung';
@@ -254,7 +269,7 @@ function ergHtml(){ if(ABSD===null){ absLaden(); }
       +'<td><b>'+esc(e.bezeichnung||'')+'</b> '+esc(m.mieter||'')+'<div class="sub">'+dmy(m.von)+' bis '+dmy(m.bis)+(va?'':' · '+esc(mvArtLabel(m.art))+', trägt der Vermieter')+'</div></td>'
       +'<td class="n">'+x.tage+'</td><td class="n">'+eur(x.bk)+'</td><td class="n">'+(va?eur(x.vzb):'–')+'</td><td class="n">'+eur(x.hk)+'</td><td class="n">'+(va?eur(x.vzh):'–')+'</td>'
       +'<td class="n">'+(x.saldo==null?'–':'<b style="color:'+(x.saldo>0?'var(--warn)':'var(--ok,#1a7f37)')+'">'+(x.saldo>0?'Nachzahlung ':x.saldo<0?'Guthaben ':'')+eur(Math.abs(x.saldo))+'</b>')+'</td>'
-      +'<td class="n">'+(va&&x.aktuell?'<input class="zahl" style="width:70px" value="'+esc(m.vz_neu_bk!=null?fnum.format(m.vz_neu_bk):'')+'" placeholder="'+esc(x.vorBk)+'" onchange="mvFeld(\''+m.id+'\',\'vz_neu_bk\',this.value)"> / <input class="zahl" style="width:70px" value="'+esc(m.vz_neu_hk!=null?fnum.format(m.vz_neu_hk):'')+'" placeholder="'+esc(x.vorHk)+'" onchange="mvFeld(\''+m.id+'\',\'vz_neu_hk\',this.value)"><div class="sub">bisher '+eur(m.vz_bk_mtl||0)+' / '+eur(m.vz_hk_mtl||0)+'</div>':'–')+'</td>'
+      +'<td class="n">'+(va&&x.aktuell&&!vzKeine()?'<input class="zahl" style="width:70px" value="'+esc(m.vz_neu_bk!=null?fnum.format(m.vz_neu_bk):'')+'" placeholder="'+esc(x.vorBk)+'" onchange="mvFeld(\''+m.id+'\',\'vz_neu_bk\',this.value)"> / <input class="zahl" style="width:70px" value="'+esc(m.vz_neu_hk!=null?fnum.format(m.vz_neu_hk):'')+'" placeholder="'+esc(x.vorHk)+'" onchange="mvFeld(\''+m.id+'\',\'vz_neu_hk\',this.value)"><div class="sub">bisher '+eur(m.vz_bk_mtl||0)+' / '+eur(m.vz_hk_mtl||0)+'</div>':'–')+'</td>'
       +'<td class="n">'+(va?'<button class="small" onclick="schreibenErstellen(\''+m.id+'\',true)">PDF</button>'+(m.schreiben_datei&&m.schreiben_datei.od?'<div class="sub"><a class="lnk" onclick="odOeffnen(\''+esc(m.schreiben_datei.od)+'\')">erstellt '+dmy(String(m.schreiben_am||'').slice(0,10))+'</a></div>':''):'')+'</td></tr>'; }
   h+='</tbody></table></div>';
   h+='<div class="sub" style="margin-top:6px">Neue Vorauszahlung: Der graue Wert ist der Vorschlag (Kosten '+JAHR+' auf zwölf Monate gerechnet, aufgerundet). Trag den Betrag ein, der ins Schreiben soll. Leer = keine Anpassung.</div>';
@@ -287,9 +302,9 @@ function schreibenPdf(x){ const m=x.m, e=D.ein.find(z=>z.id===m.einheit_id)||{},
     doc.setDrawColor(180); doc.line(L,y-2,R,y-2); y+=2; zeile('Ihre Kosten',eur(kosten),true); zeile('abzüglich Ihrer Vorauszahlungen',eur(-vz)); zeile(kosten-vz>0?'Nachzahlung':'Guthaben',eur(Math.abs(r2(kosten-vz))),true); y+=2; };
   block('Betriebskosten',x.pos.filter(p=>!p.heiz),x.bk,x.vzb); block('Heiz- und Warmwasserkosten',x.pos.filter(p=>p.heiz),x.hk,x.vzh);
   need(14); doc.setDrawColor(20); doc.line(L,y,R,y); y+=6; doc.setFont('helvetica','bold'); doc.setFontSize(11.5); doc.text(x.saldo>0?'Ihre Nachzahlung':x.saldo<0?'Ihr Guthaben':'Ergebnis',L,y); doc.text(eur(Math.abs(x.saldo)),R,y,{align:'right'}); doc.setFont('helvetica','normal'); y+=9; doc.setFontSize(10.5);
-  if(x.saldo>0) para('Bitte überweisen Sie die Nachzahlung innerhalb von 30 Tagen nach Erhalt dieses Schreibens'+(B.bank[gesVon()]?' auf das Konto '+B.bank[gesVon()]:'')+' mit dem Verwendungszweck „BK '+JAHR+' '+o.kz+' '+(e.bezeichnung||'')+'“.');
+  if(x.saldo>0) para('Bitte überweisen Sie die Nachzahlung innerhalb von 30 Tagen nach Erhalt dieses Schreibens'+(kontoObj()?' auf das Konto '+kontoText(kontoObj())+(A.name?', Kontoinhaber '+A.name:''):'')+' mit dem Verwendungszweck „BK '+JAHR+' '+o.kz+' '+(e.bezeichnung||'')+'“.');
   else if(x.saldo<0) para(B.guthaben==='verrechnen'?'Ihr Guthaben verrechnen wir mit Ihrer nächsten Mietzahlung. Sie können die nächste Miete also um diesen Betrag kürzen.':'Ihr Guthaben überweisen wir Ihnen in den nächsten Tagen auf Ihr Konto. Falls sich Ihre Bankverbindung geändert hat, teilen Sie uns diese bitte mit.');
-  if(x.aktuell&&(m.vz_neu_bk!=null||m.vz_neu_hk!=null)){ const nb=m.vz_neu_bk!=null?m.vz_neu_bk:(m.vz_bk_mtl||0), nh=m.vz_neu_hk!=null?m.vz_neu_hk:(m.vz_hk_mtl||0);
+  if(x.aktuell&&!vzKeine()&&(m.vz_neu_bk!=null||m.vz_neu_hk!=null)){ const nb=m.vz_neu_bk!=null?m.vz_neu_bk:(m.vz_bk_mtl||0), nh=m.vz_neu_hk!=null?m.vz_neu_hk:(m.vz_hk_mtl||0);
     para('Auf Grundlage dieser Abrechnung passen wir Ihre monatlichen Vorauszahlungen ab dem '+dmy(vzAb())+' an (§ 560 Abs. 4 BGB): Betriebskosten '+eur(nb)+' (bisher '+eur(m.vz_bk_mtl||0)+'), Heizkosten '+eur(nh)+' (bisher '+eur(m.vz_hk_mtl||0)+'). Die übrigen Bestandteile Ihrer Miete bleiben unverändert.'); }
   if(x.lohn>0.005) para('Haushaltsnahe Dienstleistungen und Handwerkerleistungen (§ 35a EStG): Auf Sie entfallen Arbeitskosten von insgesamt '+eur(x.lohn)+' ('+x.lohnPos.map(p=>p.name+' '+eur(p.b)).join(', ')+').');
   para('Die Belege zu dieser Abrechnung können Sie nach Terminabsprache bei uns einsehen. Einwendungen gegen die Abrechnung teilen Sie uns bitte spätestens bis zum Ablauf des zwölften Monats nach Zugang mit (§ 556 Abs. 3 BGB).');
