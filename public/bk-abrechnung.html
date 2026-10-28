@@ -160,7 +160,7 @@ async function oeffnen(kz){ CUR=kz; SCHRITT='kosten'; D=null; $('app').innerHTML
 async function objLaden(){ const o=objVon(CUR), a=abrVon(CUR); D={o,a,ein:[],kas:[],kos:[],mvs:[],z:[],zs:[]};
   const [z]=await Promise.all([sb.from('objekt_zaehler').select('*').eq('object_id',o.id)]); D.z=(z.data||[]).filter(x=>x.aktiv!==false);
   if(D.z.length){ const s=await sb.from('objekt_zaehlerstaende').select('*').in('zaehler_id',D.z.map(x=>x.id)).order('datum'); D.zs=s.data||[]; }
-  const [mk,me]=await Promise.all([sb.from('os_docs').select('pid:data->>pid,unit:data->>unit,obj:data->>obj,von:data->>von,bis:data->>bis,mieter:data->>mieter').eq('app','oc').like('pfad','mietkonten/%').eq('data->>obj',o.kz),sb.from('os_docs').select('data').eq('app','oc').eq('pfad','stamm/mietkonten-edit').maybeSingle()]);
+  const [mk,me]=await Promise.all([sb.from('os_docs').select('pid:data->>pid,unit:data->>unit,obj:data->>obj,von:data->>von,bis:data->>bis,mieter:data->>mieter,anrede:data->>anrede,gewerbe:data->>gewerbe,stufen:data->stufen').eq('app','oc').like('pfad','mietkonten/%').eq('data->>obj',o.kz),sb.from('os_docs').select('data').eq('app','oc').eq('pfad','stamm/mietkonten-edit').maybeSingle()]);
   D.mk=mk.data||[]; D.mke=(me.data&&me.data.data&&me.data.data.e)||{};
   if(a){ const [e,k,c,m]=await Promise.all([sb.from('bk_einheiten').select('*').eq('abrechnung_id',a.id).order('pos'),sb.from('bk_kostenarten').select('*').eq('abrechnung_id',a.id).order('pos'),sb.from('bk_kosten').select('*').eq('abrechnung_id',a.id).order('datum'),sb.from('bk_mietverhaeltnisse').select('*').eq('abrechnung_id',a.id)]);
     D.ein=e.data||[]; D.kas=k.data||[]; D.kos=c.data||[]; D.mvs=m.data||[]; }
@@ -181,6 +181,78 @@ async function anlegen(){ const o=D.o; const b=$('anl'); if(b){ b.disabled=true;
     ABR.push(a); toast('Abrechnung '+o.kz+' '+JAHR+' angelegt'+(vor?' – Kostenarten und Schlüssel aus '+vor.jahr+' übernommen.':'.')); await objLaden(); }
   catch(err){ toast('Nicht angelegt: '+(err.message||err),7000); if(b){ b.disabled=false; b.textContent='Abrechnung '+JAHR+' anlegen'; } } }
 const kostenVon=k=>D.kos.filter(c=>c.kostenart_id===k.id);
+/* ---------- Schritt 2: Mietverhältnisse und Vorauszahlungen ---------- */
+const MV_ARTEN=[['vorauszahlung','Vorauszahlung'],['pauschale','Pauschale'],['leerstand','Leerstand'],['eigennutzung','Eigennutzung']];
+const mvArtLabel=v=>(MV_ARTEN.find(x=>x[0]===v)||[,v||''])[1];
+const tagPlus=(d,n)=>new Date(Date.parse(d+'T00:00:00Z')+n*864e5).toISOString().slice(0,10);
+const monEnde=m=>new Date(Date.UTC(Number(m.slice(0,4)),Number(m.slice(5,7)),0)).toISOString().slice(0,10);
+function stufeAt(mk,m){ const L=(Array.isArray(mk.stufen)?mk.stufen:[]).filter(x=>x).slice().sort((a,b)=>String(a.ab||'').localeCompare(String(b.ab||''))); if(!L.length) return null; let st=L[0]; for(const x of L) if(String(x.ab||'').slice(0,7)<=m) st=x; return st; }
+/* vereinbarte Vorauszahlungen im Zeitraum, angebrochene Monate tageweise */
+function vzRechnen(mk,v,b){ let bk=0,hk=0; for(let m=v.slice(0,7); m<=b.slice(0,7); m=(Number(m.slice(5,7))===12?(Number(m.slice(0,4))+1)+'-01':m.slice(0,5)+String(Number(m.slice(5,7))+1).padStart(2,'0'))){
+    const ms=m+'-01', me=monEnde(m), s2=v>ms?v:ms, e2=b<me?b:me; if(e2<s2) continue; const f=tage(s2,e2)/tage(ms,me), st=stufeAt(mk,m); if(!st) continue; bk+=(Number(st.bk)||0)*f; hk+=(Number(st.hk)||0)*f; }
+  return {bk:r2(bk),hk:r2(hk)}; }
+function mvVorschlag(){ const pv=D.a.zeitraum_von, pb=D.a.zeitraum_bis, out=[];
+  for(const be of D.ein){ const oe=EIN.find(x=>x.id===be.einheit_ref); const L=[];
+    if(oe&&oe.nahaus_id) for(const mk of (D.mk||[]).filter(m=>m.unit===oe.nahaus_id)){ const e=D.mke[mk.pid]||{}; const von=mk.von||pv, bis=e.bis||mk.bis||pb; if(von>pb||bis<pv) continue; L.push({mk,e,v:von>pv?von:pv,b:bis<pb?bis:pb}); }
+    L.sort((x,y)=>x.v.localeCompare(y.v)); let cur=pv;
+    for(const x of L){ if(x.v>cur) out.push({einheit_id:be.id,mieter:'Leerstand',von:cur,bis:tagPlus(x.v,-1),art:'leerstand',personen:0,vz_bk_mtl:0,vz_hk_mtl:0,vz_bk_gezahlt:0,vz_hk_gezahlt:0,mk_pid:null,notiz:null});
+      const vz=vzRechnen(x.mk,x.v,x.b), st=stufeAt(x.mk,x.b.slice(0,7))||{}, p=x.e.personen!=null&&x.e.personen!==''?Number(x.e.personen):(L.indexOf(x)===L.length-1&&be.personen!=null?Number(be.personen):null);
+      const ohne=!(Number(st.bk)||Number(st.hk));
+      out.push({einheit_id:be.id,mieter:x.e.mieter||x.mk.mieter||x.mk.anrede||'Mieter',von:x.v,bis:x.b,art:ohne?'pauschale':'vorauszahlung',personen:p,vz_bk_mtl:Number(st.bk)||0,vz_hk_mtl:Number(st.hk)||0,vz_bk_gezahlt:vz.bk,vz_hk_gezahlt:vz.hk,mk_pid:x.mk.pid,
+        notiz:[ohne?'Im Mieterkonto sind keine Vorauszahlungen hinterlegt – bitte prüfen (Inklusivmiete?).':'',x.mk.gewerbe==='true'?'Gewerbe':''].filter(Boolean).join(' ')||null});
+      if(tagPlus(x.b,1)>cur) cur=tagPlus(x.b,1); }
+    if(cur<=pb) out.push({einheit_id:be.id,mieter:'Leerstand',von:cur,bis:pb,art:'leerstand',personen:0,vz_bk_mtl:0,vz_hk_mtl:0,vz_bk_gezahlt:0,vz_hk_gezahlt:0,mk_pid:null,notiz:oe&&oe.nahaus_id?null:'Einheit ist mit keinem Mieterkonto verknüpft.'}); }
+  return out; }
+async function mvUebernehmen(btn){ if(D.mvs.length&&btn.dataset.sure!=='1'){ btn.dataset.sure='1'; btn.textContent='Wirklich neu übernehmen? Deine Änderungen bleiben erhalten.'; return; }
+  btn.disabled=true; const neu=mvVorschlag(), alt=D.mvs.slice(), schl=m=>m.mk_pid?'p:'+m.mk_pid:'l:'+m.einheit_id+':'+m.von;
+  const A={}; for(const m of alt) A[schl(m)]=m;
+  const rows=neu.map(r=>{ const o=A[schl(r)]; const x=Object.assign({abrechnung_id:D.a.id,geaendert:false,anschrift:null},r);
+    if(o&&o.geaendert){ for(const f of ['personen','vz_bk_gezahlt','vz_hk_gezahlt','art','anschrift','notiz','von','bis','mieter']) x[f]=o[f]; x.geaendert=true; } else if(o&&o.anschrift) x.anschrift=o.anschrift; return x; });
+  /* von Hand angelegte Mietverhältnisse ohne Mieterkonto behalten */
+  for(const m of alt) if(!m.mk_pid&&m.art!=='leerstand'){ const x=Object.assign({},m); delete x.id; delete x.created_at; rows.push(x); }
+  if(alt.length){ const {error}=await sb.from('bk_mietverhaeltnisse').delete().eq('abrechnung_id',D.a.id); if(error){ toast('Nicht übernommen: '+error.message,6000); btn.disabled=false; return; } }
+  const {data,error}=await sb.from('bk_mietverhaeltnisse').insert(rows).select(); if(error){ toast('Nicht übernommen: '+error.message,6000); D.mvs=[]; render(); return; }
+  D.mvs=data||[]; toast(rows.filter(r=>r.art!=='leerstand').length+' Mietverhältnisse und '+rows.filter(r=>r.art==='leerstand').length+' Leerstände übernommen.',5000); render(); }
+async function mvSetzen(id,feld,wert){ const m=D.mvs.find(x=>x.id===id); if(!m) return; let v=wert;
+  if(['personen','vz_bk_gezahlt','vz_hk_gezahlt'].includes(feld)){ v=String(wert).trim()===''?null:parseNum(wert); if(String(wert).trim()!==''&&v==null){ toast('Bitte eine Zahl eintragen.'); render(); return; } }
+  if(feld==='art'){ const t=String(wert).trim().toLowerCase(); const a=MV_ARTEN.find(x=>x[1].toLowerCase()===t||x[0]===t||x[1].toLowerCase().startsWith(t)); if(!a){ toast('Bitte eine Art aus der Liste wählen.'); render(); return; } v=a[0]; }
+  if((feld==='von'||feld==='bis')&&!/^\d{4}-\d{2}-\d{2}$/.test(String(v||''))){ toast('Bitte ein Datum eintragen.'); render(); return; }
+  if(typeof v==='string') v=v.trim()||null;
+  const patch={[feld]:v,geaendert:true}; const {error}=await sb.from('bk_mietverhaeltnisse').update(patch).eq('id',id); if(error){ toast('Nicht gespeichert: '+error.message); return; } Object.assign(m,patch);
+  /* Personen auch im Mieterkonto merken */
+  if(feld==='personen'&&m.mk_pid&&v!=null){ try{ const {data}=await sb.from('os_docs').select('data').eq('app','oc').eq('pfad','stamm/mietkonten-edit').maybeSingle(); const doc=(data&&data.data)||{e:{}}; doc.e=doc.e||{};
+      doc.e[m.mk_pid]=Object.assign({},doc.e[m.mk_pid]||{},{personen:v}); const {error:e2}=await sb.from('os_docs').upsert({app:'oc',pfad:'stamm/mietkonten-edit',data:doc,updated_at:new Date().toISOString()},{onConflict:'app,pfad'}); if(!e2) D.mke[m.mk_pid]=doc.e[m.mk_pid]; }catch(e){} }
+  setTimeout(render,0); }
+async function mvNeu(eid){ const {data,error}=await sb.from('bk_mietverhaeltnisse').insert({abrechnung_id:D.a.id,einheit_id:eid,mieter:'Neuer Mieter',von:D.a.zeitraum_von,bis:D.a.zeitraum_bis,art:'vorauszahlung',vz_bk_gezahlt:0,vz_hk_gezahlt:0,geaendert:true}).select().single();
+  if(error){ toast('Nicht angelegt: '+error.message); return; } D.mvs.push(data); render(); }
+async function mvWeg(id,btn){ if(btn.dataset.sure!=='1'){ btn.dataset.sure='1'; btn.textContent='wirklich?'; return; }
+  const {error}=await sb.from('bk_mietverhaeltnisse').delete().eq('id',id); if(error){ toast('Nicht entfernt: '+error.message); return; } D.mvs=D.mvs.filter(x=>x.id!==id); render(); }
+function mvHtml(){ const pv=D.a.zeitraum_von, pb=D.a.zeitraum_bis, T=tage(pv,pb);
+  let h='<div class="acts" style="margin:0 0 10px"><button class="primary" onclick="mvUebernehmen(this)">'+(D.mvs.length?'Neu aus den Mieterkonten übernehmen':'Aus den Mieterkonten übernehmen')+'</button><span class="sub">Übernimmt Mieter, Ein- und Auszug, Personen und die vereinbarten Vorauszahlungen '+JAHR+' (angebrochene Monate tageweise). Lücken werden als Leerstand eingetragen.</span></div>';
+  if(!D.ein.length) return h+'<div class="note">Für '+esc(D.o.kz)+' sind keine Einheiten hinterlegt. Bitte zuerst unter „Einheiten und Mieter im Detail“ die Einheiten anlegen.</div>';
+  if(!D.mvs.length) return h+'<div class="empty">Noch keine Mietverhältnisse für '+JAHR+'. Klick auf „Aus den Mieterkonten übernehmen“.</div>';
+  h+='<datalist id="dl-mvart">'+MV_ARTEN.map(x=>'<option value="'+esc(x[1])+'">').join('')+'</datalist>';
+  h+='<div class="tbox"><table class="tab"><thead><tr><th>Mieter</th><th>von</th><th>bis</th><th class="n">Tage</th><th>Art</th><th class="n">Personen</th><th class="n">VZ BK '+JAHR+'</th><th class="n">VZ HK '+JAHR+'</th><th class="n">monatlich BK / HK</th><th>Anschrift nach Auszug</th><th></th></tr></thead><tbody>';
+  let sBk=0,sHk=0; const warn=[];
+  for(const be of D.ein){ const L=D.mvs.filter(m=>m.einheit_id===be.id).sort((a,b)=>String(a.von).localeCompare(String(b.von)));
+    let td=0, ueber=false, cur=pv; for(const m of L){ const v=m.von>pv?m.von:pv, b=(m.bis||pb)<pb?m.bis:pb; if(b>=v){ td+=tage(v,b); if(v<cur) ueber=true; if(tagPlus(b,1)>cur) cur=tagPlus(b,1); } }
+    const ok=td===T&&!ueber; if(!ok) warn.push(be.bezeichnung);
+    h+='<tr class="gr"><td colspan="11" style="background:var(--bg)"><b>'+esc(be.bezeichnung)+'</b> <span class="sub">'+(be.flaeche?fnum.format(be.flaeche)+' m²':'')+'</span>'+(ok?'':' <span class="pill p-warn">'+(ueber?'Zeiträume überschneiden sich':'Zeitraum nicht vollständig: '+td+' von '+T+' Tagen')+'</span>')+' <button class="small ghost" onclick="mvNeu(\''+be.id+'\')">Mietverhältnis hinzufügen</button></td></tr>';
+    for(const m of L){ const ls=m.art==='leerstand', ausz=m.bis&&m.bis<pb&&!ls; if(m.art==='vorauszahlung'){ sBk+=Number(m.vz_bk_gezahlt)||0; sHk+=Number(m.vz_hk_gezahlt)||0; }
+      const z=(f,w)=>'<input class="zahl" style="width:100px" inputmode="decimal" value="'+(m[f]!=null?esc(fnum.format(m[f])):'')+'" onchange="mvSetzen(\''+m.id+'\',\''+f+'\',this.value)"'+(w?'':' disabled')+'>';
+      h+='<tr><td><input value="'+esc(m.mieter||'')+'" style="width:190px" onchange="mvSetzen(\''+m.id+'\',\'mieter\',this.value)">'+(m.notiz?'<div class="sub">'+esc(m.notiz)+'</div>':'')+(m.geaendert?'<div class="sub">von Hand angepasst</div>':'')+'</td>'
+        +'<td><input type="date" value="'+esc(m.von||'')+'" onchange="mvSetzen(\''+m.id+'\',\'von\',this.value)"></td><td><input type="date" value="'+esc(m.bis||'')+'" onchange="mvSetzen(\''+m.id+'\',\'bis\',this.value)"></td>'
+        +'<td class="n">'+(m.von&&m.bis?tage(m.von>pv?m.von:pv,m.bis<pb?m.bis:pb):'–')+'</td>'
+        +'<td><input list="dl-mvart" data-wahl="1" value="'+esc(mvArtLabel(m.art))+'" onchange="mvSetzen(\''+m.id+'\',\'art\',this.value)" style="width:140px"></td>'
+        +'<td class="n"><input class="zahl" style="width:60px" inputmode="numeric" value="'+(m.personen!=null?esc(m.personen):'')+'" placeholder="–" onchange="mvSetzen(\''+m.id+'\',\'personen\',this.value)"'+(ls?' disabled':'')+'></td>'
+        +'<td class="n">'+z('vz_bk_gezahlt',m.art==='vorauszahlung')+'</td><td class="n">'+z('vz_hk_gezahlt',m.art==='vorauszahlung')+'</td>'
+        +'<td class="n sub">'+(ls?'–':eur(m.vz_bk_mtl||0)+' / '+eur(m.vz_hk_mtl||0))+'</td>'
+        +'<td>'+(ausz?'<input value="'+esc(m.anschrift||'')+'" placeholder="neue Anschrift" style="width:170px" onchange="mvSetzen(\''+m.id+'\',\'anschrift\',this.value)">':'')+'</td>'
+        +'<td class="n"><button class="small ghost" onclick="mvWeg(\''+m.id+'\',this)">entfernen</button></td></tr>'; } }
+  h+='<tr><td colspan="6"><b>Summe Vorauszahlungen '+JAHR+'</b></td><td class="n"><b>'+eur(sBk)+'</b></td><td class="n"><b>'+eur(sHk)+'</b></td><td colspan="3"></td></tr></tbody></table></div>';
+  h+='<div class="sub" style="margin-top:6px">Eingetragen sind die vereinbarten Vorauszahlungen laut Mieterkonto. Hat ein Mieter seine Vorauszahlungen '+JAHR+' nicht vollständig gezahlt, trag hier den tatsächlich gezahlten Betrag ein. Vorauszahlung: wird abgerechnet. Pauschale: keine Abrechnung (z. B. Inklusivmiete). Leerstand und Eigennutzung trägt der Vermieter.</div>';
+  if(warn.length) h+='<div class="note">Bitte prüfen: '+esc(warn.join(', '))+' – der Zeitraum '+JAHR+' ist nicht lückenlos oder doppelt belegt.</div>';
+  return h; }
 /* Mieter einer Einheit im Abrechnungsjahr (Mieterkonten); der zuletzt eingezogene zuerst */
 function mieterVon(be){ const oe=EIN.find(x=>x.id===be.einheit_ref); if(!oe||!oe.nahaus_id) return []; const a=D.a; const bisV=m=>(D.mke[m.pid]||{}).bis||m.bis;
   return (D.mk||[]).filter(m=>m.unit===oe.nahaus_id&&(!m.von||m.von<=a.zeitraum_bis)&&(!bisV(m)||bisV(m)>=a.zeitraum_von)).sort((x,y)=>String(y.von||'').localeCompare(String(x.von||''))); }
@@ -211,6 +283,7 @@ function renderObjekt(){ const o=D.o, a=D.a;
       return '<div class="kachel'+(k.erledigt?' fertig':'')+'" onclick="kOeffnen(\''+k.id+'\')"><div class="t">'+esc(k.name)+'</div><div class="b">'+(n?eur(s):'–')+'</div><div class="sub">'+n+' Beleg'+(n===1?'':'e')+' · Schlüssel '+esc(schlLabel(k.schluessel))+(sp?' (je Einheit verschieden)':'')+'</div>'
         +'<div class="z">'+(k.erledigt?'<span class="pill p-ok">fertig</span>':n?'<span class="pill p-warn">in Arbeit</span>':'<span class="pill">offen</span>')+(k.umlagefaehig===false?'<span class="pill">nicht umlagefähig</span>':'')+'</div></div>'; }).join('')
       +'<div class="kachel neu" onclick="kNeu()">Kostenart hinzufügen</div></div>'; }
+  else if(SCHRITT==='mieter') h+=mvHtml();
   else h+='<div class="empty">Dieser Schritt kommt als Nächstes: '+({mieter:'Mietverhältnisse und Vorauszahlungen aus den Mieterkonten übernehmen',schuetz:'Heizkostenabrechnung von Schütz hochladen und den Mietern zuordnen',ergebnis:'Berechnung je Mieter, Nachzahlung oder Guthaben, Abrechnungsschreiben'}[SCHRITT])+'.</div>';
   $('app').innerHTML=h+(K?kHtml():'')+(AZ?azHtml():''); if(K) kNachRender(); }
 async function kNeu(){ const n=(prompt('Name der neuen Kostenart, z. B. Winterdienst')||'').trim(); if(!n) return;
@@ -226,7 +299,7 @@ const kKa=()=>D.kas.find(x=>x.id===(K&&K.id));
 function anteilBerechnen(v){ const a=D.a; const b=parseNum(v.betrag); if(b==null) return null; if(!v.von||!v.bis||v.bis<v.von) return r2(b);
   const von=v.von>a.zeitraum_von?v.von:a.zeitraum_von, bis=v.bis<a.zeitraum_bis?v.bis:a.zeitraum_bis; if(bis<von) return 0; return r2(b*tage(von,bis)/tage(v.von,v.bis)); }
 /* Verteilung je Einheit: feste Prozente zuerst, Rest nach Schlüssel; Einheiten mit anderem Schlüssel erhalten vorab ihren Flächenanteil am Rest */
-function verteilung(){ const k=K, tl=D.ein.filter(e=>k.ein[e.id]&&k.ein[e.id].teil); const pers=e=>{ const m=D.mvs.filter(x=>x.einheit_id===e.id); return m.length?m.reduce((s,x)=>s+(Number(x.personen)||0),0):(personenVon(e)||0); };
+function verteilung(){ const k=K, tl=D.ein.filter(e=>k.ein[e.id]&&k.ein[e.id].teil); const pers=e=>{ const m=D.mvs.filter(x=>x.einheit_id===e.id&&x.art!=='leerstand'), pv=D.a.zeitraum_von, pb=D.a.zeitraum_bis, T=tage(pv,pb); if(!m.length) return personenVon(e)||0; return m.reduce((s,x)=>{ const v=x.von>pv?x.von:pv, b=(x.bis||pb)<pb?x.bis:pb; return b<v?s:s+(Number(x.personen)||0)*tage(v,b)/T; },0); };
   const basis=(e,s)=>s==='flaeche'?Number(e.flaeche)||0:s==='mea'?Number(e.mea)||0:s==='einheiten'?1:s==='personen'?pers(e):0;
   const out={}; let fest=0; for(const e of tl){ const p=parseNum(k.ein[e.id].prozent); if(p!=null&&p>0){ out[e.id]=p/100; fest+=p/100; } }
   const rest=tl.filter(e=>out[e.id]==null), gruppen={}; for(const e of rest){ const s=k.ein[e.id].schluessel||k.schluessel; (gruppen[s]=gruppen[s]||[]).push(e); }
