@@ -430,6 +430,8 @@ table th{background:var(--bb-grau);color:var(--bb-text2);text-transform:uppercas
 .qr-leer{color:#6c7987;font-size:13px;padding:12px}
 .qr-tip{font-size:13px;color:var(--bb-text)}
 @media (max-width:760px){.qr-db{grid-template-columns:1fr}}
+.qr-warn{background:rgba(227,161,59,.16);color:#a8650c;padding:8px 10px;border-radius:2px;font-size:13px;margin:6px 0}
+#qr-quelle a{color:var(--bb-blau)}
 </style>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=Lato:wght@400;700&display=swap" rel="stylesheet">
 </head>
@@ -1392,13 +1394,47 @@ async function qrZeichnen(){ const q=BV.qr, el=$('qr-bild'), hin=$('qr-hin'); if
   if(fe){ el.innerHTML='<div class="qr-leer">'+esc(fe)+'</div>'; if(hin) hin.textContent=''; return; }
   try{ await qrLib(); el.innerHTML=''; new QRCode(el,{text:qrText(q),width:230,height:230,correctLevel:QRCode.CorrectLevel.M}); if(hin) hin.textContent=qrAscii(q.name)+' · '+qrIbanSchoen(q.iban)+' · '+eur(Math.abs(parseNum(q.betrag))); }
   catch(e){ el.innerHTML='<div class="qr-leer">'+esc(e.message||e)+'</div>'; } }
+/* IBAN, BIC und Rechnungsnummer aus der Rechnung lesen (PDF mit Text; eingescannte Bilder gehen nicht) */
+async function qrAusRechnung(f){ const r=await odApi({aktion:'inhalt',id:f.id}); if(r.zuGross) return {fehler:'Datei zu groß zum Lesen'};
+  if(!/pdf/i.test(r.typ||'')&&!/\.pdf$/i.test(f.name)) return {fehler:'nur PDF-Dateien lassen sich lesen'};
+  if(!PDFJS){ await new Promise((res,rej)=>{ const s=document.createElement('script'); s.src='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js'; s.onload=res; s.onerror=rej; document.head.appendChild(s); }); PDFJS=window.pdfjsLib; PDFJS.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js'; }
+  const bin=atob(r.daten||''), u8=new Uint8Array(bin.length); for(let i=0;i<bin.length;i++) u8[i]=bin.charCodeAt(i);
+  const doc=await PDFJS.getDocument({data:u8}).promise; let t='';
+  for(let i=1;i<=Math.min(doc.numPages,4);i++){ const c=await (await doc.getPage(i)).getTextContent(); t+=' '+c.items.map(x=>x.str).join(' '); }
+  t=t.replace(/\s+/g,' ');
+  const eigen=new Set(konten.map(k=>qrIbanNorm(k.iban)).filter(Boolean)), ibans=[];
+  for(const m of t.matchAll(/\b[A-Z]{2}\d{2}(?: ?[A-Z0-9]){11,30}/g)){ let roh=m[0].replace(/ /g,'');
+    const LEN={DE:22,AT:20,CH:21,LI:21,NL:18,BE:16,LU:20,FR:27,IT:27,ES:24,PT:25,IE:22,GB:22,DK:18,SE:24,NO:15,FI:18,PL:28,CZ:24,SK:24,HU:28,SI:19,HR:21}, L0=LEN[roh.slice(0,2)];
+    const laengen=L0?[L0]:Array.from({length:Math.max(0,roh.length-14)},(_,k)=>roh.length-k);
+    for(const n of laengen){ if(roh.length<n) continue; const c=roh.slice(0,n); if(qrIbanOk(c)){ if(!eigen.has(c)&&!ibans.includes(c)) ibans.push(c); break; } } }
+  const bic=(t.match(/\bBIC[:.\s]*([A-Z]{4}[A-Z]{2}[A-Z0-9]{2}(?:[A-Z0-9]{3})?)\b/)||[])[1]||'';
+  const nr=(t.match(/Rechnungs?\s*-?\s*(?:nr|nummer|no)\.?\s*:?\s*([A-Z0-9][A-Z0-9\-\/\.]{2,30})/i)||[])[1]||'';
+  const kd=(t.match(/Kunden\s*-?\s*(?:nr|nummer)\.?\s*:?\s*([A-Z0-9][A-Z0-9\-\/\.]{2,30})/i)||[])[1]||'';
+  const ls=/lastschrift|wird .{0,40}(abgebucht|eingezogen)|buchen .{0,40}ab\b|einzugserm/i.test(t);
+  return {ibans,bic,nr,kd,ls}; }
+function qrSetze(id,v){ const el=$(id); if(el&&document.activeElement!==el) el.value=v; }
 function qrOeffnen(f){ const e=qrEmpf(f)||{}; const d=bvDatum(f);
   BV.qr={od:f.id,f,name:e.name||f.abs||'',iban:e.iban?qrIbanSchoen(e.iban):'',bic:e.bic||'',quelle:e.quelle||'',betrag:f.betrag!=null?fnum.format(f.betrag):'',zweck:'Rechnung '+(f.abs||'')+(d?' vom '+bvDmy(d):'')};
-  render(); setTimeout(qrZeichnen,30); }
+  BV.qr.lese='Lese die Rechnung …'; render(); setTimeout(qrZeichnen,30);
+  const q=BV.qr; qrAusRechnung(f).then(R=>{ if(BV.qr!==q) return;
+    if(R.fehler){ q.lese='Rechnung nicht gelesen: '+R.fehler+'.'; }
+    else { const alt=qrIbanNorm(q.iban);
+      if(R.ibans.length&&!q.ibanEdit){ q.iban=qrIbanSchoen(R.ibans[0]); qrSetze('qr-iban',q.iban); q.quelle='aus der Rechnung'+(alt&&alt!==R.ibans[0]?' (vorher vorgeschlagen: '+qrIbanSchoen(alt)+')':''); }
+      if(R.bic&&!q.bic){ q.bic=R.bic; qrSetze('qr-bic',q.bic); }
+      if((R.nr||R.kd)&&!q.zweckEdit){ q.zweck=(R.nr?'Rechnung '+R.nr:'Rechnung '+(f.abs||''))+(R.kd?' Kd-Nr. '+R.kd:''); qrSetze('qr-zweck',q.zweck); }
+      q.weitere=R.ibans.slice(1); q.ls=R.ls;
+      q.lese=R.ibans.length?'':'In der Rechnung keine IBAN gefunden.'; }
+    const h=$('qr-quelle'); if(h) h.innerHTML=qrQuelleHtml(q); qrZeichnen(); }).catch(err=>{ if(BV.qr!==q) return; q.lese='Rechnung nicht gelesen: '+(err.message||err)+'.'; const h=$('qr-quelle'); if(h) h.innerHTML=qrQuelleHtml(q); }); }
+function qrQuelleHtml(q){ let h='';
+  if(q.ls) h+='<div class="qr-warn">Laut Rechnung wird der Betrag per Lastschrift eingezogen – dann bitte nicht zusätzlich überweisen.</div>';
+  if(q.lese) h+='<div class="sub">'+esc(q.lese)+'</div>';
+  if(q.quelle) h+='<div class="sub">IBAN '+esc(q.quelle)+' – bitte kurz mit der Rechnung vergleichen.</div>'; else if(!q.lese) h+='<div class="sub">IBAN von der Rechnung abschreiben. Das OS merkt sie sich für diesen Absender.</div>';
+  if(q.weitere&&q.weitere.length) h+='<div class="sub">Weitere IBAN in der Rechnung: '+q.weitere.map(x=>'<a href="#" data-qriban="'+esc(x)+'">'+esc(qrIbanSchoen(x))+'</a>').join(' · ')+'</div>';
+  return h; }
 function qrHtml(){ const q=BV.qr; if(!q) return ''; const v=QRM[q.od];
   return '<div class="kdrw-bg" data-qrzu="1"></div><section class="bv-dlg qr-dlg" role="dialog" aria-label="Überweisen per GiroCode"><div class="bv-dh"><b>Überweisen per GiroCode</b><button class="bb-lnk" data-qrzu="1">Schließen</button></div><div class="bv-db qr-db"><div class="qr-f">'
     +'<label>Empfänger<input type="text" id="qr-name" value="'+esc(q.name)+'" autocomplete="off"></label>'
-    +'<label>IBAN<input type="text" id="qr-iban" value="'+esc(q.iban)+'" autocomplete="off" placeholder="DE00 0000 0000 0000 0000 00"></label>'+(q.quelle?'<div class="sub">Vorgeschlagen '+esc(q.quelle)+' – bitte mit der Rechnung vergleichen.</div>':'<div class="sub">IBAN von der Rechnung abschreiben. Das OS merkt sie sich für diesen Absender.</div>')
+    +'<label>IBAN<input type="text" id="qr-iban" value="'+esc(q.iban)+'" autocomplete="off" placeholder="DE00 0000 0000 0000 0000 00"></label>'+'<div id="qr-quelle">'+qrQuelleHtml(q)+'</div>'
     +'<label>BIC (freiwillig)<input type="text" id="qr-bic" value="'+esc(q.bic)+'" autocomplete="off"></label>'
     +'<label>Betrag (€)<input type="text" id="qr-betrag" inputmode="decimal" value="'+esc(q.betrag)+'" autocomplete="off"></label>'
     +'<label>Verwendungszweck<input type="text" id="qr-zweck" value="'+esc(q.zweck)+'" maxlength="140" autocomplete="off"></label><div class="sub">Am besten die Rechnungs- oder Kundennummer eintragen.</div></div>'
@@ -1409,9 +1445,10 @@ async function qrFertig(){ const q=BV.qr; if(!q) return; const fe=qrFehler(q); i
   KRED=Object.assign({},KRED,{[qrKey(q.f)]:{name:q.name.trim(),iban:qrIbanNorm(q.iban),bic:qrIbanNorm(q.bic)}});
   QRM=Object.assign({},QRM,{[q.od]:{am:new Date().toISOString().slice(0,10),von:(typeof ICH!=='undefined'&&ICH)||'',betrag:Math.abs(parseNum(q.betrag))}});
   BV.qr=null; render(); try{ await saveStamm('kreditoren',{map:KRED}); await saveStamm('belegqr',{map:QRM}); }catch(e){} toast('Empfänger gemerkt. Überweisung als vorbereitet vermerkt.'); }
-document.addEventListener('input',e=>{ const t=e.target; if(!BV.qr||!t.id||!t.id.startsWith('qr-')) return; const k=t.id.slice(3); if(['name','iban','bic','betrag','zweck'].includes(k)){ BV.qr[k]=t.value; clearTimeout(qrZeichnen._t); qrZeichnen._t=setTimeout(qrZeichnen,250); } });
-document.addEventListener('click',e=>{ const t=e.target.closest('[data-qrzu],button[data-qrok],button[data-bvqr]'); if(!t) return; const d=t.dataset;
+document.addEventListener('input',e=>{ const t=e.target; if(!BV.qr||!t.id||!t.id.startsWith('qr-')) return; const k=t.id.slice(3); if(['name','iban','bic','betrag','zweck'].includes(k)){ BV.qr[k]=t.value; BV.qr[k+'Edit']=true; clearTimeout(qrZeichnen._t); qrZeichnen._t=setTimeout(qrZeichnen,250); } });
+document.addEventListener('click',e=>{ const t=e.target.closest('[data-qrzu],a[data-qriban],button[data-qrok],button[data-bvqr]'); if(!t) return; const d=t.dataset;
   if(d.qrzu){ BV.qr=null; render(); return; }
+  if(d.qriban){ e.preventDefault(); const q=BV.qr; if(!q) return; const alt=qrIbanNorm(q.iban); q.weitere=(q.weitere||[]).filter(x=>x!==d.qriban).concat(alt?[alt]:[]); q.iban=qrIbanSchoen(d.qriban); q.ibanEdit=true; const el=$('qr-iban'); if(el) el.value=q.iban; $('qr-quelle').innerHTML=qrQuelleHtml(q); qrZeichnen(); return; }
   if(d.qrok){ qrFertig(); return; }
   if(d.bvqr){ const x=bvListe().L.find(y=>y.f.id===d.bvqr); if(x) qrOeffnen(x.f); return; } });
 function renderBelegeTab(){ const h=BV.view==='liste'?bvListeHtml():bvStart(); const r=h+bvUpHtml()+qrHtml(); if(BV.qr) setTimeout(qrZeichnen,0); return r; }
