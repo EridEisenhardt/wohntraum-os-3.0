@@ -67,6 +67,7 @@ button:disabled{opacity:.6;cursor:default}
 .fl input,.fl select,.fl textarea{width:100%;background:var(--soft);border:1px solid var(--line);border-radius:6px;padding:6px 8px;font-size:13.5px;color:var(--ink)}
 .tab input,.tab select{background:var(--soft);border:1px solid var(--line);border-radius:6px;padding:4px 6px;font-size:13px;max-width:100%}
 .tab input.zahl{width:110px;text-align:right}
+.tab tr.mvz td{padding-top:5px;padding-bottom:5px;border-bottom-style:dashed}
 .bel{border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin-bottom:8px}
 .bel.neu{background:var(--soft)}
 .bel .k{display:flex;justify-content:space-between;gap:10px;align-items:baseline;flex-wrap:wrap;margin-bottom:6px}
@@ -176,7 +177,7 @@ async function anlegen(){ const o=D.o; const b=$('anl'); if(b){ b.disabled=true;
       const alt2neu={}; for(const x of (pe.data||[])) if(x.einheit_ref&&em[x.einheit_ref]) alt2neu[x.id]=em[x.einheit_ref];
       rows=(pk.data||[]).map(k=>{ const ein={}; for(const [id,v] of Object.entries(k.einheiten||{})) if(alt2neu[id]) ein[alt2neu[id]]=v;
         return {abrechnung_id:a.id,name:k.name,gruppe:k.gruppe,schluessel:k.schluessel,umlagefaehig:k.umlagefaehig,betrkv_nr:k.betrkv_nr,pos:k.pos,notiz:k.notiz,einheiten:ein,zaehler:k.zaehler||null,erledigt:false,ka_key:k.ka_key||null}; }); }
-    if(!rows.length) rows=STANDARD.map((s,i)=>({abrechnung_id:a.id,name:s[0],betrkv_nr:s[1],gruppe:s[2],schluessel:s[3],umlagefaehig:true,pos:i,einheiten:{},erledigt:false}));
+    if(!rows.length) rows=STANDARD.map((s,i)=>({abrechnung_id:a.id,name:s[0],betrkv_nr:s[1],gruppe:s[2],schluessel:E.length===1?'einheiten':s[3],umlagefaehig:true,pos:i,einheiten:{},erledigt:false}));
     const {error:e3}=await sb.from('bk_kostenarten').insert(rows); if(e3) throw e3;
     ABR.push(a); toast('Abrechnung '+o.kz+' '+JAHR+' angelegt'+(vor?' – Kostenarten und Schlüssel aus '+vor.jahr+' übernommen.':'.')); await objLaden(); }
   catch(err){ toast('Nicht angelegt: '+(err.message||err),7000); if(b){ b.disabled=false; b.textContent='Abrechnung '+JAHR+' anlegen'; } } }
@@ -389,6 +390,22 @@ function mieterListe(be){ const pv=D.a.zeitraum_von, pb=D.a.zeitraum_bis; const 
   if(!L.length) L=mieterVon(be).map(m=>({n:(D.mke[m.pid]||{}).mieter||m.mieter||'',v:m.von>pv?m.von:pv,b:((D.mke[m.pid]||{}).bis||m.bis||pb)<pb?((D.mke[m.pid]||{}).bis||m.bis):pb}));
   L.sort((a,b)=>String(a.v).localeCompare(String(b.v)));
   return L.map(x=>'<div class="sub">'+esc(x.n||'')+(L.length>1||x.v>pv||x.b<pb?' ('+kurz(x.v)+' bis '+kurz(x.b)+')':'')+'</div>').join(''); }
+/* Personen einer Einheit über das Jahr gemittelt (Personen x Tage / Jahr) */
+function persZeit(e){ const pv=D.a.zeitraum_von, pb=D.a.zeitraum_bis, T=tage(pv,pb); return Math.round(D.mvs.filter(m=>m.einheit_id===e.id&&m.art!=='leerstand').reduce((s,m)=>{ const v=m.von>pv?m.von:pv, b=(m.bis||pb)<pb?(m.bis||pb):pb; return b<v?s:s+(Number(m.personen)||0)*tage(v,b)/T; },0)*100)/100; }
+/* Anteil je Mietverhältnis an einer Kostenart (wie im Ergebnis: Belege nach Leistungszeitraum) */
+function mvBetraegeKa(ka,k,V,s){ const out={}; if(!s||!D.mvs.length) return out; const pv=D.a.zeitraum_von, pb=D.a.zeitraum_bis;
+  const G={}; for(const c of kostenVon(ka)){ const a=Number(c.anteil!=null?c.anteil:c.betrag)||0; if(!a) continue; const gv=c.von&&c.von>pv?c.von:pv, gb=c.bis&&c.bis<pb?c.bis:pb; const key=gv+'|'+gb; (G[key]=G[key]||{gv,gb,s:0}).s+=a; }
+  const ov=(m,gv,gb)=>{ const v=m.von>gv?m.von:gv, b=(m.bis||gb)<gb?(m.bis||gb):gb; return b<v?0:tage(v,b); };
+  for(const e of D.ein){ const f=V[e.id]||0; if(!f) continue; const amt=s*f, sk=(k.ein[e.id]&&k.ein[e.id].schluessel)||k.schluessel;
+    for(const g of Object.values(G)){ const ag=amt*g.s/s, L=D.mvs.filter(m=>m.einheit_id===e.id&&ov(m,g.gv,g.gb)>0); if(!L.length) continue;
+      const w=m=>ov(m,g.gv,g.gb)*(sk==='personen'?(Number(m.personen)||0):1); let W=L.reduce((a,m)=>a+w(m),0); const nt=W<=0; if(nt) W=L.reduce((a,m)=>a+ov(m,g.gv,g.gb),0);
+      for(const m of L) out[m.id]=(out[m.id]||0)+ag*(nt?ov(m,g.gv,g.gb):w(m))/W; } }
+  return out; }
+function mvZeilen(e,ML,MB){ if(!ML.length) return ''; const kurz=d=>d?dmy(d).slice(0,6):'';
+  return ML.map(m=>{ const ls=m.art==='leerstand';
+    return '<tr class="mvz"><td></td><td style="padding-left:28px"><span>'+esc(m.mieter||'')+'</span> <span class="sub">'+kurz(m.von)+' bis '+kurz(m.bis)+(m.art!=='vorauszahlung'?' · '+esc(mvArtLabel(m.art)):'')+'</span></td><td></td>'
+      +'<td class="n">'+(ls?'<span class="sub">–</span>':'<input class="zahl" style="width:60px" inputmode="numeric" value="'+(m.personen!=null?esc(m.personen):'')+'" placeholder="–" onchange="mvSetzen(\''+m.id+'\',\'personen\',this.value)">')+'</td>'
+      +'<td colspan="3"></td><td class="n sub">'+(MB[m.id]!=null?eur(MB[m.id]):'–')+'</td></tr>'; }).join(''); }
 function personenVon(be){ if(be.personen!=null) return Number(be.personen); for(const m of mieterVon(be)){ const p=(D.mke[m.pid]||{}).personen; if(p!=null&&p!=='') return Number(p); } return null; }
 async function personenSetzen(eid,val){ const be=D.ein.find(x=>x.id===eid); if(!be) return; const p=String(val).trim()===''?null:parseNum(val); if(String(val).trim()!==''&&(p==null||p<0)){ toast('Bitte eine Zahl eintragen.'); return; }
   const {error}=await sb.from('bk_einheiten').update({personen:p}).eq('id',eid); if(error){ toast('Nicht gespeichert: '+error.message); return; } be.personen=p;
@@ -443,7 +460,7 @@ function verteilung(kk){ const k=kk||K, tl=D.ein.filter(e=>k.ein[e.id]&&k.ein[e.
   return out; }
 function zStand(zid,datum,richtung){ const L=D.zs.filter(s=>s.zaehler_id===zid); if(!L.length) return null; /* nächster Stand am Stichtag (±45 Tage) */
   const d0=new Date(datum).getTime(); let best=null; for(const s of L){ const dd=Math.abs(new Date(s.datum).getTime()-d0)/864e5; if(dd<=45&&(!best||dd<best.dd)) best={s,dd}; } return best?best.s:null; }
-function kHtml(){ const k=K, ka=kKa(), Ko=kostenVon(ka), sum=summe(ka), V=verteilung();
+function kHtml(){ const k=K, ka=kKa(), Ko=kostenVon(ka), sum=summe(ka), V=verteilung(), MB=mvBetraegeKa(ka,k,V,sum);
   let h='<div class="ov" onclick="kZu()"></div><section class="dlg" role="dialog" aria-label="'+esc(k.name)+'"><div class="dh"><b>'+esc(k.name)+' · '+esc(D.o.kz)+' '+JAHR+'</b><span class="sub">Summe für '+JAHR+': <b style="font-size:14px;color:var(--ink)">'+eur(sum)+'</b></span><button class="ghost" onclick="kZu()">Schließen</button></div><div class="db">';
   /* Belege */
   h+='<div class="abs">Belege</div>';
@@ -457,12 +474,13 @@ function kHtml(){ const k=K, ka=kKa(), Ko=kostenVon(ka), sum=summe(ka), V=vertei
   h+='<div class="abs">Einheiten und Verteilerschlüssel</div><div class="acts" style="margin-top:0"><span class="sub">Schlüssel für alle</span><input id="k-schl" class="inp" list="dl-schl" data-wahl="1" value="'+esc(schlLabel(k.schluessel))+'" onchange="schlWahl(this,\'\')" style="width:240px;padding:4px 8px"><datalist id="dl-schl">'+SCHLUESSEL.map(([v,l])=>'<option value="'+esc(l)+'">').join('')+'</datalist><datalist id="dl-schl2"><option value="wie oben">'+SCHLUESSEL.filter(x=>!['direkt','nicht_umlegen'].includes(x[0])).map(([v,l])=>'<option value="'+esc(l)+'">').join('')+'</datalist>'
     +'<label class="sub"><input type="checkbox" '+(k.umlagefaehig?'checked':'')+' onchange="K.umlagefaehig=this.checked;K.geaendert=true"> umlagefähig</label></div>';
   h+='<div class="tbox" style="margin-top:6px"><table class="tab"><thead><tr><th>nimmt teil</th><th>Einheit</th><th class="n">Fläche</th><th class="n">Personen</th><th>Schlüssel</th><th class="n">fester Anteil %</th><th class="n">Anteil</th><th class="n">Betrag</th></tr></thead><tbody>'
-    +D.ein.map(e=>{ const v=k.ein[e.id], p=personenVon(e), mi=mieterVon(e)[0];
-      return '<tr><td><input type="checkbox" '+(v.teil?'checked':'')+' onchange="K.ein[\''+e.id+'\'].teil=this.checked;K.geaendert=true;kNeu2()"></td><td><b>'+esc(e.bezeichnung)+'</b> <span class="sub">'+esc(e.kategorie||'')+'</span>'+mieterListe(e)+'</td><td class="n">'+(e.flaeche?fnum.format(e.flaeche)+' m²':'–')+'</td><td class="n"><input class="zahl" style="width:60px" inputmode="numeric" value="'+(p!=null?esc(p):'')+'" placeholder="–" onchange="personenSetzen(\''+e.id+'\',this.value)"></td>'
+    +D.ein.map(e=>{ const v=k.ein[e.id], p=personenVon(e), ML=D.mvs.filter(m=>m.einheit_id===e.id).sort((a,b)=>String(a.von).localeCompare(String(b.von)));
+      return '<tr><td><input type="checkbox" '+(v.teil?'checked':'')+' onchange="K.ein[\''+e.id+'\'].teil=this.checked;K.geaendert=true;kNeu2()"></td><td><b>'+esc(e.bezeichnung)+'</b> <span class="sub">'+esc(e.kategorie||'')+'</span>'+(ML.length?'':mieterListe(e))+'</td><td class="n">'+(e.flaeche?fnum.format(e.flaeche)+' m²':'–')+'</td><td class="n">'+(ML.length?'<span class="sub">'+fnum.format(persZeit(e))+'</span>':'<input class="zahl" style="width:60px" inputmode="numeric" value="'+(p!=null?esc(p):'')+'" placeholder="–" onchange="personenSetzen(\''+e.id+'\',this.value)">')+'</td>'
         +'<td><input list="dl-schl2" data-wahl="1" value="'+esc(v.schluessel?schlLabel(v.schluessel):'wie oben')+'" onchange="schlWahl(this,\''+e.id+'\')" style="width:190px"'+(v.teil?'':' disabled')+'></td>'
         +'<td class="n"><input class="zahl" style="width:70px" value="'+esc(v.prozent)+'" inputmode="decimal" onchange="K.ein[\''+e.id+'\'].prozent=this.value;K.geaendert=true;kNeu2()"'+(v.teil?'':' disabled')+'></td>'
-        +'<td class="n">'+(V[e.id]!=null?fnum.format(V[e.id]*100)+' %':'–')+'</td><td class="n">'+(V[e.id]!=null?eur(sum*V[e.id]):'–')+'</td></tr>'; }).join('')+'</tbody></table></div>';
-  if(D.ein.some(e=>k.ein[e.id].teil&&(k.ein[e.id].schluessel||k.schluessel)==='personen'&&personenVon(e)==null)) h+='<div class="note">Für den Schlüssel Personen fehlt bei einzelnen Einheiten die Personenzahl. Trag sie in der Spalte Personen ein, sie wird auch im Mieterkonto gespeichert.</div>';
+        +'<td class="n">'+(V[e.id]!=null?fnum.format(V[e.id]*100)+' %':'–')+'</td><td class="n">'+(V[e.id]!=null?eur(sum*V[e.id]):'–')+'</td></tr>'+mvZeilen(e,ML,MB);
+}).join('')+'</tbody></table></div>';
+  if(D.ein.some(e=>k.ein[e.id].teil&&(k.ein[e.id].schluessel||k.schluessel)==='personen'&&(D.mvs.some(m=>m.einheit_id===e.id)?D.mvs.some(m=>m.einheit_id===e.id&&m.art!=='leerstand'&&m.personen==null):personenVon(e)==null))) h+='<div class="note">Für den Schlüssel Personen fehlt bei einzelnen Einheiten die Personenzahl. Trag sie in der Spalte Personen ein, sie wird auch im Mieterkonto gespeichert.</div>';
   if(new Set(Object.values(k.ein).filter(v=>v.teil&&v.schluessel&&v.schluessel!==k.schluessel).map(v=>v.schluessel)).size) h+='<div class="sub" style="margin-top:4px">Mehrere Schlüssel: Die Kosten werden zuerst nach Fläche auf die Gruppen verteilt, innerhalb der Gruppe nach ihrem Schlüssel. Feste Anteile gehen vorab ab.</div>';
   /* Zähler */
   const re=ZTYP(ka); const ZL=D.z.filter(z=>(k.zaehler||[]).includes(z.id)||(re&&re.test(z.typ||'')));
