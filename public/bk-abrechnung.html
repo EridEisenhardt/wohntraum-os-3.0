@@ -102,7 +102,7 @@ const STANDARD=[['Grundsteuer','1','betriebskosten','flaeche'],['Frischwasser','
 const ZTYP=k=>{const n=norm(k.name);const re=/strom/.test(n)?/strom/:/wasser/.test(n)&&!/niederschlag/.test(n)?/wasser/:/gas|heiz|warm/.test(n)?/gas|warm|warme/:null;return re?{test:t=>re.test(norm(t))}:null;};
 const LOHN=k=>/hausmeister|reinigung|garten|schornstein|winterdienst/.test(norm(k.name));
 
-let ICH='', JAHR=new Date().getFullYear()-1, OBJ=[], EIN=[], ABR=[], CUR=null, D=null, SCHRITT='kosten', K=null;
+let EINST={jahre:{}}; let ICH='', JAHR=new Date().getFullYear()-1, OBJ=[], EIN=[], ABR=[], CUR=null, D=null, SCHRITT='kosten', K=null;
 const P=new URLSearchParams(location.search); if(/^\d{4}$/.test(P.get('jahr')||'')) JAHR=Number(P.get('jahr'));
 const frist=j=>(Number(j)+1)+'-12-31';
 
@@ -111,10 +111,23 @@ async function laden(){ const u=(await sb.auth.getUser()).data.user; if(!u){ $('
   const [o,e,a]=await Promise.all([sb.from('obj_objekte').select('id,kz,name,strasse,plz,ort,status,gesellschaft,eigentuemer').order('kz'),sb.from('obj_einheiten').select('id,objekt_id,bezeichnung,art,lage,flaeche,mea,aktiv,nahaus_id,sort').order('sort'),sb.from('bk_abrechnungen').select('*')]);
   if(o.error){ $('app').innerHTML='<div class="empty">Daten nicht lesbar: '+esc(o.error.message)+'</div>'; return; }
   OBJ=(o.data||[]).filter(x=>x.status!=='Verkauft'||true); EIN=e.data||[]; ABR=a.data||[];
+  try{ const {data}=await sb.from('os_docs').select('data').eq('app','oc').eq('pfad','einstellungen/bka').maybeSingle(); if(data&&data.data) EINST=Object.assign({jahre:{}},data.data); }catch(e){}
   if(P.get('obj')){ const ob=OBJ.find(x=>x.kz===P.get('obj')); if(ob){ await oeffnen(ob.kz); return; } }
   render(); }
 const objVon=kz=>OBJ.find(x=>x.kz===kz);
+const jahrEinst=()=>EINST.jahre[String(JAHR)]||null;
+/* Objekte des Jahres: festgelegte Liste, sonst alle Objekte mit aktiven Einheiten */
+function jahrObjekte(){ const J=jahrEinst(); if(J&&Array.isArray(J.objekte)) return J.objekte.map(objVon).filter(Boolean);
+  return OBJ.filter(o=>EIN.some(e=>e.objekt_id===o.id&&e.aktiv!==false)); }
+const hinweisVon=kz=>((jahrEinst()||{}).hinweis||{})[kz]||'';
+async function einstSpeichern(){ const {error}=await sb.from('os_docs').upsert({app:'oc',pfad:'einstellungen/bka',data:EINST,updated_at:new Date().toISOString()},{onConflict:'app,pfad'}); if(error) toast('Nicht gespeichert: '+error.message); }
+function jahrSichern(){ if(!EINST.jahre[String(JAHR)]) EINST.jahre[String(JAHR)]={objekte:jahrObjekte().map(o=>o.kz),hinweis:{}}; const J=EINST.jahre[String(JAHR)]; J.hinweis=J.hinweis||{}; return J; }
+async function objRaus(kz,btn){ if(btn.dataset.sure!=='1'){ btn.dataset.sure='1'; btn.textContent='wirklich herausnehmen?'; return; } const J=jahrSichern(); J.objekte=J.objekte.filter(x=>x!==kz); await einstSpeichern(); toast(kz+' ist für '+JAHR+' nicht mehr in der Übersicht.'); render(); }
+async function objDazu(inp){ const v=inp.value.trim(); inp.value=''; if(!v) return; const o=OBJ.find(x=>x.kz.toLowerCase()===v.split(' ')[0].toLowerCase()||(x.kz+' · '+x.name)===v); if(!o){ toast('Bitte ein Objekt aus der Liste wählen.'); return; }
+  const J=jahrSichern(); if(!J.objekte.includes(o.kz)) J.objekte.push(o.kz); await einstSpeichern(); toast(o.kz+' für '+JAHR+' aufgenommen.'); render(); }
+async function hinweisSetzen(kz){ const J=jahrSichern(); const v=prompt('Hinweis zu '+kz+' für '+JAHR+' (z. B. nur WE2 Barth). Leer = kein Hinweis.',J.hinweis[kz]||''); if(v==null) return; if(v.trim()) J.hinweis[kz]=v.trim(); else delete J.hinweis[kz]; await einstSpeichern(); render(); }
 const abrVon=kz=>ABR.find(x=>x.kennung===kz&&Number(x.jahr)===JAHR);
+function einheitenVon(o){ const L=EIN.filter(e=>e.objekt_id===o.id), A=L.filter(e=>e.aktiv!==false); return A.length?A:L; }
 
 /* ---------- Übersicht ---------- */
 async function uebersichtDaten(){ const ids=ABR.filter(a=>Number(a.jahr)===JAHR).map(a=>a.id); if(!ids.length) return {};
@@ -123,16 +136,18 @@ async function uebersichtDaten(){ const ids=ABR.filter(a=>Number(a.jahr)===JAHR)
   for(const x of (c.data||[])){ const o=out[x.abrechnung_id]=out[x.abrechnung_id]||{n:0,f:0,s:0}; o.s+=Number(x.anteil!=null?x.anteil:x.betrag)||0; } return out; }
 let UE={};
 function render(){ if(CUR) return renderObjekt();
-  const L=OBJ.filter(o=>EIN.some(e=>e.objekt_id===o.id&&e.aktiv!==false)).sort((a,b)=>a.kz.localeCompare(b.kz,'de',{numeric:true}));
+  const L=jahrObjekte().sort((a,b)=>a.kz.localeCompare(b.kz,'de',{numeric:true}));
   const rest=Math.ceil((new Date(frist(JAHR)+'T23:59:59')-new Date())/864e5);
   let h='<div class="kopf"><div><h1>Betriebskostenabrechnung '+JAHR+'</h1><div class="sub">Abgerechnet wird nach Rechnungen (Leistungszeitraum '+JAHR+'). Frist für den Zugang beim Mieter: '+dmy(frist(JAHR))+(rest>=0?' – noch '+rest+' Tage':' – abgelaufen')+'.</div></div>'
     +'<div class="acts" style="margin-top:0"><button onclick="JAHR--;UE={};uebersicht()">Vorjahr</button><b style="padding:0 6px">'+JAHR+'</b><button onclick="JAHR++;UE={};uebersicht()">Folgejahr</button></div></div>';
   const ang=L.filter(o=>abrVon(o.kz)).length;
   h+='<div class="kpis"><div class="kpi"><div class="l">Objekte</div><div class="v">'+L.length+'</div></div><div class="kpi"><div class="l">Abrechnung angelegt</div><div class="v">'+ang+'</div></div>'
     +'<div class="kpi"><div class="l">Kostenarten fertig</div><div class="v">'+Object.values(UE).reduce((a,x)=>a+x.f,0)+' / '+Object.values(UE).reduce((a,x)=>a+x.n,0)+'</div></div></div>';
-  h+='<div class="tbox"><table class="tab"><thead><tr><th>Objekt</th><th>Einheiten</th><th>Stand</th><th>Kostenarten fertig</th><th class="n">Kosten '+JAHR+'</th></tr></thead><tbody>'
-    +L.map(o=>{ const a=abrVon(o.kz), u=a&&UE[a.id]; const n=EIN.filter(e=>e.objekt_id===o.id&&e.aktiv!==false).length;
-      return '<tr class="kl" onclick="oeffnen(\''+esc(o.kz)+'\')"><td><b>'+esc(o.kz)+'</b> <span class="sub">'+esc(o.name||'')+'</span></td><td>'+n+'</td><td>'+(a?'<span class="pill p-acc">angelegt</span>':'<span class="pill">noch nicht angelegt</span>')+'</td><td>'+(u?u.f+' / '+u.n:'–')+'</td><td class="n">'+(u?eur(u.s):'–')+'</td></tr>'; }).join('')+'</tbody></table></div>';
+  h+='<div class="tbox"><table class="tab"><thead><tr><th>Objekt</th><th>Einheiten</th><th>Stand</th><th>Kostenarten fertig</th><th class="n">Kosten '+JAHR+'</th><th></th></tr></thead><tbody>'
+    +L.map(o=>{ const a=abrVon(o.kz), u=a&&UE[a.id]; const n=einheitenVon(o).length, hw=hinweisVon(o.kz);
+      return '<tr class="kl" onclick="if(!event.target.closest(\'button\'))oeffnen(\''+esc(o.kz)+'\')"><td><b>'+esc(o.kz)+'</b> <span class="sub">'+esc(o.name||'')+'</span>'+(o.status==='Verkauft'?' <span class="pill">verkauft – letzte Abrechnung</span>':'')+(hw?'<div class="sub" style="color:var(--warn)">'+esc(hw)+'</div>':'')+'</td><td>'+n+'</td><td>'+(a?'<span class="pill p-acc">angelegt</span>':'<span class="pill">noch nicht angelegt</span>')+'</td><td>'+(u?u.f+' / '+u.n:'–')+'</td><td class="n">'+(u?eur(u.s):'–')+'</td>'
+        +'<td class="n"><button class="ghost small" onclick="hinweisSetzen(\''+esc(o.kz)+'\')">Hinweis</button><button class="ghost small" onclick="objRaus(\''+esc(o.kz)+'\',this)">herausnehmen</button></td></tr>'; }).join('')+'</tbody></table></div>';
+  h+='<div class="acts"><input class="inp" list="dl-objdazu" data-wahl="1" placeholder="Objekt für '+JAHR+' aufnehmen, z. B. Rh24" onchange="objDazu(this)" style="width:320px"><datalist id="dl-objdazu">'+OBJ.filter(o=>!L.includes(o)).sort((a,b)=>a.kz.localeCompare(b.kz,'de',{numeric:true})).map(o=>'<option value="'+esc(o.kz+' · '+o.name)+'">').join('')+'</datalist></div>';
   $('app').innerHTML='<div class="ue">'+h+'</div>'; }
 async function uebersicht(){ CUR=null; D=null; K=null; try{ const a=await sb.from('bk_abrechnungen').select('*'); ABR=a.data||[]; UE=await uebersichtDaten(); }catch(e){} render(); try{ history.replaceState(null,'',location.pathname+'?jahr='+JAHR); }catch(e){} }
 
@@ -148,7 +163,7 @@ async function objLaden(){ const o=objVon(CUR), a=abrVon(CUR); D={o,a,ein:[],kas
   render(); }
 async function anlegen(){ const o=D.o; const b=$('anl'); if(b){ b.disabled=true; b.textContent='Lege an …'; }
   try{ const {data:a,error}=await sb.from('bk_abrechnungen').insert({kennung:o.kz,objekt_name:o.name||null,adresse:[o.strasse,[o.plz,o.ort].filter(Boolean).join(' ')].filter(Boolean).join(', ')||null,eigentuemer:o.eigentuemer||o.gesellschaft||null,jahr:JAHR,zeitraum_von:JAHR+'-01-01',zeitraum_bis:JAHR+'-12-31',status:'entwurf'}).select().single(); if(error) throw error;
-    const E=EIN.filter(e=>e.objekt_id===o.id&&e.aktiv!==false); const kat=e=>/gewerbe|laden|buero|büro|praxis/i.test(e.art||'')?'gewerbe':/stellplatz|garage/i.test(e.art||'')?'stellplatz':'wohnen';
+    const E=einheitenVon(o); const kat=e=>/gewerbe|laden|buero|büro|praxis/i.test(e.art||'')?'gewerbe':/stellplatz|garage/i.test(e.art||'')?'stellplatz':'wohnen';
     let em={};
     if(E.length){ const {data:ne,error:e2}=await sb.from('bk_einheiten').insert(E.map((e,i)=>({abrechnung_id:a.id,bezeichnung:e.bezeichnung,kategorie:kat(e),flaeche:e.flaeche,mea:e.mea,einheit_ref:e.id,pos:i}))).select(); if(e2) throw e2; for(const x of ne) em[x.einheit_ref]=x.id; }
     /* Kostenarten aus dem Vorjahr übernehmen (mit Einheiten-Einstellungen), sonst Standard */
@@ -178,8 +193,10 @@ const summe=k=>r2(kostenVon(k).reduce((s,c)=>s+(Number(c.anteil!=null?c.anteil:c
 function renderObjekt(){ const o=D.o, a=D.a;
   let h='<div class="kopf"><div><button class="lnk" onclick="uebersicht()">Zurück zur Übersicht</button><h1 style="margin-top:4px">'+esc(o.kz)+' · '+esc(o.name||'')+' · Betriebskosten '+JAHR+'</h1>'
     +'<div class="sub">'+esc([o.strasse,o.ort].filter(Boolean).join(', '))+' · Frist '+dmy(frist(JAHR))+'</div></div>'
-    +(a?'<div class="acts" style="margin-top:0"><a class="lnk" href="/betriebskosten/'+esc(a.id)+'" target="_top">Einheiten und Mieter im Detail</a></div>':'')+'</div>';
-  if(!a){ const n=EIN.filter(e=>e.objekt_id===o.id&&e.aktiv!==false).length; const vor=ABR.find(x=>x.kennung===o.kz&&Number(x.jahr)===JAHR-1);
+    +(a?'<div class="acts" style="margin-top:0"><a class="lnk" href="/betriebskosten/'+esc(a.id)+'" target="_top">Einheiten und Mieter im Detail</a></div>':'')+'</div>'+(hinweisVon(o.kz)?'<div class="note">'+esc(hinweisVon(o.kz))+'</div>':'');
+  if(a&&!D.ein.length) h+='<div class="note">Für '+esc(o.kz)+' sind keine Einheiten hinterlegt. Bitte unter „Einheiten und Mieter im Detail“ die Einheiten mit Fläche anlegen.</div>';
+  if(!a){ const n=einheitenVon(o).length; const vor=ABR.find(x=>x.kennung===o.kz&&Number(x.jahr)===JAHR-1);
+    if(!n) h+='<div class="note">Im Objekt '+esc(o.kz)+' sind keine Einheiten hinterlegt. Du kannst die Abrechnung trotzdem anlegen und die Einheiten danach unter „Einheiten und Mieter im Detail“ ergänzen.</div>';
     h+='<div class="card"><b>Für '+esc(o.kz)+' gibt es noch keine Abrechnung '+JAHR+'.</b><div class="sub" style="margin-top:4px">Beim Anlegen übernimmt das OS die '+n+' Einheiten mit Fläche und MEA aus dem Objekt und '+(vor?'die Kostenarten mit Einheiten und Verteilerschlüsseln aus '+vor.jahr+'.':'eine Liste der üblichen Kostenarten. Nicht benötigte kannst du später entfernen.')+'</div>'
       +'<div class="acts"><button class="primary" id="anl" onclick="anlegen()">Abrechnung '+JAHR+' anlegen</button></div></div>'; $('app').innerHTML=h; return; }
   const fertig=D.kas.filter(k=>k.erledigt).length;

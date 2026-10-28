@@ -91,6 +91,15 @@ export async function POST(req) {
       return antwort({ tags: L.sort((x, y) => String(x.name).localeCompare(String(y.name), 'de')) })
     }
 
+    if (a === 'unterReihenfolge') {
+      // Unteraufgaben einer Aufgabe in die angegebene Reihenfolge bringen
+      const parent = String(b.parent || ''), L = (b.gids || []).map(String).filter(g => /^\d+$/.test(g)).slice(0, 50)
+      if (!/^\d+$/.test(parent) || !L.length) return antwort({ error: 'Aufgabe fehlt.' }, 400)
+      await asana('/tasks/' + L[0] + '/setParent', { method: 'POST', json: { parent, insert_before: null } }).catch(() => asana('/tasks/' + L[0] + '/setParent', { method: 'POST', json: { parent } }))
+      for (let i = 1; i < L.length; i++) await asana('/tasks/' + L[i] + '/setParent', { method: 'POST', json: { parent, insert_after: L[i - 1] } })
+      return antwort({ ok: true, anzahl: L.length })
+    }
+
     if (a === 'abschnittSicher') {
       // Abschnitt eines Projekts nach Namen suchen, sonst anlegen (z. B. „Schadenersatz“ in „Mieter Meldungen“)
       const p = String(b.projekt || ''), n = String(b.name || '').trim(); if (!/^\d+$/.test(p) || !n) return antwort({ error: 'Projekt oder Name fehlt.' }, 400)
