@@ -1,0 +1,336 @@
+<!DOCTYPE html>
+<html lang="de"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Betriebskostenabrechnung</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+:root{--bg:#f3f5f8;--card:#ffffff;--ink:#18202c;--muted:#5f6b7a;--line:#e0e5eb;--soft:#eef1f5;--accent:#2f5d8a;--accent-ink:#ffffff;--accent-soft:#e3ecf5;
+  --pos:#1d7a4c;--pos-bg:#e5f4ec;--neg:#b42318;--neg-bg:#fcebe9;--warn:#946200;--warn-bg:#fff4d6;--chip:#edf1f6}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--ink);font:14px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+button,input,select,textarea{font:inherit;color:var(--ink)}
+.wrap{max-width:1240px;margin:0 auto;padding:16px 20px 60px}
+h1{font-size:22px;font-weight:800}h2{font-size:16px;font-weight:700;margin:18px 0 8px}
+.sub{color:var(--muted);font-size:12px}
+.kopf{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;margin-bottom:12px;flex-wrap:wrap}
+button{border:1px solid var(--line);background:var(--card);border-radius:8px;padding:6px 10px;cursor:pointer}
+button:hover{border-color:var(--accent)}
+button.primary{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+button.small{font-size:12px;padding:3px 8px}
+button.ghost{border-color:transparent;background:transparent;color:var(--muted);padding:3px 6px}
+button:disabled{opacity:.6;cursor:default}
+.lnk{color:var(--accent);cursor:pointer;background:none;border:0;padding:0;font-weight:600;text-decoration:none}.lnk:hover{text-decoration:underline}
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;margin-bottom:12px}
+.kpi{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:10px 14px}
+.kpi .l{font-size:12px;font-weight:700;color:var(--muted)}.kpi .v{font-size:20px;font-weight:800;font-variant-numeric:tabular-nums;margin-top:2px}
+.inp{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:7px 10px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:10px 14px;margin-bottom:12px}
+.acts{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-top:8px}
+.pill{display:inline-block;font-size:11px;padding:1px 8px;border-radius:999px;font-weight:600;white-space:nowrap;background:var(--chip);color:var(--muted)}
+.p-ok{background:var(--pos-bg);color:var(--pos)}.p-warn{background:var(--warn-bg);color:var(--warn)}.p-neg{background:var(--neg-bg);color:var(--neg)}.p-acc{background:var(--accent-soft);color:var(--accent)}
+.tab{width:100%;border-collapse:collapse;font-size:13px;background:var(--card)}
+.tab th{text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:.03em;color:var(--muted);font-weight:600;padding:7px 8px;border-bottom:1px solid var(--line);white-space:nowrap}
+.tab td{padding:7px 8px;border-bottom:1px solid var(--line);vertical-align:middle}
+.tab td.n,.tab th.n{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+.tab tr.kl td{cursor:pointer}.tab tr.kl:hover td{background:var(--accent-soft)}
+.tbox{background:var(--card);border:1px solid var(--line);border-radius:12px;overflow:auto}
+.empty{color:var(--muted);font-size:13px;padding:24px;text-align:center;background:var(--card);border:1px dashed var(--line);border-radius:12px}
+.note{background:var(--warn-bg);color:var(--warn);border-radius:8px;padding:8px 10px;font-size:13px;margin:6px 0}
+.hin{background:var(--accent-soft);color:var(--ink);border-radius:8px;padding:8px 10px;font-size:13px;margin:6px 0}
+.toast{position:fixed;left:50%;bottom:20px;transform:translateX(-50%);background:var(--ink);color:#fff;padding:8px 14px;border-radius:8px;font-size:13px;opacity:0;pointer-events:none;transition:opacity .2s;z-index:80}.toast.on{opacity:1}
+/* Kacheln */
+.kacheln{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:12px}
+.kachel{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px 14px;cursor:pointer;display:flex;flex-direction:column;gap:4px;min-height:118px}
+.kachel:hover{border-color:var(--accent)}
+.kachel.fertig{border-color:#9fd3b5;background:#f6fbf8}
+.kachel .t{font-weight:700}.kachel .b{font-size:20px;font-weight:800;font-variant-numeric:tabular-nums}
+.kachel .z{display:flex;gap:6px;flex-wrap:wrap;margin-top:auto}
+.kachel.neu{border-style:dashed;color:var(--muted);align-items:center;justify-content:center;font-weight:600}
+/* Schritte */
+.schritte{display:flex;gap:6px;flex-wrap:wrap;margin:6px 0 14px}
+.schritte button{border-radius:999px;font-size:13px}.schritte button.on{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+/* Fenster */
+.ov{position:fixed;inset:0;background:rgba(15,23,35,.35);z-index:60}
+.dlg{position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);width:min(1060px,96vw);max-height:92vh;display:flex;flex-direction:column;background:var(--card);border-radius:14px;z-index:61;box-shadow:0 18px 50px rgba(0,0,0,.25)}
+.dh{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:12px 18px;border-bottom:1px solid var(--line)}
+.dh b{font-size:17px}
+.db{padding:12px 18px;overflow:auto}
+.df{display:flex;gap:8px;align-items:center;padding:10px 18px;border-top:1px solid var(--line)}
+.abs{font-size:12px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;margin:14px 0 6px}
+.abs:first-child{margin-top:0}
+.fg{display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:8px 12px}
+.fl{display:grid;gap:2px;font-size:12px;color:var(--muted)}
+.fl input,.fl select,.fl textarea{width:100%;background:var(--soft);border:1px solid var(--line);border-radius:6px;padding:6px 8px;font-size:13.5px;color:var(--ink)}
+.tab input,.tab select{background:var(--soft);border:1px solid var(--line);border-radius:6px;padding:4px 6px;font-size:13px;max-width:100%}
+.tab input.zahl{width:110px;text-align:right}
+.bel{border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin-bottom:8px}
+.bel.neu{background:var(--soft)}
+.bel .k{display:flex;justify-content:space-between;gap:10px;align-items:baseline;flex-wrap:wrap;margin-bottom:6px}
+.such{display:grid;grid-template-columns:1fr auto;gap:8px;align-items:center;padding:6px 0;border-top:1px solid var(--line);font-size:13px}
+label.up{border:1px solid var(--line);border-radius:8px;padding:5px 10px;background:var(--card);cursor:pointer;font-size:13px}
+@media(max-width:800px){.wrap{padding:12px}.fg{grid-template-columns:1fr 1fr}}
+</style></head><body>
+<div class="wrap" id="app"><div class="empty">Lade …</div></div>
+<div class="toast" id="toast"></div>
+<script>
+const sb=window.supabase.createClient('https://jqzxctfqvcwbctpjksvg.supabase.co','eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpxenhjdGZxdmN3YmN0cGprc3ZnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODIxMzA0MzIsImV4cCI6MjA5NzcwNjQzMn0.RKIbZxJdusKWWPjBJqlxZ8e1m8So02UslOg55YRsn3o');
+window.osSupabase=sb;
+const NUTZER={'ramona@andersmacher.info':'Ramona','juergen@andersmacher.info':'Jürgen','eric@andersmacher.info':'Eric'};
+const $=id=>document.getElementById(id);
+const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const fnum=new Intl.NumberFormat('de-DE',{minimumFractionDigits:2,maximumFractionDigits:2});
+const eur=v=>v==null||v===''||isNaN(Number(v))?'–':fnum.format(Number(v))+' €';
+const dmy=d=>d?String(d).slice(0,10).split('-').reverse().join('.'):'–';
+const r2=v=>Math.round((Number(v)||0)*100)/100;
+function parseNum(s){ if(s==null) return null; s=String(s).replace(/[€\s]/g,''); if(s==='') return null; if(/,\d{1,2}$/.test(s)) s=s.replace(/\./g,'').replace(',','.'); else if(/^\d{1,3}(\.\d{3})+$/.test(s)) s=s.replace(/\./g,''); const v=Number(s); return isNaN(v)?null:v; }
+const norm=s=>String(s||'').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/ß/g,'ss').replace(/[^a-z0-9]+/g,' ').trim();
+function toast(t,ms){const el=$('toast');el.textContent=t;el.classList.add('on');clearTimeout(toast._t);toast._t=setTimeout(()=>el.classList.remove('on'),ms||3500);}
+const tage=(a,b)=>Math.round((new Date(b+'T00:00:00Z')-new Date(a+'T00:00:00Z'))/864e5)+1;
+async function token(){const {data}=await sb.auth.getSession();return data&&data.session?data.session.access_token:'';}
+async function odApi(body){let r;try{r=await fetch('/api/onedrive',{method:'POST',headers:{'content-type':'application/json',authorization:'Bearer '+await token()},body:JSON.stringify(body)});}catch(e){throw new Error('OneDrive nicht erreichbar.');}
+  let j=null;try{j=await r.json();}catch(e){}if(!j)throw new Error('OneDrive nicht erreichbar ('+r.status+').');if(j.error)throw new Error(j.error);return j;}
+async function odOeffnen(id){const w=window.open('','_blank');try{const r=await odApi({aktion:'link',id});const u=r.web||r.download;if(w)w.location.href=u;else window.open(u,'_blank');}catch(e){if(w)w.close();toast('Datei nicht erreichbar: '+e.message);}}
+
+/* ---------- Stammdaten ---------- */
+const SCHLUESSEL=[['flaeche','Wohn-/Nutzfläche'],['personen','Personen'],['einheiten','je Einheit gleich'],['mea','Miteigentumsanteile'],['verbrauch','Verbrauch (Zähler/Messdienst)'],['direkt','direkt einem Mieter'],['nicht_umlegen','nicht umlegen']];
+const schlLabel=v=>(SCHLUESSEL.find(x=>x[0]===v)||[,'–'])[1];
+const STANDARD=[['Grundsteuer','1','betriebskosten','flaeche'],['Frischwasser','2','betriebskosten','personen'],['Schmutzwasser','3','betriebskosten','personen'],['Niederschlagswasser','3','betriebskosten','flaeche'],
+  ['Heizkosten','4','heizkosten','verbrauch'],['Warmwasser','5','heizkosten','verbrauch'],['Müllgebühren','8','betriebskosten','personen'],['Straßenreinigung','8','betriebskosten','flaeche'],['Gebäudereinigung','9','betriebskosten','flaeche'],
+  ['Gartenpflege','10','betriebskosten','flaeche'],['Allgemeinstrom','11','betriebskosten','flaeche'],['Schornsteinfeger','12','betriebskosten','flaeche'],['Versicherungen','13','betriebskosten','flaeche'],['Hausmeister','14','betriebskosten','flaeche'],
+  ['Kabel / Antenne','15','betriebskosten','einheiten'],['Rauchwarnmelder','17','betriebskosten','einheiten']];
+/* welche Zähler zu welcher Kostenart passen */
+const ZTYP=k=>{const n=norm(k.name);const re=/strom/.test(n)?/strom/:/wasser/.test(n)&&!/niederschlag/.test(n)?/wasser/:/gas|heiz|warm/.test(n)?/gas|warm|warme/:null;return re?{test:t=>re.test(norm(t))}:null;};
+const LOHN=k=>/hausmeister|reinigung|garten|schornstein|winterdienst/.test(norm(k.name));
+
+let ICH='', JAHR=new Date().getFullYear()-1, OBJ=[], EIN=[], ABR=[], CUR=null, D=null, SCHRITT='kosten', K=null;
+const P=new URLSearchParams(location.search); if(/^\d{4}$/.test(P.get('jahr')||'')) JAHR=Number(P.get('jahr'));
+const frist=j=>(Number(j)+1)+'-12-31';
+
+async function laden(){ const u=(await sb.auth.getUser()).data.user; if(!u){ $('app').innerHTML='<div class="empty">Bitte im Wohntraum OS anmelden.</div>'; return; }
+  ICH=NUTZER[String(u.email||'').toLowerCase()]||u.email||'';
+  const [o,e,a]=await Promise.all([sb.from('obj_objekte').select('id,kz,name,strasse,plz,ort,status,gesellschaft,eigentuemer').order('kz'),sb.from('obj_einheiten').select('id,objekt_id,bezeichnung,art,lage,flaeche,mea,aktiv,nahaus_id,sort').order('sort'),sb.from('bk_abrechnungen').select('*')]);
+  if(o.error){ $('app').innerHTML='<div class="empty">Daten nicht lesbar: '+esc(o.error.message)+'</div>'; return; }
+  OBJ=(o.data||[]).filter(x=>x.status!=='Verkauft'||true); EIN=e.data||[]; ABR=a.data||[];
+  if(P.get('obj')){ const ob=OBJ.find(x=>x.kz===P.get('obj')); if(ob){ await oeffnen(ob.kz); return; } }
+  render(); }
+const objVon=kz=>OBJ.find(x=>x.kz===kz);
+const abrVon=kz=>ABR.find(x=>x.kennung===kz&&Number(x.jahr)===JAHR);
+
+/* ---------- Übersicht ---------- */
+async function uebersichtDaten(){ const ids=ABR.filter(a=>Number(a.jahr)===JAHR).map(a=>a.id); if(!ids.length) return {};
+  const [k,c]=await Promise.all([sb.from('bk_kostenarten').select('abrechnung_id,erledigt').in('abrechnung_id',ids),sb.from('bk_kosten').select('abrechnung_id,betrag,anteil').in('abrechnung_id',ids)]);
+  const out={}; for(const x of (k.data||[])){ const o=out[x.abrechnung_id]=out[x.abrechnung_id]||{n:0,f:0,s:0}; o.n++; if(x.erledigt) o.f++; }
+  for(const x of (c.data||[])){ const o=out[x.abrechnung_id]=out[x.abrechnung_id]||{n:0,f:0,s:0}; o.s+=Number(x.anteil!=null?x.anteil:x.betrag)||0; } return out; }
+let UE={};
+function render(){ if(CUR) return renderObjekt();
+  const L=OBJ.filter(o=>EIN.some(e=>e.objekt_id===o.id&&e.aktiv!==false)).sort((a,b)=>a.kz.localeCompare(b.kz,'de',{numeric:true}));
+  const rest=Math.ceil((new Date(frist(JAHR)+'T23:59:59')-new Date())/864e5);
+  let h='<div class="kopf"><div><h1>Betriebskostenabrechnung '+JAHR+'</h1><div class="sub">Abgerechnet wird nach Rechnungen (Leistungszeitraum '+JAHR+'). Frist für den Zugang beim Mieter: '+dmy(frist(JAHR))+(rest>=0?' – noch '+rest+' Tage':' – abgelaufen')+'.</div></div>'
+    +'<div class="acts" style="margin-top:0"><button onclick="JAHR--;UE={};uebersicht()">Vorjahr</button><b style="padding:0 6px">'+JAHR+'</b><button onclick="JAHR++;UE={};uebersicht()">Folgejahr</button></div></div>';
+  const ang=L.filter(o=>abrVon(o.kz)).length;
+  h+='<div class="kpis"><div class="kpi"><div class="l">Objekte</div><div class="v">'+L.length+'</div></div><div class="kpi"><div class="l">Abrechnung angelegt</div><div class="v">'+ang+'</div></div>'
+    +'<div class="kpi"><div class="l">Kostenarten fertig</div><div class="v">'+Object.values(UE).reduce((a,x)=>a+x.f,0)+' / '+Object.values(UE).reduce((a,x)=>a+x.n,0)+'</div></div></div>';
+  h+='<div class="tbox"><table class="tab"><thead><tr><th>Objekt</th><th>Einheiten</th><th>Stand</th><th>Kostenarten fertig</th><th class="n">Kosten '+JAHR+'</th></tr></thead><tbody>'
+    +L.map(o=>{ const a=abrVon(o.kz), u=a&&UE[a.id]; const n=EIN.filter(e=>e.objekt_id===o.id&&e.aktiv!==false).length;
+      return '<tr class="kl" onclick="oeffnen(\''+esc(o.kz)+'\')"><td><b>'+esc(o.kz)+'</b> <span class="sub">'+esc(o.name||'')+'</span></td><td>'+n+'</td><td>'+(a?'<span class="pill p-acc">angelegt</span>':'<span class="pill">noch nicht angelegt</span>')+'</td><td>'+(u?u.f+' / '+u.n:'–')+'</td><td class="n">'+(u?eur(u.s):'–')+'</td></tr>'; }).join('')+'</tbody></table></div>';
+  $('app').innerHTML=h; }
+async function uebersicht(){ CUR=null; D=null; K=null; try{ const a=await sb.from('bk_abrechnungen').select('*'); ABR=a.data||[]; UE=await uebersichtDaten(); }catch(e){} render(); try{ history.replaceState(null,'',location.pathname+'?jahr='+JAHR); }catch(e){} }
+
+/* ---------- Objekt ---------- */
+async function oeffnen(kz){ CUR=kz; SCHRITT='kosten'; D=null; $('app').innerHTML='<div class="empty">Lade '+esc(kz)+' …</div>'; await objLaden(); try{ history.replaceState(null,'',location.pathname+'?obj='+encodeURIComponent(kz)+'&jahr='+JAHR); }catch(e){} }
+async function objLaden(){ const o=objVon(CUR), a=abrVon(CUR); D={o,a,ein:[],kas:[],kos:[],mvs:[],z:[],zs:[]};
+  const [z]=await Promise.all([sb.from('objekt_zaehler').select('*').eq('object_id',o.id)]); D.z=(z.data||[]).filter(x=>x.aktiv!==false);
+  if(D.z.length){ const s=await sb.from('objekt_zaehlerstaende').select('*').in('zaehler_id',D.z.map(x=>x.id)).order('datum'); D.zs=s.data||[]; }
+  if(a){ const [e,k,c,m]=await Promise.all([sb.from('bk_einheiten').select('*').eq('abrechnung_id',a.id).order('pos'),sb.from('bk_kostenarten').select('*').eq('abrechnung_id',a.id).order('pos'),sb.from('bk_kosten').select('*').eq('abrechnung_id',a.id).order('datum'),sb.from('bk_mietverhaeltnisse').select('*').eq('abrechnung_id',a.id)]);
+    D.ein=e.data||[]; D.kas=k.data||[]; D.kos=c.data||[]; D.mvs=m.data||[]; }
+  render(); }
+async function anlegen(){ const o=D.o; const b=$('anl'); if(b){ b.disabled=true; b.textContent='Lege an …'; }
+  try{ const {data:a,error}=await sb.from('bk_abrechnungen').insert({kennung:o.kz,objekt_name:o.name||null,adresse:[o.strasse,[o.plz,o.ort].filter(Boolean).join(' ')].filter(Boolean).join(', ')||null,eigentuemer:o.eigentuemer||o.gesellschaft||null,jahr:JAHR,zeitraum_von:JAHR+'-01-01',zeitraum_bis:JAHR+'-12-31',status:'entwurf'}).select().single(); if(error) throw error;
+    const E=EIN.filter(e=>e.objekt_id===o.id&&e.aktiv!==false); const kat=e=>/gewerbe|laden|buero|büro|praxis/i.test(e.art||'')?'gewerbe':/stellplatz|garage/i.test(e.art||'')?'stellplatz':'wohnen';
+    let em={};
+    if(E.length){ const {data:ne,error:e2}=await sb.from('bk_einheiten').insert(E.map((e,i)=>({abrechnung_id:a.id,bezeichnung:e.bezeichnung,kategorie:kat(e),flaeche:e.flaeche,mea:e.mea,einheit_ref:e.id,pos:i}))).select(); if(e2) throw e2; for(const x of ne) em[x.einheit_ref]=x.id; }
+    /* Kostenarten aus dem Vorjahr übernehmen (mit Einheiten-Einstellungen), sonst Standard */
+    const vor=ABR.filter(x=>x.kennung===o.kz&&Number(x.jahr)<JAHR).sort((x,y)=>y.jahr-x.jahr)[0]; let rows=[];
+    if(vor){ const [pk,pe]=await Promise.all([sb.from('bk_kostenarten').select('*').eq('abrechnung_id',vor.id),sb.from('bk_einheiten').select('id,einheit_ref').eq('abrechnung_id',vor.id)]);
+      const alt2neu={}; for(const x of (pe.data||[])) if(x.einheit_ref&&em[x.einheit_ref]) alt2neu[x.id]=em[x.einheit_ref];
+      rows=(pk.data||[]).map(k=>{ const ein={}; for(const [id,v] of Object.entries(k.einheiten||{})) if(alt2neu[id]) ein[alt2neu[id]]=v;
+        return {abrechnung_id:a.id,name:k.name,gruppe:k.gruppe,schluessel:k.schluessel,umlagefaehig:k.umlagefaehig,betrkv_nr:k.betrkv_nr,pos:k.pos,notiz:k.notiz,einheiten:ein,zaehler:k.zaehler||null,erledigt:false,ka_key:k.ka_key||null}; }); }
+    if(!rows.length) rows=STANDARD.map((s,i)=>({abrechnung_id:a.id,name:s[0],betrkv_nr:s[1],gruppe:s[2],schluessel:s[3],umlagefaehig:true,pos:i,einheiten:{},erledigt:false}));
+    const {error:e3}=await sb.from('bk_kostenarten').insert(rows); if(e3) throw e3;
+    ABR.push(a); toast('Abrechnung '+o.kz+' '+JAHR+' angelegt'+(vor?' – Kostenarten und Schlüssel aus '+vor.jahr+' übernommen.':'.')); await objLaden(); }
+  catch(err){ toast('Nicht angelegt: '+(err.message||err),7000); if(b){ b.disabled=false; b.textContent='Abrechnung '+JAHR+' anlegen'; } } }
+const kostenVon=k=>D.kos.filter(c=>c.kostenart_id===k.id);
+const summe=k=>r2(kostenVon(k).reduce((s,c)=>s+(Number(c.anteil!=null?c.anteil:c.betrag)||0),0));
+function renderObjekt(){ const o=D.o, a=D.a;
+  let h='<div class="kopf"><div><button class="lnk" onclick="uebersicht()">Zurück zur Übersicht</button><h1 style="margin-top:4px">'+esc(o.kz)+' · '+esc(o.name||'')+' · Betriebskosten '+JAHR+'</h1>'
+    +'<div class="sub">'+esc([o.strasse,o.ort].filter(Boolean).join(', '))+' · Frist '+dmy(frist(JAHR))+'</div></div>'
+    +(a?'<div class="acts" style="margin-top:0"><a class="lnk" href="/betriebskosten/'+esc(a.id)+'" target="_top">Einheiten und Mieter im Detail</a></div>':'')+'</div>';
+  if(!a){ const n=EIN.filter(e=>e.objekt_id===o.id&&e.aktiv!==false).length; const vor=ABR.find(x=>x.kennung===o.kz&&Number(x.jahr)===JAHR-1);
+    h+='<div class="card"><b>Für '+esc(o.kz)+' gibt es noch keine Abrechnung '+JAHR+'.</b><div class="sub" style="margin-top:4px">Beim Anlegen übernimmt das OS die '+n+' Einheiten mit Fläche und MEA aus dem Objekt und '+(vor?'die Kostenarten mit Einheiten und Verteilerschlüsseln aus '+vor.jahr+'.':'eine Liste der üblichen Kostenarten. Nicht benötigte kannst du später entfernen.')+'</div>'
+      +'<div class="acts"><button class="primary" id="anl" onclick="anlegen()">Abrechnung '+JAHR+' anlegen</button></div></div>'; $('app').innerHTML=h; return; }
+  const fertig=D.kas.filter(k=>k.erledigt).length;
+  h+='<div class="schritte">'+[['kosten','1. Kosten ('+fertig+' / '+D.kas.length+' fertig)'],['mieter','2. Mietverhältnisse'],['schuetz','3. Heizkosten Schütz'],['ergebnis','4. Ergebnis']].map(([k,l])=>'<button class="'+(SCHRITT===k?'on':'')+'" onclick="SCHRITT=\''+k+'\';render()">'+l+'</button>').join('')+'</div>';
+  if(SCHRITT==='kosten'){ const L=D.kas.slice().sort((x,y)=>String(x.name).localeCompare(String(y.name),'de'));
+    h+='<div class="kacheln">'+L.map(k=>{ const n=kostenVon(k).length, s=summe(k); const sp=Object.values(k.einheiten||{}).some(v=>v&&v.schluessel&&v.schluessel!==k.schluessel);
+      return '<div class="kachel'+(k.erledigt?' fertig':'')+'" onclick="kOeffnen(\''+k.id+'\')"><div class="t">'+esc(k.name)+'</div><div class="b">'+(n?eur(s):'–')+'</div><div class="sub">'+n+' Beleg'+(n===1?'':'e')+' · '+esc(schlLabel(k.schluessel))+(sp?' (je Einheit)':'')+'</div>'
+        +'<div class="z">'+(k.erledigt?'<span class="pill p-ok">fertig</span>':n?'<span class="pill p-warn">in Arbeit</span>':'<span class="pill">offen</span>')+(k.umlagefaehig===false?'<span class="pill">nicht umlagefähig</span>':'')+'</div></div>'; }).join('')
+      +'<div class="kachel neu" onclick="kNeu()">Kostenart hinzufügen</div></div>'; }
+  else h+='<div class="empty">Dieser Schritt kommt als Nächstes: '+({mieter:'Mietverhältnisse und Vorauszahlungen aus den Mieterkonten übernehmen',schuetz:'Heizkostenabrechnung von Schütz hochladen und den Mietern zuordnen',ergebnis:'Berechnung je Mieter, Nachzahlung oder Guthaben, Abrechnungsschreiben'}[SCHRITT])+'.</div>';
+  $('app').innerHTML=h+(K?kHtml():''); if(K) kNachRender(); }
+async function kNeu(){ const n=(prompt('Name der neuen Kostenart, z. B. Winterdienst')||'').trim(); if(!n) return;
+  const {data,error}=await sb.from('bk_kostenarten').insert({abrechnung_id:D.a.id,name:n,gruppe:'betriebskosten',schluessel:'flaeche',umlagefaehig:true,pos:D.kas.length,einheiten:{},erledigt:false}).select().single(); if(error){ toast('Nicht angelegt: '+error.message); return; }
+  D.kas.push(data); kOeffnen(data.id); }
+
+/* ---------- Fenster je Kostenart ---------- */
+function kOeffnen(id){ const k=D.kas.find(x=>x.id===id); if(!k) return; const ein={}; for(const e of D.ein){ const v=(k.einheiten||{})[e.id]||{}; ein[e.id]={teil:v.teil!==false,schluessel:v.schluessel||'',prozent:v.prozent!=null?v.prozent:''}; }
+  K={id,name:k.name,schluessel:k.schluessel,umlagefaehig:k.umlagefaehig!==false,ein,zaehler:(k.zaehler&&k.zaehler.ids)||null,neu:null,such:'',treffer:null,lade:'',geaendert:false,zs:{}};
+  if(!K.zaehler){ const re=ZTYP(k); K.zaehler=re?D.z.filter(z=>re.test(z.typ||'')&&/allgemein|zwischen/.test(norm(z.typ))).map(z=>z.id):[]; }
+  render(); }
+const kKa=()=>D.kas.find(x=>x.id===(K&&K.id));
+function anteilBerechnen(v){ const a=D.a; const b=parseNum(v.betrag); if(b==null) return null; if(!v.von||!v.bis||v.bis<v.von) return r2(b);
+  const von=v.von>a.zeitraum_von?v.von:a.zeitraum_von, bis=v.bis<a.zeitraum_bis?v.bis:a.zeitraum_bis; if(bis<von) return 0; return r2(b*tage(von,bis)/tage(v.von,v.bis)); }
+/* Verteilung je Einheit: feste Prozente zuerst, Rest nach Schlüssel; Einheiten mit anderem Schlüssel erhalten vorab ihren Flächenanteil am Rest */
+function verteilung(){ const k=K, tl=D.ein.filter(e=>k.ein[e.id]&&k.ein[e.id].teil); const pers=e=>{ const m=D.mvs.filter(x=>x.einheit_id===e.id); return m.reduce((s,x)=>s+(Number(x.personen)||0),0); };
+  const basis=(e,s)=>s==='flaeche'?Number(e.flaeche)||0:s==='mea'?Number(e.mea)||0:s==='einheiten'?1:s==='personen'?pers(e):0;
+  const out={}; let fest=0; for(const e of tl){ const p=parseNum(k.ein[e.id].prozent); if(p!=null&&p>0){ out[e.id]=p/100; fest+=p/100; } }
+  const rest=tl.filter(e=>out[e.id]==null), gruppen={}; for(const e of rest){ const s=k.ein[e.id].schluessel||k.schluessel; (gruppen[s]=gruppen[s]||[]).push(e); }
+  const keys=Object.keys(gruppen), R=Math.max(0,1-fest);
+  if(keys.length===1){ const s=keys[0], g=gruppen[s], sum=g.reduce((a,e)=>a+basis(e,s),0); for(const e of g) out[e.id]=sum?R*basis(e,s)/sum:0; }
+  else { const fl=rest.reduce((a,e)=>a+(Number(e.flaeche)||0),0); for(const s of keys){ const g=gruppen[s], gA=fl?g.reduce((a,e)=>a+(Number(e.flaeche)||0),0)/fl:g.length/rest.length, sum=g.reduce((a,e)=>a+basis(e,s),0); for(const e of g) out[e.id]=sum?R*gA*basis(e,s)/sum:0; } }
+  return out; }
+function zStand(zid,datum,richtung){ const L=D.zs.filter(s=>s.zaehler_id===zid); if(!L.length) return null; /* nächster Stand am Stichtag (±45 Tage) */
+  const d0=new Date(datum).getTime(); let best=null; for(const s of L){ const dd=Math.abs(new Date(s.datum).getTime()-d0)/864e5; if(dd<=45&&(!best||dd<best.dd)) best={s,dd}; } return best?best.s:null; }
+function kHtml(){ const k=K, ka=kKa(), Ko=kostenVon(ka), sum=summe(ka), V=verteilung();
+  let h='<div class="ov" onclick="kZu()"></div><section class="dlg" role="dialog" aria-label="'+esc(k.name)+'"><div class="dh"><b>'+esc(k.name)+' · '+esc(D.o.kz)+' '+JAHR+'</b><span class="sub">Summe für '+JAHR+': <b style="font-size:14px;color:var(--ink)">'+eur(sum)+'</b></span><button class="ghost" onclick="kZu()">Schließen</button></div><div class="db">';
+  /* Belege */
+  h+='<div class="abs">Belege</div>';
+  h+='<div class="acts" style="margin-top:0"><input class="inp" id="k-such" placeholder="In OneDrive suchen: Absender, Betrag oder Dateiname" value="'+esc(k.such)+'" style="flex:1;min-width:240px" onkeydown="if(event.key===\'Enter\')kSuchen()"><button onclick="kSuchen()">Suchen</button><button onclick="kVorschlaege()">Vorschläge für '+esc(D.o.kz)+'</button><label class="up">Hochladen<input type="file" accept=".pdf,image/*" hidden onchange="kHoch(this)"></label></div>';
+  if(k.lade) h+='<div class="sub" style="margin-top:6px">'+esc(k.lade)+'</div>';
+  if(k.treffer){ h+='<div style="margin-top:6px">'+(k.treffer.length?k.treffer.slice(0,15).map((f,i)=>'<div class="such"><div><a class="lnk" onclick="odOeffnen(\''+esc(f.id)+'\')">'+esc(f.name)+'</a><div class="sub">'+esc(String(f.pfad||'').replace(/^Prozesslandkarte 3\.0\//,'').split('/').slice(0,-1).join('/'))+'</div></div><button class="small" onclick="kWaehle('+i+')">Übernehmen</button></div>').join(''):'<div class="sub">Nichts gefunden.</div>')+'</div>'; }
+  if(k.neu) h+=belegForm(k.neu,true);
+  h+=Ko.length?Ko.map(c=>belegZeile(c)).join(''):(!k.neu?'<div class="sub" style="margin-top:8px">Noch keine Belege für diese Kostenart.</div>':'');
+  /* Einheiten und Schlüssel */
+  h+='<div class="abs">Einheiten und Verteilerschlüssel</div><div class="acts" style="margin-top:0"><span class="sub">Schlüssel für alle</span><input id="k-schl" class="inp" list="dl-schl" data-wahl="1" value="'+esc(schlLabel(k.schluessel))+'" onchange="schlWahl(this,\'\')" style="width:240px;padding:4px 8px"><datalist id="dl-schl">'+SCHLUESSEL.map(([v,l])=>'<option value="'+esc(l)+'">').join('')+'</datalist><datalist id="dl-schl2"><option value="wie oben">'+SCHLUESSEL.filter(x=>!['direkt','nicht_umlegen'].includes(x[0])).map(([v,l])=>'<option value="'+esc(l)+'">').join('')+'</datalist>'
+    +'<label class="sub"><input type="checkbox" '+(k.umlagefaehig?'checked':'')+' onchange="K.umlagefaehig=this.checked;K.geaendert=true"> umlagefähig</label></div>';
+  h+='<div class="tbox" style="margin-top:6px"><table class="tab"><thead><tr><th>nimmt teil</th><th>Einheit</th><th class="n">Fläche</th><th class="n">Personen</th><th>Schlüssel</th><th class="n">fester Anteil %</th><th class="n">Anteil</th><th class="n">Betrag</th></tr></thead><tbody>'
+    +D.ein.map(e=>{ const v=k.ein[e.id], p=D.mvs.filter(x=>x.einheit_id===e.id).reduce((s,x)=>s+(Number(x.personen)||0),0);
+      return '<tr><td><input type="checkbox" '+(v.teil?'checked':'')+' onchange="K.ein[\''+e.id+'\'].teil=this.checked;K.geaendert=true;kNeu2()"></td><td><b>'+esc(e.bezeichnung)+'</b> <span class="sub">'+esc(e.kategorie||'')+'</span></td><td class="n">'+(e.flaeche?fnum.format(e.flaeche)+' m²':'–')+'</td><td class="n">'+(p||'–')+'</td>'
+        +'<td><input list="dl-schl2" data-wahl="1" value="'+esc(v.schluessel?schlLabel(v.schluessel):'wie oben')+'" onchange="schlWahl(this,\''+e.id+'\')" style="width:190px"'+(v.teil?'':' disabled')+'></td>'
+        +'<td class="n"><input class="zahl" style="width:70px" value="'+esc(v.prozent)+'" inputmode="decimal" onchange="K.ein[\''+e.id+'\'].prozent=this.value;K.geaendert=true;kNeu2()"'+(v.teil?'':' disabled')+'></td>'
+        +'<td class="n">'+(V[e.id]!=null?fnum.format(V[e.id]*100)+' %':'–')+'</td><td class="n">'+(V[e.id]!=null?eur(sum*V[e.id]):'–')+'</td></tr>'; }).join('')+'</tbody></table></div>';
+  if(['personen'].includes(k.schluessel)&&!D.mvs.length) h+='<div class="note">Für den Schlüssel Personen fehlen noch die Mietverhältnisse (Schritt 2). Bis dahin ist die Vorschau leer.</div>';
+  if(new Set(Object.values(k.ein).filter(v=>v.teil&&v.schluessel&&v.schluessel!==k.schluessel).map(v=>v.schluessel)).size) h+='<div class="sub" style="margin-top:4px">Mehrere Schlüssel: Die Kosten werden zuerst nach Fläche auf die Gruppen verteilt, innerhalb der Gruppe nach ihrem Schlüssel. Feste Anteile gehen vorab ab.</div>';
+  /* Zähler */
+  const re=ZTYP(ka); const ZL=D.z.filter(z=>(k.zaehler||[]).includes(z.id)||(re&&re.test(z.typ||'')));
+  h+='<div class="abs">Zähler</div>';
+  if(!ZL.length) h+='<div class="sub">'+(re?'Für dieses Objekt sind keine passenden Zähler hinterlegt.':'Für diese Kostenart werden keine Zähler gebraucht.')+' <button class="small" onclick="kAlleZaehler()">Alle Zähler des Objekts zeigen</button></div>';
+  else { h+='<div class="tbox"><table class="tab"><thead><tr><th>dabei</th><th>Zähler</th><th>Einheit</th><th class="n">Stand 01.01.</th><th class="n">Stand 31.12.</th><th class="n">Verbrauch</th><th>weitere Stände '+JAHR+'</th></tr></thead><tbody>'
+      +ZL.map(z=>{ const a0=zStand(z.id,D.a.zeitraum_von), a1=zStand(z.id,D.a.zeitraum_bis), ei=EIN.find(e=>e.id===z.unit_id); const w0=k.zs[z.id+'|0']??(a0?a0.wert:''), w1=k.zs[z.id+'|1']??(a1?a1.wert:'');
+        const vb=parseNum(w1)!=null&&parseNum(w0)!=null?parseNum(w1)-parseNum(w0):null; const zw=D.zs.filter(s=>s.zaehler_id===z.id&&String(s.datum).slice(0,4)===String(JAHR)&&s!==a0&&s!==a1);
+        return '<tr><td><input type="checkbox" '+((k.zaehler||[]).includes(z.id)?'checked':'')+' onchange="kZ(\''+z.id+'\',this.checked)"></td><td><b>'+esc(z.nummer||'–')+'</b> <span class="sub">'+esc(z.typ||'')+'</span></td><td>'+esc(ei?ei.bezeichnung:'Allgemein')+'</td>'
+          +'<td class="n"><input class="zahl" value="'+esc(w0)+'" inputmode="decimal" onchange="K.zs[\''+z.id+'|0\']=this.value;K.geaendert=true;kNeu2()">'+(a0?'<div class="sub">'+dmy(a0.datum)+'</div>':'')+'</td>'
+          +'<td class="n"><input class="zahl" value="'+esc(w1)+'" inputmode="decimal" onchange="K.zs[\''+z.id+'|1\']=this.value;K.geaendert=true;kNeu2()">'+(a1?'<div class="sub">'+dmy(a1.datum)+'</div>':'')+'</td>'
+          +'<td class="n">'+(vb!=null?fnum.format(vb):'–')+'</td><td class="sub">'+(zw.length?zw.map(s=>dmy(s.datum)+': '+fnum.format(s.wert)).join('<br>'):'–')+'<div><button class="small" onclick="kZwischen(\''+z.id+'\')">Zwischenstand erfassen</button></div></td></tr>'; }).join('')+'</tbody></table></div>';
+    h+='<div class="sub" style="margin-top:4px">Neu eingetragene Stände speichert das OS beim Speichern als Zählerstand im Objekt (Stichtag 01.01. bzw. 31.12.).</div>'; }
+  h+='</div><div class="df"><button class="primary" onclick="kSpeichern(false)">Speichern</button><button onclick="kSpeichern(true)">'+(ka.erledigt?'Wieder öffnen':'Speichern und als fertig markieren')+'</button><span class="sub" style="margin-left:auto">Einheiten, Schlüssel und Zähler gelten auch für die nächsten Jahre.</span>'+(Ko.length?'':'<button class="ghost small" onclick="kEntfernen(this)">Kostenart entfernen</button>')+'</div></section>';
+  return h; }
+function kNachRender(){ }
+async function kEntfernen(btn){ const ka=kKa(); if(kostenVon(ka).length){ toast('Die Kostenart hat noch Belege.'); return; } if(btn.dataset.sure!=='1'){ btn.dataset.sure='1'; btn.textContent='wirklich entfernen?'; return; }
+  const {error}=await sb.from('bk_kostenarten').delete().eq('id',ka.id); if(error){ toast('Nicht entfernt: '+error.message); return; } D.kas=D.kas.filter(x=>x.id!==ka.id); K=null; toast('Kostenart „'+ka.name+'“ entfernt.'); render(); }
+function schlWahl(inp,eid){ const v=inp.value.trim(); if(eid&&(!v||v==='wie oben')){ K.ein[eid].schluessel=''; K.geaendert=true; return kNeu2(); }
+  const x=SCHLUESSEL.find(y=>y[1]===v)||SCHLUESSEL.find(y=>norm(y[1]).includes(norm(v))||y[0]===norm(v)||norm(v).startsWith(y[0].slice(0,5))); if(!x){ toast('Bitte einen Schlüssel aus der Liste wählen.'); inp.value=eid?(K.ein[eid].schluessel?schlLabel(K.ein[eid].schluessel):'wie oben'):schlLabel(K.schluessel); return; }
+  if(eid) K.ein[eid].schluessel=x[0]===K.schluessel?'':x[0]; else K.schluessel=x[0]; K.geaendert=true; kNeu2(); }
+document.addEventListener('focusin',e=>{ const t=e.target; if(t&&t.dataset&&t.dataset.wahl){ t.dataset.alt=t.value; t.value=''; } });
+document.addEventListener('focusout',e=>{ const t=e.target; if(t&&t.dataset&&t.dataset.wahl&&!t.value&&t.dataset.alt) t.value=t.dataset.alt; });
+function kNeu2(){ clearTimeout(kNeu2._t); kNeu2._t=setTimeout(()=>{ const dlg=document.querySelector('.dlg .db'); const st=dlg?dlg.scrollTop:0; render(); const d2=document.querySelector('.dlg .db'); if(d2) d2.scrollTop=st; },0); }
+function kZu(){ if(K&&K.geaendert&&!confirm('Änderungen an Einheiten, Schlüssel oder Zählern verwerfen?')) return; K=null; render(); }
+function kZ(id,an){ const L=new Set(K.zaehler||[]); an?L.add(id):L.delete(id); K.zaehler=[...L]; K.geaendert=true; }
+function kAlleZaehler(){ K.zaehler=D.z.map(z=>z.id); K.geaendert=true; kNeu2(); }
+async function kZwischen(zid){ const d=prompt('Datum der Ablesung (TT.MM.JJJJ), z. B. beim Mieterwechsel'); if(!d) return; const m=d.match(/(\d{1,2})\.(\d{1,2})\.(\d{4})/); if(!m){ toast('Bitte das Datum als TT.MM.JJJJ eingeben.'); return; }
+  const w=parseNum(prompt('Zählerstand am '+d)); if(w==null){ toast('Kein gültiger Zählerstand.'); return; }
+  const {data,error}=await sb.from('objekt_zaehlerstaende').insert({zaehler_id:zid,datum:m[3]+'-'+m[2].padStart(2,'0')+'-'+m[1].padStart(2,'0'),wert:w,anlass:'Zwischenablesung BKA '+JAHR,erfasst_von:ICH}).select().single(); if(error){ toast('Nicht gespeichert: '+error.message); return; }
+  D.zs.push(data); kNeu2(); toast('Zwischenstand gespeichert.'); }
+async function kSpeichern(fertig){ const ka=kKa(); const ein={}; for(const [id,v] of Object.entries(K.ein)) ein[id]={teil:v.teil,schluessel:v.schluessel||'',prozent:parseNum(v.prozent)};
+  const patch={schluessel:K.schluessel,umlagefaehig:K.umlagefaehig,einheiten:ein,zaehler:{ids:K.zaehler||[]}}; if(fertig) patch.erledigt=!ka.erledigt;
+  const {error}=await sb.from('bk_kostenarten').update(patch).eq('id',ka.id); if(error){ toast('Nicht gespeichert: '+error.message); return; } Object.assign(ka,patch);
+  /* neue Zählerstände speichern */
+  const neu=[]; for(const [key,val] of Object.entries(K.zs)){ const [zid,i]=key.split('|'), w=parseNum(val); if(w==null) continue; const datum=i==='0'?D.a.zeitraum_von:D.a.zeitraum_bis; const alt=zStand(zid,datum); if(alt&&Number(alt.wert)===w) continue;
+    neu.push({zaehler_id:zid,datum,wert:w,anlass:'BKA '+JAHR,erfasst_von:ICH}); }
+  if(neu.length){ const {data,error:e2}=await sb.from('objekt_zaehlerstaende').insert(neu).select(); if(e2) toast('Zählerstände nicht gespeichert: '+e2.message,6000); else D.zs.push(...data); }
+  K.geaendert=false; K.zs={}; toast(fertig?(patch.erledigt?'Gespeichert und als fertig markiert.':'Wieder geöffnet.'):'Gespeichert.'); if(fertig){ K=null; } render(); }
+
+/* ---------- Belege: suchen, hochladen, auslesen ---------- */
+async function kSuchen(){ const q=($('k-such').value||'').trim(); K.such=q; if(q.length<2){ toast('Bitte mindestens 2 Zeichen eingeben.'); return; } K.lade='Suche in OneDrive …'; K.treffer=null; kNeu2();
+  const out=new Map(); try{ for(const x of ((await odApi({aktion:'suche',q})).treffer||[])) if(!x.ordner) out.set(x.id,x); }catch(e){}
+  const bt=parseNum(q); if(bt!=null&&/\d,\d{2}/.test(q)){ try{ for(const x of ((await odApi({aktion:'betragsuche',betrag:fnum.format(Math.abs(bt))})).treffer||[])) out.set(x.id,x); }catch(e){} }
+  K.treffer=[...out.values()].map(x=>({id:x.id,name:x.name,pfad:/\.[A-Za-z0-9]{2,5}$/.test(String(x.pfad||''))?x.pfad:(x.pfad+'/'+x.name)})); K.lade=''; kNeu2(); }
+async function kVorschlaege(){ K.lade='Lade die Belege '+JAHR+' von '+D.o.kz+' aus OneDrive …'; K.treffer=null; kNeu2();
+  try{ const r=await odApi({aktion:'belegbaum',jahr:JAHR,kz:[D.o.kz]}); const ka=kKa(), w=norm(ka.name).split(' ').filter(x=>x.length>3); const benutzt=new Set(D.kos.map(c=>c.beleg&&c.beleg.od).filter(Boolean));
+    let L=(r.dateien||[]).filter(f=>!benutzt.has(f.id)&&(f.bereich==='obj'||norm(f.name).startsWith(norm(D.o.kz)+' ')));
+    const passt=f=>w.some(x=>norm(f.name+' '+(f.rel||'')).includes(x.slice(0,6)));
+    L.sort((a,b)=>(passt(b)?1:0)-(passt(a)?1:0)||String(a.name).localeCompare(String(b.name),'de')); K.treffer=L.map(f=>({id:f.id,name:f.name,pfad:f.pfad})); }
+  catch(e){ toast(e.message); K.treffer=[]; } K.lade=''; kNeu2(); }
+const nameMeta=n=>{ const T=String(n||'').replace(/\.[A-Za-z0-9]{2,5}$/,'').split('_'); const d=T.find(t=>/^\d{4}-\d{2}-\d{2}$/.test(t.trim())); const b=T.find(t=>/^-?[\d.]+,\d{2}\s?€$/.test(t.trim())); return {abs:T.length>2?T[1]:'',datum:d||'',betrag:b?Math.abs(parseNum(b)):null}; };
+async function kWaehle(i){ const f=K.treffer[i]; if(!f) return; K.treffer=null; await belegVorbereiten({od:f.id,n:f.name,pfad:f.pfad}); }
+async function kHoch(inp){ const f=inp.files[0]; inp.value=''; if(!f) return; if(f.size>3*1024*1024){ toast('Datei zu groß (max. 3 MB). Bitte direkt in OneDrive ablegen und hier suchen.',6000); return; }
+  K.lade='Lade hoch …'; kNeu2();
+  try{ const r=await odApi({aktion:'objektbasis',kz:[D.o.kz]}); const B=(r.objekte||{})[D.o.kz]; if(!B) throw new Error('Kein Objektordner für '+D.o.kz+' gefunden.');
+    const t04=(B.top||[]).find(t=>/^04 /.test(t))||'04 Betriebskosten'; const ziel=B.basis+'/'+t04+'/'+K.name;
+    await odApi({aktion:'anlegen',pfad:ziel});
+    const daten=await new Promise((res,rej)=>{ const rd=new FileReader(); rd.onload=()=>res(String(rd.result).split(',')[1]||''); rd.onerror=()=>rej(rd.error); rd.readAsDataURL(f); });
+    const up=await odApi({aktion:'hochladen',pfad:ziel,name:f.name,daten,typ:f.type||''}); K.lade='';
+    await belegVorbereiten({od:up.item.id,n:up.item.name,pfad:ziel+'/'+up.item.name},f); }
+  catch(e){ K.lade=''; toast('Hochladen fehlgeschlagen: '+(e.message||e),7000); kNeu2(); } }
+var PDFJS=null;
+async function pdfTextVon(od,file){ let buf;
+  if(file&&/pdf/i.test(file.type||file.name)) buf=new Uint8Array(await file.arrayBuffer());
+  else { const r=await odApi({aktion:'inhalt',id:od}); if(r.zuGross||!/pdf/i.test((r.typ||'')+(r.name||''))) return ''; const bin=atob(r.daten||''); buf=new Uint8Array(bin.length); for(let i=0;i<bin.length;i++) buf[i]=bin.charCodeAt(i); }
+  if(!PDFJS){ await new Promise((res,rej)=>{ const s=document.createElement('script'); s.src='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js'; s.onload=res; s.onerror=rej; document.head.appendChild(s); }); PDFJS=window.pdfjsLib; PDFJS.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js'; }
+  const doc=await PDFJS.getDocument({data:buf}).promise; let t=''; for(let i=1;i<=Math.min(doc.numPages,6);i++){ const c=await (await doc.getPage(i)).getTextContent(); t+=' '+c.items.map(x=>x.str).join(' '); } return t.replace(/\s+/g,' '); }
+const iso=d=>{ const m=String(d).match(/(\d{1,2})\.(\d{1,2})\.(\d{2,4})/); if(!m) return ''; const y=m[3].length===2?'20'+m[3]:m[3]; return y+'-'+m[2].padStart(2,'0')+'-'+m[1].padStart(2,'0'); };
+/* relevante Angaben aus der Rechnung */
+function rechnungLesen(t){ const o={}; const G=String(t||''); const geld=s=>{ const v=parseNum(s); return v==null?null:Math.abs(v); };
+  const z=G.match(/(?:Leistungszeitraum|Abrechnungszeitraum|Verbrauchszeitraum|Zeitraum|Abrechnungsjahr)[^0-9]{0,25}(\d{1,2}\.\d{1,2}\.\d{2,4})\s*(?:-|–|bis)\s*(\d{1,2}\.\d{1,2}\.\d{2,4})/i)||G.match(/(?:vom|von)\s+(\d{1,2}\.\d{1,2}\.\d{4})\s*(?:-|–|bis)\s*(\d{1,2}\.\d{1,2}\.\d{4})/i);
+  if(z){ o.von=iso(z[1]); o.bis=iso(z[2]); }
+  const rn=G.match(/Rechnungs?\s*-?\s*(?:nr|nummer|no)\.?\s*:?\s*([A-Z0-9][A-Z0-9\-\/\.]{2,30})/i)||G.match(/Bescheid\s*(?:nr|nummer)\.?\s*:?\s*([A-Z0-9][A-Z0-9\-\/\.]{2,30})/i); if(rn) o.rechnungsnr=rn[1];
+  const rd=G.match(/(?:Rechnungsdatum|Datum|Bescheiddatum)\s*:?\s*(\d{1,2}\.\d{1,2}\.\d{4})/i); if(rd) o.datum=iso(rd[1]);
+  const gb=G.match(/(?:Gesamtbetrag|Rechnungsbetrag|Endbetrag|Bruttobetrag|Summe (?:Ihrer )?(?:Kosten|Entgelte)|Gesamtkosten|zu zahlender Betrag|Festgesetzt[^0-9]{0,30})[^0-9]{0,40}(\d{1,3}(?:\.\d{3})*,\d{2})/i); if(gb) o.betrag=geld(gb[1]);
+  const lo=G.match(/(?:Arbeitskosten|Lohnkosten|Lohnanteil|Arbeitslohn|Anteil Arbeitslohn|§\s*35a[^0-9]{0,40})[^0-9]{0,40}(\d{1,3}(?:\.\d{3})*,\d{2})/i); if(lo) o.lohnanteil=geld(lo[1]);
+  const zn=G.match(/(?:Zählernummer|Zähler-Nr\.?|Zählernr\.?)\s*:?\s*([A-Z0-9][A-Z0-9\-\/ ]{3,24}[A-Z0-9])/i); if(zn) o.zaehler=zn[1].trim();
+  const vb=G.match(/(?:Verbrauch|Menge)[^0-9]{0,30}(\d{1,3}(?:\.\d{3})*(?:,\d{1,3})?)\s*(kWh|m³|m3|cbm)/i); if(vb){ o.verbrauch=parseNum(vb[1]); o.einheit=vb[2]; }
+  const za=G.match(/(?:Zählerstand|Stand)\s*(?:alt|Anfang|Vorjahr)[^0-9]{0,20}(\d{1,3}(?:\.\d{3})*(?:,\d{1,3})?)/i), zn2=G.match(/(?:Zählerstand|Stand)\s*(?:neu|Ende|aktuell)[^0-9]{0,20}(\d{1,3}(?:\.\d{3})*(?:,\d{1,3})?)/i);
+  if(za) o.standAlt=parseNum(za[1]); if(zn2) o.standNeu=parseNum(zn2[1]);
+  const nu=G.match(/(?:Mahngebühr|Säumniszuschlag|Mahnkosten)[^0-9]{0,30}(\d{1,3}(?:\.\d{3})*,\d{2})/i); if(nu) o.nicht_umlagefaehig=geld(nu[1]);
+  return o; }
+async function belegVorbereiten(b,file){ const m=nameMeta(b.n), ka=kKa();
+  K.neu={beleg:b,empfaenger:m.abs,datum:m.datum,betrag:m.betrag!=null?fnum.format(m.betrag):'',von:'',bis:'',rechnungsnr:'',nicht_umlagefaehig:'',lohnanteil:'',verbrauch:'',info:'Lese die Rechnung …',edit:{}};
+  if(!K.neu.von&&m.datum&&m.datum.slice(0,4)===String(JAHR)){ } kNeu2();
+  try{ const t=await pdfTextVon(b.od,file); const R=rechnungLesen(t); const n=K.neu; if(!n) return;
+    for(const f of ['von','bis','rechnungsnr','datum']) if(R[f]&&!n.edit[f]) n[f]=R[f];
+    if(R.betrag!=null&&!n.edit.betrag) n.betrag=fnum.format(R.betrag);
+    if(R.lohnanteil!=null&&!n.edit.lohnanteil&&LOHN(ka)) n.lohnanteil=fnum.format(R.lohnanteil);
+    if(R.nicht_umlagefaehig!=null&&!n.edit.nicht_umlagefaehig) n.nicht_umlagefaehig=fnum.format(R.nicht_umlagefaehig);
+    if(R.verbrauch!=null&&!n.edit.verbrauch) n.verbrauch=fnum.format(R.verbrauch);
+    n.info=t?('Aus der Rechnung gelesen – bitte prüfen.'+(R.zaehler?' Zählernummer: '+R.zaehler+'.':'')+(R.standAlt!=null?' Stand alt '+fnum.format(R.standAlt):'')+(R.standNeu!=null?', neu '+fnum.format(R.standNeu)+'.':'')):'Datei ohne lesbaren Text (z. B. Scan) – bitte die Felder ausfüllen.'; }
+  catch(e){ if(K.neu) K.neu.info='Rechnung nicht gelesen: '+(e.message||e)+'. Bitte die Felder ausfüllen.'; }
+  kNeu2(); }
+function belegForm(n,neu){ const a=anteilBerechnen(n); const f=(k,l,ph)=>'<label class="fl">'+l+'<input value="'+esc(n[k]||'')+'"'+(ph?' placeholder="'+esc(ph)+'"':'')+' onchange="K.neu[\''+k+'\']=this.value;K.neu.edit[\''+k+'\']=1;kNeu2()"'+(/von|bis|datum/.test(k)?' type="date"':'')+'></label>';
+  return '<div class="bel neu"><div class="k"><a class="lnk" onclick="odOeffnen(\''+esc(n.beleg.od)+'\')">'+esc(n.beleg.n)+'</a><span class="sub">'+esc(n.info||'')+'</span></div><div class="fg">'
+    +f('empfaenger','Rechnungssteller')+f('datum','Rechnungsdatum')+f('rechnungsnr','Rechnungs- / Kundennummer')+f('von','Leistung von')+f('bis','Leistung bis')+f('betrag','Gesamtbetrag brutto (€)')
+    +f('nicht_umlagefaehig','davon nicht umlagefähig (€)','z. B. Mahngebühr, Reparatur')+f('lohnanteil','davon Lohnanteil § 35a (€)')+f('verbrauch','Verbrauch (kWh / m³)')+'</div>'
+    +'<div class="acts"><span class="sub">Anteil für '+JAHR+': <b style="color:var(--ink)">'+(a!=null?eur(a-(parseNum(n.nicht_umlagefaehig)||0)*(a&&parseNum(n.betrag)?a/parseNum(n.betrag):1)):'–')+'</b>'+(n.von&&n.bis&&(n.von<D.a.zeitraum_von||n.bis>D.a.zeitraum_bis)?' (zeitanteilig, '+dmy(n.von)+' bis '+dmy(n.bis)+')':'')+'</span>'
+    +'<button class="primary small" style="margin-left:auto" onclick="belegSpeichern()">Beleg übernehmen</button><button class="small" onclick="K.neu=null;kNeu2()">Verwerfen</button></div></div>'; }
+async function belegSpeichern(){ const n=K.neu, ka=kKa(); const b=parseNum(n.betrag); if(b==null){ toast('Bitte den Gesamtbetrag eintragen.'); return; }
+  if(n.von&&n.bis&&n.bis<n.von){ toast('Leistung bis liegt vor Leistung von.'); return; }
+  const a=anteilBerechnen(n), nu=parseNum(n.nicht_umlagefaehig)||0, faktor=b?a/b:1;
+  const row={abrechnung_id:D.a.id,kostenart_id:ka.id,datum:n.datum||n.bis||D.a.zeitraum_bis,betrag:b,empfaenger:n.empfaenger||null,verwendungszweck:n.rechnungsnr?'Rechnung '+n.rechnungsnr:null,quelle:'beleg',notiz:n.beleg.n,
+    beleg:n.beleg,von:n.von||null,bis:n.bis||null,anteil:r2(a-nu*faktor),nicht_umlagefaehig:nu||null,lohnanteil:parseNum(n.lohnanteil),rechnungsnr:n.rechnungsnr||null,verbrauch:parseNum(n.verbrauch)};
+  const {data,error}=await sb.from('bk_kosten').insert(row).select().single(); if(error){ toast('Nicht gespeichert: '+error.message,6000); return; }
+  D.kos.push(data); K.neu=null; toast('Beleg übernommen: '+eur(data.anteil)+' für '+JAHR+'.'); kNeu2(); }
+function belegZeile(c){ return '<div class="bel"><div class="k"><span>'+(c.beleg&&c.beleg.od?'<a class="lnk" onclick="odOeffnen(\''+esc(c.beleg.od)+'\')">'+esc(c.beleg.n||c.notiz||'Beleg')+'</a>':'<b>'+esc(c.notiz||c.empfaenger||'Kostenbuchung')+'</b>')+'</span><span><b>'+eur(c.anteil!=null?c.anteil:c.betrag)+'</b> <span class="sub">für '+JAHR+'</span></span></div>'
+  +'<div class="sub">'+esc([c.empfaenger,c.rechnungsnr?'Nr. '+c.rechnungsnr:'',c.datum?'vom '+dmy(c.datum):'',c.von&&c.bis?'Leistung '+dmy(c.von)+' bis '+dmy(c.bis):'','Gesamtbetrag '+eur(c.betrag),c.nicht_umlagefaehig?'nicht umlagefähig '+eur(c.nicht_umlagefaehig):'',c.lohnanteil?'Lohnanteil '+eur(c.lohnanteil):'',c.verbrauch?'Verbrauch '+fnum.format(c.verbrauch):''].filter(Boolean).join(' · '))+'</div>'
+  +'<div class="acts" style="margin-top:4px"><button class="small ghost" onclick="belegWeg(\''+c.id+'\',this)">Entfernen</button></div></div>'; }
+async function belegWeg(id,btn){ if(btn.dataset.sure!=='1'){ btn.dataset.sure='1'; btn.textContent='wirklich entfernen?'; return; }
+  const {error}=await sb.from('bk_kosten').delete().eq('id',id); if(error){ toast('Nicht entfernt: '+error.message); return; } D.kos=D.kos.filter(c=>c.id!==id); toast('Beleg aus der Abrechnung entfernt (die Datei bleibt in OneDrive).'); kNeu2(); }
+document.addEventListener('keydown',e=>{ if(e.key==='Escape'&&K) kZu(); });
+laden().then(()=>{ if(!CUR) uebersicht(); });
+</script></body></html>
