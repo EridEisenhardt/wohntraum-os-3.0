@@ -358,9 +358,42 @@ function belegForm(n,neu){ const a=anteilBerechnen(n); const f=(k,l,ph)=>'<label
   return '<div class="bel neu"><div class="k"><a class="lnk" onclick="odOeffnen(\''+esc(n.beleg.od)+'\')">'+esc(n.beleg.n)+'</a><span class="sub">'+esc(n.info||'')+'</span></div><div class="fg">'
     +f('empfaenger','Rechnungssteller')+f('datum','Rechnungsdatum')+f('rechnungsnr','Rechnungs- / Kundennummer')+f('von','Leistung von')+f('bis','Leistung bis')+f('betrag','Gesamtbetrag brutto (€)')
     +f('nicht_umlagefaehig','davon nicht umlagefähig (€)','z. B. Mahngebühr, Reparatur')+f('lohnanteil','davon Lohnanteil § 35a (€)')+f('verbrauch','Verbrauch (kWh / m³)')+'</div>'
-    +'<div class="acts"><span class="sub">Anteil für '+JAHR+': <b style="color:var(--ink)">'+(a!=null?eur(a-(parseNum(n.nicht_umlagefaehig)||0)*(a&&parseNum(n.betrag)?a/parseNum(n.betrag):1)):'–')+'</b>'+(n.von&&n.bis&&(n.von<D.a.zeitraum_von||n.bis>D.a.zeitraum_bis)?' (zeitanteilig, '+dmy(n.von)+' bis '+dmy(n.bis)+')':'')+'</span>'
-    +'<button class="primary small" style="margin-left:auto" onclick="belegSpeichern()">Beleg übernehmen</button><button class="small" onclick="K.neu=null;kNeu2()">Verwerfen</button></div></div>'; }
-async function belegSpeichern(){ const n=K.neu, ka=kKa(); const b=parseNum(n.betrag); if(b==null){ toast('Bitte den Gesamtbetrag eintragen.'); return; }
+    +(n.teile?teileHtml(n):'<div class="acts" style="margin-top:6px"><button class="small" onclick="teileAn()">Auf mehrere Kostenarten aufteilen</button><span class="sub">z. B. Wasser, Schmutzwasser und Niederschlagswasser auf einem Bescheid</span></div>')
+    +(n.teile?'<div class="acts"><span class="sub">Je Kostenart wird ein eigener Eintrag mit dem Teilbetrag angelegt, alle mit derselben Datei.</span>':'<div class="acts"><span class="sub">Anteil für '+JAHR+': <b style="color:var(--ink)">'+(a!=null?eur(a-(parseNum(n.nicht_umlagefaehig)||0)*(a&&parseNum(n.betrag)?a/parseNum(n.betrag):1)):'–')+'</b>'+(n.von&&n.bis&&(n.von<D.a.zeitraum_von||n.bis>D.a.zeitraum_bis)?' (zeitanteilig, '+dmy(n.von)+' bis '+dmy(n.bis)+')':'')+'</span>')
+    +'<button class="primary small" style="margin-left:auto" onclick="belegSpeichern()">'+(n.teile?'Aufteilung übernehmen':'Beleg übernehmen')+'</button><button class="small" onclick="K.neu=null;kNeu2()">Verwerfen</button></div></div>'; }
+/* Beleg auf mehrere Kostenarten aufteilen */
+const kasSortiert=()=>D.kas.slice().sort((a,b)=>a.name.localeCompare(b.name,'de'));
+function teileAn(){ const n=K.neu; n.teile=[{ka:K.id,betrag:''},{ka:'',betrag:''}]; kNeu2(); }
+function teileAus(){ K.neu.teile=null; kNeu2(); }
+function teilKa(i,inp){ const v=inp.value.trim().toLowerCase(); const ka=D.kas.find(x=>x.name.toLowerCase()===v); if(v&&!ka){ toast('Bitte eine Kostenart aus der Liste wählen.'); inp.value=''; }
+  K.neu.teile[i].ka=ka?ka.id:''; kNeu2(); }
+function teilBetrag(i,v){ K.neu.teile[i].betrag=v; kNeu2(); }
+function teilDazu(){ K.neu.teile.push({ka:'',betrag:''}); kNeu2(); }
+function teilWeg(i){ K.neu.teile.splice(i,1); if(!K.neu.teile.length) K.neu.teile=null; kNeu2(); }
+function teileHtml(n){ const T=n.teile, sum=T.reduce((a,t)=>a+(parseNum(t.betrag)||0),0), ges=parseNum(n.betrag);
+  let h='<div class="abs" style="margin-top:10px">Aufteilung auf Kostenarten</div><datalist id="dl-teilka">'+kasSortiert().map(k=>'<option value="'+esc(k.name)+'">').join('')+'</datalist>';
+  h+='<div class="tbox"><table class="tab"><thead><tr><th>Kostenart</th><th class="n">Teilbetrag brutto (€)</th><th class="n">Anteil für '+JAHR+'</th><th></th></tr></thead><tbody>'
+    +T.map((t,i)=>{ const ka=D.kas.find(x=>x.id===t.ka), a=anteilBerechnen({betrag:t.betrag,von:n.von,bis:n.bis});
+      return '<tr><td><input list="dl-teilka" data-wahl="1" value="'+esc(ka?ka.name:'')+'" placeholder="Kostenart wählen" onchange="teilKa('+i+',this)" style="width:260px"></td>'
+        +'<td class="n"><input class="zahl" style="width:110px" inputmode="decimal" value="'+esc(t.betrag)+'" onchange="teilBetrag('+i+',this.value)"></td>'
+        +'<td class="n">'+(a!=null?eur(a):'–')+'</td><td class="n"><button class="small ghost" onclick="teilWeg('+i+')">entfernen</button></td></tr>'; }).join('')
+    +'<tr><td><b>Summe</b></td><td class="n"><b>'+eur(sum)+'</b></td><td></td><td></td></tr></tbody></table></div>';
+  h+='<div class="acts" style="margin-top:6px"><button class="small" onclick="teilDazu()">Weitere Kostenart</button><button class="small ghost" onclick="teileAus()">Nicht aufteilen</button>'
+    +(ges!=null&&Math.abs(ges-sum)>0.005?'<span class="sub">Vom Gesamtbetrag '+eur(ges)+' werden '+eur(ges-sum)+' nicht übernommen (z. B. Vorauszahlung Folgejahr).</span>':'')+'</div>';
+  h+='<div class="sub">Nicht umlagefähig, Lohnanteil und Verbrauch werden nur bei der Kostenart dieses Fensters ('+esc(K.name)+') eingetragen.</div>';
+  return h; }
+async function teileSpeichern(){ const n=K.neu; const T=n.teile.filter(t=>t.ka||String(t.betrag).trim());
+  if(!T.length){ toast('Bitte mindestens eine Kostenart mit Betrag eintragen.'); return; }
+  for(const t of T){ if(!t.ka){ toast('Bitte bei jeder Zeile eine Kostenart wählen.'); return; } if(parseNum(t.betrag)==null){ toast('Bitte bei jeder Zeile einen Teilbetrag eintragen.'); return; } }
+  if(new Set(T.map(t=>t.ka)).size<T.length){ toast('Jede Kostenart bitte nur einmal.'); return; }
+  if(n.von&&n.bis&&n.bis<n.von){ toast('Leistung bis liegt vor Leistung von.'); return; }
+  const ges=parseNum(n.betrag); const rows=T.map(t=>{ const b=parseNum(t.betrag), hier=t.ka===K.id, a=anteilBerechnen({betrag:b,von:n.von,bis:n.bis}), nu=hier?(parseNum(n.nicht_umlagefaehig)||0):0, faktor=b?a/b:1;
+    return {abrechnung_id:D.a.id,kostenart_id:t.ka,datum:n.datum||n.bis||D.a.zeitraum_bis,betrag:b,empfaenger:n.empfaenger||null,verwendungszweck:n.rechnungsnr?'Rechnung '+n.rechnungsnr:null,quelle:'beleg',notiz:n.beleg.n,
+      beleg:Object.assign({},n.beleg,{teil:true,gesamt:ges}),von:n.von||null,bis:n.bis||null,anteil:r2(a-nu*faktor),nicht_umlagefaehig:nu||null,lohnanteil:hier?parseNum(n.lohnanteil):null,rechnungsnr:n.rechnungsnr||null,verbrauch:hier?parseNum(n.verbrauch):null}; });
+  const {data,error}=await sb.from('bk_kosten').insert(rows).select(); if(error){ toast('Nicht gespeichert: '+error.message,6000); return; }
+  D.kos.push(...(data||[])); K.neu=null;
+  toast('Aufgeteilt auf '+rows.length+' Kostenarten: '+rows.map(r=>(D.kas.find(x=>x.id===r.kostenart_id)||{}).name+' '+eur(r.anteil)).join(', ')+'.',7000); kNeu2(); }
+async function belegSpeichern(){ const n=K.neu, ka=kKa(); if(n.teile) return teileSpeichern(); const b=parseNum(n.betrag); if(b==null){ toast('Bitte den Gesamtbetrag eintragen.'); return; }
   if(n.von&&n.bis&&n.bis<n.von){ toast('Leistung bis liegt vor Leistung von.'); return; }
   const a=anteilBerechnen(n), nu=parseNum(n.nicht_umlagefaehig)||0, faktor=b?a/b:1;
   const row={abrechnung_id:D.a.id,kostenart_id:ka.id,datum:n.datum||n.bis||D.a.zeitraum_bis,betrag:b,empfaenger:n.empfaenger||null,verwendungszweck:n.rechnungsnr?'Rechnung '+n.rechnungsnr:null,quelle:'beleg',notiz:n.beleg.n,
@@ -368,7 +401,7 @@ async function belegSpeichern(){ const n=K.neu, ka=kKa(); const b=parseNum(n.bet
   const {data,error}=await sb.from('bk_kosten').insert(row).select().single(); if(error){ toast('Nicht gespeichert: '+error.message,6000); return; }
   D.kos.push(data); K.neu=null; toast('Beleg übernommen: '+eur(data.anteil)+' für '+JAHR+'.'); kNeu2(); }
 function belegZeile(c){ return '<div class="bel"><div class="k"><span>'+(c.beleg&&c.beleg.od?'<a class="lnk" onclick="odOeffnen(\''+esc(c.beleg.od)+'\')">'+esc(c.beleg.n||c.notiz||'Beleg')+'</a>':'<b>'+esc(c.notiz||c.empfaenger||'Kostenbuchung')+'</b>')+'</span><span><b>'+eur(c.anteil!=null?c.anteil:c.betrag)+'</b> <span class="sub">für '+JAHR+'</span></span></div>'
-  +'<div class="sub">'+esc([c.empfaenger,c.rechnungsnr?'Nr. '+c.rechnungsnr:'',c.datum?'vom '+dmy(c.datum):'',c.von&&c.bis?'Leistung '+dmy(c.von)+' bis '+dmy(c.bis):'','Gesamtbetrag '+eur(c.betrag),c.nicht_umlagefaehig?'nicht umlagefähig '+eur(c.nicht_umlagefaehig):'',c.lohnanteil?'Lohnanteil '+eur(c.lohnanteil):'',c.verbrauch?'Verbrauch '+fnum.format(c.verbrauch):''].filter(Boolean).join(' · '))+'</div>'
+  +'<div class="sub">'+esc([c.empfaenger,c.rechnungsnr?'Nr. '+c.rechnungsnr:'',c.datum?'vom '+dmy(c.datum):'',c.von&&c.bis?'Leistung '+dmy(c.von)+' bis '+dmy(c.bis):'',c.beleg&&c.beleg.teil?'Teilbetrag '+eur(c.betrag)+(c.beleg.gesamt!=null?' aus Beleg über '+eur(c.beleg.gesamt):''):'Gesamtbetrag '+eur(c.betrag),c.nicht_umlagefaehig?'nicht umlagefähig '+eur(c.nicht_umlagefaehig):'',c.lohnanteil?'Lohnanteil '+eur(c.lohnanteil):'',c.verbrauch?'Verbrauch '+fnum.format(c.verbrauch):''].filter(Boolean).join(' · '))+'</div>'
   +'<div class="acts" style="margin-top:4px"><button class="small ghost" onclick="belegWeg(\''+c.id+'\',this)">Entfernen</button></div></div>'; }
 async function belegWeg(id,btn){ if(btn.dataset.sure!=='1'){ btn.dataset.sure='1'; btn.textContent='wirklich entfernen?'; return; }
   const {error}=await sb.from('bk_kosten').delete().eq('id',id); if(error){ toast('Nicht entfernt: '+error.message); return; } D.kos=D.kos.filter(c=>c.id!==id); toast('Beleg aus der Abrechnung entfernt (die Datei bleibt in OneDrive).'); kNeu2(); }
