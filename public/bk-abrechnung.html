@@ -204,13 +204,18 @@ function ergebnis(){ const pv=D.a.zeitraum_von, pb=D.a.zeitraum_bis, T=tage(pv,p
     R.gesamt+=s; if(heiz) R.heiz+=s;
     const lohnGes=kostenVon(ka).reduce((a,c)=>a+(Number(c.lohnanteil)||0)*(Number(c.betrag)?(Number(c.anteil!=null?c.anteil:c.betrag))/Number(c.betrag):1),0);
     const tl=D.ein.filter(e=>k.ein[e.id].teil), sumFl=tl.reduce((a,e)=>a+(Number(e.flaeche)||0),0);
+    /* Belege nach Leistungszeitraum gruppieren: innerhalb der Einheit wird nur auf die Mieter verteilt, die in diesem Zeitraum dort gemietet haben */
+    const G={}; for(const c of kostenVon(ka)){ const a=Number(c.anteil!=null?c.anteil:c.betrag)||0; if(!a) continue; const gv=c.von&&c.von>pv?c.von:pv, gb=c.bis&&c.bis<pb?c.bis:pb; const key=gv+'|'+gb; (G[key]=G[key]||{gv,gb,s:0}).s+=a; }
+    const GL=Object.values(G), ov=(m,gv,gb)=>{ const v=m.von>gv?m.von:gv, b=(m.bis||gb)<gb?(m.bis||gb):gb; return b<v?0:tage(v,b); };
     for(const e of D.ein){ const f=V[e.id]||0; if(!f) continue; const amt=s*f, sk=k.ein[e.id].schluessel||k.schluessel, fest=num(k.ein[e.id].prozent);
-      const L=D.mvs.filter(m=>m.einheit_id===e.id&&tgMv(m)>0); if(!L.length){ R.vermieter+=amt; R.ohneMv.add(e.bezeichnung); continue; }
-      const w=m=>tgMv(m)*(sk==='personen'?(Number(m.personen)||0):1); let W=L.reduce((a,m)=>a+w(m),0); const nachTagen=W<=0; if(nachTagen) W=L.reduce((a,m)=>a+tgMv(m),0);
-      for(const m of L){ const part=amt*(nachTagen?tgMv(m):w(m))/W, x=R.mv[m.id];
-        x.pos.push({name:ka.name,ges:s,schl:fest>0?'fester Anteil':(SCHL_KURZ[sk]||schlLabel(sk)),proz:f*100*part/amt,betrag:part,heiz,basis:sk==='flaeche'&&!(fest>0)&&sumFl?fnum.format(e.flaeche||0)+' von '+fnum.format(sumFl)+' m²':''});
-        x[heiz?'hk':'bk']+=part; if(lohnGes){ const lb=lohnGes*part/s; x.lohn+=lb; x.lohnPos.push({name:ka.name,b:lb}); }
-        if(m.art!=='vorauszahlung') R.vermieter+=part; } } }
+      for(const g of GL){ const ag=amt*g.s/s; if(Math.abs(ag)<1e-9) continue;
+        const L=D.mvs.filter(m=>m.einheit_id===e.id&&ov(m,g.gv,g.gb)>0); if(!L.length){ R.vermieter+=ag; R.ohneMv.add(e.bezeichnung); continue; }
+        const w=m=>ov(m,g.gv,g.gb)*(sk==='personen'?(Number(m.personen)||0):1); let W=L.reduce((a,m)=>a+w(m),0); const nachTagen=W<=0; if(nachTagen) W=L.reduce((a,m)=>a+ov(m,g.gv,g.gb),0);
+        for(const m of L){ const part=ag*(nachTagen?ov(m,g.gv,g.gb):w(m))/W, x=R.mv[m.id]; let p=x.pos.find(q=>q.name===ka.name);
+          if(!p){ p={name:ka.name,ges:s,schl:fest>0?'fester Anteil':(SCHL_KURZ[sk]||schlLabel(sk)),proz:0,betrag:0,heiz,basis:sk==='flaeche'&&!(fest>0)&&sumFl?fnum.format(e.flaeche||0)+' von '+fnum.format(sumFl)+' m²':''}; x.pos.push(p); }
+          p.betrag+=part; p.proz=p.betrag/s*100;
+          x[heiz?'hk':'bk']+=part; if(lohnGes){ const lb=lohnGes*part/s; x.lohn+=lb; const lp=x.lohnPos.find(q=>q.name===ka.name); if(lp) lp.b+=lb; else x.lohnPos.push({name:ka.name,b:lb}); }
+          if(m.art!=='vorauszahlung') R.vermieter+=part; } } } }
   for(const x of Object.values(R.mv)){ const m=x.m, va=m.art==='vorauszahlung'; x.bk=r2(x.bk); x.hk=r2(x.hk); x.vzb=va?(num(m.vz_bk_gezahlt)||0):0; x.vzh=va?(num(m.vz_hk_gezahlt)||0):0;
     x.saldo=va?r2(x.bk+x.hk-x.vzb-x.vzh):null; x.aktuell=(m.bis||pb)>=pb;
     if(va&&x.aktuell&&x.tage>0){ x.vorBk=Math.ceil(x.bk*T/x.tage/12); x.vorHk=Math.ceil(x.hk*T/x.tage/12); } }
@@ -277,7 +282,7 @@ function schreibenPdf(x){ const m=x.m, e=D.ein.find(z=>z.id===m.einheit_id)||{},
   const zeile=(a,b,fett)=>{ need(6); doc.setFont('helvetica',fett?'bold':'normal'); doc.setFontSize(9.5); doc.text(a,L,y); doc.text(b,R,y,{align:'right'}); y+=5; doc.setFont('helvetica','normal'); };
   const block=(titel,P,kosten,vz)=>{ if(!P.length&&!vz) return; y+=1; need(14); doc.setFont('helvetica','bold'); doc.setFontSize(10.5); doc.text(titel,L,y); y+=6; if(P.length) kopf(); else { doc.setFont('helvetica','normal'); doc.setFontSize(9); doc.setTextColor(110); doc.text('Für diesen Bereich sind keine Kosten auf Ihre Einheit entfallen.',L,y); doc.setTextColor(20); y+=6; } doc.setFontSize(8.5);
     for(const p of P){ need(5); const nm=doc.splitTextToSize(p.name,58); doc.text(nm[0],L,y); doc.text(eur(p.ges),105,y,{align:'right'}); doc.text(p.schl,109,y); doc.text(fnum.format(p.proz)+' %',160,y,{align:'right'}); doc.text(eur(p.betrag),R,y,{align:'right'}); y+=4.6;
-      if(p.basis){ doc.setTextColor(110); doc.setFontSize(7.5); doc.text(p.basis+(x.tage<T?', '+x.tage+' von '+T+' Tagen':''),109,y-0.8); doc.setTextColor(20); doc.setFontSize(8.5); y+=3; } }
+      if(p.basis){ doc.setTextColor(110); doc.setFontSize(7.5); doc.text(p.basis,109,y-0.8); doc.setTextColor(20); doc.setFontSize(8.5); y+=3; } }
     doc.setDrawColor(180); doc.line(L,y-2,R,y-2); y+=2; zeile('Ihre Kosten',eur(kosten),true); zeile('abzüglich Ihrer Vorauszahlungen',eur(-vz)); zeile(kosten-vz>0?'Nachzahlung':'Guthaben',eur(Math.abs(r2(kosten-vz))),true); y+=2; };
   block('Betriebskosten',x.pos.filter(p=>!p.heiz),x.bk,x.vzb); block('Heiz- und Warmwasserkosten',x.pos.filter(p=>p.heiz),x.hk,x.vzh);
   need(14); doc.setDrawColor(20); doc.line(L,y,R,y); y+=6; doc.setFont('helvetica','bold'); doc.setFontSize(11.5); doc.text(x.saldo>0?'Ihre Nachzahlung':x.saldo<0?'Ihr Guthaben':'Ergebnis',L,y); doc.text(eur(Math.abs(x.saldo)),R,y,{align:'right'}); doc.setFont('helvetica','normal'); y+=9; doc.setFontSize(10.5);
