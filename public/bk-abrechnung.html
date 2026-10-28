@@ -661,29 +661,42 @@ function belegForm(n,neu){ const a=anteilBerechnen(n); const f=(k,l,ph)=>{ const
 /* Belege aus OneDrive automatisch den Kostenarten zuordnen */
 function kaFuerOrdner(sub){ const n=norm(sub); if(!n) return null; const L=D.kas.filter(k=>!k.ausgeblendet).sort((a,b)=>(a.pos||0)-(b.pos||0));
   return L.find(k=>norm(k.name)===n)||L.find(k=>(ORDNER_WORT[norm(k.name)]||[norm(k.name).split(' ')[0]]).some(w=>n.split(' ').some(t=>t.startsWith(w))))||null; }
+/* Ordner 04 Betriebskosten/BK-Abrechnung JAHR: dort liegen nur die Belege für dieses Jahr (Unterordner Prüfen = unsicher) */
+async function azAusOrdner(benutzt){ try{ const r=await odApi({aktion:'objektbasis',kz:[D.o.kz]}); const B=(r.objekte||{})[D.o.kz]; if(!B) return null;
+    const t04=(B.top||[]).find(t=>/^04 Betriebskosten$/.test(t))||(B.top||[]).find(t=>/Betriebskosten/.test(t)); if(!t04) return null;
+    const pfad=B.basis+'/'+t04+'/BK-Abrechnung '+JAHR, a=await odApi({aktion:'ordner',pfad}); if(a.fehlt||!(a.eintraege||[]).length) return null;
+    const L=[]; const add=(f,pruefen,pf)=>{ if(f.ordner||benutzt.has(f.id)) return; const m=nameMeta(f.name), T=String(f.name).replace(/\.[a-z0-9]+$/i,'').split('_');
+      let ka=null; for(const t of (T.length>=5?[T[2]]:[]).concat(T)) { ka=kaFuerOrdner(t); if(ka) break; }
+      L.push({id:f.id,name:f.name,pfad:pf+'/'+f.name,ordner:pruefen?'Prüfen':'BK-Abrechnung '+JAHR,ka:ka?ka.id:'',datum:m.datum,empfaenger:m.abs,betrag:m.betrag!=null?fnum.format(m.betrag):'',neg:/_-[\d.]+,\d{2}\s?€/.test(f.name),von:'',bis:'',info:pruefen?['liegt in Prüfen']:[],an:!pruefen&&!!ka,ausOrdner:true}); };
+    for(const f of a.eintraege) add(f,false,pfad);
+    const pr=a.eintraege.find(x=>x.ordner&&/^pr(ü|ue)fen$/i.test(x.name)); if(pr){ const b2=await odApi({aktion:'ordner',pfad:pfad+'/'+pr.name}); for(const f of (b2.eintraege||[])) add(f,true,pfad+'/'+pr.name); }
+    return {L,pfad}; }catch(e){ return null; } }
 async function azStart(){ AZ={lade:'Suche die Belege von '+D.o.kz+' in OneDrive …',L:[]}; render();
   try{ const benutzt=new Set(D.kos.map(c=>c.beleg&&c.beleg.od).filter(Boolean)); const seen=new Set(), L=[];
-    for(const j of [JAHR,JAHR+1]){ const r=await odApi({aktion:'belegbaum',jahr:j,kz:[D.o.kz]});
+    const O=await azAusOrdner(benutzt);
+    if(O){ AZ.quelle='Ordner '+O.pfad.split('/').slice(-2).join('/'); L.push(...O.L); }
+    else for(const j of [JAHR,JAHR+1]){ const r=await odApi({aktion:'belegbaum',jahr:j,kz:[D.o.kz]});
       for(const f of (r.dateien||[])){ if(seen.has(f.id)||benutzt.has(f.id)) continue; const rel=String(f.rel||''); if(f.obj&&f.obj!==D.o.kz) continue; if(!/^(0?4 )?Betriebskosten\//i.test(rel)) continue; seen.add(f.id);
         const sub=rel.split('/')[1]||'', ka=rel.split('/').length>2?kaFuerOrdner(sub):null, m=nameMeta(f.name);
         L.push({id:f.id,name:f.name,pfad:f.pfad,ordner:sub,ka:ka?ka.id:'',datum:m.datum,empfaenger:m.abs,betrag:m.betrag!=null?fnum.format(m.betrag):'',neg:/_-[\d.]+,\d{2}\s?€/.test(f.name),von:'',bis:'',info:[],an:false}); } }
     /* Vorauswahl nach Datum; Jahresabrechnungen kommen meist im ersten Halbjahr des Folgejahres */
-    for(const x of L){ const y=Number(String(x.datum).slice(0,4)), mo=Number(String(x.datum).slice(5,7)); x.an=!!x.ka&&(y===JAHR||(y===JAHR+1&&mo<=6)); }
+    if(!O) for(const x of L){ const y=Number(String(x.datum).slice(0,4)), mo=Number(String(x.datum).slice(5,7)); x.an=!!x.ka&&(y===JAHR||(y===JAHR+1&&mo<=6)); }
     /* doppelte Dateien (gleiche Kostenart, gleiches Datum, gleicher Betrag) */
     const key=x=>x.ka+'|'+x.datum+'|'+x.betrag; const cnt={}; for(const x of L){ const k=key(x); if(cnt[k]){ x.an=false; x.info.push('mögliches Duplikat'); } cnt[k]=(cnt[k]||0)+1; }
     AZ.L=L; AZ.lade=L.length?'Lese die Rechnungen (0 von '+L.length+') …':''; render();
-    let i=0; for(const x of L){ i++; if(!AZ) return; try{ const t=await pdfTextVon(x.id); if(t){ const R=rechnungLesen(t); if(R.von){ x.von=R.von; x.bis=R.bis; if(x.ka) x.an=!x.info.includes('mögliches Duplikat')&&R.von<=D.a.zeitraum_bis&&R.bis>=D.a.zeitraum_von; }
+    let i=0; for(const x of L){ i++; if(!AZ) return; try{ const t=await pdfTextVon(x.id); if(t){ const R=rechnungLesen(t); if(R.von){ x.von=R.von; x.bis=R.bis; if(x.ka) x.an=!x.info.includes('mögliches Duplikat')&&!x.info.includes('liegt in Prüfen')&&R.von<=D.a.zeitraum_bis&&R.bis>=D.a.zeitraum_von; }
         if(R.rechnungsnr) x.rechnungsnr=R.rechnungsnr; if(/abschlag|vorauszahlung|vorausleistung/i.test(t)&&!/jahresabrechnung|jahresgeb|endabrechnung|schlussrechnung/i.test(t)) x.info.push('Abschlag?');
         if(/vorausleistung|vorauszahlung/i.test(t)&&/jahresgeb|bescheid/i.test(t)) x.info.push('Bescheid: Betrag prüfen, ggf. aufteilen'); } }catch(e){}
       if(AZ) AZ.lade=i<L.length?'Lese die Rechnungen ('+i+' von '+L.length+') …':''; if(i%4===0||i===L.length) render(); }
   }catch(e){ AZ.lade=''; toast(e.message||String(e),6000); } render(); }
 function azZu(){ AZ=null; render(); }
 function azHtml(){ const L=AZ.L, kas=kasSortiert(); const an=L.filter(x=>x.an);
-  let h='<div class="ov" onclick="azZu()"></div><section class="dlg" role="dialog" aria-label="Belege zuordnen"><div class="dh"><b>Belege aus OneDrive zuordnen · '+esc(D.o.kz)+' '+JAHR+'</b><span class="sub">'+an.length+' ausgewählt · '+eur(an.reduce((a,x)=>a+(parseNum(x.betrag)||0)*(x.neg?-1:1),0))+'</span><button class="ghost" onclick="azZu()">Schließen</button></div><div class="db">';
+  let h='<div class="ov" onclick="azZu()"></div><section class="dlg" role="dialog" aria-label="Belege zuordnen"><div class="dh"><b>Belege aus OneDrive zuordnen · '+esc(D.o.kz)+' '+JAHR+'</b>'+(AZ.quelle?'<span class="sub">aus '+esc(AZ.quelle)+'</span>':'')+'<span class="sub">'+an.length+' ausgewählt · '+eur(an.reduce((a,x)=>a+(parseNum(x.betrag)||0)*(x.neg?-1:1),0))+'</span><button class="ghost" onclick="azZu()">Schließen</button></div><div class="db">';
   if(AZ.lade) h+='<div class="sub" style="margin-bottom:8px">'+esc(AZ.lade)+'</div>';
   if(!L.length&&!AZ.lade) h+='<div class="sub">Keine neuen Belege in 04 Betriebskosten gefunden.</div>';
-  if(L.length){ h+='<div class="sub" style="margin-bottom:8px">Vorausgewählt sind Rechnungen mit Leistungszeitraum in '+JAHR+', sonst nach Datum ('+JAHR+' und erstes Halbjahr '+(JAHR+1)+'). Bitte prüfen: Abschläge nicht zusätzlich zur Jahresabrechnung nehmen, bei Bescheiden den Betrag für '+JAHR+' eintragen.</div>'
-    +'<datalist id="dl-azka">'+kas.map(k=>'<option value="'+esc(k.name)+'">').join('')+'</datalist><div class="tbox"><table class="tab az"><thead><tr><th></th><th>Datei</th><th>Kostenart</th><th>Datum</th><th>Zeitraum</th><th class="n">Betrag brutto (€)</th><th>Hinweis</th></tr></thead><tbody>';
+  if(L.length&&AZ.quelle) h+='<div class="sub" style="margin-bottom:8px">Alle Belege aus dem Ordner sind vorausgewählt, die aus dem Unterordner Prüfen nicht. Bei Bescheiden den Betrag für '+JAHR+' prüfen.</div>';
+  if(L.length){ if(!AZ.quelle) h+='<div class="sub" style="margin-bottom:8px">Vorausgewählt sind Rechnungen mit Leistungszeitraum in '+JAHR+', sonst nach Datum ('+JAHR+' und erstes Halbjahr '+(JAHR+1)+'). Bitte prüfen: Abschläge nicht zusätzlich zur Jahresabrechnung nehmen, bei Bescheiden den Betrag für '+JAHR+' eintragen.</div>';
+    h+='<datalist id="dl-azka">'+kas.map(k=>'<option value="'+esc(k.name)+'">').join('')+'</datalist><div class="tbox"><table class="tab az"><thead><tr><th></th><th>Datei</th><th>Kostenart</th><th>Datum</th><th>Zeitraum</th><th class="n">Betrag brutto (€)</th><th>Hinweis</th></tr></thead><tbody>';
     const grp=[...new Set(L.map(x=>x.ka))].sort((a,b)=>{ const A=D.kas.find(k=>k.id===a), B=D.kas.find(k=>k.id===b); return !A?1:!B?-1:A.name.localeCompare(B.name,'de'); });
     for(const g of grp){ const ka=D.kas.find(k=>k.id===g); h+='<tr class="gr"><td colspan="7">'+esc(ka?ka.name:'Ohne passende Kostenart')+'</td></tr>';
       for(const x of L.filter(y=>y.ka===g).sort((a,b)=>String(a.datum).localeCompare(String(b.datum)))){ const i=L.indexOf(x);
