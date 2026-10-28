@@ -136,8 +136,8 @@ function einheitenVon(o){ const L=EIN.filter(e=>e.objekt_id===o.id), A=L.filter(
 
 /* ---------- Übersicht ---------- */
 async function uebersichtDaten(){ const ids=ABR.filter(a=>Number(a.jahr)===JAHR).map(a=>a.id); if(!ids.length) return {};
-  const [k,c]=await Promise.all([sb.from('bk_kostenarten').select('abrechnung_id,erledigt').in('abrechnung_id',ids),sb.from('bk_kosten').select('abrechnung_id,betrag,anteil').in('abrechnung_id',ids)]);
-  const out={}; for(const x of (k.data||[])){ const o=out[x.abrechnung_id]=out[x.abrechnung_id]||{n:0,f:0,s:0}; o.n++; if(x.erledigt) o.f++; }
+  const [k,c]=await Promise.all([sb.from('bk_kostenarten').select('abrechnung_id,erledigt,ausgeblendet').in('abrechnung_id',ids),sb.from('bk_kosten').select('abrechnung_id,betrag,anteil').in('abrechnung_id',ids)]);
+  const out={}; for(const x of (k.data||[]).filter(x=>!x.ausgeblendet)){ const o=out[x.abrechnung_id]=out[x.abrechnung_id]||{n:0,f:0,s:0}; o.n++; if(x.erledigt) o.f++; }
   for(const x of (c.data||[])){ const o=out[x.abrechnung_id]=out[x.abrechnung_id]||{n:0,f:0,s:0}; o.s+=Number(x.anteil!=null?x.anteil:x.betrag)||0; } return out; }
 let UE={};
 function render(){ if(CUR) return renderObjekt();
@@ -150,7 +150,7 @@ function render(){ if(CUR) return renderObjekt();
     +'<div class="kpi"><div class="l">Kostenarten fertig</div><div class="v">'+Object.values(UE).reduce((a,x)=>a+x.f,0)+' / '+Object.values(UE).reduce((a,x)=>a+x.n,0)+'</div></div></div>';
   h+='<div class="tbox"><table class="tab"><thead><tr><th>Objekt</th><th>Einheiten</th><th>Stand</th><th>Kostenarten fertig</th><th class="n">Kosten '+JAHR+'</th><th></th></tr></thead><tbody>'
     +L.map(o=>{ const a=abrVon(o.kz), u=a&&UE[a.id]; const n=einheitenVon(o).length, hw=hinweisVon(o.kz);
-      return '<tr class="kl" onclick="if(!event.target.closest(\'button\'))oeffnen(\''+esc(o.kz)+'\')"><td><b>'+esc(o.kz)+'</b> <span class="sub">'+esc(o.name||'')+'</span>'+(o.status==='Verkauft'?' <span class="pill">verkauft – letzte Abrechnung</span>':'')+(hw?'<div class="sub" style="color:var(--warn)">'+esc(hw)+'</div>':'')+'</td><td>'+n+'</td><td>'+(a?'<span class="pill p-acc">angelegt</span>':'<span class="pill">noch nicht angelegt</span>')+'</td><td>'+(u?u.f+' / '+u.n:'–')+'</td><td class="n">'+(u?eur(u.s):'–')+'</td>'
+      return '<tr class="kl" onclick="if(!event.target.closest(\'button\'))oeffnen(\''+esc(o.kz)+'\')"><td><b>'+esc(o.kz)+'</b> <span class="sub">'+esc(o.name||'')+'</span>'+(o.status==='Verkauft'?' <span class="pill">verkauft – letzte Abrechnung</span>':'')+(hw?'<div class="sub" style="color:var(--warn)">'+esc(hw)+'</div>':'')+'</td><td>'+n+'</td><td>'+(a?statusPill(a.status):'<span class="pill">noch nicht angelegt</span>')+'</td><td>'+(u?u.f+' / '+u.n:'–')+'</td><td class="n">'+(u?eur(u.s):'–')+'</td>'
         +'<td class="n"><button class="ghost small" onclick="hinweisSetzen(\''+esc(o.kz)+'\')">Hinweis</button><button class="ghost small" onclick="objRaus(\''+esc(o.kz)+'\',this)">herausnehmen</button></td></tr>'; }).join('')+'</tbody></table></div>';
   h+='<div class="acts"><input class="inp" list="dl-objdazu" data-wahl="1" placeholder="Objekt für '+JAHR+' aufnehmen, z. B. Rh24" onchange="objDazu(this)" style="width:320px"><datalist id="dl-objdazu">'+OBJ.filter(o=>!L.includes(o)).sort((a,b)=>a.kz.localeCompare(b.kz,'de',{numeric:true})).map(o=>'<option value="'+esc(o.kz+' · '+o.name)+'">').join('')+'</datalist></div>';
   $('app').innerHTML='<div class="ue">'+h+'</div>'; }
@@ -435,10 +435,45 @@ async function personenSetzen(eid,val){ const be=D.ein.find(x=>x.id===eid); if(!
       if(!e2){ D.mke[m.pid]=doc.e[m.pid]; txt=' gespeichert, auch im Mieterkonto '+(doc.e[m.pid].mieter||m.mieter||''); } }catch(e){} }
   toast('Personen'+(txt||' gespeichert')+'.'); kNeu2(); }
 const summe=k=>r2(kostenVon(k).reduce((s,c)=>s+(Number(c.anteil!=null?c.anteil:c.betrag)||0),0));
+const BK_STATUS=[['entwurf','Entwurf','pill'],['daten_vollstaendig','Daten vollständig','pill p-acc'],['berechnet','Berechnet','pill p-acc'],['geprueft','Geprüft','pill p-ok'],['versendet','Versendet','pill p-ok'],['nicht_abrechnen','Nicht abrechnen','pill']];
+const statusLabel=v=>(BK_STATUS.find(x=>x[0]===v)||BK_STATUS[0])[1];
+const statusPill=v=>{ const x=BK_STATUS.find(y=>y[0]===v)||BK_STATUS[0]; return '<span class="'+x[2]+'">'+esc(x[1])+'</span>'; };
+async function statusSetzen(inp){ const t=inp.value.trim().toLowerCase(), x=BK_STATUS.find(y=>y[1].toLowerCase()===t||y[1].toLowerCase().startsWith(t)); if(!t||!x){ toast('Bitte einen Stand aus der Liste wählen.'); render(); return; }
+  const {error}=await sb.from('bk_abrechnungen').update({status:x[0]}).eq('id',D.a.id); if(error){ toast('Nicht gespeichert: '+error.message); return; } D.a.status=x[0]; const g=ABR.find(y=>y.id===D.a.id); if(g) g.status=x[0]; toast('Stand: '+x[1]); render(); }
+/* Belegmappe: Verzeichnis aller Belege plus die Belege selbst in einer PDF (für die Belegeinsicht) */
+async function pdfLibLaden(){ if(window.PDFLib) return; await new Promise((res,rej)=>{ const s=document.createElement('script'); s.src='https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js'; s.onload=res; s.onerror=rej; document.head.appendChild(s); }); }
+async function belegmappe(btn){ const w=window.open('','_blank'); const alt=btn.textContent; btn.disabled=true;
+  try{ await jsPdfLaden(); await pdfLibLaden(); const o=D.o, A=absenderVon(gesVon()); const KL=D.kas.filter(k=>!k.ausgeblendet&&kostenVon(k).length).sort((a,b)=>a.name.localeCompare(b.name,'de'));
+    const B=[]; for(const k of KL) for(const c of kostenVon(k)) B.push({k,c});
+    /* Verzeichnis */
+    const doc=new window.jspdf.jsPDF({unit:'mm',format:'a4'}), L=20, R=190; let y=22; const need=n=>{ if(y+n>280){ doc.addPage(); y=20; } };
+    doc.setFont('helvetica','bold'); doc.setFontSize(14); doc.text('Belegverzeichnis Betriebskosten '+JAHR,L,y); y+=7; doc.setFont('helvetica','normal'); doc.setFontSize(10);
+    doc.text([o.strasse,[o.plz,o.ort].filter(Boolean).join(' ')].filter(Boolean).join(', ')+' · Abrechnungszeitraum '+dmy(D.a.zeitraum_von)+' bis '+dmy(D.a.zeitraum_bis),L,y); y+=5; doc.setTextColor(100); doc.text(A.name||'',L,y); doc.setTextColor(20); y+=9;
+    let nr=0, sum=0; const ODNR={}; for(const k of KL){ need(14); doc.setFont('helvetica','bold'); doc.setFontSize(10.5); doc.text(k.name,L,y); doc.text(eur(summe(k)),R,y,{align:'right'}); y+=5; doc.setFont('helvetica','normal'); doc.setFontSize(8.5);
+      for(const c of kostenVon(k)){ const od=c.beleg&&c.beleg.od, frueher=od&&ODNR[od]; nr++; c._nr=nr; if(od&&!frueher) ODNR[od]=nr; need(5);
+        const t=doc.splitTextToSize('Beleg '+nr+': '+(frueher?'Teilbetrag aus Beleg '+frueher:[c.empfaenger||String(c.notiz||'').replace(/\.[a-z]+$/i,''),c.rechnungsnr?'Nr. '+c.rechnungsnr:'',c.datum?'vom '+dmy(c.datum):'',c.von&&c.bis?'Leistung '+dmy(c.von)+' bis '+dmy(c.bis):''].filter(Boolean).join(' · ')),130);
+        doc.text(t,L+4,y); doc.text(eur(c.anteil!=null?c.anteil:c.betrag),R,y,{align:'right'}); y+=4.4*t.length; } sum+=summe(k); y+=3; }
+    need(10); doc.setDrawColor(150); doc.line(L,y,R,y); y+=6; doc.setFont('helvetica','bold'); doc.setFontSize(10.5); doc.text('Summe '+JAHR,L,y); doc.text(eur(sum),R,y,{align:'right'});
+    const mappe=await PDFLib.PDFDocument.create(); const vz=await PDFLib.PDFDocument.load(doc.output('arraybuffer')); for(const pg of await mappe.copyPages(vz,vz.getPageIndices())) mappe.addPage(pg);
+    /* Belege anhängen */
+    const fehlt=[]; let i=0; for(const {c} of B){ i++; btn.textContent='Beleg '+i+' von '+B.length+' …'; const od=c.beleg&&c.beleg.od; if(!od){ fehlt.push('Beleg '+c._nr+' (keine Datei)'); continue; }
+      if(B.findIndex(x=>x.c.beleg&&x.c.beleg.od===od)<i-1) continue; /* gleiche Datei nur einmal (aufgeteilte Bescheide) */
+      try{ const r=await odApi({aktion:'inhalt',id:od}); if(r.zuGross){ fehlt.push('Beleg '+c._nr+' (Datei zu groß: '+(r.name||'')+')'); continue; } const bin=atob(r.daten||''), u=new Uint8Array(bin.length); for(let j=0;j<bin.length;j++) u[j]=bin.charCodeAt(j);
+        if(/pdf/i.test((r.typ||'')+(r.name||''))){ const d=await PDFLib.PDFDocument.load(u,{ignoreEncryption:true}); for(const pg of await mappe.copyPages(d,d.getPageIndices())) mappe.addPage(pg); }
+        else if(/png|jpe?g/i.test((r.typ||'')+(r.name||''))){ const img=/png/i.test((r.typ||'')+(r.name||''))?await mappe.embedPng(u):await mappe.embedJpg(u); const pg=mappe.addPage([595,842]); const sc=Math.min(555/img.width,802/img.height); pg.drawImage(img,{x:20,y:842-20-img.height*sc,width:img.width*sc,height:img.height*sc}); }
+        else fehlt.push('Beleg '+c._nr+' ('+(r.name||'unbekanntes Format')+')'); }
+      catch(e){ fehlt.push('Beleg '+c._nr+' ('+(e.message||e)+')'); } }
+    const bytes=await mappe.save(); const blob=new Blob([bytes],{type:'application/pdf'}); if(w) w.location.href=URL.createObjectURL(blob);
+    const name=odSafe(o.kz+'_'+new Date().toISOString().slice(0,10)+'_Belegmappe Betriebskosten '+JAHR)+'.pdf';
+    if(bytes.length<=3*1024*1024){ try{ const rB=await odApi({aktion:'objektbasis',kz:[o.kz]}), Bs=(rB.objekte||{})[o.kz]; if(Bs){ const t04=(Bs.top||[]).find(t=>/^04 /.test(t))||'04 Betriebskosten', ziel=Bs.basis+'/'+t04+'/Abrechnung '+JAHR; await odApi({aktion:'anlegen',pfad:ziel});
+        let b64=''; for(let j=0;j<bytes.length;j+=32768) b64+=String.fromCharCode.apply(null,bytes.subarray(j,j+32768)); await odApi({aktion:'hochladen',pfad:ziel,name,daten:btoa(b64),typ:'application/pdf'}); toast('Belegmappe in OneDrive gespeichert (04 Betriebskosten/Abrechnung '+JAHR+').'+(fehlt.length?' Nicht enthalten: '+fehlt.join(', '):''),9000); } }catch(e){ toast('Belegmappe erstellt, aber nicht in OneDrive gespeichert: '+(e.message||e),8000); } }
+    else toast('Belegmappe erstellt ('+Math.round(bytes.length/1048576)+' MB). Zu groß für OneDrive-Upload – bitte im geöffneten Fenster speichern.'+(fehlt.length?' Nicht enthalten: '+fehlt.join(', '):''),10000); }
+  catch(e){ if(w) w.close(); toast('Belegmappe nicht erstellt: '+(e.message||e),7000); }
+  btn.disabled=false; btn.textContent=alt; }
 function renderObjekt(){ const o=D.o, a=D.a;
   let h='<div class="kopf"><div><button class="lnk" onclick="uebersicht()">Zurück zur Übersicht</button><h1 style="margin-top:4px">'+esc(o.kz)+' · '+esc(o.name||'')+' · Betriebskosten '+JAHR+'</h1>'
     +'<div class="sub">'+esc([o.strasse,o.ort].filter(Boolean).join(', '))+' · Frist '+dmy(frist(JAHR))+'</div></div>'
-    +(a?'<div class="acts" style="margin-top:0"><a class="lnk" href="/betriebskosten/'+esc(a.id)+'" target="_top">Einheiten und Mieter im Detail</a></div>':'')+'</div>'+(hinweisVon(o.kz)?'<div class="note">'+esc(hinweisVon(o.kz))+'</div>':'');
+    +(a?'<div class="acts" style="margin-top:0"><label class="sub">Stand <input list="dl-status" data-wahl="1" value="'+esc(statusLabel(a.status))+'" onchange="statusSetzen(this)" style="width:170px"></label><datalist id="dl-status">'+BK_STATUS.map(x=>'<option value="'+esc(x[1])+'">').join('')+'</datalist><button class="small" onclick="belegmappe(this)">Belegmappe für Mieter</button><a class="lnk" href="/betriebskosten/'+esc(a.id)+'" target="_top">Einheiten und Mieter im Detail</a></div>':'')+'</div>'+(hinweisVon(o.kz)?'<div class="note">'+esc(hinweisVon(o.kz))+'</div>':'');
   if(a&&!D.ein.length) h+='<div class="note">Für '+esc(o.kz)+' sind keine Einheiten hinterlegt. Bitte unter „Einheiten und Mieter im Detail“ die Einheiten mit Fläche anlegen.</div>';
   if(!a){ const n=einheitenVon(o).length; const vor=ABR.find(x=>x.kennung===o.kz&&Number(x.jahr)===JAHR-1);
     if(!n) h+='<div class="note">Im Objekt '+esc(o.kz)+' sind keine Einheiten hinterlegt. Du kannst die Abrechnung trotzdem anlegen und die Einheiten danach unter „Einheiten und Mieter im Detail“ ergänzen.</div>';
