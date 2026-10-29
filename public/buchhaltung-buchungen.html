@@ -1215,6 +1215,7 @@ function spVorschlag(f,idx){ if(f.betrag==null) return null; const L=(idx.get(Ma
 function spZuordnen(f,it){ if(!canWrite){ toast('Nur Lesezugriff.'); return Promise.resolve(); } const bl=(it.tx.bl||[]).slice(); if(bl.some(b=>b.od===f.id)) return Promise.resolve();
   bl.push({od:f.id,n:f.name,pfad:f.pfad,am:new Date().toISOString().slice(0,10)}); const patch={bl}; if(it.tx.ol){ patch.ol=0; patch.olg=''; }
   return writeTx(it.doc,it.ix,patch); }
+function spLoesen(f,it){ if(!canWrite){ toast('Nur Lesezugriff.'); return Promise.resolve(); } const bl=(it.tx.bl||[]).filter(b=>b.od!==f.id); return writeTx(it.doc,it.ix,{bl}); }
 const spOrt=f=>esc(f.ort);
 const BEL_WURZELN=[['Prozesslandkarte 3.0/9.000 Buchführung/Gesellschaften Rechnungen','Gesellschaften Rechnungen'],['Prozesslandkarte 3.0/9.000 Buchführung/Gesellschaften Barauslagen','Gesellschaften Barauslagen'],['virt:Objekte','Objektordner – Betriebskosten und Instandhaltung']];
 /* ---------- Belegverwaltung wie in BuchhaltungsButler: Startseite mit den Hauptordnern, Ordner öffnen zeigt die Belegliste ---------- */
@@ -1382,7 +1383,7 @@ function bvStart(){ const S=spBereit()&&!SP.fehler?bvAlle():null;
   h+='</div>';
   return h; }
 function bvMenu(f,i){ let h='<div class="bb-menu bv-menu"><a href="#" data-kaopen="'+esc(f.id)+'">Datei öffnen</a>';
-  if(i.it) h+='<a href="#" data-spgo="'+esc(i.it.id)+'">Zahlung anzeigen</a>';
+  if(i.it) h+='<a href="#" data-spgo="'+esc(i.it.id)+'">Zahlung anzeigen</a>'+(canWrite?'<button data-bvlos="'+esc(f.id)+'">Zuordnung zur Zahlung lösen</button>':'');
   if(!i.it&&!i.dd&&i.v&&canWrite) h+='<button data-bvzu="'+esc(f.id)+'" data-spit="'+esc(i.v.it.id)+'">Vorschlag zuordnen: '+esc(dmy(i.v.it.tx.d)+' · '+eur(i.v.it.tx.b))+'</button>';
   if(!i.it&&!i.dd&&canWrite) h+='<button class="bb-mt" data-bvzw="'+esc(f.id)+'">Zahlung zuweisen</button>';
   return h+'</div>'; }
@@ -1401,7 +1402,7 @@ function bvZeile(x){ const f=x.f, i=x.i, it=i.it, dd=i.dd, th=BV.th[f.id], typ=(
       :i.v?'<span class="bv-of">offen</span><span class="sub">Vorschlag: <a href="#" data-bvzw="'+esc(f.id)+'" data-bvnur="1">'+esc(dmy(i.v.it.tx.d)+' '+(i.v.it.tx.n||'').slice(0,24))+'</a></span>':'<span class="bv-of">offen</span>'+(canWrite?'<a href="#" class="bv-zwl" data-bvzw="'+esc(f.id)+'">Zahlung zuweisen</a>':''))+'</div>';
   h+='<div class="bv-fld"><small>Wiederkehrend</small>'+(dd?esc(dmy(dd.von))+' bis '+esc(dmy(dd.bis))+'<span class="sub">Abschlag '+(dd.jede?'je nach Zahlung':esc(eur(dd.betrag)))+'</span>':'nein')+'</div>';
   h+='<div class="bv-fld bv-fo"><small>Objekt</small>'+esc(i.obj||'–')+'</div></div>';
-  if(it) h+='<div class="bv-hw">Der Beleg ist der Zahlung zugeordnet.</div>'; else if(i.ign){ const g=IGN.get(f.id); h+='<div class="bv-hw">Ignoriert'+(g&&g.am?' seit '+esc(dmy(g.am)):'')+(g&&g.von?' von '+esc(g.von):'')+'.</div>'; } else if(dd) h+='<div class="bv-hw">Dauerbeleg: gilt für alle Abschläge im Zeitraum.</div>';
+  if(it) h+='<div class="bv-hw">Der Beleg ist der Zahlung zugeordnet.'+(canWrite?' <a href="#" data-bvlos="'+esc(f.id)+'">Zuordnung lösen</a>':'')+'</div>'; else if(i.ign){ const g=IGN.get(f.id); h+='<div class="bv-hw">Ignoriert'+(g&&g.am?' seit '+esc(dmy(g.am)):'')+(g&&g.von?' von '+esc(g.von):'')+'.</div>'; } else if(dd) h+='<div class="bv-hw">Dauerbeleg: gilt für alle Abschläge im Zeitraum.</div>';
   if(BV.zw===f.id) h+=bvZw(f,i);
   h+='</div><div class="bv-m"><button class="bb-kebab" data-bvmen="'+esc(f.id)+'" title="Aktionen"><i></i><i></i><i></i></button>'+(BV.menu===f.id?bvMenu(f,i):'')+'</div>';
   h+='<div class="bv-s"><button class="bv-k'+(i.bez?' on':'')+'" data-bvk="'+esc(f.id)+'" title="'+(i.ign?'Ignoriert':i.bez?'Bezahlt – Zahlung anzeigen':i.v&&i.v.eindeutig?'Offen – Vorschlag zuordnen':'Offen')+'"></button></div></div>';
@@ -1778,7 +1779,7 @@ function renderBelegeTab(){ const h=BV.view==='liste'?bvListeHtml():bvStart(); c
 function bvOeffnen(root,sub){ BV.view='liste'; BV.root=root; BV.sub=sub||(root==='ges'||root==='bar'?String(year):''); BV.menu=''; BV.mehr=100; render(); window.scrollTo(0,0); }
 document.addEventListener('click',async e=>{ if(tab!=='belege') return;
   if(BV.menu&&!e.target.closest('.bv-menu,[data-bvmen]')){ BV.menu=''; render(); }
-  const t=e.target.closest('button[data-bvsepa],button[data-bvign],[data-bvzw],[data-bvzalle],button[data-bvzzu],button[data-bvzz],[data-bvauf],[data-bvka],[data-bvgo],button[data-bvzur],button[data-bvmen],button[data-bvk],button[data-bvzu],button[data-bvsuch],button[data-bvreset],button[data-bvneu],button[data-bvup],[data-bvupzu],button[data-bvupgo],button[data-bvux],button[data-bvsort],button[data-bvmehr]'); if(!t) return;
+  const t=e.target.closest('[data-bvlos],button[data-bvsepa],button[data-bvign],[data-bvzw],[data-bvzalle],button[data-bvzzu],button[data-bvzz],[data-bvauf],[data-bvka],[data-bvgo],button[data-bvzur],button[data-bvmen],button[data-bvk],button[data-bvzu],button[data-bvsuch],button[data-bvreset],button[data-bvneu],button[data-bvup],[data-bvupzu],button[data-bvupgo],button[data-bvux],button[data-bvsort],button[data-bvmehr]'); if(!t) return;
   const d=t.dataset;
   const finde=id=>{ for(const x of bvListe().L) if(x.f.id===id) return x; return null; };
   if(d.bvauf){ e.stopPropagation(); BV.auf.has(d.bvauf)?BV.auf.delete(d.bvauf):BV.auf.add(d.bvauf); render(); return; }
@@ -1803,6 +1804,8 @@ document.addEventListener('click',async e=>{ if(tab!=='belege') return;
   if(d.bvzz){ const c=BV.zwCtx; if(!c||c.f.id!==d.bvzz) return; if(!canWrite){ toast('Nur Lesezugriff.'); return; } const it=items().find(y=>y.id===d.spit); if(!it) return;
     if(!(SP.dateien||[]).some(y=>y.id===c.f.id)) (SP.dateien=SP.dateien||[]).push(c.f);
     await spZuordnen(c.f,it); BV.zw=''; BV.zq=''; toast('Beleg der Zahlung vom '+dmy(it.tx.d)+' zugeordnet.'); render(); return; }
+  if(d.bvlos){ e.preventDefault(); const x=finde(d.bvlos); if(!x||!x.i.it) return; if(d.sure!=='1'){ d.sure='1'; t.textContent='Wirklich lösen? Nochmal klicken'; return; }
+    const it=x.i.it; BV.menu=''; await spLoesen(x.f,it); toast('Zuordnung gelöst – der Beleg ist wieder offen. Die Zahlung vom '+dmy(it.tx.d)+' bleibt unverändert.',6000); render(); return; }
   if(d.bvzu||d.bvk){ const x=finde(d.bvzu||d.bvk); if(!x) return; const i=x.i;
     if(d.bvk&&i.ign){ toast('Dieser Beleg wird ignoriert.'); return; }
     if(d.bvk&&i.bez){ const id=i.it?i.it.id:''; if(id){ NUR=id; tab='liste'; U.sel=id; saveU(); render.scrollSel=true; render(); } else toast('Dauerbeleg: '+i.n+' Abschläge zugeordnet.'); return; }
