@@ -195,6 +195,16 @@ function kObj(ka){ const ein={}; for(const e of D.ein){ const v=(ka.einheiten||{
   return {ein,schluessel:ka.schluessel,zaehler:z,zs:{}}; }
 function verbrauchE(k,e){ const ids=k.zaehler||[]; let s=0; for(const z of D.z.filter(z=>ids.includes(z.id)&&z.unit_id===e.einheit_ref)){ const a0=zStand(z.id,D.a.zeitraum_von), a1=zStand(z.id,D.a.zeitraum_bis);
     const w0=num((k.zs||{})[z.id+'|0']??(a0?a0.wert:null)), w1=num((k.zs||{})[z.id+'|1']??(a1?a1.wert:null)); if(w0!=null&&w1!=null&&w1>=w0) s+=w1-w0; } return s; }
+/* Kosten einer Kostenart in Gruppen: gleicher Leistungszeitraum und gleiche Einheiten (Belege nur für bestimmte Einheiten).
+   Jede Gruppe hat ihre eigene Verteilung V auf die Einheiten. */
+function kaGruppen(ka,k,V){ const pv=D.a.zeitraum_von, pb=D.a.zeitraum_bis, G={};
+  for(const c of kostenVon(ka)){ const a=Number(c.anteil!=null?c.anteil:c.betrag)||0; if(!a) continue; const gv=c.von&&c.von>pv?c.von:pv, gb=c.bis&&c.bis<pb?c.bis:pb;
+    const E=(Array.isArray(c.einheiten)?c.einheiten:[]).filter(id=>D.ein.some(e=>e.id===id)).sort(); const key=gv+'|'+gb+'|'+E.join(',');
+    (G[key]=G[key]||{gv,gb,s:0,E}).s+=a; }
+  for(const g of Object.values(G)){ if(!g.E.length){ g.V=V; continue; }
+    const kk=Object.assign({},k,{ein:{}}); for(const e of D.ein) kk.ein[e.id]=Object.assign({},k.ein[e.id]||{schluessel:'',prozent:''},{teil:g.E.includes(e.id),prozent:''});
+    let Vr=verteilung(kk); const sv=g.E.reduce((a,id)=>a+(Vr[id]||0),0); if(sv<1e-9){ Vr={}; for(const id of g.E) Vr[id]=1/g.E.length; } else for(const id of Object.keys(Vr)) Vr[id]=g.E.includes(id)?Vr[id]/sv:0; g.V=Vr; }
+  return Object.values(G); }
 const tgMv=m=>{ const pv=D.a.zeitraum_von, pb=D.a.zeitraum_bis, v=m.von>pv?m.von:pv, b=(m.bis||pb)<pb?(m.bis||pb):pb; return b<v?0:tage(v,b); };
 const istHeiz=ka=>ka.gruppe==='heizkosten'||/heiz|warmwasser/.test(norm(ka.name));
 function ergebnis(){ const pv=D.a.zeitraum_von, pb=D.a.zeitraum_bis, T=tage(pv,pb);
@@ -202,16 +212,15 @@ function ergebnis(){ const pv=D.a.zeitraum_von, pb=D.a.zeitraum_bis, T=tage(pv,p
   for(const m of D.mvs) R.mv[m.id]={m,pos:[],bk:0,hk:0,lohn:0,lohnPos:[],tage:tgMv(m)};
   for(const ka of D.kas.slice().sort((a,b)=>(a.pos||0)-(b.pos||0))){ const s=summe(ka); if(!s) continue;
     if(ka.umlagefaehig===false||ka.schluessel==='nicht_umlegen'){ R.nichtUml+=s; R.vermieter+=s; continue; }
-    const k=kObj(ka), V=verteilung(k), sv=Object.values(V).reduce((a,b)=>a+b,0), heiz=istHeiz(ka);
-    if(sv<1e-9){ R.nichtVerteilt.push(ka.name); R.vermieter+=s; continue; }
+    const k=kObj(ka), V=verteilung(k), sv=Object.values(V).reduce((a,b)=>a+b,0), heiz=istHeiz(ka), GL=kaGruppen(ka,k,V);
+    if(sv<1e-9&&GL.some(g=>!g.E.length)){ R.nichtVerteilt.push(ka.name); R.vermieter+=s; continue; }
     R.gesamt+=s; if(heiz) R.heiz+=s;
     const lohnGes=kostenVon(ka).reduce((a,c)=>a+(Number(c.lohnanteil)||0)*(Number(c.betrag)?(Number(c.anteil!=null?c.anteil:c.betrag))/Number(c.betrag):1),0);
     const tl=D.ein.filter(e=>k.ein[e.id].teil), sumFl=tl.reduce((a,e)=>a+(Number(e.flaeche)||0),0);
-    /* Belege nach Leistungszeitraum gruppieren: innerhalb der Einheit wird nur auf die Mieter verteilt, die in diesem Zeitraum dort gemietet haben */
-    const G={}; for(const c of kostenVon(ka)){ const a=Number(c.anteil!=null?c.anteil:c.betrag)||0; if(!a) continue; const gv=c.von&&c.von>pv?c.von:pv, gb=c.bis&&c.bis<pb?c.bis:pb; const key=gv+'|'+gb; (G[key]=G[key]||{gv,gb,s:0}).s+=a; }
-    const GL=Object.values(G), ov=(m,gv,gb)=>{ const v=m.von>gv?m.von:gv, b=(m.bis||gb)<gb?(m.bis||gb):gb; return b<v?0:tage(v,b); };
-    for(const e of D.ein){ const f=V[e.id]||0; if(!f) continue; const amt=s*f, sk=k.ein[e.id].schluessel||k.schluessel, fest=num(k.ein[e.id].prozent);
-      for(const g of GL){ const ag=amt*g.s/s; if(Math.abs(ag)<1e-9) continue;
+    /* Belege nach Leistungszeitraum und Einheiten gruppieren: innerhalb der Einheit wird nur auf die Mieter verteilt, die in diesem Zeitraum dort gemietet haben */
+    const ov=(m,gv,gb)=>{ const v=m.von>gv?m.von:gv, b=(m.bis||gb)<gb?(m.bis||gb):gb; return b<v?0:tage(v,b); };
+    for(const e of D.ein){ const sk=k.ein[e.id].schluessel||k.schluessel, fest=num(k.ein[e.id].prozent);
+      for(const g of GL){ const ag=g.s*(g.V[e.id]||0); if(Math.abs(ag)<1e-9) continue;
         const L=D.mvs.filter(m=>m.einheit_id===e.id&&ov(m,g.gv,g.gb)>0); if(!L.length){ R.vermieter+=ag; R.ohneMv.add(e.bezeichnung); continue; }
         const w=m=>ov(m,g.gv,g.gb)*(sk==='personen'?(Number(m.personen)||0):1); let W=L.reduce((a,m)=>a+w(m),0); const nachTagen=W<=0; if(nachTagen) W=L.reduce((a,m)=>a+ov(m,g.gv,g.gb),0);
         for(const m of L){ const part=ag*(nachTagen?ov(m,g.gv,g.gb):w(m))/W, x=R.mv[m.id]; let p=x.pos.find(q=>q.name===ka.name);
@@ -415,10 +424,10 @@ function mieterListe(be){ const pv=D.a.zeitraum_von, pb=D.a.zeitraum_bis; const 
 function persZeit(e){ const pv=D.a.zeitraum_von, pb=D.a.zeitraum_bis, T=tage(pv,pb); return Math.round(D.mvs.filter(m=>m.einheit_id===e.id&&m.art!=='leerstand').reduce((s,m)=>{ const v=m.von>pv?m.von:pv, b=(m.bis||pb)<pb?(m.bis||pb):pb; return b<v?s:s+(Number(m.personen)||0)*tage(v,b)/T; },0)*100)/100; }
 /* Anteil je Mietverhältnis an einer Kostenart (wie im Ergebnis: Belege nach Leistungszeitraum) */
 function mvBetraegeKa(ka,k,V,s){ const out={}; if(!s||!D.mvs.length) return out; const pv=D.a.zeitraum_von, pb=D.a.zeitraum_bis;
-  const G={}; for(const c of kostenVon(ka)){ const a=Number(c.anteil!=null?c.anteil:c.betrag)||0; if(!a) continue; const gv=c.von&&c.von>pv?c.von:pv, gb=c.bis&&c.bis<pb?c.bis:pb; const key=gv+'|'+gb; (G[key]=G[key]||{gv,gb,s:0}).s+=a; }
+  const GL=kaGruppen(ka,k,V);
   const ov=(m,gv,gb)=>{ const v=m.von>gv?m.von:gv, b=(m.bis||gb)<gb?(m.bis||gb):gb; return b<v?0:tage(v,b); };
-  for(const e of D.ein){ const f=V[e.id]||0; if(!f) continue; const amt=s*f, sk=(k.ein[e.id]&&k.ein[e.id].schluessel)||k.schluessel;
-    for(const g of Object.values(G)){ const ag=amt*g.s/s, L=D.mvs.filter(m=>m.einheit_id===e.id&&ov(m,g.gv,g.gb)>0); if(!L.length) continue;
+  for(const e of D.ein){ const sk=(k.ein[e.id]&&k.ein[e.id].schluessel)||k.schluessel;
+    for(const g of GL){ const ag=g.s*(g.V[e.id]||0); if(Math.abs(ag)<1e-9) continue; const L=D.mvs.filter(m=>m.einheit_id===e.id&&ov(m,g.gv,g.gb)>0); if(!L.length) continue;
       const w=m=>ov(m,g.gv,g.gb)*(sk==='personen'?(Number(m.personen)||0):1); let W=L.reduce((a,m)=>a+w(m),0); const nt=W<=0; if(nt) W=L.reduce((a,m)=>a+ov(m,g.gv,g.gb),0);
       for(const m of L) out[m.id]=(out[m.id]||0)+ag*(nt?ov(m,g.gv,g.gb):w(m))/W; } }
   return out; }
@@ -521,7 +530,7 @@ function verteilung(kk){ const k=kk||K, tl=D.ein.filter(e=>k.ein[e.id]&&k.ein[e.
   return out; }
 function zStand(zid,datum,richtung){ const L=D.zs.filter(s=>s.zaehler_id===zid); if(!L.length) return null; /* nächster Stand am Stichtag (±45 Tage) */
   const d0=new Date(datum).getTime(); let best=null; for(const s of L){ const dd=Math.abs(new Date(s.datum).getTime()-d0)/864e5; if(dd<=45&&(!best||dd<best.dd)) best={s,dd}; } return best?best.s:null; }
-function kHtml(){ const k=K, ka=kKa(), Ko=kostenVon(ka), sum=summe(ka), V=verteilung(), MB=mvBetraegeKa(ka,k,V,sum);
+function kHtml(){ const k=K, ka=kKa(), Ko=kostenVon(ka), sum=summe(ka), V=verteilung(), MB=mvBetraegeKa(ka,k,V,sum), UB={}; for(const g of kaGruppen(ka,k,V)) for(const e of D.ein) UB[e.id]=(UB[e.id]||0)+g.s*(g.V[e.id]||0); const mitE=Ko.some(c=>Array.isArray(c.einheiten)&&c.einheiten.length);
   let h='<div class="ov" onclick="kZu()"></div><section class="dlg" role="dialog" aria-label="'+esc(k.name)+'"><div class="dh"><b>'+esc(k.name)+' · '+esc(D.o.kz)+' '+JAHR+'</b><span class="sub">Summe für '+JAHR+': <b style="font-size:14px;color:var(--ink)">'+eur(sum)+'</b></span><button class="ghost" onclick="kZu()">Schließen</button></div><div class="db">';
   /* Belege */
   h+='<div class="abs">Belege</div>';
@@ -539,7 +548,7 @@ function kHtml(){ const k=K, ka=kKa(), Ko=kostenVon(ka), sum=summe(ka), V=vertei
       return '<tr><td><input type="checkbox" '+(v.teil?'checked':'')+' onchange="K.ein[\''+e.id+'\'].teil=this.checked;K.geaendert=true;kNeu2()"></td><td><b>'+esc(e.bezeichnung)+'</b> <span class="sub">'+esc(e.kategorie||'')+'</span>'+(ML.length?'':mieterListe(e))+'</td><td class="n">'+(e.flaeche?fnum.format(e.flaeche)+' m²':'–')+'</td><td class="n">'+(ML.length?'<span class="sub">'+fnum.format(persZeit(e))+'</span>':'<input class="zahl" style="width:60px" inputmode="numeric" value="'+(p!=null?esc(p):'')+'" placeholder="–" onchange="personenSetzen(\''+e.id+'\',this.value)">')+'</td>'
         +'<td><input list="dl-schl2" data-wahl="1" value="'+esc(schlLabel(v.schluessel||k.schluessel))+'" onchange="schlWahl(this,\''+e.id+'\')" style="width:190px"'+(v.teil?'':' disabled')+'></td>'
         +'<td class="n"><input class="zahl" style="width:70px" value="'+esc(v.prozent)+'" inputmode="decimal" onchange="K.ein[\''+e.id+'\'].prozent=this.value;K.geaendert=true;kNeu2()"'+(v.teil?'':' disabled')+'></td>'
-        +'<td class="n">'+(V[e.id]!=null?fnum.format(V[e.id]*100)+' %':'–')+'</td><td class="n">'+(V[e.id]!=null?eur(sum*V[e.id]):'–')+'</td></tr>'+mvZeilen(e,ML,MB);
+        +'<td class="n">'+(mitE?(sum?fnum.format((UB[e.id]||0)/sum*100)+' %':'–'):(V[e.id]!=null?fnum.format(V[e.id]*100)+' %':'–'))+'</td><td class="n">'+(mitE?eur(UB[e.id]||0):(V[e.id]!=null?eur(sum*V[e.id]):'–'))+'</td></tr>'+mvZeilen(e,ML,MB);
 }).join('')+'</tbody></table></div>';
   if(D.ein.some(e=>k.ein[e.id].teil&&(k.ein[e.id].schluessel||k.schluessel)==='personen'&&(D.mvs.some(m=>m.einheit_id===e.id)?D.mvs.some(m=>m.einheit_id===e.id&&m.art!=='leerstand'&&m.personen==null):personenVon(e)==null))) h+='<div class="note">Für den Schlüssel Personen fehlt bei einzelnen Einheiten die Personenzahl. Trag sie in der Spalte Personen ein, sie wird auch im Mieterkonto gespeichert.</div>';
   if(new Set(Object.values(k.ein).filter(v=>v.teil&&v.schluessel&&v.schluessel!==k.schluessel).map(v=>v.schluessel)).size) h+='<div class="sub" style="margin-top:4px">Mehrere Schlüssel: Die Kosten werden zuerst nach Fläche auf die Gruppen verteilt, innerhalb der Gruppe nach ihrem Schlüssel. Feste Anteile gehen vorab ab.</div>';
@@ -653,10 +662,13 @@ function datIso(t){ t=String(t||'').trim(); if(!t) return null; let m=t.match(/^
   m=t.match(/^(\d{1,2})[.\/ -](\d{1,2})[.\/ -](\d{2}|\d{4})$/)||t.match(/^(\d{2})(\d{2})(\d{4}|\d{2})$/); if(!m) return null; const y=m[3].length===2?'20'+m[3]:m[3], mo=Number(m[2]), d=Number(m[1]);
   const x=new Date(Date.UTC(Number(y),mo-1,d)); if(x.getUTCMonth()!==mo-1||x.getUTCDate()!==d) return null; return x.toISOString().slice(0,10); }
 function belegDatum(k,inp){ const v=datIso(inp.value); if(inp.value.trim()&&!v){ toast('Bitte das Datum als TT.MM.JJJJ eingeben, z. B. 01.06.2025.'); inp.focus(); return; } K.neu[k]=v||''; K.neu.edit[k]=1; kNeu2(); }
+function belegEinheit(id,an){ const L=(K.neu.einheiten||[]).filter(x=>x!==id); if(an) L.push(id); K.neu.einheiten=L; kNeu2(); }
+const einheitenText=L=>(L||[]).map(id=>(D.ein.find(e=>e.id===id)||{}).bezeichnung).filter(Boolean).join(', ');
 function belegForm(n,neu){ const a=anteilBerechnen(n); const f=(k,l,ph)=>{ const dt=/^(von|bis|datum)$/.test(k); return '<label class="fl">'+l+'<input value="'+esc(dt?dmyL(n[k]):(n[k]||''))+'"'+(dt?' placeholder="TT.MM.JJJJ"':ph?' placeholder="'+esc(ph)+'"':'')+' onchange="'+(dt?'belegDatum(\''+k+'\',this)':'K.neu[\''+k+'\']=this.value;K.neu.edit[\''+k+'\']=1;kNeu2()')+'"></label>'; };
   return '<div class="bel neu"><div class="k"><a class="lnk" onclick="odOeffnen(\''+esc(n.beleg.od)+'\')">'+esc(n.beleg.n)+'</a><span class="sub">'+esc(n.info||'')+'</span></div><div class="fg">'
     +f('empfaenger','Rechnungssteller')+f('datum','Rechnungsdatum')+f('rechnungsnr','Rechnungs- / Kundennummer')+f('von','Leistung von')+f('bis','Leistung bis')+f('betrag','Gesamtbetrag brutto (€)')
     +f('nicht_umlagefaehig','davon nicht umlagefähig (€)','z. B. Mahngebühr, Reparatur')+f('lohnanteil','davon Lohnanteil § 35a (€)')+f('verbrauch','Verbrauch (kWh / m³)')+'</div>'
+    +(n.teile||D.ein.length<2?'':'<div class="acts" style="margin-top:6px;flex-wrap:wrap"><span class="sub">Gilt für:</span><label class="sub"><input type="checkbox" '+(!(n.einheiten||[]).length?'checked':'')+' onchange="K.neu.einheiten=[];kNeu2()"> alle Einheiten</label>'+D.ein.map(e=>'<label class="sub"><input type="checkbox" '+((n.einheiten||[]).includes(e.id)?'checked':'')+' onchange="belegEinheit(\''+e.id+'\',this.checked)"> '+esc(e.bezeichnung)+'</label>').join('')+'</div>')
     +(n.teile?teileHtml(n):'<div class="acts" style="margin-top:6px"><button class="small" onclick="teileAn()">Auf mehrere Kostenarten aufteilen</button><span class="sub">z. B. Wasser, Schmutzwasser und Niederschlagswasser auf einem Bescheid</span></div>')
     +(n.teile?'<div class="acts"><span class="sub">Je Kostenart wird ein eigener Eintrag mit dem Teilbetrag angelegt, alle mit derselben Datei.</span>':'<div class="acts"><span class="sub">Anteil für '+JAHR+': <b style="color:var(--ink)">'+(a!=null?eur(a-(parseNum(n.nicht_umlagefaehig)||0)*(a&&parseNum(n.betrag)?a/parseNum(n.betrag):1)):'–')+'</b>'+(n.von&&n.bis&&(n.von<D.a.zeitraum_von||n.bis>D.a.zeitraum_bis)?' (zeitanteilig, '+dmy(n.von)+' bis '+dmy(n.bis)+')':'')+'</span>')
     +'<button class="primary small" style="margin-left:auto" onclick="belegSpeichern()">'+(n.teile?'Aufteilung übernehmen':'Beleg übernehmen')+'</button><button class="small" onclick="K.neu=null;kNeu2()">Verwerfen</button></div></div>'; }
@@ -755,11 +767,11 @@ async function belegSpeichern(){ const n=K.neu, ka=kKa(); if(n.teile) return tei
   if(n.von&&n.bis&&n.bis<n.von){ toast('Leistung bis liegt vor Leistung von.'); return; }
   const a=anteilBerechnen(n), nu=parseNum(n.nicht_umlagefaehig)||0, faktor=b?a/b:1;
   const row={abrechnung_id:D.a.id,kostenart_id:ka.id,datum:n.datum||n.bis||D.a.zeitraum_bis,betrag:b,empfaenger:n.empfaenger||null,verwendungszweck:n.rechnungsnr?'Rechnung '+n.rechnungsnr:null,quelle:'beleg',notiz:n.beleg.n,
-    beleg:n.beleg,von:n.von||null,bis:n.bis||null,anteil:r2(a-nu*faktor),nicht_umlagefaehig:nu||null,lohnanteil:parseNum(n.lohnanteil),rechnungsnr:n.rechnungsnr||null,verbrauch:parseNum(n.verbrauch)};
+    beleg:n.beleg,von:n.von||null,bis:n.bis||null,anteil:r2(a-nu*faktor),nicht_umlagefaehig:nu||null,lohnanteil:parseNum(n.lohnanteil),rechnungsnr:n.rechnungsnr||null,verbrauch:parseNum(n.verbrauch),einheiten:(n.einheiten||[]).length?n.einheiten:null};
   const {data,error}=await sb.from('bk_kosten').insert(row).select().single(); if(error){ toast('Nicht gespeichert: '+error.message,6000); return; }
   D.kos.push(data); K.neu=null; toast('Beleg übernommen: '+eur(data.anteil)+' für '+JAHR+'.'); kNeu2(); }
 function belegZeile(c){ return '<div class="bel"><div class="k"><span>'+(c.beleg&&c.beleg.od?'<a class="lnk" onclick="odOeffnen(\''+esc(c.beleg.od)+'\')">'+esc(c.beleg.n||c.notiz||'Beleg')+'</a>':'<b>'+esc(c.notiz||c.empfaenger||'Kostenbuchung')+'</b>')+'</span><span><b>'+eur(c.anteil!=null?c.anteil:c.betrag)+'</b> <span class="sub">für '+JAHR+'</span></span></div>'
-  +'<div class="sub">'+esc([c.empfaenger,c.rechnungsnr?'Nr. '+c.rechnungsnr:'',c.datum?'vom '+dmy(c.datum):'',c.von&&c.bis?'Leistung '+dmy(c.von)+' bis '+dmy(c.bis):'',c.beleg&&c.beleg.teil?'Teilbetrag '+eur(c.betrag)+(c.beleg.gesamt!=null?' aus Beleg über '+eur(c.beleg.gesamt):''):'Gesamtbetrag '+eur(c.betrag),c.nicht_umlagefaehig?'nicht umlagefähig '+eur(c.nicht_umlagefaehig):'',c.lohnanteil?'Lohnanteil '+eur(c.lohnanteil):'',c.verbrauch?'Verbrauch '+fnum.format(c.verbrauch):''].filter(Boolean).join(' · '))+'</div>'
+  +'<div class="sub">'+esc([c.empfaenger,c.rechnungsnr?'Nr. '+c.rechnungsnr:'',c.datum?'vom '+dmy(c.datum):'',c.von&&c.bis?'Leistung '+dmy(c.von)+' bis '+dmy(c.bis):'',c.beleg&&c.beleg.teil?'Teilbetrag '+eur(c.betrag)+(c.beleg.gesamt!=null?' aus Beleg über '+eur(c.beleg.gesamt):''):'Gesamtbetrag '+eur(c.betrag),c.nicht_umlagefaehig?'nicht umlagefähig '+eur(c.nicht_umlagefaehig):'',c.lohnanteil?'Lohnanteil '+eur(c.lohnanteil):'',Array.isArray(c.einheiten)&&c.einheiten.length?'nur für '+einheitenText(c.einheiten):'',c.verbrauch?'Verbrauch '+fnum.format(c.verbrauch):''].filter(Boolean).join(' · '))+'</div>'
   +'<div class="acts" style="margin-top:4px"><button class="small ghost" onclick="belegWeg(\''+c.id+'\',this)">Entfernen</button></div></div>'; }
 async function belegWeg(id,btn){ if(btn.dataset.sure!=='1'){ btn.dataset.sure='1'; btn.textContent='wirklich entfernen?'; return; }
   const {error}=await sb.from('bk_kosten').delete().eq('id',id); if(error){ toast('Nicht entfernt: '+error.message); return; } D.kos=D.kos.filter(c=>c.id!==id); toast('Beleg aus der Abrechnung entfernt (die Datei bleibt in OneDrive).'); kNeu2(); }
