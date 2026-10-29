@@ -128,6 +128,7 @@ h1{font-size:21px;font-weight:800}
       <button data-a="jourfix" onclick="setArt('jourfix')">🧭 Jour Fix</button>
     </div>
     <button class="btn" id="wvBtn" onclick="toggleWV()" title="Nur fällige Wiedervorlagen">🔔 Wiedervorlagen</button>
+    <select id="personsel" onchange="setPerson(this.value)" title="Nach Person filtern (verantwortlich oder beteiligt)"><option value="">👥 Alle Personen</option></select>
   </div>
   <div class="addbar"><input id="newT" placeholder="Neue Aufgabe …" onkeydown="if(event.key==='Enter')addTask()">
     <select id="newArt" title="Art"><option value="aufgabe">📌 Aufgabe</option><option value="ticket">🎫 Ticket</option><option value="followup">🔁 Follow-up</option><option value="rueckruf">📞 Rückruf</option><option value="vortermin">📍 Vor-Ort-Termin</option><option value="jourfix">🧭 Jour Fix</option></select>
@@ -190,14 +191,17 @@ const COLS=[['todo','📋 To Do'],['inarbeit','🔧 In Arbeit'],['warten','⏳ W
 const ARTLBL={aufgabe:'Aufgabe',ticket:'Ticket',followup:'Follow-up',rueckruf:'Rückruf',vortermin:'Vor-Ort-Termin',jourfix:'Jour Fix'};
 const ARTICON={aufgabe:'📌',ticket:'🎫',followup:'🔁',rueckruf:'📞',vortermin:'📍',jourfix:'🧭'};
 let TASKS=[], KONT=[], OBJ=[];
-const TEAM=['Eric','Jürgen','Stephan','Ramona','Alexander','Extern'];
-let ART='alle', WVONLY=false, SUBS=[], VER=[], DTASK=null, ICH='', TAGS=[], BETEIL=[];
+const TEAM=['Eric','Jürgen','Stephan','Ramona','Alexander Buchhaus','Extern'];
+let ART='alle', WVONLY=false, PERSON='', SUBS=[], VER=[], DTASK=null, ICH='', TAGS=[], BETEIL=[];
+function setPerson(v){PERSON=v;render();}
+function personMatch(t){if(!PERSON)return true;if(Array.isArray(t.beteiligte)&&t.beteiligte.includes(PERSON))return true;const v=(t.verantwortlich||'').trim();if(!v)return false;return v===PERSON||v.indexOf(PERSON)>=0||PERSON.indexOf(v.split(' ')[0])===0;}
+function initPersonSel(){const el=document.getElementById('personsel');if(el)el.innerHTML='<option value="">👥 Alle Personen</option>'+TEAM.map(p=>`<option value="${esc(p)}"${PERSON===p?' selected':''}>${esc(p)}</option>`).join('');}
 function renderDBeteiligte(){document.getElementById('d_beteiligte').innerHTML=TEAM.map(p=>`<button type="button" class="pbtn${BETEIL.includes(p)?' on':''}" onclick="toggleBeteil('${p.replace(/'/g,"\\'")}')">${BETEIL.includes(p)?'✓ ':''}${esc(p)}</button>`).join('');}
 function toggleBeteil(p){if(BETEIL.includes(p))BETEIL=BETEIL.filter(x=>x!==p);else BETEIL.push(p);renderDBeteiligte();}
 function renderDTags(){document.getElementById('d_tags').innerHTML=TAGS.map(tg=>`<span class="tagchip">#${esc(tg)}<b onclick="dDelTag('${esc(tg).replace(/'/g,"\\'")}')">✕</b></span>`).join('');}
 function dAddTag(){const el=document.getElementById('d_tagnew');const v=(el.value||'').trim().replace(/^#/,'');if(!v){return;}if(!TAGS.includes(v))TAGS.push(v);el.value='';renderDTags();}
 function dDelTag(tg){TAGS=TAGS.filter(x=>x!==tg);renderDTags();}
-function vis(){return TASKS.filter(t=>(ART==='alle'||(t.art||'aufgabe')===ART)&&(!WVONLY||(t.wiedervorlage&&t.wiedervorlage<=today&&t.status!=='erledigt')));}
+function vis(){return TASKS.filter(t=>(ART==='alle'||(t.art||'aufgabe')===ART)&&(!WVONLY||(t.wiedervorlage&&t.wiedervorlage<=today&&t.status!=='erledigt'))&&personMatch(t));}
 function setArt(a){ART=a;document.querySelectorAll('#artseg button').forEach(b=>b.classList.toggle('on',b.dataset.a===a));render();}
 function toggleWV(){WVONLY=!WVONLY;document.getElementById('wvBtn').classList.toggle('pri',WVONLY);render();}
 async function load(){
@@ -213,6 +217,7 @@ async function load(){
   KONT.sort((a,b)=>a.label.localeCompare(b.label,'de'));
   OBJ=(ob.data||[]).map(o=>{const kz=o.kuerzel||o.h_id_text||'';return {id:o.id,label:(kz?kz+' · ':'')+(o.name||'')};}).sort((a,b)=>a.label.localeCompare(b.label,'de',{numeric:true}));
   try{const {data:{session}}=await sb.auth.getSession();if(session&&session.user){ICH=(session.user.user_metadata&&(session.user.user_metadata.name||session.user.user_metadata.full_name))||session.user.email||'';}}catch(e){}
+  initPersonSel();
   render();
   const qp=new URLSearchParams(location.search);const op=qp.get('task')||qp.get('ticket');if(op)openDetail(op);
 }
