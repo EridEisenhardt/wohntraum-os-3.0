@@ -158,7 +158,7 @@ const AKTTYP=['Aufgabe','Anruf','Termin'];
 const TBL={kontakt:'crm_kontakte',firma:'crm_firmen',deal:'crm_deals'};
 const LBL={kontakt:'Kontakt',firma:'Firma',deal:'Deal'};
 const SPEC={
- kontakt:[['vorname','Vorname','text'],['name','Nachname','text'],['email','E-Mail','text'],['telefon','Telefon','text'],['position','Position','text'],['firma_id','Firma','firma'],['strasse','Straße & Hausnummer','text'],['plz','PLZ','text'],['ort','Ort','text'],['land','Land','text'],['kategorien','Kategorien','kats'],['potenzial','Potenzial','pot'],['letzter_kontakt','Letzter Kontakt (manuell)','date']],
+ kontakt:[['vorname','Vorname','text'],['name','Nachname','text'],['email','E-Mail','text'],['telefon','Telefon','text'],['position','Position','text'],['firma_id','Firma','firma'],['strasse','Straße & Hausnummer','text'],['plz','PLZ','text'],['ort','Ort','text'],['land','Land','text'],['kategorien','Kategorien','kats'],['potenzial','Potenzial','pot'],['letzter_kontakt','Letzter Kontakt (manuell)','date'],['visitenkarte_pfad','Visitenkarte','visitenkarte']],
  firma:[['name','Firmenname','text'],['branche','Branche','text'],['website','Website','text'],['telefon','Telefon','text'],['strasse','Straße & Hausnummer','text'],['plz','PLZ','text'],['ort','Ort','text'],['land','Land','text'],['kategorien','Kategorien','kats'],['potenzial','Potenzial','pot'],['letzter_kontakt','Letzter Kontakt (manuell)','date']],
  deal:[['titel','Titel','text'],['firma_id','Firma','firma'],['kontakt_id','Kontakt','kontakt'],['wert','Wert (€)','number'],['stufe','Stufe','stufe'],['wahrscheinlichkeit','Wahrscheinlichkeit (%)','number'],['abschluss_datum','Abschlussdatum','date']]
 };
@@ -457,6 +457,10 @@ function fieldHtml(typ,f,val){
       <select id="katAdd" onchange="katPick(this.value)"></select>
     </div>`;
   }
+  else if(kind==='visitenkarte'){
+    return `<div class="fld wide"><label>${label}</label><div id="vkBox">${vkBoxHtml()}</div>
+      <input type="file" id="vkFile" accept="image/*,application/pdf" style="display:none" onchange="vkUpload(this)"></div>`;
+  }
   else inp=`<input id="m_${key}" type="${kind==='number'?'number':kind==='date'?'date':'text'}" value="${val==null?'':esc(val)}">`;
   return `<div class="fld ${kind==='textarea'||kind==='kats'?'wide':''}"><label>${label}</label>${inp}</div>`;
 }
@@ -502,6 +506,7 @@ function openEntity(typ,id){
   $('tckWrap').style.display='';renderTickets();
   $('tlWrap').style.display='';
   $('noteInput').value='';$('noteInput').style.height='';renderTL();$('ov').classList.add('show');
+  if(typ==='kontakt')vkThumbLoad();
 }
 function openNew(){
   if(VIEW==='aktivitaeten')return openNewAkt();
@@ -527,12 +532,13 @@ async function saveEntity(){
   if(!CUR)return;const {typ,id,rec}=CUR;const row={};
   SPEC[typ].forEach(f=>{
     if(f[2]==='kats'){row[f[0]]=readKats();return;}
+    if(f[2]==='visitenkarte')return;
     const el=$('m_'+f[0]);if(!el)return;let v=el.value;if(v===''||v==='__new__')v=null;
     if(f[2]==='number'&&v!=null)v=Number(v);row[f[0]]=v;});
   row.updated_at=new Date().toISOString();
   if(id){
     const norm=v=>Array.isArray(v)?v.slice().sort().join(', '):String(v==null?'':v);
-    const changes=SPEC[typ].filter(f=>norm(rec[f[0]])!==norm(row[f[0]]));
+    const changes=SPEC[typ].filter(f=>f[2]!=='visitenkarte'&&norm(rec[f[0]])!==norm(row[f[0]]));
     const{error}=await sb.from(TBL[typ]).update(row).eq('id',id);if(error){toast(error.message);return;}
     for(const f of changes){let alt=rec[f[0]],neu=row[f[0]];
       if(f[2]==='firma'){alt=firmaName(alt);neu=firmaName(neu);}
@@ -546,6 +552,64 @@ async function saveEntity(){
     toast(LBL[typ]+' angelegt ✓');
   }
   closeDlg();load();
+}
+// ——— Visitenkarte (Upload je Kontakt) ———
+const VK_BUCKET='visitenkarten';
+function vkBoxHtml(){
+  if(!CUR||!CUR.id)return '<div style="font-size:12px;color:var(--muted)">Erst den Kontakt speichern, dann lässt sich eine Visitenkarte hochladen.</div>';
+  const p=CUR.rec&&CUR.rec.visitenkarte_pfad, nm=(CUR.rec&&CUR.rec.visitenkarte_name)||'Visitenkarte';
+  if(!p)return `<button type="button" class="btn sec" onclick="document.getElementById('vkFile').click()">📇 Visitenkarte hochladen</button>
+    <div style="font-size:11.5px;color:var(--muted);margin-top:4px">Bild (Foto/Scan) oder PDF.</div>`;
+  const isImg=!/\.pdf$/i.test(p);
+  return `<div style="display:flex;gap:12px;align-items:flex-start;flex-wrap:wrap">
+      ${isImg?`<img id="vkThumb" alt="Visitenkarte" style="max-width:220px;max-height:140px;border:1px solid var(--line);border-radius:8px;cursor:pointer;object-fit:contain;background:#fff" onclick="vkOpen()">`
+             :`<div style="width:120px;height:140px;border:1px solid var(--line);border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:34px;cursor:pointer" onclick="vkOpen()">📄</div>`}
+      <div style="display:flex;flex-direction:column;gap:6px">
+        <div style="font-size:12.5px;font-weight:600">${esc(nm)}</div>
+        <button type="button" class="btn sec" style="font-size:12px;padding:5px 11px" onclick="vkOpen()">Ansehen ↗</button>
+        <button type="button" class="btn sec" style="font-size:12px;padding:5px 11px" onclick="document.getElementById('vkFile').click()">Ersetzen</button>
+        <button type="button" class="btn sec" style="font-size:12px;padding:5px 11px;color:var(--danger)" onclick="vkRemove()">Entfernen</button>
+      </div></div>`;
+}
+async function vkThumbLoad(){
+  if(!CUR||!CUR.id||!CUR.rec||!CUR.rec.visitenkarte_pfad)return;
+  if(/\.pdf$/i.test(CUR.rec.visitenkarte_pfad))return;
+  const img=$('vkThumb');if(!img)return;
+  try{const {data}=await sb.storage.from(VK_BUCKET).createSignedUrl(CUR.rec.visitenkarte_pfad,3600);if(data&&data.signedUrl)img.src=data.signedUrl;}catch(e){}
+}
+function vkRefresh(){const b=$('vkBox');if(b){b.innerHTML=vkBoxHtml();vkThumbLoad();}}
+async function vkOpen(){
+  if(!CUR||!CUR.rec||!CUR.rec.visitenkarte_pfad)return;
+  const {data,error}=await sb.storage.from(VK_BUCKET).createSignedUrl(CUR.rec.visitenkarte_pfad,3600);
+  if(error||!data){toast('Konnte nicht öffnen: '+(error?error.message:''));return;}
+  window.open(data.signedUrl,'_blank','noopener');
+}
+async function vkUpload(input){
+  const f=input.files&&input.files[0];input.value='';if(!f||!CUR||!CUR.id)return;
+  if(f.size>15*1024*1024){toast('Datei zu groß (max. 15 MB).');return;}
+  const ext=(f.name.split('.').pop()||'bin').toLowerCase();
+  const pfad=`kontakt/${CUR.id}/visitenkarte-${Date.now()}.${ext}`;
+  toast('Lade hoch …');
+  const old=CUR.rec.visitenkarte_pfad;
+  const {error}=await sb.storage.from(VK_BUCKET).upload(pfad,f,{contentType:f.type||undefined,upsert:false});
+  if(error){toast('Upload fehlgeschlagen: '+error.message);return;}
+  const patch={visitenkarte_pfad:pfad,visitenkarte_name:f.name,updated_at:new Date().toISOString()};
+  const {error:e2}=await sb.from('crm_kontakte').update(patch).eq('id',CUR.id);
+  if(e2){toast('Speichern fehlgeschlagen: '+e2.message);return;}
+  Object.assign(CUR.rec,patch);const k=K.find(x=>x.id===CUR.id);if(k)Object.assign(k,patch);
+  if(old&&old!==pfad){try{await sb.storage.from(VK_BUCKET).remove([old]);}catch(e){}}
+  await logTL('kontakt',CUR.id,'notiz',{text:'📇 Visitenkarte hochgeladen: '+f.name});
+  vkRefresh();renderTL();toast('Visitenkarte gespeichert ✓');
+}
+async function vkRemove(){
+  if(!CUR||!CUR.id||!CUR.rec||!CUR.rec.visitenkarte_pfad)return;
+  if(!confirm('Visitenkarte entfernen?'))return;
+  const old=CUR.rec.visitenkarte_pfad;
+  const {error}=await sb.from('crm_kontakte').update({visitenkarte_pfad:null,visitenkarte_name:null,updated_at:new Date().toISOString()}).eq('id',CUR.id);
+  if(error){toast(error.message);return;}
+  try{await sb.storage.from(VK_BUCKET).remove([old]);}catch(e){}
+  CUR.rec.visitenkarte_pfad=null;CUR.rec.visitenkarte_name=null;const k=K.find(x=>x.id===CUR.id);if(k){k.visitenkarte_pfad=null;k.visitenkarte_name=null;}
+  vkRefresh();toast('Entfernt ✓');
 }
 // ——— Tickets im Datensatz ———
 function openTicket(id){ window.top.location.href='/tickets?ticket='+encodeURIComponent(id); }
