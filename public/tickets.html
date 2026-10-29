@@ -98,6 +98,11 @@ tbody tr:hover td{background:#fafbfc}
         <div style="display:flex;gap:6px;margin-top:5px;flex-wrap:wrap"><button type="button" class="btn sec" id="mic_tkComment" style="font-size:11.5px;padding:4px 9px" onclick="diktieren('tkComment','mic_tkComment')">🎤 Diktieren</button><button type="button" class="btn sec" style="font-size:11.5px;padding:4px 9px" onclick="kiZusammenfassen('tkComment')">✨ Zusammenfassen</button><button class="btn" style="font-size:12px" onclick="addComment()">Kommentar speichern</button></div></div>
     </div>
     <div class="dlg-ft">
+      <span style="margin-right:auto;display:flex;gap:8px;flex-wrap:wrap">
+        <button class="btn sec" type="button" onclick="ticketAbleiten('rueckruf')" title="Rückruf zu diesem Ticket anlegen">📞 Rückruf</button>
+        <button class="btn sec" type="button" onclick="ticketAbleiten('vortermin')" title="Vor-Ort-Termin anlegen">📍 Vor-Ort-Termin</button>
+        <button class="btn sec" type="button" onclick="ticketAbleiten('jourfix')" title="Jour Fix anlegen">🧭 Jour Fix</button>
+      </span>
       <button class="btn sec" onclick="closeDlg()">Abbrechen</button>
       <button class="btn" onclick="saveTicket()">Speichern</button>
     </div>
@@ -374,6 +379,23 @@ async function saveTicket(){
     row.nummer=((mx&&mx[0]&&mx[0].nummer)||0)+1;
     const{error}=await sb.from('os_tasks').insert(row);if(error){toast(error.message);return;}toast('Ticket angelegt ✓');}
   closeDlg();load();
+}
+const ABLBL={rueckruf:'Rückruf',vortermin:'Vor-Ort-Termin',jourfix:'Jour Fix'};
+const ABTAGE={rueckruf:2,vortermin:7,jourfix:14};
+async function ticketAbleiten(art){
+  if(!CUR||!CUR.id){toast('Bitte das Ticket zuerst speichern.');return;}
+  const t=T.find(x=>x.id===CUR.id)||{};
+  const kid=$('f_kontakt_id').value||null, fid=$('f_firma_id').value||null, ql=$('f_quelle').value||'vertrieb';
+  const klabel=kid?kontaktName('',kid):null;
+  const x=new Date();x.setDate(x.getDate()+(ABTAGE[art]||7));const wv=x.toISOString().slice(0,10);
+  const titel=ABLBL[art]+': '+($('f_titel').value.trim()||t.titel||'Ticket #'+t.nummer);
+  const row={titel,art,status:'todo',verantwortlich:$('f_verantwortlich').value||ICH||'Eric Eisenhardt',
+    quelle:'os',quelle_bereich:ql,kontakt_id:kid,kontakt_label:klabel,firma_id:fid,
+    wiedervorlage:wv,faellig:wv,beschreibung:'Abgeleitet aus Ticket #'+(t.nummer||'')+': '+(t.titel||'')};
+  const {error}=await sb.from('os_tasks').insert(row);
+  if(error){toast('Fehler: '+error.message);return;}
+  await logVer(CUR.id,'notiz',''+(art==='rueckruf'?'📞':art==='vortermin'?'📍':'🧭')+' '+ABLBL[art]+' angelegt (Wiedervorlage '+wv.split('-').reverse().join('.')+')');
+  toast(ABLBL[art]+' angelegt ✓ – im Testboard unter „'+ABLBL[art]+'"');
 }
 async function delTicket(id){
   const t=T.find(x=>x.id===id);
