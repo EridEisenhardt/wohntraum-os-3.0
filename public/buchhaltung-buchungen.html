@@ -1221,7 +1221,10 @@ const spOrt=f=>esc(f.ort);
 const BEL_WURZELN=[['Prozesslandkarte 3.0/9.000 Buchführung/Gesellschaften Rechnungen','Gesellschaften Rechnungen'],['Prozesslandkarte 3.0/9.000 Buchführung/Gesellschaften Barauslagen','Gesellschaften Barauslagen'],['virt:Objekte','Objektordner – Betriebskosten und Instandhaltung']];
 /* ---------- Belegverwaltung wie in BuchhaltungsButler: Startseite mit den Hauptordnern, Ordner öffnen zeigt die Belegliste ---------- */
 const BV_BF='Prozesslandkarte 3.0/9.000 Buchführung';
-const BV_ROOTS=[{k:'ges',n:'Gesellschaften Rechnungen',p:BV_BF+'/Gesellschaften Rechnungen',tiefe:3},{k:'bar',n:'Gesellschaften Barauslagen',p:BV_BF+'/Gesellschaften Barauslagen',tiefe:2},{k:'obj',n:'Objektordner – Betriebskosten und Instandhaltung',p:'virt:Objekte'}];
+const BV_ROOTS=[{k:'ges',n:'Gesellschaften Rechnungen',p:BV_BF+'/Gesellschaften Rechnungen',tiefe:3},{k:'bar',n:'Gesellschaften Barauslagen',p:BV_BF+'/Gesellschaften Barauslagen',tiefe:2},{k:'obj04',n:'Objektordner – Betriebskosten',p:'virt:Objekte',obj:true,ord:'04'},{k:'obj05',n:'Objektordner – Instandhaltung',p:'virt:Objekte',obj:true,ord:'05'},{k:'obj07',n:'Objektordner – WEG',p:'virt:Objekte',obj:true,ord:'07'}];
+/* Gehört eine Datei zu einer Wurzel? Objektbelege nach Hauptordner (04, 05, 07) getrennt */
+const bvOrd=f=>{ const x=(String(f.rel||'')+'/'+String(f.pfad||'')).split('/').find(y=>/^0[457] /.test(y.trim())); return x?x.trim().slice(0,2):''; };
+function bvIn(f,r){ return r.obj?f.bereich==='obj'&&bvOrd(f)===r.ord:f.bereich===r.k; }
 var BV={view:'start',root:'alle',sub:'',q:'',unbez:false,wied:false,obj:'',sort:'d',dir:-1,auf:new Set(),FL:{},ka:false,menu:'',th:{},thLade:new Set(),up:null,mehr:100};
 const bvRoot=k=>BV_ROOTS.find(r=>r.k===k);
 /* Gesellschaftsordner: nur unsere drei Gesellschaften, andere Ordner bleiben außen vor */
@@ -1351,7 +1354,7 @@ const bvNk=s=>norm(s).replace(/ /g,'');
 function bvObjKz(f){ const o=objekte.find(x=>bvNk(x.kz)===bvNk(f.obj)); return o?o.kz:(f.obj||''); }
 const bvObjListe=()=>objekte.map(o=>o.kz).sort((a,b)=>a.localeCompare(b,'de',{numeric:true}));
 /* Unterordner einer Wurzel: Jahre bzw. Objekte */
-function bvSubs(r){ if(r.k==='obj') return bvObjListe();
+function bvSubs(r){ if(r.obj) return bvObjListe();
   const L=KT.k[r.p]; if(!L){ ktLaden(r.p); return null; }
   return L.filter(x=>x.ordner&&/^\d{4}$/.test(x.name)).map(x=>x.name).sort(); }
 /* Dateien eines Jahresordners (andere Jahre als das gewählte) */
@@ -1368,7 +1371,7 @@ function bvDateien0(){ const r=bvRoot(BV.root);
   if(SP.fehler) return {fehler:SP.fehler,L:[]};
   const S=bvAlle0();
   if(!r) return {L:S};
-  if(r.k==='obj') return {L:S.filter(f=>f.bereich==='obj'&&(!BV.sub||bvObjKz(f)===BV.sub))};
+  if(r.obj) return {L:S.filter(f=>bvIn(f,r)&&(!BV.sub||bvObjKz(f)===BV.sub))};
   if(!BV.sub||BV.sub===String(year)) return {L:S.filter(f=>f.bereich===r.k)};
   const F=bvFL(r.p+'/'+BV.sub,r.k,r.tiefe); return {lade:F.lade,fehler:F.fehler,L:F.dateien||[]}; }
 /* Bezahlt, wiederkehrend, Objekt, Vorschlag */
@@ -1398,13 +1401,13 @@ function bvStart(){ const S=spBereit()&&!SP.fehler?bvAlle():null;
   if(SP.fehler) h+='<div class="note warnbox">'+esc(SP.fehler)+'</div>';
   h+='<div class="bv-lst"><div class="bv-sek"><span>Eingang '+year+'</span><button class="bb-lnk" data-bvneu="1">Aktualisieren</button></div>';
   h+='<div class="bv-r bv-alle" data-bvgo="alle"><span class="bv-a0"></span><span class="bv-n">Alle Eingangsbelege</span><span class="bv-c">'+(S?bvAnz(S):'Lade …')+'</span><span class="bv-pf"></span></div>';
-  for(const r of BV_ROOTS){ const auf=BV.auf.has(r.k), L=S?S.filter(f=>f.bereich===r.k):null;
+  for(const r of BV_ROOTS){ const auf=BV.auf.has(r.k), L=S?S.filter(f=>bvIn(f,r)):null;
     h+='<div class="bv-r" data-bvgo="'+r.k+'"><button class="bv-auf'+(auf?' on':'')+'" data-bvauf="'+r.k+'" title="Unterordner '+(auf?'ausblenden':'anzeigen')+'"></button><span class="bv-n">'+esc(r.n)+'</span><span class="bv-c">'+bvAnz(L)+'</span><span class="bv-pf"></span></div>';
     if(!auf) continue; const subs=bvSubs(r);
     if(!subs){ h+='<div class="bv-r bv-u bv-leer">Lade …</div>'; continue; }
     if(!subs.length){ h+='<div class="bv-r bv-u bv-leer">keine Unterordner</div>'; continue; }
     for(const s of subs){ let c='';
-      if(r.k==='obj') c=S?bvAnz(S.filter(f=>f.bereich==='obj'&&bvObjKz(f)===s)):'';
+      if(r.obj) c=S?bvAnz(S.filter(f=>bvIn(f,r)&&bvObjKz(f)===s)):'';
       else if(s===String(year)) c=bvAnz(L);
       else { const F=bvFL(r.p+'/'+s,r.k,r.tiefe); c=F.dateien?bvAnz(F.dateien.filter(f=>!bvEnt(f.id))):'Lade …'; }
       h+='<div class="bv-r bv-u" data-bvgo="'+r.k+'" data-bvsub="'+esc(s)+'"><span class="bv-a0"></span><span class="bv-n">'+esc(s)+'</span><span class="bv-c">'+c+'</span><span class="bv-pf"></span></div>'; } }
@@ -1466,12 +1469,12 @@ function bvListeHtml(){ const r=bvRoot(BV.root), D=bvListe();
     +'<span class="bv-sp"></span><input type="search" id="bv-q" class="bb-q" placeholder="Volltextsuche" value="'+esc(BV.q)+'" autocomplete="off">'+(canWrite?'<button class="bv-hoch" data-bvup="1">Hochladen</button>':'')+'</div>';
   const subs=r?(bvSubs(r)||[]):[];
   h+='<div class="bbbar bv-bar">';
-  if(r) h+='<div class="bb-f">'+(r.k==='obj'?'Objektordner':'Jahr')+': <input id="bv-sub" list="bv-sub-l" value="'+esc(BV.sub||'Alle')+'" autocomplete="off"><datalist id="bv-sub-l">'+(r.k==='obj'?'<option value="Alle"></option>':'')+subs.map(s=>'<option value="'+esc(s)+'"></option>').join('')+'</datalist></div>';
-  if(!r||r.k!=='obj') h+='<div class="bb-f">Objekt: <input id="bv-obj" list="bv-obj-l" value="'+esc(BV.obj||'Alle Objekte')+'" autocomplete="off"><datalist id="bv-obj-l"><option value="Alle Objekte"></option>'+bvObjListe().map(k=>'<option value="'+esc(k)+'"></option>').join('')+'</datalist></div>';
+  if(r) h+='<div class="bb-f">'+(r.obj?'Objektordner':'Jahr')+': <input id="bv-sub" list="bv-sub-l" value="'+esc(BV.sub||'Alle')+'" autocomplete="off"><datalist id="bv-sub-l">'+(r.obj?'<option value="Alle"></option>':'')+subs.map(s=>'<option value="'+esc(s)+'"></option>').join('')+'</datalist></div>';
+  if(!r||!r.obj) h+='<div class="bb-f">Objekt: <input id="bv-obj" list="bv-obj-l" value="'+esc(BV.obj||'Alle Objekte')+'" autocomplete="off"><datalist id="bv-obj-l"><option value="Alle Objekte"></option>'+bvObjListe().map(k=>'<option value="'+esc(k)+'"></option>').join('')+'</datalist></div>';
   h+='<div class="bb-re"><label><input type="checkbox" id="bv-unbez"'+(BV.unbez?' checked':'')+'> Unbezahlt</label><label><input type="checkbox" id="bv-wied"'+(BV.wied?' checked':'')+'> Wiederkehrend</label><label title="Nur offene Rechnungen, die nicht per Lastschrift eingezogen werden"><input type="checkbox" id="bv-osepa"'+(BV.ohneSepa?' checked':'')+'> Offen ohne SEPA</label><label><input type="checkbox" id="bv-ign"'+(BV.ign?' checked':'')+'> Ignorierte</label><label title="Gleicher Dateiname oder gleicher Betrag, Absender und Datum"><input type="checkbox" id="bv-dop"'+(BV.nurDop?' checked':'')+'> Doppelte</label><label title="Im OS entfernte Belege anzeigen und wiederherstellen"><input type="checkbox" id="bv-ent"'+(BV.ent?' checked':'')+'> Entfernte</label>'
     +'<button class="bb-lnk" data-bvreset="1">Zurücksetzen</button><button class="bb-lnk" data-bvneu="1">Aktualisieren</button></div></div>';
   const sum=D.L.reduce((a,x)=>a+(x.f.betrag||0),0), offen=D.L.filter(x=>!x.i.bez&&!x.i.ign&&!x.i.ent).length;
-  h+='<div class="bv-sum">'+(D.lade?'Lade Belege aus OneDrive …':esc(D.L.length+' Belege'+((!r||r.k==='obj')?' aus '+year:'')+' · Summe '+eur(sum)+' · '+offen+' offen'))
+  h+='<div class="bv-sum">'+(D.lade?'Lade Belege aus OneDrive …':esc(D.L.length+' Belege'+((!r||r.obj)?' aus '+year:'')+' · Summe '+eur(sum)+' · '+offen+' offen'))
     +(canWrite&&!D.lade&&offen?'<span style="margin-left:14px">Offene Belege bis <input type="text" id="bv-manbis" value="'+esc(BV.manbis||'30.09.2026')+'" style="width:100px" autocomplete="off"> <button class="bb-lnk" data-bvmanalle="1">als bezahlt markieren</button></span>':'')+'</div>';
   if(D.fehler) h+='<div class="note warnbox">'+esc(D.fehler)+'</div>';
   const kh=(k,l)=>'<button class="bv-so'+(BV.sort===k?' on'+(BV.dir>0?' auf':''):'')+'" data-bvsort="'+k+'">'+l+'</button>';
@@ -1492,7 +1495,7 @@ function bvMini(ids){ const neu=ids.filter(id=>BV.th[id]===undefined&&!BV.thLade
 const bvKurz=p=>String(p||'').replace(/^Prozesslandkarte 3\.0\/(9\.000 Buchführung\/|7\.000 Gebäude\/)?/,'');
 /* Hochladen: Zielordner wählen, Dateien landen unverändert (Name nach Schema) in OneDrive */
 function bvZiele(){ const S=new Set();
-  for(const r of BV_ROOTS) if(r.k!=='obj') for(const y of (bvSubs(r)||[])) S.add(r.p+'/'+y);
+  for(const r of BV_ROOTS) if(!r.obj) for(const y of (bvSubs(r)||[])) S.add(r.p+'/'+y);
   for(const f of [].concat(SP.dateien||[],...Object.values(BV.FL).map(F=>F.dateien||[]))) if(f.pfad&&f.bereich!=='such') S.add(f.pfad.split('/').slice(0,-1).join('/'));
   return [...S].sort((a,b)=>a.localeCompare(b,'de',{numeric:true})); }
 function bvZielVorschlag(){ if(BV.view!=='liste') return ''; const cnt={}; for(const x of bvListe().L){ const p=(x.f.pfad||'').split('/').slice(0,-1).join('/'); if(p) cnt[p]=(cnt[p]||0)+1; }
@@ -1878,7 +1881,7 @@ document.addEventListener('click',async e=>{ if(tab!=='belege') return;
 document.addEventListener('change',e=>{ const t=e.target; if(tab!=='belege') return;
   if(t.id==='bv-root'){ bvOeffnen(t.value,''); return; }
   if(t.id==='bv-sub'){ const v=t.value.trim(), r=bvRoot(BV.root); const subs=r?(bvSubs(r)||[]):[];
-    if(!v||v==='Alle'){ BV.sub=r&&r.k!=='obj'?String(year):''; } else { const s=subs.find(x=>x===v)||subs.find(x=>norm(x)===norm(v)); if(!s){ toast('Bitte einen Eintrag aus der Liste wählen.'); t.value=BV.sub||'Alle'; return; } BV.sub=s; }
+    if(!v||v==='Alle'){ BV.sub=r&&!r.obj?String(year):''; } else { const s=subs.find(x=>x===v)||subs.find(x=>norm(x)===norm(v)); if(!s){ toast('Bitte einen Eintrag aus der Liste wählen.'); t.value=BV.sub||'Alle'; return; } BV.sub=s; }
     BV.mehr=100; setTimeout(render,0); return; }
   if(t.id==='bv-obj'){ const v=t.value.trim(); if(!v||v==='Alle Objekte'){ BV.obj=''; } else { const s=bvObjListe().find(x=>norm(x)===norm(v)); if(!s){ toast('Bitte ein Objekt aus der Liste wählen.'); t.value=BV.obj||'Alle Objekte'; return; } BV.obj=s; } setTimeout(render,0); return; }
   if(t.id==='bv-unbez'){ BV.unbez=t.checked; render(); return; }
