@@ -1258,7 +1258,7 @@ async function bkEinheitenLaden(b){ b.einheiten=null; try{ const sb=abSb(); cons
     if(o){ const {data:EE}=await sb.from('obj_einheiten').select('id,bezeichnung,aktiv,sort').eq('objekt_id',o.id).order('sort'); const A=(EE||[]).filter(e=>e.aktiv!==false); b.einheiten=A.length?A:(EE||[]); } else b.einheiten=[]; }catch(e){ b.einheiten=[]; } if(BV.bk===b) render(); }
 function bkOeffnen(f){ const alt=BKM.get(f.id), d=bvDatum(f)||'', T=String(f.name||'').replace(/\.[a-z0-9]+$/i,'').split('_');
   const kaN=alt?alt.ka:(BK_KA.find(k=>T.some(t=>norm(t)&&(norm(k).startsWith(norm(t))||norm(t).startsWith(norm(k).slice(0,6)))))||'');
-  BV.bk={f,obj:alt?alt.obj:(f.bereich==='obj'?bvObjKz(f):(objekte.some(o=>o.kz===f.pre)?f.pre:'')),jahr:alt?String(alt.jahr):(d?d.slice(0,4):String(new Date().getFullYear())),ka:kaN,
+  BV.bk={f,obj:alt?alt.obj:(f.bereich==='obj'?bvObjKz(f):(objekte.some(o=>o.kz===f.pre)?f.pre:'')),jahr:alt?String(alt.jahr):(d?d.slice(0,4):String(new Date().getFullYear())),zeilen:alt&&alt.zeilen?alt.zeilen.map(z=>({ka:z.ka,betrag:fnum.format(z.betrag)})):[{ka:kaN,betrag:alt?fnum.format(alt.betrag):(f.betrag!=null?fnum.format(f.betrag):'')}],ka:kaN,
     betrag:alt?fnum.format(alt.betrag):(f.betrag!=null?fnum.format(f.betrag):''),von:alt?bkDmy(alt.von):'',bis:alt?bkDmy(alt.bis):'',wahl:alt&&alt.einheiten?alt.einheiten.slice():[],einheiten:null,lauf:false,info:''}; render(); if(BV.bk.obj) bkEinheitenLaden(BV.bk); }
 function bkHtml(){ const b=BV.bk; if(!b) return ''; const alt=BKM.get(b.f.id);
   const fld=(l,inner)=>'<label class="ab-f">'+l+inner+'</label>';
@@ -1266,20 +1266,24 @@ function bkHtml(){ const b=BV.bk; if(!b) return ''; const alt=BKM.get(b.f.id);
     +'<div class="ab-k"><a href="#" data-kaopen="'+esc(b.f.id)+'">'+esc(b.f.name)+'</a></div><div class="bk-g">'
     +fld('Objekt','<input type="text" id="bk-obj" list="bk-obj-l" value="'+esc(b.obj)+'" autocomplete="off"><datalist id="bk-obj-l">'+bvObjListe().map(k=>'<option value="'+esc(k)+'"></option>').join('')+'</datalist>')
     +fld('Abrechnungsjahr','<input type="text" id="bk-jahr" inputmode="numeric" value="'+esc(b.jahr)+'" autocomplete="off">')
-    +fld('Kostenart','<input type="text" id="bk-ka" list="bk-ka-l" value="'+esc(b.ka)+'" placeholder="z. B. Hausmeister" autocomplete="off"><datalist id="bk-ka-l">'+BK_KA.map(k=>'<option value="'+esc(k)+'"></option>').join('')+'</datalist>')
-    +fld('Betrag brutto (€)','<input type="text" id="bk-betrag" inputmode="decimal" value="'+esc(b.betrag)+'" autocomplete="off">')
+    +'</div><div style="margin-top:10px"><div class="sub" style="margin-bottom:4px">Kostenart und Betrag'+(b.zeilen.length>1?' (aufgeteilt)':'')+'</div><datalist id="bk-ka-l">'+BK_KA.map(k=>'<option value="'+esc(k)+'"></option>').join('')+'</datalist>'
+    +b.zeilen.map((z,ix)=>'<div class="bk-g" style="margin-bottom:6px"><label class="ab-f">'+(ix?'':'Kostenart')+'<input type="text" id="bk-ka-'+ix+'" list="bk-ka-l" value="'+esc(z.ka)+'" placeholder="z. B. Hausmeister" autocomplete="off"></label><label class="ab-f">'+(ix?'':'Betrag brutto (€)')+'<span style="display:flex;gap:6px;align-items:center"><input type="text" id="bk-betrag-'+ix+'" inputmode="decimal" value="'+esc(z.betrag)+'" autocomplete="off" style="flex:1">'+(b.zeilen.length>1?'<button class="bb-lnk" data-bkzweg="'+ix+'">entfernen</button>':'')+'</span></label></div>').join('')
+    +'<button class="bb-lnk" data-bkzneu="1">Weitere Kostenart (Beleg aufteilen)</button>'+(b.zeilen.length>1?'<span class="sub" style="margin-left:10px">Summe '+esc(eur(b.zeilen.reduce((a,z)=>a+(parseNum(z.betrag)||0),0)))+(b.f.betrag!=null?' von '+esc(eur(b.f.betrag)):'')+'</span>':'')+'</div><div class="bk-g">'
     +fld('Leistung von (optional)','<input type="text" id="bk-von" value="'+esc(b.von)+'" placeholder="TT.MM.JJJJ" autocomplete="off">')
     +fld('Leistung bis (optional)','<input type="text" id="bk-bis" value="'+esc(b.bis)+'" placeholder="TT.MM.JJJJ" autocomplete="off">')
     +'</div><div style="margin-top:10px"><div class="sub" style="margin-bottom:4px">Gilt für</div>'+(b.einheiten==null?'<span class="sub">'+(b.obj?'Lade die Einheiten …':'Bitte zuerst das Objekt wählen.')+'</span>':!b.einheiten.length?'<span class="sub">Keine Einheiten im Objekt hinterlegt – gilt für das ganze Objekt.</span>'
       :'<label class="sub" style="margin-right:14px"><input type="checkbox" data-bkein="" '+(!b.wahl.length?'checked':'')+'> alle Einheiten</label>'+b.einheiten.map(e=>'<label class="sub" style="margin-right:14px;white-space:nowrap"><input type="checkbox" data-bkein="'+esc(e.id)+'" '+(b.wahl.includes(e.id)?'checked':'')+'> '+esc(e.bezeichnung)+'</label>').join(''))+'</div><div class="sub" style="margin-top:10px">Die Rechnung wird in OneDrive nach 04 Betriebskosten/BK-Abrechnung '+esc(b.jahr||'Jahr')+' kopiert. Außerdem steht sie direkt in der Kostenart der Betriebskostenabrechnung '+esc(b.jahr||'')+'. Gibt es die Abrechnung noch nicht, legt das OS sie an.</div>'
     +(b.info?'<div class="sub" style="margin-top:6px">'+esc(b.info)+'</div>':'')
     +'</div><div class="bv-df" style="display:flex;gap:8px;padding:12px 18px;border-top:1px solid var(--bb-line,#e5e7eb)"><button class="primary" data-bksave="1"'+(b.lauf?' disabled':'')+'>'+(b.lauf?'Speichere …':'Vormerken')+'</button>'+(alt?'<button class="ghost" data-bkweg="1">Vormerkung entfernen</button>':'')+'</div></section>'; }
-async function bkSpeichern(){ const b=BV.bk; if(!b||b.lauf) return; const f=b.f, sb=abSb();
-  const obj=($('bk-obj').value||'').trim(), jahr=Number(($('bk-jahr').value||'').trim()), ka=($('bk-ka').value||'').trim(), betrag=parseNum($('bk-betrag').value), von=bkDat($('bk-von').value), bis=bkDat($('bk-bis').value);
+async function bkSpeichern(){ const b=BV.bk; if(!b||b.lauf) return; const f=b.f, sb=abSb(); bkMerken();
+  const obj=($('bk-obj').value||'').trim(), jahr=Number(String(b.jahr||'').trim()), von=bkDat(b.von), bis=bkDat(b.bis);
+  const Z=b.zeilen.map(z=>({ka:String(z.ka||'').trim(),betrag:parseNum(z.betrag)})).filter(z=>z.ka||z.betrag!=null);
   const o=objekte.find(x=>x.kz.toLowerCase()===obj.toLowerCase()); if(!o){ toast('Bitte ein Objekt aus der Liste wählen.'); return; }
-  if(!(jahr>=2020&&jahr<=2100)){ toast('Bitte das Abrechnungsjahr eintragen.'); return; } if(!ka){ toast('Bitte eine Kostenart eintragen.'); return; }
-  if(betrag==null||isNaN(betrag)){ toast('Bitte den Betrag eintragen.'); return; } if(von===null||bis===null){ toast('Bitte das Datum als TT.MM.JJJJ eingeben.'); return; }
-  Object.assign(b,{obj:o.kz,jahr:String(jahr),ka,betrag:fnum.format(betrag),von:bkDmy(von),bis:bkDmy(bis),lauf:true,info:'Kopiere die Rechnung nach OneDrive …'}); render();
+  if(!(jahr>=2020&&jahr<=2100)){ toast('Bitte das Abrechnungsjahr eintragen.'); return; } if(!Z.length||Z.some(z=>!z.ka)){ toast('Bitte bei jeder Zeile eine Kostenart eintragen.'); return; }
+  if(Z.some(z=>z.betrag==null||isNaN(z.betrag))){ toast('Bitte bei jeder Zeile den Betrag eintragen.'); return; } if(new Set(Z.map(z=>norm(z.ka))).size<Z.length){ toast('Jede Kostenart bitte nur einmal.'); return; }
+  if(von===null||bis===null){ toast('Bitte das Datum als TT.MM.JJJJ eingeben.'); return; }
+  const gesamt=r2(Z.reduce((a,z)=>a+z.betrag,0)), kaText=Z.map(z=>z.ka).join(', ');
+  Object.assign(b,{obj:o.kz,jahr:String(jahr),von:bkDmy(von),bis:bkDmy(bis),lauf:true,info:'Kopiere die Rechnung nach OneDrive …'}); render();
   let kopie=null, hinweis='';
   try{ const r=await odApi({aktion:'objektbasis',kz:[o.kz]}); const B=(r.objekte||{})[o.kz]; if(!B) throw new Error('Kein Objektordner für '+o.kz+' gefunden.');
     const t04=(B.top||[]).find(t=>/^04 Betriebskosten$/.test(t))||(B.top||[]).find(t=>/Betriebskosten/.test(t))||'04 Betriebskosten', ziel=B.basis+'/'+t04+'/BK-Abrechnung '+jahr;
@@ -1287,32 +1291,36 @@ async function bkSpeichern(){ const b=BV.bk; if(!b||b.lauf) return; const f=b.f,
     if(c.zuGross) hinweis='Datei größer als 3 MB, bitte selbst nach '+t04+'/BK-Abrechnung '+jahr+' kopieren.';
     else { const up=await odApi({aktion:'hochladen',pfad:ziel,name:f.name,daten:c.daten,typ:c.typ||'application/pdf'}); kopie={od:up.item.id,n:up.item.name,pfad:ziel+'/'+up.item.name}; } }
   catch(e){ hinweis='Nicht nach OneDrive kopiert: '+(e.message||e); }
-  let abr=false;
-  let neuAngelegt=false;
+  const kids=[]; let neuAngelegt=false;
   try{ let {data:a}=await sb.from('bk_abrechnungen').select('id,zeitraum_von,zeitraum_bis').eq('kennung',o.kz).eq('jahr',jahr).maybeSingle();
     if(!a){ b.info='Lege die Betriebskostenabrechnung '+jahr+' für '+o.kz+' an …'; render(); a=await bkAbrAnlegen(o.kz,jahr); neuAngelegt=true; }
-    if(a){ b.info='Trage die Rechnung in die Betriebskostenabrechnung ein …'; render();
-      let einB=null; if(b.wahl.length){ const {data:be}=await sb.from('bk_einheiten').select('id,einheit_ref').eq('abrechnung_id',a.id); einB=(be||[]).filter(x=>b.wahl.includes(x.einheit_ref)).map(x=>x.id); if(!einB.length) einB=null; }
-      const {data:arten}=await sb.from('bk_kostenarten').select('id,name,pos').eq('abrechnung_id',a.id); let art=(arten||[]).find(x=>norm(x.name)===norm(ka));
-      if(!art){ const {data:neu,error:e1}=await sb.from('bk_kostenarten').insert({abrechnung_id:a.id,name:ka,gruppe:/heiz|warmwasser/i.test(ka)?'heizkosten':'betriebskosten',schluessel:'flaeche',umlagefaehig:true,pos:(arten||[]).length,einheiten:{},erledigt:false}).select().single(); if(e1) throw e1; art=neu; }
-      const pv=a.zeitraum_von, pb=a.zeitraum_bis; let anteil=r2(betrag);
-      if(von&&bis&&bis>=von){ const tg=(x,y)=>Math.round((Date.parse(y)-Date.parse(x))/864e5)+1, v2=von>pv?von:pv, b2=bis<pb?bis:pb; anteil=b2<v2?0:r2(betrag*tg(v2,b2)/tg(von,bis)); }
-      const alt=BKM.get(f.id); if(alt&&alt.kid) await sb.from('bk_kosten').delete().eq('id',alt.kid);
-      const {data:k,error:e2}=await sb.from('bk_kosten').insert({abrechnung_id:a.id,kostenart_id:art.id,datum:bvDatum(f)||null,betrag:r2(betrag),anteil,empfaenger:f.abs||null,quelle:'beleg',notiz:f.name,beleg:kopie||{od:f.id,n:f.name},von:von||null,bis:bis||null,einheiten:einB}).select().single(); if(e2) throw e2;
-      abr=k.id; } }
+    b.info='Trage die Rechnung in die Betriebskostenabrechnung ein …'; render();
+    let einB=null; if(b.wahl.length){ const {data:be}=await sb.from('bk_einheiten').select('id,einheit_ref').eq('abrechnung_id',a.id); einB=(be||[]).filter(x=>b.wahl.includes(x.einheit_ref)).map(x=>x.id); if(!einB.length) einB=null; }
+    const alt=BKM.get(f.id); for(const id of [].concat(alt&&alt.kids||[],alt&&alt.kid?[alt.kid]:[])) await sb.from('bk_kosten').delete().eq('id',id);
+    const {data:arten0}=await sb.from('bk_kostenarten').select('id,name,pos').eq('abrechnung_id',a.id); const arten=arten0||[];
+    const pv=a.zeitraum_von, pb=a.zeitraum_bis;
+    for(const z of Z){ let art=arten.find(x=>norm(x.name)===norm(z.ka));
+      if(!art){ const {data:neu,error:e1}=await sb.from('bk_kostenarten').insert({abrechnung_id:a.id,name:z.ka,gruppe:/heiz|warmwasser/i.test(z.ka)?'heizkosten':'betriebskosten',schluessel:'flaeche',umlagefaehig:true,pos:arten.length,einheiten:{},erledigt:false}).select().single(); if(e1) throw e1; art=neu; arten.push(neu); }
+      let anteil=r2(z.betrag); if(von&&bis&&bis>=von){ const tg=(x,y)=>Math.round((Date.parse(y)-Date.parse(x))/864e5)+1, v2=von>pv?von:pv, b2=bis<pb?bis:pb; anteil=b2<v2?0:r2(z.betrag*tg(v2,b2)/tg(von,bis)); }
+      const bel=Object.assign({},kopie||{od:f.id,n:f.name},Z.length>1?{teil:true,gesamt}:{});
+      const {data:k,error:e2}=await sb.from('bk_kosten').insert({abrechnung_id:a.id,kostenart_id:art.id,datum:bvDatum(f)||null,betrag:r2(z.betrag),anteil,empfaenger:f.abs||null,quelle:'beleg',notiz:f.name,beleg:bel,von:von||null,bis:bis||null,einheiten:einB}).select().single(); if(e2) throw e2;
+      kids.push(k.id); } }
   catch(e){ hinweis=(hinweis?hinweis+' ':'')+'Nicht in die Betriebskostenabrechnung eingetragen: '+(e.message||e); }
-  const L=[...BKM.values()].filter(x=>x.od!==f.id); L.push({od:f.id,n:f.name,obj:o.kz,jahr,ka,betrag:r2(betrag),von:von||'',bis:bis||'',einheiten:b.wahl.slice(),einheitenText:(b.einheiten||[]).filter(e=>b.wahl.includes(e.id)).map(e=>e.bezeichnung).join(', '),kopie:kopie?kopie.od:'',kid:abr||'',am:new Date().toISOString().slice(0,10),wer:(typeof ICH!=='undefined'&&ICH)||''});
+  const eT=(b.einheiten||[]).filter(e=>b.wahl.includes(e.id)).map(e=>e.bezeichnung).join(', ');
+  const L=[...BKM.values()].filter(x=>x.od!==f.id); L.push({od:f.id,n:f.name,obj:o.kz,jahr,ka:kaText,betrag:gesamt,zeilen:Z.map(z=>({ka:z.ka,betrag:r2(z.betrag)})),von:von||'',bis:bis||'',einheiten:b.wahl.slice(),einheitenText:eT,kopie:kopie?kopie.od:'',kids,am:new Date().toISOString().slice(0,10),wer:(typeof ICH!=='undefined'&&ICH)||''});
   BKM=new Map(L.map(x=>[x.od,x])); await saveStamm('belegbk',{liste:L}); BV.bk=null; render();
-  toast((abr?(neuAngelegt?'Betriebskostenabrechnung '+jahr+' für '+o.kz+' angelegt und ':'In die Betriebskostenabrechnung '+jahr+' von '+o.kz+' ')+'eingetragen ('+ka+(b.wahl.length?', nur '+(b.einheiten||[]).filter(e=>b.wahl.includes(e.id)).map(e=>e.bezeichnung).join(', '):'')+').':'Für die Betriebskostenabrechnung '+jahr+' vorgemerkt'+(kopie?' und nach BK-Abrechnung '+jahr+' kopiert.':'.'))+(hinweis?' '+hinweis:''),hinweis?9000:5000); }
+  toast((kids.length?(neuAngelegt?'Betriebskostenabrechnung '+jahr+' für '+o.kz+' angelegt und ':'In die Betriebskostenabrechnung '+jahr+' von '+o.kz+' ')+'eingetragen ('+Z.map(z=>z.ka+' '+eur(z.betrag)).join(', ')+(eT?', nur '+eT:'')+').':'Für die Betriebskostenabrechnung '+jahr+' vorgemerkt'+(kopie?' und nach BK-Abrechnung '+jahr+' kopiert.':'.'))+(hinweis?' '+hinweis:''),hinweis?9000:6000); }
 async function bkEntfernen(){ const b=BV.bk; if(!b) return; const x=BKM.get(b.f.id); if(!x){ BV.bk=null; render(); return; }
-  if(x.kid){ try{ await abSb().from('bk_kosten').delete().eq('id',x.kid); }catch(e){} }
+  for(const id of [].concat(x.kids||[],x.kid?[x.kid]:[])){ try{ await abSb().from('bk_kosten').delete().eq('id',id); }catch(e){} }
   const L=[...BKM.values()].filter(y=>y.od!==b.f.id); BKM=new Map(L.map(y=>[y.od,y])); await saveStamm('belegbk',{liste:L}); BV.bk=null; render();
   toast('Vormerkung entfernt'+(x.kopie?'. Die Kopie in BK-Abrechnung '+x.jahr+' bleibt in OneDrive liegen.':'.'),6000); }
 document.addEventListener('change',e=>{ const t=e.target; if(!BV.bk||!t) return; const b=BV.bk;
   if(t.id==='bk-obj'){ const o=objekte.find(x=>x.kz.toLowerCase()===String(t.value).trim().toLowerCase()); if(o&&o.kz!==b.obj){ bkMerken(); b.obj=o.kz; b.wahl=[]; render(); bkEinheitenLaden(b); } return; }
   if(t.dataset&&t.dataset.bkein!=null){ bkMerken(); const id=t.dataset.bkein; if(!id) b.wahl=[]; else { b.wahl=b.wahl.filter(x=>x!==id); if(t.checked) b.wahl.push(id); } render(); } });
-function bkMerken(){ const b=BV.bk; if(!b) return; for(const [k,id] of [['jahr','bk-jahr'],['ka','bk-ka'],['betrag','bk-betrag'],['von','bk-von'],['bis','bk-bis']]){ const el=$(id); if(el) b[k]=el.value; } }
-document.addEventListener('click',e=>{ const t=e.target.closest('[data-bvbk],[data-bkzu],button[data-bksave],button[data-bkweg]'); if(!t) return; const d=t.dataset;
+function bkMerken(){ const b=BV.bk; if(!b) return; for(const [k,id] of [['jahr','bk-jahr'],['von','bk-von'],['bis','bk-bis']]){ const el=$(id); if(el) b[k]=el.value; } b.zeilen.forEach((z,ix)=>{ const a=$('bk-ka-'+ix), c=$('bk-betrag-'+ix); if(a) z.ka=a.value; if(c) z.betrag=c.value; }); }
+document.addEventListener('click',e=>{ const t=e.target.closest('[data-bvbk],[data-bkzu],button[data-bksave],button[data-bkweg],button[data-bkzneu],button[data-bkzweg]'); if(!t) return; const d=t.dataset;
+  if(d.bkzneu&&BV.bk){ bkMerken(); BV.bk.zeilen.push({ka:'',betrag:''}); render(); setTimeout(()=>{ const el=$('bk-ka-'+(BV.bk.zeilen.length-1)); if(el) el.focus(); },30); return; }
+  if(d.bkzweg!=null&&BV.bk){ bkMerken(); BV.bk.zeilen.splice(+d.bkzweg,1); render(); return; }
   if(d.bvbk){ e.preventDefault(); const x=bvListe().L.find(y=>y.f.id===d.bvbk); if(x) bkOeffnen(x.f); return; }
   if(d.bkzu){ BV.bk=null; render(); return; }
   if(d.bksave){ bkSpeichern(); return; }
