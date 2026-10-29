@@ -148,6 +148,18 @@ h1{font-size:21px;font-weight:800}
   </div>
   <div class="dlg-ft"><button class="btn sec" onclick="dFollowup()">+ Follow-up anlegen</button><span style="flex:1"></span><button class="btn" onclick="closeDetail()">Schließen</button><button class="btn pri" onclick="dSave()">Speichern</button></div>
 </div></div>
+<div class="ov" id="fuov" style="z-index:110" onclick="if(event.target===this)fuClose()"><div class="dlg" style="width:460px">
+  <div class="dlg-hd"><span>📞 Follow-up anlegen</span><span class="x" onclick="fuClose()">✕</span></div>
+  <div class="dlg-bd">
+    <div class="f wide"><label>Titel</label><input id="fu_titel"></div>
+    <div class="fg" style="margin-top:12px">
+      <div class="f"><label>Wiedervorlage in Tagen</label><input id="fu_days" type="number" min="1" placeholder="z. B. 7" oninput="if(this.value)document.getElementById('fu_date').value=''"></div>
+      <div class="f"><label>oder festes Datum</label><input id="fu_date" type="date" oninput="if(this.value)document.getElementById('fu_days').value=''"></div>
+    </div>
+    <div style="font-size:11.5px;color:var(--muted);margin-top:8px">Beides leer = in 7 Tagen. Ein Datum hat Vorrang vor der Tagesangabe.</div>
+  </div>
+  <div class="dlg-ft"><span style="flex:1"></span><button class="btn" onclick="fuClose()">Abbrechen</button><button class="btn pri" onclick="fuCreate()">Anlegen</button></div>
+</div></div>
 <div class="toast" id="toast"></div>
 <script>
 const sb=window.supabase.createClient('https://jqzxctfqvcwbctpjksvg.supabase.co','eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpxenhjdGZxdmN3YmN0cGprc3ZnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODIxMzA0MzIsImV4cCI6MjA5NzcwNjQzMn0.RKIbZxJdusKWWPjBJqlxZ8e1m8So02UslOg55YRsn3o');
@@ -356,14 +368,26 @@ async function dSave(){
   if(changes.length)await logVer('✏️ '+changes.join(' · '));
   render();toast('Gespeichert ✓');
 }
-async function dFollowup(){
+function dFollowup(){
   if(!DTASK)return;
-  const titel=prompt('Follow-up – Titel:','Nachfassen: '+(DTASK.titel||''));if(titel===null)return;
-  const d=prompt('Wiedervorlage am (JJJJ-MM-TT), leer = +7 Tage:','');
-  let wv=d&&d.trim();if(!wv){const x=new Date();x.setDate(x.getDate()+7);wv=x.toISOString().slice(0,10);}
+  document.getElementById('fu_titel').value='Nachfassen: '+(DTASK.titel||'');
+  document.getElementById('fu_days').value='';
+  document.getElementById('fu_date').value='';
+  document.getElementById('fuov').classList.add('show');
+  setTimeout(()=>document.getElementById('fu_days').focus(),50);
+}
+function fuClose(){document.getElementById('fuov').classList.remove('show');}
+async function fuCreate(){
+  if(!DTASK)return;
+  const titel=(document.getElementById('fu_titel').value||'').trim()||('Nachfassen: '+DTASK.titel);
+  const dateV=document.getElementById('fu_date').value;
+  const daysV=parseInt(document.getElementById('fu_days').value,10);
+  let wv;
+  if(dateV)wv=dateV;
+  else{const n=(!isNaN(daysV)&&daysV>0)?daysV:7;const x=new Date();x.setDate(x.getDate()+n);wv=x.toISOString().slice(0,10);}
   const pos=(TASKS.reduce((m,t)=>Math.max(m,t.pos||0),0))+1;
   const {data,error}=await sb.from('os_tasks').insert({
-    titel:titel.trim()||('Nachfassen: '+DTASK.titel),art:'followup',status:'todo',
+    titel,art:'followup',status:'todo',
     verantwortlich:DTASK.verantwortlich||'Eric Eisenhardt',quelle:'os',pos,
     wiedervorlage:wv,faellig:wv,kontakt_id:DTASK.kontakt_id||null,kontakt_label:DTASK.kontakt_label||null,
     object_id:DTASK.object_id||null,object_label:DTASK.object_label||null,
@@ -371,8 +395,8 @@ async function dFollowup(){
   }).select().maybeSingle();
   if(error){toast('Fehler: '+error.message);return;}
   if(data)TASKS.push(data);
-  await logVer('📞 Follow-up angelegt für '+wv);
-  render();toast('Follow-up angelegt ✓');
+  await logVer('📞 Follow-up angelegt für '+wv.split('-').reverse().join('.'));
+  fuClose();render();toast('Follow-up angelegt ✓');
 }
 /* ---------- Diktat + KI ---------- */
 let REC=null;
