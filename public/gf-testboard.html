@@ -39,6 +39,32 @@ h1{font-size:21px;font-weight:800}
 .card select{font:inherit;font-size:11px;padding:2px 5px;border:1px solid var(--line);border-radius:6px;background:var(--surf);color:var(--muted);max-width:140px}
 .card .del{margin-left:auto;background:none;border:0;color:var(--red);cursor:pointer;font-size:12px}
 .foot{font-size:11.5px;color:var(--muted);margin-top:16px}
+.viewbar{margin-bottom:12px}
+.seg{display:inline-flex;border:1px solid var(--line);border-radius:9px;overflow:hidden;background:var(--surf)}
+.seg button{font:inherit;font-size:12.5px;font-weight:600;border:0;background:var(--surf);color:var(--muted);padding:7px 14px;cursor:pointer;border-right:1px solid var(--line)}
+.seg button:last-child{border-right:0}
+.seg button.on{background:var(--accent);color:#fff}
+/* Liste */
+.ltab{width:100%;border-collapse:collapse;font-size:13px;background:var(--surf);border:1px solid var(--line);border-radius:12px;overflow:hidden}
+.ltab th,.ltab td{padding:9px 12px;border-bottom:1px solid var(--line);text-align:left;vertical-align:middle}
+.ltab th{font-size:10.5px;text-transform:uppercase;color:var(--muted);font-weight:700;background:var(--surf2)}
+.ltab tr:last-child td{border-bottom:0}
+.ltab tr.over td:nth-child(3){color:var(--red);font-weight:700}
+.ltab select{font:inherit;font-size:12px;padding:3px 6px;border:1px solid var(--line);border-radius:6px;background:var(--surf)}
+.ltab a{color:var(--accent);text-decoration:none;font-size:12px}
+.ltab .del{background:none;border:0;color:var(--red);cursor:pointer}
+/* Kalender */
+.calhead{display:flex;align-items:center;gap:12px;margin-bottom:10px}
+.calhead b{font-size:15px}
+.cal{display:grid;grid-template-columns:repeat(7,1fr);gap:6px}
+.cal .dow{font-size:10.5px;text-transform:uppercase;color:var(--muted);font-weight:700;text-align:center;padding:2px}
+.cell{background:var(--surf);border:1px solid var(--line);border-radius:9px;min-height:92px;padding:5px 6px}
+.cell.out{background:var(--surf2);opacity:.6}
+.cell.today{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent) inset}
+.cell .dn{font-size:11px;font-weight:700;color:var(--muted);margin-bottom:3px}
+.cell .ct{font-size:10.5px;background:#eef3fb;border:1px solid #d6e4fb;color:#2563eb;border-radius:6px;padding:2px 5px;margin-bottom:3px;line-height:1.25;cursor:default}
+.cell .ct.over{background:#fdecea;border-color:#f5c6c2;color:var(--red)}
+.cell .ct.done{background:#eefaf3;border-color:#cdeede;color:var(--green);text-decoration:line-through}
 .toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:#000c;color:#fff;padding:9px 15px;border-radius:8px;font-size:13px;opacity:0;pointer-events:none;transition:.2s;z-index:50}
 .toast.show{opacity:1}
 </style></head><body>
@@ -46,8 +72,13 @@ h1{font-size:21px;font-weight:800}
   <h1>🗂 GF Testboard · Aufgaben</h1>
   <div class="sub">Testboard zum Ablösen von Asana: Aufgaben per Spalte verschieben (Drag &amp; Drop oder Status-Auswahl), mit Kontakt &amp; Objekt verknüpfen. Import: heute fällige Asana-Aufgaben. Quelle bleibt vorerst Asana – hier wird nur getestet.</div>
   <div class="kpis" id="kpis"></div>
+  <div class="viewbar"><div class="seg" id="seg">
+    <button data-v="board" class="on" onclick="setView('board')">▦ Board</button>
+    <button data-v="liste" onclick="setView('liste')">☰ Liste</button>
+    <button data-v="kalender" onclick="setView('kalender')">▦ Kalender</button>
+  </div></div>
   <div class="addbar"><input id="newT" placeholder="Neue Aufgabe …" onkeydown="if(event.key==='Enter')addTask()"><button class="btn pri" onclick="addTask()">+ Aufgabe</button></div>
-  <div class="cols" id="cols"></div>
+  <div id="view"></div>
   <div class="foot" id="foot"></div>
 </div>
 <div class="toast" id="toast"></div>
@@ -91,21 +122,63 @@ function card(t){
       <button class="del" onclick="delTask('${t.id}')">🗑</button></div>
   </div>`;
 }
+let VIEW='board', CALM=null;
+const STLBL={todo:'To Do',inarbeit:'In Arbeit',warten:'Wartet',erledigt:'Erledigt'};
+function setView(v){VIEW=v;document.querySelectorAll('#seg button').forEach(b=>b.classList.toggle('on',b.dataset.v===v));render();}
 function render(){
-  document.getElementById('cols').innerHTML=COLS.map(([k,l])=>{
-    const list=TASKS.filter(t=>(t.status||'todo')===k);
-    return `<div class="col" ondragover="event.preventDefault();this.classList.add('dragover')" ondragleave="this.classList.remove('dragover')" ondrop="drop(event,'${k}',this)">
-      <div class="col-h"><span>${l}</span><span class="cnt">${list.length}</span></div>
-      ${list.map(card).join('')}</div>`;
-  }).join('');
   const over=TASKS.filter(t=>t.faellig&&t.faellig<today&&t.status!=='erledigt').length;
   const done=TASKS.filter(t=>t.status==='erledigt').length;
   document.getElementById('kpis').innerHTML=[
     ['Aufgaben gesamt',TASKS.length,''],['offen',TASKS.filter(t=>t.status!=='erledigt').length,''],
     ['überfällig',over,over?'red':'green'],['erledigt',done,'green']
   ].map(k=>`<div class="kpi ${k[2]}"><div class="l">${k[0]}</div><div class="v">${k[1]}</div></div>`).join('');
-  document.getElementById('foot').textContent='Verknüpfe Aufgaben mit Kontakten (CRM & Hausverwaltung) und Objekten – genau das kann Asana nicht. Status per Drag & Drop in die Spalten ziehen.';
+  if(VIEW==='liste')renderList();else if(VIEW==='kalender')renderCalendar();else renderBoard();
+  document.getElementById('foot').textContent='Verknüpfe Aufgaben mit Kontakten (CRM & Hausverwaltung) und Objekten – genau das kann Asana nicht. Umschalten zwischen Board, Liste und Kalender oben.';
 }
+function renderBoard(){
+  document.getElementById('view').innerHTML='<div class="cols" id="cols"></div>';
+  document.getElementById('cols').innerHTML=COLS.map(([k,l])=>{
+    const list=TASKS.filter(t=>(t.status||'todo')===k);
+    return `<div class="col" ondragover="event.preventDefault();this.classList.add('dragover')" ondragleave="this.classList.remove('dragover')" ondrop="drop(event,'${k}',this)">
+      <div class="col-h"><span>${l}</span><span class="cnt">${list.length}</span></div>
+      ${list.map(card).join('')}</div>`;
+  }).join('');
+}
+function renderList(){
+  const rows=TASKS.slice().sort((a,b)=>{const av=a.faellig||'9999',bv=b.faellig||'9999';return av<bv?-1:av>bv?1:(a.pos||0)-(b.pos||0);});
+  document.getElementById('view').innerHTML=`<div style="overflow:auto"><table class="ltab"><thead><tr>
+    <th>Aufgabe</th><th>Status</th><th>Fällig</th><th>Projekt</th><th>Kontakt</th><th>Objekt</th><th></th></tr></thead><tbody>
+    ${rows.map(t=>{const over=t.faellig&&t.faellig<today&&t.status!=='erledigt';return `<tr class="${over?'over':''}">
+      <td>${esc(t.titel)}${t.asana_url?` <a href="${esc(t.asana_url)}" target="_blank">↗</a>`:''}</td>
+      <td><select onchange="moveTask('${t.id}',this.value)">${COLS.map(([k,l])=>`<option value="${k}"${(t.status||'todo')===k?' selected':''}>${STLBL[k]}</option>`).join('')}</select></td>
+      <td>${t.faellig?dfmt(t.faellig)+(over?' · überfällig':''):'—'}</td>
+      <td>${esc(t.projekt||'—')}</td>
+      <td><select onchange="linkKont('${t.id}',this.value)">${kontOptions(t.kontakt_label)}</select></td>
+      <td><select onchange="linkObj('${t.id}',this.value)">${objOptions(t.object_label)}</select></td>
+      <td><button class="del" onclick="delTask('${t.id}')">🗑</button></td></tr>`;}).join('')||'<tr><td colspan="7" style="text-align:center;color:var(--muted);padding:24px">Keine Aufgaben.</td></tr>'}
+  </tbody></table></div>`;
+}
+function renderCalendar(){
+  if(!CALM){const d=new Date(today);CALM=new Date(d.getFullYear(),d.getMonth(),1);}
+  const y=CALM.getFullYear(),m=CALM.getMonth();
+  const first=new Date(y,m,1), start=new Date(first); start.setDate(1-((first.getDay()+6)%7)); // Montag-Start
+  const monthName=CALM.toLocaleDateString('de-DE',{month:'long',year:'numeric'});
+  const byDay={};TASKS.forEach(t=>{if(t.faellig){(byDay[t.faellig]=byDay[t.faellig]||[]).push(t);}});
+  const dows=['Mo','Di','Mi','Do','Fr','Sa','So'];
+  let cells='';
+  for(let i=0;i<42;i++){const d=new Date(start);d.setDate(start.getDate()+i);const iso=d.toISOString().slice(0,10);
+    const out=d.getMonth()!==m, isToday=iso===today;
+    const list=byDay[iso]||[];
+    cells+=`<div class="cell ${out?'out':''} ${isToday?'today':''}"><div class="dn">${d.getDate()}</div>${
+      list.map(t=>{const over=iso<today&&t.status!=='erledigt';const cls=t.status==='erledigt'?'done':(over?'over':'');return `<div class="ct ${cls}" title="${esc(t.titel)}">${esc(t.titel.length>26?t.titel.slice(0,24)+'…':t.titel)}</div>`;}).join('')
+    }</div>`;
+  }
+  document.getElementById('view').innerHTML=`<div class="calhead"><button class="btn" onclick="calNav(-1)">‹</button><b>${monthName}</b><button class="btn" onclick="calNav(1)">›</button><button class="btn" onclick="calToday()">Heute</button></div>
+    <div class="cal">${dows.map(d=>`<div class="dow">${d}</div>`).join('')}${cells}</div>`;
+}
+function calNav(dir){CALM=new Date(CALM.getFullYear(),CALM.getMonth()+dir,1);renderCalendar();}
+function calToday(){const d=new Date(today);CALM=new Date(d.getFullYear(),d.getMonth(),1);renderCalendar();}
+async function moveTask(id,status){const t=TASKS.find(x=>x.id===id);if(!t)return;t.status=status;await sb.from('os_tasks').update({status,updated_at:new Date().toISOString()}).eq('id',id);render();toast('Status aktualisiert ✓');}
 let DRAG=null;
 function drag(e,id){DRAG=id;e.dataTransfer.effectAllowed='move';}
 async function drop(e,status,el){e.preventDefault();el.classList.remove('dragover');if(!DRAG)return;
