@@ -1599,7 +1599,11 @@ async function belText(f){ if(BELTXT[f.id]!=null) return BELTXT[f.id];
   const doc=await PDFJS.getDocument({data:u8}).promise; let t='';
   for(let i=1;i<=Math.min(doc.numPages,6);i++){ const c=await (await doc.getPage(i)).getTextContent(); t+=' '+c.items.map(x=>x.str).join(' '); }
   return BELTXT[f.id]=t.replace(/\s+/g,' '); }
-const abIso=d=>{ const m=String(d).match(/(\d{1,2})\.(\d{1,2})\.(\d{4})/); return m?m[3]+'-'+m[2].padStart(2,'0')+'-'+m[1].padStart(2,'0'):''; };
+const abIso=d=>{ const m=String(d).match(/(\d{1,2})\.(\d{1,2})\.(\d{4}|\d{2})(?!\d)/); return m?(m[3].length===2?'20'+m[3]:m[3])+'-'+m[2].padStart(2,'0')+'-'+m[1].padStart(2,'0'):''; };
+/* einzelne Termine mit eigenem Betrag (z. B. Grundbesitzabgaben: 104,43 / 95,85 / 104,43 / 95,88) */
+const abTermine=a=>(a.termine||[]).map(t=>({d:/\d{4}-\d{2}-\d{2}/.test(t.d)?t.d:abIso(t.d),b:abBetragNum(t.b)})).filter(t=>t.d&&t.b).sort((x,y)=>x.d.localeCompare(y.d));
+const abBetragAm=(a,d)=>{ if(a.rh==='ind'&&(a.termine||[]).length){ const t=abTermine(a).filter(x=>x.d===d); return t.reduce((s,x)=>s+x.b,0); } return abBetragNum(a.betrag)||0; };
+const abUngleich=a=>a.rh==='ind'&&new Set(abTermine(a).map(t=>t.b)).size>1;
 const abBetragNum=s=>{ const v=parseNum(String(s||'').replace(/€/g,'')); return v==null||isNaN(v)?null:Math.round(Math.abs(v)*100)/100; };
 /* Vorschläge aus dem Text der Rechnung */
 function abLies(t,f){ const out={}, T=t||'', n=norm(T+' '+f.name);
@@ -1613,6 +1617,8 @@ function abLies(t,f){ const out={}, T=t||'', n=norm(T+' '+f.name);
   if(out.betrag){ const bt=fnum.format(out.betrag), ds=[];
     for(const m of T.matchAll(/(\d{1,2}\.\d{1,2}\.\d{4})/g)){ const um=T.slice(m.index,m.index+70); if(um.includes(bt)){ const d=abIso(m[1]); if(d&&!ds.includes(d)) ds.push(d); } }
     if(ds.length>=2){ ds.sort(); out.faellig=ds; out.rh='ind'; out.start=out.start||ds[0]; } }
+  { const TT=[]; for(const m of T.matchAll(/f(?:ä|ae)llig\s+am\s+(\d{1,2}\.\d{1,2}\.\d{2,4})\s+(\d{1,3}(?:\.\d{3})*,\d{2})/gi)){ const d=abIso(m[1]); if(d&&!TT.some(x=>x.d===d)) TT.push({d,b:abBetragNum(m[2])}); }
+    if(TT.length>=2){ TT.sort((x,y)=>x.d.localeCompare(y.d)); out.termine=TT; out.faellig=TT.map(x=>x.d); out.rh='ind'; out.start=TT[0].d; out.betrag=TT[0].b; } }
   const kn=T.match(/(?:Kundennummer|Kunden-Nr\.?|Vertragskonto|Vertragsnummer|Kassenzeichen|Buchungszeichen)\s*:?\s*([A-Z0-9](?:[A-Z0-9\-\/\.]|\s(?=\d)){2,30})/i); if(kn) out.knr=kn[1].trim();
   /* Jahresabrechnung */
   const jz=T.match(/(?:Abrechnungszeitraum|Verbrauchszeitraum|Abrechnungsjahr|Zeitraum)[^0-9]{0,20}\d{1,2}\.\d{1,2}\.(\d{4})\s*(?:-|–|bis)\s*\d{1,2}\.\d{1,2}\.(\d{4})/i);
@@ -1620,7 +1626,7 @@ function abLies(t,f){ const out={}, T=t||'', n=norm(T+' '+f.name);
   if(/lastschrift|wird .{0,40}(abgebucht|eingezogen)|einzugserm/i.test(T)) out.sepa=true;
   return out; }
 /* Fälligkeiten aus Rhythmus, Beginn und Ende */
-function abFaellig(a){ if(a.rh==='ind') return String(a.ftext||'').split(/[,;\s]+/).map(x=>/\d{4}-\d{2}-\d{2}/.test(x)?x:abIso(x)).filter(Boolean).sort();
+function abFaellig(a){ if(a.rh==='ind'&&(a.termine||[]).length) return abTermine(a).map(t=>t.d); if(a.rh==='ind') return String(a.ftext||'').split(/[,;\s]+/).map(x=>/\d{4}-\d{2}-\d{2}/.test(x)?x:abIso(x)).filter(Boolean).sort();
   const st=a.start, bis=a.bis||(st?st.slice(0,4)+'-12-31':''); if(!/^\d{4}-\d{2}-\d{2}$/.test(st||'')) return [];
   const step=Number(a.rh)||1, out=[]; const [y,m,d]=st.split('-').map(Number);
   for(let i=0;i<60;i++){ const mm=m-1+i*step, yy=y+Math.floor(mm/12), mo=mm%12; const last=new Date(yy,mo+1,0).getDate(); const x=yy+'-'+String(mo+1).padStart(2,'0')+'-'+String(Math.min(d,last)).padStart(2,'0'); if(x>bis) break; out.push(x); }
@@ -1663,6 +1669,7 @@ function abOeffnen(f,art){ const obj=art==='fix'?'':(f.bereich==='obj'?bvObjKz(f
       if(R.jbetrag&&!a.jbetragEdit) a.jbetrag=fnum.format(R.jbetrag);
       if(R.start&&!a.bisEdit&&!R.faellig) a.bis=abBisVon(a.start);
       if(R.faellig&&!a.ftextEdit){ a.ftext=R.faellig.map(dmy).join(', '); a.bis=R.faellig[R.faellig.length-1]; }
+      if(R.termine&&!a.termineEdit){ a.rh='ind'; a.termine=R.termine.map(t=>({d:dmy(t.d),b:fnum.format(t.b)})); }
       if(R.sepa) a.sepa=true;
       a.lese='Aus der Rechnung gelesen – bitte prüfen.'; abNeu(); })
     .catch(err=>{ if(BV.ab!==a) return; a.lese='Rechnung nicht gelesen: '+(err.message||err)+'. Bitte die Felder ausfüllen.'; abNeu(); }); }
@@ -1675,7 +1682,7 @@ function abVorschau(a){ const F=abFaellig(a), b=abBetragNum(a.betrag); const z=[
   const reg=regeln.find(r=>norm(r.muster)===norm(a.muster||''));
   const zeile=(k,t,info)=>'<label class="ab-z"><input type="checkbox" data-abzt="'+k+'"'+(a.zt[k]?' checked':'')+'><span><b>'+t+'</b><span class="sub">'+info+'</span></span></label>';
   z.push(zeile('vertrag','Verträge',v?'aktualisiert: '+esc(v.anbieter||'')+' '+esc(v.sparte||'')+(v.betrag!=null?' · bisher '+esc(eur(v.betrag)):''):'neu: '+esc(a.anbieter||'')+' · '+esc(abSparteText(a))));
-  z.push(zeile('plan','Monatswechsel-Fixkosten',(p?'aktualisiert: '+esc(p.obj+' · '+p.pos)+' ('+esc(p.rh||'')+')':'neu: '+esc(abPlanObj(a)||'?')+' · '+esc(abPos(a)))+' · '+F.length+' Fälligkeit'+(F.length===1?'':'en')+(b?' à '+esc(eur(b)):'')));
+  z.push(zeile('plan','Monatswechsel-Fixkosten',(p?'aktualisiert: '+esc(p.obj+' · '+p.pos)+' ('+esc(p.rh||'')+')':'neu: '+esc(abPlanObj(a)||'?')+' · '+esc(abPos(a)))+' · '+F.length+' Fälligkeit'+(F.length===1?'':'en')+(abUngleich(a)?' mit unterschiedlichen Beträgen':(a.rh==='ind'&&(a.termine||[]).length?(abTermine(a)[0]?' à '+esc(eur(abTermine(a)[0].b)):''):(b?' à '+esc(eur(b)):'')))));
   z.push(zeile('regel','Buchungen: Regel',(String(a.muster||'').trim().length<3?'Name auf dem Kontoauszug fehlt':(reg?'vorhanden für „'+esc(reg.muster)+'“ – wird angepasst':'neu')+': Zahlungen an „'+esc(a.muster)+'“ → '+esc(abKontoLabel(a))+(a.obj?' · '+esc(a.obj):'')+(a.unit?' · '+esc(abUnitName(a)):''))+(e?'':' (noch keine Zahlung an diesen Empfänger gefunden)')));
   z.push(zeile('dauer','Buchungen: Dauerbeleg','dieser Beleg gilt für alle Abschläge'+(b?' über '+esc(eur(b)):'')+(F.length?' vom '+esc(dmy(F[0]))+' bis '+esc(dmy(a.bis||F[F.length-1])):'')+' von '+esc(abKontoName(a.kkey)||'?')));
   if(a.art!=='fix') z.push(zeile('bk','Betriebskostenabrechnung',a.jahr&&abBetragNum(a.jbetrag)?'Jahresabrechnung '+esc(a.jahr)+': '+esc(eur(abBetragNum(a.jbetrag)))+' – wird eingetragen, wenn die Abrechnung '+esc(a.obj||'')+' '+esc(a.jahr)+' angelegt ist, sonst am Vertrag gemerkt':'nur bei Jahresabrechnung (Jahr und Betrag unten)'));
@@ -1701,9 +1708,11 @@ function abHtmlDlg(){ const a=BV.ab; if(!a) return ''; const fix=a.art==='fix', 
   h+=fld('Kunden- / Vertragsnummer','<input type="text" id="ab-knr" value="'+esc(a.knr)+'" autocomplete="off">');
   h+=fld('Name auf dem Kontoauszug','<input type="text" id="ab-muster" value="'+esc(a.muster||'')+'" autocomplete="off" title="Danach erkennt die Regel die Zahlungen">');
   h+='</div><div class="ab-h">Abschläge</div><div class="ab-g">';
-  h+=fld('Betrag je Abschlag (€)','<input type="text" id="ab-betrag" inputmode="decimal" value="'+esc(a.betrag)+'" autocomplete="off">');
+  if(a.rh!=='ind') h+=fld('Betrag je Abschlag (€)','<input type="text" id="ab-betrag" inputmode="decimal" value="'+esc(a.betrag)+'" autocomplete="off">');
   h+=fld('Rhythmus','<select id="ab-rh">'+AB_RH.map(([k,l])=>'<option value="'+k+'"'+(a.rh===k?' selected':'')+'>'+l+'</option>').join('')+'</select>');
-  if(a.rh==='ind') h+=fld('Termine (TT.MM.JJJJ, durch Komma getrennt)','<input type="text" id="ab-ftext" value="'+esc(a.ftext)+'" autocomplete="off">','ab-w');
+  if(a.rh==='ind'){ if(!(a.termine||[]).length) a.termine=(abFaellig(Object.assign({},a,{termine:null}))||[]).map(d=>({d:dmy(d),b:a.betrag||''})); if(!a.termine.length) a.termine=[{d:'',b:a.betrag||''}];
+    h+='<div class="ab-f ab-w">Fälligkeiten mit Betrag<div>'+a.termine.map((t,i)=>'<div style="display:flex;gap:8px;align-items:center;margin-top:4px"><input type="text" data-abt="'+i+'" data-k="d" value="'+esc(t.d)+'" placeholder="TT.MM.JJJJ" autocomplete="off" style="width:150px"><input type="text" data-abt="'+i+'" data-k="b" value="'+esc(t.b)+'" inputmode="decimal" placeholder="Betrag €" autocomplete="off" style="width:130px"><button class="bb-lnk" data-abtweg="'+i+'">entfernen</button></div>').join('')
+      +'<div style="margin-top:6px"><button class="bb-lnk" data-abtneu="1">Fälligkeit hinzufügen</button><span class="sub" style="margin-left:10px">Summe '+esc(eur(abTermine(a).reduce((s2,x)=>s2+x.b,0)))+'</span></div></div></div>'; }
   else { h+=fld('Erste Fälligkeit','<input type="date" id="ab-start" value="'+esc(a.start)+'">'); h+=fld('Gilt bis','<input type="date" id="ab-bis" value="'+esc(a.bis)+'">'); }
   h+=fld('Abbuchung von Konto','<input type="text" id="ab-konto" list="ab-konto-l" value="'+esc(abKontoName(a.kkey))+'" autocomplete="off"><datalist id="ab-konto-l">'+konten.filter(k=>k.iban&&k.obj!=='__aus').map(k=>'<option value="'+esc(k.name)+'"></option>').join('')+'</datalist>');
   h+='<label class="ab-f ab-cb"><input type="checkbox" id="ab-sepa"'+(a.sepa?' checked':'')+'> per SEPA-Lastschrift</label>';
@@ -1717,18 +1726,19 @@ function abFehler(a){ const F=abFaellig(a), b=abBetragNum(a.betrag);
   if(!String(a.anbieter||'').trim()) return 'Bitte den Anbieter eintragen.';
   if(a.art==='fix'){ if(!a.sub) return 'Bitte das Verwaltungskonto wählen.'; if(!['EE','WT','KiBo'].includes(a.ges)) return 'Bitte die Gesellschaft wählen (EE, WT oder KiBo).'; }
   else { if(!a.ka) return 'Bitte die Kategorie wählen.'; if(!objekte.some(o=>o.kz===a.obj)) return 'Bitte das Objekt wählen.'; }
-  if(!b) return 'Bitte den Betrag je Abschlag eintragen.'; if(!F.length) return 'Bitte die Fälligkeiten angeben.'; if(!a.kkey) return 'Bitte das Konto wählen, von dem abgebucht wird.';
+  if(a.rh==='ind'&&(a.termine||[]).length){ if((a.termine||[]).some(t=>String(t.d).trim()||String(t.b).trim())&&abTermine(a).length<(a.termine||[]).filter(t=>String(t.d).trim()||String(t.b).trim()).length) return 'Bitte bei jeder Fälligkeit Datum (TT.MM.JJJJ) und Betrag eintragen.'; }
+  else if(!b) return 'Bitte den Betrag je Abschlag eintragen.'; if(!F.length) return 'Bitte die Fälligkeiten angeben.'; if(!a.kkey) return 'Bitte das Konto wählen, von dem abgebucht wird.';
   return ''; }
 /* Übernehmen */
 async function abSpeichern(){ const a=BV.ab; if(!a||a.busy) return; const fe=abFehler(a); if(fe){ toast(fe); return; }
-  const sb=abSb(), F=abFaellig(a), b=abBetragNum(a.betrag), f=a.f, heute=new Date().toISOString().slice(0,10), ich=(typeof ICH!=='undefined'&&ICH)||'';
+  const sb=abSb(), F=abFaellig(a), b=a.rh==='ind'&&(a.termine||[]).length?(abTermine(a)[0]||{}).b:abBetragNum(a.betrag), f=a.f, TM=a.rh==='ind'?abTermine(a):null, heute=new Date().toISOString().slice(0,10), ich=(typeof ICH!=='undefined'&&ICH)||'';
   const e=abEmpfaenger(a), konto=konten.find(k=>(k.key||k.iban)===a.kkey)||{}, sparte=abSparteText(a), rh=abRhText(a,F), bis=a.rh==='ind'?F[F.length-1]:(a.bis||F[F.length-1]);
   const ges=a.art==='fix'?a.ges:((objekte.find(o=>o.kz===a.obj)||{}).ges||a.ges||konto.ges||''), rel=String(f.pfad||'').replace(/^Prozesslandkarte 3\.0\//,'');
   const erg=[]; a.busy='Speichere …'; abNeu();
   try{
     const Z=await abZiele();
     if(a.zt.vertrag){ const L=(Z.V.liste||[]).slice(); const alt=abVertragFinden(a,L); const jb=abBetragNum(a.jbetrag);
-      const v=Object.assign({},alt||{id:'v'+Math.random().toString(36).slice(2,12),quelle:'beleg'},{art:a.art==='fix'?'Verwaltung':'Versorger',ges,sparte,anbieter:a.anbieter.trim(),betrag:b,rhythmus:rh,start:F[0],ende:bis,konto:konto.iban||'',zahlart:a.sepa?'SEPA-Lastschrift':'Überweisung',geaendert:heute});
+      const v=Object.assign({},alt||{id:'v'+Math.random().toString(36).slice(2,12),quelle:'beleg'},{art:a.art==='fix'?'Verwaltung':'Versorger',ges,sparte,anbieter:a.anbieter.trim(),betrag:b,rhythmus:rh,start:F[0],ende:bis,termine:TM&&TM.length?TM:null,konto:konto.iban||'',zahlart:a.sepa?'SEPA-Lastschrift':'Überweisung',geaendert:heute});
       if(a.art!=='fix'){ v.obj=a.obj; if(a.unit) v.einheit=a.unit; else delete v.einheit; } else if(a.obj) v.obj=a.obj;
       if(a.knr) v.knr=a.knr; if(e&&e.iban) v.iban=e.iban;
       const docs=(v.dokumente||[]).filter(x=>x.n!==f.name); docs.push({d:bvDatum(f)||heute,n:f.name,t:a.jahr&&jb?'Jahresabrechnung':'Abschlagsplan',pfad:rel}); v.dokumente=docs;
@@ -1739,16 +1749,16 @@ async function abSpeichern(){ const a=BV.ab; if(!a||a.busy) return; const fe=abF
     if(a.zt.plan){ const R=(Z.P.rows||[]).slice(); const alt=abPlanFinden(a,R); const plan=alt&&Array.isArray(alt.plan)?alt.plan.slice():Array(12).fill(null);
       /* je Monat gilt der nächste kommende Termin (laufender Monat bis elf Monate voraus); Monate vor der ersten Fälligkeit bleiben unverändert */
       const nun=new Date(), mNun=nun.getMonth(), yNun=nun.getFullYear(), ab0=F[0].slice(0,7);
-      for(let mI=0;mI<12;mI++){ const ym=(mI>=mNun?yNun:yNun+1)+'-'+String(mI+1).padStart(2,'0'); if(ym<ab0) continue; const anz=F.filter(x=>x.slice(0,7)===ym).length; plan[mI]=anz?Math.round(anz*b*100)/100:null; }
+      for(let mI=0;mI<12;mI++){ const ym=(mI>=mNun?yNun:yNun+1)+'-'+String(mI+1).padStart(2,'0'); if(ym<ab0) continue; const sm=F.filter(x=>x.slice(0,7)===ym).reduce((s2,x)=>s2+abBetragAm(Object.assign({},a,{betrag:String(b)}),x),0); plan[mI]=sm?Math.round(sm*100)/100:null; }
       const row=Object.assign({},alt||{id:'p'+Math.random().toString(36).slice(2,9)},{ges,kat:a.art==='fix'?'Verwaltung':'Betriebskosten',obj:abPlanObj(a),pos:alt?alt.pos:abPos(a),rh,plan,
-        doc:Object.assign({},(alt&&alt.doc)||{},{info:(a.sepa?'SEPA-Lastschrift. ':'')+'Abschlag '+fnum.format(b)+' € '+rh+' ab '+dmy(F[0])+(bis?' bis '+dmy(bis):'')+'. Übernommen aus Beleg am '+dmy(heute)+(ich?' von '+ich:'')+'.',kdnr:a.knr||'',pfad:rel.split('/').slice(0,-1).join('/'),warn:'',datei:f.name,stand:heute,betrag:b,faellig:F})});
+        doc:Object.assign({},(alt&&alt.doc)||{},{info:(a.sepa?'SEPA-Lastschrift. ':'')+(TM&&abUngleich(a)?'Abschläge '+TM.map(t=>dmy(t.d)+' '+fnum.format(t.b)+' €').join(', '):'Abschlag '+fnum.format(b)+' € '+rh+' ab '+dmy(F[0]))+(bis?' bis '+dmy(bis):'')+'. Übernommen aus Beleg am '+dmy(heute)+(ich?' von '+ich:'')+'.',kdnr:a.knr||'',pfad:rel.split('/').slice(0,-1).join('/'),warn:'',datei:f.name,stand:heute,betrag:b,faellig:F,termine:TM&&TM.length?TM:null})});
       if(alt) R[R.indexOf(alt)]=row; else R.push(row);
       const {error}=await sb.from('os_docs').upsert({app:'mw',pfad:'stamm/plan',data:Object.assign({},Z.P,{rows:R,geaendert:heute}),updated_at:new Date().toISOString()},{onConflict:'app,pfad'}); if(error) throw new Error('Monatswechsel-Fixkosten: '+error.message);
       erg.push('Fixkosten-Zeile '+(alt?'aktualisiert':'angelegt')); }
     if(a.zt.regel){ const m=String(a.muster||'').trim(); if(m.length>=3){ const kat=a.art==='fix'?'verw':'bk';
         const r0=regeln.find(r=>norm(r.muster)===norm(m)); const r=Object.assign({},r0||{id:'r'+Date.now().toString(36)},{muster:m,kat,sub:kat==='verw'?a.sub:'',ka:kat==='bk'?a.ka:'',obj:kat==='bk'?a.obj:(a.obj||''),unit:kat==='bk'?(a.unit||''):'',scope:'alle'});
         regeln=r0?regeln.map(x=>x===r0?r:x):[r].concat(regeln); invalidate(); await saveStamm('regeln',{regeln}); erg.push('Regel '+(r0?'angepasst':'angelegt')); } }
-    if(a.zt.dauer){ const n0={id:'db'+Date.now().toString(36),od:f.id,p:'',n:f.name,pfad:f.pfad||'',kkey:a.kkey,iban:e&&e.iban?e.iban:'',name:belKey(e&&e.n&&norm(e.n).includes(norm(a.muster||'#'))?e.n:(a.muster||a.anbieter)),betrag:b,jede:false,von:F[0].slice(0,8)+'01',bis,am:heute};
+    if(a.zt.dauer){ const n0={id:'db'+Date.now().toString(36),od:f.id,p:'',n:f.name,pfad:f.pfad||'',kkey:a.kkey,iban:e&&e.iban?e.iban:'',name:belKey(e&&e.n&&norm(e.n).includes(norm(a.muster||'#'))?e.n:(a.muster||a.anbieter)),betrag:b,jede:abUngleich(a),von:F[0].slice(0,8)+'01',bis,am:heute};
       const alt=DAUER.find(x=>x.od===f.id); const liste=alt?DAUER.map(x=>x===alt?Object.assign({},n0,{id:alt.id}):x):DAUER.concat([n0]); await dbSpeichern(liste); erg.push('Dauerbeleg gespeichert'); }
     if(a.art!=='fix'&&a.zt.bk&&a.jahr&&abBetragNum(a.jbetrag)){ try{ const {data:abr}=await sb.from('bk_abrechnungen').select('id').eq('kennung',a.obj).eq('jahr',Number(a.jahr)).maybeSingle();
         if(abr){ const {data:arten}=await sb.from('bk_kostenarten').select('id,name').eq('abrechnung_id',abr.id); const sp=norm(sparte), kaN=norm((KAN[a.ka]||[])[2]||'');
@@ -1776,6 +1786,11 @@ document.addEventListener('change',e=>{ const t=e.target, a=BV.ab; if(!a||!t.id|
   else return;
   setTimeout(abNeu,0); });
 document.addEventListener('change',e=>{ const t=e.target; if(!BV.ab||!t.dataset||t.dataset.abzt===undefined) return; BV.ab.zt[t.dataset.abzt]=t.checked; });
+document.addEventListener('change',e=>{ const t=e.target, a=BV.ab; if(!a||!t.dataset||t.dataset.abt===undefined) return; const i=+t.dataset.abt, k=t.dataset.k; if(!a.termine||!a.termine[i]) return;
+  if(k==='d'&&t.value.trim()&&!abIso(t.value)){ toast('Bitte das Datum als TT.MM.JJJJ eingeben.'); return; } a.termine[i][k]=k==='d'&&abIso(t.value)?dmy(abIso(t.value)):t.value; a.termineEdit=true; setTimeout(abNeu,0); });
+document.addEventListener('click',e=>{ const t=e.target.closest('button[data-abtneu],button[data-abtweg]'); if(!t||!BV.ab) return; const a=BV.ab; e.preventDefault();
+  document.querySelectorAll('[data-abt]').forEach(el=>{ const r=a.termine[+el.dataset.abt]; if(r) r[el.dataset.k]=el.value; });
+  if(t.dataset.abtneu){ const L=abTermine(a); a.termine.push({d:'',b:L.length?fnum.format(L[L.length-1].b):''}); } else a.termine.splice(+t.dataset.abtweg,1); a.termineEdit=true; abNeu(); });
 document.addEventListener('focusin',e=>{ const t=e.target; if(t&&['ab-ka','ab-sub','ab-obj','ab-ges','ab-konto'].includes(t.id)){ t.dataset.alt=t.value; t.value=''; } });
 document.addEventListener('focusout',e=>{ const t=e.target; if(t&&['ab-ka','ab-sub','ab-obj','ab-ges','ab-konto'].includes(t.id)&&!t.value&&t.dataset.alt) t.value=t.dataset.alt; });
 document.addEventListener('click',e=>{ const t=e.target.closest('[data-abzu],button[data-abok],button[data-bvab],button[data-bvfix]'); if(!t) return; const d=t.dataset;
