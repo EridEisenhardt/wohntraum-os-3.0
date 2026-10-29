@@ -100,9 +100,10 @@ async function odOeffnen(id){const w=window.open('','_blank');try{const r=await 
 const SCHLUESSEL=[['flaeche','Wohn-/Nutzfläche'],['personen','Personen'],['einheiten','je Einheit gleich'],['mea','Miteigentumsanteile'],['verbrauch','Verbrauch (Zähler/Messdienst)'],['direkt','direkt einem Mieter'],['nicht_umlegen','nicht umlegen']];
 const schlLabel=v=>(SCHLUESSEL.find(x=>x[0]===v)||[,'–'])[1];
 const STANDARD=[['Grundsteuer','1','betriebskosten','flaeche'],['Frischwasser','2','betriebskosten','personen'],['Schmutzwasser','3','betriebskosten','personen'],['Niederschlagswasser','3','betriebskosten','flaeche'],
-  ['Heizkosten','4','heizkosten','verbrauch'],['Warmwasser','5','heizkosten','verbrauch'],['Müllgebühren','8','betriebskosten','personen'],['Straßenreinigung','8','betriebskosten','flaeche'],['Gebäudereinigung','9','betriebskosten','flaeche'],
-  ['Gartenpflege','10','betriebskosten','flaeche'],['Allgemeinstrom','11','betriebskosten','flaeche'],['Schornsteinfeger','12','betriebskosten','flaeche'],['Versicherungen','13','betriebskosten','flaeche'],['Hausmeister','14','betriebskosten','flaeche'],
-  ['Kabel / Antenne','15','betriebskosten','einheiten'],['Rauchwarnmelder','17','betriebskosten','einheiten']];
+  ['Heizkosten','4','heizkosten','verbrauch'],['Warmwasser','5','heizkosten','verbrauch'],['Müllgebühren','8','betriebskosten','personen'],['Straßenreinigung','8','betriebskosten','flaeche'],
+  ['Allgemeinstrom','11','betriebskosten','flaeche'],['Schornsteinfeger','12','betriebskosten','flaeche'],['Versicherungen','13','betriebskosten','flaeche'],['Hausmeister','14','betriebskosten','flaeche']];
+/* feste zusätzliche Kostenarten je Objekt */
+const KA_OBJEKT={E4:[['Internet','17','betriebskosten','einheiten']],K28:[['Internet','17','betriebskosten','einheiten']]};
 /* welche Zähler zu welcher Kostenart passen */
 const ZTYP=k=>{const n=norm(k.name);const re=/strom/.test(n)?/strom/:/wasser/.test(n)&&!/niederschlag/.test(n)?/wasser/:/gas|heiz|warm/.test(n)?/gas|warm|warme/:null;return re?{test:t=>re.test(norm(t))}:null;};
 const LOHN=k=>/hausmeister|reinigung|garten|schornstein|winterdienst/.test(norm(k.name));
@@ -177,7 +178,8 @@ async function anlegen(){ const o=D.o; const b=$('anl'); if(b){ b.disabled=true;
       const alt2neu={}; for(const x of (pe.data||[])) if(x.einheit_ref&&em[x.einheit_ref]) alt2neu[x.id]=em[x.einheit_ref];
       rows=(pk.data||[]).map(k=>{ const ein={}; for(const [id,v] of Object.entries(k.einheiten||{})) if(alt2neu[id]) ein[alt2neu[id]]=v;
         return {abrechnung_id:a.id,name:k.name,gruppe:k.gruppe,schluessel:k.schluessel,umlagefaehig:k.umlagefaehig,betrkv_nr:k.betrkv_nr,pos:k.pos,notiz:k.notiz,einheiten:ein,zaehler:k.zaehler||null,ausgeblendet:!!k.ausgeblendet,erledigt:false,ka_key:k.ka_key||null}; }); }
-    if(!rows.length) rows=STANDARD.map((s,i)=>({abrechnung_id:a.id,name:s[0],betrkv_nr:s[1],gruppe:s[2],schluessel:E.length===1?'einheiten':s[3],umlagefaehig:true,pos:i,einheiten:{},erledigt:false}));
+    if(!rows.length) rows=STANDARD.concat(KA_OBJEKT[o.kz]||[]).map((s,i)=>({abrechnung_id:a.id,name:s[0],betrkv_nr:s[1],gruppe:s[2],schluessel:E.length===1?'einheiten':s[3],umlagefaehig:true,pos:i,einheiten:{},erledigt:false}));
+    for(const x of (KA_OBJEKT[o.kz]||[])) if(!rows.some(r=>norm(r.name)===norm(x[0]))) rows.push({abrechnung_id:a.id,name:x[0],betrkv_nr:x[1],gruppe:x[2],schluessel:E.length===1?'einheiten':x[3],umlagefaehig:true,pos:rows.length,einheiten:{},erledigt:false});
     const {error:e3}=await sb.from('bk_kostenarten').insert(rows); if(e3) throw e3;
     ABR.push(a); toast('Abrechnung '+o.kz+' '+JAHR+' angelegt'+(vor?' – Kostenarten und Schlüssel aus '+vor.jahr+' übernommen.':'.')); await objLaden(); }
   catch(err){ toast('Nicht angelegt: '+(err.message||err),7000); if(b){ b.disabled=false; b.textContent='Abrechnung '+JAHR+' anlegen'; } } }
@@ -530,12 +532,12 @@ function kHtml(){ const k=K, ka=kKa(), Ko=kostenVon(ka), sum=summe(ka), V=vertei
   if(k.neu) h+=belegForm(k.neu,true);
   h+=Ko.length?Ko.map(c=>belegZeile(c)).join(''):(!k.neu?'<div class="sub" style="margin-top:8px">Noch keine Belege für diese Kostenart.</div>':'');
   /* Einheiten und Schlüssel */
-  h+='<div class="abs">Einheiten und Verteilerschlüssel</div><div class="acts" style="margin-top:0"><span class="sub">Schlüssel für alle</span><input id="k-schl" class="inp" list="dl-schl" data-wahl="1" value="'+esc(schlLabel(k.schluessel))+'" onchange="schlWahl(this,\'\')" style="width:240px;padding:4px 8px"><datalist id="dl-schl">'+SCHLUESSEL.map(([v,l])=>'<option value="'+esc(l)+'">').join('')+'</datalist><datalist id="dl-schl2"><option value="wie oben">'+SCHLUESSEL.filter(x=>!['direkt','nicht_umlegen'].includes(x[0])).map(([v,l])=>'<option value="'+esc(l)+'">').join('')+'</datalist>'
+  h+='<div class="abs">Einheiten und Verteilerschlüssel</div><div class="acts" style="margin-top:0"><span class="sub">Schlüssel für alle</span><input id="k-schl" class="inp" list="dl-schl" data-wahl="1" value="'+esc(schlLabel(k.schluessel))+'" onchange="schlWahl(this,\'\')" style="width:240px;padding:4px 8px"><datalist id="dl-schl">'+SCHLUESSEL.map(([v,l])=>'<option value="'+esc(l)+'">').join('')+'</datalist><datalist id="dl-schl2">'+SCHLUESSEL.filter(x=>!['direkt','nicht_umlegen'].includes(x[0])).map(([v,l])=>'<option value="'+esc(l)+'">').join('')+'</datalist>'
     +'<label class="sub"><input type="checkbox" '+(k.umlagefaehig?'checked':'')+' onchange="K.umlagefaehig=this.checked;K.geaendert=true"> umlagefähig</label></div>';
   h+='<div class="tbox" style="margin-top:6px"><table class="tab"><thead><tr><th>nimmt teil</th><th>Einheit</th><th class="n">Fläche</th><th class="n">Personen</th><th>Schlüssel</th><th class="n">fester Anteil %</th><th class="n">Anteil</th><th class="n">Betrag</th></tr></thead><tbody>'
     +D.ein.map(e=>{ const v=k.ein[e.id], p=personenVon(e), ML=D.mvs.filter(m=>m.einheit_id===e.id).sort((a,b)=>String(a.von).localeCompare(String(b.von)));
       return '<tr><td><input type="checkbox" '+(v.teil?'checked':'')+' onchange="K.ein[\''+e.id+'\'].teil=this.checked;K.geaendert=true;kNeu2()"></td><td><b>'+esc(e.bezeichnung)+'</b> <span class="sub">'+esc(e.kategorie||'')+'</span>'+(ML.length?'':mieterListe(e))+'</td><td class="n">'+(e.flaeche?fnum.format(e.flaeche)+' m²':'–')+'</td><td class="n">'+(ML.length?'<span class="sub">'+fnum.format(persZeit(e))+'</span>':'<input class="zahl" style="width:60px" inputmode="numeric" value="'+(p!=null?esc(p):'')+'" placeholder="–" onchange="personenSetzen(\''+e.id+'\',this.value)">')+'</td>'
-        +'<td><input list="dl-schl2" data-wahl="1" value="'+esc(v.schluessel?schlLabel(v.schluessel):'wie oben')+'" onchange="schlWahl(this,\''+e.id+'\')" style="width:190px"'+(v.teil?'':' disabled')+'></td>'
+        +'<td><input list="dl-schl2" data-wahl="1" value="'+esc(schlLabel(v.schluessel||k.schluessel))+'" onchange="schlWahl(this,\''+e.id+'\')" style="width:190px"'+(v.teil?'':' disabled')+'></td>'
         +'<td class="n"><input class="zahl" style="width:70px" value="'+esc(v.prozent)+'" inputmode="decimal" onchange="K.ein[\''+e.id+'\'].prozent=this.value;K.geaendert=true;kNeu2()"'+(v.teil?'':' disabled')+'></td>'
         +'<td class="n">'+(V[e.id]!=null?fnum.format(V[e.id]*100)+' %':'–')+'</td><td class="n">'+(V[e.id]!=null?eur(sum*V[e.id]):'–')+'</td></tr>'+mvZeilen(e,ML,MB);
 }).join('')+'</tbody></table></div>';
@@ -559,7 +561,7 @@ function kNachRender(){ }
 async function kEntfernen(btn){ const ka=kKa(); if(kostenVon(ka).length){ toast('Die Kostenart hat noch Belege.'); return; } if(btn.dataset.sure!=='1'){ btn.dataset.sure='1'; btn.textContent='wirklich entfernen?'; return; }
   const {error}=await sb.from('bk_kostenarten').delete().eq('id',ka.id); if(error){ toast('Nicht entfernt: '+error.message); return; } D.kas=D.kas.filter(x=>x.id!==ka.id); K=null; toast('Kostenart „'+ka.name+'“ entfernt.'); render(); }
 function schlWahl(inp,eid){ const v=inp.value.trim(); if(eid&&(!v||v==='wie oben')){ K.ein[eid].schluessel=''; K.geaendert=true; return kNeu2(); }
-  const x=SCHLUESSEL.find(y=>y[1]===v)||SCHLUESSEL.find(y=>norm(y[1]).includes(norm(v))||y[0]===norm(v)||norm(v).startsWith(y[0].slice(0,5))); if(!x){ toast('Bitte einen Schlüssel aus der Liste wählen.'); inp.value=eid?(K.ein[eid].schluessel?schlLabel(K.ein[eid].schluessel):'wie oben'):schlLabel(K.schluessel); return; }
+  const x=SCHLUESSEL.find(y=>y[1]===v)||SCHLUESSEL.find(y=>norm(y[1]).includes(norm(v))||y[0]===norm(v)||norm(v).startsWith(y[0].slice(0,5))); if(!x){ toast('Bitte einen Schlüssel aus der Liste wählen.'); inp.value=eid?schlLabel(K.ein[eid].schluessel||K.schluessel):schlLabel(K.schluessel); return; }
   if(eid) K.ein[eid].schluessel=x[0]===K.schluessel?'':x[0]; else K.schluessel=x[0]; K.geaendert=true; kNeu2(); }
 document.addEventListener('focusin',e=>{ const t=e.target; if(t&&t.dataset&&t.dataset.wahl){ t.dataset.alt=t.value; t.value=''; } });
 document.addEventListener('focusout',e=>{ const t=e.target; if(t&&t.dataset&&t.dataset.wahl&&!t.value&&t.dataset.alt) t.value=t.dataset.alt; });
