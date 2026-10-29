@@ -228,13 +228,18 @@ function personMatch(t){if(!PERSON)return true;if(Array.isArray(t.beteiligte)&&t
 function initPersonSel(){const el=document.getElementById('personsel');if(el)el.innerHTML='<option value="">👥 Alle Personen</option>'+TEAM.map(p=>`<option value="${esc(p)}"${PERSON===p?' selected':''}>${esc(p)}</option>`).join('');}
 function renderDBeteiligte(){document.getElementById('d_beteiligte').innerHTML=TEAM.map(p=>`<button type="button" class="pbtn${BETEIL.includes(p)?' on':''}" onclick="toggleBeteil('${p.replace(/'/g,"\\'")}')">${BETEIL.includes(p)?'✓ ':''}${esc(p)}</button>`).join('');}
 function toggleBeteil(p){if(BETEIL.includes(p))BETEIL=BETEIL.filter(x=>x!==p);else BETEIL.push(p);renderDBeteiligte();}
-let MASSV='';
-function renderDMass(){document.getElementById('d_mass').innerHTML=MASSORDER.map(m=>`<button type="button" class="pbtn${MASSV===m?' on':''}" onclick="toggleMass('${m}')">${MASSICON[m]} ${MASSLBL[m]}</button>`).join('')+`<button type="button" class="pbtn${MASSV===''?' on':''}" onclick="toggleMass('')" style="opacity:.8">— keine</button>`;}
-function toggleMass(m){MASSV=m;renderDMass();if(m==='followup')dFollowup();}
+let MASSV=[];
+function renderDMass(){document.getElementById('d_mass').innerHTML=MASSORDER.map(m=>`<button type="button" class="pbtn${MASSV.includes(m)?' on':''}" onclick="toggleMass('${m}')">${MASSICON[m]} ${MASSLBL[m]}</button>`).join('')+`<button type="button" class="pbtn${MASSV.length===0?' on':''}" onclick="toggleMass('')" style="opacity:.8">— keine</button>`;}
+function toggleMass(m){
+  if(m===''){MASSV=[];renderDMass();return;}
+  if(MASSV.includes(m))MASSV=MASSV.filter(x=>x!==m);
+  else{MASSV.push(m);if(m==='followup')dFollowup();}
+  renderDMass();
+}
 function renderDTags(){document.getElementById('d_tags').innerHTML=TAGS.map(tg=>`<span class="tagchip">#${esc(tg)}<b onclick="dDelTag('${esc(tg).replace(/'/g,"\\'")}')">✕</b></span>`).join('');}
 function dAddTag(){const el=document.getElementById('d_tagnew');const v=(el.value||'').trim().replace(/^#/,'');if(!v){return;}if(!TAGS.includes(v))TAGS.push(v);el.value='';renderDTags();}
 function dDelTag(tg){TAGS=TAGS.filter(x=>x!==tg);renderDTags();}
-function artMatch(t){if(ART==='alle')return true;if(ART==='aufgabe'||ART==='ticket')return (t.art||'aufgabe')===ART;if(ART.indexOf('m:')===0)return (t.massnahme||'')===ART.slice(2);return true;}
+function artMatch(t){if(ART==='alle')return true;if(ART==='aufgabe'||ART==='ticket')return (t.art||'aufgabe')===ART;if(ART.indexOf('m:')===0){const ms=Array.isArray(t.massnahme)?t.massnahme:(t.massnahme?[t.massnahme]:[]);return ms.indexOf(ART.slice(2))>=0;}return true;}
 function vis(){return TASKS.filter(t=>artMatch(t)&&(!WVONLY||(t.wiedervorlage&&t.wiedervorlage<=today&&t.status!=='erledigt'))&&personMatch(t));}
 function setArt(a){ART=a;document.querySelectorAll('#artseg button').forEach(b=>b.classList.toggle('on',b.dataset.a===a));render();}
 function toggleWV(){WVONLY=!WVONLY;document.getElementById('wvBtn').classList.toggle('pri',WVONLY);render();}
@@ -262,7 +267,7 @@ function card(t){
   const due=t.faellig?`<span class="pill ${over?'over':'due'}">📅 ${dfmt(t.faellig)}${over?' · überfällig':''}</span>`:'';
   const a=t.art||'aufgabe';
   const artb=`<span class="pill art">${ARTICON[a]||'📌'} ${ARTLBL[a]||'Aufgabe'}</span>`;
-  const mb=(t.massnahme&&MASSLBL[t.massnahme])?`<span class="pill mass">${MASSICON[t.massnahme]} ${MASSLBL[t.massnahme]}</span>`:'';
+  const mb=(Array.isArray(t.massnahme)?t.massnahme:(t.massnahme?[t.massnahme]:[])).filter(m=>MASSLBL[m]).map(m=>`<span class="pill mass">${MASSICON[m]} ${MASSLBL[m]}</span>`).join('');
   const prio=t.prio?`<span class="pill prio">${esc(t.prio)}</span>`:'';
   const wvOver=t.wiedervorlage&&t.wiedervorlage<=today&&t.status!=='erledigt';
   const wv=t.wiedervorlage?`<span class="pill wv ${wvOver?'over':''}">🔔 ${dfmt(t.wiedervorlage)}</span>`:'';
@@ -387,7 +392,7 @@ async function openDetail(id){
   document.getElementById('dov').classList.add('show');
   TAGS=Array.isArray(t.tags)?t.tags.slice():[];document.getElementById('d_tagnew').value='';renderDTags();
   BETEIL=Array.isArray(t.beteiligte)?t.beteiligte.slice():[];renderDBeteiligte();
-  MASSV=t.massnahme||'';renderDMass();
+  MASSV=Array.isArray(t.massnahme)?t.massnahme.slice():(t.massnahme?[t.massnahme]:[]);renderDMass();
   SUBS=[];VER=[];renderDSubs();renderDVer();
   const [s,v]=await Promise.all([
     sb.from('os_task_subtasks').select('*').eq('task_id',id).order('created_at'),
@@ -431,7 +436,7 @@ async function dSave(){
     beschreibung:document.getElementById('d_beschreibung').value||null,
     tags:TAGS.slice(),
     beteiligte:BETEIL.slice(),
-    massnahme:MASSV||null,
+    massnahme:MASSV.slice(),
     updated_at:new Date().toISOString()
   };
   const changes=[];const map={status:'Status',prio:'Priorität',faellig:'Fällig',wiedervorlage:'Wiedervorlage',verantwortlich:'Verantwortlich',art:'Art'};
@@ -458,11 +463,12 @@ async function fuCreate(){
   if(dateV)neu=dateV;
   else{const base=DTASK.faellig||today;const n=(!isNaN(daysV)&&daysV>0)?daysV:7;const x=new Date(base);x.setDate(x.getDate()+n);neu=x.toISOString().slice(0,10);}
   const alt=DTASK.faellig||'—';
-  const patch={faellig:neu,wiedervorlage:neu,massnahme:'followup',updated_at:new Date().toISOString()};
+  if(!MASSV.includes('followup'))MASSV.push('followup');
+  const patch={faellig:neu,wiedervorlage:neu,massnahme:MASSV.slice(),updated_at:new Date().toISOString()};
   const {error}=await sb.from('os_tasks').update(patch).eq('id',DTASK.id);
   if(error){toast('Fehler: '+error.message);return;}
   Object.assign(DTASK,patch);
-  MASSV='followup';renderDMass();
+  renderDMass();
   document.getElementById('d_faellig').value=neu;document.getElementById('d_wiedervorlage').value=neu;
   await logVer('🔁 Follow-up: Fälligkeit verschoben '+(alt==='—'?'':alt.split('-').reverse().join('.')+' → ')+neu.split('-').reverse().join('.'));
   fuClose();render();toast('Fälligkeit verschoben auf '+neu.split('-').reverse().join('.')+' ✓');
