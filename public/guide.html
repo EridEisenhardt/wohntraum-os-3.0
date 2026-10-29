@@ -52,15 +52,19 @@ async function laden(){
     const oid=q.get('objekt');
     const [o,p]=await Promise.all([sb.from('obj_objekte').select('name,strasse,plz,ort,lat,lng,bild_url').eq('id',oid).maybeSingle(),sb.from('objekt_guide_punkte').select('bereich,punkt,text,sort,medien').eq('object_id',oid)]);
     if(o.data&&!p.error)d={name:o.data.name,adresse:[o.data.strasse,[o.data.plz,o.data.ort].filter(Boolean).join(' ')].filter(Boolean).join(', '),lat:o.data.lat,lng:o.data.lng,bild:o.data.bild_url,punkte:p.data||[],vorschau:true};
+    if(d&&q.get('einheit')){ const [e,ep]=await Promise.all([sb.from('obj_einheiten').select('bezeichnung,lage').eq('id',q.get('einheit')).maybeSingle(),sb.from('einheit_guide_punkte').select('bereich,punkt,text,sort,medien').eq('einheit_id',q.get('einheit'))]); d.einheit=e.data||null; d.einheit_punkte=ep.data||[]; }
   }
   if(!d){document.getElementById('app').innerHTML='<div class="leer">Dieser Link ist ungültig oder wurde gesperrt.<br>Bitte wenden Sie sich an die Hausverwaltung.</div>';return;}
-  G=d;G.punkte=(G.punkte||[]).filter(p=>(p.medien||[]).length||(p.text||'').trim()).sort((a,b)=>(a.sort||0)-(b.sort||0));
+  G=d;
+  /* Guide einer Einheit: deren Punkte zuerst, mit dem Namen der Einheit vor dem Bereich; danach der Guide des Hauses */
+  if(G.einheit){ const en=G.einheit.bezeichnung||'Einheit'; const EP=(G.einheit_punkte||[]).map(p=>Object.assign({},p,{bereich:en+' · '+p.bereich,sort:(p.sort||0)-100000})); G.punkte=EP.concat(G.punkte||[]); G.einheitName=en; }
+  G.punkte=(G.punkte||[]).filter(p=>(p.medien||[]).length||(p.text||'').trim()).sort((a,b)=>(a.sort||0)-(b.sort||0));
   BILDER=[];G.punkte.forEach(p=>(p.medien||[]).forEach(m=>{if(m.typ!=='video')BILDER.push({url:m.url,text:m.text||p.punkt});}));
   if(!BILDER.length&&G.bild)BILDER.push({url:G.bild,text:'Außenansicht'});
   document.title='Guide '+(G.name||'');
   render();
 }
-function bereiche(){const b=[...ORDNUNG];G.punkte.forEach(p=>{if(!b.includes(p.bereich))b.push(p.bereich);});return b.filter(x=>G.punkte.some(p=>p.bereich===x));}
+function bereiche(){const b=[];G.punkte.forEach(p=>{if(G.einheitName&&p.bereich.startsWith(G.einheitName+' · ')&&!b.includes(p.bereich))b.push(p.bereich);});ORDNUNG.forEach(x=>{if(!b.includes(x))b.push(x);});G.punkte.forEach(p=>{if(!b.includes(p.bereich))b.push(p.bereich);});return b.filter(x=>G.punkte.some(p=>p.bereich===x));}
 function trifft(p){if(!such)return true;const s=such.toLowerCase();return [p.punkt,p.text,p.bereich,...(p.medien||[]).map(m=>m.text)].join(' ').toLowerCase().includes(s);}
 function kurz(n){return n.split(' / ')[0].split(' & ')[0];}
 function karteUrl(){return (G.lat&&G.lng)?`https://www.google.com/maps/search/?api=1&query=${G.lat},${G.lng}`:`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(G.adresse||G.name||'')}`;}
@@ -69,7 +73,7 @@ function render(){
   let h=`<div class="kopf"><span>Haustechnik-Guide</span><span>Wohntraum Rheinhessen</span></div>`;
   if(G.vorschau)h+='<div class="vorschau">Vorschau: So sehen Dienstleister den Guide. Punkte ohne Inhalt werden nicht angezeigt.</div>';
   h+=`<div class="karte">${b?`<div class="slide" style="background-image:url('${esc(b.url)}')" onclick="lb('${esc(b.url)}')"><div class="cap">${esc(b.text)}</div>${BILDER.length>1?`<div class="zahl">${idx+1} / ${BILDER.length}</div><button class="zur" onclick="event.stopPropagation();blaettern(-1)">Zurück</button><button class="vor" onclick="event.stopPropagation();blaettern(1)">Weiter</button>`:''}</div>`:''}
-    <div class="adr"><div class="t"><b>${esc(G.name||'')}</b><span>${esc(G.adresse||'')}</span></div><a class="btn" href="${karteUrl()}" target="_blank" rel="noopener">Karte öffnen</a></div></div>
+    <div class="adr"><div class="t"><b>${esc(G.name||'')}${G.einheit?' · '+esc(G.einheit.bezeichnung||''):''}</b>${G.einheit&&G.einheit.lage?`<span>${esc(G.einheit.lage)}</span>`:''}<span>${esc(G.adresse||'')}</span></div><a class="btn" href="${karteUrl()}" target="_blank" rel="noopener">Karte öffnen</a></div></div>
     <input class="suche" id="suche" placeholder="Suche: Mülltonne, Sicherung, Zähler …" value="${esc(such)}" oninput="such=this.value.trim();liste()">
     <div class="chips">${G.punkte.map((p,i)=>`<button class="chip" onclick="springe(${i})">${esc(kurz(p.punkt))}</button>`).join('')}</div>
     <div id="liste"></div><div class="fuss">Fragen? Bitte wenden Sie sich an die Hausverwaltung.</div>`;

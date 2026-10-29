@@ -334,7 +334,7 @@ async function gPunktWeg(kk){const p=gFinde(kk);if(!confirm('Punkt "'+p.punkt+'"
 function qrLib(){return new Promise((res,rej)=>{if(window.QRCode)return res();const s=document.createElement('script');s.src='https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js';s.onload=()=>res();s.onerror=()=>rej(new Error('QR-Code konnte nicht erzeugt werden.'));document.head.appendChild(s);});}
 async function guideTeilen(){
   dialog('<h3>Guide teilen</h3><div class="empty">Lädt …</div>');
-  const {data,error}=await sb.from('objekt_guide_freigaben').select('*').eq('object_id',id).eq('aktiv',true).order('created_at',{ascending:false}).limit(1);
+  const {data,error}=await sb.from('objekt_guide_freigaben').select('*').eq('object_id',id).is('einheit_id',null).eq('aktiv',true).order('created_at',{ascending:false}).limit(1);
   if(error){dialog('<h3>Guide teilen</h3><div class="empty">Fehler: '+esc(error.message)+'</div><div class="akt"><button class="btn zw" onclick="zu()">Schließen</button></div>');return;}
   const f=(data||[])[0];
   if(!f){dialog(`<h3>Guide teilen</h3><p style="font-size:14px;line-height:1.6">Mit dem Link oder QR-Code sehen Dienstleister und Handwerker <b>nur den Haustechnik-Guide</b> dieses Objekts, keine Mieter, Verträge oder Finanzen. Eine Anmeldung ist nicht nötig. Der Link kann jederzeit gesperrt werden.</p>
