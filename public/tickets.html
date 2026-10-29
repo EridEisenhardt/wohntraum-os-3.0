@@ -112,7 +112,10 @@ const esc=s=>(s==null?'':String(s)).replace(/&/g,'&amp;').replace(/</g,'&lt;').r
 function toast(m){const t=$('toast');t.textContent=m;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),1800);}
 function fmtD(d){if(!d)return '—';const p=String(d).split('-');return p.length===3?p[2]+'.'+p[1]+'.'+p[0]:d;}
 
-const STATUS=['Neu','In Bearbeitung','Wartet','Warten auf Rückmeldung','Erledigt'];
+const STATUS=['Neu','In Bearbeitung','Wartet','Erledigt'];
+// Tickets laufen über os_tasks (art='ticket'). Status-Mapping OS <-> Anzeige:
+const TST_OS2DE={todo:'Neu',inarbeit:'In Bearbeitung',warten:'Wartet',erledigt:'Erledigt'};
+const TST_DE2OS={'Neu':'todo','In Bearbeitung':'inarbeit','Wartet':'warten','Warten auf Rückmeldung':'warten','Erledigt':'erledigt'};
 const PRIO=['P1','P2','P3'];
 const PERS=['','Eric','Jürgen','Stephan','Ramona','Extern'];
 const sCls=s=>'s-'+String(s||'Neu').replace(/\s+/g,'');
@@ -130,13 +133,14 @@ const refName=t=>kontaktName(t.quelle,t.kontakt_id)||firmaName(t.quelle,t.firma_
 
 async function load(){
   const[t,kv,fv,kh,fh]=await Promise.all([
-    sb.from('tickets').select('*').order('nummer',{ascending:false}),
+    sb.from('os_tasks').select('*').eq('art','ticket').order('nummer',{ascending:false}),
     sb.from('crm_kontakte').select('*').order('name'),
     sb.from('crm_firmen').select('*').order('name'),
     sb.from('hv_kontakte').select('*').order('name'),
     sb.from('hv_firmen').select('*').order('name')
   ]);
-  T=t.data||[];KV=kv.data||[];FV=fv.data||[];KH=kh.data||[];FH=fh.data||[];
+  T=(t.data||[]).map(x=>({...x,status:TST_OS2DE[x.status]||'Neu',quelle:x.quelle_bereich||'vertrieb'}));
+  KV=kv.data||[];FV=fv.data||[];KH=kh.data||[];FH=fh.data||[];
   initNav();render();
   try{const op=new URLSearchParams(location.search).get('ticket');if(op&&T.some(x=>x.id===op))openTicket(op);}catch(e){}
 }
@@ -234,10 +238,10 @@ async function drop(ev,status,el){
   await setStatus(t.id,status);
 }
 async function setStatus(id,status){
-  const patch={status,updated_at:new Date().toISOString(),erledigt_at:status==='Erledigt'?new Date().toISOString():null};
-  const{error}=await sb.from('tickets').update(patch).eq('id',id);
+  const patch={status:TST_DE2OS[status]||'todo',updated_at:new Date().toISOString()};
+  const{error}=await sb.from('os_tasks').update(patch).eq('id',id);
   if(error){toast(error.message);return;}
-  const t=T.find(x=>x.id===id);if(t)Object.assign(t,patch);
+  const t=T.find(x=>x.id===id);if(t)t.status=status;
   render();toast('Status: '+status+' ✓');
 }
 
@@ -265,8 +269,8 @@ async function openTicket(id){
   fillForm(t);$('ov').classList.add('show');
   $('tkSubWrap').style.display='';$('tkVerWrap').style.display='';
   const [s,v]=await Promise.all([
-    sb.from('ticket_subtasks').select('*').eq('ticket_id',id).order('pos',{ascending:true}).order('created_at',{ascending:true}),
-    sb.from('ticket_verlauf').select('*').eq('ticket_id',id).order('created_at',{ascending:false})
+    sb.from('os_task_subtasks').select('*').eq('task_id',id).order('pos',{ascending:true}).order('created_at',{ascending:true}),
+    sb.from('os_task_verlauf').select('*').eq('task_id',id).order('created_at',{ascending:false})
   ]);
   SUBS=s.data||[];VER=v.data||[];renderSubs();renderVer();
 }
@@ -294,18 +298,18 @@ async function addSub(){
   if(!CUR||!CUR.id){toast('Erst Ticket speichern');return;}
   const el=$('tkSubNew');const t=(el.value||'').trim();if(!t)return;
   const pos=(SUBS.reduce((m,s)=>Math.max(m,s.pos||0),0))+1;
-  const {data,error}=await sb.from('ticket_subtasks').insert({ticket_id:CUR.id,titel:t,pos}).select().maybeSingle();
+  const {data,error}=await sb.from('os_task_subtasks').insert({task_id:CUR.id,titel:t,pos}).select().maybeSingle();
   if(error){toast(error.message);return;}if(data)SUBS.push(data);el.value='';renderSubs();
 }
-async function toggleSub(id){const s=SUBS.find(x=>x.id===id);if(!s)return;s.done=!s.done;renderSubs();await sb.from('ticket_subtasks').update({done:s.done}).eq('id',id);}
-async function delSub(id){await sb.from('ticket_subtasks').delete().eq('id',id);SUBS=SUBS.filter(s=>s.id!==id);renderSubs();}
+async function toggleSub(id){const s=SUBS.find(x=>x.id===id);if(!s)return;s.done=!s.done;renderSubs();await sb.from('os_task_subtasks').update({done:s.done}).eq('id',id);}
+async function delSub(id){await sb.from('os_task_subtasks').delete().eq('id',id);SUBS=SUBS.filter(s=>s.id!==id);renderSubs();}
 async function addComment(){
   if(!CUR||!CUR.id){toast('Erst Ticket speichern');return;}
   const el=$('tkComment');const t=(el.value||'').trim();if(!t){toast('Bitte Text eingeben');return;}
-  const {data,error}=await sb.from('ticket_verlauf').insert({ticket_id:CUR.id,art:'kommentar',text:t,autor:ICH||null}).select().maybeSingle();
+  const {data,error}=await sb.from('os_task_verlauf').insert({task_id:CUR.id,art:'kommentar',text:t,autor:ICH||null}).select().maybeSingle();
   if(error){toast(error.message);return;}if(data)VER.unshift(data);el.value='';renderVer();toast('Kommentar gespeichert ✓');
 }
-async function logVer(ticketId,art,text){try{const {data}=await sb.from('ticket_verlauf').insert({ticket_id:ticketId,art,text,autor:ICH||null}).select().maybeSingle();if(data&&CUR&&CUR.id===ticketId)VER.unshift(data);}catch(e){}}
+async function logVer(ticketId,art,text){try{const {data}=await sb.from('os_task_verlauf').insert({task_id:ticketId,art,text,autor:ICH||null}).select().maybeSingle();if(data&&CUR&&CUR.id===ticketId)VER.unshift(data);}catch(e){}}
 /* Diktat + KI */
 let REC=null,RECBTN=null,RECBASE='';
 function diktieren(targetId,btnId){
@@ -347,13 +351,13 @@ async function saveTicket(){
   const titel=$('f_titel').value.trim();
   if(!titel){toast('Titel fehlt');return;}
   const status=$('f_status').value;
-  const row={titel,status,prio:$('f_prio').value,quelle:$('f_quelle').value||'vertrieb',
+  const row={titel,art:'ticket',status:TST_DE2OS[status]||'todo',prio:$('f_prio').value,
+    quelle:'ticket',quelle_bereich:$('f_quelle').value||'vertrieb',
     kontakt_id:$('f_kontakt_id').value||null,firma_id:$('f_firma_id').value||null,
     verantwortlich:$('f_verantwortlich').value||null,faellig:$('f_faellig').value||null,
     asana_url:$('f_asana_url').value.trim()||null,beschreibung:$('f_beschreibung').value||null,
-    updated_at:new Date().toISOString(),
-    erledigt_at:status==='Erledigt'?new Date().toISOString():null};
-  if(CUR.id){const{error}=await sb.from('tickets').update(row).eq('id',CUR.id);if(error){toast(error.message);return;}
+    updated_at:new Date().toISOString()};
+  if(CUR.id){const{error}=await sb.from('os_tasks').update(row).eq('id',CUR.id);if(error){toast(error.message);return;}
     const old=CUR.snap||{};const chg=[];
     if((old.status||'')!==status)chg.push('Status: '+(old.status||'—')+' → '+status);
     if((old.prio||'')!==row.prio)chg.push('Priorität: '+(old.prio||'—')+' → '+row.prio);
@@ -362,13 +366,15 @@ async function saveTicket(){
     if((old.titel||'')!==titel)chg.push('Titel geändert');
     for(const c of chg)await logVer(CUR.id,'aenderung',c);
     toast('Ticket gespeichert ✓');}
-  else{const{error}=await sb.from('tickets').insert(row);if(error){toast(error.message);return;}toast('Ticket angelegt ✓');}
+  else{const {data:mx}=await sb.from('os_tasks').select('nummer').not('nummer','is',null).order('nummer',{ascending:false}).limit(1);
+    row.nummer=((mx&&mx[0]&&mx[0].nummer)||0)+1;
+    const{error}=await sb.from('os_tasks').insert(row);if(error){toast(error.message);return;}toast('Ticket angelegt ✓');}
   closeDlg();load();
 }
 async function delTicket(id){
   const t=T.find(x=>x.id===id);
   if(!confirm('Ticket #'+(t?t.nummer:'')+' löschen?'))return;
-  await sb.from('tickets').delete().eq('id',id);load();
+  await sb.from('os_tasks').delete().eq('id',id);load();
 }
 
 window.setView=setView;window.openTicket=openTicket;window.openNew=openNew;window.closeDlg=closeDlg;

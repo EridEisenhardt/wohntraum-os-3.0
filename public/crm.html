@@ -163,7 +163,10 @@ const SPEC={
  deal:[['titel','Titel','text'],['firma_id','Firma','firma'],['kontakt_id','Kontakt','kontakt'],['wert','Wert (€)','number'],['stufe','Stufe','stufe'],['wahrscheinlichkeit','Wahrscheinlichkeit (%)','number'],['abschluss_datum','Abschlussdatum','date'],['notizen','Notizen','textarea']]
 };
 let VIEW='kontakte', K=[],F=[],D=[],A=[],TL=[],M=[],KAT=[],TCK=[], CUR=null, DRAG=null, q='', kFilt='', pFilt='', aFilt={typ:'',status:''};
-const TSTATUS=['Neu','In Bearbeitung','Wartet','Warten auf Rückmeldung','Erledigt'];
+const TSTATUS=['Neu','In Bearbeitung','Wartet','Erledigt'];
+// Tickets laufen jetzt über os_tasks (art='ticket'). Status-Mapping OS <-> CRM-Anzeige:
+const TST_OS2DE={todo:'Neu',inarbeit:'In Bearbeitung',warten:'Wartet',erledigt:'Erledigt'};
+const TST_DE2OS={'Neu':'todo','In Bearbeitung':'inarbeit','Wartet':'warten','Warten auf Rückmeldung':'warten','Erledigt':'erledigt'};
 const POT=['A','B+','B','C'];
 const POTC={'A':'#1f7a4d','B+':'#185fa5','B':'#b45309','C':'#6b7280'};
 const potBadge=v=>v?`<span class="pot" style="background:${POTC[v]||'#6b7280'}">${esc(v)}</span>`:'—';
@@ -226,9 +229,10 @@ async function load(){
     sb.from('crm_timeline').select('*').order('created_at',{ascending:false}),
     sb.from('crm_mails').select('*').order('datum',{ascending:false}).limit(1000),
     sb.from('crm_kategorien').select('*').order('sort').order('name'),
-    sb.from('tickets').select('*').eq('quelle','vertrieb').order('created_at',{ascending:false})
+    sb.from('os_tasks').select('*').eq('art','ticket').eq('quelle_bereich','vertrieb').order('created_at',{ascending:false})
   ]);
-  K=k.data||[];F=f.data||[];D=d.data||[];A=a.data||[];TL=tl.data||[];M=m.data||[];KAT=kt.data||[];TCK=tc.data||[];
+  K=k.data||[];F=f.data||[];D=d.data||[];A=a.data||[];TL=tl.data||[];M=m.data||[];KAT=kt.data||[];
+  TCK=(tc.data||[]).map(t=>({...t,status:TST_OS2DE[t.status]||'Neu'}));
   KAT.sort((a,b)=>String(a.name||'').localeCompare(String(b.name||''),'de',{sensitivity:'base'}));
   K.sort((a,b)=>kName(a).localeCompare(kName(b),'de',{sensitivity:'base'}));
   F.sort((a,b)=>String(a.name||'').localeCompare(String(b.name||''),'de',{sensitivity:'base'}));
@@ -559,9 +563,10 @@ function renderTickets(){
   </div>`).join(''):'<div class="empty" style="padding:10px">Keine Tickets zu diesem Datensatz.</div>';
 }
 async function tckStatus(id,status){
-  const patch={status,updated_at:new Date().toISOString(),erledigt_at:status==='Erledigt'?new Date().toISOString():null};
-  const{error}=await sb.from('tickets').update(patch).eq('id',id);if(error){toast(error.message);return;}
-  const t=TCK.find(x=>x.id===id);if(t)Object.assign(t,patch);
+  const osSt=TST_DE2OS[status]||'todo';
+  const patch={status:osSt,updated_at:new Date().toISOString()};
+  const{error}=await sb.from('os_tasks').update(patch).eq('id',id);if(error){toast(error.message);return;}
+  const t=TCK.find(x=>x.id===id);if(t)t.status=status;
   if(t)await logTL(CUR.typ,CUR.id,'aenderung',{feld:'Ticket #'+t.nummer,alt:'',neu:status});
   renderTickets();renderTL();toast('Status: '+status+' ✓');
 }
@@ -569,11 +574,13 @@ async function newTicket(){
   if(!CUR||!CUR.id){toast('Erst speichern, dann Ticket');return;}
   const titel=prompt('Titel des Tickets:');if(!titel||!titel.trim())return;
   const asana=prompt('Asana-Link (optional):','')||'';
-  const row={titel:titel.trim(),status:'Neu',prio:'P2',asana_url:asana.trim()||null,quelle:'vertrieb'};
+  const {data:mx}=await sb.from('os_tasks').select('nummer').not('nummer','is',null).order('nummer',{ascending:false}).limit(1);
+  const nummer=((mx&&mx[0]&&mx[0].nummer)||0)+1;
+  const row={titel:titel.trim(),art:'ticket',status:'todo',prio:'P2',asana_url:asana.trim()||null,quelle:'ticket',quelle_bereich:'vertrieb',nummer};
   row[CUR.typ+'_id']=CUR.id;
-  const{data,error}=await sb.from('tickets').insert(row).select();
+  const{data,error}=await sb.from('os_tasks').insert(row).select();
   if(error){toast(error.message);return;}
-  if(data&&data[0]){TCK.unshift(data[0]);await logTL(CUR.typ,CUR.id,'notiz',{text:'🎫 Ticket #'+data[0].nummer+' angelegt: '+data[0].titel});}
+  if(data&&data[0]){TCK.unshift({...data[0],status:TST_OS2DE[data[0].status]||'Neu'});await logTL(CUR.typ,CUR.id,'notiz',{text:'🎫 Ticket #'+data[0].nummer+' angelegt: '+data[0].titel});}
   renderTickets();
   const{data:tl}=await sb.from('crm_timeline').select('*').order('created_at',{ascending:false});TL=tl||[];
   renderTL();toast('Ticket angelegt ✓');

@@ -151,7 +151,13 @@ const dfmt=d=>d?new Date(d).toLocaleDateString('de-DE'):'—';
 const today=new Date().toISOString().slice(0,10);
 function toast(m){const t=document.getElementById('toast');t.textContent=m;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),1600);}
 const COLS=[['todo','📋 To Do'],['inarbeit','🔧 In Arbeit'],['warten','⏳ Wartet'],['erledigt','✅ Erledigt']];
+const ARTLBL={aufgabe:'Aufgabe',ticket:'Ticket',followup:'Follow-up'};
+const ARTICON={aufgabe:'📌',ticket:'🎫',followup:'📞'};
 let TASKS=[], KONT=[], OBJ=[];
+let ART='alle', WVONLY=false, SUBS=[], VER=[], DTASK=null, ICH='';
+function vis(){return TASKS.filter(t=>(ART==='alle'||(t.art||'aufgabe')===ART)&&(!WVONLY||(t.wiedervorlage&&t.wiedervorlage<=today&&t.status!=='erledigt')));}
+function setArt(a){ART=a;document.querySelectorAll('#artseg button').forEach(b=>b.classList.toggle('on',b.dataset.a===a));render();}
+function toggleWV(){WVONLY=!WVONLY;document.getElementById('wvBtn').classList.toggle('pri',WVONLY);render();}
 async function load(){
   const [t,ck,hk,ob]=await Promise.all([
     sb.from('os_tasks').select('*').order('pos',{ascending:true}).order('created_at',{ascending:true}),
@@ -164,20 +170,27 @@ async function load(){
   (ck.data||[]).concat(hk.data||[]).forEach(k=>{const nm=[k.vorname,k.name].filter(Boolean).join(' ').trim();if(nm&&!seen.has(nm)){seen.add(nm);KONT.push({id:k.id,label:nm});}});
   KONT.sort((a,b)=>a.label.localeCompare(b.label,'de'));
   OBJ=(ob.data||[]).map(o=>({id:o.id,label:(o.h_id_text?o.h_id_text+' · ':'')+(o.name||'')})).sort((a,b)=>a.label.localeCompare(b.label,'de'));
+  try{const {data:{session}}=await sb.auth.getSession();if(session&&session.user){ICH=(session.user.user_metadata&&(session.user.user_metadata.name||session.user.user_metadata.full_name))||session.user.email||'';}}catch(e){}
   render();
+  const qp=new URLSearchParams(location.search);const op=qp.get('task')||qp.get('ticket');if(op)openDetail(op);
 }
 function kontOptions(sel){return `<option value="">+ Kontakt</option>`+KONT.map(k=>`<option value="${k.id}|${esc(k.label)}"${sel===k.label?' selected':''}>${esc(k.label)}</option>`).join('');}
 function objOptions(sel){return `<option value="">+ Objekt</option>`+OBJ.map(o=>`<option value="${o.id}|${esc(o.label)}"${sel===o.label?' selected':''}>${esc(o.label)}</option>`).join('');}
 function card(t){
   const over=t.faellig&&t.faellig<today&&t.status!=='erledigt';
   const due=t.faellig?`<span class="pill ${over?'over':'due'}">📅 ${dfmt(t.faellig)}${over?' · überfällig':''}</span>`:'';
+  const a=t.art||'aufgabe';
+  const artb=`<span class="pill art">${ARTICON[a]||'📌'} ${ARTLBL[a]||'Aufgabe'}</span>`;
+  const prio=t.prio?`<span class="pill prio">${esc(t.prio)}</span>`:'';
+  const wvOver=t.wiedervorlage&&t.wiedervorlage<=today&&t.status!=='erledigt';
+  const wv=t.wiedervorlage?`<span class="pill wv ${wvOver?'over':''}">🔔 ${dfmt(t.wiedervorlage)}</span>`:'';
   const proj=t.projekt?`<span class="pill">${esc(t.projekt)}</span>`:'';
   const kont=t.kontakt_label?`<span class="pill kontakt">👤 ${esc(t.kontakt_label)}</span>`:'';
   const obj=t.object_label?`<span class="pill obj">🏠 ${esc(t.object_label)}</span>`:'';
   const asana=t.asana_url?`<a href="${esc(t.asana_url)}" target="_blank">↗ Asana</a>`:'';
   return `<div class="card" draggable="true" ondragstart="drag(event,'${t.id}')">
-    <div class="tt">${esc(t.titel)}</div>
-    <div class="meta">${due}${proj}${kont}${obj}</div>
+    <div class="tt" onclick="openDetail('${t.id}')">${esc(t.titel)}</div>
+    <div class="meta">${artb}${prio}${due}${wv}${proj}${kont}${obj}</div>
     <div class="links">${asana}
       <select onchange="linkKont('${t.id}',this.value)">${kontOptions(t.kontakt_label)}</select>
       <select onchange="linkObj('${t.id}',this.value)">${objOptions(t.object_label)}</select>
@@ -188,30 +201,33 @@ let VIEW='board', CALM=null;
 const STLBL={todo:'To Do',inarbeit:'In Arbeit',warten:'Wartet',erledigt:'Erledigt'};
 function setView(v){VIEW=v;document.querySelectorAll('#seg button').forEach(b=>b.classList.toggle('on',b.dataset.v===v));render();}
 function render(){
-  const over=TASKS.filter(t=>t.faellig&&t.faellig<today&&t.status!=='erledigt').length;
-  const done=TASKS.filter(t=>t.status==='erledigt').length;
+  const V=vis();
+  const over=V.filter(t=>t.faellig&&t.faellig<today&&t.status!=='erledigt').length;
+  const done=V.filter(t=>t.status==='erledigt').length;
+  const wvDue=TASKS.filter(t=>t.wiedervorlage&&t.wiedervorlage<=today&&t.status!=='erledigt').length;
   document.getElementById('kpis').innerHTML=[
-    ['Aufgaben gesamt',TASKS.length,''],['offen',TASKS.filter(t=>t.status!=='erledigt').length,''],
-    ['überfällig',over,over?'red':'green'],['erledigt',done,'green']
+    ['Aufgaben gesamt',V.length,''],['offen',V.filter(t=>t.status!=='erledigt').length,''],
+    ['überfällig',over,over?'red':'green'],['🔔 Wiedervorlage fällig',wvDue,wvDue?'amber':''],['erledigt',done,'green']
   ].map(k=>`<div class="kpi ${k[2]}"><div class="l">${k[0]}</div><div class="v">${k[1]}</div></div>`).join('');
   if(VIEW==='liste')renderList();else if(VIEW==='kalender')renderCalendar();else renderBoard();
   document.getElementById('foot').textContent='Verknüpfe Aufgaben mit Kontakten (CRM & Hausverwaltung) und Objekten – genau das kann Asana nicht. Umschalten zwischen Board, Liste und Kalender oben.';
 }
 function renderBoard(){
   document.getElementById('view').innerHTML='<div class="cols" id="cols"></div>';
+  const V=vis();
   document.getElementById('cols').innerHTML=COLS.map(([k,l])=>{
-    const list=TASKS.filter(t=>(t.status||'todo')===k);
+    const list=V.filter(t=>(t.status||'todo')===k);
     return `<div class="col" ondragover="event.preventDefault();this.classList.add('dragover')" ondragleave="this.classList.remove('dragover')" ondrop="drop(event,'${k}',this)">
       <div class="col-h"><span>${l}</span><span class="cnt">${list.length}</span></div>
       ${list.map(card).join('')}</div>`;
   }).join('');
 }
 function renderList(){
-  const rows=TASKS.slice().sort((a,b)=>{const av=a.faellig||'9999',bv=b.faellig||'9999';return av<bv?-1:av>bv?1:(a.pos||0)-(b.pos||0);});
+  const rows=vis().slice().sort((a,b)=>{const av=a.faellig||'9999',bv=b.faellig||'9999';return av<bv?-1:av>bv?1:(a.pos||0)-(b.pos||0);});
   document.getElementById('view').innerHTML=`<div style="overflow:auto"><table class="ltab"><thead><tr>
     <th>Aufgabe</th><th>Status</th><th>Fällig</th><th>Projekt</th><th>Kontakt</th><th>Objekt</th><th></th></tr></thead><tbody>
     ${rows.map(t=>{const over=t.faellig&&t.faellig<today&&t.status!=='erledigt';return `<tr class="${over?'over':''}">
-      <td>${esc(t.titel)}${t.asana_url?` <a href="${esc(t.asana_url)}" target="_blank">↗</a>`:''}</td>
+      <td><span class="tt" style="cursor:pointer;text-decoration:underline;text-decoration-style:dotted" onclick="openDetail('${t.id}')">${esc(t.titel)}</span>${t.asana_url?` <a href="${esc(t.asana_url)}" target="_blank">↗</a>`:''}</td>
       <td><select onchange="moveTask('${t.id}',this.value)">${COLS.map(([k,l])=>`<option value="${k}"${(t.status||'todo')===k?' selected':''}>${STLBL[k]}</option>`).join('')}</select></td>
       <td>${t.faellig?dfmt(t.faellig)+(over?' · überfällig':''):'—'}</td>
       <td>${esc(t.projekt||'—')}</td>
@@ -224,7 +240,7 @@ let CALMODE='woche';
 function mondayOf(d){const x=new Date(d);x.setDate(x.getDate()-((x.getDay()+6)%7));x.setHours(0,0,0,0);return x;}
 function renderCalendar(){
   if(!CALM)CALM=new Date(today);
-  const byDay={};TASKS.forEach(t=>{if(t.faellig){(byDay[t.faellig]=byDay[t.faellig]||[]).push(t);}});
+  const byDay={};vis().forEach(t=>{if(t.faellig){(byDay[t.faellig]=byDay[t.faellig]||[]).push(t);}});
   const dows=['Mo','Di','Mi','Do','Fr','Sa','So'];
   let start,count,label,curM=CALM.getMonth();
   if(CALMODE==='woche'){start=mondayOf(CALM);count=7;const end=new Date(start);end.setDate(start.getDate()+6);
@@ -235,7 +251,7 @@ function renderCalendar(){
     const out=CALMODE==='monat'&&d.getMonth()!==curM, isToday=iso===today;
     const list=byDay[iso]||[];
     cells+=`<div class="cell ${out?'out':''} ${isToday?'today':''}"><div class="dn">${d.getDate()}.</div>${
-      list.map(t=>{const over=iso<today&&t.status!=='erledigt';const cls=t.status==='erledigt'?'done':(over?'over':'');return `<div class="ct ${cls}" title="${esc(t.titel)}">${esc(CALMODE==='woche'?t.titel:(t.titel.length>26?t.titel.slice(0,24)+'…':t.titel))}</div>`;}).join('')
+      list.map(t=>{const over=iso<today&&t.status!=='erledigt';const cls=t.status==='erledigt'?'done':(over?'over':'');return `<div class="ct ${cls}" style="cursor:pointer" onclick="openDetail('${t.id}')" title="${esc(t.titel)}">${esc(CALMODE==='woche'?t.titel:(t.titel.length>26?t.titel.slice(0,24)+'…':t.titel))}</div>`;}).join('')
     }</div>`;
   }
   document.getElementById('view').innerHTML=`<div class="calhead">
@@ -254,14 +270,116 @@ async function drop(e,status,el){e.preventDefault();el.classList.remove('dragove
   const t=TASKS.find(x=>x.id===DRAG);if(t&&t.status!==status){t.status=status;render();await sb.from('os_tasks').update({status,updated_at:new Date().toISOString()}).eq('id',DRAG);toast('Verschoben ✓');}
   DRAG=null;}
 async function addTask(){const el=document.getElementById('newT');const titel=(el.value||'').trim();if(!titel)return;
+  const art=document.getElementById('newArt').value||'aufgabe';
   const pos=(TASKS.reduce((m,t)=>Math.max(m,t.pos||0),0))+1;
-  const {data,error}=await sb.from('os_tasks').insert({titel,status:'todo',verantwortlich:'Eric Eisenhardt',quelle:'os',pos}).select().maybeSingle();
+  const {data,error}=await sb.from('os_tasks').insert({titel,art,status:'todo',verantwortlich:'Eric Eisenhardt',quelle:'os',pos}).select().maybeSingle();
   if(error){toast('Fehler: '+error.message);return;}
-  if(data)TASKS.push(data);el.value='';render();}
+  if(data)TASKS.push(data);el.value='';render();toast('Angelegt ✓');}
 async function delTask(id){if(!confirm('Aufgabe entfernen?'))return;await sb.from('os_tasks').delete().eq('id',id);TASKS=TASKS.filter(t=>t.id!==id);render();}
 async function linkKont(id,val){const t=TASKS.find(x=>x.id===id);if(!t)return;const [kid,label]=val?val.split('|'):[null,null];
   t.kontakt_id=kid;t.kontakt_label=label;await sb.from('os_tasks').update({kontakt_id:kid,kontakt_label:label,updated_at:new Date().toISOString()}).eq('id',id);render();}
 async function linkObj(id,val){const t=TASKS.find(x=>x.id===id);if(!t)return;const [oid,label]=val?val.split('|'):[null,null];
   t.object_id=oid;t.object_label=label;await sb.from('os_tasks').update({object_id:oid,object_label:label,updated_at:new Date().toISOString()}).eq('id',id);render();}
+/* ---------- Detail-Dialog ---------- */
+function setVal(id,v){const e=document.getElementById(id);if(e)e.value=v==null?'':v;}
+async function openDetail(id){
+  const t=TASKS.find(x=>x.id===id);if(!t)return;DTASK=t;
+  document.getElementById('dTitle').textContent=(ARTICON[t.art||'aufgabe']||'📌')+' '+(ARTLBL[t.art||'aufgabe']||'Aufgabe');
+  setVal('d_titel',t.titel);setVal('d_art',t.art||'aufgabe');setVal('d_prio',t.prio||'');
+  setVal('d_verantwortlich',t.verantwortlich||'');setVal('d_faellig',t.faellig||'');
+  setVal('d_wiedervorlage',t.wiedervorlage||'');setVal('d_asana_url',t.asana_url||'');setVal('d_beschreibung',t.beschreibung||'');
+  document.getElementById('d_status').innerHTML=COLS.map(([k,l])=>`<option value="${k}"${(t.status||'todo')===k?' selected':''}>${STLBL[k]}</option>`).join('');
+  document.getElementById('d_kont').innerHTML=kontOptions(t.kontakt_label);
+  document.getElementById('d_obj').innerHTML=objOptions(t.object_label);
+  document.getElementById('dov').classList.add('show');
+  SUBS=[];VER=[];renderDSubs();renderDVer();
+  const [s,v]=await Promise.all([
+    sb.from('os_task_subtasks').select('*').eq('task_id',id).order('created_at'),
+    sb.from('os_task_verlauf').select('*').eq('task_id',id).order('created_at',{ascending:false})
+  ]);
+  SUBS=s.data||[];VER=v.data||[];renderDSubs();renderDVer();
+}
+function closeDetail(){document.getElementById('dov').classList.remove('show');DTASK=null;}
+function renderDSubs(){
+  const open=SUBS.filter(x=>!x.erledigt).length;
+  document.getElementById('d_subcnt').textContent=SUBS.length?`(${SUBS.length-open}/${SUBS.length})`:'';
+  document.getElementById('d_subs').innerHTML=SUBS.map(s=>`<div class="dsub ${s.erledigt?'done':''}">
+    <input type="checkbox" ${s.erledigt?'checked':''} onchange="dToggleSub('${s.id}',this.checked)">
+    <span>${esc(s.titel)}</span><b onclick="dDelSub('${s.id}')">🗑</b></div>`).join('')||'<div style="color:var(--muted);font-size:12px">Keine Unteraufgaben.</div>';
+}
+function renderDVer(){
+  document.getElementById('d_ver').innerHTML=VER.map(v=>`<div class="vrow"><div>${esc(v.text)}</div><div class="vm">${esc(v.autor||'')} · ${new Date(v.created_at).toLocaleString('de-DE')}</div></div>`).join('')||'<div style="color:var(--muted);font-size:12px">Noch kein Verlauf.</div>';
+}
+async function logVer(text){if(!DTASK)return;const row={task_id:DTASK.id,text,autor:ICH||'System'};const {data}=await sb.from('os_task_verlauf').insert(row).select().maybeSingle();if(data){VER.unshift(data);renderDVer();}}
+async function dAddSub(){const el=document.getElementById('d_subnew');const titel=(el.value||'').trim();if(!titel||!DTASK)return;
+  const {data}=await sb.from('os_task_subtasks').insert({task_id:DTASK.id,titel,erledigt:false}).select().maybeSingle();
+  if(data){SUBS.push(data);el.value='';renderDSubs();}}
+async function dToggleSub(id,v){await sb.from('os_task_subtasks').update({erledigt:v}).eq('id',id);const s=SUBS.find(x=>x.id===id);if(s)s.erledigt=v;renderDSubs();}
+async function dDelSub(id){await sb.from('os_task_subtasks').delete().eq('id',id);SUBS=SUBS.filter(x=>x.id!==id);renderDSubs();}
+async function dAddComment(){const el=document.getElementById('d_comment');const text=(el.value||'').trim();if(!text)return;await logVer('💬 '+text);el.value='';}
+async function dSave(){
+  if(!DTASK)return;const id=DTASK.id;
+  const kv=document.getElementById('d_kont').value, ov=document.getElementById('d_obj').value;
+  const [kid,klabel]=kv?kv.split('|'):[null,null];const [oid,olabel]=ov?ov.split('|'):[null,null];
+  const patch={
+    titel:document.getElementById('d_titel').value.trim(),
+    art:document.getElementById('d_art').value,
+    status:document.getElementById('d_status').value,
+    prio:document.getElementById('d_prio').value||null,
+    verantwortlich:document.getElementById('d_verantwortlich').value||null,
+    faellig:document.getElementById('d_faellig').value||null,
+    wiedervorlage:document.getElementById('d_wiedervorlage').value||null,
+    kontakt_id:kid,kontakt_label:klabel,object_id:oid,object_label:olabel,
+    asana_url:document.getElementById('d_asana_url').value||null,
+    beschreibung:document.getElementById('d_beschreibung').value||null,
+    updated_at:new Date().toISOString()
+  };
+  const changes=[];const map={status:'Status',prio:'Priorität',faellig:'Fällig',wiedervorlage:'Wiedervorlage',verantwortlich:'Verantwortlich',art:'Art'};
+  for(const k in map){if((DTASK[k]||'')!==(patch[k]||'')&&!(DTASK[k]==null&&patch[k]==null))changes.push(`${map[k]}: ${DTASK[k]||'—'} → ${patch[k]||'—'}`);}
+  const {error}=await sb.from('os_tasks').update(patch).eq('id',id);
+  if(error){toast('Fehler: '+error.message);return;}
+  Object.assign(DTASK,patch);
+  if(changes.length)await logVer('✏️ '+changes.join(' · '));
+  render();toast('Gespeichert ✓');
+}
+async function dFollowup(){
+  if(!DTASK)return;
+  const titel=prompt('Follow-up – Titel:','Nachfassen: '+(DTASK.titel||''));if(titel===null)return;
+  const d=prompt('Wiedervorlage am (JJJJ-MM-TT), leer = +7 Tage:','');
+  let wv=d&&d.trim();if(!wv){const x=new Date();x.setDate(x.getDate()+7);wv=x.toISOString().slice(0,10);}
+  const pos=(TASKS.reduce((m,t)=>Math.max(m,t.pos||0),0))+1;
+  const {data,error}=await sb.from('os_tasks').insert({
+    titel:titel.trim()||('Nachfassen: '+DTASK.titel),art:'followup',status:'todo',
+    verantwortlich:DTASK.verantwortlich||'Eric Eisenhardt',quelle:'os',pos,
+    wiedervorlage:wv,faellig:wv,kontakt_id:DTASK.kontakt_id||null,kontakt_label:DTASK.kontakt_label||null,
+    object_id:DTASK.object_id||null,object_label:DTASK.object_label||null,
+    beschreibung:'Follow-up zu: '+(DTASK.titel||'')
+  }).select().maybeSingle();
+  if(error){toast('Fehler: '+error.message);return;}
+  if(data)TASKS.push(data);
+  await logVer('📞 Follow-up angelegt für '+wv);
+  render();toast('Follow-up angelegt ✓');
+}
+/* ---------- Diktat + KI ---------- */
+let REC=null;
+function diktieren(targetId,btnId){
+  const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
+  if(!SR){toast('Spracherkennung nicht verfügbar (Chrome/Edge nutzen)');return;}
+  const btn=document.getElementById(btnId);const ta=document.getElementById(targetId);
+  if(REC){REC.stop();REC=null;if(btn)btn.classList.remove('pri');return;}
+  REC=new SR();REC.lang='de-DE';REC.continuous=true;REC.interimResults=true;
+  if(btn)btn.classList.add('pri');let base=ta.value?ta.value+' ':'';
+  REC.onresult=e=>{let fin='';for(let i=e.resultIndex;i<e.results.length;i++){if(e.results[i].isFinal)fin+=e.results[i][0].transcript;}if(fin)base+=fin+' ';ta.value=base;};
+  REC.onerror=()=>{if(btn)btn.classList.remove('pri');REC=null;};
+  REC.onend=()=>{if(btn)btn.classList.remove('pri');REC=null;};
+  REC.start();
+}
+async function kiZusammenfassen(targetId){
+  const ta=document.getElementById(targetId);const txt=(ta.value||'').trim();if(!txt){toast('Nichts zum Zusammenfassen');return;}
+  toast('✨ Fasse zusammen …');
+  try{const r=await fetch('/api/ki',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({task:'zusammenfassung',text:txt})});
+    const j=await r.json();if(j&&j.text){ta.value=j.text.trim();toast('✓ Zusammengefasst');}else{toast('KI nicht verfügbar');}}
+  catch(e){toast('Fehler: '+e.message);}
+}
 load();
 </script></body></html>
