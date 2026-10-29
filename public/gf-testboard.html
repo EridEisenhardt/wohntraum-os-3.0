@@ -129,6 +129,7 @@ h1{font-size:21px;font-weight:800}
       <button data-a="alle" class="on" onclick="setArt('alle')">Alle</button>
       <button data-a="aufgabe" onclick="setArt('aufgabe')">📌 Aufgaben</button>
       <button data-a="ticket" onclick="setArt('ticket')">🎫 Tickets</button>
+      <button data-a="m:followup" onclick="setArt('m:followup')">🔁 Follow-ups</button>
       <button data-a="m:rueckruf" onclick="setArt('m:rueckruf')">📞 Rückrufe</button>
       <button data-a="m:anruf" onclick="setArt('m:anruf')">☎️ Anrufe</button>
       <button data-a="m:vortermin" onclick="setArt('m:vortermin')">📍 Vor-Ort</button>
@@ -216,9 +217,9 @@ function toast(m){const t=document.getElementById('toast');t.textContent=m;t.cla
 const COLS=[['todo','📋 To Do'],['inarbeit','🔧 In Arbeit'],['warten','⏳ Wartet'],['wartenrueck','📨 Warten auf Rückmeldung'],['erledigt','✅ Erledigt']];
 const ARTLBL={aufgabe:'Aufgabe',ticket:'Ticket'};
 const ARTICON={aufgabe:'📌',ticket:'🎫'};
-const MASSLBL={rueckruf:'Rückruf',anruf:'Anruf',vortermin:'Vor-Ort-Termin',jourfix:'Jour Fix'};
-const MASSICON={rueckruf:'📞',anruf:'☎️',vortermin:'📍',jourfix:'🧭'};
-const MASSORDER=['rueckruf','anruf','vortermin','jourfix'];
+const MASSLBL={followup:'Follow-up',rueckruf:'Rückruf',anruf:'Anruf',vortermin:'Vor-Ort-Termin',jourfix:'Jour Fix'};
+const MASSICON={followup:'🔁',rueckruf:'📞',anruf:'☎️',vortermin:'📍',jourfix:'🧭'};
+const MASSORDER=['followup','rueckruf','anruf','vortermin','jourfix'];
 let TASKS=[], KONT=[], OBJ=[];
 const TEAM=['Eric','Jürgen','Stephan','Ramona','Alexander Buchhaus','Extern'];
 let ART='alle', WVONLY=false, PERSON='', SUBS=[], VER=[], DTASK=null, ICH='', TAGS=[], BETEIL=[];
@@ -229,7 +230,7 @@ function renderDBeteiligte(){document.getElementById('d_beteiligte').innerHTML=T
 function toggleBeteil(p){if(BETEIL.includes(p))BETEIL=BETEIL.filter(x=>x!==p);else BETEIL.push(p);renderDBeteiligte();}
 let MASSV='';
 function renderDMass(){document.getElementById('d_mass').innerHTML=MASSORDER.map(m=>`<button type="button" class="pbtn${MASSV===m?' on':''}" onclick="toggleMass('${m}')">${MASSICON[m]} ${MASSLBL[m]}</button>`).join('')+`<button type="button" class="pbtn${MASSV===''?' on':''}" onclick="toggleMass('')" style="opacity:.8">— keine</button>`;}
-function toggleMass(m){MASSV=m;renderDMass();}
+function toggleMass(m){MASSV=m;renderDMass();if(m==='followup')dFollowup();}
 function renderDTags(){document.getElementById('d_tags').innerHTML=TAGS.map(tg=>`<span class="tagchip">#${esc(tg)}<b onclick="dDelTag('${esc(tg).replace(/'/g,"\\'")}')">✕</b></span>`).join('');}
 function dAddTag(){const el=document.getElementById('d_tagnew');const v=(el.value||'').trim().replace(/^#/,'');if(!v){return;}if(!TAGS.includes(v))TAGS.push(v);el.value='';renderDTags();}
 function dDelTag(tg){TAGS=TAGS.filter(x=>x!==tg);renderDTags();}
@@ -457,10 +458,11 @@ async function fuCreate(){
   if(dateV)neu=dateV;
   else{const base=DTASK.faellig||today;const n=(!isNaN(daysV)&&daysV>0)?daysV:7;const x=new Date(base);x.setDate(x.getDate()+n);neu=x.toISOString().slice(0,10);}
   const alt=DTASK.faellig||'—';
-  const patch={faellig:neu,wiedervorlage:neu,updated_at:new Date().toISOString()};
+  const patch={faellig:neu,wiedervorlage:neu,massnahme:'followup',updated_at:new Date().toISOString()};
   const {error}=await sb.from('os_tasks').update(patch).eq('id',DTASK.id);
   if(error){toast('Fehler: '+error.message);return;}
   Object.assign(DTASK,patch);
+  MASSV='followup';renderDMass();
   document.getElementById('d_faellig').value=neu;document.getElementById('d_wiedervorlage').value=neu;
   await logVer('🔁 Follow-up: Fälligkeit verschoben '+(alt==='—'?'':alt.split('-').reverse().join('.')+' → ')+neu.split('-').reverse().join('.'));
   fuClose();render();toast('Fälligkeit verschoben auf '+neu.split('-').reverse().join('.')+' ✓');
