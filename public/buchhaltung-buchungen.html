@@ -412,6 +412,7 @@ table th{background:var(--bb-grau);color:var(--bb-text2);text-transform:uppercas
 .bv-kt{display:flex;align-items:center;gap:12px;max-width:940px}
 .bv-kt .kz-olb{margin-left:auto}
 .bv-p.ig{background:var(--bb-grau);color:var(--bb-text2)}
+.bv-p.dp{background:#fdf1dc;color:#8a5a00}
 .bv-z.ign{opacity:.75}
 .bv-z.ign .bv-s{background:var(--bb-grau)}
 .bv-z.ign .bv-k{background:var(--bb-knopf);border-color:var(--bb-knopf);cursor:default}
@@ -1331,7 +1332,19 @@ var MANB=new Map();
 function manSpeichern(L){ MANB=new Map(L.map(x=>[x.od,x])); render(); return saveStamm('belegbezahlt',{liste:L}); }
 /* Ignorierte Belege (z. B. Mahnung, Angebot, Kopie): stamm/belegignoriert {liste:[{od,n,am,von}]} */
 var IGN=new Map();
-const bvIgn=id=>IGN.has(id);
+/* Im OS entfernte Belege (doppelt abgelegt o. ä.), Datei bleibt in OneDrive: stamm/belegentfernt {liste:[{od,n,pfad,am,von}]} */
+var ENT=new Map();
+const bvEnt=id=>ENT.has(id);
+function bvEntSetzen(f,an){ const L=[...ENT.values()].filter(x=>x.od!==f.id); if(an) L.push({od:f.id,n:f.name,pfad:f.pfad||'',am:new Date().toISOString().slice(0,10),von:(typeof ICH!=='undefined'&&ICH)||''});
+  ENT=new Map(L.map(x=>[x.od,x])); render(); return saveStamm('belegentfernt',{liste:L}); }
+/* Mögliche Doppelte: gleicher Dateiname oder gleicher Betrag + Absender + Datum */
+function bvDopKeys(f){ const k=['n:'+norm(f.name)]; if(f.betrag!=null&&(f.abs||'')&&f.datum) k.push('b:'+Math.round(f.betrag*100)+'|'+norm(f.abs)+'|'+f.datum); return k; }
+function bvDoppelte(){ const S=[].concat(SP.dateien||[],...Object.values(BV.FL).map(F=>F.dateien||[])).filter(f=>f.bereich!=='such'&&!bvEnt(f.id));
+  const seen=new Set(), L=S.filter(f=>!seen.has(f.id)&&seen.add(f.id)); const M=new Map();
+  for(const f of L) for(const k of bvDopKeys(f)){ if(!M.has(k)) M.set(k,[]); M.get(k).push(f); }
+  const D=new Map(); for(const G of M.values()) if(G.length>1) for(const f of G){ const a=D.get(f.id)||[]; for(const g of G) if(g.id!==f.id&&!a.includes(g)) a.push(g); D.set(f.id,a); }
+  return D; }
+const bvIgn=id=>IGN.has(id)||ENT.has(id);
 function bvIgnSetzen(f,an){ const L=[...IGN.values()].filter(x=>x.od!==f.id); if(an) L.push({od:f.id,n:f.name,am:new Date().toISOString().slice(0,10),von:(typeof ICH!=='undefined'&&ICH)||''});
   IGN=new Map(L.map(x=>[x.od,x])); render(); return saveStamm('belegignoriert',{liste:L}); }
 const bvNk=s=>norm(s).replace(/ /g,'');
@@ -1347,26 +1360,29 @@ function bvFL(p,bereich,tiefe){ let F=BV.FL[p];
     odApi({aktion:'baum',pfad:p,tiefe}).then(r=>{ F.dateien=(r.dateien||[]).filter(x=>!/^~\$|\.(ds_store|tmp)$/i.test(x.name)&&!/(^|\/)[^/]*(abrechnung|altablage)[^/]*\//i.test(x.rel||'')).map(x=>Object.assign(x,{bereich,pfad:p+'/'+x.rel})).filter(bvGesOk).map(spMeta); })
       .catch(e=>{ F.fehler=e.message||String(e); F.dateien=[]; }).finally(()=>{ F.lade=false; render(); }); }
   return F; }
-const bvAlle=()=>(SP.dateien||[]).filter(f=>/^(ges|bar|obj)$/.test(f.bereich));
-function bvDateien(){ const r=bvRoot(BV.root);
+const bvAlle0=()=>(SP.dateien||[]).filter(f=>/^(ges|bar|obj)$/.test(f.bereich));
+const bvAlle=()=>bvAlle0().filter(f=>!bvEnt(f.id));
+function bvDateien(){ const D=bvDateien0(); D.L=(D.L||[]).filter(f=>BV.ent?bvEnt(f.id):!bvEnt(f.id)); return D; }
+function bvDateien0(){ const r=bvRoot(BV.root);
   if(!spBereit()) return {lade:true,L:[]};
   if(SP.fehler) return {fehler:SP.fehler,L:[]};
-  const S=bvAlle();
+  const S=bvAlle0();
   if(!r) return {L:S};
   if(r.k==='obj') return {L:S.filter(f=>f.bereich==='obj'&&(!BV.sub||bvObjKz(f)===BV.sub))};
   if(!BV.sub||BV.sub===String(year)) return {L:S.filter(f=>f.bereich===r.k)};
   const F=bvFL(r.p+'/'+BV.sub,r.k,r.tiefe); return {lade:F.lade,fehler:F.fehler,L:F.dateien||[]}; }
 /* Bezahlt, wiederkehrend, Objekt, Vorschlag */
 function bvInfo(f,Z,byId,idx){ const z=Z[f.id], it=z?byId.get(z.id):null, dd=DAUER.find(y=>y.od&&y.od===f.id)||null;
-  const man=!it&&MANB.get(f.id)||null, n=dd?dbAnzahl(dd):0, bez=!!it||n>0||!!man, ign=!bez&&bvIgn(f.id), sepa=bvSepa(f);
+  const man=!it&&MANB.get(f.id)||null, n=dd?dbAnzahl(dd):0, bez=!!it||n>0||!!man, ent=bvEnt(f.id), ign=!bez&&!ent&&IGN.has(f.id), sepa=bvSepa(f);
   const obj=(it&&it.c&&it.c.obj&&it.c.obj!=='__ges'?it.c.obj:'')||(f.bereich==='obj'?bvObjKz(f):'')||(objekte.some(o=>o.kz===f.pre)?f.pre:'');
-  const v=(!it&&!dd&&!ign&&!man&&f.betrag!=null)?spVorschlag(f,idx):null;
-  return {it,dd,n,bez,obj,v,ign,sepa,man}; }
+  const v=(!it&&!dd&&!ign&&!ent&&!man&&f.betrag!=null)?spVorschlag(f,idx):null;
+  return {it,dd,n,bez,obj,v,ign,sepa,man,ent}; }
 const bvDatum=f=>f.datum||String(f.geaendert||'').slice(0,10);
 const bvDmy=d=>!d?'–':d.length===7?d.slice(5)+'.'+d.slice(0,4):dmy(d);
 function bvListe(){ const D=bvDateien(); const Z=spZugeordnet(), idx=spIndex(), byId=new Map(items().map(it=>[it.id,it]));
   let L=D.L.map(f=>({f,i:bvInfo(f,Z,byId,idx)}));
-  if(!BV.ign) L=L.filter(x=>!x.i.ign); else L=L.filter(x=>x.i.ign);
+  if(!BV.ent){ if(!BV.ign) L=L.filter(x=>!x.i.ign); else L=L.filter(x=>x.i.ign); }
+  BV.dop=bvDoppelte(); if(BV.nurDop) L=L.filter(x=>BV.dop.has(x.f.id));
   if(BV.unbez) L=L.filter(x=>!x.i.bez);
   if(BV.ohneSepa) L=L.filter(x=>!x.i.bez&&!x.i.sepa&&!x.i.dd);
   if(BV.wied) L=L.filter(x=>x.i.dd);
@@ -1390,23 +1406,24 @@ function bvStart(){ const S=spBereit()&&!SP.fehler?bvAlle():null;
     for(const s of subs){ let c='';
       if(r.k==='obj') c=S?bvAnz(S.filter(f=>f.bereich==='obj'&&bvObjKz(f)===s)):'';
       else if(s===String(year)) c=bvAnz(L);
-      else { const F=bvFL(r.p+'/'+s,r.k,r.tiefe); c=F.dateien?bvAnz(F.dateien):'Lade …'; }
+      else { const F=bvFL(r.p+'/'+s,r.k,r.tiefe); c=F.dateien?bvAnz(F.dateien.filter(f=>!bvEnt(f.id))):'Lade …'; }
       h+='<div class="bv-r bv-u" data-bvgo="'+r.k+'" data-bvsub="'+esc(s)+'"><span class="bv-a0"></span><span class="bv-n">'+esc(s)+'</span><span class="bv-c">'+c+'</span><span class="bv-pf"></span></div>'; } }
   h+='</div>';
   return h; }
 function bvMenu(f,i){ let h='<div class="bb-menu bv-menu"><a href="#" data-kaopen="'+esc(f.id)+'">Datei öffnen</a>';
   if(i.it) h+='<a href="#" data-spgo="'+esc(i.it.id)+'">Zahlung anzeigen</a>'+(canWrite?'<button data-bvlos="'+esc(f.id)+'">Zuordnung zur Zahlung lösen</button>':'');
   if(!i.it&&!i.dd&&i.v&&canWrite) h+='<button data-bvzu="'+esc(f.id)+'" data-spit="'+esc(i.v.it.id)+'">Vorschlag zuordnen: '+esc(dmy(i.v.it.tx.d)+' · '+eur(i.v.it.tx.b))+'</button>';
-  if(!i.it&&!i.dd&&canWrite) h+='<button class="bb-mt" data-bvzw="'+esc(f.id)+'">Zahlung zuweisen</button>';
+  if(!i.it&&!i.dd&&!i.ent&&canWrite) h+='<button class="bb-mt" data-bvzw="'+esc(f.id)+'">Zahlung zuweisen</button>';
+  if(canWrite) h+=i.ent?'<button data-bvent="'+esc(f.id)+'" data-bvwie="1">Im OS wiederherstellen</button>':'<button data-bvent="'+esc(f.id)+'">Im OS entfernen (Datei bleibt in OneDrive)</button>';
   return h+'</div>'; }
 function bvZeile(x){ const f=x.f, i=x.i, it=i.it, dd=i.dd, th=BV.th[f.id], typ=((f.name.match(/\.([A-Za-z0-9]{2,5})$/)||['',''])[1]).toUpperCase();
   let h='<div class="bv-z'+(i.bez?' bez':'')+(i.ign?' ign':'')+'" data-bvid="'+esc(f.id)+'">';
   h+='<a href="#" class="bv-th" data-kaopen="'+esc(f.id)+'" title="Datei öffnen">'+(th?'<img src="'+esc(th)+'" alt="">':'<span>'+esc(typ)+'</span>')+'</a>';
   h+='<div class="bv-i"><b>'+esc(f.abs||f.name.replace(/\.[^.]+$/,''))+'</b><a href="#" class="bv-fn" data-kaopen="'+esc(f.id)+'" title="'+esc(bvKurz(f.pfad||''))+'">'+esc(f.name)+'</a>'
-    +'<div class="bv-dt">Eingang '+esc(bvDmy(bvDatum(f)))+'</div><div class="bv-pl">'+(i.bez?'<span class="bv-p ok">Bezahlt</span>':i.ign?'<span class="bv-p ig">Ignoriert</span>':'<span class="bv-p of">Offen</span>')+(dd?'<span class="bv-p wd">Wiederkehrend</span>':'')+(i.sepa?'<span class="bv-p wd">SEPA-Lastschrift</span>':'')+'</div></div>';
+    +'<div class="bv-dt">Eingang '+esc(bvDmy(bvDatum(f)))+'</div><div class="bv-pl">'+(i.ent?'<span class="bv-p ig">Entfernt</span>':i.bez?'<span class="bv-p ok">Bezahlt</span>':i.ign?'<span class="bv-p ig">Ignoriert</span>':'<span class="bv-p of">Offen</span>')+(BV.dop&&BV.dop.has(f.id)?'<span class="bv-p dp">Doppelt?</span>':'')+(dd?'<span class="bv-p wd">Wiederkehrend</span>':'')+(i.sepa?'<span class="bv-p wd">SEPA-Lastschrift</span>':'')+'</div></div>';
   h+='<div class="bv-b">'+(f.betrag==null?'<span class="sub">kein Betrag</span>':esc(eur(f.betrag)))+'</div>';
-  h+='<div class="bv-d"><div class="bv-kt"><span>Kostenträger: <b>'+esc(f.pre||'–')+'</b>'+(BKM.has(f.id)?' <span class="bk-pill">BKA '+esc(BKM.get(f.id).jahr)+' · '+esc(BKM.get(f.id).ka)+(BKM.get(f.id).einheitenText?' · '+esc(BKM.get(f.id).einheitenText):'')+'</span>':'')+'</span>'+(!i.ign&&canWrite?'<button class="kz-olb" data-bvab="'+esc(f.id)+'" title="Abschlagsplan oder Jahresabrechnung übernehmen: Verträge, Fixkosten, Buchungen, Betriebskosten">Abschlag</button><button class="kz-olb" data-bvfix="'+esc(f.id)+'" title="Feste laufende Kosten der Gesellschaft übernehmen, z. B. Caya">Fixkosten</button><button class="kz-olb'+(BKM.has(f.id)?' on':'')+'" data-bvbk="'+esc(f.id)+'" title="Rechnung für die Betriebskostenabrechnung vormerken">Betriebskosten</button>':'')+(!i.bez&&!i.ign&&canWrite?'<button class="kz-olb bv-sepab'+(i.sepa?' on':'')+'" data-bvsepa="'+esc(f.id)+'" title="'+(i.sepa?'SEPA-Markierung für '+esc(f.abs||'diesen Absender')+' entfernen':'Wird per SEPA-Lastschrift eingezogen – gilt für alle Rechnungen von '+esc(f.abs||'diesem Absender'))+'">SEPA</button>':'')+(!i.bez&&!i.ign&&!i.dd&&!i.sepa&&f.betrag!=null?'<button class="kz-olb bv-qrb" data-bvqr="'+esc(f.id)+'" title="QR-Code für die Banking-App">Überweisen</button>':'')+(!i.bez&&!i.ign&&canWrite?'<button class="kz-olb" data-bvman="'+esc(f.id)+'" title="Rechnung ist bezahlt, auch wenn keine passende Zahlung im OS ist (z. B. bar, privat oder vor dem Kontoabruf)">Bezahlt</button>':'')+(!i.bez&&canWrite?'<button class="kz-olb" data-bvign="'+esc(f.id)+'" title="'+(i.ign?'Beleg wieder als offen führen':'Beleg braucht keine Zahlung, z. B. Mahnung, Angebot oder Kopie')+'">'+(i.ign?'Nicht mehr ignorieren':'Ignorieren')+'</button>':'')+'</div><div class="bv-fs">';
-  h+='<div class="bv-fld"><small>Zahlung</small>'+(i.man?'bezahlt<span class="sub">als bezahlt markiert'+(i.man.am?' am '+esc(dmy(i.man.am)):'')+(i.man.von?' von '+esc(i.man.von):'')+(i.man.sammel?' (bis '+esc(dmy(i.man.sammel))+')':'')+'</span>'+(canWrite?'<a href="#" class="bv-zwl" data-bvmanweg="'+esc(f.id)+'">Markierung entfernen</a>':''):it?'<a href="#" data-spgo="'+esc(it.id)+'">bezahlt am '+esc(dmy(it.tx.d))+'</a><span class="sub">'+esc(kontoName(it.kkey)||'')+'</span>'
+  h+='<div class="bv-d"><div class="bv-kt"><span>Kostenträger: <b>'+esc(f.pre||'–')+'</b>'+(BKM.has(f.id)?' <span class="bk-pill">BKA '+esc(BKM.get(f.id).jahr)+' · '+esc(BKM.get(f.id).ka)+(BKM.get(f.id).einheitenText?' · '+esc(BKM.get(f.id).einheitenText):'')+'</span>':'')+'</span>'+(!i.ign&&!i.ent&&canWrite?'<button class="kz-olb" data-bvab="'+esc(f.id)+'" title="Abschlagsplan oder Jahresabrechnung übernehmen: Verträge, Fixkosten, Buchungen, Betriebskosten">Abschlag</button><button class="kz-olb" data-bvfix="'+esc(f.id)+'" title="Feste laufende Kosten der Gesellschaft übernehmen, z. B. Caya">Fixkosten</button><button class="kz-olb'+(BKM.has(f.id)?' on':'')+'" data-bvbk="'+esc(f.id)+'" title="Rechnung für die Betriebskostenabrechnung vormerken">Betriebskosten</button>':'')+(!i.bez&&!i.ign&&!i.ent&&canWrite?'<button class="kz-olb bv-sepab'+(i.sepa?' on':'')+'" data-bvsepa="'+esc(f.id)+'" title="'+(i.sepa?'SEPA-Markierung für '+esc(f.abs||'diesen Absender')+' entfernen':'Wird per SEPA-Lastschrift eingezogen – gilt für alle Rechnungen von '+esc(f.abs||'diesem Absender'))+'">SEPA</button>':'')+(!i.bez&&!i.ign&&!i.ent&&!i.dd&&!i.sepa&&f.betrag!=null?'<button class="kz-olb bv-qrb" data-bvqr="'+esc(f.id)+'" title="QR-Code für die Banking-App">Überweisen</button>':'')+(!i.bez&&!i.ign&&!i.ent&&canWrite?'<button class="kz-olb" data-bvman="'+esc(f.id)+'" title="Rechnung ist bezahlt, auch wenn keine passende Zahlung im OS ist (z. B. bar, privat oder vor dem Kontoabruf)">Bezahlt</button>':'')+(!i.bez&&!i.ent&&canWrite?'<button class="kz-olb" data-bvign="'+esc(f.id)+'" title="'+(i.ign?'Beleg wieder als offen führen':'Beleg braucht keine Zahlung, z. B. Mahnung, Angebot oder Kopie')+'">'+(i.ign?'Nicht mehr ignorieren':'Ignorieren')+'</button>':'')+'</div><div class="bv-fs">';
+  h+='<div class="bv-fld"><small>Zahlung</small>'+(i.ent&&!it?'entfernt<span class="sub">wird keiner Zahlung zugeordnet</span>':i.man?'bezahlt<span class="sub">als bezahlt markiert'+(i.man.am?' am '+esc(dmy(i.man.am)):'')+(i.man.von?' von '+esc(i.man.von):'')+(i.man.sammel?' (bis '+esc(dmy(i.man.sammel))+')':'')+'</span>'+(canWrite?'<a href="#" class="bv-zwl" data-bvmanweg="'+esc(f.id)+'">Markierung entfernen</a>':''):it?'<a href="#" data-spgo="'+esc(it.id)+'">bezahlt am '+esc(dmy(it.tx.d))+'</a><span class="sub">'+esc(kontoName(it.kkey)||'')+'</span>'
       :dd?(i.n?i.n+' Abschl'+(i.n===1?'ag':'äge')+' bezahlt':'noch kein Abschlag bezahlt')
       :i.ign?'ignoriert<span class="sub">wird keiner Zahlung zugeordnet</span>'
       :(i.sepa&&!i.v)?'<span class="bv-of">offen</span><span class="sub">wird per SEPA-Lastschrift eingezogen</span>'
@@ -1415,6 +1432,8 @@ function bvZeile(x){ const f=x.f, i=x.i, it=i.it, dd=i.dd, th=BV.th[f.id], typ=(
   h+='<div class="bv-fld"><small>Wiederkehrend</small>'+(dd?esc(dmy(dd.von))+' bis '+esc(dmy(dd.bis))+'<span class="sub">Abschlag '+(dd.jede?'je nach Zahlung':esc(eur(dd.betrag)))+'</span>':'nein')+'</div>';
   h+='<div class="bv-fld bv-fo"><small>Objekt</small>'+esc(i.obj||'–')+'</div></div>';
   if(it) h+='<div class="bv-hw">Der Beleg ist der Zahlung zugeordnet.'+(canWrite?' <a href="#" data-bvlos="'+esc(f.id)+'">Zuordnung lösen</a>':'')+'</div>'; else if(i.ign){ const g=IGN.get(f.id); h+='<div class="bv-hw">Ignoriert'+(g&&g.am?' seit '+esc(dmy(g.am)):'')+(g&&g.von?' von '+esc(g.von):'')+'.</div>'; } else if(dd) h+='<div class="bv-hw">Dauerbeleg: gilt für alle Abschläge im Zeitraum.</div>';
+  if(i.ent){ const g=ENT.get(f.id); h+='<div class="bv-hw">Im OS entfernt'+(g&&g.am?' am '+esc(dmy(g.am)):'')+(g&&g.von?' von '+esc(g.von):'')+'. Die Datei liegt weiter in OneDrive.'+(canWrite?' <a href="#" data-bvent="'+esc(f.id)+'" data-bvwie="1">Wiederherstellen</a>':'')+'</div>'; }
+  else if(BV.dop&&BV.dop.has(f.id)){ const A=BV.dop.get(f.id); h+='<div class="bv-hw bv-dop">Möglicherweise doppelt: '+A.map(g=>'<a href="#" data-kaopen="'+esc(g.id)+'" title="'+esc(g.pfad||'')+'">'+esc(bvKurz(g.pfad||g.name))+'</a>').join(', ')+'.'+(canWrite&&!it&&!dd?' <a href="#" data-bvent="'+esc(f.id)+'">Diesen Beleg im OS entfernen</a>':'')+(it?' <span class="sub">Dieser Beleg ist einer Zahlung zugeordnet, besser den anderen entfernen.</span>':'')+'</div>'; }
   if(BV.zw===f.id) h+=bvZw(f,i);
   h+='</div><div class="bv-m"><button class="bb-kebab" data-bvmen="'+esc(f.id)+'" title="Aktionen"><i></i><i></i><i></i></button>'+(BV.menu===f.id?bvMenu(f,i):'')+'</div>';
   h+='<div class="bv-s"><button class="bv-k'+(i.bez?' on':'')+'" data-bvk="'+esc(f.id)+'" title="'+(i.ign?'Ignoriert':i.bez?'Bezahlt – Zahlung anzeigen':i.v&&i.v.eindeutig?'Offen – Vorschlag zuordnen':'Offen')+'"></button></div></div>';
@@ -1449,15 +1468,15 @@ function bvListeHtml(){ const r=bvRoot(BV.root), D=bvListe();
   h+='<div class="bbbar bv-bar">';
   if(r) h+='<div class="bb-f">'+(r.k==='obj'?'Objektordner':'Jahr')+': <input id="bv-sub" list="bv-sub-l" value="'+esc(BV.sub||'Alle')+'" autocomplete="off"><datalist id="bv-sub-l">'+(r.k==='obj'?'<option value="Alle"></option>':'')+subs.map(s=>'<option value="'+esc(s)+'"></option>').join('')+'</datalist></div>';
   if(!r||r.k!=='obj') h+='<div class="bb-f">Objekt: <input id="bv-obj" list="bv-obj-l" value="'+esc(BV.obj||'Alle Objekte')+'" autocomplete="off"><datalist id="bv-obj-l"><option value="Alle Objekte"></option>'+bvObjListe().map(k=>'<option value="'+esc(k)+'"></option>').join('')+'</datalist></div>';
-  h+='<div class="bb-re"><label><input type="checkbox" id="bv-unbez"'+(BV.unbez?' checked':'')+'> Unbezahlt</label><label><input type="checkbox" id="bv-wied"'+(BV.wied?' checked':'')+'> Wiederkehrend</label><label title="Nur offene Rechnungen, die nicht per Lastschrift eingezogen werden"><input type="checkbox" id="bv-osepa"'+(BV.ohneSepa?' checked':'')+'> Offen ohne SEPA</label><label><input type="checkbox" id="bv-ign"'+(BV.ign?' checked':'')+'> Ignorierte</label>'
+  h+='<div class="bb-re"><label><input type="checkbox" id="bv-unbez"'+(BV.unbez?' checked':'')+'> Unbezahlt</label><label><input type="checkbox" id="bv-wied"'+(BV.wied?' checked':'')+'> Wiederkehrend</label><label title="Nur offene Rechnungen, die nicht per Lastschrift eingezogen werden"><input type="checkbox" id="bv-osepa"'+(BV.ohneSepa?' checked':'')+'> Offen ohne SEPA</label><label><input type="checkbox" id="bv-ign"'+(BV.ign?' checked':'')+'> Ignorierte</label><label title="Gleicher Dateiname oder gleicher Betrag, Absender und Datum"><input type="checkbox" id="bv-dop"'+(BV.nurDop?' checked':'')+'> Doppelte</label><label title="Im OS entfernte Belege anzeigen und wiederherstellen"><input type="checkbox" id="bv-ent"'+(BV.ent?' checked':'')+'> Entfernte</label>'
     +'<button class="bb-lnk" data-bvreset="1">Zurücksetzen</button><button class="bb-lnk" data-bvneu="1">Aktualisieren</button></div></div>';
-  const sum=D.L.reduce((a,x)=>a+(x.f.betrag||0),0), offen=D.L.filter(x=>!x.i.bez&&!x.i.ign).length;
+  const sum=D.L.reduce((a,x)=>a+(x.f.betrag||0),0), offen=D.L.filter(x=>!x.i.bez&&!x.i.ign&&!x.i.ent).length;
   h+='<div class="bv-sum">'+(D.lade?'Lade Belege aus OneDrive …':esc(D.L.length+' Belege'+((!r||r.k==='obj')?' aus '+year:'')+' · Summe '+eur(sum)+' · '+offen+' offen'))
     +(canWrite&&!D.lade&&offen?'<span style="margin-left:14px">Offene Belege bis <input type="text" id="bv-manbis" value="'+esc(BV.manbis||'30.09.2026')+'" style="width:100px" autocomplete="off"> <button class="bb-lnk" data-bvmanalle="1">als bezahlt markieren</button></span>':'')+'</div>';
   if(D.fehler) h+='<div class="note warnbox">'+esc(D.fehler)+'</div>';
   const kh=(k,l)=>'<button class="bv-so'+(BV.sort===k?' on'+(BV.dir>0?' auf':''):'')+'" data-bvsort="'+k+'">'+l+'</button>';
   h+='<div class="bv-kh"><span></span><span>'+kh('d','Datum')+kh('g','Gegenpartei')+'</span><span class="bv-khb">'+kh('b','Betrag')+'</span><span>Zahlung · Wiederkehrend · Objekt</span><span></span><span></span></div>';
-  if(!D.lade&&!D.L.length) h+='<div class="leer bv-leer2">Keine Belege'+(BV.q||BV.unbez||BV.wied||BV.obj?' für diese Auswahl':' in diesem Ordner')+'.</div>';
+  if(!D.lade&&!D.L.length) h+='<div class="leer bv-leer2">Keine Belege'+(BV.q||BV.unbez||BV.wied||BV.obj||BV.nurDop||BV.ent?' für diese Auswahl':' in diesem Ordner')+'.</div>';
   const zeig=D.L.slice(0,BV.mehr); h+=zeig.map(bvZeile).join('');
   if(D.L.length>BV.mehr) h+='<div class="bv-mehr"><button class="ghost" data-bvmehr="1">Weitere '+Math.min(100,D.L.length-BV.mehr)+' Belege anzeigen</button></div>';
   setTimeout(()=>bvMini(zeig.map(x=>x.f.id)),30);
@@ -1807,7 +1826,7 @@ function renderBelegeTab(){ const h=BV.view==='liste'?bvListeHtml():bvStart(); c
 function bvOeffnen(root,sub){ BV.view='liste'; BV.root=root; BV.sub=sub||(root==='ges'||root==='bar'?String(year):''); BV.menu=''; BV.mehr=100; render(); window.scrollTo(0,0); }
 document.addEventListener('click',async e=>{ if(tab!=='belege') return;
   if(BV.menu&&!e.target.closest('.bv-menu,[data-bvmen]')){ BV.menu=''; render(); }
-  const t=e.target.closest('[data-bvman],[data-bvmanweg],button[data-bvmanalle],[data-bvlos],button[data-bvsepa],button[data-bvign],[data-bvzw],[data-bvzalle],button[data-bvzzu],button[data-bvzz],[data-bvauf],[data-bvka],[data-bvgo],button[data-bvzur],button[data-bvmen],button[data-bvk],button[data-bvzu],button[data-bvsuch],button[data-bvreset],button[data-bvneu],button[data-bvup],[data-bvupzu],button[data-bvupgo],button[data-bvux],button[data-bvsort],button[data-bvmehr]'); if(!t) return;
+  const t=e.target.closest('[data-bvent],[data-bvman],[data-bvmanweg],button[data-bvmanalle],[data-bvlos],button[data-bvsepa],button[data-bvign],[data-bvzw],[data-bvzalle],button[data-bvzzu],button[data-bvzz],[data-bvauf],[data-bvka],[data-bvgo],button[data-bvzur],button[data-bvmen],button[data-bvk],button[data-bvzu],button[data-bvsuch],button[data-bvreset],button[data-bvneu],button[data-bvup],[data-bvupzu],button[data-bvupgo],button[data-bvux],button[data-bvsort],button[data-bvmehr]'); if(!t) return;
   const d=t.dataset;
   const finde=id=>{ for(const x of bvListe().L) if(x.f.id===id) return x; return null; };
   if(d.bvauf){ e.stopPropagation(); BV.auf.has(d.bvauf)?BV.auf.delete(d.bvauf):BV.auf.add(d.bvauf); render(); return; }
@@ -1815,7 +1834,7 @@ document.addEventListener('click',async e=>{ if(tab!=='belege') return;
   if(d.bvgo){ bvOeffnen(d.bvgo,d.bvsub||''); return; }
   if(d.bvzur){ BV.view='start'; BV.menu=''; render(); return; }
   if(d.bvmen){ BV.menu=BV.menu===d.bvmen?'':d.bvmen; render(); return; }
-  if(d.bvreset){ BV.q=''; BV.unbez=false; BV.wied=false; BV.ign=false; BV.ohneSepa=false; BV.obj=''; BV.sort='d'; BV.dir=-1; render(); return; }
+  if(d.bvreset){ BV.q=''; BV.unbez=false; BV.wied=false; BV.ign=false; BV.ent=false; BV.nurDop=false; BV.ohneSepa=false; BV.obj=''; BV.sort='d'; BV.dir=-1; render(); return; }
   if(d.bvneu){ SP.jahr=null; BV.FL={}; BV.th={}; KT.k={}; render(); return; }
   if(d.bvup){ bvUpOeffnen(); return; }
   if(d.bvupzu!==undefined&&d.bvupzu){ if(BV.up&&BV.up.busy) return; BV.up=null; render(); return; }
@@ -1824,6 +1843,11 @@ document.addEventListener('click',async e=>{ if(tab!=='belege') return;
   if(d.bvsort){ if(BV.sort===d.bvsort) BV.dir=-BV.dir; else { BV.sort=d.bvsort; BV.dir=d.bvsort==='g'?1:-1; } render(); return; }
   if(d.bvmehr){ BV.mehr+=100; render(); return; }
   if(d.bvsepa){ const x=finde(d.bvsepa); if(!x) return; const an=!x.i.sepa; await bvSepaSetzen(x.f,an); toast(an?'SEPA-Lastschrift gilt jetzt für alle Rechnungen von '+(x.f.abs||'diesem Absender')+'.':'SEPA-Markierung entfernt.'); return; }
+  if(d.bvent){ e.preventDefault(); const x=finde(d.bvent); if(!x) return; const an=!d.bvwie; BV.menu='';
+    if(an&&x.i.it){ toast('Der Beleg ist einer Zahlung zugeordnet. Bitte erst die Zuordnung lösen.'); render(); return; }
+    if(an&&x.i.dd){ toast('Der Beleg ist ein Dauerbeleg für Abschläge. Bitte erst den Abschlag entfernen.'); render(); return; }
+    if(BV.zw===x.f.id) BV.zw='';
+    await bvEntSetzen(x.f,an); toast(an?'Beleg im OS entfernt. Die Datei bleibt in OneDrive. Über „Entfernte“ kannst du ihn wiederherstellen.'+(BKM.has(x.f.id)?' Hinweis: Er ist noch für die Betriebskosten vorgemerkt.':''):'Beleg ist wieder im OS sichtbar.'); return; }
   if(d.bvign){ const x=finde(d.bvign); if(!x) return; const an=!x.i.ign; if(BV.zw===x.f.id) BV.zw='';
     await bvIgnSetzen(x.f,an); toast(an?'Beleg wird ignoriert'+(BV.ign?'.':' und ist ausgeblendet. Über „Ignorierte“ siehst du ihn wieder.'):'Beleg ist wieder offen.'); return; }
   if(d.bvzw){ e.preventDefault(); BV.zw=d.bvzw; BV.zq=''; BV.zwNur=!!d.bvnur; BV.menu=''; render(); setTimeout(()=>{ const q=$('bv-zq'); if(q&&!BV.zwNur) q.focus(); },30); return; }
@@ -1836,7 +1860,7 @@ document.addEventListener('click',async e=>{ if(tab!=='belege') return;
     await manSpeichern([...MANB.values()].filter(y=>y.od!==x.f.id).concat([{od:x.f.id,n:x.f.name,am:heute,von:(typeof ICH!=='undefined'&&ICH)||''}])); toast('Als bezahlt markiert.'); return; }
   if(d.bvmanweg){ e.preventDefault(); await manSpeichern([...MANB.values()].filter(y=>y.od!==d.bvmanweg)); toast('Markierung entfernt – der Beleg ist wieder offen.'); return; }
   if(d.bvmanalle){ const el=$('bv-manbis'), bis=abIso(el?el.value:''); if(!bis){ toast('Bitte ein Datum als TT.MM.JJJJ eingeben.'); return; } BV.manbis=dmy(bis);
-    const L=bvListe().L.filter(x=>!x.i.bez&&!x.i.ign&&bvDatum(x.f)&&bvDatum(x.f)<=bis);
+    const L=bvListe().L.filter(x=>!x.i.bez&&!x.i.ign&&!x.i.ent&&bvDatum(x.f)&&bvDatum(x.f)<=bis);
     if(!L.length){ toast('Keine offenen Belege bis '+dmy(bis)+' in dieser Liste.'); return; }
     if(d.sure!==bis){ d.sure=bis; t.textContent=L.length+' Belege bis '+dmy(bis)+' wirklich als bezahlt markieren?'; return; }
     const heute=new Date().toISOString().slice(0,10), wer=(typeof ICH!=='undefined'&&ICH)||'', ids=new Set(L.map(x=>x.f.id));
@@ -1860,6 +1884,8 @@ document.addEventListener('change',e=>{ const t=e.target; if(tab!=='belege') ret
   if(t.id==='bv-unbez'){ BV.unbez=t.checked; render(); return; }
   if(t.id==='bv-wied'){ BV.wied=t.checked; render(); return; }
   if(t.id==='bv-ign'){ BV.ign=t.checked; render(); return; }
+  if(t.id==='bv-dop'){ BV.nurDop=t.checked; render(); return; }
+  if(t.id==='bv-ent'){ BV.ent=t.checked; render(); return; }
   if(t.id==='bv-osepa'){ BV.ohneSepa=t.checked; render(); return; }
   if(t.id==='bv-file'){ if(BV.up){ bvUpDazu([...t.files]); render(); } return; }
   if(t.dataset&&t.dataset.bvun!==undefined&&BV.up){ const x=BV.up.files[Number(t.dataset.bvun)]; if(x) x.name=t.value; return; }
@@ -1924,7 +1950,7 @@ document.addEventListener('click',async e=>{ const t=e.target.closest('button,a[
   if(d.nurzur){ NUR=''; tab='belege'; render(); return; }
   if(d.spzu){ const f=(SP.dateien||[]).find(x=>x.id===d.spzu), it=items().find(x=>x.id===d.spit); if(!f||!it) return; await spZuordnen(f,it); SP.such=''; toast('Beleg zugeordnet.'); render(); return; }
   if(d.spalle){ const Z=spZugeordnet(), idx=spIndex(); let n=0; const benutzt=new Set();
-    for(const f of SP.dateien){ if(Z[f.id]) continue; const v=spVorschlag(f,idx); if(!v||!v.eindeutig||v.s<90||benutzt.has(v.it.id)) continue; benutzt.add(v.it.id); await spZuordnen(f,items().find(x=>x.id===v.it.id)); n++; }
+    for(const f of SP.dateien){ if(Z[f.id]||bvIgn(f.id)) continue; const v=spVorschlag(f,idx); if(!v||!v.eindeutig||v.s<90||benutzt.has(v.it.id)) continue; benutzt.add(v.it.id); await spZuordnen(f,items().find(x=>x.id===v.it.id)); n++; }
     toast(n+' Belege zugeordnet.'); render(); return; } });
 /* ---------- Dauerbelege: eine Rechnung / ein Bescheid gilt für alle Abschläge eines Zeitraums ----------
    gespeichert in stamm/dauerbelege {liste:[{id,od,n,pfad,kkey,iban,name,betrag,jede,von,bis,am}]} */
@@ -2602,6 +2628,7 @@ render();
   db.doc('stamm/belegqr').onSnapshot(s=>{ QRM=(s.exists?clone(s.data()).map:null)||{}; softRender(); },()=>{});
   db.doc('stamm/belegbezahlt').onSnapshot(s=>{ const L=(s.exists?clone(s.data()).liste:null)||[]; MANB=new Map(L.map(x=>[x.od,x])); softRender(); },()=>{});
   db.doc('stamm/belegbk').onSnapshot(s=>{ const L=(s.exists?clone(s.data()).liste:null)||[]; BKM=new Map(L.map(x=>[x.od,x])); softRender(); },()=>{});
+  db.doc('stamm/belegentfernt').onSnapshot(s=>{ const L=(s.exists?clone(s.data()).liste:null)||[]; ENT=new Map(L.map(x=>[x.od,x])); softRender(); },()=>{});
   db.doc('stamm/belegignoriert').onSnapshot(s=>{ const L=(s.exists?clone(s.data()).liste:null)||[]; IGN=new Map(L.map(x=>[x.od,x])); softRender(); },()=>{});
   db.doc('stamm/dauerbelege').onSnapshot(s=>{ DAUER=(s.exists?clone(s.data()).liste:null)||[]; invalidate(); softRender(); },()=>{});
   db.doc('stamm/belegabsender').onSnapshot(s=>{ absMap=(s.exists?clone(s.data()).map:null)||{}; },()=>{});
