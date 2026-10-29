@@ -69,6 +69,12 @@ h1{font-size:21px;font-weight:800}
 .cell:hover .addday{opacity:1}
 .addday:hover{background:var(--accent);color:#fff}
 .jfcol{background:#f4f1fe;border:1px solid #e3dcfb}
+.statrow{display:grid;grid-template-columns:96px 1fr 120px;align-items:center;gap:10px;padding:5px 0;border-bottom:1px solid var(--line);font-size:12.5px}
+.statrow.head{font-weight:700;color:var(--muted);text-transform:uppercase;font-size:10.5px;border-bottom:2px solid var(--line)}
+.statrow.today{background:#fff8ec}
+.bar{height:16px;border-radius:4px;display:flex;overflow:hidden;background:#f1f3f6}
+.bar .due{background:#9db4d6}.bar .over{background:var(--red)}
+.statnum{text-align:right}.statnum .o{color:var(--red);font-weight:700}
 .pbox{display:flex;flex-wrap:wrap;gap:6px}
 .pbtn{border:1px solid var(--line);background:var(--surf);color:var(--text);border-radius:999px;padding:5px 12px;font:inherit;font-size:12.5px;cursor:pointer}
 .pbtn.on{background:#eafaf0;border-color:#bfe8d1;color:var(--green);font-weight:700}
@@ -130,6 +136,7 @@ h1{font-size:21px;font-weight:800}
     <button class="btn" id="wvBtn" onclick="toggleWV()" title="Nur fällige Wiedervorlagen">🔔 Wiedervorlagen</button>
     <select id="personsel" onchange="setPerson(this.value)" title="Nach Person filtern (verantwortlich oder beteiligt)"><option value="">👥 Alle Personen</option></select>
     <button class="btn" id="asImpBtn" onclick="asImportOpen()" title="Eine Asana-Aufgabe per Link ins OS übertragen">⇅ Asana-Übertragung</button>
+    <button class="btn" id="statBtn" onclick="statsOpen()" title="Fällige und überfällige Aufgaben pro Tag">📊 Statistik</button>
   </div>
   <div class="addbar"><input id="newT" placeholder="Neue Aufgabe …" onkeydown="if(event.key==='Enter')addTask()">
     <select id="newArt" title="Art"><option value="aufgabe">📌 Aufgabe</option><option value="ticket">🎫 Ticket</option><option value="followup">🔁 Follow-up</option><option value="rueckruf">📞 Rückruf</option><option value="vortermin">📍 Vor-Ort-Termin</option><option value="jourfix">🧭 Jour Fix</option></select>
@@ -168,6 +175,11 @@ h1{font-size:21px;font-weight:800}
       <div class="row"><button class="btn sec sm" id="mic_d_comment" onclick="diktieren('d_comment','mic_d_comment')">🎤</button><button class="btn sec sm" onclick="kiZusammenfassen('d_comment')">✨</button><button class="btn sm" onclick="dAddComment()">Kommentar</button></div></div>
   </div>
   <div class="dlg-ft"><button class="btn sec" onclick="dFollowup()">+ Follow-up anlegen</button><span style="flex:1"></span><button class="btn" onclick="closeDetail()">Schließen</button><button class="btn pri" onclick="dSave()">Speichern</button></div>
+</div></div>
+<div class="ov" id="statov" style="z-index:110" onclick="if(event.target===this)statsClose()"><div class="dlg" style="width:680px">
+  <div class="dlg-hd"><span>📊 Statistik · Fällig &amp; Überfällig pro Tag</span><span class="x" onclick="statsClose()">✕</span></div>
+  <div class="dlg-bd"><div id="stat_body"></div></div>
+  <div class="dlg-ft"><span style="flex:1"></span><button class="btn" onclick="statsClose()">Schließen</button></div>
 </div></div>
 <div class="ov" id="asov" style="z-index:110" onclick="if(event.target===this)asImportClose()"><div class="dlg" style="width:540px">
   <div class="dlg-hd"><span>⇅ Asana-Übertragung</span><span class="x" onclick="asImportClose()">✕</span></div>
@@ -482,6 +494,26 @@ async function kiZusammenfassen(targetId){
   try{const r=await fetch('/api/ki',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({task:'zusammenfassung',text:txt})});
     const j=await r.json();if(j&&j.text){ta.value=j.text.trim();toast('✓ Zusammengefasst');}else{toast('KI nicht verfügbar');}}
   catch(e){toast('Fehler: '+e.message);}
+}
+/* ---------- Statistik: Fällig & Überfällig pro Tag ---------- */
+function statsOpen(){renderStats();document.getElementById('statov').classList.add('show');}
+function statsClose(){document.getElementById('statov').classList.remove('show');}
+function renderStats(){
+  const V=vis().filter(t=>t.faellig);
+  const by={};
+  V.forEach(t=>{const d=t.faellig;if(!by[d])by[d]={due:0,over:0};by[d].due++;if(d<today&&t.status!=='erledigt')by[d].over++;});
+  const days=Object.keys(by).sort();
+  const totDue=V.length, totOver=V.filter(t=>t.faellig<today&&t.status!=='erledigt').length;
+  const max=Math.max(1,...days.map(d=>by[d].due));
+  const head=`<div style="margin-bottom:10px;color:var(--muted);font-size:12px">Gesamt mit Fälligkeit: <b>${totDue}</b> · davon überfällig (offen): <b style="color:var(--red)">${totOver}</b>${ART!=='alle'||PERSON||WVONLY?' · <span style="color:var(--accent)">gefiltert</span>':''}</div>`;
+  if(!days.length){document.getElementById('stat_body').innerHTML=head+'<div style="color:var(--muted)">Keine Aufgaben mit Fälligkeitsdatum.</div>';return;}
+  const rows=`<div class="statrow head"><div>Tag</div><div></div><div class="statnum">Fällig · Überf.</div></div>`+
+    days.map(d=>{const o=by[d];const dueW=Math.round(o.due/max*100);const overW=o.due?Math.round(o.over/o.due*dueW):0;
+      const lbl=d.split('-').reverse().join('.');
+      return `<div class="statrow ${d===today?'today':''}"><div>${lbl}${d===today?' · heute':''}</div>
+        <div class="bar"><div class="over" style="width:${overW}%"></div><div class="due" style="width:${dueW-overW}%"></div></div>
+        <div class="statnum">${o.due}${o.over?` · <span class="o">${o.over}</span>`:''}</div></div>`;}).join('');
+  document.getElementById('stat_body').innerHTML=head+rows;
 }
 /* ---------- Asana-Übertragung ---------- */
 function asImportOpen(){document.getElementById('as_link').value='';document.getElementById('as_status').textContent='';document.getElementById('asov').classList.add('show');setTimeout(()=>document.getElementById('as_link').focus(),50);}
