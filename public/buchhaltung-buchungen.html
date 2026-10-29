@@ -435,6 +435,9 @@ table th{background:var(--bb-grau);color:var(--bb-text2);text-transform:uppercas
 .bv-sepab.on{color:var(--bb-blau);border-color:var(--bb-blau);background:var(--bb-blau-h)}
 
 .ab-dlg{width:min(980px,96vw)}
+.bk-pill{display:inline-block;margin-left:8px;padding:1px 8px;border-radius:999px;font-size:12px;background:#e8f1fb;color:#1f4f82;font-weight:600}
+.bk-dlg{width:min(760px,96vw)}
+.bk-g{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px 14px}
 .ab-db{display:block}
 .ab-k{display:flex;gap:12px;align-items:baseline;flex-wrap:wrap;margin-bottom:10px}.ab-k a{color:var(--bb-blau);text-decoration:none;font-size:14px;word-break:break-all}
 .ab-h{font-size:12.5px;text-transform:uppercase;letter-spacing:.05em;color:var(--bb-text2);margin:16px 0 6px}
@@ -1221,6 +1224,65 @@ var BV={view:'start',root:'alle',sub:'',q:'',unbez:false,wied:false,obj:'',sort:
 const bvRoot=k=>BV_ROOTS.find(r=>r.k===k);
 /* Gesellschaftsordner: nur unsere drei Gesellschaften, andere Ordner bleiben außen vor */
 function bvGesOk(f){ return !(f.bereich==='ges'||f.bereich==='bar')||['ee','wt','kibo'].includes(String(f.rel||'').split('/')[0].trim().toLowerCase()); }
+/* Belege für die Betriebskostenabrechnung vormerken: stamm/belegbk {liste:[{od,n,obj,jahr,ka,betrag,von,bis,am,wer,abr}]}.
+   Die Datei wird in OneDrive nach 04 Betriebskosten/BK-Abrechnung <Jahr> kopiert. Gibt es die Abrechnung des Jahres schon, wird der Beleg dort direkt in der Kostenart erfasst. */
+var BKM=new Map();
+const BK_KA=['Allgemeinstrom','Frischwasser','Grundsteuer','Hausmeister','Heizkosten','Internet','Müllgebühren','Niederschlagswasser','Schmutzwasser','Schornsteinfeger','Straßenreinigung','Versicherungen','Warmwasser'];
+const bkDat=t=>{ t=String(t||'').trim(); if(!t) return ''; let m=t.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/); if(m) return m[1]+'-'+m[2].padStart(2,'0')+'-'+m[3].padStart(2,'0'); m=t.match(/^(\d{1,2})\.(\d{1,2})\.(\d{2}|\d{4})$/); if(!m) return null; const y=m[3].length===2?'20'+m[3]:m[3]; const x=new Date(Date.UTC(+y,+m[2]-1,+m[1])); return x.getUTCDate()===+m[1]?x.toISOString().slice(0,10):null; };
+const bkDmy=d=>d?String(d).slice(0,10).split('-').reverse().join('.'):'';
+function bkOeffnen(f){ const alt=BKM.get(f.id), d=bvDatum(f)||'', T=String(f.name||'').replace(/\.[a-z0-9]+$/i,'').split('_');
+  const kaN=alt?alt.ka:(BK_KA.find(k=>T.some(t=>norm(t)&&(norm(k).startsWith(norm(t))||norm(t).startsWith(norm(k).slice(0,6)))))||'');
+  BV.bk={f,obj:alt?alt.obj:(f.bereich==='obj'?bvObjKz(f):(objekte.some(o=>o.kz===f.pre)?f.pre:'')),jahr:alt?String(alt.jahr):(d?d.slice(0,4):String(new Date().getFullYear())),ka:kaN,
+    betrag:alt?fnum.format(alt.betrag):(f.betrag!=null?fnum.format(f.betrag):''),von:alt?bkDmy(alt.von):'',bis:alt?bkDmy(alt.bis):'',lauf:false,info:''}; render(); }
+function bkHtml(){ const b=BV.bk; if(!b) return ''; const alt=BKM.get(b.f.id);
+  const fld=(l,inner)=>'<label class="ab-f">'+l+inner+'</label>';
+  return '<div class="kdrw-bg" data-bkzu="1"></div><section class="bv-dlg bk-dlg" role="dialog" aria-label="Für die Betriebskostenabrechnung vormerken"><div class="bv-dh"><b>Für die Betriebskostenabrechnung vormerken</b><button class="bb-lnk" data-bkzu="1">Schließen</button></div><div class="bv-db">'
+    +'<div class="ab-k"><a href="#" data-kaopen="'+esc(b.f.id)+'">'+esc(b.f.name)+'</a></div><div class="bk-g">'
+    +fld('Objekt','<input type="text" id="bk-obj" list="bk-obj-l" value="'+esc(b.obj)+'" autocomplete="off"><datalist id="bk-obj-l">'+bvObjListe().map(k=>'<option value="'+esc(k)+'"></option>').join('')+'</datalist>')
+    +fld('Abrechnungsjahr','<input type="text" id="bk-jahr" inputmode="numeric" value="'+esc(b.jahr)+'" autocomplete="off">')
+    +fld('Kostenart','<input type="text" id="bk-ka" list="bk-ka-l" value="'+esc(b.ka)+'" placeholder="z. B. Hausmeister" autocomplete="off"><datalist id="bk-ka-l">'+BK_KA.map(k=>'<option value="'+esc(k)+'"></option>').join('')+'</datalist>')
+    +fld('Betrag brutto (€)','<input type="text" id="bk-betrag" inputmode="decimal" value="'+esc(b.betrag)+'" autocomplete="off">')
+    +fld('Leistung von (optional)','<input type="text" id="bk-von" value="'+esc(b.von)+'" placeholder="TT.MM.JJJJ" autocomplete="off">')
+    +fld('Leistung bis (optional)','<input type="text" id="bk-bis" value="'+esc(b.bis)+'" placeholder="TT.MM.JJJJ" autocomplete="off">')
+    +'</div><div class="sub" style="margin-top:10px">Die Rechnung wird in OneDrive nach 04 Betriebskosten/BK-Abrechnung '+esc(b.jahr||'Jahr')+' kopiert. Gibt es die Betriebskostenabrechnung des Jahres schon, steht sie dort direkt in der Kostenart. Sonst übernimmst du sie später mit „Belege aus OneDrive zuordnen“.</div>'
+    +(b.info?'<div class="sub" style="margin-top:6px">'+esc(b.info)+'</div>':'')
+    +'</div><div class="bv-df" style="display:flex;gap:8px;padding:12px 18px;border-top:1px solid var(--bb-line,#e5e7eb)"><button class="primary" data-bksave="1"'+(b.lauf?' disabled':'')+'>'+(b.lauf?'Speichere …':'Vormerken')+'</button>'+(alt?'<button class="ghost" data-bkweg="1">Vormerkung entfernen</button>':'')+'</div></section>'; }
+async function bkSpeichern(){ const b=BV.bk; if(!b||b.lauf) return; const f=b.f, sb=abSb();
+  const obj=($('bk-obj').value||'').trim(), jahr=Number(($('bk-jahr').value||'').trim()), ka=($('bk-ka').value||'').trim(), betrag=parseNum($('bk-betrag').value), von=bkDat($('bk-von').value), bis=bkDat($('bk-bis').value);
+  const o=objekte.find(x=>x.kz.toLowerCase()===obj.toLowerCase()); if(!o){ toast('Bitte ein Objekt aus der Liste wählen.'); return; }
+  if(!(jahr>=2020&&jahr<=2100)){ toast('Bitte das Abrechnungsjahr eintragen.'); return; } if(!ka){ toast('Bitte eine Kostenart eintragen.'); return; }
+  if(betrag==null||isNaN(betrag)){ toast('Bitte den Betrag eintragen.'); return; } if(von===null||bis===null){ toast('Bitte das Datum als TT.MM.JJJJ eingeben.'); return; }
+  Object.assign(b,{obj:o.kz,jahr:String(jahr),ka,betrag:fnum.format(betrag),von:bkDmy(von),bis:bkDmy(bis),lauf:true,info:'Kopiere die Rechnung nach OneDrive …'}); render();
+  let kopie=null, hinweis='';
+  try{ const r=await odApi({aktion:'objektbasis',kz:[o.kz]}); const B=(r.objekte||{})[o.kz]; if(!B) throw new Error('Kein Objektordner für '+o.kz+' gefunden.');
+    const t04=(B.top||[]).find(t=>/^04 Betriebskosten$/.test(t))||(B.top||[]).find(t=>/Betriebskosten/.test(t))||'04 Betriebskosten', ziel=B.basis+'/'+t04+'/BK-Abrechnung '+jahr;
+    await odApi({aktion:'anlegen',pfad:ziel}); const c=await odApi({aktion:'inhalt',id:f.id});
+    if(c.zuGross) hinweis='Datei größer als 3 MB, bitte selbst nach '+t04+'/BK-Abrechnung '+jahr+' kopieren.';
+    else { const up=await odApi({aktion:'hochladen',pfad:ziel,name:f.name,daten:c.daten,typ:c.typ||'application/pdf'}); kopie={od:up.item.id,n:up.item.name,pfad:ziel+'/'+up.item.name}; } }
+  catch(e){ hinweis='Nicht nach OneDrive kopiert: '+(e.message||e); }
+  let abr=false;
+  try{ const {data:a}=await sb.from('bk_abrechnungen').select('id,zeitraum_von,zeitraum_bis').eq('kennung',o.kz).eq('jahr',jahr).maybeSingle();
+    if(a){ b.info='Trage die Rechnung in die Betriebskostenabrechnung ein …'; render();
+      const {data:arten}=await sb.from('bk_kostenarten').select('id,name,pos').eq('abrechnung_id',a.id); let art=(arten||[]).find(x=>norm(x.name)===norm(ka));
+      if(!art){ const {data:neu,error:e1}=await sb.from('bk_kostenarten').insert({abrechnung_id:a.id,name:ka,gruppe:/heiz|warmwasser/i.test(ka)?'heizkosten':'betriebskosten',schluessel:'flaeche',umlagefaehig:true,pos:(arten||[]).length,einheiten:{},erledigt:false}).select().single(); if(e1) throw e1; art=neu; }
+      const pv=a.zeitraum_von, pb=a.zeitraum_bis; let anteil=r2(betrag);
+      if(von&&bis&&bis>=von){ const tg=(x,y)=>Math.round((Date.parse(y)-Date.parse(x))/864e5)+1, v2=von>pv?von:pv, b2=bis<pb?bis:pb; anteil=b2<v2?0:r2(betrag*tg(v2,b2)/tg(von,bis)); }
+      const alt=BKM.get(f.id); if(alt&&alt.kid) await sb.from('bk_kosten').delete().eq('id',alt.kid);
+      const {data:k,error:e2}=await sb.from('bk_kosten').insert({abrechnung_id:a.id,kostenart_id:art.id,datum:bvDatum(f)||null,betrag:r2(betrag),anteil,empfaenger:f.abs||null,quelle:'beleg',notiz:f.name,beleg:kopie||{od:f.id,n:f.name},von:von||null,bis:bis||null}).select().single(); if(e2) throw e2;
+      abr=k.id; } }
+  catch(e){ hinweis=(hinweis?hinweis+' ':'')+'Nicht in die Betriebskostenabrechnung eingetragen: '+(e.message||e); }
+  const L=[...BKM.values()].filter(x=>x.od!==f.id); L.push({od:f.id,n:f.name,obj:o.kz,jahr,ka,betrag:r2(betrag),von:von||'',bis:bis||'',kopie:kopie?kopie.od:'',kid:abr||'',am:new Date().toISOString().slice(0,10),wer:(typeof ICH!=='undefined'&&ICH)||''});
+  BKM=new Map(L.map(x=>[x.od,x])); await saveStamm('belegbk',{liste:L}); BV.bk=null; render();
+  toast((abr?'In die Betriebskostenabrechnung '+jahr+' von '+o.kz+' eingetragen ('+ka+').':'Für die Betriebskostenabrechnung '+jahr+' vorgemerkt'+(kopie?' und nach BK-Abrechnung '+jahr+' kopiert.':'.'))+(hinweis?' '+hinweis:''),hinweis?9000:5000); }
+async function bkEntfernen(){ const b=BV.bk; if(!b) return; const x=BKM.get(b.f.id); if(!x){ BV.bk=null; render(); return; }
+  if(x.kid){ try{ await abSb().from('bk_kosten').delete().eq('id',x.kid); }catch(e){} }
+  const L=[...BKM.values()].filter(y=>y.od!==b.f.id); BKM=new Map(L.map(y=>[y.od,y])); await saveStamm('belegbk',{liste:L}); BV.bk=null; render();
+  toast('Vormerkung entfernt'+(x.kopie?'. Die Kopie in BK-Abrechnung '+x.jahr+' bleibt in OneDrive liegen.':'.'),6000); }
+document.addEventListener('click',e=>{ const t=e.target.closest('[data-bvbk],[data-bkzu],button[data-bksave],button[data-bkweg]'); if(!t) return; const d=t.dataset;
+  if(d.bvbk){ e.preventDefault(); const x=bvListe().L.find(y=>y.f.id===d.bvbk); if(x) bkOeffnen(x.f); return; }
+  if(d.bkzu){ BV.bk=null; render(); return; }
+  if(d.bksave){ bkSpeichern(); return; }
+  if(d.bkweg){ if(d.sure!=='1'){ d.sure='1'; t.textContent='wirklich entfernen?'; return; } bkEntfernen(); } });
 /* Ignorierte Belege (z. B. Mahnung, Angebot, Kopie): stamm/belegignoriert {liste:[{od,n,am,von}]} */
 var IGN=new Map();
 const bvIgn=id=>IGN.has(id);
@@ -1297,7 +1359,7 @@ function bvZeile(x){ const f=x.f, i=x.i, it=i.it, dd=i.dd, th=BV.th[f.id], typ=(
   h+='<div class="bv-i"><b>'+esc(f.abs||f.name.replace(/\.[^.]+$/,''))+'</b><a href="#" class="bv-fn" data-kaopen="'+esc(f.id)+'" title="'+esc(bvKurz(f.pfad||''))+'">'+esc(f.name)+'</a>'
     +'<div class="bv-dt">Eingang '+esc(bvDmy(bvDatum(f)))+'</div><div class="bv-pl">'+(i.bez?'<span class="bv-p ok">Bezahlt</span>':i.ign?'<span class="bv-p ig">Ignoriert</span>':'<span class="bv-p of">Offen</span>')+(dd?'<span class="bv-p wd">Wiederkehrend</span>':'')+(i.sepa?'<span class="bv-p wd">SEPA-Lastschrift</span>':'')+'</div></div>';
   h+='<div class="bv-b">'+(f.betrag==null?'<span class="sub">kein Betrag</span>':esc(eur(f.betrag)))+'</div>';
-  h+='<div class="bv-d"><div class="bv-kt"><span>Kostenträger: <b>'+esc(f.pre||'–')+'</b></span>'+(!i.ign&&canWrite?'<button class="kz-olb" data-bvab="'+esc(f.id)+'" title="Abschlagsplan oder Jahresabrechnung übernehmen: Verträge, Fixkosten, Buchungen, Betriebskosten">Abschlag</button><button class="kz-olb" data-bvfix="'+esc(f.id)+'" title="Feste laufende Kosten der Gesellschaft übernehmen, z. B. Caya">Fixkosten</button>':'')+(!i.bez&&!i.ign&&canWrite?'<button class="kz-olb bv-sepab'+(i.sepa?' on':'')+'" data-bvsepa="'+esc(f.id)+'" title="'+(i.sepa?'SEPA-Markierung für '+esc(f.abs||'diesen Absender')+' entfernen':'Wird per SEPA-Lastschrift eingezogen – gilt für alle Rechnungen von '+esc(f.abs||'diesem Absender'))+'">SEPA</button>':'')+(!i.bez&&!i.ign&&!i.dd&&!i.sepa&&f.betrag!=null?'<button class="kz-olb bv-qrb" data-bvqr="'+esc(f.id)+'" title="QR-Code für die Banking-App">Überweisen</button>':'')+(!i.bez&&canWrite?'<button class="kz-olb" data-bvign="'+esc(f.id)+'" title="'+(i.ign?'Beleg wieder als offen führen':'Beleg braucht keine Zahlung, z. B. Mahnung, Angebot oder Kopie')+'">'+(i.ign?'Nicht mehr ignorieren':'Ignorieren')+'</button>':'')+'</div><div class="bv-fs">';
+  h+='<div class="bv-d"><div class="bv-kt"><span>Kostenträger: <b>'+esc(f.pre||'–')+'</b>'+(BKM.has(f.id)?' <span class="bk-pill">BKA '+esc(BKM.get(f.id).jahr)+' · '+esc(BKM.get(f.id).ka)+'</span>':'')+'</span>'+(!i.ign&&canWrite?'<button class="kz-olb" data-bvab="'+esc(f.id)+'" title="Abschlagsplan oder Jahresabrechnung übernehmen: Verträge, Fixkosten, Buchungen, Betriebskosten">Abschlag</button><button class="kz-olb" data-bvfix="'+esc(f.id)+'" title="Feste laufende Kosten der Gesellschaft übernehmen, z. B. Caya">Fixkosten</button><button class="kz-olb'+(BKM.has(f.id)?' on':'')+'" data-bvbk="'+esc(f.id)+'" title="Rechnung für die Betriebskostenabrechnung vormerken">Betriebskosten</button>':'')+(!i.bez&&!i.ign&&canWrite?'<button class="kz-olb bv-sepab'+(i.sepa?' on':'')+'" data-bvsepa="'+esc(f.id)+'" title="'+(i.sepa?'SEPA-Markierung für '+esc(f.abs||'diesen Absender')+' entfernen':'Wird per SEPA-Lastschrift eingezogen – gilt für alle Rechnungen von '+esc(f.abs||'diesem Absender'))+'">SEPA</button>':'')+(!i.bez&&!i.ign&&!i.dd&&!i.sepa&&f.betrag!=null?'<button class="kz-olb bv-qrb" data-bvqr="'+esc(f.id)+'" title="QR-Code für die Banking-App">Überweisen</button>':'')+(!i.bez&&canWrite?'<button class="kz-olb" data-bvign="'+esc(f.id)+'" title="'+(i.ign?'Beleg wieder als offen führen':'Beleg braucht keine Zahlung, z. B. Mahnung, Angebot oder Kopie')+'">'+(i.ign?'Nicht mehr ignorieren':'Ignorieren')+'</button>':'')+'</div><div class="bv-fs">';
   h+='<div class="bv-fld"><small>Zahlung</small>'+(it?'<a href="#" data-spgo="'+esc(it.id)+'">bezahlt am '+esc(dmy(it.tx.d))+'</a><span class="sub">'+esc(kontoName(it.kkey)||'')+'</span>'
       :dd?(i.n?i.n+' Abschl'+(i.n===1?'ag':'äge')+' bezahlt':'noch kein Abschlag bezahlt')
       :i.ign?'ignoriert<span class="sub">wird keiner Zahlung zugeordnet</span>'
@@ -1679,7 +1741,7 @@ document.addEventListener('click',e=>{ const t=e.target.closest('[data-abzu],but
   if(d.abok){ abSpeichern(); return; }
   if(d.bvab||d.bvfix){ const id=d.bvab||d.bvfix; const x=bvListe().L.find(y=>y.f.id===id); if(x) abOeffnen(x.f,d.bvab?'abschlag':'fix'); return; } });
 
-function renderBelegeTab(){ const h=BV.view==='liste'?bvListeHtml():bvStart(); const r=h+bvUpHtml()+qrHtml()+abHtml(); if(BV.qr) setTimeout(qrZeichnen,0); return r; }
+function renderBelegeTab(){ const h=BV.view==='liste'?bvListeHtml():bvStart(); const r=h+bvUpHtml()+qrHtml()+abHtml()+bkHtml(); if(BV.qr) setTimeout(qrZeichnen,0); return r; }
 function bvOeffnen(root,sub){ BV.view='liste'; BV.root=root; BV.sub=sub||(root==='ges'||root==='bar'?String(year):''); BV.menu=''; BV.mehr=100; render(); window.scrollTo(0,0); }
 document.addEventListener('click',async e=>{ if(tab!=='belege') return;
   if(BV.menu&&!e.target.closest('.bv-menu,[data-bvmen]')){ BV.menu=''; render(); }
@@ -2465,6 +2527,7 @@ render();
   db.doc('stamm/vertraege').onSnapshot(s=>{ VERTR=(s.exists?clone(s.data()).liste:null)||[]; vtCache=new Map(); softRender(); },()=>{});
   db.doc('stamm/kreditoren').onSnapshot(s=>{ KRED=(s.exists?clone(s.data()).map:null)||{}; },()=>{});
   db.doc('stamm/belegqr').onSnapshot(s=>{ QRM=(s.exists?clone(s.data()).map:null)||{}; softRender(); },()=>{});
+  db.doc('stamm/belegbk').onSnapshot(s=>{ const L=(s.exists?clone(s.data()).liste:null)||[]; BKM=new Map(L.map(x=>[x.od,x])); softRender(); },()=>{});
   db.doc('stamm/belegignoriert').onSnapshot(s=>{ const L=(s.exists?clone(s.data()).liste:null)||[]; IGN=new Map(L.map(x=>[x.od,x])); softRender(); },()=>{});
   db.doc('stamm/dauerbelege').onSnapshot(s=>{ DAUER=(s.exists?clone(s.data()).liste:null)||[]; invalidate(); softRender(); },()=>{});
   db.doc('stamm/belegabsender').onSnapshot(s=>{ absMap=(s.exists?clone(s.data()).map:null)||{}; },()=>{});
