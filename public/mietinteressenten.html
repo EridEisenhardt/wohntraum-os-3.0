@@ -163,7 +163,7 @@ const MILE_TITLE={'✅':'erledigt','⏳':'in Arbeit','⏸️':'wartet','❌':'ne
 const MILEF=[['kostenuebernahme','Zusage Kostenübernahme'],['mietangebot_erhalten','Mietangebot erhalten'],['mietvertrag_unterschrieben','Mietvertrag unterschrieben'],['schluesseluebergabe_erfolgt','Schlüsselübergabe erfolgt'],['erste_mietzahlung','1. Mietzahlung']];
 function mileCell(r,field){const lbl=(field==='erste_mietzahlung'&&(r[field]||'')==='⏳')?'<span style="font-size:11px;color:var(--muted);margin-left:5px;white-space:nowrap">Auszahlung in Arbeit</span>':'';return `<td style="text-align:center;white-space:nowrap"><select class="inl" style="text-align:center" onchange="upd('${r.id}','${field}',this.value)">${MILE.map(o=>`<option value="${o}" ${o===(r[field]||'')?'selected':''}>${o===''?'—':o}</option>`).join('')}</select>${lbl}</td>`;}
 let ROWS=[], QUELLEN=[], QROWS=[], FSTAGE='', FTYP='', NOTES=[], HIST=[], FILES=[], NT_CUR=null, ME_NAME='', EDIT_NOTE=null;
-let VWOHN=[], IWOHN=[], ITODO=[], IASANA=[], IMSA={};
+let VWOHN=[], IWOHN=[], ITODO=[], IASANA=[], IMSA={}, ALLWOHN=[];
 async function loadMe(){try{const{data:{user}}=await sb.auth.getUser();if(!user)return;const p=await sb.from('profiles').select('full_name,email').eq('id',user.id).maybeSingle();ME_NAME=(p.data&&(p.data.full_name||p.data.email))||user.email||'';}catch(e){}}
 const DBUCKET='mietinteressent-dateien';
 async function uploadFiles(inp){
@@ -374,6 +374,14 @@ async function load(){
   IMSA={};((ms&&ms.data)||[]).forEach(m=>{IMSA[m.interessent_id]=m;});
   VWOHN=(vw.data||[]).filter(w=>!w.vermietet&&!/Erledigt/i.test(w.status||''));
   IWOHN=iw.data||[]; ITODO=it.data||[]; IASANA=ia.data||[];
+  // Alle Wohnungen aus den Objekten (Objekt-Einheiten) als Zielwohnungs-Auswahl
+  const [oe,oo]=await Promise.all([
+    sb.from('obj_einheiten').select('id,objekt_id,bezeichnung,lage,aktiv,sort'),
+    sb.from('obj_objekte').select('id,kz,name,strasse')
+  ]);
+  const OBYID={};((oo&&oo.data)||[]).forEach(o=>{OBYID[o.id]=o;});
+  ALLWOHN=((oe&&oe.data)||[]).map(e=>{const o=OBYID[e.objekt_id];const objL=o?(o.kz||o.name||o.strasse||''):'';const einL=(e.bezeichnung||'Einheit')+(e.lage?' · '+e.lage:'');return {id:e.id,label:(objL?objL+' · ':'')+einL,aktiv:e.aktiv!==false};})
+    .sort((a,b)=>a.label.localeCompare(b.label,'de',{numeric:true}));
   render();
   maybeOpenParam();
 }
@@ -384,10 +392,12 @@ function vwLabel(w){return [w.gebaeude,w.einheit].filter(Boolean).join(' · ')||
 function renderZielwohnung(){
   const r=ROWS.find(x=>x.id===NT_CUR)||{};
   // Auswahl: priorisiert als "passt" markierte Wohnungen, sonst alle freien + schon gewählte
-  const shortlist=IWOHN.filter(x=>x.interessent_id===NT_CUR);
+  // Auswahl: ALLE Wohnungen aus den Objekten; als "passt" markierte Wohnungen zuerst
+  const shortlist=IWOHN.filter(x=>x.interessent_id===NT_CUR&&x.status==='passt');
+  const passId=new Set(shortlist.map(x=>x.vermietung_id));
   const opts=[];const seen=new Set();
-  shortlist.forEach(x=>{if(!seen.has(x.vermietung_id)){seen.add(x.vermietung_id);opts.push({id:x.vermietung_id,label:x.label,tag:x.status==='passt'?' ✅':''});}});
-  VWOHN.forEach(w=>{if(!seen.has(w.id)){seen.add(w.id);opts.push({id:w.id,label:vwLabel(w),tag:''});}});
+  shortlist.forEach(x=>{if(!seen.has(x.vermietung_id)){seen.add(x.vermietung_id);opts.push({id:x.vermietung_id,label:x.label,tag:' ✅'});}});
+  ALLWOHN.forEach(w=>{if(!seen.has(w.id)){seen.add(w.id);opts.push({id:w.id,label:w.label,tag:w.aktiv?'':' (inaktiv)'});}});
   const cur=r.zielwohnung_id||'';
   const curLabel=r.zielwohnung_label||'';
   const sel=`<select id="zielPick" class="inl" style="flex:1;font-size:12.5px" onchange="saveZielwohnung(this.value)">
@@ -401,7 +411,7 @@ function renderZielwohnung(){
 async function saveZielwohnung(vid){
   const r=ROWS.find(x=>x.id===NT_CUR);if(!r)return;
   let label=null;
-  if(vid){const fromList=IWOHN.find(x=>x.vermietung_id===vid&&x.interessent_id===NT_CUR);const w=VWOHN.find(x=>x.id===vid);label=fromList?fromList.label:(w?vwLabel(w):null);}
+  if(vid){const fromList=IWOHN.find(x=>x.vermietung_id===vid&&x.interessent_id===NT_CUR);const a=ALLWOHN.find(x=>x.id===vid);const w=VWOHN.find(x=>x.id===vid);label=fromList?fromList.label:(a?a.label:(w?vwLabel(w):null));}
   r.zielwohnung_id=vid||null;r.zielwohnung_label=label;
   const{error}=await sb.from('mietinteressenten').update({zielwohnung_id:vid||null,zielwohnung_label:label}).eq('id',NT_CUR);
   if(error){toast('Fehler: '+error.message);return;}
