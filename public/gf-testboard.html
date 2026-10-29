@@ -501,19 +501,42 @@ function statsClose(){document.getElementById('statov').classList.remove('show')
 function renderStats(){
   const V=vis().filter(t=>t.faellig);
   const by={};
-  V.forEach(t=>{const d=t.faellig;if(!by[d])by[d]={due:0,over:0};by[d].due++;if(d<today&&t.status!=='erledigt')by[d].over++;});
+  V.forEach(t=>{const d=t.faellig;if(!by[d])by[d]={due:0,over:0,done:0};by[d].due++;if(t.status==='erledigt')by[d].done++;else if(d<today)by[d].over++;});
   const days=Object.keys(by).sort();
-  const totDue=V.length, totOver=V.filter(t=>t.faellig<today&&t.status!=='erledigt').length;
+  const totDue=V.length, totOver=V.filter(t=>t.faellig<today&&t.status!=='erledigt').length, totDone=V.filter(t=>t.status==='erledigt').length;
   const max=Math.max(1,...days.map(d=>by[d].due));
-  const head=`<div style="margin-bottom:10px;color:var(--muted);font-size:12px">Gesamt mit Fälligkeit: <b>${totDue}</b> · davon überfällig (offen): <b style="color:var(--red)">${totOver}</b>${ART!=='alle'||PERSON||WVONLY?' · <span style="color:var(--accent)">gefiltert</span>':''}</div>`;
+  const head=`<div style="margin-bottom:10px;color:var(--muted);font-size:12px">Gesamt mit Fälligkeit: <b>${totDue}</b> · überfällig (offen): <b style="color:var(--red)">${totOver}</b> · erledigt: <b style="color:var(--green)">${totDone}</b>${ART!=='alle'||PERSON||WVONLY?' · <span style="color:var(--accent)">gefiltert</span>':''}</div>`;
   if(!days.length){document.getElementById('stat_body').innerHTML=head+'<div style="color:var(--muted)">Keine Aufgaben mit Fälligkeitsdatum.</div>';return;}
-  const rows=`<div class="statrow head"><div>Tag</div><div></div><div class="statnum">Fällig · Überf.</div></div>`+
-    days.map(d=>{const o=by[d];const dueW=Math.round(o.due/max*100);const overW=o.due?Math.round(o.over/o.due*dueW):0;
+  // ——— Diagramm (SVG) ———
+  const bw=26,gap=10,padL=32,padB=48,padT=12,plotH=180,H=plotH+padT+padB;
+  const innerH=plotH;
+  const W=padL+days.length*(bw+gap)+12;
+  const yv=v=>padT+innerH*(1-v/max);
+  const ticks=[];const step=Math.max(1,Math.ceil(max/4));
+  for(let v=0;v<=max;v+=step)ticks.push(v);
+  let g='';
+  ticks.forEach(v=>{const y=yv(v);g+=`<line x1="${padL}" y1="${y}" x2="${W-6}" y2="${y}" stroke="#eceef2"/><text x="${padL-6}" y="${y+3}" text-anchor="end" font-size="9" fill="#9aa1ab">${v}</text>`;});
+  days.forEach((d,i)=>{const o=by[d];const x=padL+i*(bw+gap);const base=padT+innerH;
+    const open=Math.max(0,o.due-o.over-o.done);
+    const h=v=>innerH*(v/max);
+    let yb=base; // von unten stapeln: erledigt, überfällig, offen
+    const seg=(val,fill,lbl)=>{if(val<=0)return;const hh=h(val);yb-=hh;g+=`<rect x="${x}" y="${yb}" width="${bw}" height="${hh}" fill="${fill}"><title>${d.split('-').reverse().join('.')}: ${val} ${lbl}</title></rect>`;};
+    seg(o.done,'#0f9d6b','erledigt');
+    seg(o.over,'#c0392b','überfällig');
+    seg(open,'#9db4d6','offen');
+    const lbl=d.slice(8,10)+'.'+d.slice(5,7)+'.';
+    g+=`<text x="${x+bw/2}" y="${base+12}" text-anchor="end" font-size="9" fill="${d===today?'#b45309':'#6b7280'}" transform="rotate(-45 ${x+bw/2} ${base+12})">${lbl}</text>`;
+  });
+  const lg=(c,t)=>`<span style="display:inline-flex;align-items:center;gap:5px"><span style="width:12px;height:12px;background:${c};border-radius:3px;display:inline-block"></span>${t}</span>`;
+  const legend=`<div style="display:flex;gap:16px;align-items:center;font-size:12px;margin:4px 0 8px">${lg('#9db4d6','Offen')}${lg('#c0392b','Überfällig')}${lg('#0f9d6b','Erledigt')}</div>`;
+  const chart=legend+`<div style="overflow-x:auto;border:1px solid var(--line);border-radius:10px;padding:8px;margin-bottom:14px"><svg width="${W}" height="${H}" style="display:block">${g}</svg></div>`;
+  const rows=`<div class="statrow head"><div>Tag</div><div>Zusammensetzung</div><div class="statnum">F · Ü · E</div></div>`+
+    days.map(d=>{const o=by[d];const open=Math.max(0,o.due-o.over-o.done);const w=v=>o.due?Math.round(v/o.due*100):0;
       const lbl=d.split('-').reverse().join('.');
       return `<div class="statrow ${d===today?'today':''}"><div>${lbl}${d===today?' · heute':''}</div>
-        <div class="bar"><div class="over" style="width:${overW}%"></div><div class="due" style="width:${dueW-overW}%"></div></div>
-        <div class="statnum">${o.due}${o.over?` · <span class="o">${o.over}</span>`:''}</div></div>`;}).join('');
-  document.getElementById('stat_body').innerHTML=head+rows;
+        <div class="bar"><div style="background:#0f9d6b;width:${w(o.done)}%"></div><div class="over" style="width:${w(o.over)}%"></div><div class="due" style="width:${w(open)}%"></div></div>
+        <div class="statnum">${o.due}${o.over?` · <span class="o">${o.over}</span>`:' · 0'}${o.done?` · <span style="color:var(--green);font-weight:700">${o.done}</span>`:' · 0'}</div></div>`;}).join('');
+  document.getElementById('stat_body').innerHTML=head+chart+rows;
 }
 /* ---------- Asana-Übertragung ---------- */
 function asImportOpen(){document.getElementById('as_link').value='';document.getElementById('as_status').textContent='';document.getElementById('asov').classList.add('show');setTimeout(()=>document.getElementById('as_link').focus(),50);}
