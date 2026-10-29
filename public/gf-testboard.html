@@ -158,26 +158,33 @@ function renderList(){
       <td><button class="del" onclick="delTask('${t.id}')">🗑</button></td></tr>`;}).join('')||'<tr><td colspan="7" style="text-align:center;color:var(--muted);padding:24px">Keine Aufgaben.</td></tr>'}
   </tbody></table></div>`;
 }
+let CALMODE='woche';
+function mondayOf(d){const x=new Date(d);x.setDate(x.getDate()-((x.getDay()+6)%7));x.setHours(0,0,0,0);return x;}
 function renderCalendar(){
-  if(!CALM){const d=new Date(today);CALM=new Date(d.getFullYear(),d.getMonth(),1);}
-  const y=CALM.getFullYear(),m=CALM.getMonth();
-  const first=new Date(y,m,1), start=new Date(first); start.setDate(1-((first.getDay()+6)%7)); // Montag-Start
-  const monthName=CALM.toLocaleDateString('de-DE',{month:'long',year:'numeric'});
+  if(!CALM)CALM=new Date(today);
   const byDay={};TASKS.forEach(t=>{if(t.faellig){(byDay[t.faellig]=byDay[t.faellig]||[]).push(t);}});
   const dows=['Mo','Di','Mi','Do','Fr','Sa','So'];
+  let start,count,label,curM=CALM.getMonth();
+  if(CALMODE==='woche'){start=mondayOf(CALM);count=7;const end=new Date(start);end.setDate(start.getDate()+6);
+    label='Woche '+start.toLocaleDateString('de-DE',{day:'2-digit',month:'short'})+' – '+end.toLocaleDateString('de-DE',{day:'2-digit',month:'short',year:'numeric'});}
+  else{const first=new Date(CALM.getFullYear(),CALM.getMonth(),1);start=mondayOf(first);count=42;label=first.toLocaleDateString('de-DE',{month:'long',year:'numeric'});curM=first.getMonth();}
   let cells='';
-  for(let i=0;i<42;i++){const d=new Date(start);d.setDate(start.getDate()+i);const iso=d.toISOString().slice(0,10);
-    const out=d.getMonth()!==m, isToday=iso===today;
+  for(let i=0;i<count;i++){const d=new Date(start);d.setDate(start.getDate()+i);const iso=d.toISOString().slice(0,10);
+    const out=CALMODE==='monat'&&d.getMonth()!==curM, isToday=iso===today;
     const list=byDay[iso]||[];
-    cells+=`<div class="cell ${out?'out':''} ${isToday?'today':''}"><div class="dn">${d.getDate()}</div>${
-      list.map(t=>{const over=iso<today&&t.status!=='erledigt';const cls=t.status==='erledigt'?'done':(over?'over':'');return `<div class="ct ${cls}" title="${esc(t.titel)}">${esc(t.titel.length>26?t.titel.slice(0,24)+'…':t.titel)}</div>`;}).join('')
+    cells+=`<div class="cell ${out?'out':''} ${isToday?'today':''}"><div class="dn">${d.getDate()}.</div>${
+      list.map(t=>{const over=iso<today&&t.status!=='erledigt';const cls=t.status==='erledigt'?'done':(over?'over':'');return `<div class="ct ${cls}" title="${esc(t.titel)}">${esc(CALMODE==='woche'?t.titel:(t.titel.length>26?t.titel.slice(0,24)+'…':t.titel))}</div>`;}).join('')
     }</div>`;
   }
-  document.getElementById('view').innerHTML=`<div class="calhead"><button class="btn" onclick="calNav(-1)">‹</button><b>${monthName}</b><button class="btn" onclick="calNav(1)">›</button><button class="btn" onclick="calToday()">Heute</button></div>
+  document.getElementById('view').innerHTML=`<div class="calhead">
+    <button class="btn" onclick="calNav(-1)">‹</button><b>${label}</b><button class="btn" onclick="calNav(1)">›</button><button class="btn" onclick="calToday()">Heute</button>
+    <span class="seg" style="margin-left:auto"><button class="${CALMODE==='monat'?'on':''}" onclick="calMode('monat')">Monat</button><button class="${CALMODE==='woche'?'on':''}" onclick="calMode('woche')">Woche</button></span>
+  </div>
     <div class="cal">${dows.map(d=>`<div class="dow">${d}</div>`).join('')}${cells}</div>`;
 }
-function calNav(dir){CALM=new Date(CALM.getFullYear(),CALM.getMonth()+dir,1);renderCalendar();}
-function calToday(){const d=new Date(today);CALM=new Date(d.getFullYear(),d.getMonth(),1);renderCalendar();}
+function calMode(m){CALMODE=m;renderCalendar();}
+function calNav(dir){if(CALMODE==='woche'){CALM.setDate(CALM.getDate()+dir*7);CALM=new Date(CALM);}else{CALM=new Date(CALM.getFullYear(),CALM.getMonth()+dir,1);}renderCalendar();}
+function calToday(){CALM=new Date(today);renderCalendar();}
 async function moveTask(id,status){const t=TASKS.find(x=>x.id===id);if(!t)return;t.status=status;await sb.from('os_tasks').update({status,updated_at:new Date().toISOString()}).eq('id',id);render();toast('Status aktualisiert ✓');}
 let DRAG=null;
 function drag(e,id){DRAG=id;e.dataTransfer.effectAllowed='move';}
