@@ -87,9 +87,15 @@ tbody tr:hover td{background:#fafbfc}
         <div class="fld"><label>Fällig am</label><input id="f_faellig" type="date"></div>
         <div class="fld wide"><label>Asana-Link <span style="font-weight:400;text-transform:none">(Aufgabe in Asana zum aktuellen Stand)</span></label>
           <input id="f_asana_url" type="text" placeholder="https://app.asana.com/…"></div>
-        <div class="fld wide"><label>Beschreibung</label><textarea id="f_beschreibung" rows="5"></textarea></div>
+        <div class="fld wide"><label>Beschreibung</label><textarea id="f_beschreibung" rows="5"></textarea>
+          <div style="display:flex;gap:6px;margin-top:5px"><button type="button" class="btn sec" id="mic_f_beschreibung" style="font-size:11.5px;padding:4px 9px" onclick="diktieren('f_beschreibung','mic_f_beschreibung')" title="Diktieren">🎤 Diktieren</button><button type="button" class="btn sec" style="font-size:11.5px;padding:4px 9px" onclick="kiZusammenfassen('f_beschreibung')" title="Zusammenfassen">✨ Zusammenfassen</button></div></div>
       </div>
       <div id="asanaHint" style="margin-top:10px"></div>
+      <div id="tkSubWrap" style="margin-top:16px;display:none"><div class="secttl" style="font-size:12px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted,#6b7280);font-weight:700;margin-bottom:8px">☑ Unteraufgaben <span id="tkSubCnt" style="font-weight:400"></span></div><div id="tkSubList"></div>
+        <div style="display:flex;gap:6px;margin-top:6px"><input id="tkSubNew" placeholder="Neue Unteraufgabe …" style="flex:1;border:1px solid var(--line,#e4e7ec);border-radius:8px;padding:7px 9px;font:inherit;font-size:13px" onkeydown="if(event.key==='Enter')addSub()"><button class="btn sec" style="font-size:12px" onclick="addSub()">+</button></div></div>
+      <div id="tkVerWrap" style="margin-top:16px;display:none"><div class="secttl" style="font-size:12px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted,#6b7280);font-weight:700;margin-bottom:8px">🕓 Verlauf &amp; Kommentare</div><div id="tkVerList"></div>
+        <textarea id="tkComment" rows="2" placeholder="Kommentar hinzufügen … – oder 🎤 reinsprechen" style="width:100%;border:1px solid var(--line,#e4e7ec);border-radius:8px;padding:8px 10px;font:inherit;font-size:13px;margin-top:8px"></textarea>
+        <div style="display:flex;gap:6px;margin-top:5px;flex-wrap:wrap"><button type="button" class="btn sec" id="mic_tkComment" style="font-size:11.5px;padding:4px 9px" onclick="diktieren('tkComment','mic_tkComment')">🎤 Diktieren</button><button type="button" class="btn sec" style="font-size:11.5px;padding:4px 9px" onclick="kiZusammenfassen('tkComment')">✨ Zusammenfassen</button><button class="btn" style="font-size:12px" onclick="addComment()">Kommentar speichern</button></div></div>
     </div>
     <div class="dlg-ft">
       <button class="btn sec" onclick="closeDlg()">Abbrechen</button>
@@ -112,7 +118,7 @@ const PERS=['','Eric','Jürgen','Stephan','Ramona','Extern'];
 const sCls=s=>'s-'+String(s||'Neu').replace(/\s+/g,'');
 const heute=()=>new Date().toISOString().slice(0,10);
 
-let VIEW='offen', T=[], KV=[], FV=[], KH=[], FH=[], CUR=null, DRAG=null, q='', fPrio='', fKontakt='', fVer='', fQuelle='';
+let VIEW='offen', T=[], KV=[], FV=[], KH=[], FH=[], CUR=null, DRAG=null, q='', fPrio='', fKontakt='', fVer='', fQuelle='', ICH='';
 const QLBL={vertrieb:'Vertrieb',hausverwaltung:'Hausverwaltung'};
 
 const kName=k=>((k.vorname||'')+' '+(k.name||'')).trim()||'(ohne Name)';
@@ -132,6 +138,7 @@ async function load(){
   ]);
   T=t.data||[];KV=kv.data||[];FV=fv.data||[];KH=kh.data||[];FH=fh.data||[];
   initNav();render();
+  try{const op=new URLSearchParams(location.search).get('ticket');if(op&&T.some(x=>x.id===op))openTicket(op);}catch(e){}
 }
 
 function initNav(){const t=[['offen','Meine offenen ToDos'],['alle','Alle Tickets'],['board','Board']];
@@ -251,14 +258,81 @@ function fillForm(t){
        <div style="font-size:11.5px;color:var(--muted);margin-top:4px">Der Bearbeitungsstand wird in Asana gepflegt. Dieses Ticket verweist nur darauf.</div>`
     : '<div style="font-size:11.5px;color:var(--muted)">Noch kein Asana-Link hinterlegt. Aufgaben-URL aus Asana kopieren und oben einfügen.</div>';
 }
-function openTicket(id){
+let SUBS=[], VER=[];
+async function openTicket(id){
   const t=T.find(x=>x.id===id);if(!t)return;
-  CUR={id};$('dlgTitle').textContent='Ticket #'+t.nummer;
+  CUR={id,snap:t};$('dlgTitle').textContent='Ticket #'+t.nummer;
   fillForm(t);$('ov').classList.add('show');
+  $('tkSubWrap').style.display='';$('tkVerWrap').style.display='';
+  const [s,v]=await Promise.all([
+    sb.from('ticket_subtasks').select('*').eq('ticket_id',id).order('pos',{ascending:true}).order('created_at',{ascending:true}),
+    sb.from('ticket_verlauf').select('*').eq('ticket_id',id).order('created_at',{ascending:false})
+  ]);
+  SUBS=s.data||[];VER=v.data||[];renderSubs();renderVer();
 }
 function openNew(){
   CUR={id:null};$('dlgTitle').textContent='Neues Ticket';
   fillForm({status:'Neu',prio:'P2',quelle:fQuelle||'vertrieb'});$('ov').classList.add('show');
+  SUBS=[];VER=[];$('tkSubWrap').style.display='none';$('tkVerWrap').style.display='none';
+}
+function renderSubs(){
+  const done=SUBS.filter(s=>s.done).length;
+  $('tkSubCnt').textContent=SUBS.length?('· '+done+'/'+SUBS.length+' erledigt'):'';
+  $('tkSubList').innerHTML=SUBS.map(s=>`<div style="display:flex;gap:8px;align-items:center;padding:3px 0">
+    <input type="checkbox" ${s.done?'checked':''} onchange="toggleSub('${s.id}')" style="width:15px;height:15px;cursor:pointer">
+    <span style="flex:1;font-size:13px;${s.done?'text-decoration:line-through;color:var(--muted,#6b7280)':''}">${esc(s.titel||'')}</span>
+    <b style="cursor:pointer;color:#c0392b" onclick="delSub('${s.id}')">×</b></div>`).join('')||'<div style="color:var(--muted,#6b7280);font-size:12px">Noch keine Unteraufgaben.</div>';
+}
+function renderVer(){
+  $('tkVerList').innerHTML=VER.length?VER.map(v=>{
+    const dt=new Date(v.created_at).toLocaleString('de-DE',{dateStyle:'short',timeStyle:'short'});
+    const ic=v.art==='aenderung'?'🔄':(v.art==='status'?'🏷':'💬');
+    return `<div style="border-left:2px solid var(--line,#e4e7ec);padding:4px 0 4px 10px;margin:2px 0;font-size:12.5px"><div style="color:var(--muted,#6b7280);font-size:11px">${ic} ${dt}${v.autor?' · '+esc(v.autor):''}</div><div>${esc(v.text||'')}</div></div>`;
+  }).join(''):'<div style="color:var(--muted,#6b7280);font-size:12px">Noch keine Einträge.</div>';
+}
+async function addSub(){
+  if(!CUR||!CUR.id){toast('Erst Ticket speichern');return;}
+  const el=$('tkSubNew');const t=(el.value||'').trim();if(!t)return;
+  const pos=(SUBS.reduce((m,s)=>Math.max(m,s.pos||0),0))+1;
+  const {data,error}=await sb.from('ticket_subtasks').insert({ticket_id:CUR.id,titel:t,pos}).select().maybeSingle();
+  if(error){toast(error.message);return;}if(data)SUBS.push(data);el.value='';renderSubs();
+}
+async function toggleSub(id){const s=SUBS.find(x=>x.id===id);if(!s)return;s.done=!s.done;renderSubs();await sb.from('ticket_subtasks').update({done:s.done}).eq('id',id);}
+async function delSub(id){await sb.from('ticket_subtasks').delete().eq('id',id);SUBS=SUBS.filter(s=>s.id!==id);renderSubs();}
+async function addComment(){
+  if(!CUR||!CUR.id){toast('Erst Ticket speichern');return;}
+  const el=$('tkComment');const t=(el.value||'').trim();if(!t){toast('Bitte Text eingeben');return;}
+  const {data,error}=await sb.from('ticket_verlauf').insert({ticket_id:CUR.id,art:'kommentar',text:t,autor:ICH||null}).select().maybeSingle();
+  if(error){toast(error.message);return;}if(data)VER.unshift(data);el.value='';renderVer();toast('Kommentar gespeichert ✓');
+}
+async function logVer(ticketId,art,text){try{const {data}=await sb.from('ticket_verlauf').insert({ticket_id:ticketId,art,text,autor:ICH||null}).select().maybeSingle();if(data&&CUR&&CUR.id===ticketId)VER.unshift(data);}catch(e){}}
+/* Diktat + KI */
+let REC=null,RECBTN=null,RECBASE='';
+function diktieren(targetId,btnId){
+  const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
+  if(!SR){toast('Spracherkennung nicht unterstützt (am besten Chrome).');return;}
+  const btn=btnId?$(btnId):null;if(REC){REC.stop();return;}
+  const el=$(targetId);if(!el)return;RECBASE=el.value?el.value.trim()+' ':'';
+  REC=new SR();REC.lang='de-DE';REC.continuous=true;REC.interimResults=true;RECBTN=btn;
+  if(btn){btn.dataset.lbl=btn.textContent;btn.textContent='⏺ Stop';btn.style.color='#c0392b';}
+  let fin='';
+  REC.onresult=(e)=>{let im='';for(let i=e.resultIndex;i<e.results.length;i++){const tr=e.results[i][0].transcript;if(e.results[i].isFinal)fin+=tr+' ';else im+=tr;}el.value=RECBASE+fin+im;};
+  REC.onerror=(e)=>toast('Diktat-Fehler: '+(e.error||''));
+  REC.onend=()=>{if(RECBTN){RECBTN.textContent=RECBTN.dataset.lbl||'🎤 Diktieren';RECBTN.style.color='';}REC=null;RECBTN=null;};
+  try{REC.start();}catch(e){toast('Konnte Diktat nicht starten.');}
+}
+async function kiRuf(aufgabe,text){
+  const r=await fetch('/api/ki',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({aufgabe,text})});
+  const j=await r.json().catch(()=>({error:'Antwort unlesbar'}));
+  if(j&&j.setup){toast('KI noch nicht eingerichtet (API-Schlüssel fehlt).');return null;}
+  if(!j||j.error){toast('KI: '+((j&&j.error)||'Fehler'));return null;}
+  return (j.text||'').trim()||null;
+}
+async function kiZusammenfassen(targetId){
+  const el=$(targetId);if(!el)return;const t=(el.value||'').trim();
+  if(t.length<20){toast('Zu wenig Text zum Zusammenfassen.');return;}
+  toast('Fasse zusammen …');const s=await kiRuf('zusammenfassung',t);
+  if(s){el.value=s;toast('Zusammengefasst ✓');}
 }
 function quelleChg(){
   const ql=$('f_quelle').value;
@@ -279,7 +353,15 @@ async function saveTicket(){
     asana_url:$('f_asana_url').value.trim()||null,beschreibung:$('f_beschreibung').value||null,
     updated_at:new Date().toISOString(),
     erledigt_at:status==='Erledigt'?new Date().toISOString():null};
-  if(CUR.id){const{error}=await sb.from('tickets').update(row).eq('id',CUR.id);if(error){toast(error.message);return;}toast('Ticket gespeichert ✓');}
+  if(CUR.id){const{error}=await sb.from('tickets').update(row).eq('id',CUR.id);if(error){toast(error.message);return;}
+    const old=CUR.snap||{};const chg=[];
+    if((old.status||'')!==status)chg.push('Status: '+(old.status||'—')+' → '+status);
+    if((old.prio||'')!==row.prio)chg.push('Priorität: '+(old.prio||'—')+' → '+row.prio);
+    if((old.verantwortlich||'')!==(row.verantwortlich||''))chg.push('Verantwortlich: '+(old.verantwortlich||'—')+' → '+(row.verantwortlich||'—'));
+    if((old.faellig||'')!==(row.faellig||''))chg.push('Fällig: '+(old.faellig||'—')+' → '+(row.faellig||'—'));
+    if((old.titel||'')!==titel)chg.push('Titel geändert');
+    for(const c of chg)await logVer(CUR.id,'aenderung',c);
+    toast('Ticket gespeichert ✓');}
   else{const{error}=await sb.from('tickets').insert(row);if(error){toast(error.message);return;}toast('Ticket angelegt ✓');}
   closeDlg();load();
 }
@@ -296,6 +378,7 @@ window.dragStart=dragStart;window.allowDrop=allowDrop;window.drop=drop;
 (async()=>{
   const{data:{session}}=await sb.auth.getSession();
   if(!session){$('main').innerHTML='<div class="empty" style="padding:60px">Bitte zuerst im OS einloggen.</div>';return;}
+  try{const u=session.user;ICH=(u&&(u.user_metadata&&(u.user_metadata.full_name||u.user_metadata.name)))||(u&&u.email)||'';}catch(e){}
   const p=new URLSearchParams(location.search);
   if(p.get('kontakt'))fKontakt=p.get('kontakt');
   load();
