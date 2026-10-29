@@ -102,7 +102,6 @@ export const NAV = [
   { type: 'group', key: 'gf-dashboard', icon: 'ti-chart-pie', label: 'GF-Dashboard', area: ['vertrieb', 'hv'], mod: 'dashboards', items: [
     { href: '/gf-dashboard', icon: 'ti-chart-pie', label: 'Übersicht' },
     { href: '/gf-dashboard/kpi', icon: 'ti-gauge', label: 'KPI GF · Cashflow je Struktur' },
-    { href: '/gf-dashboard/testboard', icon: 'ti-layout-kanban', label: 'Testboard Aufgaben' },
   ] },
   { type: 'link', href: '/beschluesse', icon: 'ti-clipboard-check', label: 'Beschlüsse', area: ['vertrieb', 'hv'], mod: 'dashboards' },
   { type: 'group', key: 'backoffice', icon: 'ti-building-warehouse', label: 'Backoffice-Kosten', area: ['vertrieb', 'hv'], mod: 'dashboards', items: [
@@ -189,7 +188,7 @@ export const NAV = [
     { href: '/controlling/objekt-controlling', icon: 'ti-building-bank', label: 'Objekt-Controlling' },
   ] },
   { type: 'group', key: 'produktivitaet', icon: 'ti-rocket', label: 'Produktivität', area: 'hv', mod: 'produktivitaet', items: [
-    { href: '/produktivitaet/tracking', icon: 'ti-chart-line', label: 'Tracking' },
+    { href: '/gf-dashboard/testboard', icon: 'ti-layout-kanban', label: 'Testboard Aufgaben' },
     { href: '/produktivitaet/planung', icon: 'ti-calendar-event', label: 'Wochenplanung' },
     { href: '/produktivitaet/ideale-woche', icon: 'ti-calendar-heart', label: 'Ideale Woche' },
     { href: '/produktivitaet/statusbericht', icon: 'ti-clipboard-check', label: 'Statusbericht GF' },
