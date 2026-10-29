@@ -102,6 +102,7 @@ export const NAV = [
   { type: 'group', key: 'gf-dashboard', icon: 'ti-chart-pie', label: 'GF-Dashboard', area: ['vertrieb', 'hv'], mod: 'dashboards', items: [
     { href: '/gf-dashboard', icon: 'ti-chart-pie', label: 'Übersicht' },
     { href: '/gf-dashboard/kpi', icon: 'ti-gauge', label: 'KPI GF · Cashflow je Struktur' },
+    { href: '/gf-dashboard/testboard', icon: 'ti-layout-kanban', label: 'Testboard Aufgaben' },
   ] },
   { type: 'link', href: '/beschluesse', icon: 'ti-clipboard-check', label: 'Beschlüsse', area: ['vertrieb', 'hv'], mod: 'dashboards' },
   { type: 'group', key: 'backoffice', icon: 'ti-building-warehouse', label: 'Backoffice-Kosten', area: ['vertrieb', 'hv'], mod: 'dashboards', items: [
