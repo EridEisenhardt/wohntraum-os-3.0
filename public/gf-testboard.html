@@ -18,8 +18,7 @@ h1{font-size:21px;font-weight:800}
 .addbar input{flex:1;border:1px solid var(--line);border-radius:9px;padding:9px 11px;font:inherit;font-size:13px}
 .btn{font:inherit;font-size:13px;border:1px solid var(--line);background:var(--surf);border-radius:9px;padding:9px 14px;cursor:pointer;font-weight:600}
 .btn.pri{background:var(--accent);color:#fff;border-color:var(--accent)}
-.cols{display:grid;grid-template-columns:repeat(5,1fr);gap:12px;align-items:start}
-@media(max-width:1200px){.cols{grid-template-columns:repeat(3,1fr)}}
+.cols{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;align-items:start}
 @media(max-width:980px){.cols{grid-template-columns:1fr 1fr}}
 @media(max-width:620px){.cols{grid-template-columns:1fr}}
 .col{background:var(--surf2);border:1px solid var(--line);border-radius:13px;padding:10px;min-height:120px}
@@ -69,6 +68,13 @@ h1{font-size:21px;font-weight:800}
 .addday{float:right;cursor:pointer;color:var(--muted);font-weight:700;width:18px;height:18px;line-height:17px;text-align:center;border-radius:5px;opacity:0;transition:.1s}
 .cell:hover .addday{opacity:1}
 .addday:hover{background:var(--accent);color:#fff}
+.jfcol{background:#f4f1fe;border:1px solid #e3dcfb}
+.pill.tag{background:#eef6ff;border-color:#cfe4fb;color:#1d6fd6}
+.tagbox{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:6px}
+.tagbox:empty{display:none}
+.tagchip{display:inline-flex;align-items:center;gap:5px;background:#eef6ff;border:1px solid #cfe4fb;color:#1d6fd6;border-radius:999px;padding:3px 9px;font-size:12px;font-weight:600}
+.tagchip b{cursor:pointer;color:#1d6fd6;opacity:.7}.tagchip b:hover{opacity:1}
+.taginput{width:100%;border:1px solid var(--line);border-radius:8px;padding:7px 9px;font:inherit;font-size:13px}
 .pill.art{background:#efeafe;border-color:#ddd3fb;color:#6d4ef0}
 .pill.wv{background:#fff4e5;border-color:#f3dcc0;color:var(--amber)}.pill.wv.over{background:#fdecea;border-color:#f5c6c2;color:var(--red)}
 .pill.prio{background:#f1f3f6}
@@ -139,6 +145,10 @@ h1{font-size:21px;font-weight:800}
       <div class="f"><label>Kontakt</label><select id="d_kont"></select></div>
       <div class="f"><label>Objekt</label><select id="d_obj"></select></div>
       <div class="f wide"><label>Asana-Link</label><input id="d_asana_url" placeholder="https://app.asana.com/…"></div>
+      <div class="f wide"><label>Tags</label>
+        <div id="d_tags" class="tagbox"></div>
+        <input id="d_tagnew" class="taginput" placeholder="Tag eingeben und Enter …" onkeydown="if(event.key==='Enter'){event.preventDefault();dAddTag();}">
+      </div>
       <div class="f wide"><label>Beschreibung</label><textarea id="d_beschreibung" rows="4"></textarea>
         <div class="row"><button class="btn sec sm" id="mic_d_beschreibung" onclick="diktieren('d_beschreibung','mic_d_beschreibung')">🎤 Diktieren</button><button class="btn sec sm" onclick="kiZusammenfassen('d_beschreibung')">✨ Zusammenfassen</button></div></div>
     </div>
@@ -173,7 +183,10 @@ const COLS=[['todo','📋 To Do'],['inarbeit','🔧 In Arbeit'],['warten','⏳ W
 const ARTLBL={aufgabe:'Aufgabe',ticket:'Ticket',followup:'Follow-up',rueckruf:'Rückruf',vortermin:'Vor-Ort-Termin',jourfix:'Jour Fix'};
 const ARTICON={aufgabe:'📌',ticket:'🎫',followup:'🔁',rueckruf:'📞',vortermin:'📍',jourfix:'🧭'};
 let TASKS=[], KONT=[], OBJ=[];
-let ART='alle', WVONLY=false, SUBS=[], VER=[], DTASK=null, ICH='';
+let ART='alle', WVONLY=false, SUBS=[], VER=[], DTASK=null, ICH='', TAGS=[];
+function renderDTags(){document.getElementById('d_tags').innerHTML=TAGS.map(tg=>`<span class="tagchip">#${esc(tg)}<b onclick="dDelTag('${esc(tg).replace(/'/g,"\\'")}')">✕</b></span>`).join('');}
+function dAddTag(){const el=document.getElementById('d_tagnew');const v=(el.value||'').trim().replace(/^#/,'');if(!v){return;}if(!TAGS.includes(v))TAGS.push(v);el.value='';renderDTags();}
+function dDelTag(tg){TAGS=TAGS.filter(x=>x!==tg);renderDTags();}
 function vis(){return TASKS.filter(t=>(ART==='alle'||(t.art||'aufgabe')===ART)&&(!WVONLY||(t.wiedervorlage&&t.wiedervorlage<=today&&t.status!=='erledigt')));}
 function setArt(a){ART=a;document.querySelectorAll('#artseg button').forEach(b=>b.classList.toggle('on',b.dataset.a===a));render();}
 function toggleWV(){WVONLY=!WVONLY;document.getElementById('wvBtn').classList.toggle('pri',WVONLY);render();}
@@ -206,10 +219,11 @@ function card(t){
   const proj=t.projekt?`<span class="pill">${esc(t.projekt)}</span>`:'';
   const kont=t.kontakt_label?`<span class="pill kontakt">👤 ${esc(t.kontakt_label)}</span>`:'';
   const obj=t.object_label?`<span class="pill obj">🏠 ${esc(t.object_label)}</span>`:'';
+  const tags=(t.tags||[]).map(tg=>`<span class="pill tag">#${esc(tg)}</span>`).join('');
   const asana=t.asana_url?`<a href="${esc(t.asana_url)}" target="_blank">↗ Asana</a>`:'';
   return `<div class="card" draggable="true" ondragstart="drag(event,'${t.id}')">
     <div class="tt" onclick="openDetail('${t.id}')">${esc(t.titel)}</div>
-    <div class="meta">${artb}${prio}${due}${wv}${proj}${kont}${obj}</div>
+    <div class="meta">${artb}${prio}${due}${wv}${proj}${kont}${obj}${tags}</div>
     <div class="links">${asana}
       <select onchange="linkKont('${t.id}',this.value)">${kontOptions(t.kontakt_label)}</select>
       <select onchange="linkObj('${t.id}',this.value)">${objOptions(t.object_label)}</select>
@@ -234,12 +248,20 @@ function render(){
 function renderBoard(){
   document.getElementById('view').innerHTML='<div class="cols" id="cols"></div>';
   const V=vis();
-  document.getElementById('cols').innerHTML=COLS.map(([k,l])=>{
-    const list=V.filter(t=>(t.status||'todo')===k);
+  const showJF=(ART==='alle'||ART==='jourfix');
+  let html=COLS.map(([k,l])=>{
+    const list=V.filter(t=>(t.art||'')!=='jourfix'&&(t.status||'todo')===k);
     return `<div class="col" ondragover="event.preventDefault();this.classList.add('dragover')" ondragleave="this.classList.remove('dragover')" ondrop="drop(event,'${k}',this)">
       <div class="col-h"><span>${l}</span><span class="cnt">${list.length}</span></div>
       ${list.map(card).join('')}</div>`;
   }).join('');
+  if(showJF){
+    const jf=V.filter(t=>(t.art||'')==='jourfix');
+    html+=`<div class="col jfcol" ondragover="event.preventDefault();this.classList.add('dragover')" ondragleave="this.classList.remove('dragover')" ondrop="dropJF(event,this)">
+      <div class="col-h"><span>🧭 Jour Fix</span><span class="cnt">${jf.length}</span></div>
+      ${jf.map(card).join('')}</div>`;
+  }
+  document.getElementById('cols').innerHTML=html;
 }
 function renderList(){
   const rows=vis().slice().sort((a,b)=>{const av=a.faellig||'9999',bv=b.faellig||'9999';return av<bv?-1:av>bv?1:(a.pos||0)-(b.pos||0);});
@@ -295,7 +317,16 @@ async function moveTask(id,status){const t=TASKS.find(x=>x.id===id);if(!t)return
 let DRAG=null;
 function drag(e,id){DRAG=id;e.dataTransfer.effectAllowed='move';}
 async function drop(e,status,el){e.preventDefault();el.classList.remove('dragover');if(!DRAG)return;
-  const t=TASKS.find(x=>x.id===DRAG);if(t&&t.status!==status){t.status=status;render();await sb.from('os_tasks').update({status,updated_at:new Date().toISOString()}).eq('id',DRAG);toast('Verschoben ✓');}
+  const t=TASKS.find(x=>x.id===DRAG);
+  if(t){const wasJF=(t.art||'')==='jourfix';const patch={updated_at:new Date().toISOString()};let ch=false;
+    if(t.status!==status){t.status=status;patch.status=status;ch=true;}
+    if(wasJF){t.art='aufgabe';patch.art='aufgabe';ch=true;} /* aus der Jour-Fix-Spalte gezogen → wird normale Aufgabe */
+    if(ch){render();await sb.from('os_tasks').update(patch).eq('id',DRAG);toast('Verschoben ✓');}
+  }
+  DRAG=null;}
+async function dropJF(e,el){e.preventDefault();el.classList.remove('dragover');if(!DRAG)return;
+  const t=TASKS.find(x=>x.id===DRAG);
+  if(t&&(t.art||'')!=='jourfix'){t.art='jourfix';render();await sb.from('os_tasks').update({art:'jourfix',updated_at:new Date().toISOString()}).eq('id',DRAG);toast('In Jour Fix verschoben ✓');}
   DRAG=null;}
 async function addTask(){const el=document.getElementById('newT');const titel=(el.value||'').trim();if(!titel)return;
   const art=document.getElementById('newArt').value||'aufgabe';
@@ -320,6 +351,7 @@ async function openDetail(id){
   document.getElementById('d_kont').innerHTML=kontOptions(t.kontakt_label);
   document.getElementById('d_obj').innerHTML=objOptions(t.object_label);
   document.getElementById('dov').classList.add('show');
+  TAGS=Array.isArray(t.tags)?t.tags.slice():[];document.getElementById('d_tagnew').value='';renderDTags();
   SUBS=[];VER=[];renderDSubs();renderDVer();
   const [s,v]=await Promise.all([
     sb.from('os_task_subtasks').select('*').eq('task_id',id).order('created_at'),
@@ -347,6 +379,7 @@ async function dDelSub(id){await sb.from('os_task_subtasks').delete().eq('id',id
 async function dAddComment(){const el=document.getElementById('d_comment');const text=(el.value||'').trim();if(!text)return;await logVer('💬 '+text);el.value='';}
 async function dSave(){
   if(!DTASK)return;const id=DTASK.id;
+  dAddTag(); /* noch nicht bestätigten Tag-Text übernehmen */
   const kv=document.getElementById('d_kont').value, ov=document.getElementById('d_obj').value;
   const [kid,klabel]=kv?kv.split('|'):[null,null];const [oid,olabel]=ov?ov.split('|'):[null,null];
   const patch={
@@ -360,6 +393,7 @@ async function dSave(){
     kontakt_id:kid,kontakt_label:klabel,object_id:oid,object_label:olabel,
     asana_url:document.getElementById('d_asana_url').value||null,
     beschreibung:document.getElementById('d_beschreibung').value||null,
+    tags:TAGS.slice(),
     updated_at:new Date().toISOString()
   };
   const changes=[];const map={status:'Status',prio:'Priorität',faellig:'Fällig',wiedervorlage:'Wiedervorlage',verantwortlich:'Verantwortlich',art:'Art'};
