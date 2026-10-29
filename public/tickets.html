@@ -124,11 +124,15 @@ const heute=()=>new Date().toISOString().slice(0,10);
 let VIEW='offen', T=[], KV=[], FV=[], KH=[], FH=[], CUR=null, DRAG=null, q='', fPrio='', fKontakt='', fVer='', fQuelle='', ICH='';
 const QLBL={vertrieb:'Vertrieb',hausverwaltung:'Hausverwaltung'};
 
-const kName=k=>((k.vorname||'')+' '+(k.name||'')).trim()||'(ohne Name)';
+const kName=k=>{const n=(k.name||'').trim(),v=(k.vorname||'').trim();return (n?(n+(v?', '+v:'')):v)||'(ohne Name)';};
+const kSort=(a,b)=>((a.name||'')+' '+(a.vorname||'')).localeCompare(((b.name||'')+' '+(b.vorname||'')),'de',{sensitivity:'base'});
 const Kof=ql=>ql==='hausverwaltung'?KH:KV;
 const Fof=ql=>ql==='hausverwaltung'?FH:FV;
-const kontaktName=(ql,id)=>{const x=Kof(ql).find(k=>k.id===id);return x?kName(x):'';};
-const firmaName=(ql,id)=>{const x=Fof(ql).find(f=>f.id===id);return x?x.name:'';};
+// Kontakt/Firma werden aus BEIDEN Töpfen (CRM + Dienstleister) geführt – unabhängig vom Bereich
+const kontaktName=(ql,id)=>{const x=KV.concat(KH).find(k=>k.id===id);return x?kName(x):'';};
+const firmaName=(ql,id)=>{const x=FV.concat(FH).find(f=>f.id===id);return x?x.name:'';};
+function kontOptsAll(selId){const g=(lbl,list)=>list.length?`<optgroup label="${lbl}">${list.map(k=>`<option value="${k.id}"${k.id===selId?' selected':''}>${esc(kName(k))}</option>`).join('')}</optgroup>`:'';return '<option value="">—</option>'+g('Vertrieb (CRM)',KV)+g('Hausverwaltung (Dienstleister)',KH);}
+function firmaOptsAll(selId){const sf=(a,b)=>String(a.name||'').localeCompare(String(b.name||''),'de',{sensitivity:'base'});const g=(lbl,list)=>list.length?`<optgroup label="${lbl}">${list.slice().sort(sf).map(f=>`<option value="${f.id}"${f.id===selId?' selected':''}>${esc(f.name)}</option>`).join('')}</optgroup>`:'';return '<option value="">—</option>'+g('Vertrieb (CRM)',FV)+g('Hausverwaltung (Dienstleister)',FH);}
 const refName=t=>kontaktName(t.quelle,t.kontakt_id)||firmaName(t.quelle,t.firma_id)||'';
 
 async function load(){
@@ -140,7 +144,7 @@ async function load(){
     sb.from('hv_firmen').select('*').order('name')
   ]);
   T=(t.data||[]).map(x=>({...x,status:TST_OS2DE[x.status]||'Neu',quelle:x.quelle_bereich||'vertrieb'}));
-  KV=kv.data||[];FV=fv.data||[];KH=kh.data||[];FH=fh.data||[];
+  KV=(kv.data||[]).sort(kSort);FV=fv.data||[];KH=(kh.data||[]).sort(kSort);FH=fh.data||[];
   initNav();render();
   try{const op=new URLSearchParams(location.search).get('ticket');if(op&&T.some(x=>x.id===op))openTicket(op);}catch(e){}
 }
@@ -251,8 +255,8 @@ function fillForm(t){
   $('f_status').innerHTML=STATUS.map(s=>`<option ${(t.status||'Neu')===s?'selected':''}>${s}</option>`).join('');
   $('f_prio').innerHTML=PRIO.map(p=>`<option ${(t.prio||'P2')===p?'selected':''}>${p}</option>`).join('');
   const ql=t.quelle||'vertrieb'; $('f_quelle').value=ql;
-  $('f_kontakt_id').innerHTML=selOpts(Kof(ql),t.kontakt_id,kName);
-  $('f_firma_id').innerHTML=selOpts(Fof(ql),t.firma_id,x=>x.name);
+  $('f_kontakt_id').innerHTML=kontOptsAll(t.kontakt_id);
+  $('f_firma_id').innerHTML=firmaOptsAll(t.firma_id);
   $('f_verantwortlich').innerHTML=PERS.map(p=>`<option value="${esc(p)}" ${(t.verantwortlich||'')===p?'selected':''}>${p||'—'}</option>`).join('');
   $('f_faellig').value=t.faellig||'';
   $('f_asana_url').value=t.asana_url||'';
@@ -340,8 +344,8 @@ async function kiZusammenfassen(targetId){
 }
 function quelleChg(){
   const ql=$('f_quelle').value;
-  $('f_kontakt_id').innerHTML=selOpts(Kof(ql),'',kName);
-  $('f_firma_id').innerHTML=selOpts(Fof(ql),'',x=>x.name);
+  $('f_kontakt_id').innerHTML=kontOptsAll('');
+  $('f_firma_id').innerHTML=firmaOptsAll('');
 }
 window.quelleChg=quelleChg;
 function closeDlg(){$('ov').classList.remove('show');CUR=null;}

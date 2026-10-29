@@ -69,6 +69,10 @@ h1{font-size:21px;font-weight:800}
 .cell:hover .addday{opacity:1}
 .addday:hover{background:var(--accent);color:#fff}
 .jfcol{background:#f4f1fe;border:1px solid #e3dcfb}
+.pbox{display:flex;flex-wrap:wrap;gap:6px}
+.pbtn{border:1px solid var(--line);background:var(--surf);color:var(--text);border-radius:999px;padding:5px 12px;font:inherit;font-size:12.5px;cursor:pointer}
+.pbtn.on{background:#eafaf0;border-color:#bfe8d1;color:var(--green);font-weight:700}
+.pill.bet{background:#eafaf0;border-color:#bfe8d1;color:var(--green)}
 .pill.tag{background:#eef6ff;border-color:#cfe4fb;color:#1d6fd6}
 .tagbox{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:6px}
 .tagbox:empty{display:none}
@@ -145,6 +149,9 @@ h1{font-size:21px;font-weight:800}
       <div class="f"><label>Kontakt</label><select id="d_kont"></select></div>
       <div class="f"><label>Objekt</label><select id="d_obj"></select></div>
       <div class="f wide"><label>Asana-Link</label><input id="d_asana_url" placeholder="https://app.asana.com/…"></div>
+      <div class="f wide"><label>Beteiligte</label>
+        <div id="d_beteiligte" class="pbox"></div>
+      </div>
       <div class="f wide"><label>Tags</label>
         <div id="d_tags" class="tagbox"></div>
         <input id="d_tagnew" class="taginput" placeholder="Tag eingeben und Enter …" onkeydown="if(event.key==='Enter'){event.preventDefault();dAddTag();}">
@@ -183,7 +190,10 @@ const COLS=[['todo','📋 To Do'],['inarbeit','🔧 In Arbeit'],['warten','⏳ W
 const ARTLBL={aufgabe:'Aufgabe',ticket:'Ticket',followup:'Follow-up',rueckruf:'Rückruf',vortermin:'Vor-Ort-Termin',jourfix:'Jour Fix'};
 const ARTICON={aufgabe:'📌',ticket:'🎫',followup:'🔁',rueckruf:'📞',vortermin:'📍',jourfix:'🧭'};
 let TASKS=[], KONT=[], OBJ=[];
-let ART='alle', WVONLY=false, SUBS=[], VER=[], DTASK=null, ICH='', TAGS=[];
+const TEAM=['Eric','Jürgen','Stephan','Ramona','Alexander','Extern'];
+let ART='alle', WVONLY=false, SUBS=[], VER=[], DTASK=null, ICH='', TAGS=[], BETEIL=[];
+function renderDBeteiligte(){document.getElementById('d_beteiligte').innerHTML=TEAM.map(p=>`<button type="button" class="pbtn${BETEIL.includes(p)?' on':''}" onclick="toggleBeteil('${p.replace(/'/g,"\\'")}')">${BETEIL.includes(p)?'✓ ':''}${esc(p)}</button>`).join('');}
+function toggleBeteil(p){if(BETEIL.includes(p))BETEIL=BETEIL.filter(x=>x!==p);else BETEIL.push(p);renderDBeteiligte();}
 function renderDTags(){document.getElementById('d_tags').innerHTML=TAGS.map(tg=>`<span class="tagchip">#${esc(tg)}<b onclick="dDelTag('${esc(tg).replace(/'/g,"\\'")}')">✕</b></span>`).join('');}
 function dAddTag(){const el=document.getElementById('d_tagnew');const v=(el.value||'').trim().replace(/^#/,'');if(!v){return;}if(!TAGS.includes(v))TAGS.push(v);el.value='';renderDTags();}
 function dDelTag(tg){TAGS=TAGS.filter(x=>x!==tg);renderDTags();}
@@ -195,13 +205,13 @@ async function load(){
     sb.from('os_tasks').select('*').order('pos',{ascending:true}).order('created_at',{ascending:true}),
     sb.from('crm_kontakte').select('id,vorname,name'),
     sb.from('hv_kontakte').select('id,vorname,name'),
-    sb.from('nahaus_objekte').select('id,h_id_text,name').eq('geloescht',false)
+    sb.from('nahaus_objekte').select('id,h_id_text,kuerzel,name').eq('geloescht',false)
   ]);
   TASKS=t.data||[];
   const seen=new Set();KONT=[];
   (ck.data||[]).concat(hk.data||[]).forEach(k=>{const nm=[k.vorname,k.name].filter(Boolean).join(' ').trim();if(nm&&!seen.has(nm)){seen.add(nm);KONT.push({id:k.id,label:nm});}});
   KONT.sort((a,b)=>a.label.localeCompare(b.label,'de'));
-  OBJ=(ob.data||[]).map(o=>({id:o.id,label:(o.h_id_text?o.h_id_text+' · ':'')+(o.name||'')})).sort((a,b)=>a.label.localeCompare(b.label,'de'));
+  OBJ=(ob.data||[]).map(o=>{const kz=o.kuerzel||o.h_id_text||'';return {id:o.id,label:(kz?kz+' · ':'')+(o.name||'')};}).sort((a,b)=>a.label.localeCompare(b.label,'de',{numeric:true}));
   try{const {data:{session}}=await sb.auth.getSession();if(session&&session.user){ICH=(session.user.user_metadata&&(session.user.user_metadata.name||session.user.user_metadata.full_name))||session.user.email||'';}}catch(e){}
   render();
   const qp=new URLSearchParams(location.search);const op=qp.get('task')||qp.get('ticket');if(op)openDetail(op);
@@ -219,11 +229,12 @@ function card(t){
   const proj=t.projekt?`<span class="pill">${esc(t.projekt)}</span>`:'';
   const kont=t.kontakt_label?`<span class="pill kontakt">👤 ${esc(t.kontakt_label)}</span>`:'';
   const obj=t.object_label?`<span class="pill obj">🏠 ${esc(t.object_label)}</span>`:'';
+  const bet=(t.beteiligte||[]).map(p=>`<span class="pill bet">🧑 ${esc(p)}</span>`).join('');
   const tags=(t.tags||[]).map(tg=>`<span class="pill tag">#${esc(tg)}</span>`).join('');
   const asana=t.asana_url?`<a href="${esc(t.asana_url)}" target="_blank">↗ Asana</a>`:'';
   return `<div class="card" draggable="true" ondragstart="drag(event,'${t.id}')">
     <div class="tt" onclick="openDetail('${t.id}')">${esc(t.titel)}</div>
-    <div class="meta">${artb}${prio}${due}${wv}${proj}${kont}${obj}${tags}</div>
+    <div class="meta">${artb}${prio}${due}${wv}${proj}${kont}${obj}${bet}${tags}</div>
     <div class="links">${asana}
       <select onchange="linkKont('${t.id}',this.value)">${kontOptions(t.kontakt_label)}</select>
       <select onchange="linkObj('${t.id}',this.value)">${objOptions(t.object_label)}</select>
@@ -352,6 +363,7 @@ async function openDetail(id){
   document.getElementById('d_obj').innerHTML=objOptions(t.object_label);
   document.getElementById('dov').classList.add('show');
   TAGS=Array.isArray(t.tags)?t.tags.slice():[];document.getElementById('d_tagnew').value='';renderDTags();
+  BETEIL=Array.isArray(t.beteiligte)?t.beteiligte.slice():[];renderDBeteiligte();
   SUBS=[];VER=[];renderDSubs();renderDVer();
   const [s,v]=await Promise.all([
     sb.from('os_task_subtasks').select('*').eq('task_id',id).order('created_at'),
@@ -394,6 +406,7 @@ async function dSave(){
     asana_url:document.getElementById('d_asana_url').value||null,
     beschreibung:document.getElementById('d_beschreibung').value||null,
     tags:TAGS.slice(),
+    beteiligte:BETEIL.slice(),
     updated_at:new Date().toISOString()
   };
   const changes=[];const map={status:'Status',prio:'Priorität',faellig:'Fällig',wiedervorlage:'Wiedervorlage',verantwortlich:'Verantwortlich',art:'Art'};
