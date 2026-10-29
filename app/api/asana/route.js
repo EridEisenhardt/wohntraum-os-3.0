@@ -194,10 +194,12 @@ export async function POST(req) {
         await asana('/tasks/' + gid + '/addTag', { method: 'POST', json: { tag: tagGid } })
         getaggt = true
       } catch (e) { /* Tag setzen ist optional – Übertragung bleibt gültig */ }
+      let abgeschlossen = false
+      if (b.abschliessen) { try { await asana('/tasks/' + gid, { method: 'PUT', json: { completed: true } }); abgeschlossen = true } catch (e) { /* Abschließen optional */ } }
       return antwort({
         task: { gid, name: t.name || '', notiz: String(t.notes || ''), faellig: t.due_on || '', zustaendig: (t.assignee && t.assignee.name) || '', completed: !!t.completed, link: t.permalink_url || raw },
         unteraufgaben: subs.map(s => ({ name: s.name || '', erledigt: !!s.completed, faellig: s.due_on || '' })),
-        kommentare, getaggt
+        kommentare, getaggt, abgeschlossen
       })
     }
 
