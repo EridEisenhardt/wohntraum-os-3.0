@@ -129,6 +129,7 @@ h1{font-size:21px;font-weight:800}
     </div>
     <button class="btn" id="wvBtn" onclick="toggleWV()" title="Nur fällige Wiedervorlagen">🔔 Wiedervorlagen</button>
     <select id="personsel" onchange="setPerson(this.value)" title="Nach Person filtern (verantwortlich oder beteiligt)"><option value="">👥 Alle Personen</option></select>
+    <button class="btn" id="asImpBtn" onclick="asImportOpen()" title="Eine Asana-Aufgabe per Link ins OS übertragen">⇅ Asana-Übertragung</button>
   </div>
   <div class="addbar"><input id="newT" placeholder="Neue Aufgabe …" onkeydown="if(event.key==='Enter')addTask()">
     <select id="newArt" title="Art"><option value="aufgabe">📌 Aufgabe</option><option value="ticket">🎫 Ticket</option><option value="followup">🔁 Follow-up</option><option value="rueckruf">📞 Rückruf</option><option value="vortermin">📍 Vor-Ort-Termin</option><option value="jourfix">🧭 Jour Fix</option></select>
@@ -167,6 +168,15 @@ h1{font-size:21px;font-weight:800}
       <div class="row"><button class="btn sec sm" id="mic_d_comment" onclick="diktieren('d_comment','mic_d_comment')">🎤</button><button class="btn sec sm" onclick="kiZusammenfassen('d_comment')">✨</button><button class="btn sm" onclick="dAddComment()">Kommentar</button></div></div>
   </div>
   <div class="dlg-ft"><button class="btn sec" onclick="dFollowup()">+ Follow-up anlegen</button><span style="flex:1"></span><button class="btn" onclick="closeDetail()">Schließen</button><button class="btn pri" onclick="dSave()">Speichern</button></div>
+</div></div>
+<div class="ov" id="asov" style="z-index:110" onclick="if(event.target===this)asImportClose()"><div class="dlg" style="width:540px">
+  <div class="dlg-hd"><span>⇅ Asana-Übertragung</span><span class="x" onclick="asImportClose()">✕</span></div>
+  <div class="dlg-bd">
+    <div class="f wide"><label>Asana-Link der Aufgabe</label><input id="as_link" placeholder="https://app.asana.com/…" onkeydown="if(event.key==='Enter')asImportRun()"></div>
+    <div style="font-size:12px;color:var(--muted);margin-top:8px">Überträgt die Aufgabe mit allen Unteraufgaben und Kommentaren ins OS. In Asana wird sie anschließend mit dem Tag <b>WohntraumOS-Übertragen</b> markiert.</div>
+    <div id="as_status" style="margin-top:10px;font-size:12.5px"></div>
+  </div>
+  <div class="dlg-ft"><span style="flex:1"></span><button class="btn" onclick="asImportClose()">Schließen</button><button class="btn pri" id="as_go" onclick="asImportRun()">Übertragen</button></div>
 </div></div>
 <div class="ov" id="fuov" style="z-index:110" onclick="if(event.target===this)fuClose()"><div class="dlg" style="width:460px">
   <div class="dlg-hd"><span>📞 Follow-up anlegen</span><span class="x" onclick="fuClose()">✕</span></div>
@@ -472,6 +482,31 @@ async function kiZusammenfassen(targetId){
   try{const r=await fetch('/api/ki',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({task:'zusammenfassung',text:txt})});
     const j=await r.json();if(j&&j.text){ta.value=j.text.trim();toast('✓ Zusammengefasst');}else{toast('KI nicht verfügbar');}}
   catch(e){toast('Fehler: '+e.message);}
+}
+/* ---------- Asana-Übertragung ---------- */
+function asImportOpen(){document.getElementById('as_link').value='';document.getElementById('as_status').textContent='';document.getElementById('asov').classList.add('show');setTimeout(()=>document.getElementById('as_link').focus(),50);}
+function asImportClose(){document.getElementById('asov').classList.remove('show');}
+async function asImportRun(){
+  const link=document.getElementById('as_link').value.trim();
+  const st=document.getElementById('as_status');const go=document.getElementById('as_go');
+  if(!link){st.textContent='Bitte einen Asana-Link einfügen.';return;}
+  go.disabled=true;st.textContent='⏳ Übertrage aus Asana …';
+  try{
+    const {data:{session}}=await sb.auth.getSession();const tok=session&&session.access_token;
+    const r=await fetch('/api/asana',{method:'POST',headers:{'content-type':'application/json',authorization:'Bearer '+tok},body:JSON.stringify({aktion:'import',link})});
+    const j=await r.json().catch(()=>({error:'Antwort unlesbar'}));
+    if(!r.ok||j.error){st.textContent='Fehler: '+(j.error||('HTTP '+r.status));go.disabled=false;return;}
+    if(j.task&&j.task.gid&&TASKS.some(x=>x.asana_gid===j.task.gid)){st.textContent='Diese Asana-Aufgabe wurde bereits übertragen.';go.disabled=false;return;}
+    const pos=(TASKS.reduce((m,t)=>Math.max(m,t.pos||0),0))+1;
+    const {data:ins,error}=await sb.from('os_tasks').insert({titel:j.task.name||'(ohne Titel)',art:'aufgabe',status:j.task.completed?'erledigt':'todo',verantwortlich:j.task.zustaendig||'Eric Eisenhardt',quelle:'asana',pos,faellig:j.task.faellig||null,asana_url:j.task.link||link,asana_gid:j.task.gid,beschreibung:j.task.notiz||null}).select().maybeSingle();
+    if(error){st.textContent='Fehler beim Anlegen: '+error.message;go.disabled=false;return;}
+    if((j.unteraufgaben||[]).length)await sb.from('os_task_subtasks').insert(j.unteraufgaben.map((u,i)=>({task_id:ins.id,titel:u.name,done:u.erledigt,pos:i+1})));
+    if((j.kommentare||[]).length)await sb.from('os_task_verlauf').insert(j.kommentare.map(k=>({task_id:ins.id,art:'kommentar',text:(k.autor?k.autor+': ':'')+k.text,autor:k.autor||null})));
+    if(ins)TASKS.push(ins);render();
+    st.innerHTML='✓ Übertragen: „'+esc(j.task.name||'')+'" · '+(j.unteraufgaben||[]).length+' Unteraufgaben · '+(j.kommentare||[]).length+' Kommentare'+(j.getaggt?' · in Asana getaggt':' · <span style="color:var(--amber)">Tag konnte nicht gesetzt werden</span>');
+    document.getElementById('as_link').value='';toast('Aus Asana übertragen ✓');
+  }catch(e){st.textContent='Fehler: '+e.message;}
+  go.disabled=false;
 }
 load();
 </script></body></html>

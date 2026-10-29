@@ -169,6 +169,38 @@ export async function POST(req) {
       return antwort({ aufgabe: aufgabe(t) })
     }
 
+    if (a === 'import') {
+      // Eine Asana-Aufgabe (per Link oder ID) ins Wohntraum OS übertragen: Aufgabe + Unteraufgaben + Kommentare.
+      // Danach wird die Aufgabe in Asana mit dem Tag „WohntraumOS-Übertragen“ markiert.
+      const raw = String(b.link || '').trim()
+      const gid = (raw.match(/\/task\/(\d+)/) || [])[1] || (raw.match(/\d{6,}/g) || []).pop()
+      if (!gid) return antwort({ error: 'Kein gültiger Asana-Link bzw. keine Aufgaben-ID gefunden.' }, 400)
+      const t = await asana('/tasks/' + gid + '?opt_fields=name,notes,due_on,completed,assignee.name,permalink_url')
+      const subs = (await asana('/tasks/' + gid + '/subtasks?opt_fields=name,completed,due_on&limit=100')) || []
+      const stories = (await asana('/tasks/' + gid + '/stories?opt_fields=text,type,created_at,created_by.name&limit=100')) || []
+      const kommentare = stories.filter(s => s.type === 'comment').map(s => ({ text: String(s.text || ''), autor: (s.created_by && s.created_by.name) || '', created_at: s.created_at || '' }))
+      let getaggt = false
+      try {
+        const TAG = 'WohntraumOS-Übertragen'
+        let found = null, off = ''
+        for (let i = 0; i < 10; i++) {
+          const q = new URLSearchParams({ limit: '100', opt_fields: 'name' }); if (off) q.set('offset', off)
+          const r = await fetch('https://app.asana.com/api/1.0/workspaces/' + WS() + '/tags?' + q, { headers: { Authorization: 'Bearer ' + process.env.ASANA_TOKEN }, cache: 'no-store' })
+          const j = await r.json(); if (!r.ok) break
+          found = (j.data || []).find(x => String(x.name).trim().toLowerCase() === TAG.toLowerCase()); if (found) break
+          off = j.next_page && j.next_page.offset; if (!off) break
+        }
+        const tagGid = found ? found.gid : (await asana('/workspaces/' + WS() + '/tags', { method: 'POST', json: { name: TAG } })).gid
+        await asana('/tasks/' + gid + '/addTag', { method: 'POST', json: { tag: tagGid } })
+        getaggt = true
+      } catch (e) { /* Tag setzen ist optional – Übertragung bleibt gültig */ }
+      return antwort({
+        task: { gid, name: t.name || '', notiz: String(t.notes || ''), faellig: t.due_on || '', zustaendig: (t.assignee && t.assignee.name) || '', completed: !!t.completed, link: t.permalink_url || raw },
+        unteraufgaben: subs.map(s => ({ name: s.name || '', erledigt: !!s.completed, faellig: s.due_on || '' })),
+        kommentare, getaggt
+      })
+    }
+
     return antwort({ error: 'Unbekannte Aktion.' }, 400)
   } catch (e) {
     return antwort({ error: e.message || String(e) }, 500)
