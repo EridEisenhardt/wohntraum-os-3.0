@@ -2077,6 +2077,8 @@ function bestaetigt(it){ return !!((it.tx.m&&it.tx.ok!==0)||it.split||it.nh||it.
 const stOffen=it=>!bestaetigt(it)&&(it.open||!!(it.tx.m&&it.tx.ok===0));
 const stBest=it=>!it.open&&!bestaetigt(it)&&!(it.tx.m&&it.tx.ok===0);
 const stZug=it=>bestaetigt(it)&&!it.open;
+/* Ungebucht (wie BuchhaltungsButler): alles, was noch nicht bestätigt ist – offen und Vorschläge */
+const stUng=it=>stOffen(it)||stBest(it);
 function kartenLayout(all,list,cnt,nav){ const it=U.dr?all.find(x=>x.id===U.sel):null;
   let h='<div class="grid3 kart bb">'
     +'<section class="mid">'+midHtml(all,list,cnt)+'</section></div>';
@@ -2213,7 +2215,8 @@ tab='liste';
 var BUCH_BELEGE=false;
 const ST_KEY='bu_state';
 let U={status:'offen',konto:'',q:'',sel:'',m:'',sort:'d',kat:'',knZu:false,gZu:{},ansicht:'karten'}; try{ const s=JSON.parse(store(ST_KEY)||'null'); if(s) U=Object.assign(U,s,{q:''}); }catch(e){}
-if(!BUCH_BELEGE){ if(U.status==='beleg') U.status='offen'; U.bz=''; }
+if(!BUCH_BELEGE){ if(U.status==='beleg') U.status='ung'; U.bz=''; }
+if(U.status==='offen'&&U.ansicht!=='detail') U.status='ung';
 const saveU=()=>store(ST_KEY,JSON.stringify({status:U.status,konto:U.konto,m:U.m,sort:U.sort,dir:U.dir||'',bz:U.bz||'',ansicht:U.ansicht}));
 let splitDraft=null, ruleDraft=null, sb=null, urlCache={};
 /* ---------- Kontenplan ---------- */
@@ -2286,7 +2289,7 @@ function items(){
 var NUR=''; /* aus der Belegverwaltung: nur diese eine Zahlung zeigen */
 function filtered(all){ if(NUR) return all.filter(it=>it.id===NUR); const q=norm(U.q);
   return all.filter(it=>(!U.konto||it.kkey===U.konto)&&(U.m===''||it.m===Number(U.m))
-    &&(!U.kat||(U.kat==='__offen'?it.parts.some(p=>!p.c.kat):U.kat.startsWith('k:')?it.parts.some(p=>'k:'+kval(p.c.kat,p.c.sub,p.c.ka)===U.kat):it.parts.some(p=>p.c.kat===U.kat)))&&(U.status==='alle'||HALT.has(it.id)||(U.status==='best'&&stBest(it))||(U.status==='offen'&&stOffen(it))||(U.status==='beleg'&&it.needBeleg)||(U.status==='ka'&&it.needKA)||(U.status==='zug'&&stZug(it)))
+    &&(!U.kat||(U.kat==='__offen'?it.parts.some(p=>!p.c.kat):U.kat.startsWith('k:')?it.parts.some(p=>'k:'+kval(p.c.kat,p.c.sub,p.c.ka)===U.kat):it.parts.some(p=>p.c.kat===U.kat)))&&(U.status==='alle'||HALT.has(it.id)||(U.status==='best'&&stBest(it))||(U.status==='offen'&&stOffen(it))||(U.status==='ung'&&stUng(it))||(U.status==='beleg'&&it.needBeleg)||(U.status==='ka'&&it.needKA)||(U.status==='zug'&&stZug(it)))
     &&(!U.dir||(U.dir==='ein'?it.tx.b>0:it.tx.b<0))
     &&(!U.bz||(U.bz==='mit'?!!it.bel:U.bz==='ohne'?(!it.bel&&!it.dauer&&!it.tx.ol&&it.tx.b<0):U.bz==='beleglos'?!!it.tx.ol:!!it.dauer))
     &&(!U.betrag||(()=>{ const s=String(U.betrag).replace(/[^\d,.-]/g,''); const v=parseFloat(s.replace(/\.(?=\d{3}(\D|$))/g,'').replace(',','.')); return isNaN(v)?true:Math.abs(Math.abs(it.tx.b)-Math.abs(v))<0.005; })())
@@ -2323,7 +2326,7 @@ function render(){
 }
 function renderListe(){
   const all=items(), list=sortiert(filtered(all));
-  const cnt=k=>all.filter(it=>(!U.konto||it.kkey===U.konto)&&(U.m===''||it.m===Number(U.m))&&(k==='best'?stBest(it):k==='offen'?stOffen(it):k==='beleg'?it.needBeleg:k==='ka'?it.needKA:k==='zug'?stZug(it):true)).length;
+  const cnt=k=>all.filter(it=>(!U.konto||it.kkey===U.konto)&&(U.m===''||it.m===Number(U.m))&&(k==='best'?stBest(it):k==='offen'?stOffen(it):k==='ung'?stUng(it):k==='beleg'?it.needBeleg:k==='ka'?it.needKA:k==='zug'?stZug(it):true)).length;
   if(U.sel&&!all.find(x=>x.id===U.sel)) U.sel='';
   if(!U.sel&&list.length) U.sel=list[0].id;
   /* linke Spalte: Konten */
@@ -2354,7 +2357,7 @@ function midHtml(all,list,cnt){
   const nurBar=NUR?'<div class="bv-nur">Es wird nur die Zahlung aus der Belegverwaltung angezeigt.<button class="bb-lnk" data-nurzur="1">Zurück zu den Belegen</button><button class="bb-lnk" data-nurweg="1">Alle Buchungen anzeigen</button></div>':'';
   if(U.ansicht!=='detail') return bbLeiste(all)+nurBar+kartenListe(list,sum);
   mid+='<div class="lsum">'+list.length+' Buchungen · Summe <b class="'+cls(sum)+'">'+eur(sum)+'</b></div><div class="list" id="list">';
-  if(!list.length) mid+='<div class="empty">'+(U.status==='offen'?'🎉 Keine offenen Buchungen – alles zugeordnet.':U.status==='beleg'?'Zu allen zugeordneten Ausgaben ist ein Beleg hinterlegt.':'Keine Buchungen für diesen Filter.')+'</div>';
+  if(!list.length) mid+='<div class="empty">'+(U.status==='offen'||U.status==='ung'?'Keine offenen Buchungen – alles gebucht.':U.status==='beleg'?'Zu allen zugeordneten Ausgaben ist ein Beleg hinterlegt.':'Keine Buchungen für diesen Filter.')+'</div>';
   let lastD='';
   const gAnz={}; if(U.sort==='n'||U.sort==='nh') for(const x of list){ const k=empfKey(x); if(!gAnz[k]) gAnz[k]={n:0,s:0}; gAnz[k].n++; gAnz[k].s+=x.tx.b; }
   for(const it of list.slice(0,600)){ if(U.sort==='n'||U.sort==='nh'){ const k=empfKey(it); if(k!==lastD){ lastD=k; const g=gAnz[k]; mid+='<div class="lgrp">'+esc(it.tx.n||'ohne Empfänger')+' <span class="sub">· '+g.n+' Buchung'+(g.n===1?'':'en')+' · '+eur(g.s)+'</span></div>'; } }
@@ -2366,7 +2369,7 @@ function midHtml(all,list,cnt){
   mid+='</div>';
   return mid; }
 /* Leiste wie BuchhaltungsButler: Ansicht, Konto, Sortierung, Fehlender Beleg, Ungebucht, Filter */
-const BB_ST=[['alle','alle'],['offen','offen (ungebucht)'],['best','zu bestätigen'],['ka','Kostenart prüfen'],['beleg','Beleg fehlt'],['zug','zugeordnet']].filter(([k])=>BUCH_BELEGE||k!=='beleg');
+const BB_ST=[['alle','alle'],['ung','ungebucht (offen und zu bestätigen)'],['offen','offen (ohne Vorschlag)'],['best','zu bestätigen'],['ka','Kostenart prüfen'],['beleg','Beleg fehlt'],['zug','zugeordnet']].filter(([k])=>BUCH_BELEGE||k!=='beleg');
 const BB_SORT=[['d','Datum absteigend'],['da','Datum aufsteigend'],['n','Gegenpartei aufsteigend'],['nh','Gegenpartei häufigste'],['bh','Betrag absteigend'],['bn','Betrag aufsteigend']];
 function bbKonten(){ const S=new Set(items().map(it=>it.kkey)); return [...S].map(k=>[k,kontoName(k)]).sort((a,b)=>a[1].localeCompare(b[1],'de',{numeric:true})); }
 function bbLeiste(all){ const KL=bbKonten();
@@ -2374,7 +2377,7 @@ function bbLeiste(all){ const KL=bbKonten();
     +'<div class="bb-f">Konto: <input id="u-konto" list="u-konto-l" value="'+esc(U.konto?kontoName(U.konto):'Alle Konten')+'" autocomplete="off"><datalist id="u-konto-l"><option value="Alle Konten"></option>'+KL.map(([k,n])=>'<option value="'+esc(n)+'"></option>').join('')+'</datalist></div>'
     +'<div class="bb-f">Sortierung: <select id="u-sort">'+BB_SORT.map(([k,l])=>'<option value="'+k+'"'+((U.sort||'d')===k?' selected':'')+'>'+l+'</option>').join('')+'</select></div>'
     +'<input type="search" id="u-q" class="bb-q" placeholder="Volltextsuche" value="'+esc(U.q)+'" autocomplete="off">'
-    +'<div class="bb-re">'+(BUCH_BELEGE?'<label><input type="checkbox" id="u-fb"'+(U.status==='beleg'?' checked':'')+'> Fehlender Beleg</label>':'')+'<label><input type="checkbox" id="u-ug"'+(U.status==='offen'?' checked':'')+'> Ungebucht</label>'
+    +'<div class="bb-re">'+(BUCH_BELEGE?'<label><input type="checkbox" id="u-fb"'+(U.status==='beleg'?' checked':'')+'> Fehlender Beleg</label>':'')+'<label><input type="checkbox" id="u-ug"'+(U.status==='ung'?' checked':'')+'> Ungebucht</label>'
     +'<button class="bb-lnk'+(U.fp||bbAktiv()?' on':'')+'" data-bbf="1">Filter auswählen</button><button class="bb-lnk" data-bbreset="1" title="Alle Filter zurücksetzen">Zurücksetzen</button><button class="bb-lnk" data-nhsync="1" title="Zahlungen jetzt abrufen">Aktualisieren</button></div>';
   if(U.fp) h+='<div class="bb-pan">'
     +'<div class="bb-pr"><label>Zeitraum</label><select id="u-m"><option value="">Gesamter Zeitraum '+year+'</option>'+MON.map((x,i)=>'<option value="'+i+'"'+(U.m!==''&&Number(U.m)===i?' selected':'')+'>'+x+' '+year+'</option>').join('')+'</select></div>'
@@ -2385,7 +2388,7 @@ function bbLeiste(all){ const KL=bbKonten();
     +'<div class="bb-pr"><label>Betrag</label><input type="text" id="u-betrag" placeholder="Betrag eingeben" value="'+esc(U.betrag||'')+'" autocomplete="off" inputmode="decimal"></div>'
     +'<div class="bb-pf"><a href="#" data-bbreset="1">Auswahl zurücksetzen</a><button class="primary" data-bbf="1">Anwenden</button></div></div>';
   return h+'</div>'; }
-const bbAktiv=()=>!!(U.dir||U.bz||U.betrag||U.kat||U.m!==''||!['alle','offen','beleg'].includes(U.status));
+const bbAktiv=()=>!!(U.dir||U.bz||U.betrag||U.kat||U.m!==''||!['alle','offen','ung','beleg'].includes(U.status));
 function selOpts(list,cur,ph){ return (ph!=null?'<option value="">'+esc(ph)+'</option>':'')+list.map(([k,l])=>'<option value="'+esc(k)+'"'+(k===cur?' selected':'')+'>'+esc(l)+'</option>').join(''); }
 function objSel(id,cur,kat,sub){ const ph=kat==='verw'?'alle Objekte (Umlage)':'– Objekt wählen –';
   let o='<option value="">'+ph+'</option>'+objekte.map(x=>'<option value="'+esc(x.kz)+'"'+(x.kz===cur?' selected':'')+'>'+esc(x.kz+' – '+String(x.name||'').split(',')[0])+'</option>').join('');
@@ -2528,7 +2531,7 @@ function uploadBelege(files){ return belQueue(files); }
 
 /* ---------- Ereignisse ---------- */
 function step(n){ const list=sortiert(filtered(items())); const i=list.findIndex(x=>x.id===U.sel); const nx=list[i+n]; if(nx){ U.sel=nx.id; splitDraft=null; ruleDraft=null; render.scrollSel=true; render(); } }
-function nextOpen(){ const list=sortiert(filtered(items())); const i=list.findIndex(x=>x.id===U.sel); const need=x=>U.status==='ka'?x.needKA:U.status==='beleg'?x.needBeleg:U.status==='best'?stBest(x):stOffen(x); const nx=list.slice(i+1).find(need)||list.find(x=>need(x)&&x.id!==U.sel)||list[i+1];
+function nextOpen(){ const list=sortiert(filtered(items())); const i=list.findIndex(x=>x.id===U.sel); const need=x=>U.status==='ka'?x.needKA:U.status==='beleg'?x.needBeleg:U.status==='best'?stBest(x):U.status==='ung'?stUng(x):stOffen(x); const nx=list.slice(i+1).find(need)||list.find(x=>need(x)&&x.id!==U.sel)||list[i+1];
   if(nx){ U.sel=nx.id; splitDraft=null; ruleDraft=null; render.scrollSel=true; render(); } }
 document.addEventListener('click',async e=>{
   const t=e.target.closest('button,a[data-bopen]'); if(!t) return;
@@ -2585,7 +2588,7 @@ document.addEventListener('change',e=>{ const t=e.target;
   if(t.id==='u-m'){ U.m=t.value; U.sel=''; saveU(); render(); return; }
   if(t.id==='u-konto'){ const v=t.value.trim(); if(!v||v==='Alle Konten'){ U.konto=''; } else { const f=bbKonten().find(([k,n])=>n===v)||bbKonten().find(([k,n])=>norm(n).includes(norm(v))); if(!f){ toast('Bitte ein Konto aus der Liste wählen.'); return; } U.konto=f[0]; } U.sel=''; saveU(); render(); return; }
   if(t.id==='u-fb'){ U.status=t.checked?'beleg':'alle'; U.sel=''; HALT.clear(); saveU(); render(); return; }
-  if(t.id==='u-ug'){ U.status=t.checked?'offen':'alle'; U.sel=''; HALT.clear(); saveU(); render(); return; }
+  if(t.id==='u-ug'){ U.status=t.checked?'ung':'alle'; U.sel=''; HALT.clear(); saveU(); render(); return; }
   if(t.id==='u-st'){ U.status=t.value; U.sel=''; HALT.clear(); saveU(); render(); return; }
   if(t.id==='u-dir'){ U.dir=t.value; U.sel=''; saveU(); render(); return; }
   if(t.id==='u-bz'){ U.bz=t.value; U.sel=''; saveU(); render(); return; }
