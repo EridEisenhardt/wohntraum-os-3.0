@@ -136,7 +136,7 @@ body{overflow:auto}
 .kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:10px;margin-bottom:12px}
 .kpi{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:10px 12px}
 .kpi .l{font-size:12px;color:var(--muted)}
-.kpis2{grid-template-columns:repeat(2,minmax(0,1fr))}.kpis2 .kpi.kbtn{border-color:#9db8d6}.kpis2 .kpi.kbtn+.kpi.kbtn{border-color:#c3b0dd}.kpi.kbtn .v{font-size:18px}
+.kpis2{grid-template-columns:repeat(3,minmax(0,1fr))}.kpis2 .kpi.kbtn.on{border-color:#2f6db5;box-shadow:inset 0 0 0 1px #2f6db5}.kpis2 .kpi.kbtn{border-color:#9db8d6}.kpis2 .kpi.kbtn+.kpi.kbtn{border-color:#c3b0dd}.kpi.kbtn .v{font-size:18px}
 .kpi.kbtn{text-align:left;cursor:pointer;font:inherit;color:inherit;width:100%;display:flex;flex-direction:column;justify-content:flex-start;align-items:stretch}.kpi.kbtn:hover{border-color:var(--accent,#2f5d8a)}.kpi.kueber,.kpis2 .kpi.kbtn.kueber{background:var(--bad-soft,#fdf0ef);border-color:#f0c9c5}@media (prefers-color-scheme: dark){.kpi.kueber{background:#3a2422;border-color:#5c302c}}.kpi .v{font-size:20px;font-weight:700;font-variant-numeric:tabular-nums}.kpi .s{font-size:12px;color:var(--muted)}
 .tbar{border:1px solid var(--line);border-radius:12px;margin-bottom:12px}
 .grid2{display:grid;grid-template-columns:minmax(0,1.5fr) minmax(380px,1fr);gap:12px;align-items:start}
@@ -774,6 +774,8 @@ function mahnstandCard(x){ const mk=ed(x.mk), lm=letzteMahnung(x), ms=mahnsperre
     +'<div class="trow"><input type="date" id="mn-d" value="'+esc(today)+'"><input type="text" id="mn-b" placeholder="Betrag €" style="width:100px"><select id="mn-st">'+STUFEN.map(s2=>'<option>'+s2+'</option>').join('')+'</select><button class="ghost small" data-mnadd="1">Mahnung nachtragen</button></div></details>';
   return h+'</div>'; }
 function mahnListe(){ if(!calc) calc=compute(); return Object.values(calc.res).filter(x=>x.aktiv&&mrUeber(x)>0.5).sort((a,b)=>mrUeber(b)-mrUeber(a)); }
+function monBox(all){ const L=all.filter(x=>x.aktiv).map(x=>({x,m:monOffen(x)})).filter(y=>y.m.soll>0.005), O=L.filter(y=>y.m.offen>0.005), sum=O.reduce((a,y)=>a+y.m.offen,0);
+  return '<button class="kpi kbtn'+(M.st==='monat'?' on':'')+'" data-mst="'+(M.st==='monat'?'aktiv':'monat')+'" title="Klick zeigt die Mieter, deren Miete für '+esc(monName())+' noch offen ist"><div class="l">Mieten '+esc(monName())+' offen</div><div class="v">'+O.length+' von '+L.length+'</div><div class="s">zusammen '+eur(sum)+'</div></button>'; }
 function mahnBox(){ const lt=laufTermin(), ll=letzterLauf(), faellig=!ll||ll<lt;
   return '<button class="kpi kbtn'+(faellig?' kueber':'')+'" data-mahnopen="1"><div class="l">Sammelmahnung</div><div class="v">'+esc(dmy(faellig?lt:naechsterTermin()))+'</div></button>'; }
 function mahnInit(art){ MR.art=art||'miete'; MR.datum=MR.datum&&art?MR.datum:today; MR.frist=MR.frist&&art?MR.frist:addD(today,10); MR.sel={}; MR.stufe={}; MR.done=null; MR.q='';
@@ -1530,7 +1532,10 @@ document.addEventListener('click',e=>{ const t=e.target.closest('button[data-zrq
   ZR[art]=j?{von:j+'-01-01',bis:j+'-12-31'}:{von:'',bis:''}; render(); });
 /* ---------- Mieterkonten-Liste als Excel und PDF (genau die gefilterte Liste) ---------- */
 var LISTE=[];
-const EXF={alle:'Alle',aktiv:'Laufend',rueck:'Rückstand',rueck2:'Mehr als 2 Monatsmieten offen',guthaben:'Guthaben',kaution:'Kaution offen',beendet:'Beendet'};
+/* Miete des laufenden Monats: Soll und offener Rest (nur Warmmiete, nach Verrechnung der Zahlungen) */
+function monOffen(x){ let soll=0, offen=0; for(const r of x.rows||[]){ if(r.art!=='WARM_MIETE'||!r.s||String(r.d||'').slice(0,7)!==curM) continue; soll+=r.s; offen+=Math.max(0,Number(r.offen)||0); } return {soll:r2(soll),offen:r2(offen)}; }
+const monName=()=>MON[Number(curM.slice(5,7))-1];
+const EXF={alle:'Alle',monat:'Miete laufender Monat offen',aktiv:'Laufend',rueck:'Rückstand',rueck2:'Mehr als 2 Monatsmieten offen',guthaben:'Guthaben',kaution:'Kaution offen',beendet:'Beendet'};
 function exFilterText(){ return [EXF[M.st]||'Alle',M.ges?'Gesellschaft '+M.ges:'',M.obj?'Objekt '+M.obj:'',M.betr?'Betreuer „'+M.betr+'“':'',M.q?'Suche „'+M.q+'“':'',M.ms?MF_MS[M.ms]:'',M.rz?MF_JN('Ratenzahlung')[M.rz]:'',M.sp?MF_JN('Mahnsperre')[M.sp]:''].filter(Boolean).join(' · '); }
 function exZeilen(){ return LISTE.map(x=>{ const mk=x.mk, sn=STN[x.status]||['',''], lm=letzteMahnung(x);
   return {obj:mk.obj, einheit:uName(mk.einheit), mieter:ed(mk).mieter||'', betreuer:ed(mk).betreuer||'', zahler:String(ed(mk).zahler||x.zahlerAuto||'').replace(/ \(.*\)$/,''), von:mk.von||'', bis:mk.bis||'',
@@ -1595,7 +1600,7 @@ function render(){
   if(canWrite&&!__opSnapDone){__opSnapDone=true;snapshotOP();}
   const q=norm(M.q);
   const betrF=norm(M.betr||'');
-  const list=all.filter(x=>(!M.ges||x.mk.ges===M.ges)&&(!M.obj||x.mk.obj===M.obj)&&(!betrF||(betrF==='ohne betreuer'?!String(ed(x.mk).betreuer||'').trim():norm(ed(x.mk).betreuer).includes(betrF)))&&(M.st==='alle'||(M.st==='aktiv'&&x.aktiv)||(M.st==='rueck'&&x.ueber>0.5)||(M.st==='rueck2'&&x.ueber>0.5&&x.monate>2)||(M.st==='guthaben'&&x.saldo<-0.5)||(M.st==='beendet'&&!x.aktiv)||(M.st==='kaution'&&x.kOffen>0.5))
+  const list=all.filter(x=>(!M.ges||x.mk.ges===M.ges)&&(!M.obj||x.mk.obj===M.obj)&&(!betrF||(betrF==='ohne betreuer'?!String(ed(x.mk).betreuer||'').trim():norm(ed(x.mk).betreuer).includes(betrF)))&&(M.st==='alle'||(M.st==='aktiv'&&x.aktiv)||(M.st==='monat'&&x.aktiv&&monOffen(x).offen>0.005)||(M.st==='rueck'&&x.ueber>0.5)||(M.st==='rueck2'&&x.ueber>0.5&&x.monate>2)||(M.st==='guthaben'&&x.saldo<-0.5)||(M.st==='beendet'&&!x.aktiv)||(M.st==='kaution'&&x.kOffen>0.5))
     &&mFilterOk(x)&&(!q||norm(ed(x.mk).mieter+' '+x.mk.obj+' '+x.mk.einheit+' '+uName(x.mk.einheit)+' '+ed(x.mk).ref).includes(q)))
     .sort(listSort);
   LISTE=list;
@@ -1604,7 +1609,7 @@ function render(){
   let h='<div class="kpis"><div class="kpi"><div class="l">Mietverhältnisse seit 2025</div><div class="v">'+all.length+'</div><div class="s">'+all.filter(x=>x.aktiv).length+' laufend</div></div>'
     +'<div class="kpi"><div class="l">Mieter mit Rückstand (überfällig)</div><div class="v neg">'+nR+'</div><div class="s">zusammen '+eur(sumR)+'</div></div>'
     +'<div class="kpi"><div class="l">Rückstand ≥ 2 Monatsmieten</div><div class="v '+(n2?'neg':'')+'">'+n2+'</div></div>'
-    +'<div class="kpi"><div class="l">Kaution offen</div><div class="v">'+eur(all.reduce((a,x)=>a+Math.max(0,x.kOffen),0))+'</div><div class="s">'+all.filter(x=>x.kOffen>0.5).length+' Mietverhältnisse</div></div></div><div class="kpis kpis2">'+sollBox()+mahnBox()+'</div>';
+    +'<div class="kpi"><div class="l">Kaution offen</div><div class="v">'+eur(all.reduce((a,x)=>a+Math.max(0,x.kOffen),0))+'</div><div class="s">'+all.filter(x=>x.kOffen>0.5).length+' Mietverhältnisse</div></div></div><div class="kpis kpis2">'+monBox(all)+sollBox()+mahnBox()+'</div>';
   /* Filterleiste: oben die Suche, darunter Filterknöpfe (Status, Mahnstufe, Ratenzahlung, Mahnsperre), darunter Gesellschaft, Objekt, Betreuer */
   h+='<div class="tbar tbar3"><div class="trow"><input type="search" id="m-q" class="msuche" placeholder="Mieter, Objekt oder Einheit suchen" value="'+esc(M.q)+'" autocomplete="off"></div>'
     +'<div class="trow"><div class="seg">'+[['alle','Alle'],['aktiv','Laufend'],['rueck','Rückstand'],['rueck2','Mehr als 2 Monatsmieten offen'],['guthaben','Guthaben'],['kaution','Kaution offen'],['beendet','Beendet']].map(([k,l])=>'<button data-mst="'+k+'" class="'+(M.st===k?'on':'')+'">'+l+'</button>').join('')+'</div>'
@@ -1619,7 +1624,7 @@ function render(){
   if(!list.length) h+='<tr><td colspan="10" class="empty">Keine Mietverhältnisse für diesen Filter.</td></tr>';
   const rowH=(x,cls,vm)=>{ const mk=x.mk, sn=STN[x.status];
     return '<tr class="click'+(cls||'')+(mk.pid===M.sel?' sel':'')+'" data-mk="'+esc(mk.pid)+'"><td>'+ampelDot(ampel(x))+'</td><td><b>'+esc(mk.obj)+'</b></td><td>'+esc(uName(mk.einheit))+(vm?vm:'')+'</td><td class="wrapc">'+esc(ed(mk).mieter||'–')+(mk.gewerbe?' <span class="pill src">Gewerbe</span>':'')+'</td><td class="sub">'+esc(String(ed(mk).zahler||x.zahlerAuto||'').replace(/ \(.*\)$/,''))+'</td><td class="sub">'+betrHtml(ed(mk).betreuer,1)+'</td><td class="sub">'+esc(dmy(mk.von))+(mk.bis?' – '+esc(dmy(mk.bis)):'')+'</td><td class="n">'+(x.miete?eur(x.miete):'–')+'</td>'
-      +'<td class="n '+(x.ueber>0.5?'neg':x.saldo<-0.5?'pos':'')+'"><b>'+eur(x.saldo)+'</b>'+(x.ueber>0.5&&Math.abs(x.ueber-x.saldo)>0.5?'<div class="sub">überfällig '+eur(x.ueber)+'</div>':'')+'</td><td>'+((()=>{ const lm=listMahnstufe(x), T=[lm?'<span class="pill p-mahn" title="vom '+esc(dmy(lm.d))+(lm.b?' · '+eur(lm.b):'')+'">'+esc(lm.stufe)+'</span>':'',mahnsperre(mk)?'<span class="pill p-sperre">Mahnsperre</span>':'',listRaten(x)?'<span class="pill p-raten">Ratenzahlung</span>':''].filter(Boolean); return T.length?T.join(' '):'<span class="mut">–</span>'; })())+'</td></tr>'; };
+      +'<td class="n '+(x.ueber>0.5?'neg':x.saldo<-0.5?'pos':'')+'"><b>'+eur(x.saldo)+'</b>'+(M.st==='monat'?'<div class="sub">'+esc(monName())+' offen '+eur(monOffen(x).offen)+'</div>':x.ueber>0.5&&Math.abs(x.ueber-x.saldo)>0.5?'<div class="sub">überfällig '+eur(x.ueber)+'</div>':'')+'</td><td>'+((()=>{ const lm=listMahnstufe(x), T=[lm?'<span class="pill p-mahn" title="vom '+esc(dmy(lm.d))+(lm.b?' · '+eur(lm.b):'')+'">'+esc(lm.stufe)+'</span>':'',mahnsperre(mk)?'<span class="pill p-sperre">Mahnsperre</span>':'',listRaten(x)?'<span class="pill p-raten">Ratenzahlung</span>':''].filter(Boolean); return T.length?T.join(' '):'<span class="mut">–</span>'; })())+'</td></tr>'; };
   const grp=M.st==='alle'&&!q;
   if(!grp){ for(const x of list) h+=rowH(x); }
   else { const G={}; for(const x of list){ const k=x.mk.obj+'|'+uName(x.mk.einheit); (G[k]=G[k]||{k,akt:[],alt:[]})[x.aktiv?'akt':'alt'].push(x); }
