@@ -66,7 +66,7 @@ td input:focus,td select:focus{border-color:var(--accent);background:var(--surf)
 .kbnil{text-align:center;color:var(--muted);font-size:11px;padding:8px}
 .nrbadge{display:inline-block;font-size:10.5px;font-weight:700;color:var(--muted);background:var(--surf2);border-radius:5px;padding:1px 5px;margin-right:2px}
 .empty{text-align:center;padding:26px;color:var(--muted)}
-.ov{position:fixed;inset:0;background:rgba(20,25,35,.45);display:none;align-items:flex-start;justify-content:center;z-index:200;padding:32px 16px;overflow:auto}.ov.show{display:flex}
+.ov{position:fixed;inset:0;background:rgba(20,25,35,.55);display:none;align-items:flex-start;justify-content:center;z-index:2000;padding:32px 16px;overflow:auto}.ov.show{display:flex}
 .dlg{background:var(--surf);border-radius:12px;width:100%;max-width:900px;box-shadow:0 20px 60px rgba(0,0,0,.3)}
 .dlg-hd{padding:14px 18px;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;align-items:center;font-weight:700}
 .dlg-bd{padding:16px 18px;max-height:66vh;overflow:auto}
@@ -139,7 +139,7 @@ td input:focus,td select:focus{border-color:var(--accent);background:var(--surf)
     </div>
   </div>
 
-  <div class="card">
+  <div class="card" id="mapCard">
     <div class="card-hd">
       <span>Karte der geprüften Objekte <span style="color:var(--muted);font-weight:400" id="mapCnt"></span></span>
       <span><button class="btn sec" onclick="geocodeAlle()" id="geoBtn">📍 Fehlende Adressen verorten</button></span>
@@ -202,7 +202,15 @@ const asanaOut=u=>u?`<a href="${esc(u)}" target="_blank" rel="noopener" class="a
 const linkOut=(u,t)=>u?`<a href="${esc(u)}" target="_blank" rel="noopener" class="lnk" onclick="event.stopPropagation()">${t||'Portal ↗'}</a>`:'—';
 const ordnerOut=u=>u?`<a href="${esc(u)}" target="_blank" rel="noopener" class="lnk" onclick="event.stopPropagation()">📁 Ordner ↗</a>`:'—';
 const claudeOut=u=>u?`<a href="${esc(u)}" target="_blank" rel="noopener" class="lnk" onclick="event.stopPropagation()">✦ Claude ↗</a>`:'—';
-const FLABEL={bezeichnung:'Bezeichnung',strasse:'Straße',plz:'PLZ',ort:'Ort',angeboten_von:'Angeboten von',quelle:'Quelle',eingang:'Eingang',stufe:'Stufe',einheiten:'Einheiten',wohnflaeche:'Wohnfläche',baujahr:'Baujahr',kaufpreis:'Kaufpreis',miete_ist:'Miete IST p. a.',miete_potenzial:'Miete Potenzial p. a.',grunderwerb_pct:'Grunderwerbsteuer %',notar_pct:'Notar & Grundbuch %',makler_pct:'Makler %',sanierung:'Sanierungskosten',angebot_eigen:'Eigenes Angebot',absage_grund:'Absagegrund',verantwortlich:'Verantwortlich',exposé_link:'Exposé-Link',portal:'Portal',portal_link:'Portal-Link',lat:'Breitengrad',lng:'Längengrad',asana_url:'Asana-Link',ordner_url:'Objektordner',claude_url:'Claude-Link',next_step:'Nächster Schritt',next_step_faellig:'Nächster Schritt · fällig'};
+// Kategorie des nächsten Schritts → mappt auf os_tasks art + massnahme (wie GF-Testboard)
+const STEPKAT=[['aufgabe','📌 Aufgabe (To-do)'],['ankauf','🏷️ Ankauf'],['followup','🔁 Follow-up'],['rueckruf','📞 Rückruf'],['anruf','☎️ Anruf'],['vortermin','📍 Vor-Ort-Termin'],['zuarbeit','🤝 Zuarbeit fürs Team'],['jourfix','🧭 Jour Fix']];
+function stepArtMass(kat){
+  if(kat==='ankauf')return{art:'ankauf',massnahme:[]};
+  if(kat==='ticket')return{art:'ticket',massnahme:[]};
+  if(kat==='aufgabe'||!kat)return{art:'aufgabe',massnahme:[]};
+  return{art:'aufgabe',massnahme:[kat]};
+}
+const FLABEL={bezeichnung:'Bezeichnung',strasse:'Straße',plz:'PLZ',ort:'Ort',angeboten_von:'Angeboten von',quelle:'Quelle',eingang:'Eingang',stufe:'Stufe',einheiten:'Einheiten',wohnflaeche:'Wohnfläche',baujahr:'Baujahr',kaufpreis:'Kaufpreis',miete_ist:'Miete IST p. a.',miete_potenzial:'Miete Potenzial p. a.',grunderwerb_pct:'Grunderwerbsteuer %',notar_pct:'Notar & Grundbuch %',makler_pct:'Makler %',sanierung:'Sanierungskosten',angebot_eigen:'Eigenes Angebot',absage_grund:'Absagegrund',verantwortlich:'Verantwortlich',exposé_link:'Exposé-Link',portal:'Portal',portal_link:'Portal-Link',lat:'Breitengrad',lng:'Längengrad',asana_url:'Asana-Link',ordner_url:'Objektordner',claude_url:'Claude-Link',next_step:'Nächster Schritt',next_step_faellig:'Nächster Schritt · fällig',next_step_kat:'Nächster Schritt · Kategorie'};
 
 let ROWS=[], NOTES=[], HIST=[], QUELLEN=[], FSTAGE='', FQUELLE='', VIEW='liste', CUR=null, DRAG=null;
 const heute=()=>new Date().toISOString().slice(0,10);
@@ -352,6 +360,7 @@ async function syncStep(id){
   const due=r.next_step_faellig||null;
   const resp=r.verantwortlich||'Eric';
   const label='Akquise #'+r.nummer+' · '+(r.bezeichnung||r.strasse||'Objekt');
+  const am=stepArtMass(r.next_step_kat||'aufgabe');
   if(!step){
     if(r.next_step_task_id){
       await sb.from('os_tasks').update({status:'erledigt',updated_at:new Date().toISOString()}).eq('id',r.next_step_task_id);
@@ -361,10 +370,10 @@ async function syncStep(id){
     return;
   }
   if(r.next_step_task_id){
-    const{error}=await sb.from('os_tasks').update({titel:step,faellig:due,verantwortlich:resp,object_label:label,status:'todo',updated_at:new Date().toISOString()}).eq('id',r.next_step_task_id);
+    const{error}=await sb.from('os_tasks').update({titel:step,faellig:due,verantwortlich:resp,object_label:label,art:am.art,massnahme:am.massnahme,status:'todo',updated_at:new Date().toISOString()}).eq('id',r.next_step_task_id);
     if(error)toast('Kalender-Sync: '+error.message);
   }else{
-    const{data,error}=await sb.from('os_tasks').insert({titel:step,faellig:due,status:'todo',art:'aufgabe',verantwortlich:resp,quelle:'akquise',quelle_bereich:'Akquise',object_id:id,object_label:label,akquise_id:id}).select().maybeSingle();
+    const{data,error}=await sb.from('os_tasks').insert({titel:step,faellig:due,status:'todo',art:am.art,massnahme:am.massnahme,verantwortlich:resp,quelle:'akquise',quelle_bereich:'Akquise',object_id:id,object_label:label,akquise_id:id}).select().maybeSingle();
     if(error){toast('Kalender-Sync: '+error.message);return;}
     if(data){await sb.from('akquise_objekte').update({next_step_task_id:data.id}).eq('id',id);r.next_step_task_id=data.id;}
   }
@@ -430,6 +439,7 @@ function renderOP(){
     F('Claude-Link '+(r.claude_url?'· '+claudeOut(r.claude_url):''),opTxt(r,'claude_url','url'))+
     F('Objektordner '+(r.ordner_url?'· '+ordnerOut(r.ordner_url):''),opTxt(r,'ordner_url','url'))+
     F('Nächster Schritt','<input class="opi" type="text" placeholder="z. B. Makler zurückrufen" value="'+(r.next_step==null?'':esc(r.next_step))+'" onchange="updStep(\''+r.id+'\',\'next_step\',this.value)">')+
+    F('Kategorie (im Kalender)','<select class="opi" onchange="updStep(\''+r.id+'\',\'next_step_kat\',this.value)">'+STEPKAT.map(kv=>'<option value="'+kv[0]+'"'+((r.next_step_kat||'aufgabe')===kv[0]?' selected':'')+'>'+kv[1]+'</option>').join('')+'</select>')+
     F('Nächster Schritt · fällig am'+(r.next_step_task_id?' · <span style="color:var(--green);font-weight:600">im Kalender ✓</span>':''),'<input class="opi" type="date" value="'+(r.next_step_faellig||'')+'" onchange="updStep(\''+r.id+'\',\'next_step_faellig\',this.value)">')+
     F('Absagegrund',opTxt(r,'absage_grund'))+
     F('Breitengrad (lat)',opTxt(r,'lat','number','0.000001'))+F('Längengrad (lng)',opTxt(r,'lng','number','0.000001'));
@@ -442,8 +452,8 @@ function renderOP(){
     : `<div class="tli"><div class="ts">🔄 ${esc(i.feld)} · ${fmtDT(i.t)}</div><div class="tx">${esc(i.alt||'—')} → ${esc(i.neu||'—')}</div></div>`).join('')
     :'<div class="empty" style="padding:10px">Noch keine Einträge.</div>';
 }
-function openOP(id){CUR=id;$('noteInput').value='';renderOP();$('ov').classList.add('show');}
-function closeOP(){$('ov').classList.remove('show');CUR=null;}
+function openOP(id){CUR=id;$('noteInput').value='';renderOP();$('ov').classList.add('show');const mc=$('mapCard');if(mc)mc.style.display='none';}
+function closeOP(){$('ov').classList.remove('show');CUR=null;const mc=$('mapCard');if(mc)mc.style.display='';}
 async function addNote(){
   if(!CUR)return;
   const t=$('noteInput').value.trim();if(!t){toast('Bitte Text eingeben');return;}
