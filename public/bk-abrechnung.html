@@ -103,7 +103,9 @@ const STANDARD=[['Grundsteuer','1','betriebskosten','flaeche'],['Frischwasser','
   ['Heizkosten','4','heizkosten','verbrauch'],['Warmwasser','5','heizkosten','verbrauch'],['Müllgebühren','8','betriebskosten','personen'],['Straßenreinigung','8','betriebskosten','flaeche'],
   ['Allgemeinstrom','11','betriebskosten','flaeche'],['Schornsteinfeger','12','betriebskosten','flaeche'],['Versicherungen','13','betriebskosten','flaeche'],['Hausmeister','14','betriebskosten','flaeche']];
 /* feste zusätzliche Kostenarten je Objekt */
-const KA_OBJEKT={E4:[['Internet','17','betriebskosten','einheiten']],K28:[['Internet','17','betriebskosten','einheiten']]};
+const KA_OBJEKT={E4:[['Internet','17','betriebskosten','einheiten','WE 1']],Kw30:[['Internet','17','betriebskosten','einheiten','WE 2']]};
+/* Kostenart nur für eine Einheit (5. Wert = Einheit): diese Einheit nimmt teil, alle anderen nicht */
+function kaObjEin(x,E,em){ if(!x[4]) return {}; const nk=v=>String(v||'').toLowerCase().replace(/[^a-z0-9.]/g,''); const o={}; for(const e of E){ const id=em[e.id]; if(id) o[id]={teil:nk(e.bezeichnung)===nk(x[4]),prozent:null,schluessel:''}; } return o; }
 /* welche Zähler zu welcher Kostenart passen */
 const ZTYP=k=>{const n=norm(k.name);const re=/strom/.test(n)?/strom/:/wasser/.test(n)&&!/niederschlag/.test(n)?/wasser/:/gas|heiz|warm/.test(n)?/gas|warm|warme/:null;return re?{test:t=>re.test(norm(t))}:null;};
 const LOHN=k=>/hausmeister|reinigung|garten|schornstein|winterdienst/.test(norm(k.name));
@@ -178,8 +180,8 @@ async function anlegen(){ const o=D.o; const b=$('anl'); if(b){ b.disabled=true;
       const alt2neu={}; for(const x of (pe.data||[])) if(x.einheit_ref&&em[x.einheit_ref]) alt2neu[x.id]=em[x.einheit_ref];
       rows=(pk.data||[]).map(k=>{ const ein={}; for(const [id,v] of Object.entries(k.einheiten||{})) if(alt2neu[id]) ein[alt2neu[id]]=v;
         return {abrechnung_id:a.id,name:k.name,gruppe:k.gruppe,schluessel:k.schluessel,umlagefaehig:k.umlagefaehig,betrkv_nr:k.betrkv_nr,pos:k.pos,notiz:k.notiz,einheiten:ein,zaehler:k.zaehler||null,ausgeblendet:!!k.ausgeblendet,erledigt:false,ka_key:k.ka_key||null}; }); }
-    if(!rows.length) rows=STANDARD.concat(KA_OBJEKT[o.kz]||[]).map((s,i)=>({abrechnung_id:a.id,name:s[0],betrkv_nr:s[1],gruppe:s[2],schluessel:E.length===1?'einheiten':s[3],umlagefaehig:true,pos:i,einheiten:{},erledigt:false}));
-    for(const x of (KA_OBJEKT[o.kz]||[])) if(!rows.some(r=>norm(r.name)===norm(x[0]))) rows.push({abrechnung_id:a.id,name:x[0],betrkv_nr:x[1],gruppe:x[2],schluessel:E.length===1?'einheiten':x[3],umlagefaehig:true,pos:rows.length,einheiten:{},erledigt:false});
+    if(!rows.length) rows=STANDARD.concat(KA_OBJEKT[o.kz]||[]).map((s,i)=>({abrechnung_id:a.id,name:s[0],betrkv_nr:s[1],gruppe:s[2],schluessel:E.length===1?'einheiten':s[3],umlagefaehig:true,pos:i,einheiten:kaObjEin(s,E,em),erledigt:false}));
+    for(const x of (KA_OBJEKT[o.kz]||[])) if(!rows.some(r=>norm(r.name)===norm(x[0]))) rows.push({abrechnung_id:a.id,name:x[0],betrkv_nr:x[1],gruppe:x[2],schluessel:E.length===1?'einheiten':x[3],umlagefaehig:true,pos:rows.length,einheiten:kaObjEin(x,E,em),erledigt:false});
     const {error:e3}=await sb.from('bk_kostenarten').insert(rows); if(e3) throw e3;
     ABR.push(a); toast('Abrechnung '+o.kz+' '+JAHR+' angelegt'+(vor?' – Kostenarten und Schlüssel aus '+vor.jahr+' übernommen.':'.')); await objLaden(); }
   catch(err){ toast('Nicht angelegt: '+(err.message||err),7000); if(b){ b.disabled=false; b.textContent='Abrechnung '+JAHR+' anlegen'; } } }

@@ -1245,7 +1245,9 @@ const bkDmy=d=>d?String(d).slice(0,10).split('-').reverse().join('.'):'';
 const BK_STANDARD=[['Grundsteuer','1','betriebskosten','flaeche'],['Frischwasser','2','betriebskosten','personen'],['Schmutzwasser','3','betriebskosten','personen'],['Niederschlagswasser','3','betriebskosten','flaeche'],
   ['Heizkosten','4','heizkosten','verbrauch'],['Warmwasser','5','heizkosten','verbrauch'],['Müllgebühren','8','betriebskosten','personen'],['Straßenreinigung','8','betriebskosten','flaeche'],
   ['Allgemeinstrom','11','betriebskosten','flaeche'],['Schornsteinfeger','12','betriebskosten','flaeche'],['Versicherungen','13','betriebskosten','flaeche'],['Hausmeister','14','betriebskosten','flaeche']];
-const BK_KA_OBJEKT={E4:[['Internet','17','betriebskosten','einheiten']],K28:[['Internet','17','betriebskosten','einheiten']]};
+const BK_KA_OBJEKT={E4:[['Internet','17','betriebskosten','einheiten','WE 1']],Kw30:[['Internet','17','betriebskosten','einheiten','WE 2']]};
+/* Kostenart nur für eine Einheit (5. Wert = Einheit): diese Einheit nimmt teil, alle anderen nicht */
+function kaObjEin(x,E,em){ if(!x[4]) return {}; const nk=v=>String(v||'').toLowerCase().replace(/[^a-z0-9.]/g,''); const o={}; for(const e of E){ const id=em[e.id]; if(id) o[id]={teil:nk(e.bezeichnung)===nk(x[4]),prozent:null,schluessel:''}; } return o; }
 async function bkAbrAnlegen(kz,jahr){ const sb=abSb();
   const {data:o}=await sb.from('obj_objekte').select('*').eq('kz',kz).maybeSingle(); if(!o) throw new Error('Objekt '+kz+' nicht gefunden.');
   const {data:EE}=await sb.from('obj_einheiten').select('*').eq('objekt_id',o.id).order('sort'); const A=(EE||[]).filter(e=>e.aktiv!==false), E=A.length?A:(EE||[]);
@@ -1257,8 +1259,8 @@ async function bkAbrAnlegen(kz,jahr){ const sb=abSb();
     const a2n={}; for(const x of (pe.data||[])) if(x.einheit_ref&&em[x.einheit_ref]) a2n[x.id]=em[x.einheit_ref];
     rows=(pk.data||[]).map(k=>{ const ein={}; for(const [id,v] of Object.entries(k.einheiten||{})) if(a2n[id]) ein[a2n[id]]=v;
       return {abrechnung_id:a.id,name:k.name,gruppe:k.gruppe,schluessel:k.schluessel,umlagefaehig:k.umlagefaehig,betrkv_nr:k.betrkv_nr,pos:k.pos,notiz:k.notiz,einheiten:ein,zaehler:k.zaehler||null,ausgeblendet:!!k.ausgeblendet,erledigt:false,ka_key:k.ka_key||null}; }); }
-  if(!rows.length) rows=BK_STANDARD.concat(BK_KA_OBJEKT[kz]||[]).map((x,i)=>({abrechnung_id:a.id,name:x[0],betrkv_nr:x[1],gruppe:x[2],schluessel:E.length===1?'einheiten':x[3],umlagefaehig:true,pos:i,einheiten:{},erledigt:false}));
-  for(const x of (BK_KA_OBJEKT[kz]||[])) if(!rows.some(r=>norm(r.name)===norm(x[0]))) rows.push({abrechnung_id:a.id,name:x[0],betrkv_nr:x[1],gruppe:x[2],schluessel:E.length===1?'einheiten':x[3],umlagefaehig:true,pos:rows.length,einheiten:{},erledigt:false});
+  if(!rows.length) rows=BK_STANDARD.concat(BK_KA_OBJEKT[kz]||[]).map((x,i)=>({abrechnung_id:a.id,name:x[0],betrkv_nr:x[1],gruppe:x[2],schluessel:E.length===1?'einheiten':x[3],umlagefaehig:true,pos:i,einheiten:kaObjEin(x,E,em),erledigt:false}));
+  for(const x of (BK_KA_OBJEKT[kz]||[])) if(!rows.some(r=>norm(r.name)===norm(x[0]))) rows.push({abrechnung_id:a.id,name:x[0],betrkv_nr:x[1],gruppe:x[2],schluessel:E.length===1?'einheiten':x[3],umlagefaehig:true,pos:rows.length,einheiten:kaObjEin(x,E,em),erledigt:false});
   const {error:e3}=await sb.from('bk_kostenarten').insert(rows); if(e3) throw e3;
   /* in die Objektliste des Jahres aufnehmen, falls es eine gibt */
   try{ const {data:es}=await sb.from('os_docs').select('data').eq('app','oc').eq('pfad','einstellungen/bka').maybeSingle(); const d=(es&&es.data)||null; const J=d&&d.jahre&&d.jahre[String(jahr)];
@@ -2259,6 +2261,9 @@ if(U.status==='offen'&&U.ansicht!=='detail') U.status='ung';
 const saveU=()=>store(ST_KEY,JSON.stringify({status:U.status,konto:U.konto,m:U.m,sort:U.sort,dir:U.dir||'',bz:U.bz||'',ansicht:U.ansicht}));
 let splitDraft=null, ruleDraft=null, sb=null, urlCache={};
 /* ---------- Kontenplan ---------- */
+/* Internet wird nur in Kw30 (WE 2, Eisenhardt) und E4 (WE 1, Terleckis) umgelegt, sonst 4258 Betriebskosten nicht umlagefähig */
+const INET_UML={Kw30:'WE 2',E4:'WE 1'};
+function inetUnit(kz,label){ const o=objekte.find(x=>x.kz===kz); const n=v=>String(v||'').replace(/\s+/g,'').toLowerCase(); const e=o&&(o.einheiten||[]).find(x=>n(x.label)===n(label)); return e?e.id:''; }
 const KA=[['grundsteuer','2375','Grundsteuer'],['wasser','4243','Frischwasser'],['abwasser','4244','Schmutzwasser'],['niederschlag','4245','Niederschlagswasser'],['heizung','4241','Heizung (Gas / Öl / Wärme)'],['warmwasser','4249','Warmwasser'],['aufzug','4252','Aufzug'],['strassenreinigung','4247','Straßenreinigung'],['muell','4246','Müllgebühren'],['reinigung','4250','Gebäudereinigung / Ungezieferbekämpfung'],['garten','4253','Gartenpflege'],['allgstrom','4242','Allgemeinstrom'],['schornstein','4254','Schornsteinfeger'],['versicherung','4360','Versicherungen (Gebäude / Haftpflicht)'],['hauswart','4248','Hausmeister'],['kabel','4255','Kabel / Antenne'],['internet','4259','Internet / Telefon'],['waesche','4256','Wäschepflege'],['sonstige_bk','4257','Sonstige Betriebskosten (Wartung, Rauchmelder)'],['weg','4240','Hausgeld (WEG)'],['bk_nu','4258','Betriebskosten nicht umlagefähig']];
 const KAN=Object.fromEntries(KA.map(x=>[x[0],x]));
 const VNR={lizenzen:'4806',personal:'4120',gf:'4124',buchhaltung:'4955',buero:'4210',buerobedarf:'4930',telefon:'4920',bank:'4970',objverw:'4901',forderung:'4902',bkverw:'4903',vermietung:'4610',objbetreuung:'4904',recht:'4950',versicherung:'4366',kfz:'4500',recht_sonst:'4951',steuern:'4320',spende:'2380',fortbildung:'4945',eeprivat:'1800',kauf:'4905',sonstige:'4909'};
@@ -2299,7 +2304,8 @@ function setKonto(it,val,extra){ const [k,s,ka,o2,kv]=val.split('|'); const c=it
   if(o2&&o2!==obj){ obj=o2; unit=''; }
   if(k!=='miete'&&k!=='bk') unit=''; if(k==='verw'&&!objKz().has(obj)) obj=''; if(['intern','ignore','ruecklast',''].includes(k)) obj='';
   if(c.kat==='ruecklast'&&k!=='ruecklast') setTx(it.id,'k',k);
-  return writeTx(it.doc,it.ix,Object.assign({m:1,k,s:s||'',ka:ka||'',o:obj,u:unit,kv:k==='bk'?(kv||''):''},extra||{ok:1})); }
+  let ka2=ka||''; if(k==='bk'&&ka2==='internet'){ const w=INET_UML[obj]; if(w){ if(!unit) unit=inetUnit(obj,w); } else if(obj){ ka2='bk_nu'; toast('Internet wird bei '+obj+' nicht umgelegt – gebucht auf 4258 Betriebskosten nicht umlagefähig.'); } }
+  return writeTx(it.doc,it.ix,Object.assign({m:1,k,s:s||'',ka:ka2,o:obj,u:unit,kv:k==='bk'&&ka2===(ka||'')?(kv||''):''},extra||{ok:1})); }
 const BELEG_KATS=['bk','inst','umbau','obj_sonst','verw'];
 function umlageSubs(){ return new Set(SUBS_UM.map(x=>x[0])); }
 const kontoOf=key=>konten.find(x=>(x.key||x.iban)===key)||null;
@@ -2319,7 +2325,7 @@ function items(){
     if(!it){ const orig=(buch[r.doc].tx||[])[r.ix]||r.tx; it={id,doc:r.doc,ix:r.ix,tx:orig,k:r.k,kkey:r.kkey,m:r.m,parts:[],nh:!!r.nh,split:!!r.split}; map.set(id,it); }
     it.parts.push(r); }
   const out=[...map.values()];
-  for(const it of out){ it.parts=it.parts.map((p,pi)=>{ const sp=Array.isArray(it.tx.sp)&&it.tx.sp.length&&!p.nh?it.tx.sp[pi]:null; let ka=sp?(sp.ka||''):(it.tx.m?(it.tx.ka||''):ruleKa(p.c)), kg=false; if(!ka&&p.c.kat==='bk'&&!sp){ ka=guessKa(it.tx); kg=!!ka; } return Object.assign({},p,{c:Object.assign({},p.c,{ka,kg,kv:!sp&&it.tx.m?(it.tx.kv||''):''})}); });
+  for(const it of out){ it.parts=it.parts.map((p,pi)=>{ const sp=Array.isArray(it.tx.sp)&&it.tx.sp.length&&!p.nh?it.tx.sp[pi]:null; let ka=sp?(sp.ka||''):(it.tx.m?(it.tx.ka||''):ruleKa(p.c)), kg=false; if(!ka&&p.c.kat==='bk'&&!sp){ ka=guessKa(it.tx); kg=!!ka; } let unit=p.c.unit||''; if(!it.tx.m&&!sp&&p.c.kat==='bk'&&ka==='internet'){ const w=INET_UML[p.c.obj]; if(w){ if(!unit) unit=inetUnit(p.c.obj,w); } else { ka='bk_nu'; kg=false; } } return Object.assign({},p,{c:Object.assign({},p.c,{ka,kg,unit,kv:!sp&&it.tx.m?(it.tx.kv||''):''})}); });
     it.c=it.parts[0].c; it.needKA=!it.parts.some(p=>isOpen(p.c))&&it.parts.some(p=>p.c.kat==='bk'&&(!p.c.ka||p.c.kg)); it.open=it.parts.some(p=>isOpen(p.c)); it.bel=(it.tx.bl||[]).length;
     it.dauer=it.tx.b<0&&DAUER.length?dbFuer(it):null;
     it.needBeleg=BUCH_BELEGE&&it.tx.b<0&&!it.open&&it.parts.some(p=>BELEG_KATS.includes(p.c.kat)&&!(p.c.kat==='verw'&&p.c.sub==='bank'))&&!it.bel&&!it.tx.ol&&!it.dauer; }
