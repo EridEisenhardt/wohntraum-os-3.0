@@ -103,6 +103,11 @@ th,td{padding:6px 8px;border-bottom:1px solid var(--line);text-align:left;white-
 th{position:sticky;top:0;background:var(--soft);font-weight:600;font-size:12px;color:var(--muted)}
 td.n,th.n{text-align:right;font-variant-numeric:tabular-nums}
 tr.grp td{background:var(--soft);font-weight:700}
+tr.grp2 td{background:var(--card);font-weight:600;border-top:1px solid var(--line)}
+td.pneu{white-space:nowrap}
+table.plan td.pneu input.num{width:96px;padding:4px 6px;background:var(--card);border-color:var(--line)}
+td.pneu input.pab{width:92px;margin:0 6px}
+td.pneu .sub{margin-left:6px}
 table.plan input.num{width:74px;padding:3px 4px;background:transparent;border-color:transparent}
 table.plan input.num:hover,table.plan input.num:focus{border-color:var(--line);background:var(--soft)}
 table.plan input.txt{width:210px;background:transparent;border-color:transparent}
@@ -402,21 +407,46 @@ function renderPlan(){
       +'<div class="sub" style="margin:10px 0 6px">'+(np.rh==='0'?'Monate anklicken, in denen abgebucht wird:':np.rh==='1'?'Wird jeden Monat abgebucht.':'Monat der (ersten) Abbuchung anklicken – die weiteren Monate werden automatisch gesetzt:')+'</div>'
       +'<div class="mchips">'+MS.map((x,m)=>'<button type="button" class="mchip'+(np.sel.includes(m)?' on':'')+'" data-npm="'+m+'">'+x+'</button>').join('')+'</div>'
       +'<div style="margin-top:10px"><button class="primary" id="np-add">Hinzufügen</button></div></div>'; }
-  h+='<div class="tablewrap"><table class="plan"><thead><tr><th></th><th>Objekt</th><th>Position</th><th>Kategorie</th><th>Rhythmus</th><th>Beleg</th>'+MS.map(x=>'<th class="n">'+x+'</th>').join('')+'<th class="n">Jahr</th></tr></thead><tbody>';
-  let lastG=null;
-  const gi=g=>{ const i=GES.indexOf(g); return i<0?99:i; }, oi={}; rows.forEach((r,i)=>{ const k=r.ges+'|'+r.obj; if(oi[k]==null) oi[k]=i; });
-  const reihe=rows.map((r,ix)=>({r,ix})).sort((a,b)=>gi(a.r.ges)-gi(b.r.ges)||oi[a.r.ges+'|'+a.r.obj]-oi[b.r.ges+'|'+b.r.obj]||String(a.r.pos||'').localeCompare(String(b.r.pos||''),'de',{numeric:true,sensitivity:'base'}));
-  reihe.forEach(({r,ix})=>{ if(r.ges!==lastG){ lastG=r.ges; const tj=rows.filter(x=>x.ges===r.ges).reduce((s,x)=>s+x.plan.reduce((a,b)=>a+(b||0),0),0);
+  h+='<div class="tablewrap"><table class="plan"><thead><tr><th></th><th>Position</th><th>Kategorie</th><th>Rhythmus</th><th>Beleg</th><th>Neuer Betrag</th>'+MS.map(x=>'<th class="n">'+x+'</th>').join('')+'<th class="n">Jahr</th></tr></thead><tbody>';
+  let lastG=null, lastO=null;
+  const gi=g=>{ const i=GES.indexOf(g); return i<0?99:i; }, cmp=(a,b)=>String(a||'').localeCompare(String(b||''),'de',{numeric:true,sensitivity:'base'});
+  const reihe=rows.map((r,ix)=>({r,ix})).sort((a,b)=>gi(a.r.ges)-gi(b.r.ges)||cmp(a.r.obj,b.r.obj)||cmp(a.r.pos,b.r.pos));
+  const jsum=L=>L.reduce((s,x)=>s+x.plan.reduce((a,b)=>a+(b||0),0),0);
+  /* Monate für „ab“: drei zurück bis zwölf voraus */
+  const abL=[]; for(let i=-3;i<=12;i++){ const k=shiftKey(curKey,i); abL.push(k.slice(5,7)+'.'+k.slice(0,4)); }
+  reihe.forEach(({r,ix})=>{ if(r.ges!==lastG){ lastO=null; lastG=r.ges; const tj=rows.filter(x=>x.ges===r.ges).reduce((s,x)=>s+x.plan.reduce((a,b)=>a+(b||0),0),0);
       const zu=!!ZU['p:'+r.ges]; h+='<tr class="grp gtog" data-zu="p:'+esc(r.ges)+'"><td colspan="18"><span class="zu">'+(zu?'ausklappen':'einklappen')+'</span>'+esc(r.ges)+' <span class="sub">'+rows.filter(x=>x.ges===r.ges).length+' Positionen</span></td><td class="n">'+eur(tj)+'</td></tr>'; }
     if(ZU['p:'+r.ges]) return;
-    h+='<tr><td>'+(canWrite?'<button class="del" data-pdel="'+ix+'" title="Position löschen">Löschen</button>':'')+'</td><td>'+esc(r.obj)+'</td><td><input type="text" class="txt" data-f="pp:'+ix+'" data-ppos="'+ix+'" value="'+esc(r.pos)+'"'+ro+'>'+(r.lohn?'<div class="sub" style="font-size:11px" title="'+esc(r.lohn.replace('|',' › '))+'">aus Lohnkosten</div>':'')+'</td>'
+    const ok=r.ges+'|'+r.obj, auf=!!ZU['pa:'+ok];
+    if(ok!==lastO){ lastO=ok; const L=rows.filter(x=>x.ges===r.ges&&x.obj===r.obj);
+      h+='<tr class="grp2 gtog" data-zu="pa:'+esc(ok)+'"><td colspan="18"><span class="zu">'+(auf?'einklappen':'ausklappen')+'</span>'+esc(r.obj)+' <span class="sub">'+L.length+' Position'+(L.length===1?'':'en')+'</span></td><td class="n">'+eur(jsum(L))+'</td></tr>'; }
+    if(!auf) return;
+    const abW=(np.ab&&np.ab[ix])||(curKey.slice(5,7)+'.'+curKey.slice(0,4));
+    h+='<tr><td>'+(canWrite?'<button class="del" data-pdel="'+ix+'" title="Position löschen">Löschen</button>':'')+'</td><td><input type="text" class="txt" data-f="pp:'+ix+'" data-ppos="'+ix+'" value="'+esc(r.pos)+'"'+ro+'>'+(r.lohn?'<div class="sub" style="font-size:11px" title="'+esc(r.lohn.replace('|',' › '))+'">aus Lohnkosten</div>':'')+'</td>'
       +'<td><select data-pkat="'+ix+'"'+ro+'>'+KATS.map(k=>'<option'+(k===r.kat?' selected':'')+'>'+k+'</option>').join('')+'</select></td>'
-      +'<td><input type="text" class="txt" style="width:170px" data-f="pr:'+ix+'" data-prh="'+ix+'" value="'+esc(r.rh||'')+'"'+ro+'></td><td class="d" style="max-width:220px;white-space:normal;font-size:11px;color:var(--muted)">'+(r.doc?esc(r.doc.datei)+(r.doc.kdnr?'<br>Kd-Nr. '+esc(r.doc.kdnr):''):'–')+'</td>';
+      +'<td><input type="text" class="txt" style="width:170px" data-f="pr:'+ix+'" data-prh="'+ix+'" value="'+esc(r.rh||'')+'"'+ro+'></td><td class="d" style="max-width:220px;white-space:normal;font-size:11px;color:var(--muted)">'+(r.doc?esc(r.doc.datei)+(r.doc.kdnr?'<br>Kd-Nr. '+esc(r.doc.kdnr):''):'–')+'</td>'
+      +'<td class="pneu">'+(canWrite?'<input type="text" inputmode="decimal" class="num" data-f="pn:'+ix+'" id="pn-'+ix+'" placeholder="Betrag" value="'+esc((np.pn&&np.pn[ix])||'')+'"><span class="sub">ab</span><input type="text" class="pab" data-f="pa:'+ix+'" id="pa-'+ix+'" list="pab-l" value="'+esc(abW)+'" autocomplete="off" title="Monat als MM.JJJJ"><button class="ghost" data-pneu="'+ix+'" title="Betrag ab diesem Monat in alle Monate der Position übernehmen">Übernehmen</button>':'')+'</td>';
     for(let m=0;m<12;m++) h+='<td class="n"><input type="text" inputmode="decimal" class="num" data-f="pm:'+ix+':'+m+'" data-pm="'+ix+':'+m+'" value="'+(r.plan[m]==null?'':fnum.format(r.plan[m]))+'"'+ro+'></td>';
     h+='<td class="n">'+eur(r.plan.reduce((a,b)=>a+(b||0),0))+'</td></tr>'; });
-  h+='</tbody></table></div>';
+  h+='</tbody></table></div><datalist id="pab-l">'+abL.map(x=>'<option value="'+x+'"></option>').join('')+'</datalist>';
   return h;
 }
+
+/* Neuer Betrag ab Monat: gilt in allen Monaten der Position (Plan wiederholt sich jedes Jahr).
+   Offene Monate vor dem Startmonat behalten den alten Betrag als Abweichung im Monat. */
+function planNeuerBetrag(ix){
+  const v=parseNum(($('pn-'+ix)||{}).value||''); if(v==null||isNaN(v)){ toast('Bitte einen Betrag eingeben.'); return; }
+  const a=String(($('pa-'+ix)||{}).value||'').trim().match(/^(\d{1,2})[.\/-](\d{4})$/); if(!a||Number(a[1])<1||Number(a[1])>12){ toast('Bitte den Monat als MM.JJJJ eingeben, z. B. 11.2026.'); return; }
+  const abKey=a[2]+'-'+String(a[1]).padStart(2,'0');
+  planDraft=planRows().map(r=>Object.assign({},r,{plan:r.plan.slice()})); const r=planDraft[ix]; if(!r) return;
+  const alt=r.plan.slice(); let M=alt.map((x,m)=>x?m:-1).filter(m=>m>=0); if(!M.length) M=[0,1,2,3,4,5,6,7,8,9,10,11];
+  let n=0; for(const k of Object.keys(months).sort()){ const md=months[k]; if(!md||k>=abKey||md.abgeschlossen) continue;
+    const m=Number(k.slice(5,7))-1; if(!alt[m]||alt[m]===v||(md.betrag||{})[r.id]!=null) continue;
+    writeMonth(k,{betrag:{[r.id]:alt[m]}}); n++; }
+  for(const m of M) r.plan[m]=v;
+  np.ab=np.ab||{}; np.ab[ix]=a[1].padStart(2,'0')+'.'+a[2]; if(np.pn) delete np.pn[ix];
+  render(); schedulePlanSave();
+  toast(r.pos+': '+fnum.format(v)+' ab '+np.ab[ix]+' übernommen'+(n?', '+n+' frühere Monat'+(n===1?'':'e')+' behalten den alten Betrag':'')+'.'); }
 
 /* ---------- Ereignisse ---------- */
 document.addEventListener('click',e=>{ const g=e.target.closest('.gtog'); if(!g||e.target.closest('input,select,button:not(.zu)')) return; const k=g.dataset.zu; if(ZU[k]) delete ZU[k]; else ZU[k]=1; zuSave(); render(); });
@@ -430,6 +460,7 @@ document.addEventListener('click',e=>{
   if(t.id==='close'){ if(t.dataset.sure!=='1'){t.dataset.sure='1';t.textContent='Wirklich abschließen?';return;}
     const snap=monthRows(curKey); writeMonth(curKey,{abgeschlossen:true,abgeschlossenAm:todayISO(),snapshot:snap}); toast('Monat abgeschlossen – jetzt den Report ziehen.'); return; }
   if(t.id==='reopen'){ writeMonth(curKey,{abgeschlossen:false}); return; }
+  if(t.dataset.pneu!=null){ planNeuerBetrag(Number(t.dataset.pneu)); return; }
   if(t.dataset.addr){ const o=t.dataset.addr, tx=$('rt-'+o).value.trim(), b=parseNum($('rb-'+o).value);
     if(!tx||b==null||isNaN(b)){toast('Bitte Text und Betrag eingeben.');return;}
     const list=((months[curKey]||{}).rechnungen||{})[o]||[]; writeMonth(curKey,{rechnungen:{[o]:list.concat([{text:tx,betrag:b}])}}); return; }
@@ -479,7 +510,7 @@ document.addEventListener('change',e=>{
   if(t.dataset.prh){ rows()[Number(t.dataset.prh)].rh=t.value.trim(); schedulePlanSave(); return; }
   if(t.dataset.pkat){ rows()[Number(t.dataset.pkat)].kat=t.value; render(); schedulePlanSave(); return; }
 });
-document.addEventListener('input',e=>{ const t=e.target; if(t.id==='np-pos') np.pos=t.value; else if(t.id==='np-betrag') np.betrag=t.value; });
+document.addEventListener('input',e=>{ const t=e.target; if(/^pn-\d+$/.test(t.id)){ (np.pn=np.pn||{})[t.id.slice(3)]=t.value; return; } if(/^pa-\d+$/.test(t.id)){ (np.ab=np.ab||{})[t.id.slice(3)]=t.value; return; } if(t.id==='np-pos') np.pos=t.value; else if(t.id==='np-betrag') np.betrag=t.value; });
 document.addEventListener('keydown',e=>{ if(e.key==='Enter'&&e.target.matches('input[type=text]')) e.target.blur(); });
 
 /* ---------- Monatsreport (Excel) ---------- */
