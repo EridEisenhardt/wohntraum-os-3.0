@@ -1565,6 +1565,19 @@ function exPdf(){ if(!window.jspdf){ toast('PDF-Bibliothek lädt noch, bitte gle
   const pages=doc.getNumberOfPages(); for(let i=1;i<=pages;i++){ doc.setPage(i); doc.setFont('helvetica','normal'); doc.setFontSize(7.5); doc.setTextColor(120); doc.text('Seite '+i+' von '+pages+' · Saldo positiv = Mieter schuldet · erstellt mit Wohntraum OS',R,203,{align:'right'}); }
   doc.save(exName('pdf')); }
 document.addEventListener('click',e=>{ const t=e.target.closest('button[data-mex]'); if(!t) return; if(!LISTE.length){ toast('Die Liste ist leer.'); return; } if(t.dataset.mex==='xlsx') exExcel(); else exPdf(); });
+/* ---------- Tages-Snapshot offene Posten (Quelle für Statusbericht GF) ---------- */
+let __opSnapDone=false;
+async function snapshotOP(){
+  try{
+    const sb=window.osSupabase; if(!sb||!calc) return;
+    const rk=Object.values(calc.res).filter(x=>x.saldo>0.5); /* alle positiven Salden (Rückstände), inkl. Ratenzahler */
+    const posten=rk.map(x=>({obj:x.mk.obj,einheit:uName(x.mk.einheit),mieter:ed(x.mk).mieter||'',is_current:!!x.aktiv,saldo:r2(x.saldo)}))
+      .sort((a,b)=>b.saldo-a.saldo);
+    const summe=r2(rk.reduce((s,x)=>s+x.saldo,0));
+    const laufend=r2(rk.filter(x=>x.aktiv).reduce((s,x)=>s+x.saldo,0));
+    await sb.from('mieterkonto_snapshot').upsert({datum:today,summe,summe_laufend:laufend,summe_beendet:r2(summe-laufend),n:rk.length,posten,generated_at:new Date().toISOString()},{onConflict:'datum'});
+  }catch(e){}
+}
 /* ---------- Render ---------- */
 /* Aufruf mit ?mahnlauf=1 (Menüpunkt Mahnläufe): Mahnlauf direkt öffnen, sobald die Daten geladen sind */
 window.__mlAuto=/[?&]mahnlauf=1/.test(location.search);
@@ -1579,6 +1592,7 @@ function render(){
   if(!slAuto&&loadedSL&&canWrite&&today>=curM+'-25'&&!SL[nextMon()]){ slAuto=true; runSoll(nextMon(),true); }
   if(!calc) calc=compute();
   const all=Object.values(calc.res);
+  if(canWrite&&!__opSnapDone){__opSnapDone=true;snapshotOP();}
   const q=norm(M.q);
   const betrF=norm(M.betr||'');
   const list=all.filter(x=>(!M.ges||x.mk.ges===M.ges)&&(!M.obj||x.mk.obj===M.obj)&&(!betrF||(betrF==='ohne betreuer'?!String(ed(x.mk).betreuer||'').trim():norm(ed(x.mk).betreuer).includes(betrF)))&&(M.st==='alle'||(M.st==='aktiv'&&x.aktiv)||(M.st==='rueck'&&x.ueber>0.5)||(M.st==='rueck2'&&x.ueber>0.5&&x.monate>2)||(M.st==='guthaben'&&x.saldo<-0.5)||(M.st==='beendet'&&!x.aktiv)||(M.st==='kaution'&&x.kOffen>0.5))

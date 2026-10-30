@@ -119,8 +119,8 @@ tbody tr:hover td{background:#fafbfc}
       <div id="tlWrap"><div class="secttl">Zeitstrahl — Änderungen, Notizen, E-Mails &amp; Aktivitäten</div><div class="tl" id="tlList"></div></div>
     </div>
     <div class="dlg-ft">
-      <textarea id="noteInput" rows="6" placeholder="Notiz zum Datensatz … (Datum &amp; Uhrzeit automatisch)" oninput="autoGrow(this)"></textarea>
-      <span style="display:flex;gap:8px"><button class="btn sec" id="mailBtn" onclick="openMail()">✉ Mail schreiben</button><button class="btn" onclick="addNote()">+ Notiz</button></span>
+      <textarea id="noteInput" rows="6" placeholder="Notiz zum Datensatz … (Datum &amp; Uhrzeit automatisch) – oder 🎤 reinsprechen" oninput="autoGrow(this)"></textarea>
+      <span style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn sec" id="micBtn" onclick="diktieren('noteInput','micBtn')" title="Diktieren – ins Textfeld sprechen">🎤 Diktieren</button><button class="btn sec" onclick="kiZusammenfassen('noteInput')" title="Text komprimieren / zusammenfassen">✨ Zusammenfassen</button><button class="btn sec" id="mailBtn" onclick="openMail()">✉ Mail schreiben</button><button class="btn" onclick="addNote()">+ Notiz</button></span>
     </div>
   </div>
 </div>
@@ -158,12 +158,15 @@ const AKTTYP=['Aufgabe','Anruf','Termin'];
 const TBL={kontakt:'crm_kontakte',firma:'crm_firmen',deal:'crm_deals'};
 const LBL={kontakt:'Kontakt',firma:'Firma',deal:'Deal'};
 const SPEC={
- kontakt:[['vorname','Vorname','text'],['name','Nachname','text'],['email','E-Mail','text'],['telefon','Telefon','text'],['position','Position','text'],['firma_id','Firma','firma'],['strasse','Straße & Hausnummer','text'],['plz','PLZ','text'],['ort','Ort','text'],['land','Land','text'],['kategorien','Kategorien','kats'],['potenzial','Potenzial','pot'],['letzter_kontakt','Letzter Kontakt (manuell)','date'],['notizen','Notizen','textarea']],
- firma:[['name','Firmenname','text'],['branche','Branche','text'],['website','Website','text'],['telefon','Telefon','text'],['strasse','Straße & Hausnummer','text'],['plz','PLZ','text'],['ort','Ort','text'],['land','Land','text'],['kategorien','Kategorien','kats'],['potenzial','Potenzial','pot'],['letzter_kontakt','Letzter Kontakt (manuell)','date'],['notizen','Notizen','textarea']],
- deal:[['titel','Titel','text'],['firma_id','Firma','firma'],['kontakt_id','Kontakt','kontakt'],['wert','Wert (€)','number'],['stufe','Stufe','stufe'],['wahrscheinlichkeit','Wahrscheinlichkeit (%)','number'],['abschluss_datum','Abschlussdatum','date'],['notizen','Notizen','textarea']]
+ kontakt:[['vorname','Vorname','text'],['name','Nachname','text'],['email','E-Mail','text'],['telefon','Telefon','text'],['position','Position','text'],['firma_id','Firma','firma'],['strasse','Straße & Hausnummer','text'],['plz','PLZ','text'],['ort','Ort','text'],['land','Land','text'],['kategorien','Kategorien','kats'],['potenzial','Potenzial','pot'],['letzter_kontakt','Letzter Kontakt (manuell)','date'],['visitenkarte_pfad','Visitenkarte','visitenkarte']],
+ firma:[['name','Firmenname','text'],['branche','Branche','text'],['website','Website','text'],['telefon','Telefon','text'],['strasse','Straße & Hausnummer','text'],['plz','PLZ','text'],['ort','Ort','text'],['land','Land','text'],['kategorien','Kategorien','kats'],['potenzial','Potenzial','pot'],['letzter_kontakt','Letzter Kontakt (manuell)','date']],
+ deal:[['titel','Titel','text'],['firma_id','Firma','firma'],['kontakt_id','Kontakt','kontakt'],['wert','Wert (€)','number'],['stufe','Stufe','stufe'],['wahrscheinlichkeit','Wahrscheinlichkeit (%)','number'],['abschluss_datum','Abschlussdatum','date']]
 };
 let VIEW='kontakte', K=[],F=[],D=[],A=[],TL=[],M=[],KAT=[],TCK=[], CUR=null, DRAG=null, q='', kFilt='', pFilt='', aFilt={typ:'',status:''};
 const TSTATUS=['Neu','In Bearbeitung','Wartet','Warten auf Rückmeldung','Erledigt'];
+// Tickets laufen jetzt über os_tasks (art='ticket'). Status-Mapping OS <-> CRM-Anzeige:
+const TST_OS2DE={todo:'Neu',inarbeit:'In Bearbeitung',warten:'Wartet',wartenrueck:'Warten auf Rückmeldung',erledigt:'Erledigt'};
+const TST_DE2OS={'Neu':'todo','In Bearbeitung':'inarbeit','Wartet':'warten','Warten auf Rückmeldung':'wartenrueck','Erledigt':'erledigt'};
 const POT=['A','B+','B','C'];
 const POTC={'A':'#1f7a4d','B+':'#185fa5','B':'#b45309','C':'#6b7280'};
 const potBadge=v=>v?`<span class="pot" style="background:${POTC[v]||'#6b7280'}">${esc(v)}</span>`:'—';
@@ -226,9 +229,10 @@ async function load(){
     sb.from('crm_timeline').select('*').order('created_at',{ascending:false}),
     sb.from('crm_mails').select('*').order('datum',{ascending:false}).limit(1000),
     sb.from('crm_kategorien').select('*').order('sort').order('name'),
-    sb.from('tickets').select('*').eq('quelle','vertrieb').order('created_at',{ascending:false})
+    sb.from('os_tasks').select('*').eq('art','ticket').eq('quelle_bereich','vertrieb').order('created_at',{ascending:false})
   ]);
-  K=k.data||[];F=f.data||[];D=d.data||[];A=a.data||[];TL=tl.data||[];M=m.data||[];KAT=kt.data||[];TCK=tc.data||[];
+  K=k.data||[];F=f.data||[];D=d.data||[];A=a.data||[];TL=tl.data||[];M=m.data||[];KAT=kt.data||[];
+  TCK=(tc.data||[]).map(t=>({...t,status:TST_OS2DE[t.status]||'Neu'}));
   KAT.sort((a,b)=>String(a.name||'').localeCompare(String(b.name||''),'de',{sensitivity:'base'}));
   K.sort((a,b)=>kName(a).localeCompare(kName(b),'de',{sensitivity:'base'}));
   F.sort((a,b)=>String(a.name||'').localeCompare(String(b.name||''),'de',{sensitivity:'base'}));
@@ -414,7 +418,7 @@ function renderTL(){
   if(!CUR||!CUR.id){$('tlWrap').style.display='none';return;}
   $('tlWrap').style.display='';
   const items=[];
-  TL.filter(t=>t.entity_typ===CUR.typ&&t.entity_id===CUR.id).forEach(t=>items.push({t:t.created_at,art:t.art,feld:t.feld,alt:t.alt,neu:t.neu,text:t.text}));
+  TL.filter(t=>t.entity_typ===CUR.typ&&t.entity_id===CUR.id).forEach(t=>items.push({id:t.id,t:t.created_at,art:t.art,feld:t.feld,alt:t.alt,neu:t.neu,text:t.text}));
   // Aktivitäten
   A.filter(a=>(CUR.typ==='kontakt'&&a.kontakt_id===CUR.id)||(CUR.typ==='firma'&&a.firma_id===CUR.id)||(CUR.typ==='deal'&&a.deal_id===CUR.id))
    .forEach(a=>items.push({t:a.created_at,art:'aktivitaet',text:a.typ+': '+(a.betreff||'')+(a.faellig?' · fällig '+fmtD(a.faellig):'')+' · '+a.status}));
@@ -429,7 +433,7 @@ function renderTL(){
   $('tlList').innerHTML=items.length?items.map(i=>{
     if(i.art==='mail')return `<div class="tli mail"><div class="ts">${i.raus?'📤 Mail gesendet':'✉ E-Mail'} · ${fmtDT(i.t)}</div><div class="tx"><b>${esc(i.text)}</b>${i.link?` <a href="${esc(i.link)}" target="_blank">↗</a>`:''}</div><div class="sub">${esc(i.sub)}</div>${i.body?`<details class="mbody"><summary>Volltext anzeigen</summary><div class="mtext">${esc(i.body)}</div></details>`:(i.snippet?`<div class="sub" style="color:var(--muted)">${esc(i.snippet)}</div>`:'')}</div>`;
     if(i.art==='ticket')return `<div class="tli ticket"><div class="ts">🎫 Ticket · ${fmtDT(i.t)}</div><div class="tx"><b>${esc(i.text)}</b>${i.link?` <a href="${esc(i.link)}" target="_blank" rel="noopener">Asana ↗</a>`:''}</div><div class="sub">${esc(i.sub)}</div></div>`;
-    if(i.art==='notiz')return `<div class="tli notiz"><div class="ts">📝 Notiz · ${fmtDT(i.t)}</div><div class="tx">${esc(i.text)}</div></div>`;
+    if(i.art==='notiz')return `<div class="tli notiz"><div class="ts">📝 Notiz · ${fmtDT(i.t)}${i.id?` <span style="cursor:pointer;color:var(--accent)" title="Zusammenfassen" onclick="kiNoteZusammenfassen('${i.id}')">✨ zusammenfassen</span>`:''}</div><div class="tx">${esc(i.text)}</div></div>`;
     if(i.art==='aktivitaet')return `<div class="tli aktivitaet"><div class="ts">📌 Aktivität · ${fmtDT(i.t)}</div><div class="tx">${esc(i.text)}</div></div>`;
     if(i.art==='erstellt')return `<div class="tli erstellt"><div class="ts">➕ ${fmtDT(i.t)}</div><div class="tx">${esc(i.text||'Datensatz angelegt')}</div></div>`;
     return `<div class="tli"><div class="ts">🔄 Änderung · ${fmtDT(i.t)}</div><div class="tx"><b>${esc(i.feld)}</b>: ${esc(i.alt||'—')} → ${esc(i.neu||'—')}</div></div>`;
@@ -440,7 +444,8 @@ function renderTL(){
 function fieldHtml(typ,f,val){
   const [key,label,kind]=f;
   let inp;
-  if(kind==='textarea')inp=`<textarea id="m_${key}" rows="3">${esc(val)}</textarea>`;
+  if(kind==='textarea')inp=`<textarea id="m_${key}" rows="3">${esc(val)}</textarea>`
+    +(key==='notizen'?`<div style="display:flex;gap:6px;margin-top:5px"><button type="button" class="btn sec" id="mic_${key}" style="font-size:11.5px;padding:4px 9px" onclick="diktieren('m_${key}','mic_${key}')" title="Diktieren">🎤 Diktieren</button><button type="button" class="btn sec" style="font-size:11.5px;padding:4px 9px" onclick="kiZusammenfassen('m_${key}')" title="Zusammenfassen">✨ Zusammenfassen</button></div>`:'');
   else if(kind==='firma')inp=`<select id="m_${key}" data-prev="${val==null?'':esc(val)}" onchange="firmaSel(this)"><option value="">—</option>${F.map(x=>`<option value="${x.id}" ${x.id===val?'selected':''}>${esc(x.name)}</option>`).join('')}<option value="__new__">➕ Neue Firma anlegen …</option></select>`;
   else if(kind==='kontakt')inp=`<select id="m_${key}"><option value="">—</option>${K.map(x=>`<option value="${x.id}" ${x.id===val?'selected':''}>${esc(kName(x))}</option>`).join('')}</select>`;
   else if(kind==='stufe')inp=`<select id="m_${key}">${STUFEN.map(s=>`<option ${s===val?'selected':''}>${esc(s)}</option>`).join('')}</select>`;
@@ -451,6 +456,10 @@ function fieldHtml(typ,f,val){
       <div class="chips" id="katChips"></div>
       <select id="katAdd" onchange="katPick(this.value)"></select>
     </div>`;
+  }
+  else if(kind==='visitenkarte'){
+    return `<div class="fld wide"><label>${label}</label><div id="vkBox">${vkBoxHtml()}</div>
+      <input type="file" id="vkFile" accept="image/*,application/pdf" style="display:none" onchange="vkUpload(this)"></div>`;
   }
   else inp=`<input id="m_${key}" type="${kind==='number'?'number':kind==='date'?'date':'text'}" value="${val==null?'':esc(val)}">`;
   return `<div class="fld ${kind==='textarea'||kind==='kats'?'wide':''}"><label>${label}</label>${inp}</div>`;
@@ -497,6 +506,7 @@ function openEntity(typ,id){
   $('tckWrap').style.display='';renderTickets();
   $('tlWrap').style.display='';
   $('noteInput').value='';$('noteInput').style.height='';renderTL();$('ov').classList.add('show');
+  if(typ==='kontakt')vkThumbLoad();
 }
 function openNew(){
   if(VIEW==='aktivitaeten')return openNewAkt();
@@ -522,12 +532,13 @@ async function saveEntity(){
   if(!CUR)return;const {typ,id,rec}=CUR;const row={};
   SPEC[typ].forEach(f=>{
     if(f[2]==='kats'){row[f[0]]=readKats();return;}
+    if(f[2]==='visitenkarte')return;
     const el=$('m_'+f[0]);if(!el)return;let v=el.value;if(v===''||v==='__new__')v=null;
     if(f[2]==='number'&&v!=null)v=Number(v);row[f[0]]=v;});
   row.updated_at=new Date().toISOString();
   if(id){
     const norm=v=>Array.isArray(v)?v.slice().sort().join(', '):String(v==null?'':v);
-    const changes=SPEC[typ].filter(f=>norm(rec[f[0]])!==norm(row[f[0]]));
+    const changes=SPEC[typ].filter(f=>f[2]!=='visitenkarte'&&norm(rec[f[0]])!==norm(row[f[0]]));
     const{error}=await sb.from(TBL[typ]).update(row).eq('id',id);if(error){toast(error.message);return;}
     for(const f of changes){let alt=rec[f[0]],neu=row[f[0]];
       if(f[2]==='firma'){alt=firmaName(alt);neu=firmaName(neu);}
@@ -542,14 +553,73 @@ async function saveEntity(){
   }
   closeDlg();load();
 }
+// ——— Visitenkarte (Upload je Kontakt) ———
+const VK_BUCKET='visitenkarten';
+function vkBoxHtml(){
+  if(!CUR||!CUR.id)return '<div style="font-size:12px;color:var(--muted)">Erst den Kontakt speichern, dann lässt sich eine Visitenkarte hochladen.</div>';
+  const p=CUR.rec&&CUR.rec.visitenkarte_pfad, nm=(CUR.rec&&CUR.rec.visitenkarte_name)||'Visitenkarte';
+  if(!p)return `<button type="button" class="btn sec" onclick="document.getElementById('vkFile').click()">📇 Visitenkarte hochladen</button>
+    <div style="font-size:11.5px;color:var(--muted);margin-top:4px">Bild (Foto/Scan) oder PDF.</div>`;
+  const isImg=!/\.pdf$/i.test(p);
+  return `<div style="display:flex;gap:12px;align-items:flex-start;flex-wrap:wrap">
+      ${isImg?`<img id="vkThumb" alt="Visitenkarte" style="max-width:220px;max-height:140px;border:1px solid var(--line);border-radius:8px;cursor:pointer;object-fit:contain;background:#fff" onclick="vkOpen()">`
+             :`<div style="width:120px;height:140px;border:1px solid var(--line);border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:34px;cursor:pointer" onclick="vkOpen()">📄</div>`}
+      <div style="display:flex;flex-direction:column;gap:6px">
+        <div style="font-size:12.5px;font-weight:600">${esc(nm)}</div>
+        <button type="button" class="btn sec" style="font-size:12px;padding:5px 11px" onclick="vkOpen()">Ansehen ↗</button>
+        <button type="button" class="btn sec" style="font-size:12px;padding:5px 11px" onclick="document.getElementById('vkFile').click()">Ersetzen</button>
+        <button type="button" class="btn sec" style="font-size:12px;padding:5px 11px;color:var(--danger)" onclick="vkRemove()">Entfernen</button>
+      </div></div>`;
+}
+async function vkThumbLoad(){
+  if(!CUR||!CUR.id||!CUR.rec||!CUR.rec.visitenkarte_pfad)return;
+  if(/\.pdf$/i.test(CUR.rec.visitenkarte_pfad))return;
+  const img=$('vkThumb');if(!img)return;
+  try{const {data}=await sb.storage.from(VK_BUCKET).createSignedUrl(CUR.rec.visitenkarte_pfad,3600);if(data&&data.signedUrl)img.src=data.signedUrl;}catch(e){}
+}
+function vkRefresh(){const b=$('vkBox');if(b){b.innerHTML=vkBoxHtml();vkThumbLoad();}}
+async function vkOpen(){
+  if(!CUR||!CUR.rec||!CUR.rec.visitenkarte_pfad)return;
+  const {data,error}=await sb.storage.from(VK_BUCKET).createSignedUrl(CUR.rec.visitenkarte_pfad,3600);
+  if(error||!data){toast('Konnte nicht öffnen: '+(error?error.message:''));return;}
+  window.open(data.signedUrl,'_blank','noopener');
+}
+async function vkUpload(input){
+  const f=input.files&&input.files[0];input.value='';if(!f||!CUR||!CUR.id)return;
+  if(f.size>15*1024*1024){toast('Datei zu groß (max. 15 MB).');return;}
+  const ext=(f.name.split('.').pop()||'bin').toLowerCase();
+  const pfad=`kontakt/${CUR.id}/visitenkarte-${Date.now()}.${ext}`;
+  toast('Lade hoch …');
+  const old=CUR.rec.visitenkarte_pfad;
+  const {error}=await sb.storage.from(VK_BUCKET).upload(pfad,f,{contentType:f.type||undefined,upsert:false});
+  if(error){toast('Upload fehlgeschlagen: '+error.message);return;}
+  const patch={visitenkarte_pfad:pfad,visitenkarte_name:f.name,updated_at:new Date().toISOString()};
+  const {error:e2}=await sb.from('crm_kontakte').update(patch).eq('id',CUR.id);
+  if(e2){toast('Speichern fehlgeschlagen: '+e2.message);return;}
+  Object.assign(CUR.rec,patch);const k=K.find(x=>x.id===CUR.id);if(k)Object.assign(k,patch);
+  if(old&&old!==pfad){try{await sb.storage.from(VK_BUCKET).remove([old]);}catch(e){}}
+  await logTL('kontakt',CUR.id,'notiz',{text:'📇 Visitenkarte hochgeladen: '+f.name});
+  vkRefresh();renderTL();toast('Visitenkarte gespeichert ✓');
+}
+async function vkRemove(){
+  if(!CUR||!CUR.id||!CUR.rec||!CUR.rec.visitenkarte_pfad)return;
+  if(!confirm('Visitenkarte entfernen?'))return;
+  const old=CUR.rec.visitenkarte_pfad;
+  const {error}=await sb.from('crm_kontakte').update({visitenkarte_pfad:null,visitenkarte_name:null,updated_at:new Date().toISOString()}).eq('id',CUR.id);
+  if(error){toast(error.message);return;}
+  try{await sb.storage.from(VK_BUCKET).remove([old]);}catch(e){}
+  CUR.rec.visitenkarte_pfad=null;CUR.rec.visitenkarte_name=null;const k=K.find(x=>x.id===CUR.id);if(k){k.visitenkarte_pfad=null;k.visitenkarte_name=null;}
+  vkRefresh();toast('Entfernt ✓');
+}
 // ——— Tickets im Datensatz ———
+function openTicket(id){ window.top.location.href='/tickets?ticket='+encodeURIComponent(id); }
 function renderTickets(){
   const box=$('tckList');if(!box||!CUR)return;
   const list=ticketsFor(CUR.typ,CUR.id).sort((a,b)=>(a.status==='Erledigt')-(b.status==='Erledigt')||String(a.faellig||'9999').localeCompare(String(b.faellig||'9999')));
   $('tckAll').href='/tickets'+(CUR.typ==='kontakt'?('?kontakt='+CUR.id):'');
   box.innerHTML=list.length?list.map(t=>`<div class="trow">
-    <span style="color:var(--muted);font-weight:700">#${t.nummer}</span>
-    <span class="tt">${esc(t.titel)}</span>
+    <span class="lnk" style="color:var(--muted);font-weight:700;cursor:pointer" onclick="openTicket('${t.id}')">#${t.nummer}</span>
+    <span class="tt lnk" style="cursor:pointer" title="Ticket öffnen" onclick="openTicket('${t.id}')">${esc(t.titel)}</span>
     ${t.faellig?`<span class="${(t.faellig<heute()&&t.status!=='Erledigt')?'tdue-over':''}">${fmtD(t.faellig)}</span>`:''}
     <select onchange="tckStatus('${t.id}',this.value)">${TSTATUS.map(x=>`<option ${((t.status||'Neu')===x)?'selected':''}>${x}</option>`).join('')}</select>
     <span class="pill ${tCls(t.status)}">${esc(t.status||'Neu')}</span>
@@ -557,9 +627,10 @@ function renderTickets(){
   </div>`).join(''):'<div class="empty" style="padding:10px">Keine Tickets zu diesem Datensatz.</div>';
 }
 async function tckStatus(id,status){
-  const patch={status,updated_at:new Date().toISOString(),erledigt_at:status==='Erledigt'?new Date().toISOString():null};
-  const{error}=await sb.from('tickets').update(patch).eq('id',id);if(error){toast(error.message);return;}
-  const t=TCK.find(x=>x.id===id);if(t)Object.assign(t,patch);
+  const osSt=TST_DE2OS[status]||'todo';
+  const patch={status:osSt,updated_at:new Date().toISOString()};
+  const{error}=await sb.from('os_tasks').update(patch).eq('id',id);if(error){toast(error.message);return;}
+  const t=TCK.find(x=>x.id===id);if(t)t.status=status;
   if(t)await logTL(CUR.typ,CUR.id,'aenderung',{feld:'Ticket #'+t.nummer,alt:'',neu:status});
   renderTickets();renderTL();toast('Status: '+status+' ✓');
 }
@@ -567,11 +638,13 @@ async function newTicket(){
   if(!CUR||!CUR.id){toast('Erst speichern, dann Ticket');return;}
   const titel=prompt('Titel des Tickets:');if(!titel||!titel.trim())return;
   const asana=prompt('Asana-Link (optional):','')||'';
-  const row={titel:titel.trim(),status:'Neu',prio:'P2',asana_url:asana.trim()||null,quelle:'vertrieb'};
+  const {data:mx}=await sb.from('os_tasks').select('nummer').not('nummer','is',null).order('nummer',{ascending:false}).limit(1);
+  const nummer=((mx&&mx[0]&&mx[0].nummer)||0)+1;
+  const row={titel:titel.trim(),art:'ticket',status:'todo',prio:'P2',asana_url:asana.trim()||null,quelle:'ticket',quelle_bereich:'vertrieb',nummer};
   row[CUR.typ+'_id']=CUR.id;
-  const{data,error}=await sb.from('tickets').insert(row).select();
+  const{data,error}=await sb.from('os_tasks').insert(row).select();
   if(error){toast(error.message);return;}
-  if(data&&data[0]){TCK.unshift(data[0]);await logTL(CUR.typ,CUR.id,'notiz',{text:'🎫 Ticket #'+data[0].nummer+' angelegt: '+data[0].titel});}
+  if(data&&data[0]){TCK.unshift({...data[0],status:TST_OS2DE[data[0].status]||'Neu'});await logTL(CUR.typ,CUR.id,'notiz',{text:'🎫 Ticket #'+data[0].nummer+' angelegt: '+data[0].titel});}
   renderTickets();
   const{data:tl}=await sb.from('crm_timeline').select('*').order('created_at',{ascending:false});TL=tl||[];
   renderTL();toast('Ticket angelegt ✓');
@@ -615,6 +688,48 @@ async function addNote(){
   await logTL(CUR.typ,CUR.id,'notiz',{text:t});$('noteInput').value='';$('noteInput').style.height='';toast('Notiz gespeichert ✓');
 }
 async function delEntity(typ,id){if(!confirm(LBL[typ]+' löschen?'))return;await sb.from(TBL[typ]).delete().eq('id',id);await sb.from('crm_timeline').delete().eq('entity_typ',typ).eq('entity_id',id);load();}
+/* ---------- Diktat (Browser-Spracherkennung) + KI-Zusammenfassung ---------- */
+let REC=null, RECBTN=null, RECBASE='';
+function diktieren(targetId,btnId){
+  const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
+  if(!SR){toast('Spracherkennung wird von diesem Browser nicht unterstützt (am besten Chrome).');return;}
+  const btn=btnId?document.getElementById(btnId):null;
+  if(REC){REC.stop();return;}
+  const el=document.getElementById(targetId);if(!el)return;
+  RECBASE=el.value?el.value.trim()+' ':'';
+  REC=new SR();REC.lang='de-DE';REC.continuous=true;REC.interimResults=true;RECBTN=btn;
+  if(btn){btn.dataset.lbl=btn.textContent;btn.textContent='⏺ Stop (nimmt auf …)';btn.style.color='#c0392b';}
+  let fin='';
+  REC.onresult=(e)=>{let interim='';for(let i=e.resultIndex;i<e.results.length;i++){const tr=e.results[i][0].transcript;if(e.results[i].isFinal)fin+=tr+' ';else interim+=tr;}el.value=RECBASE+fin+interim;if(typeof autoGrow==='function'&&targetId==='noteInput')autoGrow(el);};
+  REC.onerror=(e)=>{toast('Diktat-Fehler: '+(e.error||''));};
+  REC.onend=()=>{if(RECBTN){RECBTN.textContent=RECBTN.dataset.lbl||'🎤 Diktieren';RECBTN.style.color='';}REC=null;RECBTN=null;el.dispatchEvent(new Event('change'));};
+  try{REC.start();}catch(e){toast('Konnte Diktat nicht starten.');}
+}
+async function kiRuf(aufgabe,text){
+  const r=await fetch('/api/ki',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({aufgabe,text})});
+  const j=await r.json().catch(()=>({error:'Antwort unlesbar'}));
+  if(j&&j.setup){toast('KI noch nicht eingerichtet (API-Schlüssel fehlt).');return null;}
+  if(!j||j.error){toast('KI: '+((j&&j.error)||'Fehler'));return null;}
+  return (j.text||'').trim()||null;
+}
+async function kiZusammenfassen(targetId){
+  const el=document.getElementById(targetId);if(!el)return;const t=(el.value||'').trim();
+  if(t.length<20){toast('Zu wenig Text zum Zusammenfassen.');return;}
+  toast('Fasse zusammen …');const s=await kiRuf('zusammenfassung',t);
+  if(s){el.value=s;if(typeof autoGrow==='function'&&targetId==='noteInput')autoGrow(el);el.dispatchEvent(new Event('change'));toast('Zusammengefasst ✓');}
+}
+async function kiNoteZusammenfassen(tlId){
+  const it=TL.find(x=>x.id===tlId);if(!it)return;const t=(it.text||'').trim();
+  if(t.length<20){toast('Zu wenig Text.');return;}
+  toast('Fasse zusammen …');const s=await kiRuf('zusammenfassung',t);
+  if(!s)return;
+  if(!confirm('Zusammenfassung:\n\n'+s+'\n\nSoll die Notiz durch diese Zusammenfassung ersetzt werden? (Abbrechen = als neue Notiz anhängen)')){
+    await logTL(CUR.typ,CUR.id,'notiz',{text:'🧠 Zusammenfassung: '+s});toast('Als neue Notiz gespeichert ✓');return;
+  }
+  const {error}=await sb.from('crm_timeline').update({text:s}).eq('id',tlId);
+  if(error){toast('Fehler: '+error.message);return;}
+  it.text=s;renderTL();toast('Notiz ersetzt ✓');
+}
 
 (async()=>{const{data:{session}}=await sb.auth.getSession();if(!session){$('main').innerHTML='<div class="empty" style="padding:60px">Bitte zuerst im OS einloggen.</div>';return;}await load();try{const p=new URLSearchParams(location.search);const kid=p.get('kontakt'),fid=p.get('firma'),did=p.get('deal');if(kid)openEntity('kontakt',kid);else if(fid)openEntity('firma',fid);else if(did)openEntity('deal',did);}catch(e){}})();
 </script></body></html>

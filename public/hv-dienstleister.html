@@ -118,8 +118,8 @@ tbody tr:hover td{background:#fafbfc}
       <div id="tlWrap"><div class="secttl">Zeitstrahl — Änderungen, Notizen, E-Mails &amp; Aktivitäten</div><div class="tl" id="tlList"></div></div>
     </div>
     <div class="dlg-ft">
-      <textarea id="noteInput" rows="2" placeholder="Notiz zum Datensatz … (Datum &amp; Uhrzeit automatisch)"></textarea>
-      <span style="display:flex;gap:8px"><button class="btn sec" id="mailBtn" onclick="openMail()">✉ Mail schreiben</button><button class="btn sec" onclick="addNote()">+ Notiz</button><button class="btn" onclick="saveEntity()" title="Änderungen werden automatisch gespeichert">Fertig</button></span>
+      <textarea id="noteInput" rows="2" placeholder="Notiz zum Datensatz … (Datum &amp; Uhrzeit automatisch) – oder 🎤 reinsprechen"></textarea>
+      <span style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn sec" id="micBtn" onclick="diktieren('noteInput','micBtn')" title="Diktieren – ins Textfeld sprechen">🎤 Diktieren</button><button class="btn sec" onclick="kiZusammenfassen('noteInput')" title="Text komprimieren / zusammenfassen">✨ Zusammenfassen</button><button class="btn sec" id="mailBtn" onclick="openMail()">✉ Mail schreiben</button><button class="btn sec" onclick="addNote()">+ Notiz</button><button class="btn" onclick="saveEntity()" title="Änderungen werden automatisch gespeichert">Fertig</button></span>
     </div>
   </div>
 </div>
@@ -156,13 +156,16 @@ const AKTTYP=['Aufgabe','Anruf','Termin'];
 const TBL={kontakt:'hv_kontakte',firma:'hv_firmen',deal:'hv_deals'};
 const LBL={kontakt:'Kontakt',firma:'Firma',deal:'Deal'};
 const SPEC={
- kontakt:[['vorname','Vorname','text'],['name','Nachname','text'],['email','E-Mail','text'],['telefon','Telefon','text'],['website','Homepage','text'],['position','Position','text'],['firma_id','Firma','firma'],['strasse','Straße & Hausnummer','text'],['plz','PLZ','text'],['ort','Ort','text'],['land','Land','text'],['kategorien','Kategorien','kats'],['potenzial','Potenzial','pot'],['letzter_kontakt','Letzter Kontakt (manuell)','date'],['notizen','Notizen','textarea']],
- firma:[['name','Firmenname','text'],['branche','Branche','text'],['website','Homepage','text'],['telefon','Telefon','text'],['strasse','Straße & Hausnummer','text'],['plz','PLZ','text'],['ort','Ort','text'],['land','Land','text'],['kategorien','Kategorien','kats'],['gebaeude','Gebäude (Ansprechpartner für)','geb'],['potenzial','Potenzial','pot'],['letzter_kontakt','Letzter Kontakt (manuell)','date'],['notizen','Notizen','textarea']],
- deal:[['titel','Titel','text'],['firma_id','Firma','firma'],['kontakt_id','Kontakt','kontakt'],['wert','Wert (€)','number'],['stufe','Stufe','stufe'],['wahrscheinlichkeit','Wahrscheinlichkeit (%)','number'],['abschluss_datum','Abschlussdatum','date'],['notizen','Notizen','textarea']]
+ kontakt:[['vorname','Vorname','text'],['name','Nachname','text'],['email','E-Mail','text'],['telefon','Telefon','text'],['website','Homepage','text'],['position','Position','text'],['firma_id','Firma','firma'],['strasse','Straße & Hausnummer','text'],['plz','PLZ','text'],['ort','Ort','text'],['land','Land','text'],['kategorien','Kategorien','kats'],['potenzial','Potenzial','pot'],['letzter_kontakt','Letzter Kontakt (manuell)','date']],
+ firma:[['name','Firmenname','text'],['branche','Branche','text'],['website','Homepage','text'],['telefon','Telefon','text'],['strasse','Straße & Hausnummer','text'],['plz','PLZ','text'],['ort','Ort','text'],['land','Land','text'],['kategorien','Kategorien','kats'],['gebaeude','Gebäude (Ansprechpartner für)','geb'],['potenzial','Potenzial','pot'],['letzter_kontakt','Letzter Kontakt (manuell)','date']],
+ deal:[['titel','Titel','text'],['firma_id','Firma','firma'],['kontakt_id','Kontakt','kontakt'],['wert','Wert (€)','number'],['stufe','Stufe','stufe'],['wahrscheinlichkeit','Wahrscheinlichkeit (%)','number'],['abschluss_datum','Abschlussdatum','date']]
 };
 let VIEW='kontakte', K=[],F=[],D=[],A=[],TL=[],M=[],KAT=[],TCK=[],GEB=[], CUR=null, DRAG=null, q='', kFilt='', pFilt='', aFilt={typ:'',status:''};
 let CURGEB=[];
 const TSTATUS=['Neu','In Bearbeitung','Wartet','Warten auf Rückmeldung','Erledigt'];
+// Tickets laufen jetzt über os_tasks (art='ticket'). Status-Mapping OS <-> Anzeige:
+const TST_OS2DE={todo:'Neu',inarbeit:'In Bearbeitung',warten:'Wartet',wartenrueck:'Warten auf Rückmeldung',erledigt:'Erledigt'};
+const TST_DE2OS={'Neu':'todo','In Bearbeitung':'inarbeit','Wartet':'warten','Warten auf Rückmeldung':'wartenrueck','Erledigt':'erledigt'};
 const POT=['A','B+','B','C'];
 const POTC={'A':'#1f7a4d','B+':'#185fa5','B':'#b45309','C':'#6b7280'};
 const potBadge=v=>v?`<span class="pot" style="background:${POTC[v]||'#6b7280'}">${esc(v)}</span>`:'—';
@@ -227,10 +230,11 @@ async function load(){
     sb.from('hv_timeline').select('*').order('created_at',{ascending:false}),
     sb.from('hv_mails').select('*').order('datum',{ascending:false}).limit(1000),
     sb.from('hv_kategorien').select('*').order('sort').order('name'),
-    sb.from('tickets').select('*').eq('quelle','hausverwaltung').order('created_at',{ascending:false}),
+    sb.from('os_tasks').select('*').eq('art','ticket').eq('quelle_bereich','hausverwaltung').order('created_at',{ascending:false}),
     sb.from('gebaeude').select('name,kennung').order('name')
   ]);
-  K=k.data||[];F=f.data||[];D=d.data||[];A=a.data||[];TL=tl.data||[];M=m.data||[];KAT=kt.data||[];TCK=tc.data||[];
+  K=k.data||[];F=f.data||[];D=d.data||[];A=a.data||[];TL=tl.data||[];M=m.data||[];KAT=kt.data||[];
+  TCK=(tc.data||[]).map(t=>({...t,status:TST_OS2DE[t.status]||'Neu'}));
   GEB=((g&&g.data)||[]).map(x=>x.name).filter(Boolean);
   GEB.sort((a,b)=>String(a).localeCompare(String(b),'de',{sensitivity:'base'}));
   KAT.sort((a,b)=>String(a.name||'').localeCompare(String(b.name||''),'de',{sensitivity:'base'}));
@@ -423,7 +427,7 @@ function renderTL(){
   if(!CUR||!CUR.id){$('tlWrap').style.display='none';return;}
   $('tlWrap').style.display='';
   const items=[];
-  TL.filter(t=>t.entity_typ===CUR.typ&&t.entity_id===CUR.id).forEach(t=>items.push({t:t.created_at,art:t.art,feld:t.feld,alt:t.alt,neu:t.neu,text:t.text}));
+  TL.filter(t=>t.entity_typ===CUR.typ&&t.entity_id===CUR.id).forEach(t=>items.push({id:t.id,t:t.created_at,art:t.art,feld:t.feld,alt:t.alt,neu:t.neu,text:t.text}));
   // Aktivitäten
   A.filter(a=>(CUR.typ==='kontakt'&&a.kontakt_id===CUR.id)||(CUR.typ==='firma'&&a.firma_id===CUR.id)||(CUR.typ==='deal'&&a.deal_id===CUR.id))
    .forEach(a=>items.push({t:a.created_at,art:'aktivitaet',text:a.typ+': '+(a.betreff||'')+(a.faellig?' · fällig '+fmtD(a.faellig):'')+' · '+a.status}));
@@ -438,7 +442,7 @@ function renderTL(){
   $('tlList').innerHTML=items.length?items.map(i=>{
     if(i.art==='mail')return `<div class="tli mail"><div class="ts">${i.raus?'📤 Mail gesendet':'✉ E-Mail'} · ${fmtDT(i.t)}</div><div class="tx"><b>${esc(i.text)}</b>${i.link?` <a href="${esc(i.link)}" target="_blank">↗</a>`:''}</div><div class="sub">${esc(i.sub)}</div>${i.body?`<details class="mbody"><summary>Volltext anzeigen</summary><div class="mtext">${esc(i.body)}</div></details>`:(i.snippet?`<div class="sub" style="color:var(--muted)">${esc(i.snippet)}</div>`:'')}</div>`;
     if(i.art==='ticket')return `<div class="tli ticket"><div class="ts">🎫 Ticket · ${fmtDT(i.t)}</div><div class="tx"><b>${esc(i.text)}</b>${i.link?` <a href="${esc(i.link)}" target="_blank" rel="noopener">Asana ↗</a>`:''}</div><div class="sub">${esc(i.sub)}</div></div>`;
-    if(i.art==='notiz')return `<div class="tli notiz"><div class="ts">📝 Notiz · ${fmtDT(i.t)}</div><div class="tx">${esc(i.text)}</div></div>`;
+    if(i.art==='notiz')return `<div class="tli notiz"><div class="ts">📝 Notiz · ${fmtDT(i.t)}${i.id?` <span style="cursor:pointer;color:var(--accent)" title="Zusammenfassen" onclick="kiNoteZusammenfassen('${i.id}')">✨ zusammenfassen</span>`:''}</div><div class="tx">${esc(i.text)}</div></div>`;
     if(i.art==='aktivitaet')return `<div class="tli aktivitaet"><div class="ts">📌 Aktivität · ${fmtDT(i.t)}</div><div class="tx">${esc(i.text)}</div></div>`;
     if(i.art==='anschreiben')return `<div class="tli"><div class="ts">Anschreiben · ${fmtDT(i.t)}</div><div class="tx"><b>${esc(i.feld||'')}</b>${i.neu?` <a href="${esc(i.neu)}" target="_blank" rel="noopener">Öffnen</a>`:''}</div><div class="sub">${esc(i.text||'')}</div></div>`;
     if(i.art==='erstellt')return `<div class="tli erstellt"><div class="ts">➕ ${fmtDT(i.t)}</div><div class="tx">${esc(i.text||'Datensatz angelegt')}</div></div>`;
@@ -450,7 +454,8 @@ function renderTL(){
 function fieldHtml(typ,f,val){
   const [key,label,kind]=f;
   let inp;
-  if(kind==='textarea')inp=`<textarea id="m_${key}" rows="3" onchange="autoSave('${key}','textarea')">${esc(val)}</textarea>`;
+  if(kind==='textarea')inp=`<textarea id="m_${key}" rows="3" onchange="autoSave('${key}','textarea')">${esc(val)}</textarea>`
+    +(key==='notizen'?`<div style="display:flex;gap:6px;margin-top:5px"><button type="button" class="btn sec" id="mic_${key}" style="font-size:11.5px;padding:4px 9px" onclick="diktieren('m_${key}','mic_${key}')" title="Diktieren">🎤 Diktieren</button><button type="button" class="btn sec" style="font-size:11.5px;padding:4px 9px" onclick="kiZusammenfassen('m_${key}')" title="Zusammenfassen">✨ Zusammenfassen</button></div>`:'');
   else if(kind==='firma'){const cur=val?firmaName(val):'';inp=`<input id="m_${key}" list="dl_${key}" value="${esc(cur)}" placeholder="Firma eintippen – neue werden automatisch angelegt" autocomplete="off" onchange="autoSave('${key}','firma')"><datalist id="dl_${key}">${F.map(x=>`<option value="${esc(x.name)}">`).join('')}</datalist>`;}
   else if(kind==='kontakt')inp=`<select id="m_${key}" onchange="autoSave('${key}','kontakt')"><option value="">—</option>${K.map(x=>`<option value="${x.id}" ${x.id===val?'selected':''}>${esc(kName(x))}</option>`).join('')}</select>`;
   else if(kind==='stufe')inp=`<select id="m_${key}" onchange="autoSave('${key}','stufe')">${STUFEN.map(s=>`<option ${s===val?'selected':''}>${esc(s)}</option>`).join('')}</select>`;
@@ -653,9 +658,10 @@ function renderTickets(){
   </div>`).join(''):'<div class="empty" style="padding:10px">Keine Tickets zu diesem Datensatz.</div>';
 }
 async function tckStatus(id,status){
-  const patch={status,updated_at:new Date().toISOString(),erledigt_at:status==='Erledigt'?new Date().toISOString():null};
-  const{error}=await sb.from('tickets').update(patch).eq('id',id);if(error){toast(error.message);return;}
-  const t=TCK.find(x=>x.id===id);if(t)Object.assign(t,patch);
+  const osSt=TST_DE2OS[status]||'todo';
+  const patch={status:osSt,updated_at:new Date().toISOString()};
+  const{error}=await sb.from('os_tasks').update(patch).eq('id',id);if(error){toast(error.message);return;}
+  const t=TCK.find(x=>x.id===id);if(t)t.status=status;
   if(t)await logTL(CUR.typ,CUR.id,'aenderung',{feld:'Ticket #'+t.nummer,alt:'',neu:status});
   renderTickets();renderTL();toast('Status: '+status+' ✓');
 }
@@ -663,11 +669,13 @@ async function newTicket(){
   if(!CUR||!CUR.id){toast('Erst speichern, dann Ticket');return;}
   const titel=prompt('Titel des Tickets:');if(!titel||!titel.trim())return;
   const asana=prompt('Asana-Link (optional):','')||'';
-  const row={titel:titel.trim(),status:'Neu',prio:'P2',asana_url:asana.trim()||null,quelle:'hausverwaltung'};
+  const {data:mx}=await sb.from('os_tasks').select('nummer').not('nummer','is',null).order('nummer',{ascending:false}).limit(1);
+  const nummer=((mx&&mx[0]&&mx[0].nummer)||0)+1;
+  const row={titel:titel.trim(),art:'ticket',status:'todo',prio:'P2',asana_url:asana.trim()||null,quelle:'ticket',quelle_bereich:'hausverwaltung',nummer};
   row[CUR.typ+'_id']=CUR.id;
-  const{data,error}=await sb.from('tickets').insert(row).select();
+  const{data,error}=await sb.from('os_tasks').insert(row).select();
   if(error){toast(error.message);return;}
-  if(data&&data[0]){TCK.unshift(data[0]);await logTL(CUR.typ,CUR.id,'notiz',{text:'🎫 Ticket #'+data[0].nummer+' angelegt: '+data[0].titel});}
+  if(data&&data[0]){TCK.unshift({...data[0],status:TST_OS2DE[data[0].status]||'Neu'});await logTL(CUR.typ,CUR.id,'notiz',{text:'🎫 Ticket #'+data[0].nummer+' angelegt: '+data[0].titel});}
   renderTickets();
   const{data:tl}=await sb.from('hv_timeline').select('*').order('created_at',{ascending:false});TL=tl||[];
   renderTL();toast('Ticket angelegt ✓');
@@ -711,6 +719,48 @@ async function addNote(){
   await logTL(CUR.typ,CUR.id,'notiz',{text:t});$('noteInput').value='';toast('Notiz gespeichert ✓');
 }
 async function delEntity(typ,id){if(!confirm(LBL[typ]+' löschen?'))return;await sb.from(TBL[typ]).delete().eq('id',id);await sb.from('hv_timeline').delete().eq('entity_typ',typ).eq('entity_id',id);load();}
+/* ---------- Diktat (Browser-Spracherkennung) + KI-Zusammenfassung ---------- */
+let REC=null, RECBTN=null, RECBASE='';
+function diktieren(targetId,btnId){
+  const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
+  if(!SR){toast('Spracherkennung wird von diesem Browser nicht unterstützt (am besten Chrome).');return;}
+  const btn=btnId?document.getElementById(btnId):null;
+  if(REC){REC.stop();return;}
+  const el=document.getElementById(targetId);if(!el)return;
+  RECBASE=el.value?el.value.trim()+' ':'';
+  REC=new SR();REC.lang='de-DE';REC.continuous=true;REC.interimResults=true;RECBTN=btn;
+  if(btn){btn.dataset.lbl=btn.textContent;btn.textContent='⏺ Stop (nimmt auf …)';btn.style.color='#c0392b';}
+  let fin='';
+  REC.onresult=(e)=>{let interim='';for(let i=e.resultIndex;i<e.results.length;i++){const tr=e.results[i][0].transcript;if(e.results[i].isFinal)fin+=tr+' ';else interim+=tr;}el.value=RECBASE+fin+interim;};
+  REC.onerror=(e)=>{toast('Diktat-Fehler: '+(e.error||''));};
+  REC.onend=()=>{if(RECBTN){RECBTN.textContent=RECBTN.dataset.lbl||'🎤 Diktieren';RECBTN.style.color='';}REC=null;RECBTN=null;el.dispatchEvent(new Event('change'));};
+  try{REC.start();}catch(e){toast('Konnte Diktat nicht starten.');}
+}
+async function kiRuf(aufgabe,text){
+  const r=await fetch('/api/ki',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({aufgabe,text})});
+  const j=await r.json().catch(()=>({error:'Antwort unlesbar'}));
+  if(j&&j.setup){toast('KI noch nicht eingerichtet (API-Schlüssel fehlt).');return null;}
+  if(!j||j.error){toast('KI: '+((j&&j.error)||'Fehler'));return null;}
+  return (j.text||'').trim()||null;
+}
+async function kiZusammenfassen(targetId){
+  const el=document.getElementById(targetId);if(!el)return;const t=(el.value||'').trim();
+  if(t.length<20){toast('Zu wenig Text zum Zusammenfassen.');return;}
+  toast('Fasse zusammen …');const s=await kiRuf('zusammenfassung',t);
+  if(s){el.value=s;el.dispatchEvent(new Event('change'));toast('Zusammengefasst ✓');}
+}
+async function kiNoteZusammenfassen(tlId){
+  const it=TL.find(x=>x.id===tlId);if(!it)return;const t=(it.text||'').trim();
+  if(t.length<20){toast('Zu wenig Text.');return;}
+  toast('Fasse zusammen …');const s=await kiRuf('zusammenfassung',t);
+  if(!s)return;
+  if(!confirm('Zusammenfassung:\n\n'+s+'\n\nSoll die Notiz durch diese Zusammenfassung ersetzt werden? (Abbrechen = als neue Notiz anhängen)')){
+    await logTL(CUR.typ,CUR.id,'notiz',{text:'🧠 Zusammenfassung: '+s});toast('Als neue Notiz gespeichert ✓');return;
+  }
+  const {error}=await sb.from('hv_timeline').update({text:s}).eq('id',tlId);
+  if(error){toast('Fehler: '+error.message);return;}
+  it.text=s;renderTL();toast('Notiz ersetzt ✓');
+}
 
 (async()=>{const{data:{session}}=await sb.auth.getSession();if(!session){$('main').innerHTML='<div class="empty" style="padding:60px">Bitte zuerst im OS einloggen.</div>';return;}await load();try{const p=new URLSearchParams(location.search);const fid=p.get('firma'),kid=p.get('kontakt'),did=p.get('deal');if(fid)openEntity('firma',fid);else if(kid)openEntity('kontakt',kid);else if(did)openEntity('deal',did);}catch(e){}})();
 </script></body></html>

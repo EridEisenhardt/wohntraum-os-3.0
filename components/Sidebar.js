@@ -188,7 +188,7 @@ export const NAV = [
     { href: '/controlling/objekt-controlling', icon: 'ti-building-bank', label: 'Objekt-Controlling' },
   ] },
   { type: 'group', key: 'produktivitaet', icon: 'ti-rocket', label: 'Produktivität', area: 'hv', mod: 'produktivitaet', items: [
-    { href: '/produktivitaet/tracking', icon: 'ti-chart-line', label: 'Tracking' },
+    { href: '/gf-dashboard/testboard', icon: 'ti-layout-kanban', label: 'Testboard Aufgaben' },
     { href: '/produktivitaet/planung', icon: 'ti-calendar-event', label: 'Wochenplanung' },
     { href: '/produktivitaet/ideale-woche', icon: 'ti-calendar-heart', label: 'Ideale Woche' },
     { href: '/produktivitaet/statusbericht', icon: 'ti-clipboard-check', label: 'Statusbericht GF' },

@@ -50,6 +50,8 @@ const AUFGABEN = {
     'Keine Überschrift, keine Aufzählungszeichen. Antworte nur mit dem Text.' + NUR_TEXT,
   stichpunkte: STIL + ' Aufgabe: Fasse die folgende interne Notiz in kurzen Stichpunkten zusammen (jede Zeile beginnt mit "- "). ' +
     'Alle wichtigen Fakten behalten: Namen, Daten, Beträge, Vereinbarungen, offene Aufgaben. Höchstens 8 Stichpunkte. Antworte nur mit den Stichpunkten.' + NUR_TEXT,
+  zusammenfassung: STIL + ' Aufgabe: Fasse die folgende Notiz bzw. das Gesprächsprotokoll knapp und komprimiert in wenigen klaren Sätzen zusammen (Fließtext, kein Aufzählungszeichen). ' +
+    'Alle wichtigen Fakten behalten: Namen, Daten, Beträge, Vereinbarungen, offene Punkte, nächste Schritte. Nichts hinzuerfinden, nichts Wichtiges weglassen. Antworte nur mit der Zusammenfassung.' + NUR_TEXT,
 }
 
 export async function POST(req) {
