@@ -1122,6 +1122,10 @@ function belEntwurf(it){ if(BEL.id!==it.id||(!BEL.L.length&&!BEL.busy&&!BEL.fehl
   else if(BEL.busy) h+='<div class="sub">'+esc(BEL.busy)+'</div>';
   return h+'</div>'; }
 function belCard(it,ro){ const bl=it.tx.bl||[];
+  if(!BUCH_BELEGE){ if(!bl.length) return '';
+    return '<div class="card"><div class="lab">Zugeordnete Belege <span class="pill ok">'+bl.length+'</span></div>'
+      +bl.map((b,i)=>'<div class="bel"><a href="#" data-bopen="'+i+'" title="'+esc(b.pfad?b.pfad.replace(/^Prozesslandkarte 3\.0\//,''):'im OS gespeichert')+'">'+esc(b.n)+'</a></div>').join('')
+      +'<div class="sub" style="margin-top:6px">Zuordnung ändern unter Belege.</div><div class="prev" id="prev"><div class="sub">Lade Vorschau …</div></div></div>'; }
   let h='<div class="card"><div class="lab">Belege '+(bl.length?'<span class="pill ok">'+bl.length+'</span>':it.dauer?'<span class="pill ok">Dauerbeleg</span>':it.tx.ol?'<span class="pill src">beleglos</span>':it.needBeleg?'<span class="pill mid">fehlt</span>':'')+'</div>';
   if(!bl.length&&!it.dauer&&it.tx.b<0) h+='<div class="belol"><label><input type="checkbox" id="bel-ol"'+(it.tx.ol?' checked':'')+(ro?' disabled':'')+'> Beleglos – für diese Zahlung gibt es keinen Beleg</label>'
     +(it.tx.ol?'<input type="text" id="bel-olg" placeholder="Grund, z. B. Bankgebühr, Barabhebung, Erstattung" value="'+esc(it.tx.olg||'')+'"'+(ro?' disabled':'')+'>':'')+'</div>';
@@ -2080,8 +2084,8 @@ function kartenLayout(all,list,cnt,nav){ const it=U.dr?all.find(x=>x.id===U.sel)
   return h; }
 /* Detailfenster im Stil des Beleg-Dialogs von BuchhaltungsButler */
 function bbDialog(it,list){ const t=it.tx, bl=t.bl||[], pos=list.findIndex(x=>x.id===it.id), zd=U.zd!==false;
-  let h='<div class="kdrw-h bb-dh"><div><span class="bb-dt">'+(t.b<0?'Belege über ':'Zahlung über ')+'<b>'+eur(Math.abs(t.b))+'</b></span><span class="bb-dg">'+esc(t.n||'')+'</span><span class="bb-dg">'+esc(dmy(t.d))+'</span></div><button class="bb-x" data-kdrzu="1" title="Schließen">Schließen</button></div>';
-  h+='<div class="bb-band">'+(bl.length?bl.map((b,i)=>'<a href="#" data-bopen="'+i+'" class="bb-bel"><span class="bb-thumb"></span>'+esc(b.n)+'</a>').join(''):it.dauer?'<div class="bb-bel"><span class="bb-thumb"></span>Dauerbeleg: '+esc(it.dauer.n||'')+'</div>':t.ol?'<div class="bb-kein">Beleglos'+(t.olg?': '+esc(t.olg):'')+'</div>':'<div class="bb-kein">kein Beleg</div>')
+  let h='<div class="kdrw-h bb-dh"><div><span class="bb-dt">'+(t.b<0&&BUCH_BELEGE?'Belege über ':'Zahlung über ')+'<b>'+eur(Math.abs(t.b))+'</b></span><span class="bb-dg">'+esc(t.n||'')+'</span><span class="bb-dg">'+esc(dmy(t.d))+'</span></div><button class="bb-x" data-kdrzu="1" title="Schließen">Schließen</button></div>';
+  h+='<div class="bb-band">'+(bl.length?bl.map((b,i)=>'<a href="#" data-bopen="'+i+'" class="bb-bel"><span class="bb-thumb"></span>'+esc(b.n)+'</a>').join(''):it.dauer?'<div class="bb-bel"><span class="bb-thumb"></span>Dauerbeleg: '+esc(it.dauer.n||'')+'</div>':t.ol?'<div class="bb-kein">Beleglos'+(t.olg?': '+esc(t.olg):'')+'</div>':BUCH_BELEGE?'<div class="bb-kein">kein Beleg</div>':'')
     +'<div class="bb-bk">'+esc(kontoName(it.kkey))+' · '+esc(zuordText(it))+'</div></div>';
   h+='<div class="bb-zdw"><button class="bb-zd" data-kzd="1">'+(zd?'Zahlungsdetails ausblenden':'Zahlungsdetails anzeigen')+'</button></div>';
   if(zd) h+='<div class="bb-zbox">'+renderDetail(it,list,{ohneKopf:true,ohneBelege:true})+'</div>';
@@ -2111,12 +2115,14 @@ function karte(it,n){ const t=it.tx, c=it.c, ok=bestaetigt(it), ro=!canWrite||it
   if(bl.length) h+=bl.map(b=>'<div class="kz-bf"><a href="#" data-kdet="'+esc(it.id)+'" title="'+esc(b.n)+'">'+esc(b.n)+'</a></div>').join('');
   else if(it.dauer) h+='<div class="sub">Dauerbeleg: '+esc(it.dauer.n||'')+'</div>';
   else if(t.ol) h+='<div class="bb-ol">Beleglos<small>'+(t.olg?esc(t.olg):'(Markierung)')+'</small></div>';
+  else if(!BUCH_BELEGE&&!(c.kat==='miete'&&t.b>0&&!it.split)) h+='';
   else if(t.b<0&&!it.split&&!BELEG_KATS.includes(c.kat)&&c.kat) h+='<div class="sub">Kein Beleg nötig ('+esc(KATN[c.kat]||c.kat)+')</div>';
   else if(t.b<0){ h+=ro?'<div class="sub">Kein Beleg</div>':'<div class="kz-zwr"><a href="#" class="bb-zw" data-kdet="'+esc(it.id)+'">Belege zuweisen</a><button class="kz-olb" data-kol="'+esc(it.id)+'" title="Als beleglos markieren – den Grund kannst du in den Details eintragen">Beleglos</button></div>';
     const v=kVorschlag(it); if(v&&!ro) h+='<div class="kz-vb">Vorschlag: <span title="'+esc(v.ort||'')+'">'+esc(v.name)+'</span> <button class="ghost small" data-kspzu="'+esc(v.id)+'" data-kspit="'+esc(it.id)+'">Zuordnen</button></div>'; }
   else if(c.kat==='miete'&&t.b>0&&!it.split) h+=kMieter(it,ro);
   else h+='<div class="sub">Einnahme – kein Beleg nötig</div>';
   h+='</div>';
+  if(!BUCH_BELEGE&&h.endsWith('<div class="kz-bel"></div>')) h=h.slice(0,-'<div class="kz-bel"></div>'.length);
   if(it.split) h+='<div class="kz-f"><div class="sub">Aufgeteilt in '+it.parts.length+' Teile: '+esc(it.parts.map(p=>kontoLabel(p.c.kat,p.c.sub,p.c.ka)+(p.c.obj?' '+p.c.obj:'')).join(' · '))+'</div><a href="#" data-kdet="'+esc(it.id)+'">ändern</a></div>';
   else h+='<div class="kz-f'+(ok?'':' vs')+'">'+kontoSelect('kk-'+n,c,ro)+(['intern','ignore','ruecklast'].includes(c.kat)?'<span></span>':objSel('ko-'+n,c.obj||'',c.kat,c.sub).replace('<select ','<select data-kid="'+esc(it.id)+'"'+(ro?' disabled':'')+' title="Objekt" '))+'</div>'
     +(ok?'':'<div class="kz-src">'+(c.src==='manuell'?'Noch nicht bestätigt – erst mit dem Kreis rechts ist die Buchung erfasst':'Vorschlag: '+esc(c.src||'automatisch'))+'</div>')
@@ -2125,14 +2131,14 @@ function karte(it,n){ const t=it.tx, c=it.c, ok=bestaetigt(it), ro=!canWrite||it
   /* rechts: Details + Bestätigen */
   const men=KS.menu===it.id;
   h+='<div class="kz-m"><button class="bb-kebab" data-kmen="'+esc(it.id)+'" title="Aktionen"><i></i><i></i><i></i></button>'
-    +(men?'<div class="bb-menu"><button data-kdet="'+esc(it.id)+'">Teilbuchung hinzufügen</button><button data-kdet="'+esc(it.id)+'">Belege zuweisen</button>'
-      +(ro?'':(t.b<0?'<button data-kol="'+esc(it.id)+'">'+(t.ol?'Beleglos-Markierung entfernen':'Als beleglos markieren')+'</button>':''))
+    +(men?'<div class="bb-menu"><button data-kdet="'+esc(it.id)+'">Teilbuchung hinzufügen</button>'+(BUCH_BELEGE?'<button data-kdet="'+esc(it.id)+'">Belege zuweisen</button>':'')
+      +(ro||!BUCH_BELEGE?'':(t.b<0?'<button data-kol="'+esc(it.id)+'">'+(t.ol?'Beleglos-Markierung entfernen':'Als beleglos markieren')+'</button>':''))
       +'<button data-kdet="'+esc(it.id)+'">Regel anlegen</button><button data-kdet="'+esc(it.id)+'">Kommentieren</button><button class="bb-mt" data-kdet="'+esc(it.id)+'">Details öffnen</button></div>':'')+'</div>';
   h+='<div class="kz-r"><button class="kz-d" data-kdet="'+esc(it.id)+'" title="Details, Aufteilen, Regel">Details</button>'
     +'<button class="kz-ok'+(ok?' on':'')+'" data-kok="'+esc(it.id)+'"'+(ro||(ok&&(it.split||it.nh))?' disabled':'')+' title="'+(ok?'Bestätigt – zum Wieder-Öffnen klicken':it.open?'Ungebucht – erst Konto und Objekt wählen':'Buchung bestätigen')+'"></button></div>';
   return h+'</div>'; }
 /* Mietzahlung: welcher Mieter, auf welche Sollstellung */
-function kMieter(it,ro){ const t=it.tx; if(!MKload||!Object.keys(MK).length) return '<div class="sub">Einnahme – kein Beleg nötig</div>';
+function kMieter(it,ro){ const t=it.tx; if(!MKload||!Object.keys(MK).length) return BUCH_BELEGE?'<div class="sub">Einnahme – kein Beleg nötig</div>':'';
   if(!mkCalc) mkCalc=compute(); const key=(t.h||'')+'|'+t.b, op=t.op&&t.op.pid?t.op:null, pid=(op&&op.pid)||mkCalc.ZMAP[key]||'', mk=MK[pid];
   if(!mk) return '<div class="sub">Mietzahlung – kein Mieter erkannt.</div>'+(ro?'':'<div class="kz-acts"><a href="#" data-kdet="'+esc(it.id)+'">Mieter und Sollstellung zuordnen</a></div>');
   const x=mkCalc.res[pid], tit=id=>{ const r=x&&x.rows.find(q=>q.id===id); return r?r.t:'Posten'; };
@@ -2141,7 +2147,7 @@ function kMieter(it,ro){ const t=it.tx; if(!MKload||!Object.keys(MK).length) ret
   else h+='<div class="sub">'+(op?'ohne feste Sollstellung':'Sollstellung: älteste offene zuerst')+'</div>';
   if(!ro) h+='<div class="kz-acts"><a href="#" data-kdet="'+esc(it.id)+'">'+(op?'Zuordnung ändern':'Sollstellung zuordnen')+'</a></div>';
   return h; }
-function kVorschlag(it){ try{ if(typeof spBereit!=='function'||!spBereit()||!SP.dateien) return null; const f=spTreffer(it,'')[0]; if(!f) return null; const s=spScore(f,it); return s>=100?{id:f.id,name:f.name,ort:f.ort}:null; }catch(e){ return null; } }
+function kVorschlag(it){ if(!BUCH_BELEGE) return null; try{ if(typeof spBereit!=='function'||!spBereit()||!SP.dateien) return null; const f=spTreffer(it,'')[0]; if(!f) return null; const s=spScore(f,it); return s>=100?{id:f.id,name:f.name,ort:f.ort}:null; }catch(e){ return null; } }
 function kBestaetigen(it){ const c=it.c; return writeTx(it.doc,it.ix,{m:1,ok:1,k:c.kat||'',s:c.sub||'',ka:c.ka||'',o:c.obj||'',u:c.unit||''}); }
 const kItem=id=>items().find(x=>x.id===id);
 document.addEventListener('click',async e=>{ const t=e.target.closest('button,a,input[data-kw],input[data-kalle],.kdrw-bg'); if(!t) return; const d=t.dataset;
@@ -2196,8 +2202,12 @@ function vtZeile(it){ const v=vtFuer(it); if(!v) return ''; return '<div class="
 /* ================= Buchungen (Belegbuchhaltung im Stil von BuchhaltungsButler) =================
    Gleiche Daten wie „Objekt-Controlling“ (os_docs, app 'oc'): jede Zuordnung zählt dort sofort mit. */
 tab='liste';
+/* Belegzuordnung bei den Zahlungen: aus, die Buchhaltung für den Steuerberater läuft über BuchhaltungsButler.
+   Zuordnen geht weiter über die Belege (Zahlung zuweisen); vorhandene Zuordnungen werden bei der Zahlung nur angezeigt. */
+var BUCH_BELEGE=false;
 const ST_KEY='bu_state';
 let U={status:'offen',konto:'',q:'',sel:'',m:'',sort:'d',kat:'',knZu:false,gZu:{},ansicht:'karten'}; try{ const s=JSON.parse(store(ST_KEY)||'null'); if(s) U=Object.assign(U,s,{q:''}); }catch(e){}
+if(!BUCH_BELEGE){ if(U.status==='beleg') U.status='offen'; U.bz=''; }
 const saveU=()=>store(ST_KEY,JSON.stringify({status:U.status,konto:U.konto,m:U.m,sort:U.sort,dir:U.dir||'',bz:U.bz||'',ansicht:U.ansicht}));
 let splitDraft=null, ruleDraft=null, sb=null, urlCache={};
 /* ---------- Kontenplan ---------- */
@@ -2264,7 +2274,7 @@ function items(){
   for(const it of out){ it.parts=it.parts.map((p,pi)=>{ const sp=Array.isArray(it.tx.sp)&&it.tx.sp.length&&!p.nh?it.tx.sp[pi]:null; let ka=sp?(sp.ka||''):(it.tx.m?(it.tx.ka||''):ruleKa(p.c)), kg=false; if(!ka&&p.c.kat==='bk'&&!sp){ ka=guessKa(it.tx); kg=!!ka; } return Object.assign({},p,{c:Object.assign({},p.c,{ka,kg,kv:!sp&&it.tx.m?(it.tx.kv||''):''})}); });
     it.c=it.parts[0].c; it.needKA=!it.parts.some(p=>isOpen(p.c))&&it.parts.some(p=>p.c.kat==='bk'&&(!p.c.ka||p.c.kg)); it.open=it.parts.some(p=>isOpen(p.c)); it.bel=(it.tx.bl||[]).length;
     it.dauer=it.tx.b<0&&DAUER.length?dbFuer(it):null;
-    it.needBeleg=it.tx.b<0&&!it.open&&it.parts.some(p=>BELEG_KATS.includes(p.c.kat)&&!(p.c.kat==='verw'&&p.c.sub==='bank'))&&!it.bel&&!it.tx.ol&&!it.dauer; }
+    it.needBeleg=BUCH_BELEGE&&it.tx.b<0&&!it.open&&it.parts.some(p=>BELEG_KATS.includes(p.c.kat)&&!(p.c.kat==='verw'&&p.c.sub==='bank'))&&!it.bel&&!it.tx.ol&&!it.dauer; }
   return out.sort((a,b)=>a.tx.d<b.tx.d?1:a.tx.d>b.tx.d?-1:0);
 }
 var NUR=''; /* aus der Belegverwaltung: nur diese eine Zahlung zeigen */
@@ -2329,7 +2339,7 @@ function renderListe(){
 function midHtml(all,list,cnt){
   /* Mitte: Liste */
   const sum=list.reduce((a,it)=>a+it.tx.b,0);
-  let mid='<div class="tbar"><div class="seg">'+[['offen','Offen'],['best','Zu bestätigen'],['ka','Kostenart prüfen'],['beleg','Beleg fehlt'],['zug','Zugeordnet'],['alle','Alle']].map(([k,l])=>'<button data-st="'+k+'" class="'+(U.status===k?'on':'')+'">'+l+' <span>'+cnt(k)+'</span></button>').join('')+'</div>'
+  let mid='<div class="tbar"><div class="seg">'+[['offen','Offen'],['best','Zu bestätigen'],['ka','Kostenart prüfen'],['beleg','Beleg fehlt'],['zug','Zugeordnet'],['alle','Alle']].filter(([k])=>BUCH_BELEGE||k!=='beleg').map(([k,l])=>'<button data-st="'+k+'" class="'+(U.status===k?'on':'')+'">'+l+' <span>'+cnt(k)+'</span></button>').join('')+'</div>'
     +'<select id="u-m" aria-label="Monat"><option value="">ganzes Jahr</option>'+MON.map((x,i)=>'<option value="'+i+'"'+(U.m!==''&&Number(U.m)===i?' selected':'')+'>'+x+'</option>').join('')+'</select>'
     +'<input type="text" id="u-kat" list="u-kat-l" aria-label="Kategorie oder Konto" placeholder="alle Kategorien / Konten – suchen" value="'+esc(katFiltLabel(U.kat))+'" autocomplete="off" style="width:280px"><datalist id="u-kat-l">'+katFilt().map(([v,l])=>'<option value="'+esc(l)+'"></option>').join('')+'</datalist>'
     +'<select id="u-sort" aria-label="Sortierung">'+[['d','Datum: neueste zuerst'],['da','Datum: älteste zuerst'],['n','Empfänger A–Z'],['nh','Empfänger: häufigste zuerst'],['bh','Betrag: höchster zuerst'],['bn','Betrag: niedrigster zuerst']].map(([k,l])=>'<option value="'+k+'"'+((U.sort||'d')===k?' selected':'')+'>'+l+'</option>').join('')+'</select>'
@@ -2350,7 +2360,7 @@ function midHtml(all,list,cnt){
   mid+='</div>';
   return mid; }
 /* Leiste wie BuchhaltungsButler: Ansicht, Konto, Sortierung, Fehlender Beleg, Ungebucht, Filter */
-const BB_ST=[['alle','alle'],['offen','offen (ungebucht)'],['best','zu bestätigen'],['ka','Kostenart prüfen'],['beleg','Beleg fehlt'],['zug','zugeordnet']];
+const BB_ST=[['alle','alle'],['offen','offen (ungebucht)'],['best','zu bestätigen'],['ka','Kostenart prüfen'],['beleg','Beleg fehlt'],['zug','zugeordnet']].filter(([k])=>BUCH_BELEGE||k!=='beleg');
 const BB_SORT=[['d','Datum absteigend'],['da','Datum aufsteigend'],['n','Gegenpartei aufsteigend'],['nh','Gegenpartei häufigste'],['bh','Betrag absteigend'],['bn','Betrag aufsteigend']];
 function bbKonten(){ const S=new Set(items().map(it=>it.kkey)); return [...S].map(k=>[k,kontoName(k)]).sort((a,b)=>a[1].localeCompare(b[1],'de',{numeric:true})); }
 function bbLeiste(all){ const KL=bbKonten();
@@ -2358,12 +2368,12 @@ function bbLeiste(all){ const KL=bbKonten();
     +'<div class="bb-f">Konto: <input id="u-konto" list="u-konto-l" value="'+esc(U.konto?kontoName(U.konto):'Alle Konten')+'" autocomplete="off"><datalist id="u-konto-l"><option value="Alle Konten"></option>'+KL.map(([k,n])=>'<option value="'+esc(n)+'"></option>').join('')+'</datalist></div>'
     +'<div class="bb-f">Sortierung: <select id="u-sort">'+BB_SORT.map(([k,l])=>'<option value="'+k+'"'+((U.sort||'d')===k?' selected':'')+'>'+l+'</option>').join('')+'</select></div>'
     +'<input type="search" id="u-q" class="bb-q" placeholder="Volltextsuche" value="'+esc(U.q)+'" autocomplete="off">'
-    +'<div class="bb-re"><label><input type="checkbox" id="u-fb"'+(U.status==='beleg'?' checked':'')+'> Fehlender Beleg</label><label><input type="checkbox" id="u-ug"'+(U.status==='offen'?' checked':'')+'> Ungebucht</label>'
+    +'<div class="bb-re">'+(BUCH_BELEGE?'<label><input type="checkbox" id="u-fb"'+(U.status==='beleg'?' checked':'')+'> Fehlender Beleg</label>':'')+'<label><input type="checkbox" id="u-ug"'+(U.status==='offen'?' checked':'')+'> Ungebucht</label>'
     +'<button class="bb-lnk'+(U.fp||bbAktiv()?' on':'')+'" data-bbf="1">Filter auswählen</button><button class="bb-lnk" data-bbreset="1" title="Alle Filter zurücksetzen">Zurücksetzen</button><button class="bb-lnk" data-nhsync="1" title="Zahlungen jetzt abrufen">Aktualisieren</button></div>';
   if(U.fp) h+='<div class="bb-pan">'
     +'<div class="bb-pr"><label>Zeitraum</label><select id="u-m"><option value="">Gesamter Zeitraum '+year+'</option>'+MON.map((x,i)=>'<option value="'+i+'"'+(U.m!==''&&Number(U.m)===i?' selected':'')+'>'+x+' '+year+'</option>').join('')+'</select></div>'
     +'<div class="bb-pr"><label>Zugänge/Abgänge</label><select id="u-dir">'+[['','alle'],['ein','nur Zugänge'],['aus','nur Abgänge']].map(([k,l])=>'<option value="'+k+'"'+((U.dir||'')===k?' selected':'')+'>'+l+'</option>').join('')+'</select></div>'
-    +'<div class="bb-pr"><label>Belegzuweisung</label><select id="u-bz">'+[['','keine Auswahl'],['mit','mit Beleg'],['ohne','ohne Beleg'],['beleglos','als beleglos markiert'],['dauer','mit Dauerbeleg']].map(([k,l])=>'<option value="'+k+'"'+((U.bz||'')===k?' selected':'')+'>'+l+'</option>').join('')+'</select></div>'
+    +(!BUCH_BELEGE?'':'<div class="bb-pr"><label>Belegzuweisung</label><select id="u-bz">'+[['','keine Auswahl'],['mit','mit Beleg'],['ohne','ohne Beleg'],['beleglos','als beleglos markiert'],['dauer','mit Dauerbeleg']].map(([k,l])=>'<option value="'+k+'"'+((U.bz||'')===k?' selected':'')+'>'+l+'</option>').join('')+'</select></div>')
     +'<div class="bb-pr"><label>Buchungsstatus</label><select id="u-st">'+BB_ST.map(([k,l])=>'<option value="'+k+'"'+(U.status===k?' selected':'')+'>'+l+'</option>').join('')+'</select></div>'
     +'<div class="bb-pr"><label>Buchungskonto</label><input type="text" id="u-kat" list="u-kat-l" placeholder="z. B. 4246 Müllgebühren" value="'+esc(katFiltLabel(U.kat))+'" autocomplete="off"><datalist id="u-kat-l">'+katFilt().map(([v,l])=>'<option value="'+esc(l)+'"></option>').join('')+'</datalist></div>'
     +'<div class="bb-pr"><label>Betrag</label><input type="text" id="u-betrag" placeholder="Betrag eingeben" value="'+esc(U.betrag||'')+'" autocomplete="off" inputmode="decimal"></div>'
