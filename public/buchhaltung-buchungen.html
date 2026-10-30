@@ -589,6 +589,7 @@ function objInText(text){ const ad=objByAddr(text); if(ad) return ad; if(!objRe)
   if(!objRe) return ''; const m=(' '+text).match(objRe); if(!m) return ''; const o=objekte.find(x=>x.kz.toLowerCase()===m[1]); return o?o.kz:''; }
 function classify(tx,k){
   if(tx.m) return {obj:tx.o||'',kat:tx.k||'',sub:tx.s||'',unit:tx.u||'',src:tx.q==='beleg'?'Beleg':'manuell'};
+  if(tx.b>0){ const z=zvMatch(tx); if(z){ const zi=zvZiel(z); if(zi.obj) return {obj:zi.obj,kat:'miete',sub:'',unit:zi.unit,src:'Ratenzahlung erkannt',zv:z.id}; } }
   const typ=kontoTyp(k), kObj=typ==='obj'?k.obj:'';
   if(typ==='aus') return {obj:'',kat:'ignore',sub:'',unit:'',src:'Konto ausgeschlossen'};
   /* Bankgebühren: Kontoabschluss, Entgeltabschluss, Endsaldo, DKB-Abrechnung → Objektkonto: sonstige Objektkosten; sonst Verwaltung › Bankgebühren */
@@ -2121,7 +2122,7 @@ function karte(it,n){ const t=it.tx, c=it.c, ok=bestaetigt(it), ro=!canWrite||it
   else if(t.b<0&&!it.split&&!BELEG_KATS.includes(c.kat)&&c.kat) h+='<div class="sub">Kein Beleg nötig ('+esc(KATN[c.kat]||c.kat)+')</div>';
   else if(t.b<0){ h+=ro?'<div class="sub">Kein Beleg</div>':'<div class="kz-zwr"><a href="#" class="bb-zw" data-kdet="'+esc(it.id)+'">Belege zuweisen</a><button class="kz-olb" data-kol="'+esc(it.id)+'" title="Als beleglos markieren – den Grund kannst du in den Details eintragen">Beleglos</button></div>';
     const v=kVorschlag(it); if(v&&!ro) h+='<div class="kz-vb">Vorschlag: <span title="'+esc(v.ort||'')+'">'+esc(v.name)+'</span> <button class="ghost small" data-kspzu="'+esc(v.id)+'" data-kspit="'+esc(it.id)+'">Zuordnen</button></div>'; }
-  else if(c.kat==='miete'&&t.b>0&&!it.split) h+=kMieter(it,ro);
+  else if(c.kat==='miete'&&t.b>0&&!it.split) h+=zvZeile(it)+kMieter(it,ro);
   else h+='<div class="sub">Einnahme – kein Beleg nötig</div>';
   h+='</div>';
   if(!BUCH_BELEGE&&h.endsWith('<div class="kz-bel"></div>')) h=h.slice(0,-'<div class="kz-bel"></div>'.length);
@@ -2140,6 +2141,43 @@ function karte(it,n){ const t=it.tx, c=it.c, ok=bestaetigt(it), ro=!canWrite||it
     +'<button class="kz-ok'+(ok?' on':'')+'" data-kok="'+esc(it.id)+'"'+(ro||(ok&&(it.split||it.nh))?' disabled':'')+' title="'+(ok?'Bestätigt – zum Wieder-Öffnen klicken':it.open?'Ungebucht – erst Konto und Objekt wählen':'Buchung bestätigen')+'"></button></div>';
   return h+'</div>'; }
 /* Mietzahlung: welcher Mieter, auf welche Sollstellung */
+/* ---------- Ratenzahlungen (Tabelle zahlungsvereinbarungen) ----------
+   Eingang mit Name des Mieters und Betrag der Rate (oder „Rate“ im Verwendungszweck) wird als Ratenzahlung erkannt:
+   Vorschlag Mieterlöse auf Objekt und Einheit des Mieters. Nach dem Bestätigen wird die Zahlung in der Ratenzahlung eingetragen. */
+const zvNum=v=>{ const n=parseNum(String(v==null?'':v)); return n==null||isNaN(n)?0:n; };
+const zvTag=(d,n)=>new Date(Date.parse(d)+n*864e5).toISOString().slice(0,10);
+async function zvLaden(){ const s=window.osSupabase; if(!s) return false; const {data,error}=await s.from('zahlungsvereinbarungen').select('id,mieter,objekt,wohnung,forderung,rate,start_datum,status,art,zahlungen'); if(error) return false;
+  ZV=(data||[]).filter(z=>!/abgeschlossen|erledigt/i.test(z.status||'')); ZVload=true; mkCalc=null; opCache={}; return true; }
+function zvMatch(tx){ if(!ZVload||!(tx.b>0)) return null; const t=' '+norm((tx.n||'')+' '+(tx.z||''))+' '; let best=null, bs=0;
+  for(const z of ZV){ const rate=zvNum(z.rate); if(!rate) continue; if(z.start_datum&&tx.d<zvTag(z.start_datum,-10)) continue;
+    const W=norm(z.mieter||'').split(' ').filter(w=>w.length>=3); const nm=W.filter(w=>t.includes(' '+w+' ')).length, nachname=W.length&&t.includes(' '+W[W.length-1]+' ');
+    const ibOk=!!tx.i&&(z.zahlungen||[]).some(y=>y.iban===tx.i), betragOk=Math.abs(tx.b-rate)<0.005, rateText=/ (rate|raten|ratenzahlung|teilzahlung) /.test(t);
+    if(!(nachname||nm>=2||ibOk)) continue; if(!(betragOk||rateText)) continue;
+    const sc=2*nm+(ibOk?4:0)+(betragOk?3:0)+(rateText?1:0); if(sc>bs){ bs=sc; best=z; } }
+  return best; }
+/* Mieterkonto zur Ratenzahlung: verknüpft im Mieterkonto, sonst Objekt aus der Adresse und Name */
+function zvZiel(z){ const L=Object.values(MK); let mk=L.find(m=>(ed(m).raten||[]).includes(z.id));
+  const obj=objByAddr(String(z.objekt||'').split(',')[0].replace(/\s+\d{5,6}\b.*$/,''));
+  if(!mk){ const W=norm(z.mieter||'').split(' ').filter(w=>w.length>=3), nach=W[W.length-1]||'';
+    const passt=m=>(m.namen||[]).concat(String(ed(m).mieter||'').split(',')).some(n=>norm(n).split(' ').includes(nach));
+    const K=nach?L.filter(m=>passt(m)&&(!obj||m.obj===obj)):[]; mk=K.sort((a,b)=>(b.von||'').localeCompare(a.von||''))[0]; }
+  return {obj:mk?mk.obj:obj, unit:mk?(mk.unit||''):'', mk:mk||null}; }
+function zvZeile(it){ const z=zvMatch(it.tx); if(!z) return ''; const fertig=(z.zahlungen||[]).some(y=>y.buchung===it.id), bez=(z.zahlungen||[]).reduce((a,y)=>a+zvNum(y.betrag),0);
+  return '<div class="sub"><b>Ratenzahlung '+esc(z.mieter||'')+'</b> <span class="pill '+(fertig?'ok':'src')+'">'+(fertig?'eingetragen':'wird beim Bestätigen eingetragen')+'</span></div>'
+    +'<div class="sub">Rate '+eur(zvNum(z.rate))+' · bezahlt '+eur(bez)+' von '+eur(zvNum(z.forderung))+'</div>'; }
+/* Nach dem Bestätigen: Zahlung in die Ratenzahlung eintragen (vorhandenen Eintrag mit gleichem Betrag und Datum verknüpfen statt doppelt anlegen) */
+let zvT=null, zvLaeuft=false; function zvSyncBald(){ clearTimeout(zvT); zvT=setTimeout(zvSync,1500); }
+async function zvSync(){ if(zvLaeuft||!ZVload||!canWrite) return; const s=window.osSupabase; if(!s) return;
+  const kand=items().filter(it=>it.tx.b>0&&bestaetigt(it)&&!it.split&&it.c.kat==='miete'&&zvMatch(it.tx)); if(!kand.length) return;
+  zvLaeuft=true;
+  try{ if(!(await zvLaden())) return; const neu=new Map();
+    for(const it of kand){ const tx=it.tx, z=zvMatch(tx); if(!z) continue; const arr=neu.get(z.id)||(z.zahlungen||[]).slice(); if(arr.some(y=>y.buchung===it.id)) continue;
+      const i=arr.findIndex(y=>!y.buchung&&y.datum&&Math.abs(zvNum(y.betrag)-tx.b)<0.005&&Math.abs(Date.parse(y.datum)-Date.parse(tx.d))<=6*864e5);
+      if(i>=0) arr[i]=Object.assign({},arr[i],{buchung:it.id,iban:tx.i||arr[i].iban||''}); else arr.push({datum:tx.d,betrag:fnum.format(tx.b),buchung:it.id,iban:tx.i||''});
+      neu.set(z.id,arr); }
+    let n=0; for(const [id,arr] of neu){ const {error}=await s.from('zahlungsvereinbarungen').update({zahlungen:arr}).eq('id',id); if(error){ toast('Ratenzahlung nicht gespeichert: '+error.message); continue; } const z=ZV.find(x=>x.id===id); if(z) z.zahlungen=arr; n++; }
+    if(n){ invalidate(); softRender(); toast('Zahlung in der Ratenzahlung eingetragen.'); } }
+  finally{ zvLaeuft=false; } }
 function kMieter(it,ro){ const t=it.tx; if(!MKload||!Object.keys(MK).length) return BUCH_BELEGE?'<div class="sub">Einnahme – kein Beleg nötig</div>':'';
   if(!mkCalc) mkCalc=compute(); const key=(t.h||'')+'|'+t.b, op=t.op&&t.op.pid?t.op:null, pid=(op&&op.pid)||mkCalc.ZMAP[key]||'', mk=MK[pid];
   if(!mk) return '<div class="sub">Mietzahlung – kein Mieter erkannt.</div>'+(ro?'':'<div class="kz-acts"><a href="#" data-kdet="'+esc(it.id)+'">Mieter und Sollstellung zuordnen</a></div>');
@@ -2267,7 +2305,7 @@ const kontoOf=key=>konten.find(x=>(x.key||x.iban)===key)||null;
 
 var HALT=new Set(); /* gerade bearbeitete Karten bleiben sichtbar, bis sie bestätigt sind */
 let MKload=false, mkCalc=null, opCache={}, OPD={};
-function writeTx(doc,ix,patch){ mkCalc=null; opCache={};
+function writeTx(doc,ix,patch){ mkCalc=null; opCache={}; if(patch&&(patch.ok!=null||patch.m!=null)) zvSyncBald();
   if(!db||!canWrite){toast('Nur Lesezugriff.');return Promise.resolve();}
   const d=buch[doc]; if(!d) return Promise.resolve(); const tx=d.tx.slice(); tx[ix]=Object.assign({},tx[ix],patch); d.tx=tx; invalidate(); render();
   return queue('buchungen/'+doc,()=>db.doc('buchungen/'+doc).update({tx:d.tx}));
@@ -2635,6 +2673,7 @@ render();
   try{ db=await claude.use('db'); }catch(e){ db=null; }
   if(!db){ dbState='none'; render(); return; }
   sb=window.osSupabase||null;
+  zvLaden().then(ok=>{ if(ok){ invalidate(); softRender(); zvSyncBald(); } });
   const done=(k)=>{loaded[k]=1; invalidate(); softRender(); nhAutoPruefen();};
   db.doc('stamm/nahaussync').onSnapshot(s=>{ NHS.stand=s.exists?clone(s.data()):{}; nhAutoPruefen(); softRender(); },()=>{ NHS.stand={}; nhAutoPruefen(); });
   db.doc('stamm/objekte').onSnapshot(s=>{ const d=s.exists?clone(s.data()):{}; objekte=d.objekte||[]; done('o'); },()=>done('o'));
@@ -2655,7 +2694,7 @@ render();
   db.doc('stamm/dauerbelege').onSnapshot(s=>{ DAUER=(s.exists?clone(s.data()).liste:null)||[]; invalidate(); softRender(); },()=>{});
   db.doc('stamm/belegabsender').onSnapshot(s=>{ absMap=(s.exists?clone(s.data()).map:null)||{}; },()=>{});
   db.doc('stamm/einstellungen').onSnapshot(s=>{ einst=s.exists?clone(s.data()):{}; done('e'); },()=>done('e'));
-  const mkDirty=()=>{ mkCalc=null; opCache={}; softRender(); };
+  const mkDirty=()=>{ mkCalc=null; opCache={}; if(ZVload) invalidate(); softRender(); };
   db.collection('mahnlaeufe').onSnapshot(q=>{ const m={}; q.docs.forEach(d=>{m[d.id]=clone(d.data());}); MAHN=m; mkDirty(); },()=>{});
   db.collection('mietkonten').onSnapshot(q=>{ const m={}; q.docs.forEach(d=>{m[d.id]=clone(d.data());}); MK=m; MKload=true; mkDirty(); },()=>{ MKload=true; });
   db.doc('stamm/mietkonten-edit').onSnapshot(s2=>{ EDIT=(s2.exists?clone(s2.data()).e:null)||{}; mkDirty(); },()=>{});
