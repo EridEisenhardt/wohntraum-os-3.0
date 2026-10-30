@@ -622,7 +622,8 @@ function classify(tx,k){
   if(typ==='inst') return {obj:oT,kat:'inst',sub:'',unit:'',src:oT?'Objekt im Text':'auto'};
   return {obj:oT||kObj,kat:'',sub:'',unit:'',src:'auto'};
 }
-function isOpen(c){ if(c.kat==='') return true; if(c.kat==='sonst_ein'&&c.obj==='__ges') return false; if(['miete','sonst_ein','bk','inst','umbau','darl','obj_sonst'].includes(c.kat) && !objKz().has(c.obj)) return true; if(c.kat==='verw'&&!c.sub) return true; return false; }
+/* __ges = ohne Objekt (Gesellschaft, z. B. verkauftes Objekt) */
+function isOpen(c){ if(c.kat==='') return true; if(c.obj==='__ges'&&['miete','sonst_ein','bk','inst','umbau','obj_sonst'].includes(c.kat)) return false; if(['miete','sonst_ein','bk','inst','umbau','darl','obj_sonst'].includes(c.kat) && !objKz().has(c.obj)) return true; if(c.kat==='verw'&&!c.sub) return true; return false; }
 
 /* alle Buchungen eines Jahres, klassifiziert (Cache) */
 let cache=null;
@@ -2161,7 +2162,7 @@ function zvZiel(z){ const L=Object.values(MK); let mk=L.find(m=>(ed(m).raten||[]
   if(!mk){ const W=norm(z.mieter||'').split(' ').filter(w=>w.length>=3), nach=W[W.length-1]||'';
     const passt=m=>(m.namen||[]).concat(String(ed(m).mieter||'').split(',')).some(n=>norm(n).split(' ').includes(nach));
     const K=nach?L.filter(m=>passt(m)&&(!obj||m.obj===obj)):[]; mk=K.sort((a,b)=>(b.von||'').localeCompare(a.von||''))[0]; }
-  return {obj:mk?mk.obj:obj, unit:mk?(mk.unit||''):'', mk:mk||null}; }
+  const o2=mk?mk.obj:obj; return {obj:objKz().has(o2)?o2:'__ges', unit:mk?(mk.unit||''):'', mk:mk||null}; }
 function zvZeile(it){ const z=zvMatch(it.tx); if(!z) return ''; const fertig=(z.zahlungen||[]).some(y=>y.buchung===it.id), bez=(z.zahlungen||[]).reduce((a,y)=>a+zvNum(y.betrag),0);
   return '<div class="sub"><b>Ratenzahlung '+esc(z.mieter||'')+'</b> <span class="pill '+(fertig?'ok':'src')+'">'+(fertig?'eingetragen':'wird beim Bestätigen eingetragen')+'</span></div>'
     +'<div class="sub">Rate '+eur(zvNum(z.rate))+' · bezahlt '+eur(bez)+' von '+eur(zvNum(z.forderung))+'</div>'; }
@@ -2344,7 +2345,7 @@ function sortiert(list){ const L=list.slice(), byD=(a,b)=>a.tx.d<b.tx.d?1:a.tx.d
 
 function zuordText(it){ if(it.split) return 'aufgeteilt in '+it.parts.length;
   const c=it.c; if(isOpen(c)) return c.kat?(KATN[c.kat]+' · Objekt fehlt'):'nicht zugeordnet';
-  let t=kontoLabel(c.kat,c.sub,c.ka,c.obj||''); if(false&&c.obj&&c.obj!=='__ges') t=c.obj+' · '+t; if(c.obj==='__ges') t+=' · Gesellschaft'; if(c.kat==='verw'&&!c.obj&&umlageSubs().has(c.sub)) t+=' · Umlage'; return t; }
+  let t=kontoLabel(c.kat,c.sub,c.ka,c.obj||''); if(false&&c.obj&&c.obj!=='__ges') t=c.obj+' · '+t; if(c.obj==='__ges') t+=(c.kat==='sonst_ein'||c.kat==='verw'?' · Gesellschaft':' · ohne Objekt'); if(c.kat==='verw'&&!c.obj&&umlageSubs().has(c.sub)) t+=' · Umlage'; return t; }
 
 /* ---------- Render ---------- */
 function render(){
@@ -2431,6 +2432,7 @@ function selOpts(list,cur,ph){ return (ph!=null?'<option value="">'+esc(ph)+'</o
 function objSel(id,cur,kat,sub){ const ph=kat==='verw'?'alle Objekte (Umlage)':'– Objekt wählen –';
   let o='<option value="">'+ph+'</option>'+objekte.map(x=>'<option value="'+esc(x.kz)+'"'+(x.kz===cur?' selected':'')+'>'+esc(x.kz+' – '+String(x.name||'').split(',')[0])+'</option>').join('');
   if(kat==='sonst_ein'||(kat==='verw'&&sub==='kauf')) o+='<option value="__ges"'+(cur==='__ges'?' selected':'')+'>Gesellschaft (kein Objekt)</option>';
+  else if(['miete','bk','inst','umbau','obj_sonst'].includes(kat)) o+='<option value="__ges"'+(cur==='__ges'?' selected':'')+'>Ohne Objekt (z. B. verkauft)</option>';
   return '<select id="'+id+'">'+o+'</select>'; }
 function unitSel(id,obj,cur,leer){ const o=objekte.find(x=>x.kz===obj); if(!o) return '';
   return '<select id="'+id+'"><option value="">'+esc(leer||'– Einheit –')+'</option>'+sortedUnits(o).map(x=>x.e).map(e=>'<option value="'+esc(e.id)+'"'+(e.id===cur?' selected':'')+'>'+esc(uName(e.label)+(e.mieter?' · '+e.mieter.split(',')[0]:''))+'</option>').join('')+'</select>'; }
