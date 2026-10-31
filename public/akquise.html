@@ -362,7 +362,8 @@ async function syncStep(id){
   const resp=r.verantwortlich||'Eric';
   const label='Akquise #'+r.nummer+' · '+(r.bezeichnung||r.strasse||'Objekt');
   const am=stepArtMass(r.next_step_kat||'aufgabe');
-  if(!step){
+  const title=step||('Nächster Schritt – '+label);
+  if(!step&&!due){
     if(r.next_step_task_id){
       await sb.from('os_tasks').update({status:'erledigt',updated_at:new Date().toISOString()}).eq('id',r.next_step_task_id);
       await sb.from('akquise_objekte').update({next_step_task_id:null}).eq('id',id);
@@ -371,10 +372,10 @@ async function syncStep(id){
     return;
   }
   if(r.next_step_task_id){
-    const{error}=await sb.from('os_tasks').update({titel:step,faellig:due,verantwortlich:resp,object_label:label,art:am.art,massnahme:am.massnahme,status:'todo',updated_at:new Date().toISOString()}).eq('id',r.next_step_task_id);
+    const{error}=await sb.from('os_tasks').update({titel:title,faellig:due,verantwortlich:resp,object_label:label,art:am.art,massnahme:am.massnahme,status:'todo',updated_at:new Date().toISOString()}).eq('id',r.next_step_task_id);
     if(error)toast('Kalender-Sync: '+error.message);
   }else{
-    const{data,error}=await sb.from('os_tasks').insert({titel:step,faellig:due,status:'todo',art:am.art,massnahme:am.massnahme,verantwortlich:resp,quelle:'akquise',quelle_bereich:'Akquise',object_id:id,object_label:label,akquise_id:id}).select().maybeSingle();
+    const{data,error}=await sb.from('os_tasks').insert({titel:title,faellig:due,status:'todo',art:am.art,massnahme:am.massnahme,verantwortlich:resp,quelle:'akquise',quelle_bereich:'Akquise',object_id:id,object_label:label,akquise_id:id}).select().maybeSingle();
     if(error){toast('Kalender-Sync: '+error.message);return;}
     if(data){await sb.from('akquise_objekte').update({next_step_task_id:data.id}).eq('id',id);r.next_step_task_id=data.id;}
   }
