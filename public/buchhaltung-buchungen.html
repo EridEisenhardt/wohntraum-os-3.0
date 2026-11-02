@@ -803,7 +803,9 @@ function bbErgebnis(){ if(BB.erg) return BB.erg; const its=items().filter(it=>!i
     if(!L.length){ R.push({g,b,st:'fehlt',kn}); continue; } const it=L[0]; benutzt.add(it.id);
     R.push({g,b,it,kn,st:bestaetigt(it)?'best':'offen'}); }
   BB.erg={R,benutzt}; return BB.erg; }
-function bbPatch(r){ const {g,b,it,kn}=r; const z=bbZiel(g,b.acc); if(!z) return null; let [k,s,ka]=z.split('|'); s=s||''; ka=ka||'';
+/* Mieteingänge werden nie aus BB übernommen: sie werden im OS den Sollstellungen der Mieter zugeordnet (BB bucht nur auf Erlöse) */
+const bbMiete=r=>(bbZiel(r.g,r.b.acc)||'').split('|')[0]==='miete'||(r.b.b>0&&r.it&&r.it.c&&r.it.c.kat==='miete');
+function bbPatch(r){ if(bbMiete(r)) return null; const {g,b,it,kn}=r; const z=bbZiel(g,b.acc); if(!z) return null; let [k,s,ka]=z.split('|'); s=s||''; ka=ka||'';
   let obj=bbObj(g,b); const kObj=kn&&objKz().has(kn.obj)?kn.obj:'';
   if(k==='intern'||k==='ignore') obj='';
   else if(k==='verw'){ if(!objKz().has(obj)) obj=''; }
@@ -831,12 +833,13 @@ function renderBB(){ let h='<h2>Abgleich mit BuchhaltungsButler</h2><div class="
   h+='<table class="sp"><tbody>'
     +'<tr><td>Im OS gefunden, noch offen</td><td class="n"><b>'+offen.length+'</b></td></tr>'
     +'<tr><td>davon mit OS-Konto, werden übernommen</td><td class="n"><b>'+mitZ.length+'</b></td></tr>'
+    +'<tr><td>davon Mietzahlungen (bleiben bei der Zuordnung zu den Sollstellungen im OS)</td><td class="n">'+offen.filter(bbMiete).length+'</td></tr>'
     +'<tr><td>Im OS schon bestätigt (bleiben unverändert)</td><td class="n">'+z('best').length+'</td></tr>'
     +'<tr><td>Im OS keine passende Zahlung gefunden</td><td class="n">'+z('fehlt').length+'</td></tr>'
     +'<tr><td>BB-Bankkonto ohne passendes OS-Konto (z. B. Kreditkarte)</td><td class="n">'+z('konto').length+'</td></tr></tbody></table>';
   h+='<div class="acts"><button class="primary" id="bbgo"'+(BB.lauf||!mitZ.length?' disabled':'')+'>'+(BB.lauf?esc(BB.lauf):mitZ.length+' Buchungen übernehmen und bestätigen')+'</button><button class="ghost" id="bbweg">Export entfernen</button></div></div>';
   /* Zuordnungstabelle: alle BB-Konten der offenen Zahlungen */
-  const A=new Map(); for(const r of offen){ const key=r.g.ges+':'+(r.b.acc||''); const a=A.get(key)||{g:r.g,acc:r.b.acc,n:0,s:0,ueber:new Set()}; a.n++; a.s+=r.b.b; if(r.b.ueber) a.ueber.add((r.g.K[r.b.ueber]||{}).name||r.b.ueber); A.set(key,a); }
+  const A=new Map(); for(const r of offen.filter(x=>!bbMiete(x))){ const key=r.g.ges+':'+(r.b.acc||''); const a=A.get(key)||{g:r.g,acc:r.b.acc,n:0,s:0,ueber:new Set()}; a.n++; a.s+=r.b.b; if(r.b.ueber) a.ueber.add((r.g.K[r.b.ueber]||{}).name||r.b.ueber); A.set(key,a); }
   const opt=bbZielOptionen();
   h+='<h3 style="margin-top:16px">Zuordnung BB-Konto zu OS-Konto</h3><div class="sub" style="margin-bottom:6px">Vorschläge sind vorausgefüllt. Ändern: ins Feld schreiben und aus der Liste wählen. Die Zuordnung wird gespeichert und gilt auch für spätere Exporte.</div>';
   h+='<datalist id="bb-ziel-l">'+opt.map(o=>'<option value="'+esc(o[1])+'"></option>').join('')+'</datalist>';
