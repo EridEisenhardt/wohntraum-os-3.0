@@ -138,6 +138,7 @@ h1{font-size:21px;font-weight:800}
       <button data-a="m:zuarbeit" onclick="setArt('m:zuarbeit')">🤝 Zuarbeit fürs Team</button>
       <button data-a="m:jourfix" onclick="setArt('m:jourfix')">🧭 Jour Fix</button>
     </div>
+    <input id="qSuche" type="search" placeholder="🔍 Aufgaben durchsuchen …" oninput="setQuery(this.value)" title="Nach Stichwort in Titel, Beschreibung, Kontakt, Objekt, Projekt, Tags, Verantwortlich suchen" style="flex:1;min-width:200px;padding:7px 10px;border:1px solid var(--line);border-radius:8px;font:inherit">
     <button class="btn" id="wvBtn" onclick="toggleWV()" title="Nur fällige Wiedervorlagen">🔔 Wiedervorlagen</button>
     <select id="personsel" onchange="setPerson(this.value)" title="Nach Person filtern (verantwortlich oder beteiligt)"><option value="">👥 Alle Personen</option></select>
     <button class="btn" id="asImpBtn" onclick="asImportOpen()" title="Eine Asana-Aufgabe per Link ins OS übertragen">⇅ Asana-Übertragung</button>
@@ -226,7 +227,7 @@ const MASSICON={followup:'🔁',rueckruf:'📞',anruf:'☎️',vortermin:'📍',
 const MASSORDER=['followup','rueckruf','anruf','vortermin','zuarbeit','jourfix'];
 let TASKS=[], KONT=[], OBJ=[];
 const TEAM=['Eric','Jürgen','Stephan','Ramona','Alexander Buchhaus','Extern'];
-let ART='alle', WVONLY=false, PERSON='', SUBS=[], VER=[], DTASK=null, ICH='', TAGS=[], BETEIL=[], SUBOPEN=new Set();
+let ART='alle', WVONLY=false, PERSON='', QUERY='', SUBS=[], VER=[], DTASK=null, ICH='', TAGS=[], BETEIL=[], SUBOPEN=new Set();
 function setPerson(v){PERSON=v;render();}
 function personMatch(t){if(!PERSON)return true;if(Array.isArray(t.beteiligte)&&t.beteiligte.includes(PERSON))return true;const v=(t.verantwortlich||'').trim();if(!v)return false;return v===PERSON||v.indexOf(PERSON)>=0||PERSON.indexOf(v.split(' ')[0])===0;}
 function initPersonSel(){const el=document.getElementById('personsel');if(el)el.innerHTML='<option value="">👥 Alle Personen</option>'+TEAM.map(p=>`<option value="${esc(p)}"${PERSON===p?' selected':''}>${esc(p)}</option>`).join('');}
@@ -244,7 +245,9 @@ function renderDTags(){document.getElementById('d_tags').innerHTML=TAGS.map(tg=>
 function dAddTag(){const el=document.getElementById('d_tagnew');const v=(el.value||'').trim().replace(/^#/,'');if(!v){return;}if(!TAGS.includes(v))TAGS.push(v);el.value='';renderDTags();}
 function dDelTag(tg){TAGS=TAGS.filter(x=>x!==tg);renderDTags();}
 function artMatch(t){if(ART==='alle')return true;if(ART==='aufgabe'||ART==='ticket'||ART==='ankauf'||ART==='immoentwicklung')return (t.art||'aufgabe')===ART;if(ART.indexOf('m:')===0){const ms=Array.isArray(t.massnahme)?t.massnahme:(t.massnahme?[t.massnahme]:[]);return ms.indexOf(ART.slice(2))>=0;}return true;}
-function vis(){return TASKS.filter(t=>artMatch(t)&&(!WVONLY||(t.wiedervorlage&&t.wiedervorlage<=today&&t.status!=='erledigt'))&&personMatch(t));}
+function textMatch(t){if(!QUERY)return true;const q=QUERY;return [t.titel,t.beschreibung,t.notiz,t.projekt,t.kontakt_label,t.object_label,t.verantwortlich,Array.isArray(t.tags)?t.tags.join(' '):'',Array.isArray(t.beteiligte)?t.beteiligte.join(' '):''].some(x=>(x||'').toLowerCase().includes(q));}
+function setQuery(v){QUERY=(v||'').trim().toLowerCase();render();}
+function vis(){return TASKS.filter(t=>artMatch(t)&&(!WVONLY||(t.wiedervorlage&&t.wiedervorlage<=today&&t.status!=='erledigt'))&&personMatch(t)&&textMatch(t));}
 function setArt(a){ART=a;document.querySelectorAll('#artseg button').forEach(b=>b.classList.toggle('on',b.dataset.a===a));render();}
 function toggleWV(){WVONLY=!WVONLY;document.getElementById('wvBtn').classList.toggle('pri',WVONLY);render();}
 async function load(){
@@ -557,7 +560,25 @@ function renderStats(){
       return `<div class="statrow ${d===today?'today':''}"><div>${lbl}${d===today?' · heute':''}</div>
         <div class="bar"><div style="background:#0f9d6b;width:${w(o.done)}%"></div><div class="over" style="width:${w(o.over)}%"></div><div class="due" style="width:${w(open)}%"></div></div>
         <div class="statnum">${o.due}${o.over?` · <span class="o">${o.over}</span>`:' · 0'}${o.done?` · <span style="color:var(--green);font-weight:700">${o.done}</span>`:' · 0'}</div></div>`;}).join('');
-  document.getElementById('stat_body').innerHTML=head+chart+rows;
+  document.getElementById('stat_body').innerHTML=head+chart+rows+'<div id="stat_done"></div>';
+  renderStatsDone();
+}
+async function renderStatsDone(){
+  const el=document.getElementById('stat_done');if(!el)return;
+  const ARTS=[['aufgabe','📌 Aufgabe'],['ankauf','🏷️ Ankauf'],['immoentwicklung','🏗️ Immobilienentwicklung'],['ticket','🎫 Ticket']];
+  const artOf=a=>(a==='ankauf'||a==='immoentwicklung'||a==='ticket')?a:'aufgabe';
+  const tb={};ARTS.forEach(([a])=>tb[a]={tdone:0,ttot:0,sdone:0,stot:0});
+  TASKS.forEach(t=>{const a=artOf(t.art);tb[a].ttot++;if(t.status==='erledigt')tb[a].tdone++;});
+  const artById={};TASKS.forEach(t=>artById[t.id]=artOf(t.art));
+  const {data:subs}=await sb.from('os_task_subtasks').select('task_id,done');
+  (subs||[]).forEach(s=>{const a=artById[s.task_id];if(!a||!tb[a])return;tb[a].stot++;if(s.done)tb[a].sdone++;});
+  let tT=0,tTd=0,tS=0,tSd=0;
+  const rows=ARTS.map(([a,l])=>{const b=tb[a];tT+=b.ttot;tTd+=b.tdone;tS+=b.stot;tSd+=b.sdone;
+    return `<div class="statrow"><div>${l}</div><div><b style="color:var(--green)">${b.tdone}</b> / ${b.ttot}</div><div class="statnum"><b style="color:var(--green)">${b.sdone}</b> / ${b.stot}</div></div>`;}).join('');
+  el.innerHTML=`<div style="font-weight:600;margin:18px 0 6px">Erledigt nach Kategorie <span style="color:var(--muted);font-weight:400;font-size:12px">(gesamt, unabhängig vom Filter)</span></div>`
+    +`<div class="statrow head"><div>Kategorie</div><div>Aufgaben (erledigt / gesamt)</div><div class="statnum">Unteraufgaben (erl. / ges.)</div></div>`
+    +rows
+    +`<div class="statrow" style="font-weight:700;border-top:1px solid var(--line)"><div>Summe</div><div>${tTd} / ${tT}</div><div class="statnum">${tSd} / ${tS}</div></div>`;
 }
 /* ---------- Asana-Übertragung ---------- */
 function asImportOpen(){document.getElementById('as_link').value='';document.getElementById('as_status').textContent='';document.getElementById('asov').classList.add('show');setTimeout(()=>document.getElementById('as_link').focus(),50);}
