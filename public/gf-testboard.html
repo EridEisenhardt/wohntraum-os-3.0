@@ -61,6 +61,7 @@ h1{font-size:21px;font-weight:800}
 .cell{background:var(--surf);border:1px solid var(--line);border-radius:9px;min-height:92px;padding:5px 6px}
 .cell.out{background:var(--surf2);opacity:.6}
 .cell.today{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent) inset}
+.cell.calover{outline:2px dashed var(--accent);outline-offset:-4px;background:#eef3fb}
 .cell .dn{font-size:11px;font-weight:700;color:var(--muted);margin-bottom:3px}
 .cell .ct{font-size:10.5px;background:#eef3fb;border:1px solid #d6e4fb;color:#2563eb;border-radius:6px;padding:2px 5px;margin-bottom:3px;line-height:1.25;cursor:default}
 .cell .ct.over{background:#fdecea;border-color:#f5c6c2;color:var(--red)}
@@ -155,6 +156,7 @@ h1{font-size:21px;font-weight:800}
   <div class="dlg-bd">
     <div class="fg">
       <div class="f wide"><label>Titel</label><input id="d_titel"></div>
+      <div class="f wide" id="d_akqlink" style="display:none"></div>
       <div class="f"><label>Kategorie</label><select id="d_art"><option value="aufgabe">📌 Aufgabe</option><option value="ankauf">🏷️ Ankauf</option><option value="immoentwicklung">🏗️ Immobilienentwicklung</option><option value="ticket">🎫 Ticket</option></select></div>
       <div class="f"><label>Status</label><select id="d_status"></select></div>
       <div class="f"><label>Priorität</label><select id="d_prio"><option value="">—</option><option>P1</option><option>P2</option><option>P3</option></select></div>
@@ -346,8 +348,8 @@ function renderCalendar(){
   for(let i=0;i<count;i++){const d=new Date(start);d.setDate(start.getDate()+i);const iso=isoLokal(d);
     const out=CALMODE==='monat'&&d.getMonth()!==curM, isToday=iso===today;
     const list=byDay[iso]||[];
-    cells+=`<div class="cell ${out?'out':''} ${isToday?'today':''}"><div class="dn">${d.getDate()}. <span class="addday" title="Hier eine Aufgabe anlegen" onclick="event.stopPropagation();calAdd('${iso}')">＋</span></div>${
-      list.map(t=>{const over=iso<today&&t.status!=='erledigt';const cls=t.status==='erledigt'?'done':(over?'over':'');return `<div class="ct ${cls}" style="cursor:pointer" onclick="openDetail('${t.id}')" title="${esc(t.titel)}">${esc(CALMODE==='woche'?t.titel:(t.titel.length>26?t.titel.slice(0,24)+'…':t.titel))}</div>`;}).join('')
+    cells+=`<div class="cell ${out?'out':''} ${isToday?'today':''}" ondragover="event.preventDefault();this.classList.add('calover')" ondragleave="this.classList.remove('calover')" ondrop="calDrop(event,'${iso}',this)"><div class="dn">${d.getDate()}. <span class="addday" title="Hier eine Aufgabe anlegen" onclick="event.stopPropagation();calAdd('${iso}')">＋</span></div>${
+      list.map(t=>{const over=iso<today&&t.status!=='erledigt';const cls=t.status==='erledigt'?'done':(over?'over':'');return `<div class="ct ${cls}" draggable="true" ondragstart="event.stopPropagation();drag(event,'${t.id}')" style="cursor:grab" onclick="openDetail('${t.id}')" title="Ziehen zum Verschieben · Klick zum Öffnen – ${esc(t.titel)}">${esc(CALMODE==='woche'?t.titel:(t.titel.length>26?t.titel.slice(0,24)+'…':t.titel))}</div>`;}).join('')
     }</div>`;
   }
   document.getElementById('view').innerHTML=`<div class="calhead">
@@ -374,6 +376,11 @@ function drag(e,id){DRAG=id;e.dataTransfer.effectAllowed='move';}
 async function drop(e,status,el){e.preventDefault();el.classList.remove('dragover');if(!DRAG)return;
   const t=TASKS.find(x=>x.id===DRAG);if(t&&t.status!==status){t.status=status;render();await sb.from('os_tasks').update({status,updated_at:new Date().toISOString()}).eq('id',DRAG);toast('Verschoben ✓');}
   DRAG=null;}
+async function calDrop(e,iso,el){e.preventDefault();if(el)el.classList.remove('calover');if(!DRAG)return;
+  const id=DRAG;DRAG=null;const t=TASKS.find(x=>x.id===id);if(!t||t.faellig===iso)return;
+  t.faellig=iso;render();
+  const {error}=await sb.from('os_tasks').update({faellig:iso,updated_at:new Date().toISOString()}).eq('id',id);
+  if(error)toast(error.message);else toast('Fällig auf '+iso.split('-').reverse().join('.')+' verschoben ✓');}
 async function addTask(){const el=document.getElementById('newT');const titel=(el.value||'').trim();if(!titel)return;
   const art=document.getElementById('newArt').value||'aufgabe';
   const pos=(TASKS.reduce((m,t)=>Math.max(m,t.pos||0),0))+1;
@@ -391,6 +398,8 @@ async function openDetail(id){
   const t=TASKS.find(x=>x.id===id);if(!t)return;DTASK=t;
   document.getElementById('dTitle').textContent=(ARTICON[t.art||'aufgabe']||'📌')+' '+(ARTLBL[t.art||'aufgabe']||'Aufgabe');
   setVal('d_titel',t.titel);setVal('d_art',t.art||'aufgabe');setVal('d_prio',t.prio||'');
+  const alk=document.getElementById('d_akqlink');
+  if(alk){if(t.akquise_id){alk.style.display='';alk.innerHTML=`<a href="akquise.html?lead=${encodeURIComponent(t.akquise_id)}" target="_blank" rel="noopener" style="color:var(--accent);font-weight:600;text-decoration:none">🏠 Zum Lead im Akquise-Board ↗</a>`;}else{alk.style.display='none';alk.innerHTML='';}}
   setVal('d_verantwortlich',t.verantwortlich||'');setVal('d_faellig',t.faellig||'');
   setVal('d_wiedervorlage',t.wiedervorlage||'');setVal('d_asana_url',t.asana_url||'');setVal('d_beschreibung',t.beschreibung||'');
   document.getElementById('d_status').innerHTML=COLS.map(([k,l])=>`<option value="${k}"${(t.status||'todo')===k?' selected':''}>${STLBL[k]}</option>`).join('');
