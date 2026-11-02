@@ -61,7 +61,7 @@ details.ein>summary::before{content:'+';display:inline-block;width:14px;color:va
     <div class="card-hd" id="stTitel">Stunden</div>
     <div id="stWarn"></div>
     <div class="tablewrap pad" id="stTab"></div>
-    <div class="hinweis pad" style="padding-top:0">Endstand = Übertrag aus dem Vormonat + Ist − Soll − über EE ausgezahlte Stunden. Der Endstand wird als Übertrag in den nächsten Monat übernommen. Crewmeister zeigt zum Vergleich den Zeitkontostand am Monatsende laut Stundenzettel. Alle Werte sind änderbar.</div>
+    <div class="hinweis pad" style="padding-top:0">Endstand = Übertrag aus dem Vormonat + Ist − Soll − über EE ausgezahlte Stunden. Den Startstand trägst du im Startmonat direkt in „Übertrag Vormonat“ ein, ab dann rechnet das OS weiter. Der Endstand wird als Übertrag in den nächsten Monat übernommen. Crewmeister zeigt zum Vergleich den Zeitkontostand am Monatsende laut Stundenzettel. Alle Werte sind änderbar.</div>
   </div>
 
   <div class="card">
@@ -179,26 +179,27 @@ function renderStunden(){
     const eeHint=r.ee_kat!=null?`<div class="mut">EE-Kategorie: ${fh(r.ee_kat)}</div>`:'';
     const dat=r.datei_url?`<a href="${esc(r.datei_url)}" target="_blank">${esc(r.datei_name||'öffnen')}</a>`:(r.datei_name?`<span class="mut" title="${esc(r.pfad||'')}">${esc(r.datei_name)} (im Ordner)</span>`:'<span class="mut">fehlt</span>');
     h+=`<tr><td class="l"><b>${esc(p.name)}</b></td><td class="l">${esc(FIRMA_TXT[p.main.unternehmen]||p.main.unternehmen||'')}</td>
-      <td class="calc">${kk?fh(kk.ueb):''}</td><td>${inp(r.soll,f('soll'),'',zu)}</td><td>${inp(r.ist,f('ist'),'',zu)}</td>
+      <td>${inp(kk?kk.ueb:null,`saveStart('${id}',this.value)`,(s0=>s0.start_ab===ym(JAHR,MONAT)?'':'vor')(SS[id]||{}),zu)}</td><td>${inp(r.soll,f('soll'),'',zu)}</td><td>${inp(r.ist,f('ist'),'',zu)}</td>
       <td class="calc ${diff>0?'pos':diff<0?'neg':''}">${diff==null?'':fs(diff)}</td>
       <td>${p.ee||r.ee_aus!=null?inp(r.ee_aus,f('ee_aus'),'',zu)+eeHint:'<span class="mut">kein EE-Minijob</span>'}</td>
       <td class="end ${kk&&kk.end<0?'neg':''}">${kk?fh(kk.end):''}</td>
       <td>${inp(r.urlaub_tage,f('urlaub_tage'),'s',zu)}</td><td>${inp(r.krank_tage,f('krank_tage'),'s',zu)}</td>
       <td class="${r.cm_ende!=null&&kk&&Math.abs(r.cm_ende-kk.end)>0.5?'mut':''}">${r.cm_ende==null?'':fh(r.cm_ende)}</td><td class="l">${dat}</td></tr>`;});
   $('stTab').innerHTML=h+'</tbody></table>';
-  $('stWarn').innerHTML=fehlt.length?`<div class="warn">Startstand fehlt bei: ${esc(fehlt.join(', '))}. Bis er eingetragen ist, beginnt die Rechnung mit 0 im ersten Monat mit Stundenzettel. Eintragen unter „Startstand und Einstellungen je Mitarbeiter“.</div>`:'';
+  $('stWarn').innerHTML=fehlt.length?`<div class="warn">Startstand fehlt bei: ${esc(fehlt.join(', '))}. Bis er eingetragen ist, beginnt die Rechnung mit 0 im ersten Monat mit Stundenzettel. Einfach im ersten Monat in der Spalte „Übertrag Vormonat“ den Stand eintragen.</div>`:'';
 }
 function renderEin(){
   let h='<table><thead><tr><th class="l">Mitarbeiter</th><th>Startstand (Std.)</th><th>ab Monat</th><th>Crewmeister zu Beginn dieses Monats</th><th>Auszahlung über EE im Folgemonat</th><th class="l">Minijob-Zeile EE</th><th>Stunden erfassen</th></tr></thead><tbody>';
-  PERS.forEach(p=>{const id=p.main.id;const s=SS[id]||{};let cm='';
+  PERS.filter(p=>!(SS[p.main.id]||{}).ohne_stunden).forEach(p=>{const id=p.main.id;const s=SS[id]||{};let cm='';
     if(s.start_ab){const [y,m]=s.start_ab.split('-').map(Number);const r=stOf(id,y,m);if(r&&r.cm_start!=null)cm=fh(r.cm_start);}
     else{const L=ST.filter(x=>x.mitarbeiter_id===id).sort((a,b)=>mkey(a.jahr,a.monat)-mkey(b.jahr,b.monat));if(L[0]&&L[0].cm_start!=null)cm=fh(L[0].cm_start)+' <span class="mut">(am '+MONK[L[0].monat-1]+' '+L[0].jahr+')</span>';}
     h+=`<tr><td class="l"><b>${esc(p.name)}</b></td><td>${inp(s.start_std,`saveSS('${id}','start_std',this.value)`)}</td>
-      <td><input class="c d" type="month" value="${esc(s.start_ab||'')}" onchange="saveSS('${id}','start_ab',this.value)"></td>
+      <td><input class="c d" value="${esc(s.start_ab?monTxt(s.start_ab):'')}" placeholder="z. B. 01/2026" onchange="saveSS('${id}','start_ab',this.value)"></td>
       <td>${cm}</td><td style="text-align:center"><input type="checkbox" ${s.ee_folgemonat?'checked':''} ${p.ee?'':'disabled'} onchange="saveSS('${id}','ee_folgemonat',this.checked)"></td>
       <td class="l">${p.ee?esc(nm(p.ee)+' · '+(FIRMA_TXT[p.ee.unternehmen]||p.ee.unternehmen)):'<span class="mut">keine</span>'}</td>
       <td style="text-align:center"><input type="checkbox" ${s.ohne_stunden?'':'checked'} onchange="saveSS('${id}','ohne_stunden',!this.checked)"></td></tr>`;});
-  $('einTab').innerHTML=h+'</tbody></table>';
+  const ohne=PERS.filter(p=>(SS[p.main.id]||{}).ohne_stunden);
+  $('einTab').innerHTML=h+'</tbody></table>'+(ohne.length?'<div class="hinweis">Ohne Stundenerfassung (nur in der Lohntabelle): '+ohne.map(p=>esc(p.name)+' <a href="#" onclick="saveSS(\''+p.main.id+'\',\'ohne_stunden\',false);return false">wieder aufnehmen</a>').join(' · ')+'</div>':'');
 }
 
 /* ---------- Lohntabelle ---------- */
@@ -251,7 +252,15 @@ function renderLT(){
 async function saveSt(id,f,val){const v=numDE(val);const row={mitarbeiter_id:id,jahr:JAHR,monat:MONAT,[f]:v,updated_at:new Date().toISOString()};
   const{error}=await sb.from('personal_stunden').upsert(row,{onConflict:'mitarbeiter_id,jahr,monat'});if(error){toast('Fehler: '+error.message);return;}
   let r=stOf(id,JAHR,MONAT);if(r)r[f]=v;else ST.push({mitarbeiter_id:id,jahr:JAHR,monat:MONAT,[f]:v});render();toast('Gespeichert');}
-async function saveSS(id,f,val){const v=f==='start_std'?numDE(val):(f==='start_ab'?(val||null):val);
+function monParse(t){t=String(t||'').trim().toLowerCase();if(!t)return null;let m=t.match(/^(\d{4})-(\d{1,2})$/);if(m)return ym(+m[1],+m[2]);
+  m=t.match(/^(\d{1,2})\s*[./\- ]\s*(\d{2,4})$/);if(m){let y=+m[2];if(y<100)y+=2000;return ym(y,+m[1]);}
+  const i=MON.findIndex(x=>t.startsWith(x.toLowerCase().slice(0,3)));m=t.match(/(\d{2,4})$/);if(i>=0&&m){let y=+m[1];if(y<100)y+=2000;return ym(y,i+1);}return undefined;}
+const monTxt=s=>{const [y,m]=s.split('-');return m+'/'+y;};
+async function saveStart(id,val){const v=numDE(val);const row={mitarbeiter_id:id,start_std:v,start_ab:v==null?null:ym(JAHR,MONAT),updated_at:new Date().toISOString()};
+  const p=PERS.find(p=>p.main.id===id);if(p&&p.ee&&!(SS[id]||{}).ee_id)row.ee_id=p.ee.id;
+  const{error}=await sb.from('personal_stunden_stamm').upsert(row,{onConflict:'mitarbeiter_id'});if(error){toast('Fehler: '+error.message);return;}
+  SS[id]=Object.assign({},SS[id]||{mitarbeiter_id:id},row);render();toast(v==null?'Startstand entfernt':'Startstand '+fh(v)+' ab '+MON[MONAT-1]+' '+JAHR+' gespeichert');}
+async function saveSS(id,f,val){let v=f==='start_std'?numDE(val):val;if(f==='start_ab'){v=monParse(val);if(v===undefined){toast('Monat bitte so eingeben: 01/2026');render();return;}}
   const row={mitarbeiter_id:id,[f]:v,updated_at:new Date().toISOString()};const p=PERS.find(p=>p.main.id===id);if(p&&p.ee&&!(SS[id]||{}).ee_id)row.ee_id=p.ee.id;
   const{error}=await sb.from('personal_stunden_stamm').upsert(row,{onConflict:'mitarbeiter_id'});if(error){toast('Fehler: '+error.message);return;}
   SS[id]=Object.assign({},SS[id]||{mitarbeiter_id:id},row);render();toast('Gespeichert');}
