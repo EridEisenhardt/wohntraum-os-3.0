@@ -980,6 +980,7 @@ function bankIst(){
   for(const y of [...ys].sort()){ year=y; invalidate(); for(const r of allTx()){ if(r.c.kat==='miete'&&r.c.unit&&r.tx.b) out.push(r); } }
   year=y0; invalidate(); return out;
 }
+const mkRowKey=r=>r.id?'s:'+r.id:r.key?'b:'+r.key+(r.k?':k':''):r.mz?'m:'+r.mz:r.nh?'n:'+(r.nhid||(r.d+'|'+r.h+'|'+r.t)):null;
 function compute(opt){ opt=opt||{}; const ZMAP={}, BU={};
   let first='9999-99'; for(const id in buch){ const d=buch[id]; if(d&&d.monat&&d.konto!==MANKEY&&d.monat<first) first=d.monat; }
   /* Stichtag: letzte Buchung in den Kontoauszügen (spätere Sollstellungen sind noch nicht überfällig) */
@@ -1042,7 +1043,13 @@ function compute(opt){ opt=opt||{}; const ZMAP={}, BU={};
     /* Nahaus-Zahlungen für Zeiträume ohne Kontoauszüge im OS */
     for(const p of mk.nhIst||[]){ const m=(p.d||'').slice(0,7); if(m<START) continue; const uebP=U&&p.d<=U; if(!uebP&&m>=first) continue;
       let pn=''; if(uebP){ const L=BU[mk.pid]||[]; const i=L.findIndex(q=>!q.u&&Math.abs(q.b-p.b)<0.01&&Math.abs(dnum2(q.d)-dnum2(p.d))<=4); if(i>=0){ L[i].u=1; pn=L[i].n; } }
-      x.rows.push({d:p.d,t:p.t||'Zahlung',pn,h:p.b,s:0,src:uebP?'Nahaus (Übernahme bis '+dmy(U)+')':'Zahlung laut Nahaus',k:kautIds.has(p.bk),alloc:uebP&&p.bk?[{id:p.bk,b:p.b}]:null,nh:1}); }
+      x.rows.push({d:p.d,nhid:p.id||'',t:p.t||'Zahlung',pn,h:p.b,s:0,src:uebP?'Nahaus (Übernahme bis '+dmy(U)+')':'Zahlung laut Nahaus',k:kautIds.has(p.bk),alloc:uebP&&p.bk?[{id:p.bk,b:p.b}]:null,nh:1}); }
+    /* im Mieterkonto von Hand erfasste Zahlungen (wie in den Mieterkonten) */
+    for(const z of (ed(mk).manZ||[])){ const zb=Number(z&&z.b)||0; if(zb<=0||!z.d) continue;
+      x.rows.push({d:z.d,t:'Zahlung manuell erfasst'+(z.t?' · '+z.t:''),pn:'',h:zb,s:0,src:'manuell erfasst',k:z.sid?kautIds.has(z.sid):!!z.k,alloc:z.sid?[{id:z.sid,b:zb}]:null,mz:z.id}); }
+    /* Korrekturen aus den Mieterkonten (Sollstellungen und Buchungen bearbeitet oder entfernt) – damit hier dieselben offenen Posten erscheinen */
+    { const KO=ed(mk).korr||{}; x.rows=x.rows.filter(r=>{ const rk=mkRowKey(r); const k=rk&&KO[rk]; if(!k) return true; if(k.weg) return false;
+        if(k.d) r.d=k.d; if(k.t) r.t=k.t; if(k.b!=null){ if(r.s>0) r.s=r2(k.b); else if(r.h>0) r.h=r2(k.b); } return true; }); }
     x.rows.sort((a,b)=>a.d<b.d?-1:a.d>b.d?1:(b.s||0)-(a.s||0));
     let saldo=0, ks=0; for(const r of x.rows){ if(r.fut){ r.saldo=null; continue; } if(r.k){ ks+=(r.s||0)-(r.h||0); r.saldo=null; continue; } saldo=r2(saldo+(r.s||0)-(r.h||0)); r.saldo=saldo; if(!r.v){ x.soll+=r.s||0; x.ist+=r.h||0; } }
     x.saldo=saldo; x.kOffen=r2(ks);
