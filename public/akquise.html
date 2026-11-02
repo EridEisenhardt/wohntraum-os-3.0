@@ -66,7 +66,7 @@ td input:focus,td select:focus{border-color:var(--accent);background:var(--surf)
 .kbnil{text-align:center;color:var(--muted);font-size:11px;padding:8px}
 .nrbadge{display:inline-block;font-size:10.5px;font-weight:700;color:var(--muted);background:var(--surf2);border-radius:5px;padding:1px 5px;margin-right:2px}
 .empty{text-align:center;padding:26px;color:var(--muted)}
-.ov{position:fixed;inset:0;background:rgba(20,25,35,.45);display:none;align-items:flex-start;justify-content:center;z-index:200;padding:32px 16px;overflow:auto}.ov.show{display:flex}
+.ov{position:fixed;inset:0;background:rgba(20,25,35,.55);display:none;align-items:flex-start;justify-content:center;z-index:2000;padding:32px 16px;overflow:auto}.ov.show{display:flex}
 .dlg{background:var(--surf);border-radius:12px;width:100%;max-width:900px;box-shadow:0 20px 60px rgba(0,0,0,.3)}
 .dlg-hd{padding:14px 18px;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;align-items:center;font-weight:700}
 .dlg-bd{padding:16px 18px;max-height:66vh;overflow:auto}
@@ -128,6 +128,7 @@ td input:focus,td select:focus{border-color:var(--accent);background:var(--surf)
         <div class="fld"><label>Portal</label><select id="f_portal"></select></div>
         <div class="fld" style="grid-column:span 3"><label>Portal-Link (Exposé / Inserat)</label><input id="f_plink" type="url" placeholder="https://www.immobilienscout24.de/expose/…"></div>
         <div class="fld" style="grid-column:span 4"><label>Asana-Link (Board oder Aufgabe zum Objekt)</label><input id="f_asana" type="url" placeholder="https://app.asana.com/…"></div>
+        <div class="fld" style="grid-column:span 4"><label>Claude-Link (Chat / Projekt zum Objekt)</label><input id="f_claude" type="url" placeholder="https://claude.ai/…"></div>
         <div class="fld" style="grid-column:span 4"><label>Objektordner (Ablage aller Unterlagen)</label><input id="f_ordner" type="url" placeholder="https://… (Cloud-Ordner)"></div>
       </div>
       <div class="foot-row">
@@ -138,7 +139,7 @@ td input:focus,td select:focus{border-color:var(--accent);background:var(--surf)
     </div>
   </div>
 
-  <div class="card">
+  <div class="card" id="mapCard">
     <div class="card-hd">
       <span>Karte der geprüften Objekte <span style="color:var(--muted);font-weight:400" id="mapCnt"></span></span>
       <span><button class="btn sec" onclick="geocodeAlle()" id="geoBtn">📍 Fehlende Adressen verorten</button></span>
@@ -200,7 +201,17 @@ const PORTALE=['','ImmobilienScout24','Immowelt','Immonet','eBay Kleinanzeigen',
 const asanaOut=u=>u?`<a href="${esc(u)}" target="_blank" rel="noopener" class="asana" onclick="event.stopPropagation()">● Asana ↗</a>`:'—';
 const linkOut=(u,t)=>u?`<a href="${esc(u)}" target="_blank" rel="noopener" class="lnk" onclick="event.stopPropagation()">${t||'Portal ↗'}</a>`:'—';
 const ordnerOut=u=>u?`<a href="${esc(u)}" target="_blank" rel="noopener" class="lnk" onclick="event.stopPropagation()">📁 Ordner ↗</a>`:'—';
-const FLABEL={bezeichnung:'Bezeichnung',strasse:'Straße',plz:'PLZ',ort:'Ort',angeboten_von:'Angeboten von',quelle:'Quelle',eingang:'Eingang',stufe:'Stufe',einheiten:'Einheiten',wohnflaeche:'Wohnfläche',baujahr:'Baujahr',kaufpreis:'Kaufpreis',miete_ist:'Miete IST p. a.',miete_potenzial:'Miete Potenzial p. a.',grunderwerb_pct:'Grunderwerbsteuer %',notar_pct:'Notar & Grundbuch %',makler_pct:'Makler %',sanierung:'Sanierungskosten',angebot_eigen:'Eigenes Angebot',absage_grund:'Absagegrund',verantwortlich:'Verantwortlich',exposé_link:'Exposé-Link',portal:'Portal',portal_link:'Portal-Link',lat:'Breitengrad',lng:'Längengrad',asana_url:'Asana-Link',ordner_url:'Objektordner'};
+const claudeOut=u=>u?`<a href="${esc(u)}" target="_blank" rel="noopener" class="lnk" onclick="event.stopPropagation()">✦ Claude ↗</a>`:'—';
+// Kategorie des nächsten Schritts → mappt auf os_tasks art + massnahme (wie GF-Testboard)
+const STEPKAT=[['aufgabe','📌 Aufgabe (To-do)'],['ankauf','🏷️ Ankauf'],['immoentwicklung','🏗️ Immobilienentwicklung'],['followup','🔁 Follow-up'],['rueckruf','📞 Rückruf'],['anruf','☎️ Anruf'],['vortermin','📍 Vor-Ort-Termin'],['zuarbeit','🤝 Zuarbeit fürs Team'],['jourfix','🧭 Jour Fix']];
+function stepArtMass(kat){
+  if(kat==='ankauf')return{art:'ankauf',massnahme:[]};
+  if(kat==='immoentwicklung')return{art:'immoentwicklung',massnahme:[]};
+  if(kat==='ticket')return{art:'ticket',massnahme:[]};
+  if(kat==='aufgabe'||!kat)return{art:'aufgabe',massnahme:[]};
+  return{art:'aufgabe',massnahme:[kat]};
+}
+const FLABEL={bezeichnung:'Bezeichnung',strasse:'Straße',plz:'PLZ',ort:'Ort',angeboten_von:'Angeboten von',quelle:'Quelle',eingang:'Eingang',stufe:'Stufe',einheiten:'Einheiten',wohnflaeche:'Wohnfläche',baujahr:'Baujahr',kaufpreis:'Kaufpreis',miete_ist:'Miete IST p. a.',miete_potenzial:'Miete Potenzial p. a.',grunderwerb_pct:'Grunderwerbsteuer %',notar_pct:'Notar & Grundbuch %',makler_pct:'Makler %',sanierung:'Sanierungskosten',angebot_eigen:'Eigenes Angebot',absage_grund:'Absagegrund',verantwortlich:'Verantwortlich',exposé_link:'Exposé-Link',portal:'Portal',portal_link:'Portal-Link',lat:'Breitengrad',lng:'Längengrad',asana_url:'Asana-Link',ordner_url:'Objektordner',claude_url:'Claude-Link',next_step:'Nächster Schritt',next_step_faellig:'Nächster Schritt · fällig',next_step_kat:'Nächster Schritt · Kategorie'};
 
 let ROWS=[], NOTES=[], HIST=[], QUELLEN=[], FSTAGE='', FQUELLE='', VIEW='liste', CUR=null, DRAG=null;
 const heute=()=>new Date().toISOString().slice(0,10);
@@ -299,7 +310,9 @@ function boardView(){
         ${r.portal_link?`<span class="kbtag">${linkOut(r.portal_link, r.portal?esc(r.portal)+' ↗':'Inserat ↗')}</span>`:''}
         ${noteCount(r.id)?`<span class="kbtag">${noteCount(r.id)} 📝</span>`:''}
         ${r.asana_url?`<span class="kbtag">${asanaOut(r.asana_url)}</span>`:''}
+        ${r.claude_url?`<span class="kbtag">${claudeOut(r.claude_url)}</span>`:''}
         ${r.ordner_url?`<span class="kbtag">${ordnerOut(r.ordner_url)}</span>`:''}
+        ${r.next_step?`<span class="kbtag ${r.next_step_faellig&&r.next_step_faellig<heute()?'bad':''}" title="${esc(r.next_step)}">➡ ${esc(r.next_step.length>22?r.next_step.slice(0,22)+'…':r.next_step)}${r.next_step_faellig?' · '+fmtD(r.next_step_faellig):''}</span>`:''}
       </div>`;}).join('');
     return `<div class="kbcol" ondragover="allowDrop(event,this)" ondragleave="this.classList.remove('over')" ondrop="drop(event,${JSON.stringify(s).replace(/"/g,'&quot;')},this)">
       <div class="kbcolhd"><span>${esc(s)}</span><span class="n">${list.length}</span></div>
@@ -336,6 +349,37 @@ async function upd(id,field,val){
   if(String(alt==null?'':alt)!==String(nv==null?'':nv))await logHist(id,field,alt,nv);
   render();if(CUR===id)renderOP();
 }
+// Nächster Schritt → Aufgaben-Kalender (os_tasks) synchronisieren
+async function updStep(id,field,val){
+  await upd(id,field,val);
+  await syncStep(id);
+  render();if(CUR===id)renderOP();
+}
+async function syncStep(id){
+  const r=ROWS.find(x=>x.id===id);if(!r)return;
+  const step=(r.next_step||'').trim();
+  const due=r.next_step_faellig||null;
+  const resp=r.verantwortlich||'Eric';
+  const label='Akquise #'+r.nummer+' · '+(r.bezeichnung||r.strasse||'Objekt');
+  const am=stepArtMass(r.next_step_kat||'aufgabe');
+  const title=step||('Nächster Schritt – '+label);
+  if(!step&&!due){
+    if(r.next_step_task_id){
+      await sb.from('os_tasks').update({status:'erledigt',updated_at:new Date().toISOString()}).eq('id',r.next_step_task_id);
+      await sb.from('akquise_objekte').update({next_step_task_id:null}).eq('id',id);
+      r.next_step_task_id=null;
+    }
+    return;
+  }
+  if(r.next_step_task_id){
+    const{error}=await sb.from('os_tasks').update({titel:title,faellig:due,verantwortlich:resp,object_label:label,art:am.art,massnahme:am.massnahme,status:'todo',updated_at:new Date().toISOString()}).eq('id',r.next_step_task_id);
+    if(error)toast('Kalender-Sync: '+error.message);
+  }else{
+    const{data,error}=await sb.from('os_tasks').insert({titel:title,faellig:due,status:'todo',art:am.art,massnahme:am.massnahme,verantwortlich:resp,quelle:'akquise',quelle_bereich:'Akquise',object_id:id,object_label:label,akquise_id:id}).select().maybeSingle();
+    if(error){toast('Kalender-Sync: '+error.message);return;}
+    if(data){await sb.from('akquise_objekte').update({next_step_task_id:data.id}).eq('id',id);r.next_step_task_id=data.id;}
+  }
+}
 async function save(){
   const row={bezeichnung:$('f_bez').value.trim()||null,strasse:$('f_str').value.trim()||null,plz:$('f_plz').value.trim()||null,
     ort:$('f_ort').value.trim()||null,angeboten_von:$('f_von').value.trim()||null,
@@ -343,12 +387,12 @@ async function save(){
     kaufpreis:n0($('f_kp').value),miete_ist:n0($('f_miete').value),einheiten:n0($('f_einh').value),
     wohnflaeche:n0($('f_wfl').value),baujahr:n0($('f_bj').value),verantwortlich:$('f_ver').value||null,
     portal:$('f_portal').value||null,portal_link:$('f_plink').value.trim()||null,
-    asana_url:$('f_asana').value.trim()||null,ordner_url:$('f_ordner').value.trim()||null,stufe:STAGES[0]};
+    asana_url:$('f_asana').value.trim()||null,claude_url:$('f_claude').value.trim()||null,ordner_url:$('f_ordner').value.trim()||null,stufe:STAGES[0]};
   if(!row.bezeichnung&&!row.strasse){toast('Bitte Bezeichnung oder Straße angeben');return;}
   const{data,error}=await sb.from('akquise_objekte').insert(row).select();
   if(error){$('msg').style.color='var(--red)';$('msg').textContent='Fehler: '+error.message;return;}
   if(data&&data[0])await sb.from('akquise_historie').insert({objekt_id:data[0].id,feld:'Objekt',alt:null,neu:'angelegt'});
-  ['f_bez','f_str','f_plz','f_ort','f_von','f_kp','f_miete','f_einh','f_wfl','f_bj','f_plink','f_asana','f_ordner'].forEach(i=>$(i).value='');
+  ['f_bez','f_str','f_plz','f_ort','f_von','f_kp','f_miete','f_einh','f_wfl','f_bj','f_plink','f_asana','f_claude','f_ordner'].forEach(i=>$(i).value='');
   $('f_eingang').value=heute();
   $('msg').style.color='var(--green)';$('msg').textContent='Objekt angelegt ✓';
   load();
@@ -394,7 +438,11 @@ function renderOP(){
     F('Makler %',opTxt(r,'makler_pct','number','0.1'))+F('Portal',opSel(r,'portal',PORTALE.filter(Boolean),true))+
     F('Portal-Link '+(r.portal_link?'· '+linkOut(r.portal_link,'öffnen ↗'):''),opTxt(r,'portal_link','url'))+
     F('Asana-Link '+(r.asana_url?'· '+asanaOut(r.asana_url):''),opTxt(r,'asana_url','url'))+
+    F('Claude-Link '+(r.claude_url?'· '+claudeOut(r.claude_url):''),opTxt(r,'claude_url','url'))+
     F('Objektordner '+(r.ordner_url?'· '+ordnerOut(r.ordner_url):''),opTxt(r,'ordner_url','url'))+
+    F('Nächster Schritt','<input class="opi" type="text" placeholder="z. B. Makler zurückrufen" value="'+(r.next_step==null?'':esc(r.next_step))+'" onchange="updStep(\''+r.id+'\',\'next_step\',this.value)">')+
+    F('Kategorie (im Kalender)','<select class="opi" onchange="updStep(\''+r.id+'\',\'next_step_kat\',this.value)">'+STEPKAT.map(kv=>'<option value="'+kv[0]+'"'+((r.next_step_kat||'aufgabe')===kv[0]?' selected':'')+'>'+kv[1]+'</option>').join('')+'</select>')+
+    F('Nächster Schritt · fällig am'+(r.next_step_task_id?' · <span style="color:var(--green);font-weight:600">im Kalender ✓</span>':''),'<input class="opi" type="date" value="'+(r.next_step_faellig||'')+'" onchange="updStep(\''+r.id+'\',\'next_step_faellig\',this.value)">')+
     F('Absagegrund',opTxt(r,'absage_grund'))+
     F('Breitengrad (lat)',opTxt(r,'lat','number','0.000001'))+F('Längengrad (lng)',opTxt(r,'lng','number','0.000001'));
   const items=[];
@@ -406,8 +454,8 @@ function renderOP(){
     : `<div class="tli"><div class="ts">🔄 ${esc(i.feld)} · ${fmtDT(i.t)}</div><div class="tx">${esc(i.alt||'—')} → ${esc(i.neu||'—')}</div></div>`).join('')
     :'<div class="empty" style="padding:10px">Noch keine Einträge.</div>';
 }
-function openOP(id){CUR=id;$('noteInput').value='';renderOP();$('ov').classList.add('show');}
-function closeOP(){$('ov').classList.remove('show');CUR=null;}
+function openOP(id){CUR=id;$('noteInput').value='';renderOP();$('ov').classList.add('show');const mc=$('mapCard');if(mc)mc.style.display='none';}
+function closeOP(){$('ov').classList.remove('show');CUR=null;const mc=$('mapCard');if(mc)mc.style.display='';}
 async function addNote(){
   if(!CUR)return;
   const t=$('noteInput').value.trim();if(!t){toast('Bitte Text eingeben');return;}
@@ -443,7 +491,7 @@ function renderMap(){
     m.bindPopup(`<div class="mpop"><b>#${r.nummer} ${esc(r.bezeichnung||'')}</b><br>${esc(adrOf(r))}<br>
       ${eur(r.kaufpreis)}${k.faktor?' · Faktor '+num(k.faktor,1)+'×':''}<br>
       <span style="color:#6b7280">${esc(r.stufe||'')}</span><br>
-      <a href="#" onclick="openOP('${r.id}');return false;">Objekt öffnen</a>${r.asana_url?' · '+asanaOut(r.asana_url):''}</div>`);
+      <a href="#" onclick="openOP('${r.id}');return false;">Objekt öffnen</a>${r.asana_url?' · '+asanaOut(r.asana_url):''}${r.claude_url?' · '+claudeOut(r.claude_url):''}</div>`);
     pts.push([r.lat,r.lng]);
   });
   if(pts.length===1)MAP.setView(pts[0],14);
@@ -514,17 +562,17 @@ function exportCSV(){
   if(!list.length){toast('Keine Objekte zum Exportieren');return;}
   const header=['Nr','Bezeichnung','Strasse','PLZ','Ort','Stufe','Angeboten von','Quelle','Eingang','Einheiten','Wohnflaeche',
     'Baujahr','Kaufpreis','Miete IST p.a.','Miete Potenzial p.a.','Eigenes Angebot','Faktor','Bruttorendite %','Preis pro qm',
-    'Nebenkosten %','Nebenkosten EUR','Sanierung','Gesamtinvestition','Verantwortlich','Portal','Portal-Link','Asana-Link','Objektordner','Absagegrund','Notizen'];
+    'Nebenkosten %','Nebenkosten EUR','Sanierung','Gesamtinvestition','Verantwortlich','Portal','Portal-Link','Asana-Link','Claude-Link','Objektordner','Nächster Schritt','Nächster Schritt fällig','Absagegrund','Notizen'];
   const zeilen=list.map(r=>{const k=kz(r);return [r.nummer,r.bezeichnung,r.strasse,r.plz,r.ort,r.stufe,r.angeboten_von,r.quelle,r.eingang,
     r.einheiten,r.wohnflaeche,r.baujahr,r.kaufpreis,r.miete_ist,r.miete_potenzial,r.angebot_eigen,
     k.faktor?k.faktor.toFixed(2):'',k.rendite?k.rendite.toFixed(2):'',k.preisM2?Math.round(k.preisM2):'',
-    k.nkPct,k.nk?Math.round(k.nk):'',r.sanierung,k.gesamt?Math.round(k.gesamt):'',r.verantwortlich,r.portal,r.portal_link,r.asana_url,r.ordner_url,r.absage_grund,
+    k.nkPct,k.nk?Math.round(k.nk):'',r.sanierung,k.gesamt?Math.round(k.gesamt):'',r.verantwortlich,r.portal,r.portal_link,r.asana_url,r.claude_url,r.ordner_url,r.next_step,r.next_step_faellig,r.absage_grund,
     NOTES.filter(n=>n.objekt_id===r.id).map(n=>fmtDT(n.created_at)+': '+n.text).join(' | ')];});
   csvDownload('akquise_export',header,zeilen);
   toast(list.length+' Objekt(e) exportiert ✓');
 }
 
-window.setView=setView;window.save=save;window.del=del;window.upd=upd;window.openOP=openOP;window.closeOP=closeOP;
+window.setView=setView;window.save=save;window.del=del;window.upd=upd;window.updStep=updStep;window.openOP=openOP;window.closeOP=closeOP;
 window.addNote=addNote;window.exportCSV=exportCSV;window.geocodeAlle=geocodeAlle;window.addQuelle=addQuelle;window.dragStart=dragStart;window.allowDrop=allowDrop;window.drop=drop;
 
 (async()=>{
