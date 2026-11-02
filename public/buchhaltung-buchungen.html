@@ -2454,13 +2454,15 @@ function kontoLabel(k,s,ka,obj){ if(!k) return 'nicht zugeordnet'; const x=KMAP[
   if(!x){ if(k==='bk') return 'Betriebskosten – Kostenart fehlt'; if(k==='verw') return 'Verwaltung – Art fehlt'; return KATN[k]||k; }
   if(obj===undefined) return x[0]+' '+x[1];
   const on=objNr(obj); return (x[0]+(on||'00'))+' '+(on?obj+' ':'')+x[1]; }
-function kontoSelect(id,c,ro){ const cur=kval(c.kat,c.sub,c.ka), bx=c.kat==='bk'&&c.obj&&c.ka?bkkFuer(c,c.kv):null, curO=bx?'bk||'+bx.ka+'|'+bx.obj+'|'+bx.id:'';
-  const lab=bx?bkkNr(bx)+' '+bx.name:c.kat?(KMAP[cur]?KMAP[cur][0]+' '+KMAP[cur][1]:kontoLabel(c.kat,c.sub,c.ka)):'';
+function kontoSelect(id,c,ro){ const cur=kval(c.kat,c.sub,c.ka), bx=c.kat==='bk'&&c.obj&&c.ka?bkkFuer(c,c.kv):null, ix=c.kat==='inst'&&objNr(c.obj)?c.obj:'', curO=bx?'bk||'+bx.ka+'|'+bx.obj+'|'+bx.id:ix?'inst|||'+ix:'';
+  const lab=bx?bkkNr(bx)+' '+bx.name:ix?kontoLabel('inst','','',ix):c.kat?(KMAP[cur]?KMAP[cur][0]+' '+KMAP[cur][1]:kontoLabel(c.kat,c.sub,c.ka)):'';
   let h='<div class="kcombo"><input type="text" class="kc-in" id="'+id+'-q" data-kc="'+id+'" value="'+esc(lab)+'" placeholder="Konto: Nummer oder Begriff" autocomplete="off"'+(ro?' disabled':'')+'><div class="kc-list" hidden></div>';
   h+='<select id="'+id+'" class="kc-sel" tabindex="-1" aria-hidden="true"'+(ro?' disabled':'')+'><option value="||"'+(c.kat?'':' selected')+'>– Konto wählen –</option>';
   if(c.kat&&!KMAP[cur]&&!bx) h+='<option value="'+esc(cur)+'" selected>'+esc(kontoLabel(c.kat,c.sub,c.ka))+'</option>';
-  for(const [g,l] of KONTEN){ h+='<optgroup label="'+esc(g)+'">'+l.map(x=>{ const v=kval(x[2],x[3],x[4]); return '<option value="'+esc(v)+'"'+(v===cur&&!bx?' selected':'')+'>'+esc(x[0]+' '+x[1])+'</option>'; }).join('')+'</optgroup>'; }
+  for(const [g,l] of KONTEN){ h+='<optgroup label="'+esc(g)+'">'+l.map(x=>{ const v=kval(x[2],x[3],x[4]); return '<option value="'+esc(v)+'"'+(v===cur&&!bx&&!ix?' selected':'')+'>'+esc(x[0]+' '+x[1])+'</option>'; }).join('')+'</optgroup>'; }
   const objKzs=new Set(objekte.map(o=>o.kz));
+  /* Instandhaltung je Objekt: 4260 + Objektnummer, z. B. 426024 M8 Instandhaltung */
+  h+='<optgroup label="Instandhaltung je Objekt">'+objekte.filter(o=>objNr(o.kz)).map(o=>o.kz).sort((a,b)=>a.localeCompare(b,'de',{numeric:true})).map(kz=>{ const v='inst|||'+kz; return '<option value="'+esc(v)+'"'+(v===curO?' selected':'')+'>'+esc(kontoLabel('inst','','',kz))+'</option>'; }).join('')+'</optgroup>';
   h+='<optgroup label="Betriebskosten je Objekt (mit Verteilerschlüssel)">'+bkkListe().filter(x=>objKzs.has(x.obj)).slice().sort((a,b)=>a.name.localeCompare(b.name,'de',{numeric:true})).map(x=>{ const v='bk||'+x.ka+'|'+x.obj+'|'+x.id; return '<option value="'+esc(v)+'"'+(v===curO?' selected':'')+'>'+esc(bkkNr(x)+' '+x.name+(x.schl?' · '+schlLabel(x.schl):''))+'</option>'; }).join('')+'</optgroup>';
   return h+'</select></div>'; }
 const KA_RX=[['weg',/\bhausgeld\b|\bweg\b|wohnungseigentuemer/],['schornstein',/schornstein|kaminfeger/],['heizung',/heizoel|brennstoff|erdgas|\bgas\b|fluessiggas|\bista\b|techem|brunata|minol|kalo\b/],['niederschlag',/niederschlag/],['abwasser',/abwasser|schmutzwasser|entwaesser|kanalgeb/],['wasser',/wasserversorg|wassergeld|wasserzins|\bwvr\b|trinkwasser/],['muell',/abfall|muell|\bawb\b|entsorgung|wertstoff/],['grundsteuer',/grundsteuer/],['versicherung',/versicherung|signal iduna|allianz|provinzial|gebaeudevers|haftpflicht/],['garten',/garten|gruenpflege|baumpflege/],['reinigung',/treppenhausreinig|gebaeudereinig|reinigungs|schaedlings|ungeziefer/],['hauswart',/hausmeister|hauswart/],['kabel',/kabelanschluss|kabel tv|antenne|tele columbus|pyur/],['sonstige_bk',/rauchmelder|rauchwarn|wartung|dichtheitspruef|legionell/],['internet',/telekom|1 1 telecom|vodafone|telefonica|\bo2\b|starlink|congstar|\binternet\b|\bdsl\b/],['allgstrom',/allgemeinstrom|\bstrom\b|\bews\b|elektrizitaet|eon\b|e on\b/]];
@@ -2688,6 +2690,12 @@ function renderKontenplan(){
   h+='</tbody></table></div>';
   /* Objektnummern */
   h+='<div class="tablewrap"><table><thead><tr><th>Objekt</th><th>Ges.</th><th>Objektnummer</th></tr></thead><tbody>'+objekte.map(o=>'<tr><td><b>'+esc(o.kz)+'</b> <span class="sub">'+esc(String(o.name||'').split(',')[0])+'</span></td><td>'+esc(o.ges||'')+'</td><td><input type="text" class="num" style="width:60px" maxlength="2" id="on-'+esc(o.kz)+'" data-onr="'+esc(o.kz)+'" value="'+esc(objNr(o.kz))+'"'+(canWrite?'':' disabled')+'></td></tr>').join('')+'</tbody></table><div class="sub" style="padding:8px">EE 10–19 · WT 20–29 · KiBo 30–39 · ohne Objekt = 00</div></div></div>';
+  /* Instandhaltungskonten je Objekt */
+  { const S={}; for(const it of items()) for(const p of it.parts){ if(p.c.kat!=='inst'||!p.c.obj) continue; const o=S[p.c.obj]=S[p.c.obj]||{n:0,b:0}; o.n++; o.b+=p.tx.b; }
+    const L=objekte.filter(o=>objNr(o.kz)&&(!kpObj||o.kz===kpObj)).map(o=>o.kz).sort((a,b)=>a.localeCompare(b,'de',{numeric:true}));
+    h+='<div class="note" style="margin-top:16px"><b>Instandhaltungskonten je Objekt</b> – 4260 Instandhaltung + Objektnummer. In der Buchung direkt im Feld Konto auswählbar, z. B. „'+esc(kontoLabel('inst','','',L[0]||'M8'))+'“.</div>';
+    h+='<div class="tablewrap"><table><thead><tr><th>Konto-Nr.</th><th>Konto</th><th class="n">Buchungen</th><th class="n">Summe '+year+'</th></tr></thead><tbody>'
+      +L.map(kz=>{ const o=S[kz]; return '<tr><td>4260'+esc(objNr(kz))+'</td><td>'+esc(kz+' Instandhaltung')+'</td><td class="n">'+(o?o.n:'<span class="mut">–</span>')+'</td><td class="n '+(o?cls(o.b):'')+'">'+(o?eur(o.b):'')+'</td></tr>'; }).join('')+'</tbody></table></div>'; }
   /* Betriebskostenkonten je Objekt mit Verteilerschlüssel */
   const BL=bkkListe().filter(x=>!kpObj||x.obj===kpObj).slice().sort((a,b)=>a.obj.localeCompare(b.obj,'de',{numeric:true})||a.name.localeCompare(b.name,'de',{numeric:true}));
   h+='<div class="note" style="margin-top:16px"><b>Betriebskostenkonten je Objekt</b> – aus Nahaus übernommen, je Objekt und Kostenart ein Konto mit Verteilerschlüssel (aus den PDFs „Verteilerschlüssel“ in den Objektordnern). Wählst du in der Buchung so ein Konto, sind Kostenart und Objekt gesetzt. Der Verteilerschlüssel lässt sich hier ändern.</div>';
