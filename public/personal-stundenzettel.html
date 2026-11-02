@@ -67,7 +67,7 @@ details.ein>summary::before{content:'+';display:inline-block;width:14px;color:va
   <div class="card">
     <details class="ein" id="einDet"><summary>Startstand und Einstellungen je Mitarbeiter</summary>
       <div class="tablewrap pad" id="einTab"></div>
-      <div class="hinweis pad" style="padding-top:0">Startstand = Stundenkonto zu Beginn des angegebenen Monats. Ab diesem Monat rechnet das OS den Endstand fortlaufend weiter. „Auszahlung im Folgemonat“: Die über EE ausgezahlten Stunden eines Monats erscheinen erst in der Lohntabelle des nächsten Monats.</div>
+      <div class="hinweis pad" style="padding-top:0">Startstand = Stundenkonto zu Beginn des angegebenen Monats. Ab diesem Monat rechnet das OS den Endstand fortlaufend weiter. „Auszahlung im Folgemonat“: Die über EE ausgezahlten Stunden eines Monats erscheinen erst in der Lohntabelle des nächsten Monats. „Stunden erfassen“ ausgeschaltet: Der Mitarbeiter erscheint nicht in der Stundenübersicht, bleibt aber in der Lohntabelle.</div>
     </details>
   </div>
 
@@ -172,7 +172,7 @@ function renderStunden(){
   const zu=istZu(); const k=mkey(JAHR,MONAT);
   $('stTitel').innerHTML=`Stunden ${MON[MONAT-1]} ${JAHR}${zu?' <span class="sub">abgeschlossen</span>':''}`;
   const fehlt=[];let h='<table><thead><tr><th class="l">Mitarbeiter</th><th class="l">Gesellschaft</th><th>Übertrag Vormonat</th><th>Soll</th><th>Ist</th><th>Differenz</th><th>Über EE ausgezahlt</th><th>Endstand</th><th>Urlaub (Tage)</th><th>Krank (Tage)</th><th>Crewmeister Monatsende</th><th class="l">Stundenzettel</th></tr></thead><tbody>';
-  PERS.forEach(p=>{const id=p.main.id;const r=stOf(id,JAHR,MONAT)||{};const K=konto(id);const kk=K.out[k];
+  PERS.filter(p=>!(SS[p.main.id]||{}).ohne_stunden).forEach(p=>{const id=p.main.id;const r=stOf(id,JAHR,MONAT)||{};const K=konto(id);const kk=K.out[k];
     if(K.fehlt&&ST.some(x=>x.mitarbeiter_id===id))fehlt.push(p.name);
     const hat=r.soll!=null||r.ist!=null; const diff=hat?r2(n(r.ist)-n(r.soll)):null;
     const f=(fld)=>`saveSt('${id}','${fld}',this.value)`;
@@ -189,14 +189,15 @@ function renderStunden(){
   $('stWarn').innerHTML=fehlt.length?`<div class="warn">Startstand fehlt bei: ${esc(fehlt.join(', '))}. Bis er eingetragen ist, beginnt die Rechnung mit 0 im ersten Monat mit Stundenzettel. Eintragen unter „Startstand und Einstellungen je Mitarbeiter“.</div>`:'';
 }
 function renderEin(){
-  let h='<table><thead><tr><th class="l">Mitarbeiter</th><th>Startstand (Std.)</th><th>ab Monat</th><th>Crewmeister zu Beginn dieses Monats</th><th>Auszahlung über EE im Folgemonat</th><th class="l">Minijob-Zeile EE</th></tr></thead><tbody>';
+  let h='<table><thead><tr><th class="l">Mitarbeiter</th><th>Startstand (Std.)</th><th>ab Monat</th><th>Crewmeister zu Beginn dieses Monats</th><th>Auszahlung über EE im Folgemonat</th><th class="l">Minijob-Zeile EE</th><th>Stunden erfassen</th></tr></thead><tbody>';
   PERS.forEach(p=>{const id=p.main.id;const s=SS[id]||{};let cm='';
     if(s.start_ab){const [y,m]=s.start_ab.split('-').map(Number);const r=stOf(id,y,m);if(r&&r.cm_start!=null)cm=fh(r.cm_start);}
     else{const L=ST.filter(x=>x.mitarbeiter_id===id).sort((a,b)=>mkey(a.jahr,a.monat)-mkey(b.jahr,b.monat));if(L[0]&&L[0].cm_start!=null)cm=fh(L[0].cm_start)+' <span class="mut">(am '+MONK[L[0].monat-1]+' '+L[0].jahr+')</span>';}
     h+=`<tr><td class="l"><b>${esc(p.name)}</b></td><td>${inp(s.start_std,`saveSS('${id}','start_std',this.value)`)}</td>
       <td><input class="c d" type="month" value="${esc(s.start_ab||'')}" onchange="saveSS('${id}','start_ab',this.value)"></td>
       <td>${cm}</td><td style="text-align:center"><input type="checkbox" ${s.ee_folgemonat?'checked':''} ${p.ee?'':'disabled'} onchange="saveSS('${id}','ee_folgemonat',this.checked)"></td>
-      <td class="l">${p.ee?esc(nm(p.ee)+' · '+(FIRMA_TXT[p.ee.unternehmen]||p.ee.unternehmen)):'<span class="mut">keine</span>'}</td></tr>`;});
+      <td class="l">${p.ee?esc(nm(p.ee)+' · '+(FIRMA_TXT[p.ee.unternehmen]||p.ee.unternehmen)):'<span class="mut">keine</span>'}</td>
+      <td style="text-align:center"><input type="checkbox" ${s.ohne_stunden?'':'checked'} onchange="saveSS('${id}','ohne_stunden',!this.checked)"></td></tr>`;});
   $('einTab').innerHTML=h+'</tbody></table>';
 }
 
@@ -378,6 +379,7 @@ async function dateien(files){
     if(!r.monat||(!r.name&&!r.nurEE)){UP.push({file:f,fehler:z.join('').length<40?'Kein Text gefunden (eingescanntes Blatt?) – bitte Werte von Hand eintragen.':'Monat oder Mitarbeiter nicht erkannt – ist das ein Crewmeister-Stundenzettel?'});continue;}
     if(!r.name){const t=nrm(f.name);const p=PERS.find(p=>t.includes(nrm(p.main.name))&&t.includes(nrm(p.main.vorname)));if(p)r.name=p.name;}
     const p=PERS.find(p=>nrm(p.name)===nrm(r.name))||PERS.find(p=>nrm(r.name).includes(nrm(p.main.name)));
+    if(p&&(SS[p.main.id]||{}).ohne_stunden){UP.push({file:f,fehler:p.name+': Stunden werden nicht erfasst (unter Einstellungen einschaltbar).'});continue;}
     UP.push({file:f,r,pid:p?p.main.id:null,pname:p?p.name:(r.name||''),on:!!p});}
   $('upStatus').textContent='';zeigeUp();
 }
