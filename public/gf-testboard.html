@@ -226,7 +226,7 @@ const MASSICON={followup:'🔁',rueckruf:'📞',anruf:'☎️',vortermin:'📍',
 const MASSORDER=['followup','rueckruf','anruf','vortermin','zuarbeit','jourfix'];
 let TASKS=[], KONT=[], OBJ=[];
 const TEAM=['Eric','Jürgen','Stephan','Ramona','Alexander Buchhaus','Extern'];
-let ART='alle', WVONLY=false, PERSON='', SUBS=[], VER=[], DTASK=null, ICH='', TAGS=[], BETEIL=[];
+let ART='alle', WVONLY=false, PERSON='', SUBS=[], VER=[], DTASK=null, ICH='', TAGS=[], BETEIL=[], SUBOPEN=new Set();
 function setPerson(v){PERSON=v;render();}
 function personMatch(t){if(!PERSON)return true;if(Array.isArray(t.beteiligte)&&t.beteiligte.includes(PERSON))return true;const v=(t.verantwortlich||'').trim();if(!v)return false;return v===PERSON||v.indexOf(PERSON)>=0||PERSON.indexOf(v.split(' ')[0])===0;}
 function initPersonSel(){const el=document.getElementById('personsel');if(el)el.innerHTML='<option value="">👥 Alle Personen</option>'+TEAM.map(p=>`<option value="${esc(p)}"${PERSON===p?' selected':''}>${esc(p)}</option>`).join('');}
@@ -397,7 +397,7 @@ async function openDetail(id){
   TAGS=Array.isArray(t.tags)?t.tags.slice():[];document.getElementById('d_tagnew').value='';renderDTags();
   BETEIL=Array.isArray(t.beteiligte)?t.beteiligte.slice():[];renderDBeteiligte();
   MASSV=Array.isArray(t.massnahme)?t.massnahme.slice():(t.massnahme?[t.massnahme]:[]);renderDMass();
-  SUBS=[];VER=[];renderDSubs();renderDVer();
+  SUBS=[];VER=[];SUBOPEN=new Set();renderDSubs();renderDVer();
   const [s,v]=await Promise.all([
     sb.from('os_task_subtasks').select('*').eq('task_id',id).order('created_at'),
     sb.from('os_task_verlauf').select('*').eq('task_id',id).order('created_at',{ascending:false})
@@ -406,20 +406,38 @@ async function openDetail(id){
 }
 function closeDetail(){document.getElementById('dov').classList.remove('show');DTASK=null;}
 function renderDSubs(){
-  const open=SUBS.filter(x=>!x.erledigt).length;
+  const open=SUBS.filter(x=>!x.done).length;
   document.getElementById('d_subcnt').textContent=SUBS.length?`(${SUBS.length-open}/${SUBS.length})`:'';
-  document.getElementById('d_subs').innerHTML=SUBS.map(s=>`<div class="dsub ${s.erledigt?'done':''}">
-    <input type="checkbox" ${s.erledigt?'checked':''} onchange="dToggleSub('${s.id}',this.checked)">
-    <span>${esc(s.titel)}</span><b onclick="dDelSub('${s.id}')">🗑</b></div>`).join('')||'<div style="color:var(--muted);font-size:12px">Keine Unteraufgaben.</div>';
+  document.getElementById('d_subs').innerHTML=SUBS.map(s=>{
+    const notes=VER.filter(v=>v.subtask_id===s.id);
+    const chat=SUBOPEN.has(s.id)?`<div style="margin:2px 0 8px 26px;padding:6px 9px;border-left:2px solid var(--line);display:flex;flex-direction:column;gap:5px">`
+      +(notes.length?notes.slice().reverse().map(v=>`<div style="font-size:12px"><div>${esc(v.text)}</div><div class="vm">${esc(v.autor||'')} · ${new Date(v.created_at).toLocaleString('de-DE')}</div></div>`).join(''):'<div class="vm" style="font-size:12px">Noch keine Notizen – unten festhalten, was hier gelaufen ist.</div>')
+      +`<div class="row"><input id="sn_${s.id}" placeholder="Notiz / was ist hier gelaufen?" onkeydown="if(event.key==='Enter')dSubNote('${s.id}')"><button class="btn sec sm" onclick="dSubNote('${s.id}')">+</button></div></div>`:'';
+    return `<div class="dsub ${s.done?'done':''}">
+    <input type="checkbox" ${s.done?'checked':''} onchange="dToggleSub('${s.id}',this.checked)">
+    <span>${esc(s.titel)}</span>
+    <b onclick="dSubToggle('${s.id}')" title="Notizen / Chat" style="margin-left:auto;cursor:pointer">💬${notes.length?' '+notes.length:''}</b>
+    <b onclick="dDelSub('${s.id}')" title="löschen" style="cursor:pointer">🗑</b></div>${chat}`;
+  }).join('')||'<div style="color:var(--muted);font-size:12px">Keine Unteraufgaben.</div>';
 }
 function renderDVer(){
-  document.getElementById('d_ver').innerHTML=VER.map(v=>`<div class="vrow"><div>${esc(v.text)}</div><div class="vm">${esc(v.autor||'')} · ${new Date(v.created_at).toLocaleString('de-DE')}</div></div>`).join('')||'<div style="color:var(--muted);font-size:12px">Noch kein Verlauf.</div>';
+  document.getElementById('d_ver').innerHTML=VER.map(v=>`<div class="vrow"><div>${v.subtask_id?'<span title="aus einer Unteraufgabe" style="color:var(--accent)">↳ </span>':''}${esc(v.text)}</div><div class="vm">${esc(v.autor||'')} · ${new Date(v.created_at).toLocaleString('de-DE')}</div></div>`).join('')||'<div style="color:var(--muted);font-size:12px">Noch kein Verlauf.</div>';
 }
+function dSubToggle(id){if(SUBOPEN.has(id))SUBOPEN.delete(id);else SUBOPEN.add(id);renderDSubs();}
+async function dSubNote(id){const el=document.getElementById('sn_'+id);if(!el||!DTASK)return;const t=(el.value||'').trim();if(!t)return;
+  const s=SUBS.find(x=>x.id===id);const txt='Notiz zu «'+(s?s.titel:'Unteraufgabe')+'»: '+t;
+  const {data,error}=await sb.from('os_task_verlauf').insert({task_id:DTASK.id,subtask_id:id,text:txt,autor:ICH||'System'}).select().maybeSingle();
+  if(error){toast(error.message);return;}
+  if(data){VER.unshift(data);SUBOPEN.add(id);renderDSubs();renderDVer();}}
 async function logVer(text){if(!DTASK)return;const row={task_id:DTASK.id,text,autor:ICH||'System'};const {data}=await sb.from('os_task_verlauf').insert(row).select().maybeSingle();if(data){VER.unshift(data);renderDVer();}}
 async function dAddSub(){const el=document.getElementById('d_subnew');const titel=(el.value||'').trim();if(!titel||!DTASK)return;
-  const {data}=await sb.from('os_task_subtasks').insert({task_id:DTASK.id,titel,erledigt:false}).select().maybeSingle();
+  const {data}=await sb.from('os_task_subtasks').insert({task_id:DTASK.id,titel,done:false}).select().maybeSingle();
   if(data){SUBS.push(data);el.value='';renderDSubs();}}
-async function dToggleSub(id,v){await sb.from('os_task_subtasks').update({erledigt:v}).eq('id',id);const s=SUBS.find(x=>x.id===id);if(s)s.erledigt=v;renderDSubs();}
+async function dToggleSub(id,v){const {error}=await sb.from('os_task_subtasks').update({done:v}).eq('id',id);if(error){toast(error.message);return;}const s=SUBS.find(x=>x.id===id);if(s)s.done=v;
+  if(s&&DTASK){const txt=(v?'Unteraufgabe erledigt: «':'Unteraufgabe wieder offen: «')+s.titel+'»';
+    const {data}=await sb.from('os_task_verlauf').insert({task_id:DTASK.id,subtask_id:id,text:txt,autor:ICH||'System'}).select().maybeSingle();
+    if(data)VER.unshift(data);}
+  renderDSubs();renderDVer();}
 async function dDelSub(id){await sb.from('os_task_subtasks').delete().eq('id',id);SUBS=SUBS.filter(x=>x.id!==id);renderDSubs();}
 async function dAddComment(){const el=document.getElementById('d_comment');const text=(el.value||'').trim();if(!text)return;await logVer('💬 '+text);el.value='';}
 async function dSave(){
