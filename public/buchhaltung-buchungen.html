@@ -589,7 +589,7 @@ function objInText(text){ const ad=objByAddr(text); if(ad) return ad; if(!objRe)
   if(!objRe) return ''; const m=(' '+text).match(objRe); if(!m) return ''; const o=objekte.find(x=>x.kz.toLowerCase()===m[1]); return o?o.kz:''; }
 function classify(tx,k){
   if(tx.m) return {obj:tx.o||'',kat:tx.k||'',sub:tx.s||'',unit:tx.u||'',src:tx.q==='beleg'?'Beleg':'manuell'};
-  if(tx.b>0){ const z=zvMatch(tx); if(z){ const zi=zvZiel(z); if(zi.obj) return {obj:zi.obj,kat:'miete',sub:'',unit:zi.unit,src:'Ratenzahlung erkannt',zv:z.id}; } }
+  if(tx.b>0){ const z=zvMatch(tx,k); if(z){ const zi=zvZiel(z); if(zi.obj) return {obj:zi.obj,kat:'miete',sub:'',unit:zi.unit,src:'Ratenzahlung erkannt',zv:z.id}; } }
   const typ=kontoTyp(k), kObj=typ==='obj'?k.obj:'';
   if(typ==='aus') return {obj:'',kat:'ignore',sub:'',unit:'',src:'Konto ausgeschlossen'};
   /* Bankgebühren: Kontoabschluss, Entgeltabschluss, Endsaldo, DKB-Abrechnung → Objektkonto: sonstige Objektkosten; sonst Verwaltung › Bankgebühren */
@@ -2303,11 +2303,14 @@ const zvNum=v=>{ const n=parseNum(String(v==null?'':v)); return n==null||isNaN(n
 const zvTag=(d,n)=>new Date(Date.parse(d)+n*864e5).toISOString().slice(0,10);
 async function zvLaden(){ const s=window.osSupabase; if(!s) return false; const {data,error}=await s.from('zahlungsvereinbarungen').select('id,mieter,objekt,wohnung,forderung,rate,start_datum,status,art,zahlungen'); if(error) return false;
   ZV=(data||[]).filter(z=>!/abgeschlossen|erledigt/i.test(z.status||'')); ZVload=true; mkCalc=null; opCache={}; return true; }
-function zvMatch(tx){ if(!ZVload||!(tx.b>0)) return null; const t=' '+norm((tx.n||'')+' '+(tx.z||''))+' '; let best=null, bs=0;
+/* k = Bankkonto der Zahlung: geht die Zahlung auf das Konto eines anderen Objekts als das der Ratenzahlung, passt sie nicht (z. B. gleicher Nachname in zwei Häusern) */
+function zvMatch(tx,k){ if(!ZVload||!(tx.b>0)) return null; const t=' '+norm((tx.n||'')+' '+(tx.z||''))+' '; let best=null, bs=0; const ko=k&&objKz().has(k.obj)?k.obj:'';
   for(const z of ZV){ const rate=zvNum(z.rate); if(!rate) continue; if(z.start_datum&&tx.d<zvTag(z.start_datum,-10)) continue;
     const W=norm(z.mieter||'').split(' ').filter(w=>w.length>=3); const nm=W.filter(w=>t.includes(' '+w+' ')).length, nachname=W.length&&t.includes(' '+W[W.length-1]+' ');
     const ibOk=!!tx.i&&(z.zahlungen||[]).some(y=>y.iban===tx.i), betragOk=Math.abs(tx.b-rate)<0.005, rateText=/ (rate|raten|ratenzahlung|teilzahlung) /.test(t);
     if(!(nachname||nm>=2||ibOk)) continue; if(!(betragOk||rateText)) continue;
+    if(ko){ const zo=zvZiel(z).obj; if(zo&&zo!=='__ges'&&zo!==ko) continue; }
+    if(tx.i&&!ibOk&&ZV.some(y=>y!==z&&(y.zahlungen||[]).some(q=>q.iban===tx.i))) continue;
     const sc=2*nm+(ibOk?4:0)+(betragOk?3:0)+(rateText?1:0); if(sc>bs){ bs=sc; best=z; } }
   return best; }
 /* Mieterkonto zur Ratenzahlung: verknüpft im Mieterkonto, sonst Objekt aus der Adresse und Name */
@@ -2317,18 +2320,20 @@ function zvZiel(z){ const L=Object.values(MK); let mk=L.find(m=>(ed(m).raten||[]
     const passt=m=>(m.namen||[]).concat(String(ed(m).mieter||'').split(',')).some(n=>norm(n).split(' ').includes(nach));
     const K=nach?L.filter(m=>passt(m)&&(!obj||m.obj===obj)):[]; mk=K.sort((a,b)=>(b.von||'').localeCompare(a.von||''))[0]; }
   const o2=mk?mk.obj:obj; return {obj:objKz().has(o2)?o2:'__ges', unit:mk?(mk.unit||''):'', mk:mk||null}; }
-function zvZeile(it){ const z=zvMatch(it.tx); if(!z) return ''; const fertig=(z.zahlungen||[]).some(y=>y.buchung===it.id), bez=(z.zahlungen||[]).reduce((a,y)=>a+zvNum(y.betrag),0);
+function zvZeile(it){ const z=zvMatch(it.tx,it.k); if(!z) return ''; const fertig=(z.zahlungen||[]).some(y=>y.buchung===it.id), bez=(z.zahlungen||[]).reduce((a,y)=>a+zvNum(y.betrag),0);
   return '<div class="sub"><b>Ratenzahlung '+esc(z.mieter||'')+'</b> <span class="pill '+(fertig?'ok':'src')+'">'+(fertig?'eingetragen':'wird beim Bestätigen eingetragen')+'</span></div>'
     +'<div class="sub">Rate '+eur(zvNum(z.rate))+' · bezahlt '+eur(bez)+' von '+eur(zvNum(z.forderung))+'</div>'; }
 /* Nach dem Bestätigen: Zahlung in die Ratenzahlung eintragen (vorhandenen Eintrag mit gleichem Betrag und Datum verknüpfen statt doppelt anlegen) */
 let zvT=null, zvLaeuft=false; function zvSyncBald(){ clearTimeout(zvT); zvT=setTimeout(zvSync,1500); }
 async function zvSync(){ if(zvLaeuft||!ZVload||!canWrite) return; const s=window.osSupabase; if(!s) return;
-  const kand=items().filter(it=>it.tx.b>0&&bestaetigt(it)&&!it.split&&it.c.kat==='miete'&&zvMatch(it.tx)); if(!kand.length) return;
+  const kand=items().filter(it=>it.tx.b>0&&bestaetigt(it)&&!it.split&&it.c.kat==='miete'&&zvMatch(it.tx,it.k)); if(!kand.length) return;
   zvLaeuft=true;
   try{ if(!(await zvLaden())) return; const neu=new Map();
-    for(const it of kand){ const tx=it.tx, z=zvMatch(tx); if(!z) continue; const arr=neu.get(z.id)||(z.zahlungen||[]).slice(); if(arr.some(y=>y.buchung===it.id)) continue;
-      const i=arr.findIndex(y=>!y.buchung&&y.datum&&Math.abs(zvNum(y.betrag)-tx.b)<0.005&&Math.abs(Date.parse(y.datum)-Date.parse(tx.d))<=6*864e5);
-      if(i>=0) arr[i]=Object.assign({},arr[i],{buchung:it.id,iban:tx.i||arr[i].iban||''}); else arr.push({datum:tx.d,betrag:fnum.format(tx.b),buchung:it.id,iban:tx.i||''});
+    for(const it of kand){ const tx=it.tx, z=zvMatch(tx,it.k); if(!z) continue; const arr=neu.get(z.id)||(z.zahlungen||[]).slice(); if(arr.some(y=>y.buchung===it.id)) continue;
+      /* Miete und Rate in einer Zahlung („Mietanteil 167,72. Rate 150.00“): nur die Rate eintragen */
+      const rt=(String(tx.z||'').match(/\brate\s*:?\s*(\d+(?:[.,]\d{2})?)/i)||[])[1]; let betr=rt?zvNum(rt.replace(/\.(\d{2})$/,',$1')):tx.b; if(!(betr>0&&betr<=tx.b+0.005)) betr=tx.b;
+      const i=arr.findIndex(y=>!y.buchung&&y.datum&&Math.abs(zvNum(y.betrag)-betr)<0.005&&Math.abs(Date.parse(y.datum)-Date.parse(tx.d))<=6*864e5);
+      if(i>=0) arr[i]=Object.assign({},arr[i],{buchung:it.id,iban:tx.i||arr[i].iban||''}); else arr.push({datum:tx.d,betrag:fnum.format(betr),buchung:it.id,iban:tx.i||''});
       neu.set(z.id,arr); }
     let n=0; for(const [id,arr] of neu){ const {error}=await s.from('zahlungsvereinbarungen').update({zahlungen:arr}).eq('id',id); if(error){ toast('Ratenzahlung nicht gespeichert: '+error.message); continue; } const z=ZV.find(x=>x.id===id); if(z) z.zahlungen=arr; n++; }
     if(n){ invalidate(); softRender(); toast('Zahlung in der Ratenzahlung eingetragen.'); } }
