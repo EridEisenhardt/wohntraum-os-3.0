@@ -32,3 +32,4 @@ alter table public.personal_stunden_stamm enable row level security;
 create policy pss_all on public.personal_stunden_stamm for all to authenticated using (true) with check (true);
 -- Infos je Monat: os_docs app='personal', pfad='lohntabelle/YYYY-MM' {infos}
 -- Abgeschlossene Monate: os_docs app='personal', pfad='stundenzettel/abschluss' {"YYYY-MM": datum}
+alter table public.personal_stunden_stamm add column if not exists ohne_stunden boolean default false;
