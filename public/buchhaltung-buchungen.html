@@ -627,7 +627,7 @@ function isOpen(c){ if(c.kat==='') return true; if(c.obj==='__ges'&&['miete','so
 
 /* alle Buchungen eines Jahres, klassifiziert (Cache) */
 let cache=null;
-function invalidate(){cache=null;unitIdx=null;tenIdx=null;ownIban=null;objRe=null;addrRe=null;}
+function invalidate(){if(typeof BB!=='undefined'&&BB)BB.erg=null;cache=null;unitIdx=null;tenIdx=null;ownIban=null;objRe=null;addrRe=null;}
 function allTx(){
   if(cache&&cache.year===year) return cache.list;
   const kmap=Object.fromEntries(konten.map(k=>[k.key||k.iban,k]));
@@ -706,6 +706,155 @@ function setTx(id,field,val){
   invalidate(); render();
   queue('buchungen/'+doc,()=>db.doc('buchungen/'+doc).update({tx:d.tx}));
 }
+/* ================= Abgleich mit BuchhaltungsButler (GDPdU-Prüfungsexport) =================
+   Die in BB gebuchten Bankzahlungen werden den Zahlungen im OS zugeordnet (Bankkonto, Betrag, Datum ±6 Tage).
+   Das BB-Konto (bei Zahlungen an Lieferanten das Konto der zugehörigen Rechnung) wird über eine Zuordnungstabelle
+   in ein OS-Konto übersetzt; die genaue Kostenart ermittelt weiter das OS. Danach werden die Buchungen bestätigt. */
+var BB={lade:false,fehler:'',daten:[],map:{},erg:null,mehr:false};
+async function bbZipLib(){ if(window.JSZip) return; await new Promise((ok,err)=>{ const s=document.createElement('script'); s.src='https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js'; s.onload=ok; s.onerror=()=>err(new Error('Entpacken nicht möglich (JSZip nicht ladbar).')); document.head.appendChild(s); }); }
+function bbCsv(txt){ const rows=[]; let f='', row=[], q=false;
+  for(let i=0;i<txt.length;i++){ const c=txt[i];
+    if(q){ if(c==='"'){ if(txt[i+1]==='"'){ f+='"'; i++; } else q=false; } else f+=c; }
+    else if(c==='"') q=true; else if(c===';'){ row.push(f); f=''; } else if(c==='\n'){ row.push(f); rows.push(row); row=[]; f=''; } else if(c!=='\r') f+=c; }
+  if(f||row.length){ row.push(f); rows.push(row); }
+  const H=rows.shift()||[]; return rows.filter(r=>r.length>1).map(r=>Object.fromEntries(H.map((h,j)=>[h,r[j]||'']))); }
+const bbDt=s=>{ const m=String(s||'').match(/^(\d\d)\.(\d\d)\.(\d{4})$/); return m?m[3]+'-'+m[2]+'-'+m[1]:''; };
+const bbTag=d=>d?Date.parse(d+'T12:00:00Z')/864e5:0;
+async function bbDateien(files){ BB.lade=true; BB.fehler=''; render();
+  try{ const dec=b=>new TextDecoder('windows-1252').decode(b);
+    for(const f of files){ const T={};
+      if(/\.zip$/i.test(f.name)){ await bbZipLib(); const z=await JSZip.loadAsync(f); for(const n of Object.keys(z.files)){ const b=n.split('/').pop().toLowerCase(); if(/\.csv$/.test(b)) T[b]=dec(await z.files[n].async('arraybuffer')); } }
+      else T[f.name.toLowerCase()]=dec(await f.arrayBuffer());
+      if(!T['journal.csv']||!T['kontenplan.csv']) throw new Error(f.name+': Journal.csv oder Kontenplan.csv fehlt. Bitte den GDPdU-Export als ZIP hochladen.');
+      const fs=T['firmenstammblatt.csv']?(bbCsv(T['firmenstammblatt.csv'])[0]||{}):{}, firma=fs.Name||f.name;
+      const ges=/kibo/i.test(firma)?'KiBo':/rheinhessen/i.test(firma)?'WT':'EE';
+      const g=bbAufbereiten(ges,firma,bbCsv(T['journal.csv']),bbCsv(T['kontenplan.csv']));
+      BB.daten=BB.daten.filter(x=>x.ges!==ges).concat([g]); } }
+  catch(e){ BB.fehler=e.message||String(e); }
+  BB.lade=false; BB.erg=null; render(); }
+function bbAufbereiten(ges,firma,J,P){ const K={}; for(const p of P) K[p.Kontonummer]={name:p.Kontenbezeichnung||'',kat:p.Kontenkategorie||''};
+  const num=s=>{ const v=parseNum(s); return v==null||isNaN(v)?0:v; };
+  const fin=n=>!!(K[n]&&/finanzkonto/i.test(K[n].kat)), kd=n=>!!(K[n]&&/kreditor|debitor/i.test(K[n].kat)), ust=n=>!!(K[n]&&/umsatzsteuer|vorsteuer/i.test(K[n].kat));
+  /* Rechnungen je Lieferant/Kunde mit ihrem Sachkonto */
+  const R={}; for(const j of J){ const s=j.Sollkonto, h=j.Habenkonto; if(fin(s)||fin(h)) continue;
+    const add=(kk,acc)=>{ if(!acc||ust(acc)||kd(acc)) return; (R[kk]=R[kk]||[]).push({acc,b:num(j.Buchungsbetrag),d:bbDt(j.Belegdatum),ks:j.Kostenstelle||''}); };
+    if(kd(h)) add(h,s); if(kd(s)) add(s,h); }
+  const bank=[]; let von='', bis='';
+  for(const j of J){ const s=j.Sollkonto, h=j.Habenkonto; if(!fin(s)&&!fin(h)) continue;
+    const b=num(j.Buchungsbetrag), d=bbDt(j.Belegdatum)||bbDt(j.Buchungsdatum); if(!b||!d) continue;
+    const seiten=[]; if(fin(s)) seiten.push({bk:s,geg:h,v:b}); if(fin(h)) seiten.push({bk:h,geg:s,v:-b});
+    for(const x of seiten){ let acc=x.geg, ks=j.Kostenstelle||'', ueber='';
+      if(kd(acc)){ ueber=acc; const L=R[acc]||[]; const gl=L.filter(r=>Math.abs(r.b-b)<0.01); const w=(gl.length?gl:L).slice().sort((p,q)=>Math.abs(bbTag(p.d)-bbTag(d))-Math.abs(bbTag(q.d)-bbTag(d)))[0]; if(w){ acc=w.acc; ks=ks||w.ks; } else acc=''; }
+      bank.push({jn:j.Journalnummer,d,b:x.v,bk:x.bk,acc,ueber,ks,text:j.Buchungstext||''});
+      if(!von||d<von) von=d; if(d>bis) bis=d; } }
+  return {ges,firma,K,bank,von,bis}; }
+/* BB-Bankkonto → OS-Konto über die Kontonummer am Ende der Bezeichnung (z. B. „S58 -1429“, „GLS-1396303300“) */
+function bbBankKonto(g,nr){ const n=(g.K[nr]||{}).name||''; const m=n.match(/(\d{4,})\D*$/); if(!m) return null; return konten.find(k=>String(k.iban||'').replace(/\D/g,'').endsWith(m[1]))||null; }
+/* Objekt aus Kontobezeichnung oder Kostenstelle; verkaufte Objekte (nicht mehr im OS) = ohne Objekt */
+function bbObj(g,b){ const ks=objekte.map(o=>o.kz).sort((a,c)=>c.length-a.length); const n=(g.K[b.acc]||{}).name||'';
+  for(const kz of ks){ if(new RegExp('(^|[^a-z0-9])'+kz.toLowerCase()+'([^a-z0-9]|$)').test(n.toLowerCase())) return kz; }
+  const st=String(b.ks||'').replace(/^(WT|EE|KIBO)/i,''); for(const kz of ks){ if(st.toLowerCase().startsWith(kz.toLowerCase())) return kz; }
+  if(/^[A-Za-z]{1,3}\d{1,3}\s/.test(n)) return '__ges'; return ''; }
+/* Vorschlag OS-Konto für ein BB-Konto (Wert k|s|ka) */
+function bbZielStd(g,acc){ if(!acc) return ''; const k=g.K[acc]||{}, n=k.name||'', kat=k.kat||'', base=String(acc).slice(0,4), z=Number(base);
+  if(/finanzkonto|interimskonto/i.test(kat)||/geldtransit|durchlaufende/i.test(n)) return 'intern||';
+  if(/kreditor|debitor/i.test(kat)) return '';
+  if(/privat|gesellschafter|geschäftsführer/i.test(n)||/^(15|16|18)/.test(base)&&/forderung|verbindlich|privat/i.test(n)) return 'intern||';
+  if(/^174/.test(base)) return 'verw|personal|';
+  if(/^178/.test(base)) return 'verw|steuern|';
+  if(z>=8200&&z<8300) return 'miete||';
+  if(/^8/.test(base)) return 'sonst_ein||';
+  /* in BB sind Gas, Strom, Wasser ein Konto (4240); die Kostenart ermittelt das OS. Achtung: im OS ist 4240 Hausgeld (WEG) */
+  if(/hausgeld|\bweg\b|wohnungseigent/i.test(n)) return 'bk||weg';
+  if(base==='4240'||/gas|strom|wasser|energie|heiz/i.test(n)&&z>=4200&&z<4300) return 'bk||';
+  if(base==='4360') return /^[A-Za-z]{1,3}\d/.test(n)?'bk||versicherung':'verw|versicherung|';
+  const ka=KA.find(x=>x[1]===base&&x[0]!=='weg'); if(ka) return 'bk||'+ka[0];
+  if(/^42[6-7]/.test(base)||/instandhaltung|reparatur/i.test(n)) return 'inst||';
+  if(/zins|darlehen/i.test(n)||/^21[0-2]/.test(base)) return 'darl||';
+  const vs=Object.entries(VNR).find(([s,nr])=>nr===base); if(vs) return 'verw|'+vs[0]+'|';
+  if(z>=4100&&z<4200) return 'verw|personal|';
+  if(z>=4210&&z<4240) return 'verw|buero|';
+  if(z>=4300&&z<4360) return 'verw|steuern|';
+  if(z>=4380&&z<4400) return 'verw|sonstige|';
+  if(z>=4500&&z<4600) return 'verw|kfz|';
+  if(z>=4600&&z<4660) return 'verw|vermietung|';
+  if(z>=4660&&z<4700) return 'verw|sonstige|';
+  if(z===4910||(z>=4930&&z<4940)) return 'verw|buerobedarf|';
+  if(z>=4920&&z<4930) return 'verw|telefon|';
+  if(z>=4940&&z<4950) return 'verw|fortbildung|';
+  if(z>=4950&&z<4955) return 'verw|recht|';
+  if(z>=4955&&z<4960) return 'verw|buchhaltung|';
+  if(z>=4960&&z<4970) return 'verw|lizenzen|';
+  if(z>=4970&&z<4980) return 'verw|bank|';
+  if(z===2380) return 'verw|spende|';
+  return ''; }
+const bbZiel=(g,acc)=>{ const k=g.ges+':'+acc; return BB.map[k]!=null?BB.map[k]:bbZielStd(g,acc); };
+function bbZielLabel(v){ if(!v) return 'nicht übernehmen'; const [k,s,ka]=v.split('|'); if(k==='intern') return 'Umbuchung intern (Geldtransit)'; if(k==='ignore') return 'Nicht relevant';
+  const x=KMAP[kval(k,s,ka)]; if(x) return x[0]+' '+x[1]; if(k==='bk') return 'Betriebskosten (Kostenart ermittelt das OS)'; return KATN[k]||k; }
+function bbZielOptionen(){ const L=[['','nicht übernehmen'],['intern||','Umbuchung intern (Geldtransit)'],['ignore||','Nicht relevant'],['bk||','Betriebskosten (Kostenart ermittelt das OS)']];
+  KONTEN.forEach(([gr,l])=>l.forEach(x=>L.push([kval(x[2],x[3],x[4])+'',x[0]+' '+x[1]]))); return L; }
+/* Zuordnung BB-Zahlung → OS-Zahlung */
+function bbErgebnis(){ if(BB.erg) return BB.erg; const its=items().filter(it=>!it.split&&!it.nh); const idx=new Map();
+  for(const it of its){ const key=it.kkey+'|'+Math.round(it.tx.b*100); if(!idx.has(key)) idx.set(key,[]); idx.get(key).push(it); }
+  const benutzt=new Set(), R=[];
+  for(const g of BB.daten) for(const b of g.bank){ if(Number(b.d.slice(0,4))!==year){ continue; } const kn=bbBankKonto(g,b.bk);
+    if(!kn){ R.push({g,b,st:'konto'}); continue; }
+    const L=(idx.get((kn.key||kn.iban)+'|'+Math.round(b.b*100))||[]).filter(it=>!benutzt.has(it.id)&&Math.abs(bbTag(it.tx.d)-bbTag(b.d))<=6).sort((p,q)=>Math.abs(bbTag(p.tx.d)-bbTag(b.d))-Math.abs(bbTag(q.tx.d)-bbTag(b.d)));
+    if(!L.length){ R.push({g,b,st:'fehlt',kn}); continue; } const it=L[0]; benutzt.add(it.id);
+    R.push({g,b,it,kn,st:bestaetigt(it)?'best':'offen'}); }
+  BB.erg={R,benutzt}; return BB.erg; }
+function bbPatch(r){ const {g,b,it,kn}=r; const z=bbZiel(g,b.acc); if(!z) return null; let [k,s,ka]=z.split('|'); s=s||''; ka=ka||'';
+  let obj=bbObj(g,b); const kObj=kn&&objKz().has(kn.obj)?kn.obj:'';
+  if(k==='intern'||k==='ignore') obj='';
+  else if(k==='verw'){ if(!objKz().has(obj)) obj=''; }
+  else { if(!obj) obj=(it.c&&it.c.obj&&(objKz().has(it.c.obj)||it.c.obj==='__ges')?it.c.obj:'')||kObj; if(!obj) obj=k==='darl'?'':'__ges'; if(k==='darl'&&!objKz().has(obj)) return null; }
+  let unit='';
+  if(k==='miete'&&it.c&&it.c.kat==='miete'&&it.c.obj===obj) unit=it.c.unit||'';
+  if(k==='bk'){ if(!ka) ka=(it.c&&it.c.kat==='bk'&&it.c.ka)||guessKa(it.tx)||''; if(ka==='internet'){ const w=INET_UML[obj]; if(w) unit=inetUnit(obj,w); else ka='bk_nu'; } }
+  return {m:1,ok:1,k,s,ka,o:obj,u:unit,kv:'',bb:g.ges+'#'+b.jn}; }
+async function bbUebernehmen(){ if(!db||!canWrite){ toast('Nur Lesezugriff.'); return; }
+  const {R}=bbErgebnis(); const docs=new Map(); let n=0;
+  for(const r of R){ if(r.st!=='offen') continue; const p=bbPatch(r); if(!p) continue; const d=buch[r.it.doc]; if(!d) continue;
+    if(!docs.has(r.it.doc)) docs.set(r.it.doc,d.tx.slice()); const tx=docs.get(r.it.doc); tx[r.it.ix]=Object.assign({},tx[r.it.ix],p); n++; }
+  if(!n){ toast('Nichts zu übernehmen.'); return; }
+  BB.lauf='Übernehme '+n+' Buchungen …'; render();
+  for(const [doc,tx] of docs){ buch[doc].tx=tx; await queue('buchungen/'+doc,()=>db.doc('buchungen/'+doc).update({tx})); }
+  mkCalc=null; opCache={}; invalidate(); BB.erg=null; BB.lauf=''; render(); zvSyncBald(); toast(n+' Buchungen aus BB übernommen und bestätigt.'); }
+function renderBB(){ let h='<h2>Abgleich mit BuchhaltungsButler</h2><div class="note">Was in BB gebucht ist, muss im OS nicht noch einmal gebucht werden. In BB unter Export den <b>Prüfungsexport nach GDPdU</b> erstellen (je Gesellschaft eine ZIP-Datei) und hier hineinziehen. Das OS findet die passenden Zahlungen über Bankkonto, Betrag und Datum, übersetzt das BB-Konto in ein OS-Konto und bestätigt die Buchungen. Bereits bestätigte Buchungen bleiben unverändert. Der Export enthält nur in BB festgeschriebene Buchungen.</div>';
+  h+='<label class="drop" id="bbdrop" for="bbfile"><b>GDPdU-Export (ZIP) hierher ziehen</b>oder klicken, um Dateien auszuwählen<input type="file" id="bbfile" accept=".zip,.csv" multiple hidden></label>';
+  if(BB.lade) h+='<div class="sub">Lese Export …</div>'; if(BB.fehler) h+='<div class="note warnbox">'+esc(BB.fehler)+'</div>';
+  if(!BB.daten.length) return h;
+  const {R}=bbErgebnis(); const z=st=>R.filter(r=>r.st===st);
+  const offen=z('offen'), mitZ=offen.filter(r=>bbPatch(r));
+  h+='<div class="card" style="margin-top:10px">';
+  for(const g of BB.daten){ const Rg=R.filter(r=>r.g===g); h+='<div class="sub" style="margin-bottom:4px"><b>'+esc(g.firma)+'</b> · BB-Zahlungen '+esc(dmy(g.von))+' bis '+esc(dmy(g.bis))+': '+Rg.length+(g.bank.some(b=>Number(b.d.slice(0,4))!==year)?' (nur '+year+' berücksichtigt)':'')+'</div>'; }
+  h+='<table class="sp"><tbody>'
+    +'<tr><td>Im OS gefunden, noch offen</td><td class="n"><b>'+offen.length+'</b></td></tr>'
+    +'<tr><td>davon mit OS-Konto, werden übernommen</td><td class="n"><b>'+mitZ.length+'</b></td></tr>'
+    +'<tr><td>Im OS schon bestätigt (bleiben unverändert)</td><td class="n">'+z('best').length+'</td></tr>'
+    +'<tr><td>Im OS keine passende Zahlung gefunden</td><td class="n">'+z('fehlt').length+'</td></tr>'
+    +'<tr><td>BB-Bankkonto ohne passendes OS-Konto (z. B. Kreditkarte)</td><td class="n">'+z('konto').length+'</td></tr></tbody></table>';
+  h+='<div class="acts"><button class="primary" id="bbgo"'+(BB.lauf||!mitZ.length?' disabled':'')+'>'+(BB.lauf?esc(BB.lauf):mitZ.length+' Buchungen übernehmen und bestätigen')+'</button><button class="ghost" id="bbweg">Export entfernen</button></div></div>';
+  /* Zuordnungstabelle: alle BB-Konten der offenen Zahlungen */
+  const A=new Map(); for(const r of offen){ const key=r.g.ges+':'+(r.b.acc||''); const a=A.get(key)||{g:r.g,acc:r.b.acc,n:0,s:0,ueber:new Set()}; a.n++; a.s+=r.b.b; if(r.b.ueber) a.ueber.add((r.g.K[r.b.ueber]||{}).name||r.b.ueber); A.set(key,a); }
+  const opt=bbZielOptionen();
+  h+='<h3 style="margin-top:16px">Zuordnung BB-Konto zu OS-Konto</h3><div class="sub" style="margin-bottom:6px">Vorschläge sind vorausgefüllt. Ändern: ins Feld schreiben und aus der Liste wählen. Die Zuordnung wird gespeichert und gilt auch für spätere Exporte.</div>';
+  h+='<datalist id="bb-ziel-l">'+opt.map(o=>'<option value="'+esc(o[1])+'"></option>').join('')+'</datalist>';
+  h+='<div class="tw"><table class="tab"><thead><tr><th>Ges.</th><th>BB-Konto</th><th class="n">Zahlungen</th><th class="n">Summe</th><th>OS-Konto</th></tr></thead><tbody>';
+  [...A.values()].sort((a,c)=>c.n-a.n).forEach(a=>{ const nm=a.acc?((a.g.K[a.acc]||{}).name||''):'Rechnung in BB nicht gefunden'; const key=a.g.ges+':'+(a.acc||''); const v=a.acc?bbZiel(a.g,a.acc):'';
+    h+='<tr><td>'+esc(a.g.ges)+'</td><td><b>'+esc(a.acc||'–')+'</b> '+esc(nm)+(a.ueber.size?'<div class="sub">über '+esc([...a.ueber].slice(0,3).join(', '))+(a.ueber.size>3?' …':'')+'</div>':'')+'</td><td class="n">'+a.n+'</td><td class="n">'+eur(a.s)+'</td>'
+      +'<td>'+(a.acc?'<input type="text" class="bbz" data-bbz="'+esc(key)+'" list="bb-ziel-l" value="'+esc(bbZielLabel(v))+'" autocomplete="off" style="min-width:300px'+(v?'':';border-color:var(--warn)')+'">':'<span class="sub">bitte im OS von Hand buchen</span>')+'</td></tr>'; });
+  h+='</tbody></table></div>';
+  const F=z('fehlt'); if(F.length){ h+='<details style="margin-top:12px"><summary>'+F.length+' BB-Zahlungen ohne passende Zahlung im OS</summary><table class="tab"><tbody>'+F.slice(0,BB.mehr?2000:50).map(r=>'<tr><td>'+esc(dmy(r.b.d))+'</td><td>'+esc(r.kn?r.kn.name:'')+'</td><td>'+esc(r.b.text)+'</td><td class="n">'+eur(r.b.b)+'</td></tr>').join('')+'</tbody></table>'+(F.length>50&&!BB.mehr?'<button class="ghost small" id="bbmehr">alle anzeigen</button>':'')+'</details>'; }
+  return h; }
+document.addEventListener('change',e=>{ const t=e.target; if(!t) return;
+  if(t.id==='bbfile'&&t.files&&t.files.length){ bbDateien([...t.files]); t.value=''; return; }
+  if(t.dataset&&t.dataset.bbz){ const o=bbZielOptionen().find(x=>x[1].toLowerCase()===String(t.value).trim().toLowerCase()); if(!o){ toast('Bitte ein Konto aus der Liste wählen.'); BB.erg=null; render(); return; }
+    BB.map=Object.assign({},BB.map,{[t.dataset.bbz]:o[0]}); saveStamm('bbzuordnung',{map:BB.map}); BB.erg=null; render(); } });
+document.addEventListener('click',e=>{ const t=e.target.closest&&e.target.closest('#bbgo,#bbweg,#bbmehr'); if(!t) return;
+  if(t.id==='bbgo') bbUebernehmen(); else if(t.id==='bbweg'){ BB.daten=[]; BB.erg=null; render(); } else { BB.mehr=true; render(); } });
+['dragover','drop'].forEach(ev=>document.addEventListener(ev,e=>{ const d=e.target.closest&&e.target.closest('#bbdrop'); if(!d) return; e.preventDefault(); e.stopPropagation(); if(ev==='drop'&&e.dataTransfer&&e.dataTransfer.files.length) bbDateien([...e.dataTransfer.files]); },true));
+
 function renderImport(){
   let h='<div class="note">So geht’s: Im Online-Banking den Umsatz-Export als <b>CSV</b> herunterladen (DKB, GLS, Sparkasse, 1822direkt …) und hier hineinziehen – gern mehrere Dateien auf einmal. Bereits importierte Buchungen werden erkannt und nicht doppelt gezählt.</div>';
   h+='<label class="drop" id="drop" for="file"><b>CSV-Kontoauszüge hierher ziehen</b>oder klicken, um Dateien auszuwählen<input type="file" id="file" accept=".csv,.txt,text/csv" multiple hidden></label>';
@@ -2362,7 +2511,7 @@ function render(){
   const f=document.activeElement, fid=f&&f.id, fv=fid?f.value:null, ss=f&&f.selectionStart;
   const keep=f&&f.id==='u-q'?f:null;
   const lsEl=$('list'), lsTop=lsEl?lsEl.scrollTop:0;
-  $('view').innerHTML=tab==='import'?'<div class="pad">'+renderNahaus()+renderImport()+'</div>':tab==='belege'?'<div class="bv-pad">'+renderBelegeTab()+'</div>':tab==='regeln'?'<div class="pad">'+renderRegeln()+'</div>':tab==='konten'?'<div class="pad">'+renderKontenplan()+'</div>':renderListe();
+  $('view').innerHTML=tab==='import'?'<div class="pad">'+renderNahaus()+renderBB()+renderImport()+'</div>':tab==='belege'?'<div class="bv-pad">'+renderBelegeTab()+'</div>':tab==='regeln'?'<div class="pad">'+renderRegeln()+'</div>':tab==='konten'?'<div class="pad">'+renderKontenplan()+'</div>':renderListe();
   if(keep){ const n=$('u-q'); if(n){ n.replaceWith(keep); keep.focus({preventScroll:true}); } }
   else if(fid){ const el=$(fid); if(el&&(el.tagName==='INPUT'||el.tagName==='TEXTAREA')){ el.focus({preventScroll:true}); if(fv!=null) el.value=fv; try{ if(ss!=null) el.setSelectionRange(ss,ss); }catch(_){} } }
   { const l2=$('list'); if(l2&&lsTop&&!render.scrollSel) l2.scrollTop=lsTop; }
@@ -2697,6 +2846,7 @@ render();
   db.doc('stamm/belegqr').onSnapshot(s=>{ QRM=(s.exists?clone(s.data()).map:null)||{}; softRender(); },()=>{});
   db.doc('stamm/belegbezahlt').onSnapshot(s=>{ const L=(s.exists?clone(s.data()).liste:null)||[]; MANB=new Map(L.map(x=>[x.od,x])); softRender(); },()=>{});
   db.doc('stamm/belegbk').onSnapshot(s=>{ const L=(s.exists?clone(s.data()).liste:null)||[]; BKM=new Map(L.map(x=>[x.od,x])); softRender(); },()=>{});
+  db.doc('stamm/bbzuordnung').onSnapshot(s=>{ BB.map=(s.exists?clone(s.data()).map:null)||{}; BB.erg=null; softRender(); },()=>{});
   db.doc('stamm/belegentfernt').onSnapshot(s=>{ const L=(s.exists?clone(s.data()).liste:null)||[]; ENT=new Map(L.map(x=>[x.od,x])); softRender(); },()=>{});
   db.doc('stamm/belegignoriert').onSnapshot(s=>{ const L=(s.exists?clone(s.data()).liste:null)||[]; IGN=new Map(L.map(x=>[x.od,x])); softRender(); },()=>{});
   db.doc('stamm/dauerbelege').onSnapshot(s=>{ DAUER=(s.exists?clone(s.data()).liste:null)||[]; invalidate(); softRender(); },()=>{});
