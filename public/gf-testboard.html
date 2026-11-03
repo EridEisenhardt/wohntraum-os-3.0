@@ -66,6 +66,9 @@ h1{font-size:21px;font-weight:800}
 .cell .ct{font-size:10.5px;background:#eef3fb;border:1px solid #d6e4fb;color:#2563eb;border-radius:6px;padding:2px 5px;margin-bottom:3px;line-height:1.25;cursor:default}
 .cell .ct.over{background:#fdecea;border-color:#f5c6c2;color:var(--red)}
 .cell .ct.done{background:#eefaf3;border-color:#cdeede;color:var(--green);text-decoration:line-through}
+.cell .ct.ctover{outline:2px dashed var(--accent);outline-offset:-2px}
+.cell .ct .cttags{display:flex;flex-wrap:wrap;gap:3px;margin-top:3px}
+.cell .ct .cttag{font-size:9px;font-weight:600;background:#fde68a;color:#92400e;border-radius:4px;padding:0 4px;line-height:1.5}
 .addday{float:right;cursor:pointer;color:var(--muted);font-weight:700;width:18px;height:18px;line-height:17px;text-align:center;border-radius:5px;opacity:0;transition:.1s}
 .cell:hover .addday{opacity:1}
 .addday:hover{background:var(--accent);color:#fff}
@@ -351,9 +354,11 @@ function renderCalendar(){
   let cells='';
   for(let i=0;i<count;i++){const d=new Date(start);d.setDate(start.getDate()+i);const iso=isoLokal(d);
     const out=CALMODE==='monat'&&d.getMonth()!==curM, isToday=iso===today;
-    const list=byDay[iso]||[];
+    const list=(byDay[iso]||[]).slice().sort((a,b)=>(a.pos||0)-(b.pos||0)||((a.created_at||'')<(b.created_at||'')?-1:1));
     cells+=`<div class="cell ${out?'out':''} ${isToday?'today':''}" ondragover="event.preventDefault();this.classList.add('calover')" ondragleave="this.classList.remove('calover')" ondrop="calDrop(event,'${iso}',this)"><div class="dn">${d.getDate()}. <span class="addday" title="Hier eine Aufgabe anlegen" onclick="event.stopPropagation();calAdd('${iso}')">＋</span></div>${
-      list.map(t=>{const over=iso<today&&t.status!=='erledigt';const cls=t.status==='erledigt'?'done':(over?'over':'');return `<div class="ct ${cls}" draggable="true" ondragstart="event.stopPropagation();drag(event,'${t.id}')" style="cursor:grab" onclick="openDetail('${t.id}')" title="Ziehen zum Verschieben · Klick zum Öffnen – ${esc(t.titel)}">${esc(CALMODE==='woche'?t.titel:(t.titel.length>26?t.titel.slice(0,24)+'…':t.titel))}</div>`;}).join('')
+      list.map(t=>{const over=iso<today&&t.status!=='erledigt';const cls=t.status==='erledigt'?'done':(over?'over':'');
+        const tg=(Array.isArray(t.tags)?t.tags:[]).map(x=>`<span class="cttag">#${esc(x)}</span>`).join('');
+        return `<div class="ct ${cls}" draggable="true" ondragstart="event.stopPropagation();drag(event,'${t.id}')" ondragover="event.preventDefault();event.stopPropagation();this.classList.add('ctover')" ondragleave="this.classList.remove('ctover')" ondrop="calReorder(event,'${t.id}',this)" style="cursor:grab" onclick="openDetail('${t.id}')" title="Ziehen = verschieben/umsortieren · Klick = öffnen – ${esc(t.titel)}"><div class="ctt">${esc(CALMODE==='woche'?t.titel:(t.titel.length>26?t.titel.slice(0,24)+'…':t.titel))}</div>${tg?`<div class="cttags">${tg}</div>`:''}</div>`;}).join('')
     }</div>`;
   }
   document.getElementById('view').innerHTML=`<div class="calhead">
@@ -385,6 +390,21 @@ async function calDrop(e,iso,el){e.preventDefault();if(el)el.classList.remove('c
   t.faellig=iso;render();
   const {error}=await sb.from('os_tasks').update({faellig:iso,updated_at:new Date().toISOString()}).eq('id',id);
   if(error)toast(error.message);else toast('Fällig auf '+iso.split('-').reverse().join('.')+' verschoben ✓');}
+async function calReorder(e,targetId,el){
+  e.preventDefault();e.stopPropagation();if(el)el.classList.remove('ctover');
+  const id=DRAG;DRAG=null;if(!id||id===targetId)return;
+  const src=TASKS.find(x=>x.id===id),tgt=TASKS.find(x=>x.id===targetId);if(!src||!tgt)return;
+  const day=tgt.faellig;
+  if(src.faellig!==day){src.faellig=day;await sb.from('os_tasks').update({faellig:day,updated_at:new Date().toISOString()}).eq('id',id);}
+  const dayList=TASKS.filter(t=>t.faellig===day).sort((a,b)=>(a.pos||0)-(b.pos||0)||((a.created_at||'')<(b.created_at||'')?-1:1));
+  const without=dayList.filter(t=>t.id!==id);
+  const idx=without.findIndex(t=>t.id===targetId);
+  without.splice(idx<0?without.length:idx,0,src);
+  const base=Math.min.apply(null,dayList.map(t=>t.pos||0).concat([1]));
+  const ups=[];
+  without.forEach((t,i)=>{const np=base+i;if(t.pos!==np){t.pos=np;ups.push([t.id,np]);}});
+  for(const u of ups){await sb.from('os_tasks').update({pos:u[1]}).eq('id',u[0]);}
+  render();toast('Reihenfolge aktualisiert ✓');}
 async function addTask(){const el=document.getElementById('newT');const titel=(el.value||'').trim();if(!titel)return;
   const art=document.getElementById('newArt').value||'aufgabe';
   const fEl=document.getElementById('newFaellig');const faellig=(fEl&&fEl.value)||null;
