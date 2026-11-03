@@ -166,6 +166,8 @@ h1{font-size:21px;font-weight:800}
       <div class="f"><label>Kontakt</label><select id="d_kont"></select></div>
       <div class="f"><label>Objekt</label><select id="d_obj"></select></div>
       <div class="f wide"><label>Asana-Link</label><input id="d_asana_url" placeholder="https://app.asana.com/…"></div>
+      <div class="f wide"><label>Claude-Chat</label><input id="d_claude_url" placeholder="https://claude.ai/…"></div>
+      <div class="f wide" id="d_gcal"></div>
       <div class="f wide"><label>Maßnahme / nächster Schritt</label>
         <div id="d_mass" class="pbox"></div>
       </div>
@@ -286,10 +288,11 @@ function card(t){
   const bet=(t.beteiligte||[]).map(p=>`<span class="pill bet">🧑 ${esc(p)}</span>`).join('');
   const tags=(t.tags||[]).map(tg=>`<span class="pill tag">#${esc(tg)}</span>`).join('');
   const asana=t.asana_url?`<a href="${esc(t.asana_url)}" target="_blank">↗ Asana</a>`:'';
+  const claude=t.claude_url?`<a href="${esc(t.claude_url)}" target="_blank">✦ Claude</a>`:'';
   return `<div class="card" draggable="true" ondragstart="drag(event,'${t.id}')" onclick="openDetail('${t.id}')" style="cursor:pointer">
     <div class="tt">${esc(t.titel)}</div>
     <div class="meta">${artb}${mb}${prio}${due}${wv}${proj}${kont}${obj}${bet}${tags}</div>
-    <div class="links" onclick="event.stopPropagation()">${asana}
+    <div class="links" onclick="event.stopPropagation()">${asana}${claude}
       <select onchange="linkKont('${t.id}',this.value)">${kontOptions(t.kontakt_label)}</select>
       <select onchange="linkObj('${t.id}',this.value)">${objOptions(t.object_label)}</select>
       <button class="del" onclick="delTask('${t.id}')">🗑</button></div>
@@ -400,8 +403,9 @@ async function openDetail(id){
   setVal('d_titel',t.titel);setVal('d_art',t.art||'aufgabe');setVal('d_prio',t.prio||'');
   const alk=document.getElementById('d_akqlink');
   if(alk){if(t.akquise_id){alk.style.display='';alk.innerHTML=`<a href="akquise.html?lead=${encodeURIComponent(t.akquise_id)}" target="_blank" rel="noopener" style="color:var(--accent);font-weight:600;text-decoration:none">🏠 Zum Lead im Akquise-Board ↗</a>`;}else{alk.style.display='none';alk.innerHTML='';}}
+  renderGcal();
   setVal('d_verantwortlich',t.verantwortlich||'');setVal('d_faellig',t.faellig||'');
-  setVal('d_wiedervorlage',t.wiedervorlage||'');setVal('d_asana_url',t.asana_url||'');setVal('d_beschreibung',t.beschreibung||'');
+  setVal('d_wiedervorlage',t.wiedervorlage||'');setVal('d_asana_url',t.asana_url||'');setVal('d_claude_url',t.claude_url||'');setVal('d_beschreibung',t.beschreibung||'');
   document.getElementById('d_status').innerHTML=COLS.map(([k,l])=>`<option value="${k}"${(t.status||'todo')===k?' selected':''}>${STLBL[k]}</option>`).join('');
   document.getElementById('d_kont').innerHTML=kontOptions(t.kontakt_label);
   document.getElementById('d_obj').innerHTML=objOptions(t.object_label);
@@ -441,6 +445,22 @@ async function dSubNote(id){const el=document.getElementById('sn_'+id);if(!el||!
   const {data,error}=await sb.from('os_task_verlauf').insert({task_id:DTASK.id,subtask_id:id,text:txt,autor:ICH||'System'}).select().maybeSingle();
   if(error){toast(error.message);return;}
   if(data){VER.unshift(data);SUBOPEN.add(id);renderDSubs();renderDVer();}}
+function renderGcal(){
+  const el=document.getElementById('d_gcal');if(!el||!DTASK)return;
+  if(DTASK.gcal_event_id){el.innerHTML=`<label>Google Kalender</label><div style="padding-top:4px"><span style="color:#0f9d6b;font-weight:600">✓ im Kalender „Eric Termine Business"</span>${DTASK.gcal_link?` · <a href="${DTASK.gcal_link}" target="_blank" rel="noopener">öffnen ↗</a>`:''} · <button class="btn sec sm" onclick="gcalCreate()" title="Erneut eintragen">↻</button></div>`;}
+  else{el.innerHTML=`<label>Google Kalender</label><button class="btn sec" onclick="gcalCreate()" title="Diese Aufgabe als Termin im Google-Kalender Eric Termine Business anlegen">📅 In Google Kalender eintragen</button>`;}
+}
+async function gcalCreate(){
+  if(!DTASK)return;
+  const faellig=(document.getElementById('d_faellig')||{}).value||DTASK.faellig;
+  if(!faellig){toast('Bitte zuerst ein Fälligkeitsdatum setzen');return;}
+  const el=document.getElementById('d_gcal');if(el)el.innerHTML='<label>Google Kalender</label><span style="color:var(--muted)">Lege Termin an …</span>';
+  const desc=[DTASK.beschreibung||'',DTASK.kontakt_label?('Kontakt: '+DTASK.kontakt_label):'',DTASK.object_label?('Objekt: '+DTASK.object_label):'',location.origin+location.pathname+'?task='+DTASK.id].filter(Boolean).join('\n');
+  const {data,error}=await sb.functions.invoke('gcal-create-event',{body:{title:DTASK.titel||'Aufgabe',date:faellig,description:desc}});
+  if(error||(data&&data.error)){toast('Google Kalender: '+(error?error.message:(typeof data.error==='string'?data.error:JSON.stringify(data.error))));renderGcal();return;}
+  await sb.from('os_tasks').update({gcal_event_id:data.id,gcal_link:data.htmlLink||null,updated_at:new Date().toISOString()}).eq('id',DTASK.id);
+  DTASK.gcal_event_id=data.id;DTASK.gcal_link=data.htmlLink||null;renderGcal();toast('Im Google Kalender eingetragen ✓');
+}
 async function logVer(text){if(!DTASK)return;const row={task_id:DTASK.id,text,autor:ICH||'System'};const {data}=await sb.from('os_task_verlauf').insert(row).select().maybeSingle();if(data){VER.unshift(data);renderDVer();}}
 async function dAddSub(){const el=document.getElementById('d_subnew');const titel=(el.value||'').trim();if(!titel||!DTASK)return;
   const {data}=await sb.from('os_task_subtasks').insert({task_id:DTASK.id,titel,done:false}).select().maybeSingle();
@@ -467,6 +487,7 @@ async function dSave(){
     wiedervorlage:document.getElementById('d_wiedervorlage').value||null,
     kontakt_id:kid,kontakt_label:klabel,object_id:oid,object_label:olabel,
     asana_url:document.getElementById('d_asana_url').value||null,
+    claude_url:document.getElementById('d_claude_url').value||null,
     beschreibung:document.getElementById('d_beschreibung').value||null,
     tags:TAGS.slice(),
     beteiligte:BETEIL.slice(),

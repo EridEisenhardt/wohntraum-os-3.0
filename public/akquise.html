@@ -139,6 +139,12 @@ td input:focus,td select:focus{border-color:var(--accent);background:var(--surf)
     </div>
   </div>
 
+  <details class="card" id="vorlageCard" style="margin-bottom:14px">
+    <summary style="cursor:pointer;font-weight:600;padding:4px 0">⚙️ Akquise-Checkliste · Standard-Vorlage bearbeiten</summary>
+    <div style="color:var(--muted);font-size:12.5px;margin:6px 0">Jeder neue Lead bekommt diese Punkte automatisch. Änderungen gelten für neue Leads; „Auf alle Leads anwenden" ergänzt fehlende Punkte bei bestehenden Leads (ohne bereits abgehakte zu verändern).</div>
+    <div id="vorlageBox"></div>
+  </details>
+
   <div class="card" id="mapCard">
     <div class="card-hd">
       <span>Karte der geprüften Objekte <span style="color:var(--muted);font-weight:400" id="mapCnt"></span></span>
@@ -173,6 +179,8 @@ td input:focus,td select:focus{border-color:var(--accent);background:var(--surf)
       <div class="kgrid" id="opKpi"></div>
       <div class="secttl">Objektdaten</div>
       <div class="opgrid" id="opInfo"></div>
+      <div class="secttl">Akquise-Checkliste <span id="opCheckCnt" style="color:var(--muted);font-weight:400;font-size:12px"></span></div>
+      <div id="opCheck"></div>
       <div class="secttl">Historie · Änderungen &amp; Notizen</div>
       <div class="tl" id="opTl"></div>
     </div>
@@ -213,7 +221,7 @@ function stepArtMass(kat){
 }
 const FLABEL={bezeichnung:'Bezeichnung',strasse:'Straße',plz:'PLZ',ort:'Ort',angeboten_von:'Angeboten von',quelle:'Quelle',eingang:'Eingang',stufe:'Stufe',einheiten:'Einheiten',wohnflaeche:'Wohnfläche',baujahr:'Baujahr',kaufpreis:'Kaufpreis',miete_ist:'Miete IST p. a.',miete_potenzial:'Miete Potenzial p. a.',grunderwerb_pct:'Grunderwerbsteuer %',notar_pct:'Notar & Grundbuch %',makler_pct:'Makler %',sanierung:'Sanierungskosten',angebot_eigen:'Eigenes Angebot',absage_grund:'Absagegrund',verantwortlich:'Verantwortlich',exposé_link:'Exposé-Link',portal:'Portal',portal_link:'Portal-Link',lat:'Breitengrad',lng:'Längengrad',asana_url:'Asana-Link',ordner_url:'Objektordner',claude_url:'Claude-Link',next_step:'Nächster Schritt',next_step_faellig:'Nächster Schritt · fällig',next_step_kat:'Nächster Schritt · Kategorie'};
 
-let ROWS=[], NOTES=[], HIST=[], QUELLEN=[], FSTAGE='', FQUELLE='', VIEW='liste', CUR=null, DRAG=null;
+let ROWS=[], NOTES=[], HIST=[], QUELLEN=[], FSTAGE='', FQUELLE='', VIEW='liste', CUR=null, DRAG=null, VORLAGE=[], CHECK=[];
 const heute=()=>new Date().toISOString().slice(0,10);
 
 const n0=v=>(v==null||v===''||isNaN(Number(v)))?null:Number(v);
@@ -236,18 +244,20 @@ const noteCount=id=>NOTES.filter(n=>n.objekt_id===id).length;
 const rowCls=r=>r.stufe==='X · Abgesagt'?'abgesagt':(/^(10|11)/.test(r.stufe||'')?'gekauft':'');
 
 async function load(){
-  const[o,n,h,q]=await Promise.all([
+  const[o,n,h,q,vl,ck]=await Promise.all([
     sb.from('akquise_objekte').select('*').order('nummer',{ascending:false}),
     sb.from('akquise_notizen').select('*').order('created_at',{ascending:false}),
     sb.from('akquise_historie').select('*').order('created_at',{ascending:false}),
-    sb.from('akquise_quellen').select('name').order('pos').order('name')
+    sb.from('akquise_quellen').select('name').order('pos').order('name'),
+    sb.from('akquise_checkliste_vorlage').select('*').order('pos'),
+    sb.from('akquise_checkliste').select('*').order('pos')
   ]);
-  ROWS=o.data||[];NOTES=n.data||[];HIST=h.data||[];QUELLEN=(q.data||[]).map(x=>x.name);
+  ROWS=o.data||[];NOTES=n.data||[];HIST=h.data||[];QUELLEN=(q.data||[]).map(x=>x.name);VORLAGE=vl.data||[];CHECK=ck.data||[];
   $('f_ver').innerHTML=PERS.map(p=>`<option value="${esc(p)}">${p||'—'}</option>`).join('');
   $('f_portal').innerHTML=PORTALE.map(p=>`<option value="${esc(p)}">${p||'—'}</option>`).join('');
   $('f_quelle').innerHTML='<option value="">—</option>'+QUELLEN.map(x=>`<option>${esc(x)}</option>`).join('');
   if(!$('f_eingang').value)$('f_eingang').value=heute();
-  render();
+  render();renderVorlage();
   try{const lid=new URLSearchParams(location.search).get('lead');if(lid&&ROWS.some(r=>r.id===lid))openOP(lid);}catch(e){}
 }
 
@@ -392,7 +402,9 @@ async function save(){
   if(!row.bezeichnung&&!row.strasse){toast('Bitte Bezeichnung oder Straße angeben');return;}
   const{data,error}=await sb.from('akquise_objekte').insert(row).select();
   if(error){$('msg').style.color='var(--red)';$('msg').textContent='Fehler: '+error.message;return;}
-  if(data&&data[0])await sb.from('akquise_historie').insert({objekt_id:data[0].id,feld:'Objekt',alt:null,neu:'angelegt'});
+  if(data&&data[0]){await sb.from('akquise_historie').insert({objekt_id:data[0].id,feld:'Objekt',alt:null,neu:'angelegt'});
+    const ck=VORLAGE.filter(v=>v.aktiv).map(v=>({objekt_id:data[0].id,text:v.text,pos:v.pos,vorlage_id:v.id}));
+    if(ck.length)await sb.from('akquise_checkliste').insert(ck);}
   ['f_bez','f_str','f_plz','f_ort','f_von','f_kp','f_miete','f_einh','f_wfl','f_bj','f_plink','f_asana','f_claude','f_ordner'].forEach(i=>$(i).value='');
   $('f_eingang').value=heute();
   $('msg').style.color='var(--green)';$('msg').textContent='Objekt angelegt ✓';
@@ -446,6 +458,7 @@ function renderOP(){
     F('Nächster Schritt · fällig am'+(r.next_step_task_id?' · <span style="color:var(--green);font-weight:600">im Kalender ✓</span>':''),'<input class="opi" type="date" value="'+(r.next_step_faellig||'')+'" onchange="updStep(\''+r.id+'\',\'next_step_faellig\',this.value)">')+
     F('Absagegrund',opTxt(r,'absage_grund'))+
     F('Breitengrad (lat)',opTxt(r,'lat','number','0.000001'))+F('Längengrad (lng)',opTxt(r,'lng','number','0.000001'));
+  renderCheck();
   const items=[];
   NOTES.filter(n=>n.objekt_id===CUR).forEach(n=>items.push({t:n.created_at,kind:'note',text:n.text}));
   HIST.filter(h=>h.objekt_id===CUR).forEach(h=>items.push({t:h.created_at,kind:'hist',feld:h.feld,alt:h.alt,neu:h.neu}));
@@ -457,6 +470,85 @@ function renderOP(){
 }
 function openOP(id){CUR=id;$('noteInput').value='';renderOP();$('ov').classList.add('show');const mc=$('mapCard');if(mc)mc.style.display='none';}
 function closeOP(){$('ov').classList.remove('show');CUR=null;const mc=$('mapCard');if(mc)mc.style.display='';}
+// ——— Akquise-Checkliste je Lead ———
+function renderCheck(){
+  const box=$('opCheck');if(!box)return;
+  const items=CHECK.filter(c=>c.objekt_id===CUR).sort((a,b)=>(a.pos||0)-(b.pos||0)||((a.created_at||'')>(b.created_at||'')?1:-1));
+  const done=items.filter(c=>c.erledigt).length;
+  const cnt=$('opCheckCnt');if(cnt)cnt.textContent=items.length?('· '+done+'/'+items.length+' erledigt'):'';
+  box.innerHTML=(items.map(c=>`<div style="display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid var(--line)">
+      <input type="checkbox" ${c.erledigt?'checked':''} onchange="chkToggle('${c.id}',this.checked)">
+      <span style="flex:1;${c.erledigt?'text-decoration:line-through;color:var(--muted)':''}">${esc(c.text)}</span>
+      ${c.task_id?'<span style="color:var(--green);font-size:12px;font-weight:600">im Kalender ✓</span>':`<button class="btn sec" style="padding:2px 8px;font-size:12px" onclick="chkToCal('${c.id}')" title="Als Termin in den Aufgaben-Kalender">📅 Kalender</button>`}
+      <button class="abtn" onclick="chkDel('${c.id}')" title="entfernen">✕</button>
+    </div>`).join('')||'<div class="empty" style="padding:8px">Keine Checklisten-Punkte.</div>')
+    +`<div style="display:flex;gap:6px;margin-top:8px"><input id="chkNew" placeholder="Eigenen Punkt hinzufügen …" style="flex:1;padding:6px 8px;border:1px solid var(--line);border-radius:7px" onkeydown="if(event.key==='Enter')chkAdd()"><button class="btn sec" onclick="chkAdd()">+ Punkt</button></div>`;
+}
+async function chkToggle(id,v){
+  const c=CHECK.find(x=>x.id===id);if(!c)return;
+  c.erledigt=v;c.erledigt_at=v?new Date().toISOString():null;
+  const {error}=await sb.from('akquise_checkliste').update({erledigt:v,erledigt_at:c.erledigt_at}).eq('id',id);
+  if(error){toast(error.message);return;}
+  if(c.task_id)await sb.from('os_tasks').update({status:v?'erledigt':'todo',updated_at:new Date().toISOString()}).eq('id',c.task_id);
+  renderCheck();
+}
+async function chkAdd(){
+  if(!CUR)return;const el=$('chkNew');const t=(el&&el.value||'').trim();if(!t)return;
+  const pos=(CHECK.filter(c=>c.objekt_id===CUR).reduce((m,c)=>Math.max(m,c.pos||0),0))+1;
+  const {data,error}=await sb.from('akquise_checkliste').insert({objekt_id:CUR,text:t,pos}).select();
+  if(error){toast(error.message);return;}
+  if(data&&data[0])CHECK.push(data[0]);renderCheck();
+}
+async function chkDel(id){
+  if(!confirm('Checklisten-Punkt entfernen?'))return;
+  const {error}=await sb.from('akquise_checkliste').delete().eq('id',id);
+  if(error){toast(error.message);return;}
+  CHECK=CHECK.filter(x=>x.id!==id);renderCheck();
+}
+async function chkToCal(id){
+  const c=CHECK.find(x=>x.id===id);if(!c)return;
+  const r=ROWS.find(x=>x.id===c.objekt_id);
+  const d=prompt('Fällig am (JJJJ-MM-TT) für „'+c.text+'" — leer = heute:',heute());
+  if(d===null)return;const faellig=(d||'').trim()||heute();
+  const resp=(r&&r.verantwortlich)||'Eric';
+  const label='Akquise #'+(r?r.nummer:'')+' · '+((r&&(r.bezeichnung||r.strasse))||'Objekt');
+  const {data,error}=await sb.from('os_tasks').insert({titel:c.text,faellig,status:'todo',art:'aufgabe',verantwortlich:resp,quelle:'akquise',quelle_bereich:'Akquise',object_id:c.objekt_id,object_label:label,akquise_id:c.objekt_id}).select().maybeSingle();
+  if(error){toast('Kalender: '+error.message);return;}
+  if(data){await sb.from('akquise_checkliste').update({task_id:data.id}).eq('id',id);c.task_id=data.id;renderCheck();toast('In den Aufgaben-Kalender übernommen ✓');}
+}
+// ——— Checklisten-Vorlage (zentral) ———
+function renderVorlage(){
+  const box=$('vorlageBox');if(!box)return;
+  const items=VORLAGE.slice().sort((a,b)=>(a.pos||0)-(b.pos||0));
+  box.innerHTML=items.map(v=>`<div style="display:flex;align-items:center;gap:8px;padding:4px 0">
+      <input type="checkbox" ${v.aktiv?'checked':''} title="aktiv – gilt für neue Leads" onchange="vorUpd('${v.id}','aktiv',this.checked)">
+      <input value="${esc(v.text)}" style="flex:1;padding:5px 8px;border:1px solid var(--line);border-radius:7px;${v.aktiv?'':'opacity:.5'}" onchange="vorUpd('${v.id}','text',this.value)">
+      <input type="number" value="${v.pos||0}" title="Reihenfolge" style="width:64px;padding:5px;border:1px solid var(--line);border-radius:7px" onchange="vorUpd('${v.id}','pos',this.value)">
+      <button class="abtn" onclick="vorDel('${v.id}')" title="aus Vorlage löschen">✕</button>
+    </div>`).join('')
+    +`<div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap"><input id="vorNew" placeholder="Neuen Standard-Punkt …" style="flex:1;min-width:180px;padding:6px 8px;border:1px solid var(--line);border-radius:7px" onkeydown="if(event.key==='Enter')vorAdd()"><button class="btn sec" onclick="vorAdd()">+ Punkt</button><button class="btn" onclick="vorApplyAll()" title="Fehlende aktive Vorlagen-Punkte bei allen bestehenden Leads ergänzen">🔄 Auf alle Leads anwenden</button></div>`;
+}
+async function vorAdd(){const el=$('vorNew');const t=(el&&el.value||'').trim();if(!t)return;
+  const pos=(VORLAGE.reduce((m,v)=>Math.max(m,v.pos||0),0))+1;
+  const {data,error}=await sb.from('akquise_checkliste_vorlage').insert({text:t,pos}).select();
+  if(error){toast(error.message);return;}if(data&&data[0])VORLAGE.push(data[0]);renderVorlage();}
+async function vorUpd(id,field,val){const v=VORLAGE.find(x=>x.id===id);if(!v)return;
+  let nv=val;if(field==='pos')nv=n0(val)||0;if(field==='aktiv')nv=!!val;
+  v[field]=nv;const {error}=await sb.from('akquise_checkliste_vorlage').update({[field]:nv}).eq('id',id);
+  if(error){toast(error.message);return;}renderVorlage();}
+async function vorDel(id){if(!confirm('Vorlagen-Punkt löschen? Bestehende Lead-Checklisten bleiben unverändert.'))return;
+  const {error}=await sb.from('akquise_checkliste_vorlage').delete().eq('id',id);
+  if(error){toast(error.message);return;}VORLAGE=VORLAGE.filter(x=>x.id!==id);renderVorlage();}
+async function vorApplyAll(){
+  const act=VORLAGE.filter(v=>v.aktiv);if(!act.length){toast('Keine aktiven Vorlagen-Punkte');return;}
+  if(!confirm('Fehlende Punkte bei allen '+ROWS.length+' Leads ergänzen?'))return;
+  const rows=[];
+  ROWS.forEach(o=>{const have=new Set(CHECK.filter(c=>c.objekt_id===o.id).map(c=>c.vorlage_id).filter(Boolean));
+    act.forEach(v=>{if(!have.has(v.id))rows.push({objekt_id:o.id,text:v.text,pos:v.pos,vorlage_id:v.id});});});
+  if(!rows.length){toast('Alle Leads sind bereits aktuell ✓');return;}
+  const {data,error}=await sb.from('akquise_checkliste').insert(rows).select();
+  if(error){toast(error.message);return;}
+  CHECK=CHECK.concat(data||[]);toast(rows.length+' Punkte ergänzt ✓');if(CUR)renderCheck();}
 async function addNote(){
   if(!CUR)return;
   const t=$('noteInput').value.trim();if(!t){toast('Bitte Text eingeben');return;}
@@ -574,6 +666,7 @@ function exportCSV(){
 }
 
 window.setView=setView;window.save=save;window.del=del;window.upd=upd;window.updStep=updStep;window.openOP=openOP;window.closeOP=closeOP;
+window.chkToggle=chkToggle;window.chkAdd=chkAdd;window.chkDel=chkDel;window.chkToCal=chkToCal;window.vorAdd=vorAdd;window.vorUpd=vorUpd;window.vorDel=vorDel;window.vorApplyAll=vorApplyAll;
 window.addNote=addNote;window.exportCSV=exportCSV;window.geocodeAlle=geocodeAlle;window.addQuelle=addQuelle;window.dragStart=dragStart;window.allowDrop=allowDrop;window.drop=drop;
 
 (async()=>{
