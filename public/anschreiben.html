@@ -99,7 +99,7 @@ const DL_BASIS='Prozesslandkarte 3.0/30.000 Banken & Dienstleister/Dienstleister
 let db=null, sb=null, MK={}, EDIT={}, OBJ=[], FIRMEN=[], KONT=[], ABSD={}, LISTE=[], ICH='', ICHMAIL='', ICHID='', ICHVOLL='', geladen=false, fehler='';
 const ART=new URLSearchParams(location.search).get('art')==='auftrag'?'auftrag':'';
 let S=leer();
-function leer(alt){ alt=alt||{}; return {ges:alt.ges||'WT',versand:'Standardbrief',empf:null,modus:'suche',such:'',neuTyp:'firma',nf:{name:'',vorname:'',firma:'',strasse:'',plz:'',ort:'',email:''},adresse:'',anrede:'',betreff:'',text:'',unter:alt.unter||ICHVOLL||'',ki:null,busy:'',absEdit:false,au:{nr:'',datum:'',leistung:'',ort:'',ortLabel:'',betrag:'',rolle:'unserer dortigen Mieterin',kontakt:'',tel:''}}; }
+function leer(alt){ alt=alt||{}; return {ges:alt.ges||'WT',versand:'Standardbrief',empf:null,modus:'suche',such:'',neuTyp:'firma',nf:{name:'',vorname:'',firma:'',strasse:'',plz:'',ort:'',email:''},adresse:'',anrede:'',betreff:'',text:'',unter:alt.unter||ICHVOLL||'',ki:null,busy:'',absEdit:false,au:{nr:'',datum:'',leistung:'',ort:'',ortLabel:'',betrag:'',rolle:'unserer dortigen Mieterin',kontakt:'',tel:'',st:null}}; }
 
 /* Gesellschaft / Absender */
 const absender=k=>Object.assign({},GES_DEF[k]||{},ABSD[k]||{});
@@ -158,15 +158,32 @@ async function loadIch(){ try{ const {data:{user}}=await sb.auth.getUser(); if(!
   ICHID=user.id; ICHMAIL=String(user.email||'').toLowerCase(); ICHVOLL=n||''; ICH=NUTZER[ICHMAIL]||n||user.email||''; if(!S.unter) S.unter=ICHVOLL; }catch(e){} }
 async function loadKontakte(){ try{ const [f,k]=await Promise.all([sb.from('hv_firmen').select('id,name,strasse,plz,ort,adresse,kategorien').order('name'),sb.from('hv_kontakte').select('id,firma_id,vorname,name,email,strasse,plz,ort').order('name')]);
   if(f.error) throw f.error; if(k.error) throw k.error; FIRMEN=f.data||[]; KONT=k.data||[]; }catch(e){ fehler='Firmen und Kontakte nicht lesbar: '+(e.message||e); } render(); }
+async function qrBild(text){ if(!window.QRCode) await new Promise((res,rej)=>{ const s=document.createElement('script'); s.src='https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js'; s.onload=res; s.onerror=rej; document.head.appendChild(s); });
+  const d=document.createElement('div'); new QRCode(d,{text,width:300,height:300,correctLevel:QRCode.CorrectLevel.M}); await new Promise(r=>setTimeout(r,120));
+  const c=d.querySelector('canvas'); if(c) return c.toDataURL('image/png'); const i=d.querySelector('img'); return i?i.src:''; }
+/* Aus einer Störungsmeldung: Firma, Objekt, Einheit, Leistung und Rückmelde-Link vorbelegen */
+async function stoerungLaden(id){ try{
+  const {data:st,error}=await sb.from('stoerungen').select('*').eq('id',id).maybeSingle(); if(error||!st) throw error||new Error('Störung nicht gefunden');
+  const [o,e]=await Promise.all([sb.from('obj_objekte').select('id,kz,gesellschaft').eq('id',st.objekt_id).maybeSingle(),st.einheit_id?sb.from('obj_einheiten').select('id,bezeichnung').eq('id',st.einheit_id).maybeSingle():Promise.resolve({data:null})]);
+  const ticket='ST-'+String(st.nr||0).padStart(5,'0'), link=st.hw_token?location.origin+'/stoerung.html?h='+st.hw_token:'';
+  const a=S.au; a.st={id:st.id,ticket,link,qr:link?await qrBild(link):''};
+  a.leistung='die Behebung der folgenden Störung: '+String(st.titel||'').trim()+' (Ticket '+ticket+')';
+  const kz=o.data&&o.data.kz, uid=e.data&&e.data.bezeichnung; if(kz){ const n=x=>String(x||'').replace(/\s+/g,'').toLowerCase();
+    const mk=Object.values(MK).find(m=>m.obj===kz&&n(m.einheit)===n(uid)&&!(m.bis&&m.bis<today)); ortListe();
+    const lab=Object.keys(ORTLAB).find(l=>{ const v=ORTLAB[l]; return v.kz===kz&&(mk?v.mk===mk.pid:!v.mk); }); if(lab) ortWaehlen(lab); }
+  if(st.handwerker){ const f=FIRMEN.find(f=>norm(f.name)===norm(st.handwerker)); if(f){ empfListe(); empfWaehlen({typ:'firma',id:f.id}); S.such=Object.keys(LAB).find(k=>LAB[k].typ==='firma'&&LAB[k].id===f.id)||''; } }
+  auftragSetzen(); render(); toast('Aus Störung '+ticket+' vorbelegt. Bitte Angebot und Preis ergänzen.');
+  }catch(err){ toast('Störung konnte nicht geladen werden: '+(err.message||err)); } }
 (async()=>{
   try{ db=await claude.use('db'); }catch(e){ db=null; }
   sb=window.osSupabase; if(!db||!sb){ $('app').innerHTML='<div class="card">Bitte zuerst im OS anmelden.</div>'; return; }
-  await loadIch(); loadKontakte();
+  await loadIch(); await loadKontakte();
   db.collection('mietkonten').onSnapshot(q=>{ const m={}; q.docs.forEach(d=>{m[d.id]=d.data();}); MK=m; geladen=true; render(); },()=>{ geladen=true; render(); });
   db.doc('stamm/mietkonten-edit').onSnapshot(s=>{ EDIT=(s.exists?s.data().e:null)||{}; render(); },()=>{});
   db.doc('stamm/objekte').onSnapshot(s=>{ OBJ=(s.exists?s.data().objekte:null)||[]; render(); },()=>{});
   db.doc('stamm/briefabsender').onSnapshot(s=>{ ABSD=(s.exists?s.data().g:null)||{}; render(); },()=>{});
   db.collection('anschreiben').onSnapshot(q=>{ LISTE=q.docs.map(d=>d.data()).sort((a,b)=>String(b.d).localeCompare(String(a.d))); render(); },()=>{});
+  const stId=new URLSearchParams(location.search).get('stoerung'); if(ART&&stId){ let n=0; while(!geladen&&n++<40) await new Promise(r=>setTimeout(r,150)); await stoerungLaden(stId); }
 })();
 
 /* ---------- Oberfläche ---------- */
@@ -211,7 +228,7 @@ function render(){ const app=$('app'); if(!app) return;
       +'<label class="fl">Leistung (wird eingesetzt in „beauftragen wir Sie hiermit, … in unserem Objekt“)<input id="u-leistung" value="'+esc(a.leistung)+'" placeholder="z. B. die Verkleidung der drei Fenster"></label>'
       +'<div class="row"><label class="fl">Objekt und Einheit<input id="u-ort" data-pick="1" list="l-ort" value="'+esc(a.ortLabel)+'" placeholder="Objekt, Einheit oder Mieter eintippen …" autocomplete="off">'+dl('l-ort',OL)+'</label><label class="fl">Angebotspreis brutto in Euro<input id="u-betrag" inputmode="decimal" value="'+esc(a.betrag)+'" placeholder="z. B. 950,00"></label></div>'
       +'<div class="row3"><label class="fl">Termin absprechen mit<input id="u-rolle" data-pick="1" list="l-rolle" value="'+esc(a.rolle)+'">'+dl('l-rolle',['unserer dortigen Mieterin','unserem dortigen Mieter','unseren dortigen Mietern','unserem Hausmeister'])+'</label><label class="fl">Name<input id="u-kontakt" value="'+esc(a.kontakt)+'" placeholder="leer = ohne Terminabsprache"></label><label class="fl">Telefon<input id="u-tel" value="'+esc(a.tel)+'"></label></div>'
-      +'<div class="sub" style="margin-top:6px">Name und Telefon kommen aus dem Mieterkonto der Einheit und lassen sich ändern. Betreff und Brieftext unten werden aus diesen Angaben erzeugt.</div></div>';
+      +'<div class="sub" style="margin-top:6px">Name und Telefon kommen aus dem Mieterkonto der Einheit und lassen sich ändern. Betreff und Brieftext unten werden aus diesen Angaben erzeugt.</div>'+(a.st?'<div class="note" style="margin-top:8px">Zur Störung <b>'+esc(a.st.ticket)+'</b>: Link und QR-Code zur Handwerker-Seite kommen in den Brief. Nach dem Erstellen wird der Auftrag im Verlauf der Störung vermerkt.</div>':'')+'</div>';
   }
   /* Brief */
   h+='<div class="card"><div class="ch">Brief</div>'
@@ -284,10 +301,11 @@ function auftragText(){ const a=S.au, A=absender(S.ges); const P=[];
   P.push((bt?'zum Angebotspreis in Höhe von brutto '+bt+' €uro ':'')+'vorzunehmen.');
   if(a.kontakt.trim()){ P.push('Gerne können Sie im Vorfeld einen konkreten Ausführungstermin mit '+(a.rolle.trim()||'unserer dortigen Mieterin')+',');
     P.push([a.kontakt.trim(),a.tel.trim()?'Telefon: '+telSchoen(a.tel):''].filter(Boolean).join('\n')); P.push('absprechen.'); }
+  if(a.st&&a.st.link) P.push('Alle Angaben zur Störung '+a.st.ticket+' mit Fotos und Ansprechpartner finden Sie über den QR-Code oben rechts oder unter folgendem Link. Dort können Sie uns nach der Ausführung auch direkt eine Rückmeldung mit Fotos geben:\n'+a.st.link);
   P.push('Bei Rückfragen Ihrerseits stehen wir Ihnen zu deren Beantwortung gerne zur Verfügung.');
   return P.join('\n\n'); }
 function auftragSetzen(){ const a=S.au; S.text=auftragText();
-  const v=a.ort||{}; S.betreff='Auftragserteilung'+(a.nr.trim()?' – Angebot Nr. '+a.nr.trim()+(a.datum?' vom '+dmyT(a.datum):''):'')+(v.kz?' – '+v.kz+(v.mk&&MK[v.mk]?' '+uName(MK[v.mk].einheit):''):'');
+  const v=a.ort||{}; S.betreff='Auftragserteilung'+(a.st?' '+a.st.ticket:'')+(a.nr.trim()?' – Angebot Nr. '+a.nr.trim()+(a.datum?' vom '+dmyT(a.datum):''):'')+(v.kz?' – '+v.kz+(v.mk&&MK[v.mk]?' '+uName(MK[v.mk].einheit):''):'');
   if(!S.anrede.trim()) S.anrede='Sehr geehrte Damen und Herren,'; }
 
 /* ---------- PDF ---------- */
@@ -298,13 +316,15 @@ function briefPdf(){ if(!window.jspdf){ toast('PDF-Bibliothek lädt noch, bitte 
   y=45; doc.setFontSize(7.5); doc.setTextColor(110); doc.text([A.name,A.strasse,A.ort].filter(Boolean).join(' · '),L,y);
   y+=5; const vm=VERMERK[S.versand]!=null?VERMERK[S.versand]:S.versand; if(vm){ doc.setFont('helvetica','bold'); doc.setFontSize(9); doc.setTextColor(20); doc.text(vm,L,y); doc.setFont('helvetica','normal'); }
   y+=6; doc.setFontSize(11); doc.setTextColor(20); String(S.adresse||'').split('\n').filter(s=>s.trim()).forEach(l=>{ doc.text(l.trim(),L,y); y+=5; });
+  if(ART&&S.au.st&&S.au.st.qr){ try{ doc.addImage(S.au.st.qr,'PNG',R-32,50,32,32); doc.setFontSize(7.5); doc.setTextColor(110); doc.text('Störung '+S.au.st.ticket,R-16,86,{align:'center'}); }catch(e){} }
   y=Math.max(y,90)+6; doc.setFontSize(10); doc.setTextColor(60); doc.text((A.datumOrt?A.datumOrt+', ':'')+dmy(today),R,y,{align:'right'});
   y+=12; doc.setTextColor(20); doc.setFontSize(11.5); doc.setFont('helvetica','bold'); doc.splitTextToSize(S.betreff||'',R-L).forEach(l=>{ doc.text(l,L,y); y+=6; }); doc.setFont('helvetica','normal'); y+=4; doc.setFontSize(10.5);
   const para=t=>{ [].concat(...String(t).split('\n').map(z=>doc.splitTextToSize(z,R-L))).forEach(ln=>{ if(y>270){ doc.addPage(); y=25; } doc.text(ln,L,y); y+=5.4; }); y+=3; };
   if(S.anrede.trim()) para(S.anrede.trim());
   String(S.text||'').replace(/\r/g,'').split(/\n\s*\n/).forEach(p=>{ if(p.trim()) para(p.trim()); });
   y+=2; para('Mit freundlichen Grüßen');
-  y+=10; if(y>275){ doc.addPage(); y=30; } doc.text(S.unter.trim()||'',L,y); y+=5; doc.setFontSize(9.5); doc.setTextColor(90); if(S.unter.trim()&&!/^(ihr )?team von/i.test(S.unter.trim())) doc.text(A.name||'',L,y);
+  y+=10; if(y>275){ doc.addPage(); y=30; } doc.text(S.unter.trim()||'',L,y);
+  y+=5; doc.setFontSize(9.5); doc.setTextColor(90); if(S.unter.trim()&&!/^(ihr )?team von/i.test(S.unter.trim())) doc.text(A.name||'',L,y);
   const fuss=[A.name,[A.strasse,A.ort].filter(Boolean).join(', '),A.tel?'Tel. '+A.tel:'',A.mail||''].filter(Boolean).join(' · ');
   const pages=doc.getNumberOfPages(); for(let i=1;i<=pages;i++){ doc.setPage(i); doc.setDrawColor(210); doc.line(L,284,R,284); doc.setFontSize(7.5); doc.setTextColor(120); doc.text(fuss,L,288); if(pages>1) doc.text('Seite '+i+' von '+pages,R,288,{align:'right'}); }
   return doc; }
@@ -367,6 +387,10 @@ async function speichern(){ if(S.busy) return;
       await sb.from('hv_timeline').insert({entity_typ:E.typ,entity_id:E.id,art:ART?'auftrag':'anschreiben',feld:S.betreff.trim(),neu:od.web||'',alt:od.id,text:S.ges+' · '+S.versand+' · '+(ICH||'')});
       await sb.from(E.typ==='firma'?'hv_firmen':'hv_kontakte').update({letzter_kontakt:today}).eq('id',E.id);
     }
+    if(ART&&S.au.st){ try{ const {data:st}=await sb.from('stoerungen').select('verlauf,handwerker,status').eq('id',S.au.st.id).maybeSingle(); const V=(st&&st.verlauf)||[]; const firma=empfKurz();
+      V.push({d:new Date().toISOString(),by:ICH||'OS',art:'Auftrag',t:'Auftragserteilung an '+firma+' erstellt'+(od&&od.web?': '+od.web:'')});
+      const patch={verlauf:V}; if(st&&!st.handwerker) patch.handwerker=firma; if(st&&st.status==='Neu') patch.status='In Arbeit';
+      await sb.from('stoerungen').update(patch).eq('id',S.au.st.id); }catch(e){} }
     doc.save(od?od.name:name); toast((ART?'Auftrag':'Anschreiben')+' erstellt und abgelegt – '+ablage+'.');
     const alt={ges:S.ges,unter:S.unter}; S=leer(alt); loadKontakte();
   }catch(e){ S.busy=''; toast('Fehler: '+(e.message||e)); render(); return; }
