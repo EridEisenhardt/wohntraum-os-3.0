@@ -815,7 +815,7 @@ function belegForm(n,neu){ const a=anteilBerechnen(n); const f=(k,l,ph)=>{ const
 function kaFuerOrdner(sub){ const n=norm(sub); if(!n) return null; const L=D.kas.filter(k=>!k.ausgeblendet).sort((a,b)=>(a.pos||0)-(b.pos||0));
   return L.find(k=>norm(k.name)===n)||L.find(k=>(ORDNER_WORT[norm(k.name)]||[norm(k.name).split(' ')[0]]).some(w=>n.split(' ').some(t=>t.startsWith(w))))||null; }
 /* Ordner 04 Betriebskosten/BK-Abrechnung JAHR: dort liegen nur die Belege für dieses Jahr (Unterordner Prüfen = unsicher) */
-async function azAusOrdner(benutzt){ try{ const r=await odApi({aktion:'objektbasis',kz:[D.o.kz]}); const B=(r.objekte||{})[D.o.kz]; if(!B) return null;
+async function azAusOrdner(benutzt){ return null; /* Ordner BK-Abrechnung JAHR gibt es nicht mehr – Belege kommen aus den Kostenart-Ordnern */ try{ const r=await odApi({aktion:'objektbasis',kz:[D.o.kz]}); const B=(r.objekte||{})[D.o.kz]; if(!B) return null;
     const t04=(B.top||[]).find(t=>/^04 Betriebskosten$/.test(t))||(B.top||[]).find(t=>/Betriebskosten/.test(t)); if(!t04) return null;
     const pfad=B.basis+'/'+t04+'/BK-Abrechnung '+JAHR, a=await odApi({aktion:'ordner',pfad}); if(a.fehlt||!(a.eintraege||[]).length) return null;
     const L=[]; const add=(f,pruefen,pf)=>{ if(f.ordner||benutzt.has(f.id)) return; const m=nameMeta(f.name), T=String(f.name).replace(/\.[a-z0-9]+$/i,'').split('_');
@@ -829,7 +829,7 @@ async function azStart(){ AZ={lade:'Suche die Belege von '+D.o.kz+' in OneDrive 
     const O=await azAusOrdner(benutzt);
     if(O){ AZ.quelle='Ordner '+O.pfad.split('/').slice(-2).join('/'); L.push(...O.L); }
     else for(const j of [JAHR,JAHR+1]){ const r=await odApi({aktion:'belegbaum',jahr:j,kz:[D.o.kz]});
-      for(const f of (r.dateien||[])){ if(seen.has(f.id)||benutzt.has(f.id)) continue; const rel=String(f.rel||''); if(f.obj&&f.obj!==D.o.kz) continue; if(!/^(0?4 )?Betriebskosten\//i.test(rel)) continue; seen.add(f.id);
+      for(const f of (r.dateien||[])){ if(seen.has(f.id)||benutzt.has(f.id)) continue; const rel=String(f.rel||''); if(f.obj&&f.obj!==D.o.kz) continue; if(!/^(0?4 )?Betriebskosten\//i.test(rel)) continue; if(/^bk-abrechnung/i.test(rel.split('/')[1]||'')) continue; seen.add(f.id);
         const sub=rel.split('/')[1]||'', ka=rel.split('/').length>2?kaFuerOrdner(sub):null, m=nameMeta(f.name);
         L.push({id:f.id,name:f.name,pfad:f.pfad,ordner:sub,ka:ka?ka.id:'',datum:m.datum,empfaenger:m.abs,betrag:m.betrag!=null?fnum.format(m.betrag):'',neg:/_-[\d.]+,\d{2}\s?€/.test(f.name),von:'',bis:'',info:[],an:false}); } }
     /* Vorauswahl nach Datum; Jahresabrechnungen kommen meist im ersten Halbjahr des Folgejahres */
