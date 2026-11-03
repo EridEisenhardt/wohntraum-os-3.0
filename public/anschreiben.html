@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Anschreiben – Wohntraum OS</title>
+<script>if(/art=auftrag/.test(location.search)) document.title='Auftragserteilung – Wohntraum OS';</script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script>window.OS_APP='oc';</script>
@@ -96,8 +97,9 @@ const VERMERK={'Standardbrief':'','Einschreiben Einwurf':'Einschreiben Einwurf',
 const DL_BASIS='Prozesslandkarte 3.0/30.000 Banken & Dienstleister/Dienstleister';
 
 let db=null, sb=null, MK={}, EDIT={}, OBJ=[], FIRMEN=[], KONT=[], ABSD={}, LISTE=[], ICH='', ICHMAIL='', ICHID='', ICHVOLL='', geladen=false, fehler='';
+const ART=new URLSearchParams(location.search).get('art')==='auftrag'?'auftrag':'';
 let S=leer();
-function leer(alt){ alt=alt||{}; return {ges:alt.ges||'WT',versand:'Standardbrief',empf:null,modus:'suche',such:'',neuTyp:'firma',nf:{name:'',vorname:'',firma:'',strasse:'',plz:'',ort:'',email:''},adresse:'',anrede:'',betreff:'',text:'',unter:alt.unter||ICHVOLL||'',ki:null,busy:'',absEdit:false}; }
+function leer(alt){ alt=alt||{}; return {ges:alt.ges||'WT',versand:'Standardbrief',empf:null,modus:'suche',such:'',neuTyp:'firma',nf:{name:'',vorname:'',firma:'',strasse:'',plz:'',ort:'',email:''},adresse:'',anrede:'',betreff:'',text:'',unter:alt.unter||ICHVOLL||'',ki:null,busy:'',absEdit:false,au:{nr:'',datum:'',leistung:'',ort:'',ortLabel:'',betrag:'',rolle:'unserer dortigen Mieterin',kontakt:'',tel:''}}; }
 
 /* Gesellschaft / Absender */
 const absender=k=>Object.assign({},GES_DEF[k]||{},ABSD[k]||{});
@@ -172,7 +174,7 @@ function dl(id,werte){ return '<datalist id="'+id+'">'+werte.map(v=>'<option val
 function render(){ const app=$('app'); if(!app) return;
   const akt=document.activeElement, fid=akt&&akt.id, sel=akt&&akt.selectionStart!=null?[akt.selectionStart,akt.selectionEnd]:null;
   const A=absender(S.ges), labels=empfListe();
-  let h='<h1>Anschreiben</h1><div class="sub">Brief aufsetzen, von der KI prüfen lassen, als PDF erstellen und beim Empfänger ablegen.</div>';
+  let h=ART?'<h1>Auftragserteilung</h1><div class="sub">Auftrag an eine Firma nach Angebot: Angaben eintragen, der Brief wird nach Vorlage erstellt, als PDF abgelegt und im Verlauf der Firma vermerkt.</div>':'<h1>Anschreiben</h1><div class="sub">Brief aufsetzen, von der KI prüfen lassen, als PDF erstellen und beim Empfänger ablegen.</div>';
   if(fehler) h+='<div class="note warn">'+esc(fehler)+'</div>';
   h+='<div class="grid"><div>';
   /* Absender und Versand */
@@ -202,6 +204,15 @@ function render(){ const app=$('app'); if(!app) return;
       +'<div class="sub" style="margin-top:6px">'+esc(neuHinweis())+'</div>';
   }
   h+='<label class="fl">Anschrift im Brief (kann angepasst werden)<textarea id="f-adresse" rows="4">'+esc(S.adresse)+'</textarea></label></div>';
+  /* Auftrag */
+  if(ART){ const a=S.au, OL=ortListe();
+    h+='<div class="card"><div class="ch">Auftrag</div>'
+      +'<div class="row"><label class="fl">Angebotsnummer<input id="u-nr" value="'+esc(a.nr)+'" placeholder="z. B. AN-1005"></label><label class="fl">Angebot vom<input id="u-datum" type="date" value="'+esc(a.datum)+'"></label></div>'
+      +'<label class="fl">Leistung (wird eingesetzt in „beauftragen wir Sie hiermit, … in unserem Objekt“)<input id="u-leistung" value="'+esc(a.leistung)+'" placeholder="z. B. die Verkleidung der drei Fenster"></label>'
+      +'<div class="row"><label class="fl">Objekt und Einheit<input id="u-ort" data-pick="1" list="l-ort" value="'+esc(a.ortLabel)+'" placeholder="Objekt, Einheit oder Mieter eintippen …" autocomplete="off">'+dl('l-ort',OL)+'</label><label class="fl">Angebotspreis brutto in Euro<input id="u-betrag" inputmode="decimal" value="'+esc(a.betrag)+'" placeholder="z. B. 950,00"></label></div>'
+      +'<div class="row3"><label class="fl">Termin absprechen mit<input id="u-rolle" data-pick="1" list="l-rolle" value="'+esc(a.rolle)+'">'+dl('l-rolle',['unserer dortigen Mieterin','unserem dortigen Mieter','unseren dortigen Mietern','unserem Hausmeister'])+'</label><label class="fl">Name<input id="u-kontakt" value="'+esc(a.kontakt)+'" placeholder="leer = ohne Terminabsprache"></label><label class="fl">Telefon<input id="u-tel" value="'+esc(a.tel)+'"></label></div>'
+      +'<div class="sub" style="margin-top:6px">Name und Telefon kommen aus dem Mieterkonto der Einheit und lassen sich ändern. Betreff und Brieftext unten werden aus diesen Angaben erzeugt.</div></div>';
+  }
   /* Brief */
   h+='<div class="card"><div class="ch">Brief</div>'
     +'<label class="fl">Betreff<input id="f-betreff" value="'+esc(S.betreff)+'" placeholder="z. B. Kündigung des Wartungsvertrags"></label>'
@@ -222,9 +233,10 @@ function render(){ const app=$('app'); if(!app) return;
     +'<div class="sub" style="margin-top:6px">Dateiname: '+esc(dateiName())+'</div></div>';
   h+='</div><div>';
   /* Liste */
-  h+='<div class="card"><div class="ch">Erstellte Anschreiben<span class="sub">'+LISTE.length+'</span></div>';
-  if(!LISTE.length) h+='<div class="empty">Noch keine Anschreiben.</div>';
-  else h+='<table><thead><tr><th>Datum</th><th>Empfänger / Betreff</th><th>Versand</th></tr></thead><tbody>'+LISTE.slice(0,60).map(a=>'<tr><td>'+esc(dmy(a.d))+'</td><td><b>'+esc(String(a.empf||'').split('\n')[0])+'</b><div><a href="#" data-open="'+esc(a.id)+'">'+esc(a.betreff||'ohne Betreff')+'</a></div><div class="sub">'+esc((a.ges?a.ges+' · ':'')+(NUTZER[a.mail]||a.by||''))+'</div></td><td class="sub">'+esc(a.versand||'Standardbrief')+'</td></tr>').join('')+'</tbody></table>';
+  const LI=LISTE.filter(a=>(a.art||'')===ART);
+  h+='<div class="card"><div class="ch">'+(ART?'Erteilte Aufträge':'Erstellte Anschreiben')+'<span class="sub">'+LI.length+'</span></div>';
+  if(!LI.length) h+='<div class="empty">'+(ART?'Noch keine Aufträge.':'Noch keine Anschreiben.')+'</div>';
+  else h+='<table><thead><tr><th>Datum</th><th>Empfänger / Betreff</th><th>Versand</th></tr></thead><tbody>'+LI.slice(0,60).map(a=>'<tr><td>'+esc(dmy(a.d))+'</td><td><b>'+esc(String(a.empf||'').split('\n')[0])+'</b><div><a href="#" data-open="'+esc(a.id)+'">'+esc(a.betreff||'ohne Betreff')+'</a></div><div class="sub">'+esc((a.ges?a.ges+' · ':'')+(NUTZER[a.mail]||a.by||''))+'</div></td><td class="sub">'+esc(a.versand||'Standardbrief')+'</td></tr>').join('')+'</tbody></table>';
   h+='</div></div></div>';
   RENDERING=true; app.innerHTML=h;
   if(fid){ const el=$(fid); if(el){ el.focus(); if(sel&&el.setSelectionRange) try{ el.setSelectionRange(sel[0],sel[1]); }catch(e){} } }
@@ -244,7 +256,39 @@ function empfKurz(){ if(S.modus==='neu'){ const n=S.nf; return S.neuTyp==='firma
   const e=S.empf; if(!e) return 'Empfänger'; if(e.typ==='kontakt'){ const k=empfObj(e), f=k&&firmaVon(k.firma_id); return f?f.name:empfName(e); } return empfName(e); }
 function dateiName(){ const b=String(S.betreff||'ohne Betreff').replace(/[\/\\]/g,'-').slice(0,70).trim();
   if(S.modus==='suche'&&S.empf&&S.empf.typ==='mieter'){ const mk=MK[S.empf.id]; if(mk) return odSafe(aktenName(mk)+'_'+today+'_Anschreiben '+b)+'.pdf'; }
+  if(ART){ const v=S.au.ort||{}; return odSafe(S.ges+'_an '+empfKurz()+'_'+today+'_Auftrag'+(v.kz?' '+v.kz+(v.mk&&MK[v.mk]?' '+uName(MK[v.mk].einheit):''):'')+(S.au.nr.trim()?' '+S.au.nr.trim():''))+'.pdf'; }
   return odSafe(S.ges+'_an '+empfKurz()+'_'+today+'_'+b)+'.pdf'; }
+
+/* ---------- Auftragserteilung ---------- */
+const dmyT=v=>{ const m=String(v||'').match(/^(\d{4})-(\d{2})-(\d{2})$/); return m?m[3]+'.'+m[2]+'.'+m[1]:String(v||''); };
+let ORTLAB={};
+function ortListe(){ ORTLAB={}; const out=[]; const add=(l,v)=>{ if(!ORTLAB[l]){ ORTLAB[l]=v; out.push(l); } };
+  const kzs=[...new Set(Object.keys(ADR).concat(OBJ.map(o=>o.kz)))].sort((a,b)=>a.localeCompare(b,'de',{numeric:true}));
+  for(const kz of kzs){ add(kz+' – ganzes Objekt',{kz,mk:null});
+    Object.values(MK).filter(mk=>mk.obj===kz&&!(mk.bis&&mk.bis<today)).sort((a,b)=>String(a.einheit).localeCompare(String(b.einheit),'de',{numeric:true})).forEach(mk=>add(kz+' '+uName(mk.einheit)+(ed(mk).mieter?' – '+ed(mk).mieter:''),{kz,mk:mk.pid})); }
+  return out; }
+function objAdr(kz){ const a=(ADR[kz]||'').split('|'); let str=a[0]||'', ort=a[1]||''; const o=OBJ.find(q=>q.kz===kz)||{}; if(!str&&o.adresse){ const p=String(o.adresse).split(','); str=p[0]||''; ort=(p[1]||'').trim(); } return {str,ort}; }
+function ortWaehlen(lab){ const v=ORTLAB[lab]; const a=S.au; if(!v){ return false; } a.ortLabel=lab; a.ort=v; const og=(OBJ.find(q=>q.kz===v.kz)||{}).ges; if(og&&gesKeys().includes(og)) S.ges=og;
+  if(v.mk){ const mk=MK[v.mk]; const K=(mk&&mk.kontakte)||[]; const k=K.find(x=>x.tel)||K[0]||{}; a.kontakt=k.name||(mk?String(ed(mk).mieter||'').split(',')[0]:''); a.tel=k.tel||''; }
+  else { a.kontakt=''; a.tel=''; }
+  return true; }
+function telSchoen(t){ return String(t||'').trim(); }
+function auftragText(){ const a=S.au, A=absender(S.ges); const P=[];
+  const bt=a.betrag.trim()?(()=>{ const n=parseFloat(String(a.betrag).replace(/\./g,'').replace(',','.')); return isNaN(n)?a.betrag.trim():new Intl.NumberFormat('de-DE',{minimumFractionDigits:2,maximumFractionDigits:2}).format(n); })():'';
+  if(a.nr.trim()||a.datum) P.push('vielen Dank für Ihr Angebot'+(a.nr.trim()?' Nr. '+a.nr.trim():'')+(a.datum?' vom '+dmyT(a.datum):'')+'.');
+  P.push('Im Namen und auf Rechnung der');
+  P.push([A.name,A.strasse,A.ort].filter(Boolean).join('\n'));
+  const v=a.ort||{}; const ad=v.kz?objAdr(v.kz):{str:'',ort:''}; const mk=v.mk?MK[v.mk]:null; const einh=mk&&mk.einheit&&!/efh/i.test(mk.einheit)?', '+uName(mk.einheit).replace(/^WE(\d)/,'WE $1'):'';
+  P.push('beauftragen wir Sie hiermit, '+(a.leistung.trim()||'…')+' in unserem Objekt in');
+  P.push([ad.ort,ad.str+einh].filter(s=>String(s).trim()).join('\n')||'…');
+  P.push((bt?'zum Angebotspreis in Höhe von brutto '+bt+' €uro ':'')+'vorzunehmen.');
+  if(a.kontakt.trim()){ P.push('Gerne können Sie im Vorfeld einen konkreten Ausführungstermin mit '+(a.rolle.trim()||'unserer dortigen Mieterin')+',');
+    P.push([a.kontakt.trim(),a.tel.trim()?'Telefon: '+telSchoen(a.tel):''].filter(Boolean).join('\n')); P.push('absprechen.'); }
+  P.push('Bei Rückfragen Ihrerseits stehen wir Ihnen zu deren Beantwortung gerne zur Verfügung.');
+  return P.join('\n\n'); }
+function auftragSetzen(){ const a=S.au; S.text=auftragText();
+  const v=a.ort||{}; S.betreff='Auftragserteilung'+(a.nr.trim()?' – Angebot Nr. '+a.nr.trim()+(a.datum?' vom '+dmyT(a.datum):''):'')+(v.kz?' – '+v.kz+(v.mk&&MK[v.mk]?' '+uName(MK[v.mk].einheit):''):'');
+  if(!S.anrede.trim()) S.anrede='Sehr geehrte Damen und Herren,'; }
 
 /* ---------- PDF ---------- */
 function briefPdf(){ if(!window.jspdf){ toast('PDF-Bibliothek lädt noch, bitte gleich nochmal.'); return null; }
@@ -256,7 +300,7 @@ function briefPdf(){ if(!window.jspdf){ toast('PDF-Bibliothek lädt noch, bitte 
   y+=6; doc.setFontSize(11); doc.setTextColor(20); String(S.adresse||'').split('\n').filter(s=>s.trim()).forEach(l=>{ doc.text(l.trim(),L,y); y+=5; });
   y=Math.max(y,90)+6; doc.setFontSize(10); doc.setTextColor(60); doc.text((A.datumOrt?A.datumOrt+', ':'')+dmy(today),R,y,{align:'right'});
   y+=12; doc.setTextColor(20); doc.setFontSize(11.5); doc.setFont('helvetica','bold'); doc.splitTextToSize(S.betreff||'',R-L).forEach(l=>{ doc.text(l,L,y); y+=6; }); doc.setFont('helvetica','normal'); y+=4; doc.setFontSize(10.5);
-  const para=t=>{ doc.splitTextToSize(t,R-L).forEach(ln=>{ if(y>270){ doc.addPage(); y=25; } doc.text(ln,L,y); y+=5.4; }); y+=3; };
+  const para=t=>{ [].concat(...String(t).split('\n').map(z=>doc.splitTextToSize(z,R-L))).forEach(ln=>{ if(y>270){ doc.addPage(); y=25; } doc.text(ln,L,y); y+=5.4; }); y+=3; };
   if(S.anrede.trim()) para(S.anrede.trim());
   String(S.text||'').replace(/\r/g,'').split(/\n\s*\n/).forEach(p=>{ if(p.trim()) para(p.trim()); });
   y+=2; para('Mit freundlichen Grüßen');
@@ -315,15 +359,15 @@ async function speichern(){ if(S.busy) return;
     if(E.typ==='mieter'){ const mk=MK[E.id]; const p=await mieterOrdner(mk);
       if(p){ od=await odHoch(p+'/05 Schriftverkehr',name,blob); ablage='OneDrive: '+p.split('/').pop()+' / 05 Schriftverkehr'; }
       else { pfad=String(mk.obj).replace(/[^A-Za-z0-9]/g,'')+'/'+mk.pid+'/'+encS('05 Schriftverkehr')+'/'+encS(name).replace(/\//g,'_'); const {error}=await sb.storage.from('mieterakten').upload(pfad,blob,{contentType:'application/pdf',upsert:true}); if(error) throw error; ablage='Mieterakte im OS / 05 Schriftverkehr'; }
-      await db.doc('anschreiben/'+mk.pid+'__'+ts.getTime()).set({pid:mk.pid,id:mk.pid+'__'+ts.getTime(),typ:'mieter',d:ts.toISOString(),by:ICH||'unbekannt',mail:ICHMAIL,uid:ICHID,betreff:S.betreff.trim(),anrede:S.anrede,text:S.text,empf:S.adresse,ges:S.ges,versand:S.versand,datei:od?od.name:(pfad?pfad.split('/').pop():name),odId:od?od.id:'',web:od?od.web:'',pfad,ki:!!S.kiGenutzt});
+      await db.doc('anschreiben/'+mk.pid+'__'+ts.getTime()).set({pid:mk.pid,id:mk.pid+'__'+ts.getTime(),typ:'mieter',d:ts.toISOString(),by:ICH||'unbekannt',mail:ICHMAIL,uid:ICHID,betreff:S.betreff.trim(),anrede:S.anrede,text:S.text,empf:S.adresse,ges:S.ges,versand:S.versand,art:ART,datei:od?od.name:(pfad?pfad.split('/').pop():name),odId:od?od.id:'',web:od?od.web:'',pfad,ki:!!S.kiGenutzt});
       const hid=mk.pid+'__'+ts.getTime()+'h'; await db.doc('historie/'+hid).set({pid:mk.pid,id:hid,d:ts.toISOString(),erfasst:ts.toISOString(),art:'Anschreiben',t:'Anschreiben erstellt: '+S.betreff.trim()+' ('+S.versand+')',by:ICH||'unbekannt',mail:ICHMAIL,uid:ICHID,manuell:false});
     } else {
       const ordner=DL_BASIS+'/'+ordnerName(E); await odApi({aktion:'anlegen',pfad:ordner}); od=await odHoch(ordner,name,blob); ablage='OneDrive: Dienstleister / '+ordnerName(E);
-      await db.doc('anschreiben/'+id).set({id,typ:E.typ,[E.typ==='firma'?'firma_id':'kontakt_id']:E.id,d:ts.toISOString(),by:ICH||'unbekannt',mail:ICHMAIL,uid:ICHID,betreff:S.betreff.trim(),anrede:S.anrede,text:S.text,empf:S.adresse,ges:S.ges,versand:S.versand,datei:od.name,odId:od.id,web:od.web||'',ki:!!S.kiGenutzt});
-      await sb.from('hv_timeline').insert({entity_typ:E.typ,entity_id:E.id,art:'anschreiben',feld:S.betreff.trim(),neu:od.web||'',alt:od.id,text:S.ges+' · '+S.versand+' · '+(ICH||'')});
+      await db.doc('anschreiben/'+id).set({id,typ:E.typ,[E.typ==='firma'?'firma_id':'kontakt_id']:E.id,d:ts.toISOString(),by:ICH||'unbekannt',mail:ICHMAIL,uid:ICHID,betreff:S.betreff.trim(),anrede:S.anrede,text:S.text,empf:S.adresse,ges:S.ges,versand:S.versand,art:ART,auftrag:ART?{nr:S.au.nr,datum:S.au.datum,leistung:S.au.leistung,obj:(S.au.ort||{}).kz||'',betrag:S.au.betrag}:null,datei:od.name,odId:od.id,web:od.web||'',ki:!!S.kiGenutzt});
+      await sb.from('hv_timeline').insert({entity_typ:E.typ,entity_id:E.id,art:ART?'auftrag':'anschreiben',feld:S.betreff.trim(),neu:od.web||'',alt:od.id,text:S.ges+' · '+S.versand+' · '+(ICH||'')});
       await sb.from(E.typ==='firma'?'hv_firmen':'hv_kontakte').update({letzter_kontakt:today}).eq('id',E.id);
     }
-    doc.save(od?od.name:name); toast('Anschreiben erstellt und abgelegt – '+ablage+'.');
+    doc.save(od?od.name:name); toast((ART?'Auftrag':'Anschreiben')+' erstellt und abgelegt – '+ablage+'.');
     const alt={ges:S.ges,unter:S.unter}; S=leer(alt); loadKontakte();
   }catch(e){ S.busy=''; toast('Fehler: '+(e.message||e)); render(); return; }
   S.busy=''; render(); }
@@ -342,9 +386,13 @@ const NF={'n-name':'name','n-vorname':'vorname','n-firma':'firma','n-strasse':'s
 document.addEventListener('input',e=>{ if(RENDERING) return; const t=e.target, id=t.id;
   if(id==='f-adresse') S.adresse=t.value; else if(id==='f-betreff') S.betreff=t.value; else if(id==='f-anrede') S.anrede=t.value; else if(id==='f-text') S.text=t.value; else if(id==='f-unter') S.unter=t.value;
   else if(id==='f-such') S.such=t.value;
+  else if(ART&&['u-nr','u-leistung','u-betrag','u-kontakt','u-tel'].includes(id)){ S.au[{'u-nr':'nr','u-leistung':'leistung','u-betrag':'betrag','u-kontakt':'kontakt','u-tel':'tel'}[id]]=t.value; auftragSetzen(); const x=$('f-text'); if(x) x.value=S.text; const y=$('f-betreff'); if(y) y.value=S.betreff; const z=$('f-anrede'); if(z) z.value=S.anrede; }
   else if(NF[id]){ S.nf[NF[id]]=t.value; S.adresse=neuAdresse(); const a=$('f-adresse'); if(a) a.value=S.adresse; if(id==='n-name'||id==='n-vorname'){ clearTimeout(window.__nh); window.__nh=setTimeout(render,400); } } });
 document.addEventListener('change',e=>{ if(RENDERING) return; const t=e.target, id=t.id;
   if(id==='f-ges'){ const k=gesKeys().find(k=>gesLabel(k)===t.value||k.toLowerCase()===t.value.trim().toLowerCase()); if(k){ S.ges=k; } else toast('Bitte eine Gesellschaft aus der Liste wählen.'); render(); return; }
+  if(ART&&id==='u-datum'){ S.au.datum=t.value; auftragSetzen(); render(); return; }
+  if(ART&&id==='u-rolle'){ S.au.rolle=t.value.trim(); auftragSetzen(); render(); return; }
+  if(ART&&id==='u-ort'){ if(ortWaehlen(t.value)){ auftragSetzen(); render(); } else if(t.value.trim()) toast('Bitte ein Objekt oder eine Einheit aus der Liste wählen.'); return; }
   if(id==='f-versand'){ S.versand=t.value.trim()||'Standardbrief'; render(); return; }
   if(id==='f-such'){ const v=LAB[t.value]; if(v){ empfWaehlen(v); S.such=t.value; render(); } else if(t.value.trim()) toast('Nicht gefunden – über „Neu eingeben“ anlegen.'); return; } });
 document.addEventListener('click',async e=>{ const t=e.target.closest('button,a'); if(!t) return; const d=t.dataset;

@@ -56,6 +56,7 @@ export const NAV = [
   ] },
   { type: 'group', key: 'v-dokumente', icon: 'ti-files', label: 'Dokumente erstellen', mod: 'verwalto', items: [
     { href: '/hausverwaltung/anschreiben', icon: 'ti-mail', label: 'Anschreiben' },
+    { href: '/hausverwaltung/auftragserteilung', icon: 'ti-file-check', label: 'Auftragserteilung' },
     { href: '/verwalto/dokumente', icon: 'ti-file', label: 'Dokumente', offen: true },
     { href: '/mahnprozess/generator', icon: 'ti-file-invoice', label: 'Mahnungen' },
     { href: '/vermietung/mietangebot', icon: 'ti-file-text', label: 'Mietangebot', perm: '/hausverwaltung/mieterkonten' },
