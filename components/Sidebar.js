@@ -73,6 +73,7 @@ export const NAV = [
     { href: '/vermietung/selbstauskuenfte', icon: 'ti-forms', label: 'Selbstauskünfte', offen: true },
     { href: '/hausverwaltung/stoerungen', icon: 'ti-tool', label: 'Störungsmeldungen', perm: '/hausverwaltung/objekte' },
     { href: '/hausverwaltung/uebergaben', icon: 'ti-clipboard-check', label: 'Übergabeprotokolle', perm: '/hausverwaltung/objekte' },
+    { href: '/hausverwaltung/zaehler', icon: 'ti-gauge', label: 'Zähler', perm: '/hausverwaltung/objekte' },
   ] },
   { type: 'group', key: 'v-mahnwesen', icon: 'ti-cash-off', label: 'Mahnwesen & Forderungen', mod: 'verwalto', items: [
     { href: '/hausverwaltung/offene-mieten', icon: 'ti-cash-off', label: 'Offene Mieten' },
