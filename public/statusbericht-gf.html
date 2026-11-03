@@ -105,7 +105,8 @@ h2 .dot{width:9px;height:9px;border-radius:3px;display:inline-block}
     <div class="kpis" id="metricKpis"></div>
     <div class="grid" style="margin-top:14px">
       <div class="cat" style="padding:12px 16px 8px"><div style="font-size:12px;font-weight:600;color:var(--dim);margin-bottom:6px">📬 Mails im Postfach</div><div style="position:relative;height:260px"><canvas id="chMail"></canvas></div></div>
-      <div class="cat" style="padding:12px 16px 8px"><div style="font-size:12px;font-weight:600;color:var(--dim);margin-bottom:6px">✅ Aufgaben fällig &amp; überfällig (Asana + Todoist)</div><div style="position:relative;height:260px"><canvas id="chTasks"></canvas></div></div>
+      <div class="cat" style="padding:12px 16px 8px"><div style="font-size:12px;font-weight:600;color:var(--dim);margin-bottom:6px">✅ Aufgaben fällig &amp; überfällig — Verlauf (Asana + Todoist + GF Testboard)</div><div style="position:relative;height:260px"><canvas id="chTasks"></canvas></div></div>
+      <div class="cat" style="padding:12px 16px 8px"><div style="font-size:12px;font-weight:600;color:var(--dim);margin-bottom:6px">📊 Fällig &amp; überfällig nach Quelle — aktuell (Asana · Todoist · GF Testboard · Gesamt)</div><div style="position:relative;height:260px"><canvas id="chQuellen"></canvas></div></div>
       <div class="cat" style="padding:12px 16px 8px"><div style="font-size:12px;font-weight:600;color:var(--dim);margin-bottom:6px">🤝 Zuarbeit fürs Team — Asana-Tag „.Eric_Zuarbeit fürs Team" (offene Aufgaben)</div><div style="position:relative;height:260px"><canvas id="chZuarbeit"></canvas></div></div>
       <div class="cat" style="padding:12px 16px 8px"><div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:6px"><span style="font-size:12px;font-weight:600;color:var(--dim)">💶 GPM's pro Tag — an dem Tag erfasste Geld produzierende Maßnahmen &amp; Systeme (letzte 30 Tage)</span><label style="font-size:11px;color:var(--dim);display:inline-flex;align-items:center;gap:5px;white-space:nowrap">🎯 Benchmark/Tag <input id="gpmBench" type="number" min="0" step="1" style="width:56px;font:inherit;font-size:12px;padding:3px 6px;border:1px solid #e6e8ec;border-radius:6px" oninput="benchChg()"></label></div><div style="position:relative;height:260px"><canvas id="chGpm"></canvas></div><div id="gpmBenchNote" style="font-size:11px;color:var(--dim);margin-top:6px"></div></div>
       <div class="cat" style="padding:12px 16px 8px;grid-column:1/-1"><div style="font-size:12px;font-weight:600;color:var(--dim);margin-bottom:6px">🗂 Alle Eric zugewiesenen Asana-Aufgaben (offen, unabhängig von Fälligkeit)</div><div style="position:relative;height:260px"><canvas id="chGesamt"></canvas></div></div>
@@ -168,10 +169,15 @@ async function load(){
   const since=new Date(); since.setDate(since.getDate()-29);
   const g = await sb.from('gpm_aktivitaeten').select('datum,gruppe').gte('datum', ymd(since));
   GPM = g.error ? [] : (g.data||[]);
+  const ot = await sb.from('os_tasks').select('faellig,status');
+  const ti = ymd(TODAY);
+  GFTB = (ot.error?[]:(ot.data||[])).filter(t=>t.faellig && t.faellig<=ti && t.status!=='erledigt').length;
+  const gt = await sb.from('gf_testboard_tageswerte').select('datum,faellig_ueberfaellig').order('datum',{ascending:true});
+  GFTB_SERIES = gt.error ? [] : (gt.data||[]);
   render(data[0].payload, data[0].generated_at);
 }
 
-let MCHART=null, TCHART=null, GCHART=null, ZCHART=null, GPMCHART=null;
+let MCHART=null, TCHART=null, GCHART=null, ZCHART=null, GPMCHART=null, QCHART=null, GFTB=0, GFTB_SERIES=[];
 function renderMetrics(p){
   const cur = METRICS.length ? METRICS[METRICS.length-1] : null;
   const k=p.kpis||{};
@@ -181,15 +187,29 @@ function renderMetrics(p){
   const sum = (typeof asana==='number'&&typeof todo==='number') ? asana+todo : '—';
   const offenGes = cur && cur.asana_offen_gesamt!=null ? cur.asana_offen_gesamt : (k.asana_offen_gesamt!=null?k.asana_offen_gesamt:'—');
   const zuarbeit = cur && cur.zuarbeit_team!=null ? cur.zuarbeit_team : (k.zuarbeit_team!=null?k.zuarbeit_team:'—');
+  const asanaN=(typeof asana==='number')?asana:0;
+  const todoN=(typeof todo==='number')?todo:0;
+  const gesAlle=asanaN+todoN+GFTB;
   document.getElementById('metricKpis').innerHTML=[
     ['accent', mail, 'Mails im Postfach', 'INBOX gesamt'],
     ['', offenGes, 'Asana zugewiesen (offen)', 'alle mir zugewiesenen Aufgaben'],
     ['danger', asana, 'Asana heute + überfällig', 'heute fällig oder überfällig'],
     ['warn', todo, 'Todoist heute + überfällig', 'heute fällig oder überfällig'],
-    ['', sum, 'Aufgaben fällig gesamt', 'Asana + Todoist'],
+    ['danger', GFTB, 'GF Testboard heute + überfällig', 'fällige & überfällige Aufgaben im GF Testboard'],
+    ['', sum, 'Aufgaben fällig (Asana + Todoist)', 'Asana + Todoist'],
+    ['accent', gesAlle, 'Fällig gesamt (alle Quellen)', 'Asana + Todoist + GF Testboard'],
     ['accent', zuarbeit, 'Zuarbeit fürs Team', 'Asana-Tag ·Eric_Zuarbeit fürs Team (offen)'],
   ].map(a=>`<div class="kpi ${a[0]}"><div class="l">${a[2]}</div><div class="v">${a[1]}</div><div class="h">${a[3]}</div></div>`).join('');
   drawChart();
+  drawQuellen(asanaN, todoN, GFTB);
+}
+function drawQuellen(asana,todo,gftb){
+  const c=document.getElementById('chQuellen'); if(!c||!window.Chart) return;
+  if(QCHART){ QCHART.destroy(); QCHART=null; }
+  const ges=asana+todo+gftb;
+  QCHART=new Chart(c,{ type:'bar',
+    data:{ labels:['Asana','Todoist','GF Testboard','Gesamt'], datasets:[{ label:'Fällig & überfällig', data:[asana,todo,gftb,ges], backgroundColor:['#1c2024','#c62828','#6d4aff','#185fa5'], borderRadius:6 }] },
+    options:{ responsive:true, maintainAspectRatio:false, plugins:{ legend:{ display:false }, tooltip:{ enabled:true } }, scales:{ y:{ beginAtZero:true, ticks:{ precision:0 } }, x:{ grid:{ display:false } } } } });
 }
 function drawChart(){
   if(!window.Chart) return;
@@ -211,10 +231,18 @@ function drawChart(){
   const m=document.getElementById('chMail');
   if(m) MCHART=new Chart(m,{ type:'line', data:{ labels, datasets:[ ds('Mails im Postfach','mail_count','#185fa5') ] }, options:opts() });
   const t=document.getElementById('chTasks');
-  if(t) TCHART=new Chart(t,{ type:'line', data:{ labels, datasets:[
-    ds('Asana fällig+überfällig','asana_faellig','#1c2024'),
-    ds('Todoist heute+überfällig','todoist_faellig','#c62828')
-  ] }, options:opts() });
+  if(t){
+    const mByDate={}; METRICS.forEach(r=>mByDate[r.datum]=r);
+    const gByDate={}; GFTB_SERIES.forEach(r=>gByDate[r.datum]=r.faellig_ueberfaellig);
+    const allDates=Array.from(new Set(METRICS.map(r=>r.datum).concat(GFTB_SERIES.map(r=>r.datum)))).sort();
+    const labT=allDates.map(d=>{ const p=String(d).split('-'); return p[2]+'.'+p[1]; });
+    const mkds=(lab,fn,col)=>({ label:lab, data:allDates.map(fn), borderColor:col, backgroundColor:col, tension:.25, pointRadius:3, borderWidth:2, spanGaps:true, fill:false });
+    TCHART=new Chart(t,{ type:'line', data:{ labels:labT, datasets:[
+      mkds('Asana fällig+überfällig', d=>mByDate[d]?mByDate[d].asana_faellig:null, '#1c2024'),
+      mkds('Todoist heute+überfällig', d=>mByDate[d]?mByDate[d].todoist_faellig:null, '#c62828'),
+      mkds('GF Testboard fällig+überfällig', d=>(d in gByDate)?gByDate[d]:null, '#6d4aff')
+    ] }, options:opts() });
+  }
   const g=document.getElementById('chGesamt');
   if(g) GCHART=new Chart(g,{ type:'line', data:{ labels, datasets:[
     ds('Asana zugewiesen (offen gesamt)','asana_offen_gesamt','#6b7280','rgba(107,114,128,.12)')
