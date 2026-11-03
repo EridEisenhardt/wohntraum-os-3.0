@@ -348,7 +348,7 @@ async function schreibenErstellen(id,zeigen,R0){ const R=R0||ergebnis(), x=R.mv[
   try{ await jsPdfLaden(); const doc=schreibenPdf(x), name=dateiNameMv(x.m); let zus=null; try{ zus=await mitSchuetz(doc,id); }catch(e){ toast('Schütz-Einzelabrechnung konnte nicht angehängt werden: '+(e.message||e),6000); }
     if(w) w.location.href=zus?URL.createObjectURL(new Blob([zus],{type:'application/pdf'})):doc.output('bloburl');
     const r=await odApi({aktion:'objektbasis',kz:[D.o.kz]}); const Bs=(r.objekte||{})[D.o.kz]; if(!Bs) throw new Error('Kein Objektordner für '+D.o.kz+' gefunden.');
-    const t04=(Bs.top||[]).find(t=>/^04 /.test(t))||'04 Betriebskosten', ziel=Bs.basis+'/'+t04+'/BK-Abrechnungen/'+JAHR; await odApi({aktion:'anlegen',pfad:ziel});
+    const t04=(Bs.top||[]).find(t=>/^04 /.test(t))||'04 Betriebskosten', ziel=await abrOrdner(Bs,t04); await odApi({aktion:'anlegen',pfad:ziel});
     const up=await odApi({aktion:'hochladen',pfad:ziel,name,daten:zus?b64Von(zus):doc.output('datauristring').split(',')[1],typ:'application/pdf'});
     const patch={schreiben_am:new Date().toISOString(),schreiben_datei:{od:up.item.id,n:up.item.name,pfad:ziel+'/'+up.item.name}}; await sb.from('bk_mietverhaeltnisse').update(patch).eq('id',id); Object.assign(x.m,patch);
     if(zeigen){ toast('Schreiben gespeichert: '+up.item.name,5000); render(); } return true; }
@@ -494,7 +494,7 @@ async function belegmappe(btn){ const w=window.open('','_blank'); const alt=btn.
       catch(e){ fehlt.push('Beleg '+c._nr+' ('+(e.message||e)+')'); } }
     const bytes=await mappe.save(); const blob=new Blob([bytes],{type:'application/pdf'}); if(w) w.location.href=URL.createObjectURL(blob);
     const name=odSafe(o.kz+'_'+new Date().toISOString().slice(0,10)+'_Belegmappe Betriebskosten '+JAHR)+'.pdf';
-    if(bytes.length<=3*1024*1024){ try{ const rB=await odApi({aktion:'objektbasis',kz:[o.kz]}), Bs=(rB.objekte||{})[o.kz]; if(Bs){ const t04=(Bs.top||[]).find(t=>/^04 /.test(t))||'04 Betriebskosten', ziel=Bs.basis+'/'+t04+'/BK-Abrechnungen/'+JAHR; await odApi({aktion:'anlegen',pfad:ziel});
+    if(bytes.length<=3*1024*1024){ try{ const rB=await odApi({aktion:'objektbasis',kz:[o.kz]}), Bs=(rB.objekte||{})[o.kz]; if(Bs){ const t04=(Bs.top||[]).find(t=>/^04 /.test(t))||'04 Betriebskosten', ziel=await abrOrdner(Bs,t04); await odApi({aktion:'anlegen',pfad:ziel});
         let b64=''; for(let j=0;j<bytes.length;j+=32768) b64+=String.fromCharCode.apply(null,bytes.subarray(j,j+32768)); await odApi({aktion:'hochladen',pfad:ziel,name,daten:btoa(b64),typ:'application/pdf'}); toast('Belegmappe in OneDrive gespeichert (04 Betriebskosten/BK-Abrechnungen/'+JAHR+').'+(fehlt.length?' Nicht enthalten: '+fehlt.join(', '):''),9000); } }catch(e){ toast('Belegmappe erstellt, aber nicht in OneDrive gespeichert: '+(e.message||e),8000); } }
     else toast('Belegmappe erstellt ('+Math.round(bytes.length/1048576)+' MB). Zu groß für OneDrive-Upload – bitte im geöffneten Fenster speichern.'+(fehlt.length?' Nicht enthalten: '+fehlt.join(', '):''),10000); }
   catch(e){ if(w) w.close(); toast('Belegmappe nicht erstellt: '+(e.message||e),7000); }
@@ -673,6 +673,10 @@ async function kHochDatei(f){ if(!f) return; if(f.size>20*1024*1024){ toast('Dat
   K.lade='Lade hoch …'; kNeu2();
   try{ const b=await belegSpeicherHoch(f); K.lade=''; await belegVorbereiten(b,f); }
   catch(e){ K.lade=''; toast('Hochladen fehlgeschlagen: '+(e.message||e),7000); kNeu2(); } }
+/* Ablage der Schreiben und der Belegmappe: vorhandenen Ordner „BK-Abrechnungen“ (auch „01 BK-Abrechnungen“) nutzen, darin das Jahr */
+async function abrOrdner(Bs,t04){ const b=Bs.basis+'/'+t04; let n='BK-Abrechnungen';
+  try{ const r=await odApi({aktion:'ordner',pfad:b}); const f=(r.eintraege||[]).find(x=>x.ordner&&/^(\d+\s+)?bk-abrechnungen$/i.test(String(x.name).trim())); if(f) n=f.name; }catch(e){}
+  return b+'/'+n+'/'+JAHR; }
 var PDFJS=null;
 async function pdfjsLaden(){ if(PDFJS) return; await new Promise((res,rej)=>{ const s=document.createElement('script'); s.src='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js'; s.onload=res; s.onerror=rej; document.head.appendChild(s); }); PDFJS=window.pdfjsLib; PDFJS.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js'; }
 /* ---------- Schritt 3: Heizkostenabrechnung von Schütz ---------- */
