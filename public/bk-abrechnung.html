@@ -217,11 +217,12 @@ function kaGruppen(ka,k,V){ const pv=D.a.zeitraum_von, pb=D.a.zeitraum_bis, G={}
 const tgMv=m=>{ const pv=D.a.zeitraum_von, pb=D.a.zeitraum_bis, v=m.von>pv?m.von:pv, b=(m.bis||pb)<pb?(m.bis||pb):pb; return b<v?0:tage(v,b); };
 const istHeiz=ka=>ka.gruppe==='heizkosten'||/heiz|warmwasser/.test(norm(ka.name));
 function ergebnis(){ const pv=D.a.zeitraum_von, pb=D.a.zeitraum_bis, T=tage(pv,pb);
-  const R={mv:{},vermieter:0,nichtUml:0,gesamt:0,nichtVerteilt:[],ohneMv:new Set(),heiz:0,T};
+  const R={mv:{},vermieter:0,nichtUml:0,gesamt:0,nichtVerteilt:[],ohneMv:new Set(),heiz:0,T,heizOS:0,schuetz:false,szOhne:[]}; const SZ=schuetzAktiv();
   for(const m of D.mvs) R.mv[m.id]={m,pos:[],bk:0,hk:0,lohn:0,lohnPos:[],tage:tgMv(m)};
   for(const ka of D.kas.slice().sort((a,b)=>(a.pos||0)-(b.pos||0))){ const s=summe(ka); if(!s) continue;
     if(ka.umlagefaehig===false||ka.schluessel==='nicht_umlegen'){ R.nichtUml+=s; R.vermieter+=s; continue; }
     const k=kObj(ka), V=verteilung(k), sv=Object.values(V).reduce((a,b)=>a+b,0), heiz=istHeiz(ka), GL=kaGruppen(ka,k,V);
+    if(SZ&&heiz){ R.heizOS+=s; continue; }
     if(sv<1e-9&&GL.some(g=>!g.E.length)){ R.nichtVerteilt.push(ka.name); R.vermieter+=s; continue; }
     R.gesamt+=s; if(heiz) R.heiz+=s;
     const lohnGes=kostenVon(ka).reduce((a,c)=>a+(Number(c.lohnanteil)||0)*(Number(c.betrag)?(Number(c.anteil!=null?c.anteil:c.betrag))/Number(c.betrag):1),0);
@@ -237,6 +238,12 @@ function ergebnis(){ const pv=D.a.zeitraum_von, pb=D.a.zeitraum_bis, T=tage(pv,p
           p.betrag+=part; p.proz=p.betrag/s*100;
           x[heiz?'hk':'bk']+=part; if(lohnGes){ const lb=lohnGes*part/s; x.lohn+=lb; const lp=x.lohnPos.find(q=>q.name===ka.name); if(lp) lp.b+=lb; else x.lohnPos.push({name:ka.name,b:lb}); }
           if(m.art!=='vorauszahlung') R.vermieter+=part; } } } }
+  if(SZ){ R.schuetz=true; const sum=schuetzSummen(SZ);
+    for(const n of SZ.nutzer){ const tot=(n.hk||0)+(n.ww||0)+(n.bk||0); R.gesamt+=tot; R.heiz+=(n.hk||0)+(n.ww||0);
+      const x=n.mv&&R.mv[n.mv]; if(!x){ R.vermieter+=tot; if(!n.mv) R.szOhne.push(n.nr+' '+n.name); continue; }
+      for(const [feld,name,heiz] of [['hk','Heizkosten (Abrechnung Schütz)',true],['ww','Warmwasser (Abrechnung Schütz)',true],['bk','Kaltwasser / Sonstiges (Abrechnung Schütz)',false]]){ const b=n[feld]||0; if(!b) continue;
+        let p=x.pos.find(q=>q.name===name); if(!p){ p={name,ges:sum[feld],schl:'laut Schütz',proz:0,betrag:0,heiz,basis:'Nutzer '+n.nr+(n.lage?' '+n.lage:'')}; x.pos.push(p); }
+        p.betrag+=b; p.proz=sum[feld]?p.betrag/sum[feld]*100:0; x[heiz?'hk':'bk']+=b; if(x.m.art!=='vorauszahlung') R.vermieter+=b; } } }
   for(const x of Object.values(R.mv)){ const m=x.m, va=m.art==='vorauszahlung'; x.bk=r2(x.bk); x.hk=r2(x.hk); x.vzb=va?(num(m.vz_bk_gezahlt)||0):0; x.vzh=va?(num(m.vz_hk_gezahlt)||0):0;
     x.saldo=va?r2(x.bk+x.hk-x.vzb-x.vzh):null; x.aktuell=(m.bis||pb)>=pb&&mvLaeuft(m);
     if(va&&x.aktuell&&x.tage>0){ x.vorBk=Math.ceil(x.bk*T/x.tage/12); x.vorHk=Math.ceil(x.hk*T/x.tage/12); } }
@@ -274,7 +281,8 @@ function ergHtml(){ if(ABSD===null){ absLaden(); } if(KONTEN===null) kontenLaden
   let h='<div class="kpis" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px;margin-bottom:12px">'
     +[['Umlagefähige Kosten',eur(R.gesamt)],['davon Vermieter',eur(R.vermieter)],['Nachzahlungen',eur(nach)],['Guthaben',eur(gut)],['Frist','bis '+dmy(frist)+' · noch '+rest+' Tage']].map(([l,v])=>'<div class="card" style="margin:0"><div class="sub">'+l+'</div><div style="font-size:18px;font-weight:800">'+v+'</div></div>').join('')+'</div>';
   const W=[]; if(offen) W.push(offen+' Kostenart'+(offen===1?' ist':'en sind')+' noch nicht als fertig markiert.'); if(R.nichtVerteilt.length) W.push('Nicht verteilt (Schlüssel ohne Werte, z. B. fehlende Zählerstände): '+R.nichtVerteilt.join(', ')+'. Diese Kosten trägt bis zur Korrektur der Vermieter.');
-  if(R.ohneMv.size) W.push('Ohne Mietverhältnis in Schritt 2: '+[...R.ohneMv].join(', ')+'.'); if(R.heiz) W.push('Heizkosten werden vorläufig nach dem Schlüssel im OS verteilt. Mit der Schütz-Abrechnung (Schritt 3) werden sie ersetzt.');
+  if(R.ohneMv.size) W.push('Ohne Mietverhältnis in Schritt 2: '+[...R.ohneMv].join(', ')+'.'); if(R.schuetz){ if(R.szOhne.length) W.push('Schütz-Nutzer ohne Zuordnung (trägt der Vermieter): '+R.szOhne.join(', ')+'. Bitte in Schritt 3 prüfen.'); }
+  else if(R.heiz) W.push('Heizkosten werden vorläufig nach dem Schlüssel im OS verteilt. Mit der Schütz-Abrechnung (Schritt 3) werden sie ersetzt.');
   if(hinweisVon(D.o.kz)) W.push(hinweisVon(D.o.kz)); if(rest<60) W.push('Die Abrechnung muss bis '+dmy(frist)+' beim Mieter sein, sonst sind Nachforderungen ausgeschlossen (§ 556 Abs. 3 BGB).');
   for(const w of W) h+='<div class="note">'+esc(w)+'</div>';
   h+='<div class="card"><b>Angaben für die Schreiben</b><div class="fg" style="margin-top:8px">'
@@ -511,6 +519,7 @@ function renderObjekt(){ const o=D.o, a=D.a;
       +(AUSZEIG?'<div class="kacheln">'+AUS.map(k=>'<div class="kachel" style="opacity:.6;cursor:default"><div class="t">'+esc(k.name)+'</div><div class="b">–</div><div class="sub">fällt für '+esc(D.o.kz)+' nicht an</div><div class="z"><button class="small" onclick="kaAusblenden(\''+k.id+'\',false)">wieder einblenden</button></div></div>').join('')+'</div>':''); }
   else if(SCHRITT==='mieter') h+=mvHtml();
   else if(SCHRITT==='ergebnis') h+=ergHtml();
+  else if(SCHRITT==='schuetz') h+=schuetzHtml();
   else h+='<div class="empty">Dieser Schritt kommt als Nächstes: '+({mieter:'Mietverhältnisse und Vorauszahlungen aus den Mieterkonten übernehmen',schuetz:'Heizkostenabrechnung von Schütz hochladen und den Mietern zuordnen',ergebnis:'Berechnung je Mieter, Nachzahlung oder Guthaben, Abrechnungsschreiben'}[SCHRITT])+'.</div>';
   $('app').innerHTML=h+(K?kHtml():'')+(AZ?azHtml():''); if(K) kNachRender(); }
 async function kaAusblenden(id,aus){ const ka=D.kas.find(x=>x.id===id); if(!ka) return; if(aus&&kostenVon(ka).length){ toast('Die Kostenart hat Belege und kann nicht ausgeblendet werden.'); return; }
@@ -664,10 +673,74 @@ async function kHochDatei(f){ if(!f) return; if(f.size>20*1024*1024){ toast('Dat
   try{ const b=await belegSpeicherHoch(f); K.lade=''; await belegVorbereiten(b,f); }
   catch(e){ K.lade=''; toast('Hochladen fehlgeschlagen: '+(e.message||e),7000); kNeu2(); } }
 var PDFJS=null;
+async function pdfjsLaden(){ if(PDFJS) return; await new Promise((res,rej)=>{ const s=document.createElement('script'); s.src='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js'; s.onload=res; s.onerror=rej; document.head.appendChild(s); }); PDFJS=window.pdfjsLib; PDFJS.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js'; }
+/* ---------- Schritt 3: Heizkostenabrechnung von Schütz ---------- */
+let SZL='';
+const schuetzAktiv=()=>{ const S=D&&D.a&&D.a.schuetz; return S&&Array.isArray(S.nutzer)&&S.nutzer.length?S:null; };
+const schuetzSummen=S=>S.nutzer.reduce((a,n)=>({hk:a.hk+(n.hk||0),ww:a.ww+(n.ww||0),bk:a.bk+(n.bk||0)}),{hk:0,ww:0,bk:0});
+async function pdfZeilen(buf){ await pdfjsLaden(); const doc=await PDFJS.getDocument({data:buf}).promise, Z=[];
+  for(let i=1;i<=doc.numPages;i++){ const c=await (await doc.getPage(i)).getTextContent(), G={};
+    for(const it of c.items){ if(!it.str||!it.str.trim()) continue; const y=Math.round(it.transform[5]/2.5); (G[y]=G[y]||[]).push({x:it.transform[4],t:it.str}); }
+    for(const y of Object.keys(G).map(Number).sort((a,b)=>b-a)) Z.push(G[y].sort((a,b)=>a.x-b.x).map(q=>q.t).join(' ').replace(/\s+/g,' ').trim()); }
+  return Z; }
+const szDat=t=>{ const m=String(t).match(/^(\d\d)\.(\d\d)\.(\d\d)$/); return m?'20'+m[3]+'-'+m[2]+'-'+m[1]:''; };
+function schuetzLesen(Z){ const N=[]; let cur=null, gesamt=null, zr='';
+  for(const t of Z){ let m;
+    if(gesamt==null&&(m=t.match(/Gesamtkosten der Liegenschaft ([\d.]+,\d\d)/))) gesamt=parseNum(m[1]);
+    if(!zr&&(m=t.match(/(\d\d\.\d\d\.\d{4}) - (\d\d\.\d\d\.\d{4})/))) zr=m[1]+' bis '+m[2];
+    if((m=t.match(/^(\d{4}-\d{3}) (.+?) (\d\d\.\d\d\.\d\d) ?- ?(\d\d\.\d\d\.\d\d)/))){ const nr=m[1], von=szDat(m[3]);
+      if(N.some(x=>x.nr===nr&&x.von===von)){ cur=null; continue; } cur={nr,name:m[2].trim(),von,bis:szDat(m[4]),lage:'',qm:null,hk:0,ww:0,bk:0,summe:null,mv:''}; N.push(cur); continue; }
+    if(!cur) continue;
+    if(/^Summen\b|Nutzer-Nr/.test(t)){ cur=null; continue; }
+    if(!cur.lage&&(m=t.match(/^(\S+(?: \S+)?) Heizkosten$/))) cur.lage=m[1];
+    if(cur.qm==null&&(m=t.match(/([\d.]+,\d+) qm Heizfl/))) cur.qm=Number(m[1].replace(/\./g,'').replace(',','.'));
+    if((m=t.match(/^Summe Heizkosten (-?[\d.]+,\d\d)/))) cur.hk=parseNum(m[1]);
+    else if((m=t.match(/^Summe Warmwasserkosten (-?[\d.]+,\d\d)/))) cur.ww=parseNum(m[1]);
+    else if((m=t.match(/^Summe Betriebskosten (-?[\d.]+,\d\d)/))) cur.bk=parseNum(m[1]);
+    else if((m=t.match(/^Gesamtbetrag (-?[\d.]+,\d\d)/))){ cur.summe=parseNum(m[1]); cur=null; } }
+  return {nutzer:N,gesamt,zeitraum:zr}; }
+function schuetzVorschlag(n){ const pb=D.a.zeitraum_bis, L=D.mvs.filter(m=>m.art!=='leerstand'&&m.von<=(n.bis||pb)&&(m.bis||pb)>=(n.von||D.a.zeitraum_von));
+  const toks=norm(n.name).split(' ').filter(x=>x.length>=3); let c=L.filter(m=>toks.some(t=>(' '+norm(m.mieter)+' ').includes(' '+t+' ')||norm(m.mieter).includes(t)));
+  if(c.length!==1&&n.qm){ const E=D.ein.filter(e=>Math.abs((Number(e.flaeche)||0)-n.qm)<0.6).map(e=>e.id), c2=L.filter(m=>E.includes(m.einheit_id)); c=c.length>1?c.filter(m=>c2.includes(m)):c.length?c:c2; }
+  return c.length===1?c[0].id:''; }
+const mvLabel=m=>{ const e=D.ein.find(x=>x.id===m.einheit_id); return (e?e.bezeichnung+' – ':'')+(m.mieter||'Mieter')+' ('+dmy(m.von)+' bis '+dmy(m.bis||D.a.zeitraum_bis)+')'; };
+async function schuetzHoch(inp){ const f=inp.files[0]; inp.value=''; if(f) schuetzDatei(f); }
+async function schuetzDatei(f){ if(!/pdf/i.test(f.type||f.name)){ toast('Bitte die Schütz-Abrechnung als PDF hochladen.'); return; }
+  SZL='Lese die Schütz-Abrechnung …'; render();
+  try{ const R=schuetzLesen(await pdfZeilen(new Uint8Array(await f.arrayBuffer())));
+    if(!R.nutzer.length){ SZL=''; render(); toast('In der Datei wurden keine Nutzer erkannt. Bitte die Gesamtabrechnung mit Nutzerübersicht hochladen.',7000); return; }
+    SZL='Speichere die Datei …'; render(); const datei=await belegSpeicherHoch(f);
+    for(const n of R.nutzer) n.mv=schuetzVorschlag(n);
+    await schuetzSpeichern(Object.assign(R,{datei,gelesen:new Date().toISOString()}));
+    toast(R.nutzer.length+' Nutzer gelesen, '+R.nutzer.filter(n=>n.mv).length+' automatisch zugeordnet.',6000); }
+  catch(e){ toast('Schütz-Abrechnung nicht gelesen: '+(e.message||e),7000); }
+  SZL=''; render(); }
+async function schuetzSpeichern(S){ const {error}=await sb.from('bk_abrechnungen').update({schuetz:S}).eq('id',D.a.id); if(error){ toast('Nicht gespeichert: '+error.message,6000); return false; } D.a.schuetz=S; return true; }
+async function schuetzZuordnung(i,el){ const S=JSON.parse(JSON.stringify(D.a.schuetz)), v=el.value.trim(); let id='';
+  if(v&&!/^vermieter/i.test(v)){ const m=D.mvs.find(x=>mvLabel(x)===v); if(!m){ toast('Bitte einen Eintrag aus der Liste wählen.'); render(); return; } id=m.id; }
+  S.nutzer[i].mv=id; if(await schuetzSpeichern(S)) render(); }
+async function schuetzWeg(btn){ if(btn.dataset.sure!=='1'){ btn.dataset.sure='1'; btn.textContent='wirklich entfernen?'; return; }
+  const alt=D.a.schuetz; if(await schuetzSpeichern(null)){ if(alt&&alt.datei&&alt.datei.sb) await sb.storage.from('bk-belege').remove([alt.datei.sb]); toast('Schütz-Abrechnung entfernt. Heizkosten werden wieder nach dem Schlüssel im OS verteilt.'); render(); } }
+function schuetzHtml(){ const S=schuetzAktiv();
+  const up=(t)=>'<label class="up" style="background:var(--accent);color:#fff;border-color:var(--accent);padding:8px 14px">'+t+'<input type="file" accept=".pdf" hidden onchange="schuetzHoch(this)"></label>';
+  if(!S) return '<div class="card"><b>Heizkostenabrechnung von Schütz</b><div class="sub" style="margin:6px 0 10px">Die Gesamtabrechnung von Schütz als PDF hochladen oder hierher ziehen. Das OS liest aus der Nutzerübersicht Heizkosten und Warmwasser je Nutzer und ordnet sie den Mietverhältnissen aus Schritt 2 zu. Die Datei wird nur hier gespeichert, nicht zusätzlich in OneDrive.</div>'
+    +(SZL?'<div class="sub">'+esc(SZL)+'</div>':'<div class="acts">'+up('Schütz-Abrechnung hochladen')+'</div>')+(D.mvs.length?'':'<div class="note" style="margin-top:10px">Bitte zuerst in Schritt 2 die Mietverhältnisse übernehmen, damit die Nutzer zugeordnet werden können.</div>')+'</div>';
+  const sum=schuetzSummen(S), tot=sum.hk+sum.ww+sum.bk, os=D.kas.filter(k=>istHeiz(k)&&k.umlagefaehig!==false).reduce((a,k)=>a+summe(k),0), ohne=S.nutzer.filter(n=>!n.mv).length;
+  const opts=D.mvs.filter(m=>m.art!=='leerstand').map(m=>'<option value="'+esc(mvLabel(m))+'">').join('')+'<option value="Vermieter / Leerstand">';
+  let h='<div class="card"><div class="acts" style="margin-top:0"><b>Heizkostenabrechnung von Schütz</b><a class="lnk" onclick="'+belegKlick(S.datei)+'">'+esc(S.datei&&S.datei.n||'Datei')+'</a><span class="sub">'+esc(S.zeitraum||'')+'</span><span style="margin-left:auto"></span>'+(SZL?'<span class="sub">'+esc(SZL)+'</span>':up('Neue Datei hochladen'))+'<button class="small ghost" onclick="schuetzWeg(this)">Entfernen</button></div>'
+    +'<div class="sub" style="margin-top:6px">Gesamtkosten laut Schütz: <b style="color:var(--ink)">'+eur(S.gesamt!=null?S.gesamt:tot)+'</b> · Summe der Nutzer: <b style="color:var(--ink)">'+eur(tot)+'</b>'+(os?' · in Schritt 1 als Heizkosten erfasst: '+eur(os)+' (werden durch die Schütz-Abrechnung ersetzt)':'')+'</div>'
+    +(S.gesamt!=null&&Math.abs(S.gesamt-tot)>0.05?'<div class="note">Die Summe der Nutzer weicht von den Gesamtkosten laut Schütz ab ('+eur(S.gesamt-tot)+'). Bitte die Datei prüfen.</div>':'')
+    +(ohne?'<div class="note">'+ohne+' Nutzer '+(ohne===1?'ist':'sind')+' noch keinem Mietverhältnis zugeordnet. Die Kosten trägt sonst der Vermieter.</div>':'')+'</div>';
+  h+='<div class="tbox"><table class="tab"><thead><tr><th>Nutzer</th><th>Lage</th><th>Zeitraum</th><th class="n">Fläche</th><th class="n">Heizkosten</th><th class="n">Warmwasser</th>'+(sum.bk?'<th class="n">Kaltwasser / Sonstiges</th>':'')+'<th class="n">Gesamt</th><th>Zugeordnet zu</th></tr></thead><tbody>'
+    +S.nutzer.map((n,i)=>{ const m=n.mv&&D.mvs.find(x=>x.id===n.mv); return '<tr><td><b>'+esc(n.name)+'</b><div class="sub">'+esc(n.nr)+'</div></td><td>'+esc(n.lage||'')+'</td><td>'+esc(dmy(n.von)+' bis '+dmy(n.bis))+'</td><td class="n">'+(n.qm!=null?fnum.format(n.qm)+' m²':'')+'</td><td class="n">'+eur(n.hk)+'</td><td class="n">'+eur(n.ww)+'</td>'+(sum.bk?'<td class="n">'+eur(n.bk)+'</td>':'')+'<td class="n"><b>'+eur((n.hk||0)+(n.ww||0)+(n.bk||0))+'</b></td>'
+      +'<td><input class="inp" list="dl-szmv" data-wahl="1" style="width:100%;min-width:260px;padding:4px 8px'+(m?'':';border-color:var(--warn)')+'" value="'+esc(m?mvLabel(m):'')+'" placeholder="Mietverhältnis wählen" onchange="schuetzZuordnung('+i+',this)"></td></tr>'; }).join('')
+    +'<tr><td colspan="4"><b>Summe</b></td><td class="n"><b>'+eur(sum.hk)+'</b></td><td class="n"><b>'+eur(sum.ww)+'</b></td>'+(sum.bk?'<td class="n"><b>'+eur(sum.bk)+'</b></td>':'')+'<td class="n"><b>'+eur(tot)+'</b></td><td></td></tr></tbody></table></div><datalist id="dl-szmv">'+opts+'</datalist>'
+    +'<div class="sub" style="margin-top:8px">In Schritt 4 werden für die zugeordneten Mieter diese Beträge statt der Heizkosten-Kostenarten aus Schritt 1 verwendet.</div>';
+  return h; }
 async function pdfTextVon(od,file){ let buf;
   if(file&&/pdf/i.test(file.type||file.name)) buf=new Uint8Array(await file.arrayBuffer());
   else { if(!od) return ''; const r=await odApi({aktion:'inhalt',id:od}); if(r.zuGross||!/pdf/i.test((r.typ||'')+(r.name||''))) return ''; const bin=atob(r.daten||''); buf=new Uint8Array(bin.length); for(let i=0;i<bin.length;i++) buf[i]=bin.charCodeAt(i); }
-  if(!PDFJS){ await new Promise((res,rej)=>{ const s=document.createElement('script'); s.src='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js'; s.onload=res; s.onerror=rej; document.head.appendChild(s); }); PDFJS=window.pdfjsLib; PDFJS.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js'; }
+  await pdfjsLaden();
   const doc=await PDFJS.getDocument({data:buf}).promise; let t=''; for(let i=1;i<=Math.min(doc.numPages,6);i++){ const c=await (await doc.getPage(i)).getTextContent(); t+=' '+c.items.map(x=>x.str).join(' '); } return t.replace(/\s+/g,' '); }
 const iso=d=>{ const m=String(d).match(/(\d{1,2})\.(\d{1,2})\.(\d{2,4})/); if(!m) return ''; const y=m[3].length===2?'20'+m[3]:m[3]; return y+'-'+m[2].padStart(2,'0')+'-'+m[1].padStart(2,'0'); };
 /* relevante Angaben aus der Rechnung */
@@ -827,9 +900,9 @@ async function belegWeg(id,btn){ if(btn.dataset.sure!=='1'){ btn.dataset.sure='1
   toast('Eintrag aus der Abrechnung entfernt.'+(sp?'':' Dateien in OneDrive bleiben erhalten.')); kNeu2(); }
 document.addEventListener('keydown',e=>{ if(e.key==='Escape'){ if(AZ) azZu(); else if(K) kZu(); } });
 /* Datei ins Fenster ziehen */
-document.addEventListener('dragover',e=>{ if(!K||!e.dataTransfer||![...e.dataTransfer.types].includes('Files')) return; e.preventDefault(); const d=document.querySelector('.dlg'); if(d) d.classList.add('drop'); });
+document.addEventListener('dragover',e=>{ if(!K&&SCHRITT==='schuetz'&&D&&D.a&&e.dataTransfer&&[...e.dataTransfer.types].includes('Files')){ e.preventDefault(); return; } if(!K||!e.dataTransfer||![...e.dataTransfer.types].includes('Files')) return; e.preventDefault(); const d=document.querySelector('.dlg'); if(d) d.classList.add('drop'); });
 document.addEventListener('dragleave',e=>{ if(e.relatedTarget) return; const d=document.querySelector('.dlg'); if(d) d.classList.remove('drop'); });
-document.addEventListener('drop',e=>{ if(!K) return; e.preventDefault(); const d=document.querySelector('.dlg'); if(d) d.classList.remove('drop'); const FL=e.dataTransfer&&e.dataTransfer.files?[...e.dataTransfer.files]:[]; if(!FL.length) return;
+document.addEventListener('drop',e=>{ if(!K&&SCHRITT==='schuetz'&&D&&D.a){ e.preventDefault(); const f=e.dataTransfer&&e.dataTransfer.files&&e.dataTransfer.files[0]; if(f) schuetzDatei(f); return; } if(!K) return; e.preventDefault(); const d=document.querySelector('.dlg'); if(d) d.classList.remove('drop'); const FL=e.dataTransfer&&e.dataTransfer.files?[...e.dataTransfer.files]:[]; if(!FL.length) return;
   if(K.neu){ toast('Bitte zuerst den offenen Beleg übernehmen oder verwerfen.'); return; } if(FL.length>1||K.stapel) stapelHoch(FL); else kHochDatei(FL[0]); });
 laden().then(()=>{ if(!CUR) uebersicht(); });
 </script></body></html>

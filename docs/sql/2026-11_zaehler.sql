@@ -11,3 +11,6 @@ alter table objekt_zaehler add column if not exists vertrag_name text;
 -- Speicher für hochgeladene BK-Belege (nicht mehr in OneDrive)
 insert into storage.buckets (id, name, public, file_size_limit) values ('bk-belege','bk-belege',false, 20971520) on conflict (id) do nothing;
 create policy bk_belege_auth on storage.objects for all to authenticated using (bucket_id = 'bk-belege') with check (bucket_id = 'bk-belege');
+
+-- Heizkostenabrechnung Schütz je BK-Abrechnung
+alter table bk_abrechnungen add column if not exists schuetz jsonb;
