@@ -301,7 +301,7 @@ function ergHtml(){ if(ABSD===null){ absLaden(); } if(KONTEN===null) kontenLaden
       +'<td class="n">'+(va?'<button class="small" onclick="schreibenErstellen(\''+m.id+'\',true)">PDF</button>'+(m.schreiben_datei&&m.schreiben_datei.od?'<div class="sub"><a class="lnk" onclick="odOeffnen(\''+esc(m.schreiben_datei.od)+'\')">erstellt '+dmy(String(m.schreiben_am||'').slice(0,10))+'</a></div>':''):'')+'</td></tr>'; }
   h+='</tbody></table></div>';
   h+='<div class="sub" style="margin-top:6px">Neue Vorauszahlung: Der graue Wert ist der Vorschlag (Kosten '+JAHR+' auf zwölf Monate gerechnet, aufgerundet). Trag den Betrag ein, der ins Schreiben soll. Leer = keine Anpassung.</div>';
-  h+='<div class="acts"><button class="primary" onclick="alleSchreiben(this)">Alle markierten Schreiben erstellen</button><span class="sub">Die PDFs werden in OneDrive unter 04 Betriebskosten/Abrechnung '+JAHR+' gespeichert.</span></div>';
+  h+='<div class="acts"><button class="primary" onclick="alleSchreiben(this)">Alle markierten Schreiben erstellen</button><span class="sub">Die PDFs werden in OneDrive unter 04 Betriebskosten/BK-Abrechnungen/'+JAHR+' gespeichert.</span></div>';
   return h; }
 /* ---------- PDF ---------- */
 async function jsPdfLaden(){ if(window.jspdf) return; await new Promise((res,rej)=>{ const s=document.createElement('script'); s.src='https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js'; s.onload=res; s.onerror=rej; document.head.appendChild(s); }); }
@@ -345,16 +345,17 @@ function schreibenPdf(x){ const m=x.m, e=D.ein.find(z=>z.id===m.einheit_id)||{},
   for(let i=1;i<=n;i++){ doc.setPage(i); doc.setDrawColor(210); doc.line(L,284,R,284); doc.setFontSize(7.5); doc.setTextColor(120); doc.text(fuss,L,288); if(n>1) doc.text('Seite '+i+' von '+n,R,288,{align:'right'}); }
   return doc; }
 async function schreibenErstellen(id,zeigen,R0){ const R=R0||ergebnis(), x=R.mv[id]; if(!x||x.saldo==null) return false; const w=zeigen?window.open('','_blank'):null;
-  try{ await jsPdfLaden(); const doc=schreibenPdf(x), name=dateiNameMv(x.m); if(w) w.location.href=doc.output('bloburl');
+  try{ await jsPdfLaden(); const doc=schreibenPdf(x), name=dateiNameMv(x.m); let zus=null; try{ zus=await mitSchuetz(doc,id); }catch(e){ toast('Schütz-Einzelabrechnung konnte nicht angehängt werden: '+(e.message||e),6000); }
+    if(w) w.location.href=zus?URL.createObjectURL(new Blob([zus],{type:'application/pdf'})):doc.output('bloburl');
     const r=await odApi({aktion:'objektbasis',kz:[D.o.kz]}); const Bs=(r.objekte||{})[D.o.kz]; if(!Bs) throw new Error('Kein Objektordner für '+D.o.kz+' gefunden.');
-    const t04=(Bs.top||[]).find(t=>/^04 /.test(t))||'04 Betriebskosten', ziel=Bs.basis+'/'+t04+'/Abrechnung '+JAHR; await odApi({aktion:'anlegen',pfad:ziel});
-    const up=await odApi({aktion:'hochladen',pfad:ziel,name,daten:doc.output('datauristring').split(',')[1],typ:'application/pdf'});
+    const t04=(Bs.top||[]).find(t=>/^04 /.test(t))||'04 Betriebskosten', ziel=Bs.basis+'/'+t04+'/BK-Abrechnungen/'+JAHR; await odApi({aktion:'anlegen',pfad:ziel});
+    const up=await odApi({aktion:'hochladen',pfad:ziel,name,daten:zus?b64Von(zus):doc.output('datauristring').split(',')[1],typ:'application/pdf'});
     const patch={schreiben_am:new Date().toISOString(),schreiben_datei:{od:up.item.id,n:up.item.name,pfad:ziel+'/'+up.item.name}}; await sb.from('bk_mietverhaeltnisse').update(patch).eq('id',id); Object.assign(x.m,patch);
     if(zeigen){ toast('Schreiben gespeichert: '+up.item.name,5000); render(); } return true; }
   catch(e){ if(w&&zeigen&&!w.location.href.startsWith('blob')) w.close(); toast('Schreiben nicht erstellt: '+(e.message||e),7000); return false; } }
 async function alleSchreiben(btn){ const R0=ergebnis(); if((R0.nichtVerteilt.length||D.kas.some(k=>!k.erledigt&&!k.ausgeblendet))&&btn.dataset.sure!=='1'){ btn.dataset.sure='1'; btn.textContent='Es sind noch Kostenarten offen oder nicht verteilt – trotzdem erstellen?'; return; } btn.dataset.sure=''; const R=R0, L=Object.values(R.mv).filter(x=>x.saldo!=null&&x.m.schreiben!==false); if(!L.length){ toast('Keine Schreiben markiert.'); return; }
   btn.disabled=true; let n=0; for(const x of L){ btn.textContent='Erstelle '+(n+1)+' von '+L.length+' …'; if(await schreibenErstellen(x.m.id,false,R)) n++; }
-  toast(n+' von '+L.length+' Schreiben in OneDrive gespeichert (04 Betriebskosten/Abrechnung '+JAHR+').',7000); render(); }
+  toast(n+' von '+L.length+' Schreiben in OneDrive gespeichert (04 Betriebskosten/BK-Abrechnungen/'+JAHR+').',7000); render(); }
 
 /* ---------- Schritt 2: Mietverhältnisse und Vorauszahlungen ---------- */
 const MV_ARTEN=[['vorauszahlung','Vorauszahlung'],['pauschale','Pauschale'],['leerstand','Leerstand'],['eigennutzung','Eigennutzung']];
@@ -493,8 +494,8 @@ async function belegmappe(btn){ const w=window.open('','_blank'); const alt=btn.
       catch(e){ fehlt.push('Beleg '+c._nr+' ('+(e.message||e)+')'); } }
     const bytes=await mappe.save(); const blob=new Blob([bytes],{type:'application/pdf'}); if(w) w.location.href=URL.createObjectURL(blob);
     const name=odSafe(o.kz+'_'+new Date().toISOString().slice(0,10)+'_Belegmappe Betriebskosten '+JAHR)+'.pdf';
-    if(bytes.length<=3*1024*1024){ try{ const rB=await odApi({aktion:'objektbasis',kz:[o.kz]}), Bs=(rB.objekte||{})[o.kz]; if(Bs){ const t04=(Bs.top||[]).find(t=>/^04 /.test(t))||'04 Betriebskosten', ziel=Bs.basis+'/'+t04+'/Abrechnung '+JAHR; await odApi({aktion:'anlegen',pfad:ziel});
-        let b64=''; for(let j=0;j<bytes.length;j+=32768) b64+=String.fromCharCode.apply(null,bytes.subarray(j,j+32768)); await odApi({aktion:'hochladen',pfad:ziel,name,daten:btoa(b64),typ:'application/pdf'}); toast('Belegmappe in OneDrive gespeichert (04 Betriebskosten/Abrechnung '+JAHR+').'+(fehlt.length?' Nicht enthalten: '+fehlt.join(', '):''),9000); } }catch(e){ toast('Belegmappe erstellt, aber nicht in OneDrive gespeichert: '+(e.message||e),8000); } }
+    if(bytes.length<=3*1024*1024){ try{ const rB=await odApi({aktion:'objektbasis',kz:[o.kz]}), Bs=(rB.objekte||{})[o.kz]; if(Bs){ const t04=(Bs.top||[]).find(t=>/^04 /.test(t))||'04 Betriebskosten', ziel=Bs.basis+'/'+t04+'/BK-Abrechnungen/'+JAHR; await odApi({aktion:'anlegen',pfad:ziel});
+        let b64=''; for(let j=0;j<bytes.length;j+=32768) b64+=String.fromCharCode.apply(null,bytes.subarray(j,j+32768)); await odApi({aktion:'hochladen',pfad:ziel,name,daten:btoa(b64),typ:'application/pdf'}); toast('Belegmappe in OneDrive gespeichert (04 Betriebskosten/BK-Abrechnungen/'+JAHR+').'+(fehlt.length?' Nicht enthalten: '+fehlt.join(', '):''),9000); } }catch(e){ toast('Belegmappe erstellt, aber nicht in OneDrive gespeichert: '+(e.message||e),8000); } }
     else toast('Belegmappe erstellt ('+Math.round(bytes.length/1048576)+' MB). Zu groß für OneDrive-Upload – bitte im geöffneten Fenster speichern.'+(fehlt.length?' Nicht enthalten: '+fehlt.join(', '):''),10000); }
   catch(e){ if(w) w.close(); toast('Belegmappe nicht erstellt: '+(e.message||e),7000); }
   btn.disabled=false; btn.textContent=alt; }
@@ -678,11 +679,28 @@ async function pdfjsLaden(){ if(PDFJS) return; await new Promise((res,rej)=>{ co
 let SZL='';
 const schuetzAktiv=()=>{ const S=D&&D.a&&D.a.schuetz; return S&&Array.isArray(S.nutzer)&&S.nutzer.length?S:null; };
 const schuetzSummen=S=>S.nutzer.reduce((a,n)=>({hk:a.hk+(n.hk||0),ww:a.ww+(n.ww||0),bk:a.bk+(n.bk||0)}),{hk:0,ww:0,bk:0});
-async function pdfZeilen(buf){ await pdfjsLaden(); const doc=await PDFJS.getDocument({data:buf}).promise, Z=[];
+async function pdfZeilen(buf){ await pdfjsLaden(); const doc=await PDFJS.getDocument({data:buf}).promise, Z=[]; Z.seite=[];
   for(let i=1;i<=doc.numPages;i++){ const c=await (await doc.getPage(i)).getTextContent(), G={};
     for(const it of c.items){ if(!it.str||!it.str.trim()) continue; const y=Math.round(it.transform[5]/2.5); (G[y]=G[y]||[]).push({x:it.transform[4],t:it.str}); }
-    for(const y of Object.keys(G).map(Number).sort((a,b)=>b-a)) Z.push(G[y].sort((a,b)=>a.x-b.x).map(q=>q.t).join(' ').replace(/\s+/g,' ').trim()); }
+    for(const y of Object.keys(G).map(Number).sort((a,b)=>b-a)){ Z.push(G[y].sort((a,b)=>a.x-b.x).map(q=>q.t).join(' ').replace(/\s+/g,' ').trim()); Z.seite.push(i-1); } }
   return Z; }
+/* Einzelabrechnung je Nutzer: Seiten mit „Nutzer-Nr“ und genau einer Nutzernummer */
+function schuetzSeitenVon(Z){ const S={}, P={}; Z.forEach((t,i)=>{ const p=Z.seite[i]; (P[p]=P[p]||[]).push(t); });
+  for(const p of Object.keys(P).map(Number).sort((a,b)=>a-b)){ const T=P[p].join('\n'); if(!/Nutzer-Nr/.test(T)) continue; const nr=[...new Set(T.match(/(?<!\d)\d{4}-\d{3}(?!\d)/g)||[])]; if(nr.length===1) (S[nr[0]]=S[nr[0]]||[]).push(p); }
+  return S; }
+let SZPDF=null;
+async function schuetzPdf(){ const S=schuetzAktiv(); if(!S||!S.datei) return null; const key=S.datei.sb||S.datei.od; if(SZPDF&&SZPDF.key===key) return SZPDF;
+  const r=await belegInhalt(S.datei); if(!r||!r.u) return null; let seiten=null;
+  if(S.nutzer.some(n=>!Array.isArray(n.seiten))){ const Z=await pdfZeilen(r.u.slice()); seiten=schuetzSeitenVon(Z); }
+  SZPDF={key,u:r.u,seiten}; return SZPDF; }
+/* Schreiben + passende Einzelabrechnung(en) von Schütz zu einer PDF zusammenfügen */
+async function mitSchuetz(doc,mvId){ const S=schuetzAktiv(); if(!S) return null; const L=S.nutzer.filter(n=>n.mv===mvId); if(!L.length) return null;
+  const P=await schuetzPdf(); if(!P) return null; const idx=[]; for(const n of L) for(const p of (Array.isArray(n.seiten)?n.seiten:(P.seiten&&P.seiten[n.nr])||[])) if(!idx.includes(p)) idx.push(p);
+  if(!idx.length) return null; await pdfLibLaden();
+  const out=await PDFLib.PDFDocument.load(doc.output('arraybuffer')), src=await PDFLib.PDFDocument.load(P.u,{ignoreEncryption:true});
+  for(const pg of await out.copyPages(src,idx.filter(i=>i<src.getPageCount()))) out.addPage(pg);
+  return await out.save(); }
+const b64Von=bytes=>{ let b=''; for(let j=0;j<bytes.length;j+=32768) b+=String.fromCharCode.apply(null,bytes.subarray(j,j+32768)); return btoa(b); };
 const szDat=t=>{ const m=String(t).match(/^(\d\d)\.(\d\d)\.(\d\d)$/); return m?'20'+m[3]+'-'+m[2]+'-'+m[1]:''; };
 function schuetzLesen(Z){ const N=[]; let cur=null, gesamt=null, zr='';
   for(const t of Z){ let m;
@@ -707,7 +725,8 @@ const mvLabel=m=>{ const e=D.ein.find(x=>x.id===m.einheit_id); return (e?e.bezei
 async function schuetzHoch(inp){ const f=inp.files[0]; inp.value=''; if(f) schuetzDatei(f); }
 async function schuetzDatei(f){ if(!/pdf/i.test(f.type||f.name)){ toast('Bitte die Schütz-Abrechnung als PDF hochladen.'); return; }
   SZL='Lese die Schütz-Abrechnung …'; render();
-  try{ const R=schuetzLesen(await pdfZeilen(new Uint8Array(await f.arrayBuffer())));
+  try{ const Rz=await pdfZeilen(new Uint8Array(await f.arrayBuffer())), R=schuetzLesen(Rz);
+    if(R.nutzer.length){ const SS=schuetzSeitenVon(Rz); for(const n of R.nutzer) n.seiten=SS[n.nr]||[]; }
     if(!R.nutzer.length){ SZL=''; render(); toast('In der Datei wurden keine Nutzer erkannt. Bitte die Gesamtabrechnung mit Nutzerübersicht hochladen.',7000); return; }
     SZL='Speichere die Datei …'; render(); const datei=await belegSpeicherHoch(f);
     for(const n of R.nutzer) n.mv=schuetzVorschlag(n);
