@@ -94,6 +94,13 @@ const tage=(a,b)=>Math.round((new Date(b+'T00:00:00Z')-new Date(a+'T00:00:00Z'))
 async function token(){const {data}=await sb.auth.getSession();return data&&data.session?data.session.access_token:'';}
 async function odApi(body){let r;try{r=await fetch('/api/onedrive',{method:'POST',headers:{'content-type':'application/json',authorization:'Bearer '+await token()},body:JSON.stringify(body)});}catch(e){throw new Error('OneDrive nicht erreichbar.');}
   let j=null;try{j=await r.json();}catch(e){}if(!j)throw new Error('OneDrive nicht erreichbar ('+r.status+').');if(j.error)throw new Error(j.error);return j;}
+/* Hochgeladene Belege liegen in der Abrechnung (Speicher bk-belege), nicht in OneDrive. Belege aus OneDrive werden nur verknüpft. */
+const belegKlick=b=>b&&b.sb?'sbOeffnen(\''+esc(b.sb)+'\')':'odOeffnen(\''+esc(b&&b.od||'')+'\')';
+async function sbOeffnen(p){const w=window.open('','_blank');const {data,error}=await sb.storage.from('bk-belege').createSignedUrl(p,600);if(error||!data){if(w)w.close();toast('Beleg konnte nicht geöffnet werden.');return;}if(w)w.location.href=data.signedUrl;else window.open(data.signedUrl,'_blank');}
+async function belegInhalt(b){ if(b.sb){ const {data,error}=await sb.storage.from('bk-belege').download(b.sb); if(error) throw error; return {u:new Uint8Array(await data.arrayBuffer()),typ:data.type||'',name:b.n||b.sb}; }
+  const r=await odApi({aktion:'inhalt',id:b.od}); if(r.zuGross) return {zuGross:true,name:r.name}; const bin=atob(r.daten||''), u=new Uint8Array(bin.length); for(let j=0;j<bin.length;j++) u[j]=bin.charCodeAt(j); return {u,typ:r.typ||'',name:r.name||''}; }
+async function belegSpeicherHoch(f){ const name=String(f.name||'Beleg').replace(/[^\w.\-äöüÄÖÜß ,€]+/g,'_'), pfad=D.a.id+'/'+Date.now().toString(36)+Math.random().toString(36).slice(2,6)+'/'+name.replace(/[^\w.\-]+/g,'_');
+  const {error}=await sb.storage.from('bk-belege').upload(pfad,f,{contentType:f.type||'application/pdf'}); if(error) throw new Error(error.message); return {sb:pfad,n:f.name}; }
 async function odOeffnen(id){const w=window.open('','_blank');try{const r=await odApi({aktion:'link',id});const u=r.web||r.download;if(w)w.location.href=u;else window.open(u,'_blank');}catch(e){if(w)w.close();toast('Datei nicht erreichbar: '+e.message);}}
 
 /* ---------- Stammdaten ---------- */
@@ -463,15 +470,15 @@ async function belegmappe(btn){ const w=window.open('','_blank'); const alt=btn.
     doc.setFont('helvetica','bold'); doc.setFontSize(14); doc.text('Belegverzeichnis Betriebskosten '+JAHR,L,y); y+=7; doc.setFont('helvetica','normal'); doc.setFontSize(10);
     doc.text([o.strasse,[o.plz,o.ort].filter(Boolean).join(' ')].filter(Boolean).join(', ')+' · Abrechnungszeitraum '+dmy(D.a.zeitraum_von)+' bis '+dmy(D.a.zeitraum_bis),L,y); y+=5; doc.setTextColor(100); doc.text(A.name||'',L,y); doc.setTextColor(20); y+=9;
     let nr=0, sum=0; const ODNR={}; for(const k of KL){ need(14); doc.setFont('helvetica','bold'); doc.setFontSize(10.5); doc.text(k.name,L,y); doc.text(eur(summe(k)),R,y,{align:'right'}); y+=5; doc.setFont('helvetica','normal'); doc.setFontSize(8.5);
-      for(const c of kostenVon(k)){ const od=c.beleg&&c.beleg.od, frueher=od&&ODNR[od]; nr++; c._nr=nr; if(od&&!frueher) ODNR[od]=nr; need(5);
+      for(const c of kostenVon(k)){ const od=c.beleg&&(c.beleg.od||c.beleg.sb), frueher=od&&ODNR[od]; nr++; c._nr=nr; if(od&&!frueher) ODNR[od]=nr; need(5);
         const t=doc.splitTextToSize('Beleg '+nr+': '+(frueher?'Teilbetrag aus Beleg '+frueher:[c.empfaenger||String(c.notiz||'').replace(/\.[a-z]+$/i,''),c.rechnungsnr?'Nr. '+c.rechnungsnr:'',c.datum?'vom '+dmy(c.datum):'',c.von&&c.bis?'Leistung '+dmy(c.von)+' bis '+dmy(c.bis):''].filter(Boolean).join(' · ')),130);
         doc.text(t,L+4,y); doc.text(eur(c.anteil!=null?c.anteil:c.betrag),R,y,{align:'right'}); y+=4.4*t.length; } sum+=summe(k); y+=3; }
     need(10); doc.setDrawColor(150); doc.line(L,y,R,y); y+=6; doc.setFont('helvetica','bold'); doc.setFontSize(10.5); doc.text('Summe '+JAHR,L,y); doc.text(eur(sum),R,y,{align:'right'});
     const mappe=await PDFLib.PDFDocument.create(); const vz=await PDFLib.PDFDocument.load(doc.output('arraybuffer')); for(const pg of await mappe.copyPages(vz,vz.getPageIndices())) mappe.addPage(pg);
     /* Belege anhängen */
-    const fehlt=[]; let i=0; for(const {c} of B){ i++; btn.textContent='Beleg '+i+' von '+B.length+' …'; const od=c.beleg&&c.beleg.od; if(!od){ fehlt.push('Beleg '+c._nr+' (keine Datei)'); continue; }
-      if(B.findIndex(x=>x.c.beleg&&x.c.beleg.od===od)<i-1) continue; /* gleiche Datei nur einmal (aufgeteilte Bescheide) */
-      try{ const r=await odApi({aktion:'inhalt',id:od}); if(r.zuGross){ fehlt.push('Beleg '+c._nr+' (Datei zu groß: '+(r.name||'')+')'); continue; } const bin=atob(r.daten||''), u=new Uint8Array(bin.length); for(let j=0;j<bin.length;j++) u[j]=bin.charCodeAt(j);
+    const fehlt=[]; let i=0; for(const {c} of B){ i++; btn.textContent='Beleg '+i+' von '+B.length+' …'; const od=c.beleg&&(c.beleg.od||c.beleg.sb); if(!od){ fehlt.push('Beleg '+c._nr+' (keine Datei)'); continue; }
+      if(B.findIndex(x=>x.c.beleg&&(x.c.beleg.od||x.c.beleg.sb)===od)<i-1) continue; /* gleiche Datei nur einmal (aufgeteilte Bescheide) */
+      try{ const r=await belegInhalt(c.beleg); if(r.zuGross){ fehlt.push('Beleg '+c._nr+' (Datei zu groß: '+(r.name||'')+')'); continue; } const u=r.u;
         if(/pdf/i.test((r.typ||'')+(r.name||''))){ const d=await PDFLib.PDFDocument.load(u,{ignoreEncryption:true}); for(const pg of await mappe.copyPages(d,d.getPageIndices())) mappe.addPage(pg); }
         else if(/png|jpe?g/i.test((r.typ||'')+(r.name||''))){ const img=/png/i.test((r.typ||'')+(r.name||''))?await mappe.embedPng(u):await mappe.embedJpg(u); const pg=mappe.addPage([595,842]); const sc=Math.min(555/img.width,802/img.height); pg.drawImage(img,{x:20,y:842-20-img.height*sc,width:img.width*sc,height:img.height*sc}); }
         else fehlt.push('Beleg '+c._nr+' ('+(r.name||'unbekanntes Format')+')'); }
@@ -537,7 +544,7 @@ function kHtml(){ const k=K, ka=kKa(), Ko=kostenVon(ka), sum=summe(ka), V=vertei
   /* Belege */
   h+='<div class="abs">Belege</div>';
   h+='<div class="acts" style="margin-top:0"><input class="inp" id="k-such" placeholder="In OneDrive suchen: Absender, Betrag oder Dateiname" value="'+esc(k.such)+'" style="flex:1;min-width:240px" onkeydown="if(event.key===\'Enter\')kSuchen()"><button onclick="kSuchen()">Suchen</button><button onclick="kVorschlaege()">Vorschläge für '+esc(D.o.kz)+'</button><button onclick="kOrdner()">OneDrive-Ordner öffnen</button><label class="up">Hochladen<input type="file" accept=".pdf,image/*" multiple hidden onchange="kHoch(this)"></label><button onclick="manuellNeu()">Betrag ohne Beleg eintragen</button></div>';
-  if(!k.neu) h+='<div class="dropz">Dateien hierher ziehen (auch mehrere, z. B. alle Monatsrechnungen) – sie werden in OneDrive unter 04 Betriebskosten/'+esc(k.name)+' abgelegt und gelesen.</div>';
+  if(!k.neu) h+='<div class="dropz">Dateien hierher ziehen (auch mehrere, z. B. alle Monatsrechnungen) – sie werden gelesen und nur hier in der Abrechnung gespeichert, nicht zusätzlich in OneDrive.</div>';
   if(k.lade) h+='<div class="sub" style="margin-top:6px">'+esc(k.lade)+'</div>';
   if(k.treffer){ h+='<div style="margin-top:6px">'+(k.treffer.length?k.treffer.slice(0,15).map((f,i)=>'<div class="such"><div><a class="lnk" onclick="odOeffnen(\''+esc(f.id)+'\')">'+esc(f.name)+'</a><div class="sub">'+esc(String(f.pfad||'').replace(/^Prozesslandkarte 3\.0\//,'').split('/').slice(0,-1).join('/'))+'</div></div><button class="small" onclick="kWaehle('+i+')">Übernehmen</button></div>').join(''):'<div class="sub">Nichts gefunden.</div>')+'</div>'; }
   if(k.neu) h+=belegForm(k.neu,true);
@@ -620,16 +627,11 @@ async function kHoch(inp){ const L=[...inp.files]; inp.value=''; if(L.length>1) 
 /* ---------- Mehrere Belege auf einmal (z. B. monatliche Rechnungen) ---------- */
 async function stapelHoch(files){ if(!K) return; if(K.neu){ toast('Bitte zuerst den offenen Beleg übernehmen oder verwerfen.'); return; }
   const ka=kKa(); const S=K.stapel=K.stapel||{L:[],einheiten:letzteZuordnung(ka)}; S.lade='Lade '+files.length+' Dateien hoch …'; kNeu2();
-  let ziel; try{ const r=await odApi({aktion:'objektbasis',kz:[D.o.kz]}); const B=(r.objekte||{})[D.o.kz]; if(!B) throw new Error('Kein Objektordner für '+D.o.kz+' gefunden.');
-    const t04=(B.top||[]).find(t=>/^04 /.test(t))||'04 Betriebskosten'; ziel=B.basis+'/'+t04+'/'+K.name; await odApi({aktion:'anlegen',pfad:ziel}); }
-  catch(e){ S.lade=''; toast('Hochladen fehlgeschlagen: '+(e.message||e),7000); kNeu2(); return; }
   let i=0; for(const f of files){ i++; if(K.stapel!==S) return; S.lade='Datei '+i+' von '+files.length+': '+f.name+' …'; kNeu2();
-    if(f.size>3*1024*1024){ toast(f.name+' ist zu groß (max. 3 MB) und wurde übersprungen.',6000); continue; }
-    try{ const daten=await new Promise((res,rej)=>{ const rd=new FileReader(); rd.onload=()=>res(String(rd.result).split(',')[1]||''); rd.onerror=()=>rej(rd.error); rd.readAsDataURL(f); });
-      const up=await odApi({aktion:'hochladen',pfad:ziel,name:f.name,daten,typ:f.type||''});
-      const b={od:up.item.id,n:up.item.name,pfad:ziel+'/'+up.item.name}, m=nameMeta(b.n);
+    if(f.size>20*1024*1024){ toast(f.name+' ist zu groß (max. 20 MB) und wurde übersprungen.',6000); continue; }
+    try{ const b=await belegSpeicherHoch(f), m=nameMeta(b.n);
       const it={beleg:b,empfaenger:m.abs,datum:m.datum,betrag:m.betrag!=null?fnum.format(m.betrag):'',von:'',bis:'',rechnungsnr:'',nicht_umlagefaehig:'',lohnanteil:'',verbrauch:'',info:''};
-      try{ const t=await pdfTextVon(b.od,f); const R=rechnungLesen(t);
+      try{ const t=await pdfTextVon(null,f); const R=rechnungLesen(t);
         for(const k of ['von','bis','rechnungsnr','datum']) if(R[k]) it[k]=R[k];
         if(R.betrag!=null) it.betrag=fnum.format(R.betrag); if(R.lohnanteil!=null&&LOHN(ka)) it.lohnanteil=fnum.format(R.lohnanteil);
         if(R.nicht_umlagefaehig!=null) it.nicht_umlagefaehig=fnum.format(R.nicht_umlagefaehig); if(R.verbrauch!=null) it.verbrauch=fnum.format(R.verbrauch);
@@ -640,9 +642,9 @@ async function stapelHoch(files){ if(!K) return; if(K.neu){ toast('Bitte zuerst 
 function stapelHtml(S){ const ka=kKa(), lohn=LOHN(ka);
   const inp=(i,k,w)=>{ const it=S.L[i], dt=/^(von|bis|datum)$/.test(k); return '<input class="inp'+(dt?'':' zahl')+'" style="width:'+w+'px;padding:4px 6px" value="'+esc(dt?dmyL(it[k]):(it[k]||''))+'"'+(dt?' placeholder="TT.MM.JJJJ"':'')+' onchange="stapelFeld('+i+',\''+k+'\',this)">'; };
   let sum=0; const rows=S.L.map((it,i)=>{ const a=anteilBerechnen(it), nu=parseNum(it.nicht_umlagefaehig)||0, b=parseNum(it.betrag), an=a!=null?a-nu*(a&&b?a/b:1):null; if(an!=null) sum+=an;
-    return '<tr><td><a class="lnk" onclick="odOeffnen(\''+esc(it.beleg.od)+'\')">'+esc(it.beleg.n)+'</a>'+(it.info?' <span class="sub">'+esc(it.info)+'</span>':'')+'</td><td>'+inp(i,'datum',100)+'</td><td>'+inp(i,'von',100)+'</td><td>'+inp(i,'bis',100)+'</td><td class="n">'+inp(i,'betrag',90)+'</td>'
+    return '<tr><td><a class="lnk" onclick="'+belegKlick(it.beleg)+'">'+esc(it.beleg.n)+'</a>'+(it.info?' <span class="sub">'+esc(it.info)+'</span>':'')+'</td><td>'+inp(i,'datum',100)+'</td><td>'+inp(i,'von',100)+'</td><td>'+inp(i,'bis',100)+'</td><td class="n">'+inp(i,'betrag',90)+'</td>'
       +(lohn?'<td class="n">'+inp(i,'lohnanteil',80)+'</td>':'')+'<td class="n">'+(an!=null?eur(an):'–')+'</td><td><button class="small ghost" onclick="stapelWeg('+i+')">x</button></td></tr>'; }).join('');
-  return '<div class="bel neu"><div class="k"><b>'+S.L.length+' Belege zum Übernehmen</b><span class="sub">'+esc(S.lade||'Aus den Rechnungen gelesen – bitte prüfen. Die Zuordnung unten gilt für alle Belege. Mit x nimmst du einen Beleg aus der Liste (die Datei bleibt in OneDrive).')+'</span></div>'
+  return '<div class="bel neu"><div class="k"><b>'+S.L.length+' Belege zum Übernehmen</b><span class="sub">'+esc(S.lade||'Aus den Rechnungen gelesen – bitte prüfen. Die Zuordnung unten gilt für alle Belege. Mit x nimmst du einen Beleg aus der Liste.')+'</span></div>'
     +(S.L.length?'<div class="tbox" style="margin-top:6px"><table class="tab"><thead><tr><th>Datei</th><th>Rechnungsdatum</th><th>Leistung von</th><th>bis</th><th class="n">Betrag (€)</th>'+(lohn?'<th class="n">Lohnanteil</th>':'')+'<th class="n">Anteil '+JAHR+'</th><th></th></tr></thead><tbody>'+rows+'<tr><td colspan="'+(lohn?6:5)+'"><b>Summe</b></td><td class="n"><b>'+eur(sum)+'</b></td><td></td></tr></tbody></table></div>':'')
     +(D.ein.length<2?'':'<div class="acts" style="margin-top:6px;flex-wrap:wrap"><span class="sub">Gelten für:</span><label class="sub"><input type="checkbox" '+(!S.einheiten.length?'checked':'')+' onchange="K.stapel.einheiten=[];kNeu2()"> alle Einheiten</label>'+D.ein.map(e=>'<label class="sub"><input type="checkbox" '+(S.einheiten.includes(e.id)?'checked':'')+' onchange="stapelEinheit(\''+e.id+'\',this.checked)"> '+esc(e.bezeichnung)+'</label>').join('')+'</div>')
     +'<div class="acts"><button class="primary small" style="margin-left:auto" '+(S.lade||!S.L.length?'disabled':'')+' onclick="stapelSpeichern(this)">Alle '+S.L.length+' übernehmen</button><button class="small" onclick="K.stapel=null;kNeu2()">Verwerfen</button></div></div>'; }
@@ -657,19 +659,14 @@ async function stapelSpeichern(btn){ const S=K.stapel, ka=kKa(); if(!S) return;
       beleg:n.beleg,von:n.von||null,bis:n.bis||null,anteil:r2(a-nu*faktor),nicht_umlagefaehig:nu||null,lohnanteil:parseNum(n.lohnanteil),rechnungsnr:n.rechnungsnr||null,verbrauch:parseNum(n.verbrauch),einheiten:S.einheiten.length?S.einheiten.slice():null}; });
   const {data,error}=await sb.from('bk_kosten').insert(rows).select(); if(error){ btn.disabled=false; toast('Nicht gespeichert: '+error.message,6000); return; }
   D.kos.push(...(data||[])); K.stapel=null; toast(rows.length+' Belege übernommen: '+eur(rows.reduce((a,r)=>a+(r.anteil||0),0))+' für '+JAHR+'.'); kNeu2(); }
-async function kHochDatei(f){ if(!f) return; if(f.size>3*1024*1024){ toast('Datei zu groß (max. 3 MB). Bitte direkt in OneDrive ablegen und hier suchen.',6000); return; }
+async function kHochDatei(f){ if(!f) return; if(f.size>20*1024*1024){ toast('Datei zu groß (max. 20 MB).',6000); return; }
   K.lade='Lade hoch …'; kNeu2();
-  try{ const r=await odApi({aktion:'objektbasis',kz:[D.o.kz]}); const B=(r.objekte||{})[D.o.kz]; if(!B) throw new Error('Kein Objektordner für '+D.o.kz+' gefunden.');
-    const t04=(B.top||[]).find(t=>/^04 /.test(t))||'04 Betriebskosten'; const ziel=B.basis+'/'+t04+'/'+K.name;
-    await odApi({aktion:'anlegen',pfad:ziel});
-    const daten=await new Promise((res,rej)=>{ const rd=new FileReader(); rd.onload=()=>res(String(rd.result).split(',')[1]||''); rd.onerror=()=>rej(rd.error); rd.readAsDataURL(f); });
-    const up=await odApi({aktion:'hochladen',pfad:ziel,name:f.name,daten,typ:f.type||''}); K.lade='';
-    await belegVorbereiten({od:up.item.id,n:up.item.name,pfad:ziel+'/'+up.item.name},f); }
+  try{ const b=await belegSpeicherHoch(f); K.lade=''; await belegVorbereiten(b,f); }
   catch(e){ K.lade=''; toast('Hochladen fehlgeschlagen: '+(e.message||e),7000); kNeu2(); } }
 var PDFJS=null;
 async function pdfTextVon(od,file){ let buf;
   if(file&&/pdf/i.test(file.type||file.name)) buf=new Uint8Array(await file.arrayBuffer());
-  else { const r=await odApi({aktion:'inhalt',id:od}); if(r.zuGross||!/pdf/i.test((r.typ||'')+(r.name||''))) return ''; const bin=atob(r.daten||''); buf=new Uint8Array(bin.length); for(let i=0;i<bin.length;i++) buf[i]=bin.charCodeAt(i); }
+  else { if(!od) return ''; const r=await odApi({aktion:'inhalt',id:od}); if(r.zuGross||!/pdf/i.test((r.typ||'')+(r.name||''))) return ''; const bin=atob(r.daten||''); buf=new Uint8Array(bin.length); for(let i=0;i<bin.length;i++) buf[i]=bin.charCodeAt(i); }
   if(!PDFJS){ await new Promise((res,rej)=>{ const s=document.createElement('script'); s.src='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js'; s.onload=res; s.onerror=rej; document.head.appendChild(s); }); PDFJS=window.pdfjsLib; PDFJS.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js'; }
   const doc=await PDFJS.getDocument({data:buf}).promise; let t=''; for(let i=1;i<=Math.min(doc.numPages,6);i++){ const c=await (await doc.getPage(i)).getTextContent(); t+=' '+c.items.map(x=>x.str).join(' '); } return t.replace(/\s+/g,' '); }
 const iso=d=>{ const m=String(d).match(/(\d{1,2})\.(\d{1,2})\.(\d{2,4})/); if(!m) return ''; const y=m[3].length===2?'20'+m[3]:m[3]; return y+'-'+m[2].padStart(2,'0')+'-'+m[1].padStart(2,'0'); };
@@ -711,7 +708,7 @@ function belegEinheit(id,an){ const L=(K.neu.einheiten||[]).filter(x=>x!==id); i
 const einheitenText=L=>(L||[]).map(id=>(D.ein.find(e=>e.id===id)||{}).bezeichnung).filter(Boolean).join(', ');
 function belegForm(n,neu){ const a=anteilBerechnen(n); const f=(k,l,ph)=>{ const dt=/^(von|bis|datum)$/.test(k); return '<label class="fl">'+l+'<input value="'+esc(dt?dmyL(n[k]):(n[k]||''))+'"'+(dt?' placeholder="TT.MM.JJJJ"':ph?' placeholder="'+esc(ph)+'"':'')+' onchange="'+(dt?'belegDatum(\''+k+'\',this)':'K.neu[\''+k+'\']=this.value;K.neu.edit[\''+k+'\']=1;kNeu2()')+'"></label>'; };
   const man=!!(n.beleg&&n.beleg.manuell);
-  return '<div class="bel neu"><div class="k">'+(man?'<b>Betrag ohne Beleg</b>':'<a class="lnk" onclick="odOeffnen(\''+esc(n.beleg.od)+'\')">'+esc(n.beleg.n)+'</a>')+'<span class="sub">'+esc(n.info||'')+'</span></div><div class="fg">'
+  return '<div class="bel neu"><div class="k">'+(man?'<b>Betrag ohne Beleg</b>':'<a class="lnk" onclick="'+belegKlick(n.beleg)+'">'+esc(n.beleg.n)+'</a>')+'<span class="sub">'+esc(n.info||'')+'</span></div><div class="fg">'
     +(man?f('notiz','Bezeichnung','z. B. Hausmeister 2025')+f('empfaenger','Wer (z. B. Hausmeister)')+f('datum','Datum'):f('empfaenger','Rechnungssteller')+f('datum','Rechnungsdatum')+f('rechnungsnr','Rechnungs- / Kundennummer'))+f('von','Leistung von')+f('bis','Leistung bis')+f('betrag','Gesamtbetrag brutto (€)')
     +f('nicht_umlagefaehig','davon nicht umlagefähig (€)','z. B. Mahngebühr, Reparatur')+f('lohnanteil','davon Lohnanteil § 35a (€)')+f('verbrauch','Verbrauch (kWh / m³)')+'</div>'
     +(n.teile||D.ein.length<2?'':'<div class="acts" style="margin-top:6px;flex-wrap:wrap"><span class="sub">Gilt für:</span><label class="sub"><input type="checkbox" '+(!(n.einheiten||[]).length?'checked':'')+' onchange="K.neu.einheiten=[];kNeu2()"> alle Einheiten</label>'+D.ein.map(e=>'<label class="sub"><input type="checkbox" '+((n.einheiten||[]).includes(e.id)?'checked':'')+' onchange="belegEinheit(\''+e.id+'\',this.checked)"> '+esc(e.bezeichnung)+'</label>').join('')+'</div>')
@@ -820,11 +817,14 @@ async function belegSpeichern(){ const n=K.neu, ka=kKa(); if(n.teile) return tei
 /* Betrag ohne Rechnung (z. B. Hausmeister) */
 function manuellNeu(){ if(!K) return; const ka=kKa(); K.treffer=null;
   K.neu={beleg:{manuell:true,n:'ohne Beleg'},notiz:ka.name+' '+JAHR,empfaenger:'',datum:D.a.zeitraum_bis,betrag:'',von:D.a.zeitraum_von,bis:D.a.zeitraum_bis,rechnungsnr:'',nicht_umlagefaehig:'',lohnanteil:'',verbrauch:'',info:'Betrag für den Abrechnungszeitraum eintragen. Ein Beleg ist nicht nötig.',edit:{}}; kNeu2(); }
-function belegZeile(c){ return '<div class="bel"><div class="k"><span>'+(c.beleg&&c.beleg.od?'<a class="lnk" onclick="odOeffnen(\''+esc(c.beleg.od)+'\')">'+esc(c.beleg.n||c.notiz||'Beleg')+'</a>':'<b>'+esc(c.notiz||c.empfaenger||'Kostenbuchung')+'</b>'+(c.quelle==='manuell'?' <span class="sub">ohne Beleg</span>':''))+'</span><span><b>'+eur(c.anteil!=null?c.anteil:c.betrag)+'</b> <span class="sub">für '+JAHR+'</span></span></div>'
+function belegZeile(c){ return '<div class="bel"><div class="k"><span>'+(c.beleg&&(c.beleg.od||c.beleg.sb)?'<a class="lnk" onclick="'+belegKlick(c.beleg)+'">'+esc(c.beleg.n||c.notiz||'Beleg')+'</a>':'<b>'+esc(c.notiz||c.empfaenger||'Kostenbuchung')+'</b>'+(c.quelle==='manuell'?' <span class="sub">ohne Beleg</span>':''))+'</span><span><b>'+eur(c.anteil!=null?c.anteil:c.betrag)+'</b> <span class="sub">für '+JAHR+'</span></span></div>'
   +'<div class="sub">'+esc([c.empfaenger,c.rechnungsnr?'Nr. '+c.rechnungsnr:'',c.datum?'vom '+dmy(c.datum):'',c.von&&c.bis?'Leistung '+dmy(c.von)+' bis '+dmy(c.bis):'',c.beleg&&c.beleg.teil?'Teilbetrag '+eur(c.betrag)+(c.beleg.gesamt!=null?' aus Beleg über '+eur(c.beleg.gesamt):''):'Gesamtbetrag '+eur(c.betrag),c.nicht_umlagefaehig?'nicht umlagefähig '+eur(c.nicht_umlagefaehig):'',c.lohnanteil?'Lohnanteil '+eur(c.lohnanteil):'',Array.isArray(c.einheiten)&&c.einheiten.length?'nur für '+einheitenText(c.einheiten):'',c.verbrauch?'Verbrauch '+fnum.format(c.verbrauch):''].filter(Boolean).join(' · '))+'</div>'
   +'<div class="acts" style="margin-top:4px"><button class="small ghost" onclick="belegWeg(\''+c.id+'\',this)">Entfernen</button></div></div>'; }
 async function belegWeg(id,btn){ if(btn.dataset.sure!=='1'){ btn.dataset.sure='1'; btn.textContent='wirklich entfernen?'; return; }
-  const {error}=await sb.from('bk_kosten').delete().eq('id',id); if(error){ toast('Nicht entfernt: '+error.message); return; } D.kos=D.kos.filter(c=>c.id!==id); toast('Eintrag aus der Abrechnung entfernt. Dateien in OneDrive bleiben erhalten.'); kNeu2(); }
+  const alt=D.kos.find(c=>c.id===id), sp=alt&&alt.beleg&&alt.beleg.sb;
+  const {error}=await sb.from('bk_kosten').delete().eq('id',id); if(error){ toast('Nicht entfernt: '+error.message); return; } D.kos=D.kos.filter(c=>c.id!==id);
+  if(sp&&!D.kos.some(c=>c.beleg&&c.beleg.sb===sp)) await sb.storage.from('bk-belege').remove([sp]);
+  toast('Eintrag aus der Abrechnung entfernt.'+(sp?'':' Dateien in OneDrive bleiben erhalten.')); kNeu2(); }
 document.addEventListener('keydown',e=>{ if(e.key==='Escape'){ if(AZ) azZu(); else if(K) kZu(); } });
 /* Datei ins Fenster ziehen */
 document.addEventListener('dragover',e=>{ if(!K||!e.dataTransfer||![...e.dataTransfer.types].includes('Files')) return; e.preventDefault(); const d=document.querySelector('.dlg'); if(d) d.classList.add('drop'); });
