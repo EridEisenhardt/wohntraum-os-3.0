@@ -150,15 +150,26 @@ async function uebersichtDaten(){ const ids=ABR.filter(a=>Number(a.jahr)===JAHR)
   const out={}; for(const x of (k.data||[]).filter(x=>!x.ausgeblendet)){ const o=out[x.abrechnung_id]=out[x.abrechnung_id]||{n:0,f:0,s:0}; o.n++; if(x.erledigt) o.f++; }
   for(const x of (c.data||[])){ const o=out[x.abrechnung_id]=out[x.abrechnung_id]||{n:0,f:0,s:0}; o.s+=Number(x.anteil!=null?x.anteil:x.betrag)||0; } return out; }
 let UE={};
+/* Sortierung der Übersicht, im Browser gemerkt */
+let UESORT={k:'kz',ab:false}; try{ const x=JSON.parse(localStorage.getItem('bka_ue_sort')||'null'); if(x&&x.k) UESORT=x; }catch(e){}
+function ueSort(k){ UESORT=UESORT.k===k?{k,ab:!UESORT.ab}:{k,ab:k==='kosten'}; try{ localStorage.setItem('bka_ue_sort',JSON.stringify(UESORT)); }catch(e){} render(); }
+function ueSortieren(L){ const wert=o=>{ const a=abrVon(o.kz), u=a&&UE[a.id];
+    if(UESORT.k==='ein') return einheitenVon(o).length;
+    if(UESORT.k==='stand') return a?BK_STATUS.findIndex(y=>y[0]===a.status)+1:0;
+    if(UESORT.k==='fertig') return u&&u.n?u.f/u.n:-1;
+    if(UESORT.k==='kosten') return u?u.s:-1;
+    return null; };
+  const kz=(a,b)=>a.kz.localeCompare(b.kz,'de',{numeric:true});
+  return L.slice().sort((a,b)=>{ let r=UESORT.k==='kz'?kz(a,b):(wert(a)-wert(b))||kz(a,b); return UESORT.ab&&UESORT.k!=='kz'?(wert(b)-wert(a))||kz(a,b):UESORT.ab?-r:r; }); }
 function render(){ if(CUR) return renderObjekt();
-  const L=jahrObjekte().sort((a,b)=>a.kz.localeCompare(b.kz,'de',{numeric:true}));
+  const L=ueSortieren(jahrObjekte());
   const rest=Math.ceil((new Date(frist(JAHR)+'T23:59:59')-new Date())/864e5);
   let h='<div class="kopf"><div><h1>Betriebskostenabrechnung '+JAHR+'</h1><div class="sub">Abgerechnet wird nach Rechnungen (Leistungszeitraum '+JAHR+'). Frist für den Zugang beim Mieter: '+dmy(frist(JAHR))+(rest>=0?' – noch '+rest+' Tage':' – abgelaufen')+'.</div></div>'
     +'<div class="acts" style="margin-top:0"><button onclick="JAHR--;UE={};uebersicht()">Vorjahr</button><b style="padding:0 6px">'+JAHR+'</b><button onclick="JAHR++;UE={};uebersicht()">Folgejahr</button></div></div>';
   const ang=L.filter(o=>abrVon(o.kz)).length;
   h+='<div class="kpis"><div class="kpi"><div class="l">Objekte</div><div class="v">'+L.length+'</div></div><div class="kpi"><div class="l">Abrechnung angelegt</div><div class="v">'+ang+'</div></div>'
     +'<div class="kpi"><div class="l">Kostenarten fertig</div><div class="v">'+Object.values(UE).reduce((a,x)=>a+x.f,0)+' / '+Object.values(UE).reduce((a,x)=>a+x.n,0)+'</div></div></div>';
-  h+='<div class="tbox"><table class="tab"><thead><tr><th>Objekt</th><th>Einheiten</th><th>Stand</th><th>Kostenarten fertig</th><th class="n">Kosten '+JAHR+'</th><th></th></tr></thead><tbody>'
+  h+='<div class="tbox"><table class="tab"><thead><tr>'+[['kz','Objekt',''],['ein','Einheiten',''],['stand','Stand',''],['fertig','Kostenarten fertig',''],['kosten','Kosten '+JAHR,'n']].map(([k,l,c])=>'<th class="'+c+'" style="cursor:pointer;white-space:nowrap" onclick="ueSort(\''+k+'\')" title="Sortieren">'+(UESORT.k===k?'<span style="color:var(--ink);text-decoration:underline">'+l+'</span> <span style="font-weight:400;text-transform:none;letter-spacing:0">'+(UESORT.ab?'absteigend':'aufsteigend')+'</span>':l)+'</th>').join('')+'<th></th></tr></thead><tbody>'
     +L.map(o=>{ const a=abrVon(o.kz), u=a&&UE[a.id]; const n=einheitenVon(o).length, hw=hinweisVon(o.kz);
       return '<tr class="kl" onclick="if(!event.target.closest(\'button\'))oeffnen(\''+esc(o.kz)+'\')"><td><b>'+esc(o.kz)+'</b> <span class="sub">'+esc(o.name||'')+'</span>'+(o.status==='Verkauft'?' <span class="pill">verkauft – letzte Abrechnung</span>':'')+(hw?'<div class="sub" style="color:var(--warn)">'+esc(hw)+'</div>':'')+'</td><td>'+n+'</td><td>'+(a?statusPill(a.status):'<span class="pill">noch nicht angelegt</span>')+'</td><td>'+(u?u.f+' / '+u.n:'–')+'</td><td class="n">'+(u?eur(u.s):'–')+'</td>'
         +'<td class="n"><button class="ghost small" onclick="hinweisSetzen(\''+esc(o.kz)+'\')">Hinweis</button><button class="ghost small" onclick="objRaus(\''+esc(o.kz)+'\',this)">herausnehmen</button></td></tr>'; }).join('')+'</tbody></table></div>';
