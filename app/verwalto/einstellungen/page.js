@@ -1,7 +1,7 @@
 'use client'
 import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabaseClient'
-import { FARBEN, GROESSEN, HINTERGRUENDE, STANDARD, lokalLesen, lokalSetzen } from '@/lib/darstellung'
+import { FARBEN, GROESSEN, HINTERGRUENDE, MODI, STANDARD, lokalLesen, lokalSetzen } from '@/lib/darstellung'
 
 const box = { background: 'var(--surface)', border: '1px solid var(--line)', borderRadius: 12, padding: '18px 20px', marginBottom: 14 }
 const titel = { fontSize: 11, textTransform: 'uppercase', letterSpacing: '.05em', color: 'var(--muted)', fontWeight: 700, marginBottom: 10 }
@@ -39,6 +39,11 @@ export default function Page() {
       <h1 style={{ fontSize: 22, margin: '0 0 4px' }}>Meine Einstellungen</h1>
       <div style={{ color: 'var(--muted)', fontSize: 13.5, marginBottom: 18 }}>Diese Einstellungen gelten nur für dich und nur im Bereich Verwalto. Änderungen werden sofort übernommen.</div>
       {bereich && bereich !== 'team' && <div style={{ ...box, borderColor: 'var(--brand)' }}>Du bist gerade im Bereich {bereich === 'eric' ? 'Eric' : bereich}. Dort bleibt die Darstellung unverändert. Wechsle in den Bereich Verwalto, um die Wirkung zu sehen.</div>}
+      <div style={box}>
+        <div style={titel}>Ansicht</div>
+        <div style={reihe}>{MODI.map((m) => (
+          <button key={m.v} style={{ ...wahl(d.modus === m.v), ...(m.v === 'dunkel' ? { background: '#1f2329', color: '#e8eaed' } : {}) }} onClick={() => setze('modus', m.v)}>{m.label}</button>))}</div>
+      </div>
       <div style={box}>
         <div style={titel}>Farbe</div>
         <div style={reihe}>{FARBEN.map((f) => (

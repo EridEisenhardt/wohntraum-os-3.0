@@ -1,7 +1,7 @@
 'use client'
 import { useEffect } from 'react'
 import { supabase } from '@/lib/supabaseClient'
-import { cssFuer, lokalLesen, lokalSetzen } from '@/lib/darstellung'
+import { cssFuer, lokalLesen, lokalSetzen, umfaerber } from '@/lib/darstellung'
 
 // Wendet die persönliche Darstellung im obersten Fenster und in allen eingebetteten Seiten an –
 // aber nur, solange der Bereich Verwalto aktiv ist. Im Bereich Eric bleibt alles unverändert.
@@ -13,8 +13,36 @@ function stil(doc, css) {
   else if (el !== (doc.head || doc.documentElement).lastElementChild) (doc.head || doc.documentElement).appendChild(el)
   if (el.textContent !== css) el.textContent = css
 }
+// Fest eingebaute Farben in den Stylesheets einer Seite umfärben (Blautöne -> Akzentfarbe, helle Grautöne -> Hintergrundton).
+// Die Originalwerte werden gemerkt, damit beim Wechsel (z. B. in den Bereich Eric) alles zurückgestellt wird.
+const FARBRE = /#([0-9a-f]{6}|[0-9a-f]{3})\b|rgba?\(\s*(\d+)[\s,]+(\d+)[\s,]+(\d+)\s*([,/]\s*[\d.]+%?\s*)?\)/gi
+function wert(v, fn) {
+  return v.replace(FARBRE, (m, hx, r, g, b, a) => {
+    let c
+    if (hx) { const h = hx.length === 3 ? hx.split('').map((x) => x + x).join('') : hx; c = [0, 2, 4].map((i) => parseInt(h.slice(i, i + 2), 16)) } else c = [+r, +g, +b]
+    const n = fn(c[0], c[1], c[2]); if (!n) return m
+    if (hx) return '#' + n.map((x) => x.toString(16).padStart(2, '0')).join('')
+    return a ? 'rgba(' + n.join(',') + ',' + String(a).replace(/[,/]/, '').trim() + ')' : 'rgb(' + n.join(',') + ')'
+  })
+}
+function regeln(liste, fn, aus) {
+  for (const r of Array.from(liste || [])) {
+    if (r.cssRules && !r.style) { regeln(r.cssRules, fn, aus); continue }
+    if (!r.style) continue
+    if (!r.__osOrig) { if (aus) continue; const o = []; for (let i = 0; i < r.style.length; i++) { const n = r.style[i], v = r.style.getPropertyValue(n); if (FARBRE.test(v)) o.push([n, v, r.style.getPropertyPriority(n)]); FARBRE.lastIndex = 0 } r.__osOrig = o }
+    for (const [n, v, p] of r.__osOrig) { const nv = aus ? v : wert(v, fn); if (r.style.getPropertyValue(n) !== nv) r.style.setProperty(n, nv, p) }
+  }
+}
+function faerben(doc, d) {
+  const fn = umfaerber(d), key = fn ? JSON.stringify([d.farbe, d.hintergrund]) : ''
+  const sig = key + '|' + doc.styleSheets.length
+  if (doc.__osFarbe === sig) return
+  doc.__osFarbe = sig
+  for (const sh of Array.from(doc.styleSheets)) { let rl = null; try { rl = sh.cssRules } catch (e) { rl = null } if (rl && !(sh.ownerNode && sh.ownerNode.id === 'os-darst')) regeln(rl, fn, !fn) }
+}
 function durchlaufen(doc, art, d) {
   stil(doc, cssFuer(d, art))
+  try { faerben(doc, d) } catch (e) {}
   doc.querySelectorAll('iframe').forEach((f) => {
     let cd = null
     try { cd = f.contentDocument } catch (e) { cd = null }
