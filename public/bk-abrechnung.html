@@ -720,7 +720,7 @@ function schuetzLesen(Z){ const N=[]; let cur=null, gesamt=null, zr='';
     else if((m=t.match(/^Summe Betriebskosten (-?[\d.]+,\d\d)/))) cur.bk=parseNum(m[1]);
     else if((m=t.match(/^Gesamtbetrag (-?[\d.]+,\d\d)/))){ cur.summe=parseNum(m[1]); cur=null; } }
   return {nutzer:N,gesamt,zeitraum:zr}; }
-function schuetzVorschlag(n){ const pb=D.a.zeitraum_bis, L=D.mvs.filter(m=>m.art!=='leerstand'&&m.von<=(n.bis||pb)&&(m.bis||pb)>=(n.von||D.a.zeitraum_von));
+function schuetzVorschlag(n){ if(/leerstand|vermieter|eigent/i.test(n.name||'')) return 'vermieter'; const pb=D.a.zeitraum_bis, L=D.mvs.filter(m=>m.art!=='leerstand'&&m.von<=(n.bis||pb)&&(m.bis||pb)>=(n.von||D.a.zeitraum_von));
   const toks=norm(n.name).split(' ').filter(x=>x.length>=3); let c=L.filter(m=>toks.some(t=>(' '+norm(m.mieter)+' ').includes(' '+t+' ')||norm(m.mieter).includes(t)));
   if(c.length!==1&&n.qm){ const E=D.ein.filter(e=>Math.abs((Number(e.flaeche)||0)-n.qm)<0.6).map(e=>e.id), c2=L.filter(m=>E.includes(m.einheit_id)); c=c.length>1?c.filter(m=>c2.includes(m)):c.length?c:c2; }
   return c.length===1?c[0].id:''; }
@@ -739,7 +739,8 @@ async function schuetzDatei(f){ if(!/pdf/i.test(f.type||f.name)){ toast('Bitte d
   SZL=''; render(); }
 async function schuetzSpeichern(S){ const {error}=await sb.from('bk_abrechnungen').update({schuetz:S}).eq('id',D.a.id); if(error){ toast('Nicht gespeichert: '+error.message,6000); return false; } D.a.schuetz=S; return true; }
 async function schuetzZuordnung(i,el){ const S=JSON.parse(JSON.stringify(D.a.schuetz)), v=el.value.trim(); let id='';
-  if(v&&!/^vermieter/i.test(v)){ const m=D.mvs.find(x=>mvLabel(x)===v); if(!m){ toast('Bitte einen Eintrag aus der Liste wählen.'); render(); return; } id=m.id; }
+  if(/^(vermieter|leerstand)/i.test(v)) id='vermieter';
+  else if(v){ const m=D.mvs.find(x=>mvLabel(x)===v); if(!m){ toast('Bitte einen Eintrag aus der Liste wählen.'); render(); return; } id=m.id; }
   S.nutzer[i].mv=id; if(await schuetzSpeichern(S)) render(); }
 async function schuetzWeg(btn){ if(btn.dataset.sure!=='1'){ btn.dataset.sure='1'; btn.textContent='wirklich entfernen?'; return; }
   const alt=D.a.schuetz; if(await schuetzSpeichern(null)){ if(alt&&alt.datei&&alt.datei.sb) await sb.storage.from('bk-belege').remove([alt.datei.sb]); toast('Schütz-Abrechnung entfernt. Heizkosten werden wieder nach dem Schlüssel im OS verteilt.'); render(); } }
@@ -755,7 +756,7 @@ function schuetzHtml(){ const S=schuetzAktiv();
     +(ohne?'<div class="note">'+ohne+' Nutzer '+(ohne===1?'ist':'sind')+' noch keinem Mietverhältnis zugeordnet. Die Kosten trägt sonst der Vermieter.</div>':'')+'</div>';
   h+='<div class="tbox"><table class="tab"><thead><tr><th>Nutzer</th><th>Lage</th><th>Zeitraum</th><th class="n">Fläche</th><th class="n">Heizkosten</th><th class="n">Warmwasser</th>'+(sum.bk?'<th class="n">Kaltwasser / Sonstiges</th>':'')+'<th class="n">Gesamt</th><th>Zugeordnet zu</th></tr></thead><tbody>'
     +S.nutzer.map((n,i)=>{ const m=n.mv&&D.mvs.find(x=>x.id===n.mv); return '<tr><td><b>'+esc(n.name)+'</b><div class="sub">'+esc(n.nr)+'</div></td><td>'+esc(n.lage||'')+'</td><td>'+esc(dmy(n.von)+' bis '+dmy(n.bis))+'</td><td class="n">'+(n.qm!=null?fnum.format(n.qm)+' m²':'')+'</td><td class="n">'+eur(n.hk)+'</td><td class="n">'+eur(n.ww)+'</td>'+(sum.bk?'<td class="n">'+eur(n.bk)+'</td>':'')+'<td class="n"><b>'+eur((n.hk||0)+(n.ww||0)+(n.bk||0))+'</b></td>'
-      +'<td><input class="inp" list="dl-szmv" data-wahl="1" style="width:100%;min-width:260px;padding:4px 8px'+(m?'':';border-color:var(--warn)')+'" value="'+esc(m?mvLabel(m):'')+'" placeholder="Mietverhältnis wählen" onchange="schuetzZuordnung('+i+',this)"></td></tr>'; }).join('')
+      +'<td><input class="inp" list="dl-szmv" data-wahl="1" style="width:100%;min-width:260px;padding:4px 8px'+(n.mv?'':';border-color:var(--warn)')+'" value="'+esc(m?mvLabel(m):n.mv==='vermieter'?'Vermieter / Leerstand':'')+'" placeholder="Mietverhältnis wählen" onchange="schuetzZuordnung('+i+',this)"></td></tr>'; }).join('')
     +'<tr><td colspan="4"><b>Summe</b></td><td class="n"><b>'+eur(sum.hk)+'</b></td><td class="n"><b>'+eur(sum.ww)+'</b></td>'+(sum.bk?'<td class="n"><b>'+eur(sum.bk)+'</b></td>':'')+'<td class="n"><b>'+eur(tot)+'</b></td><td></td></tr></tbody></table></div><datalist id="dl-szmv">'+opts+'</datalist>'
     +'<div class="sub" style="margin-top:8px">In Schritt 4 werden für die zugeordneten Mieter diese Beträge statt der Heizkosten-Kostenarten aus Schritt 1 verwendet.</div>';
   return h; }
