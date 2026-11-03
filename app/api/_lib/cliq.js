@@ -52,4 +52,5 @@ export const zeit = x => typeof x === 'number' ? x : Date.parse(x || '') || 0
 export const text = m => { const c = m.content || {}; if (typeof c === 'string') return c; return c.text || c.comment || (c.file && ('Datei: ' + (c.file.name || ''))) || (m.type === 'file' ? 'Datei' : '') || '' }
 export const datei = m => { const c = m.content || {}; const f = c.file || (Array.isArray(c.files) && c.files[0]) || null; if (!f) return null; return { id: f.id || '', name: f.name || 'Datei', typ: f.type || f.content_type || '', groesse: Number(f.size || (f.dimensions && 0) || 0) } }
 export const chatKurz = c => ({ id: c.chat_id, name: c.name || c.title || '', typ: c.chat_type || '', geaendert: zeit(c.last_modified_time),
+  anzahlNeu: [c.unread_message_count, c.unread_count, c.unread_messages_count].map(Number).find(n => Number.isFinite(n) && n >= 0) ?? null,
   letzte: c.last_message_info ? { von: (c.last_message_info.sender || {}).name || '', vonId: String((c.last_message_info.sender || {}).id || ''), zeit: zeit(c.last_message_info.time), text: text(c.last_message_info) } : null })
