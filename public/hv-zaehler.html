@@ -32,6 +32,15 @@ tr.aus td{color:var(--muted)}
 .lnk{color:var(--accent2);cursor:pointer;background:none;border:0;font:inherit;padding:0;text-decoration:underline}
 .verl{background:var(--surf2);border-radius:8px;padding:8px 10px}.verl .vz{display:flex;gap:14px;flex-wrap:wrap;padding:4px 0;border-bottom:1px solid var(--line);font-size:12.5px}.verl .vz:last-child{border-bottom:0}
 .empty{padding:30px;text-align:center;color:var(--muted)}
+table.zt{table-layout:fixed}tr.zr{cursor:pointer}tr.zr:hover td{background:var(--surf2)}tr.zr.auf td{background:var(--surf2);border-bottom:0}.pm{display:inline-block;width:18px;color:var(--muted);font-weight:700}
+tr.dz td{background:var(--surf2);padding:4px 12px 14px}
+.det{background:var(--surf);border:1px solid var(--line);border-radius:10px;padding:14px}
+.det h4{font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--accent2);margin:4px 0 8px}
+.dg{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:10px 14px;margin-bottom:12px}
+.dg .fl .btn{text-transform:none;letter-spacing:0;font-size:12px}.dg label,.dg .fl{display:flex;flex-direction:column;gap:4px;font-size:10.5px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);font-weight:700}
+.dg label.cb{flex-direction:row;align-items:center;gap:6px;text-transform:none;font-size:13px;color:var(--text);font-weight:600}
+.dakt{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:4px}
+.dlg{background:var(--surf);border-radius:var(--rl);padding:20px;width:min(620px,100%);max-height:90vh;overflow:auto}.dlg h3{margin-bottom:12px}
 /* Tablet-Ablesung */
 .ogrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:12px}
 .obtn{background:var(--surf);border:1px solid var(--line);border-radius:14px;padding:18px 16px;text-align:left;cursor:pointer;font:inherit}
@@ -55,7 +64,7 @@ tr.aus td{color:var(--muted)}
   <div class="tabs"><button data-t="liste" class="on">Übersicht</button><button data-t="ablesen">Ablesen</button></div></div>
 <div class="main" id="main"><div class="empty">Lade Zähler …</div></div>
 <div class="toast" id="toast"></div>
-<datalist id="dlObj"></datalist><datalist id="dlTyp"></datalist><datalist id="dlAnl"></datalist>
+<datalist id="dlObj"></datalist><datalist id="dlVers"></datalist><datalist id="dlTyp"></datalist><datalist id="dlAnl"></datalist>
 <script>
 const sb=window.supabase.createClient('https://jqzxctfqvcwbctpjksvg.supabase.co','eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpxenhjdGZxdmN3YmN0cGprc3ZnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODIxMzA0MzIsImV4cCI6MjA5NzcwNjQzMn0.RKIbZxJdusKWWPjBJqlxZ8e1m8So02UslOg55YRsn3o');
 const $=id=>document.getElementById(id);
@@ -71,7 +80,7 @@ const ZTYPEN=['Stromzähler allgemein','Stromzähler WE','Stromzähler Zwischenz
 const ANLAESSE=['Ablesung','Jahresende','Jahresanfang','Zwischenablesung','Einzug','Auszug'];
 let OBJ=[],EIN=[],Z=[],ZS=[],ICH='',TAB='liste';
 const F={obj:'',typ:'',q:'',jahr:false,aus:false,fehlt:false};
-let OFFEN={},VERL={};
+let OFFEN={},VERL={},DET={};
 const A={obj:'',einh:'__alle',datum:heute(),anlass:'Ablesung',fotos:{},fertig:{}};
 
 /* ---------- Laden ---------- */
@@ -82,6 +91,7 @@ async function laden(){
   const ids=Z.map(x=>x.id);for(let i=0;i<ids.length;i+=150){const {data}=await sb.from('objekt_zaehlerstaende').select('*').in('zaehler_id',ids.slice(i,i+150)).order('datum',{ascending:false}).order('created_at',{ascending:false});ZS=ZS.concat(data||[]);}
   $('dlObj').innerHTML=objListe().map(x=>'<option value="'+esc(objLabel(x))+'">').join('');
   $('dlTyp').innerHTML=[...new Set(ZTYPEN.concat(Z.map(x=>x.typ).filter(Boolean)))].map(t=>'<option value="'+esc(t)+'">').join('');
+  versListe(); if(window.__objP){const o=objVon(window.__objP);if(o){F.obj=objLabel(o);OFFEN[o.id]=true;}window.__objP='';}
   $('dlAnl').innerHTML=ANLAESSE.map(t=>'<option value="'+esc(t)+'">').join('');
   render();
 }
@@ -98,7 +108,7 @@ const alt=s=>!s||(Date.now()-new Date(s.datum).getTime())>365*864e5;
 /* ---------- Übersicht ---------- */
 function gefiltert(){const q=F.q.trim().toLowerCase();
   return Z.filter(z=>(F.aus||z.aktiv!==false)&&(!F.typ||z.typ===F.typ)&&(!F.jahr||z.jahresablesung)&&(!F.fehlt||alt(letzter(z.id)))
-    &&(!q||[z.nummer,z.typ,z.standort,z.kundennummer,einLabel(z.unit_id),(objVon(z.object_id)||{}).kz].join(' ').toLowerCase().includes(q)));}
+    &&(!q||[z.nummer,z.typ,z.standort,z.kundennummer,z.versorger,einLabel(z.unit_id),(objVon(z.object_id)||{}).kz].join(' ').toLowerCase().includes(q)));}
 function renderListe(){
   const L=gefiltert(), oSel=F.obj?OBJ.find(o=>objLabel(o)===F.obj||o.kz===F.obj):null;
   let h='<div class="bar"><label>Objekt<input class="inp" list="dlObj" value="'+esc(F.obj)+'" placeholder="Alle Objekte" onchange="F.obj=this.value.trim();render()" style="width:260px"></label>'
@@ -115,15 +125,15 @@ function renderListe(){
   objs.forEach(o=>{const zs=L.filter(z=>String(z.object_id)===String(o.id));const offen=OFFEN[o.id]!=null?OFFEN[o.id]:auf;
     const fehlt=zs.filter(z=>z.aktiv!==false&&alt(letzter(z.id))).length;
     h+='<details class="obj"'+(offen?' open':'')+' ontoggle="OFFEN[\''+o.id+'\']=this.open;if(this.open&&!this.querySelector(\'table\'))render()"><summary><span class="kz">'+esc(o.kz)+'</span><span class="adr">'+esc((o.strasse||'')+(o.ort?', '+o.ort:''))+'</span><span class="rechts">'+zs.length+' Zähler'+(fehlt?' · <span class="warn">'+fehlt+' ohne aktuelle Ablesung</span>':'')
-      +' <button class="btn kl" onclick="event.preventDefault();ablesenStart(\''+o.id+'\')">Ablesen</button><a class="btn zw kl" href="/verwalto/objekt?id='+encodeURIComponent(o.id)+'&tab=zaehler" target="_top" onclick="event.stopPropagation()" style="text-decoration:none">Objekt öffnen</a></span></summary><div class="inner">';
+      +' <button class="btn zw kl" onclick="event.preventDefault();neuDialog(\''+o.id+'\')">Zähler anlegen</button> <button class="btn kl" onclick="event.preventDefault();ablesenStart(\''+o.id+'\')">Ablesen</button><a class="btn zw kl" href="/verwalto/objekt?id='+encodeURIComponent(o.id)+'&tab=zaehler" target="_top" onclick="event.stopPropagation()" style="text-decoration:none">Objekt öffnen</a></span></summary><div class="inner">';
     if(offen){const gr=[...new Set(zs.map(z=>z.unit_id||''))].sort((a,b)=>a===''?-1:b===''?1:nat(einLabel(a),einLabel(b)));
       gr.forEach(g=>{const zz=zs.filter(z=>(z.unit_id||'')===g).sort((a,b)=>nat(a.typ,b.typ)||nat(a.nummer,b.nummer));
-        h+='<div class="grp">'+esc(einLabel(g))+'</div><table><thead><tr><th>Zählertyp</th><th>Zählernummer</th><th>Standort</th><th>Kundennummer</th><th>Jahresablesung</th><th>Letzter Stand</th><th>Datum</th><th>Quelle</th><th></th></tr></thead><tbody>';
+        h+='<div class="grp">'+esc(einLabel(g))+'</div><table class="zt"><colgroup><col style="width:34%"><col style="width:24%"><col style="width:16%"><col style="width:14%"><col style="width:12%"></colgroup><thead><tr><th>Zählertyp</th><th>Zählernummer</th><th>Letzter Stand</th><th>Datum</th><th></th></tr></thead><tbody>';
         zz.forEach(z=>{const s=letzter(z.id);
-          h+='<tr class="'+(z.aktiv===false?'aus':'')+'"><td><b>'+esc(z.typ||'')+'</b>'+(z.aktiv===false?' (ausgebaut)':'')+(z.bemerkung?'<div class="mut">'+esc(z.bemerkung)+'</div>':'')+'</td><td>'+esc(z.nummer||'—')+'</td><td>'+esc(z.standort||'—')+'</td><td>'+esc(z.kundennummer||'')+'</td><td>'+(z.jahresablesung===true?'ja':z.jahresablesung===false?'nein':'')+'</td>'
-            +'<td>'+(s?'<b>'+zfmt(s.wert)+'</b>':'<span class="warn">keine</span>')+'</td><td class="'+(s&&alt(s)?'warn':'')+'">'+(s?dfmt(s.datum):'')+'</td><td>'+quelle(s)+(s&&s.bild_pfad?' <button class="lnk" onclick="foto(\''+esc(s.bild_pfad)+'\')">Foto</button>':'')+'</td>'
-            +'<td style="white-space:nowrap">'+(z.aktiv!==false?'<button class="btn kl" onclick="ablesenEinzeln(\''+z.id+'\')">Ablesen</button> ':'')+'<button class="btn zw kl" onclick="VERL[\''+z.id+'\']=!VERL[\''+z.id+'\'];render()">'+(VERL[z.id]?'Verlauf zu':'Verlauf')+' ('+staende(z.id).length+')</button></td></tr>';
-          if(VERL[z.id]){const v=staende(z.id);h+='<tr><td colspan="9"><div class="verl">'+(v.length?v.map(x=>'<div class="vz"><b style="min-width:90px">'+dfmt(x.datum)+'</b><span style="min-width:100px">'+zfmt(x.wert)+'</span><span style="min-width:150px">'+quelle(x)+'</span>'+(x.notiz&&!x.uebergabe_id?'<span>'+esc(x.notiz)+'</span>':'')+(x.bild_pfad?'<button class="lnk" onclick="foto(\''+esc(x.bild_pfad)+'\')">Foto</button>':'')+'<span class="mut" style="margin-left:auto">'+esc(x.erfasst_von||'')+'</span></div>').join(''):'<span class="mut">Noch keine Ablesungen.</span>')+'</div></td></tr>';}
+          h+='<tr class="zr'+(z.aktiv===false?' aus':'')+(DET[z.id]?' auf':'')+'" onclick="DET[\''+z.id+'\']=!DET[\''+z.id+'\'];render()"><td><span class="pm">'+(DET[z.id]?'−':'+')+'</span><b>'+esc(z.typ||'')+'</b>'+(z.aktiv===false?' (ausgebaut)':'')+(z.bemerkung?'<div class="mut" style="margin-left:18px">'+esc(z.bemerkung)+'</div>':'')+'</td><td>'+esc(z.nummer||'—')+'</td>'
+            +'<td>'+(s?'<b>'+zfmt(s.wert)+'</b>':'<span class="warn">keine</span>')+'</td><td class="'+(s&&alt(s)?'warn':'')+'">'+(s?dfmt(s.datum):'')+'</td>'
+            +'<td style="white-space:nowrap;text-align:right" onclick="event.stopPropagation()">'+(z.aktiv!==false?'<button class="btn kl" onclick="ablesenEinzeln(\''+z.id+'\')">Ablesen</button>':'')+'</td></tr>';
+          if(DET[z.id]) h+='<tr class="dz"><td colspan="5">'+detail(z)+'</td></tr>';
         });
         h+='</tbody></table>';});
     }
@@ -132,6 +142,77 @@ function renderListe(){
   if(document.activeElement&&document.activeElement.id!=='q'){} const q=$('q'); if(q&&window.__qfocus){q.focus();q.setSelectionRange(q.value.length,q.value.length);}
 }
 document.addEventListener('focusin',e=>{window.__qfocus=e.target&&e.target.id==='q';});
+
+/* ---------- Zähler-Details ---------- */
+const VERS=()=>[...new Set(Z.map(z=>z.versorger).filter(Boolean))].sort(nat);
+const einOpts=oid=>['Allgemein'].concat(EIN.filter(e=>String(e.objekt_id)===String(oid)).sort((a,b)=>nat(a.bezeichnung,b.bezeichnung)).map(e=>e.bezeichnung));
+function einIdVon(oid,txt){txt=String(txt||'').trim();if(!txt||txt==='Allgemein')return null;const e=EIN.find(x=>String(x.objekt_id)===String(oid)&&x.bezeichnung===txt);return e?e.id:undefined;}
+const dlist=(id,arr)=>'<datalist id="'+id+'">'+arr.map(v=>'<option value="'+esc(v)+'">').join('')+'</datalist>';
+function detail(z){const i=z.id, v=staende(i);
+  return '<div class="det" onclick="event.stopPropagation()"><h4>Vertrag</h4><div class="dg">'
+    +'<label>Versorger<input class="inp" id="dV-'+i+'" list="dlVers" value="'+esc(z.versorger||'')+'" placeholder="z. B. Stadtwerke"></label>'
+    +'<label>Kundennummer<input class="inp" id="dK-'+i+'" value="'+esc(z.kundennummer||'')+'"></label>'
+    +'<div class="fl">Vertrag<span style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;text-transform:none;letter-spacing:0;font-weight:500;font-size:13px">'+(z.vertrag_pfad?'<button class="lnk" onclick="vertragOeffnen(\''+i+'\')">'+esc(z.vertrag_name||'Vertrag öffnen')+'</button>':'<span class="mut">noch kein Vertrag</span>')
+      +'<label class="btn zw kl" style="cursor:pointer">'+(z.vertrag_pfad?'Ersetzen':'Hochladen')+'<input type="file" accept=".pdf,image/*" style="display:none" onchange="vertragHoch(\''+i+'\',this)"></label></span></div></div>'
+    +'<h4>Zählerdaten</h4><div class="dg">'
+    +'<label>Zählertyp<input class="inp" id="dT-'+i+'" list="dlTyp" value="'+esc(z.typ||'')+'"></label>'
+    +'<label>Zählernummer<input class="inp" id="dN-'+i+'" value="'+esc(z.nummer||'')+'"></label>'
+    +'<label>Einheit<input class="inp" id="dE-'+i+'" list="dlE-'+i+'" value="'+esc(einLabel(z.unit_id))+'"></label>'+dlist('dlE-'+i,einOpts(z.object_id))
+    +'<label>Standort<input class="inp" id="dS-'+i+'" value="'+esc(z.standort||'')+'"></label>'
+    +'<label>Bemerkung<input class="inp" id="dB-'+i+'" value="'+esc(z.bemerkung||'')+'"></label>'
+    +'<label class="cb"><input type="checkbox" id="dJ-'+i+'" '+(z.jahresablesung?'checked':'')+'> Jahresablesung</label>'
+    +'<label class="cb"><input type="checkbox" id="dA-'+i+'" '+(z.aktiv!==false?'checked':'')+'> Zähler ist eingebaut</label></div>'
+    +'<div class="dakt"><button class="btn" onclick="detSpeichern(\''+i+'\',this)">Speichern</button>'+(z.aktiv!==false?'<button class="btn zw" onclick="wechselDialog(\''+i+'\')">Zählerwechsel</button>':'')+'<span class="mut" id="dH-'+i+'"></span></div>'
+    +'<h4 style="margin-top:14px">Ablesungen ('+v.length+')</h4><div class="verl">'+(v.length?v.map(x=>'<div class="vz"><b style="min-width:90px">'+dfmt(x.datum)+'</b><span style="min-width:100px">'+zfmt(x.wert)+'</span><span style="min-width:150px">'+quelle(x)+'</span>'+(x.notiz&&!x.uebergabe_id?'<span>'+esc(x.notiz)+'</span>':'')+(x.bild_pfad?'<button class="lnk" onclick="foto(\''+esc(x.bild_pfad)+'\')">Foto</button>':'')+'<span class="mut" style="margin-left:auto">'+esc(x.erfasst_von||'')+'</span></div>').join(''):'<span class="mut">Noch keine Ablesungen.</span>')+'</div></div>';}
+const dv=id=>(($(id)||{}).value||'').trim();
+async function detSpeichern(i,btn){const z=Z.find(x=>x.id===i);const h=$('dH-'+i);
+  const uid=einIdVon(z.object_id,dv('dE-'+i));if(uid===undefined){h.innerHTML='<span class="warn">Diese Einheit gibt es im Objekt nicht. Bitte aus der Liste wählen.</span>';return;}
+  const typ=dv('dT-'+i);if(!typ){h.innerHTML='<span class="warn">Bitte den Zählertyp angeben.</span>';return;}
+  const rec={versorger:dv('dV-'+i)||null,kundennummer:dv('dK-'+i)||null,typ,nummer:dv('dN-'+i)||null,unit_id:uid,standort:dv('dS-'+i)||null,bemerkung:dv('dB-'+i)||null,jahresablesung:$('dJ-'+i).checked,aktiv:$('dA-'+i).checked,updated_at:new Date().toISOString()};
+  btn.disabled=true;h.textContent='Wird gespeichert …';
+  const {error}=await sb.from('objekt_zaehler').update(rec).eq('id',i);btn.disabled=false;
+  if(error){h.innerHTML='<span class="warn">Fehler: '+esc(error.message)+'</span>';return;}
+  Object.assign(z,rec);versListe();render();toast('Zähler gespeichert.');}
+function versListe(){$('dlVers').innerHTML=VERS().map(v=>'<option value="'+esc(v)+'">').join('');}
+async function vertragHoch(i,inp){const f=inp.files&&inp.files[0];if(!f)return;const z=Z.find(x=>x.id===i);const h=$('dH-'+i);if(h)h.textContent='Vertrag wird hochgeladen …';
+  const name=f.name.replace(/[^\w.\-]+/g,'_');const pfad=z.object_id+'/'+i+'/vertrag-'+rnd()+'-'+name;
+  const up=await sb.storage.from('objekt-zaehler').upload(pfad,f,{contentType:f.type||'application/pdf'});if(up.error){if(h)h.innerHTML='<span class="warn">Upload fehlgeschlagen: '+esc(up.error.message)+'</span>';return;}
+  const {error}=await sb.from('objekt_zaehler').update({vertrag_pfad:pfad,vertrag_name:f.name,updated_at:new Date().toISOString()}).eq('id',i);if(error){if(h)h.innerHTML='<span class="warn">Fehler: '+esc(error.message)+'</span>';return;}
+  z.vertrag_pfad=pfad;z.vertrag_name=f.name;render();toast('Vertrag gespeichert.');}
+async function vertragOeffnen(i){const z=Z.find(x=>x.id===i);if(z&&z.vertrag_pfad)foto(z.vertrag_pfad);}
+function dialog(html){zu();const d=document.createElement('div');d.className='ovl';d.id='ovl';d.innerHTML='<div class="dlg">'+html+'</div>';d.onclick=e=>{if(e.target===d)zu();};document.body.appendChild(d);}
+function zu(){const d=$('ovl');if(d)d.remove();}
+function neuDialog(oid){const o=objVon(oid)||{};
+  dialog('<h3>Zähler anlegen – '+esc(o.kz||'')+'</h3><div class="dg">'
+   +'<label>Einheit<input class="inp" id="nE" list="dlNE" value="Allgemein"></label>'+dlist('dlNE',einOpts(oid))
+   +'<label>Zählertyp<input class="inp" id="nT" list="dlTyp" placeholder="z. B. Gaszähler"></label>'
+   +'<label>Zählernummer<input class="inp" id="nN"></label><label>Standort<input class="inp" id="nS" placeholder="z. B. Keller links"></label>'
+   +'<label>Versorger<input class="inp" id="nV" list="dlVers"></label><label>Kundennummer<input class="inp" id="nK"></label>'
+   +'<label>Anfangsstand (optional)<input class="inp" id="nW" inputmode="decimal"></label><label>Datum<input class="inp" type="date" id="nD" value="'+heute()+'"></label>'
+   +'<label class="cb"><input type="checkbox" id="nJ"> Jahresablesung</label></div><div class="mut" id="nH"></div>'
+   +'<div class="dakt" style="justify-content:flex-end"><button class="btn zw" onclick="zu()">Abbrechen</button><button class="btn" id="nOk">Speichern</button></div>');
+  $('nOk').onclick=async function(){const uid=einIdVon(oid,dv('nE'));if(uid===undefined){$('nH').innerHTML='<span class="warn">Diese Einheit gibt es im Objekt nicht.</span>';return;}
+    const typ=dv('nT');if(!typ){$('nH').innerHTML='<span class="warn">Bitte den Zählertyp angeben.</span>';return;}
+    this.disabled=true;const rec={object_id:String(oid),unit_id:uid,typ,nummer:dv('nN')||null,standort:dv('nS')||null,versorger:dv('nV')||null,kundennummer:dv('nK')||null,jahresablesung:$('nJ').checked,aktiv:true};
+    const {data,error}=await sb.from('objekt_zaehler').insert(rec).select().single();if(error){this.disabled=false;$('nH').innerHTML='<span class="warn">Fehler: '+esc(error.message)+'</span>';return;}
+    Z.push(data);const w=zahl(dv('nW'));if(w!=null){const r=await sb.from('objekt_zaehlerstaende').insert({zaehler_id:data.id,datum:dv('nD')||heute(),wert:w,anlass:'Einbau',erfasst_von:ICH||null}).select().single();if(r.data)ZS.unshift(r.data);}
+    zu();OFFEN[oid]=true;DET[data.id]=true;versListe();render();toast('Zähler angelegt.');};}
+function wechselDialog(i){const z=Z.find(x=>x.id===i);
+  dialog('<h3>Zählerwechsel</h3><div class="mut" style="margin-bottom:12px">'+esc(z.typ)+' · '+esc(einLabel(z.unit_id))+(z.standort?' · '+esc(z.standort):'')+'</div><div class="dg">'
+   +'<label>Datum des Wechsels<input class="inp" type="date" id="wD" value="'+heute()+'"></label><span></span>'
+   +'<label>Endstand alter Zähler ('+esc(z.nummer||'ohne Nummer')+')<input class="inp" id="wW1" inputmode="decimal"></label><label>Foto alter Zähler<input class="inp" type="file" id="wF1" accept="image/*" capture="environment"></label>'
+   +'<label>Neue Zählernummer<input class="inp" id="wN"></label><label>Anfangsstand neuer Zähler<input class="inp" id="wW2" inputmode="decimal"></label>'
+   +'<label>Foto neuer Zähler<input class="inp" type="file" id="wF2" accept="image/*" capture="environment"></label></div>'
+   +'<div class="mut" id="wH">Der alte Zähler wird als ausgebaut markiert und bleibt mit allen Ablesungen erhalten. Versorger, Kundennummer und Vertrag werden übernommen.</div>'
+   +'<div class="dakt" style="justify-content:flex-end;margin-top:12px"><button class="btn zw" onclick="zu()">Abbrechen</button><button class="btn" id="wOk">Wechsel speichern</button></div>');
+  $('wOk').onclick=async function(){const d=dv('wD')||heute(),nr=dv('wN');if(!nr){$('wH').innerHTML='<span class="warn">Bitte die neue Zählernummer angeben.</span>';return;}
+    this.disabled=true;$('wH').textContent='Wird gespeichert …';
+    const hoch=async(zid,f)=>{if(!f)return null;const blob=await bildKlein(f,1600);const p=z.object_id+'/'+zid+'/'+rnd()+'.jpg';const u=await sb.storage.from('objekt-zaehler').upload(p,blob,{contentType:'image/jpeg'});if(u.error)throw new Error('Foto-Upload fehlgeschlagen: '+u.error.message);return p;};
+    try{let r=await sb.from('objekt_zaehlerstaende').insert({zaehler_id:i,datum:d,wert:zahl(dv('wW1')),anlass:'Zählerwechsel alt',bild_pfad:await hoch(i,$('wF1').files[0]),erfasst_von:ICH||null});if(r.error)throw r.error;
+      r=await sb.from('objekt_zaehler').update({aktiv:false,updated_at:new Date().toISOString()}).eq('id',i);if(r.error)throw r.error;
+      const n=await sb.from('objekt_zaehler').insert({object_id:z.object_id,unit_id:z.unit_id,typ:z.typ,nummer:nr,standort:z.standort,versorger:z.versorger||null,kundennummer:z.kundennummer||null,vertrag_pfad:z.vertrag_pfad||null,vertrag_name:z.vertrag_name||null,jahresablesung:z.jahresablesung,aktiv:true,bemerkung:'ersetzt Zähler '+(z.nummer||'ohne Nummer')+' am '+dfmt(d)}).select().single();if(n.error)throw n.error;
+      r=await sb.from('objekt_zaehlerstaende').insert({zaehler_id:n.data.id,datum:d,wert:zahl(dv('wW2')),anlass:'Zählerwechsel neu',bild_pfad:await hoch(n.data.id,$('wF2').files[0]),erfasst_von:ICH||null});if(r.error)throw r.error;
+      zu();toast('Zählerwechsel gespeichert.');DET={};DET[n.data.id]=true;laden();}catch(e){this.disabled=false;$('wH').innerHTML='<span class="warn">Fehler: '+esc(e.message||e)+'</span>';}};}
 
 /* ---------- Ablesen (Tablet) ---------- */
 function ablesenStart(oid){A.obj=oid;A.einh='__alle';TAB='ablesen';tabsSetzen();render();window.scrollTo(0,0);}
@@ -184,6 +265,6 @@ document.addEventListener('focusin',e=>{const t=e.target;if(t.matches&&t.matches
 document.addEventListener('focusout',e=>{const t=e.target;if(t.matches&&t.matches('input[list]')&&t.value===''&&t.dataset.alt){t.value=t.dataset.alt;}});
 (async()=>{const {data:{session}}=await sb.auth.getSession();if(!session){$('main').innerHTML='<div class="empty">Bitte im OS anmelden.</div>';return;}
   ICH=String(session.user&&session.user.email||'').split('@')[0];
-  const p=new URLSearchParams(location.search);if(p.get('ablesen')!=null){TAB='ablesen';tabsSetzen();}if(p.get('objekt'))A.obj=p.get('objekt');
+  const p=new URLSearchParams(location.search);if(p.get('ablesen')!=null){TAB='ablesen';tabsSetzen();}if(p.get('objekt')){if(TAB==='ablesen')A.obj=p.get('objekt');else window.__objP=p.get('objekt');}
   laden();})();
 </script></body></html>
