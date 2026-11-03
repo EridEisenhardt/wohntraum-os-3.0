@@ -66,6 +66,9 @@ h1{font-size:21px;font-weight:800}
 .cell .ct{font-size:10.5px;background:#eef3fb;border:1px solid #d6e4fb;color:#2563eb;border-radius:6px;padding:2px 5px;margin-bottom:3px;line-height:1.25;cursor:default}
 .cell .ct.over{background:#fdecea;border-color:#f5c6c2;color:var(--red)}
 .cell .ct.done{background:#eefaf3;border-color:#cdeede;color:var(--green);text-decoration:line-through}
+.cell .ct.ctover{outline:2px dashed var(--accent);outline-offset:-2px}
+.cell .ct .cttags{display:flex;flex-wrap:wrap;gap:3px;margin-top:3px}
+.cell .ct .cttag{font-size:9px;font-weight:600;background:#fde68a;color:#92400e;border-radius:4px;padding:0 4px;line-height:1.5}
 .addday{float:right;cursor:pointer;color:var(--muted);font-weight:700;width:18px;height:18px;line-height:17px;text-align:center;border-radius:5px;opacity:0;transition:.1s}
 .cell:hover .addday{opacity:1}
 .addday:hover{background:var(--accent);color:#fff}
@@ -87,6 +90,9 @@ h1{font-size:21px;font-weight:800}
 .tagchip{display:inline-flex;align-items:center;gap:5px;background:#eef6ff;border:1px solid #cfe4fb;color:#1d6fd6;border-radius:999px;padding:3px 9px;font-size:12px;font-weight:600}
 .tagchip b{cursor:pointer;color:#1d6fd6;opacity:.7}.tagchip b:hover{opacity:1}
 .taginput{width:100%;border:1px solid var(--line);border-radius:8px;padding:7px 9px;font:inherit;font-size:13px}
+.tagsug{font-size:11px;background:#fff;border:1px dashed var(--line);color:var(--muted);border-radius:12px;padding:2px 9px;cursor:pointer}
+.tagsug:hover{border-color:var(--accent);color:var(--accent);background:#f4f6ff}
+.tagsughd{font-size:11px;color:var(--muted);align-self:center;margin-right:2px}
 .pill.art{background:#efeafe;border-color:#ddd3fb;color:#6d4ef0}
 .pill.wv{background:#fff4e5;border-color:#f3dcc0;color:var(--amber)}.pill.wv.over{background:#fdecea;border-color:#f5c6c2;color:var(--red)}
 .pill.prio{background:#f1f3f6}
@@ -177,7 +183,9 @@ h1{font-size:21px;font-weight:800}
       </div>
       <div class="f wide"><label>Tags</label>
         <div id="d_tags" class="tagbox"></div>
-        <input id="d_tagnew" class="taginput" placeholder="Tag eingeben und Enter …" onkeydown="if(event.key==='Enter'){event.preventDefault();dAddTag();}">
+        <div id="d_tagsug" class="tagbox"></div>
+        <input id="d_tagnew" class="taginput" list="d_tagdl" placeholder="Tag wählen oder neuen eingeben und Enter …" onkeydown="if(event.key==='Enter'){event.preventDefault();dAddTag();}">
+        <datalist id="d_tagdl"></datalist>
       </div>
       <div class="f wide"><label>Beschreibung</label><textarea id="d_beschreibung" rows="4"></textarea>
         <div class="row"><button class="btn sec sm" id="mic_d_beschreibung" onclick="diktieren('d_beschreibung','mic_d_beschreibung')">🎤 Diktieren</button><button class="btn sec sm" onclick="kiZusammenfassen('d_beschreibung')">✨ Zusammenfassen</button></div></div>
@@ -232,7 +240,7 @@ const MASSICON={followup:'🔁',rueckruf:'📞',anruf:'☎️',vortermin:'📍',
 const MASSORDER=['followup','rueckruf','anruf','vortermin','zuarbeit','jourfix'];
 let TASKS=[], KONT=[], OBJ=[];
 const TEAM=['Eric','Jürgen','Stephan','Ramona','Alexander Buchhaus','Extern'];
-let ART='alle', WVONLY=false, PERSON='', QUERY='', SUBS=[], VER=[], DTASK=null, ICH='', TAGS=[], BETEIL=[], SUBOPEN=new Set();
+let ART='alle', WVONLY=false, PERSON='', QUERY='', SUBS=[], VER=[], DTASK=null, ICH='', TAGS=[], BETEIL=[], SUBOPEN=new Set(), TAGVORRAT=[];
 function setPerson(v){PERSON=v;render();}
 function personMatch(t){if(!PERSON)return true;if(Array.isArray(t.beteiligte)&&t.beteiligte.includes(PERSON))return true;const v=(t.verantwortlich||'').trim();if(!v)return false;return v===PERSON||v.indexOf(PERSON)>=0||PERSON.indexOf(v.split(' ')[0])===0;}
 function initPersonSel(){const el=document.getElementById('personsel');if(el)el.innerHTML='<option value="">👥 Alle Personen</option>'+TEAM.map(p=>`<option value="${esc(p)}"${PERSON===p?' selected':''}>${esc(p)}</option>`).join('');}
@@ -246,8 +254,19 @@ function toggleMass(m){
   else{MASSV.push(m);if(m==='followup')dFollowup();}
   renderDMass();
 }
-function renderDTags(){document.getElementById('d_tags').innerHTML=TAGS.map(tg=>`<span class="tagchip">#${esc(tg)}<b onclick="dDelTag('${esc(tg).replace(/'/g,"\\'")}')">✕</b></span>`).join('');}
-function dAddTag(){const el=document.getElementById('d_tagnew');const v=(el.value||'').trim().replace(/^#/,'');if(!v){return;}if(!TAGS.includes(v))TAGS.push(v);el.value='';renderDTags();}
+function renderDTags(){
+  document.getElementById('d_tags').innerHTML=TAGS.map(tg=>`<span class="tagchip">#${esc(tg)}<b onclick="dDelTag('${esc(tg).replace(/'/g,"\\'")}')">✕</b></span>`).join('');
+  const sug=document.getElementById('d_tagsug');
+  if(sug){const frei=TAGVORRAT.filter(x=>!TAGS.includes(x));
+    sug.innerHTML=frei.length?('<span class="tagsughd">Vorauswahl:</span>'+frei.map(tg=>`<span class="tagsug" onclick="dAddSug('${esc(tg).replace(/'/g,"\\'")}')">+ ${esc(tg)}</span>`).join('')):'';}
+  const dl=document.getElementById('d_tagdl');
+  if(dl)dl.innerHTML=TAGVORRAT.map(tg=>`<option value="${esc(tg)}">`).join('');
+}
+function dAddSug(tg){if(tg&&!TAGS.includes(tg))TAGS.push(tg);renderDTags();}
+function dAddTag(){const el=document.getElementById('d_tagnew');const v=(el.value||'').trim().replace(/^#/,'');if(!v){return;}
+  if(!TAGS.includes(v))TAGS.push(v);el.value='';
+  if(!TAGVORRAT.includes(v)){TAGVORRAT.push(v);TAGVORRAT.sort((a,b)=>a.localeCompare(b,'de'));try{sb.from('os_task_tag_vorlage').insert({name:v}).then(()=>{},()=>{});}catch(e){}}
+  renderDTags();}
 function dDelTag(tg){TAGS=TAGS.filter(x=>x!==tg);renderDTags();}
 function artMatch(t){if(ART==='alle')return true;if(ART==='aufgabe'||ART==='ticket'||ART==='ankauf'||ART==='immoentwicklung')return (t.art||'aufgabe')===ART;if(ART.indexOf('m:')===0){const ms=Array.isArray(t.massnahme)?t.massnahme:(t.massnahme?[t.massnahme]:[]);return ms.indexOf(ART.slice(2))>=0;}return true;}
 function textMatch(t){if(!QUERY)return true;const q=QUERY;return [t.titel,t.beschreibung,t.notiz,t.projekt,t.kontakt_label,t.object_label,t.verantwortlich,Array.isArray(t.tags)?t.tags.join(' '):'',Array.isArray(t.beteiligte)?t.beteiligte.join(' '):''].some(x=>(x||'').toLowerCase().includes(q));}
@@ -256,12 +275,14 @@ function vis(){return TASKS.filter(t=>artMatch(t)&&(!WVONLY||(t.wiedervorlage&&t
 function setArt(a){ART=a;document.querySelectorAll('#artseg button').forEach(b=>b.classList.toggle('on',b.dataset.a===a));render();}
 function toggleWV(){WVONLY=!WVONLY;document.getElementById('wvBtn').classList.toggle('pri',WVONLY);render();}
 async function load(){
-  const [t,ck,hk,ob]=await Promise.all([
+  const [t,ck,hk,ob,tv]=await Promise.all([
     sb.from('os_tasks').select('*').order('pos',{ascending:true}).order('created_at',{ascending:true}),
     sb.from('crm_kontakte').select('id,vorname,name'),
     sb.from('hv_kontakte').select('id,vorname,name'),
-    sb.from('nahaus_objekte').select('id,h_id_text,kuerzel,name').eq('geloescht',false)
+    sb.from('nahaus_objekte').select('id,h_id_text,kuerzel,name').eq('geloescht',false),
+    sb.from('os_task_tag_vorlage').select('name').order('name')
   ]);
+  TAGVORRAT=(tv&&!tv.error?(tv.data||[]):[]).map(x=>x.name);
   TASKS=t.data||[];
   const seen=new Set();KONT=[];
   (ck.data||[]).concat(hk.data||[]).forEach(k=>{const nm=[k.vorname,k.name].filter(Boolean).join(' ').trim();if(nm&&!seen.has(nm)){seen.add(nm);KONT.push({id:k.id,label:nm});}});
@@ -351,9 +372,11 @@ function renderCalendar(){
   let cells='';
   for(let i=0;i<count;i++){const d=new Date(start);d.setDate(start.getDate()+i);const iso=isoLokal(d);
     const out=CALMODE==='monat'&&d.getMonth()!==curM, isToday=iso===today;
-    const list=byDay[iso]||[];
+    const list=(byDay[iso]||[]).slice().sort((a,b)=>(a.pos||0)-(b.pos||0)||((a.created_at||'')<(b.created_at||'')?-1:1));
     cells+=`<div class="cell ${out?'out':''} ${isToday?'today':''}" ondragover="event.preventDefault();this.classList.add('calover')" ondragleave="this.classList.remove('calover')" ondrop="calDrop(event,'${iso}',this)"><div class="dn">${d.getDate()}. <span class="addday" title="Hier eine Aufgabe anlegen" onclick="event.stopPropagation();calAdd('${iso}')">＋</span></div>${
-      list.map(t=>{const over=iso<today&&t.status!=='erledigt';const cls=t.status==='erledigt'?'done':(over?'over':'');return `<div class="ct ${cls}" draggable="true" ondragstart="event.stopPropagation();drag(event,'${t.id}')" style="cursor:grab" onclick="openDetail('${t.id}')" title="Ziehen zum Verschieben · Klick zum Öffnen – ${esc(t.titel)}">${esc(CALMODE==='woche'?t.titel:(t.titel.length>26?t.titel.slice(0,24)+'…':t.titel))}</div>`;}).join('')
+      list.map(t=>{const over=iso<today&&t.status!=='erledigt';const cls=t.status==='erledigt'?'done':(over?'over':'');
+        const tg=(Array.isArray(t.tags)?t.tags:[]).map(x=>`<span class="cttag">#${esc(x)}</span>`).join('');
+        return `<div class="ct ${cls}" draggable="true" ondragstart="event.stopPropagation();drag(event,'${t.id}')" ondragover="event.preventDefault();event.stopPropagation();this.classList.add('ctover')" ondragleave="this.classList.remove('ctover')" ondrop="calReorder(event,'${t.id}',this)" style="cursor:grab" onclick="openDetail('${t.id}')" title="Ziehen = verschieben/umsortieren · Klick = öffnen – ${esc(t.titel)}"><div class="ctt">${esc(CALMODE==='woche'?t.titel:(t.titel.length>26?t.titel.slice(0,24)+'…':t.titel))}</div>${tg?`<div class="cttags">${tg}</div>`:''}</div>`;}).join('')
     }</div>`;
   }
   document.getElementById('view').innerHTML=`<div class="calhead">
@@ -385,6 +408,21 @@ async function calDrop(e,iso,el){e.preventDefault();if(el)el.classList.remove('c
   t.faellig=iso;render();
   const {error}=await sb.from('os_tasks').update({faellig:iso,updated_at:new Date().toISOString()}).eq('id',id);
   if(error)toast(error.message);else toast('Fällig auf '+iso.split('-').reverse().join('.')+' verschoben ✓');}
+async function calReorder(e,targetId,el){
+  e.preventDefault();e.stopPropagation();if(el)el.classList.remove('ctover');
+  const id=DRAG;DRAG=null;if(!id||id===targetId)return;
+  const src=TASKS.find(x=>x.id===id),tgt=TASKS.find(x=>x.id===targetId);if(!src||!tgt)return;
+  const day=tgt.faellig;
+  if(src.faellig!==day){src.faellig=day;await sb.from('os_tasks').update({faellig:day,updated_at:new Date().toISOString()}).eq('id',id);}
+  const dayList=TASKS.filter(t=>t.faellig===day).sort((a,b)=>(a.pos||0)-(b.pos||0)||((a.created_at||'')<(b.created_at||'')?-1:1));
+  const without=dayList.filter(t=>t.id!==id);
+  const idx=without.findIndex(t=>t.id===targetId);
+  without.splice(idx<0?without.length:idx,0,src);
+  const base=Math.min.apply(null,dayList.map(t=>t.pos||0).concat([1]));
+  const ups=[];
+  without.forEach((t,i)=>{const np=base+i;if(t.pos!==np){t.pos=np;ups.push([t.id,np]);}});
+  for(const u of ups){await sb.from('os_tasks').update({pos:u[1]}).eq('id',u[0]);}
+  render();toast('Reihenfolge aktualisiert ✓');}
 async function addTask(){const el=document.getElementById('newT');const titel=(el.value||'').trim();if(!titel)return;
   const art=document.getElementById('newArt').value||'aufgabe';
   const fEl=document.getElementById('newFaellig');const faellig=(fEl&&fEl.value)||null;
