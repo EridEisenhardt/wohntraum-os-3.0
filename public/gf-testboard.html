@@ -90,6 +90,9 @@ h1{font-size:21px;font-weight:800}
 .tagchip{display:inline-flex;align-items:center;gap:5px;background:#eef6ff;border:1px solid #cfe4fb;color:#1d6fd6;border-radius:999px;padding:3px 9px;font-size:12px;font-weight:600}
 .tagchip b{cursor:pointer;color:#1d6fd6;opacity:.7}.tagchip b:hover{opacity:1}
 .taginput{width:100%;border:1px solid var(--line);border-radius:8px;padding:7px 9px;font:inherit;font-size:13px}
+.tagsug{font-size:11px;background:#fff;border:1px dashed var(--line);color:var(--muted);border-radius:12px;padding:2px 9px;cursor:pointer}
+.tagsug:hover{border-color:var(--accent);color:var(--accent);background:#f4f6ff}
+.tagsughd{font-size:11px;color:var(--muted);align-self:center;margin-right:2px}
 .pill.art{background:#efeafe;border-color:#ddd3fb;color:#6d4ef0}
 .pill.wv{background:#fff4e5;border-color:#f3dcc0;color:var(--amber)}.pill.wv.over{background:#fdecea;border-color:#f5c6c2;color:var(--red)}
 .pill.prio{background:#f1f3f6}
@@ -180,7 +183,9 @@ h1{font-size:21px;font-weight:800}
       </div>
       <div class="f wide"><label>Tags</label>
         <div id="d_tags" class="tagbox"></div>
-        <input id="d_tagnew" class="taginput" placeholder="Tag eingeben und Enter …" onkeydown="if(event.key==='Enter'){event.preventDefault();dAddTag();}">
+        <div id="d_tagsug" class="tagbox"></div>
+        <input id="d_tagnew" class="taginput" list="d_tagdl" placeholder="Tag wählen oder neuen eingeben und Enter …" onkeydown="if(event.key==='Enter'){event.preventDefault();dAddTag();}">
+        <datalist id="d_tagdl"></datalist>
       </div>
       <div class="f wide"><label>Beschreibung</label><textarea id="d_beschreibung" rows="4"></textarea>
         <div class="row"><button class="btn sec sm" id="mic_d_beschreibung" onclick="diktieren('d_beschreibung','mic_d_beschreibung')">🎤 Diktieren</button><button class="btn sec sm" onclick="kiZusammenfassen('d_beschreibung')">✨ Zusammenfassen</button></div></div>
@@ -235,7 +240,7 @@ const MASSICON={followup:'🔁',rueckruf:'📞',anruf:'☎️',vortermin:'📍',
 const MASSORDER=['followup','rueckruf','anruf','vortermin','zuarbeit','jourfix'];
 let TASKS=[], KONT=[], OBJ=[];
 const TEAM=['Eric','Jürgen','Stephan','Ramona','Alexander Buchhaus','Extern'];
-let ART='alle', WVONLY=false, PERSON='', QUERY='', SUBS=[], VER=[], DTASK=null, ICH='', TAGS=[], BETEIL=[], SUBOPEN=new Set();
+let ART='alle', WVONLY=false, PERSON='', QUERY='', SUBS=[], VER=[], DTASK=null, ICH='', TAGS=[], BETEIL=[], SUBOPEN=new Set(), TAGVORRAT=[];
 function setPerson(v){PERSON=v;render();}
 function personMatch(t){if(!PERSON)return true;if(Array.isArray(t.beteiligte)&&t.beteiligte.includes(PERSON))return true;const v=(t.verantwortlich||'').trim();if(!v)return false;return v===PERSON||v.indexOf(PERSON)>=0||PERSON.indexOf(v.split(' ')[0])===0;}
 function initPersonSel(){const el=document.getElementById('personsel');if(el)el.innerHTML='<option value="">👥 Alle Personen</option>'+TEAM.map(p=>`<option value="${esc(p)}"${PERSON===p?' selected':''}>${esc(p)}</option>`).join('');}
@@ -249,8 +254,19 @@ function toggleMass(m){
   else{MASSV.push(m);if(m==='followup')dFollowup();}
   renderDMass();
 }
-function renderDTags(){document.getElementById('d_tags').innerHTML=TAGS.map(tg=>`<span class="tagchip">#${esc(tg)}<b onclick="dDelTag('${esc(tg).replace(/'/g,"\\'")}')">✕</b></span>`).join('');}
-function dAddTag(){const el=document.getElementById('d_tagnew');const v=(el.value||'').trim().replace(/^#/,'');if(!v){return;}if(!TAGS.includes(v))TAGS.push(v);el.value='';renderDTags();}
+function renderDTags(){
+  document.getElementById('d_tags').innerHTML=TAGS.map(tg=>`<span class="tagchip">#${esc(tg)}<b onclick="dDelTag('${esc(tg).replace(/'/g,"\\'")}')">✕</b></span>`).join('');
+  const sug=document.getElementById('d_tagsug');
+  if(sug){const frei=TAGVORRAT.filter(x=>!TAGS.includes(x));
+    sug.innerHTML=frei.length?('<span class="tagsughd">Vorauswahl:</span>'+frei.map(tg=>`<span class="tagsug" onclick="dAddSug('${esc(tg).replace(/'/g,"\\'")}')">+ ${esc(tg)}</span>`).join('')):'';}
+  const dl=document.getElementById('d_tagdl');
+  if(dl)dl.innerHTML=TAGVORRAT.map(tg=>`<option value="${esc(tg)}">`).join('');
+}
+function dAddSug(tg){if(tg&&!TAGS.includes(tg))TAGS.push(tg);renderDTags();}
+function dAddTag(){const el=document.getElementById('d_tagnew');const v=(el.value||'').trim().replace(/^#/,'');if(!v){return;}
+  if(!TAGS.includes(v))TAGS.push(v);el.value='';
+  if(!TAGVORRAT.includes(v)){TAGVORRAT.push(v);TAGVORRAT.sort((a,b)=>a.localeCompare(b,'de'));try{sb.from('os_task_tag_vorlage').insert({name:v}).then(()=>{},()=>{});}catch(e){}}
+  renderDTags();}
 function dDelTag(tg){TAGS=TAGS.filter(x=>x!==tg);renderDTags();}
 function artMatch(t){if(ART==='alle')return true;if(ART==='aufgabe'||ART==='ticket'||ART==='ankauf'||ART==='immoentwicklung')return (t.art||'aufgabe')===ART;if(ART.indexOf('m:')===0){const ms=Array.isArray(t.massnahme)?t.massnahme:(t.massnahme?[t.massnahme]:[]);return ms.indexOf(ART.slice(2))>=0;}return true;}
 function textMatch(t){if(!QUERY)return true;const q=QUERY;return [t.titel,t.beschreibung,t.notiz,t.projekt,t.kontakt_label,t.object_label,t.verantwortlich,Array.isArray(t.tags)?t.tags.join(' '):'',Array.isArray(t.beteiligte)?t.beteiligte.join(' '):''].some(x=>(x||'').toLowerCase().includes(q));}
@@ -259,12 +275,14 @@ function vis(){return TASKS.filter(t=>artMatch(t)&&(!WVONLY||(t.wiedervorlage&&t
 function setArt(a){ART=a;document.querySelectorAll('#artseg button').forEach(b=>b.classList.toggle('on',b.dataset.a===a));render();}
 function toggleWV(){WVONLY=!WVONLY;document.getElementById('wvBtn').classList.toggle('pri',WVONLY);render();}
 async function load(){
-  const [t,ck,hk,ob]=await Promise.all([
+  const [t,ck,hk,ob,tv]=await Promise.all([
     sb.from('os_tasks').select('*').order('pos',{ascending:true}).order('created_at',{ascending:true}),
     sb.from('crm_kontakte').select('id,vorname,name'),
     sb.from('hv_kontakte').select('id,vorname,name'),
-    sb.from('nahaus_objekte').select('id,h_id_text,kuerzel,name').eq('geloescht',false)
+    sb.from('nahaus_objekte').select('id,h_id_text,kuerzel,name').eq('geloescht',false),
+    sb.from('os_task_tag_vorlage').select('name').order('name')
   ]);
+  TAGVORRAT=(tv&&!tv.error?(tv.data||[]):[]).map(x=>x.name);
   TASKS=t.data||[];
   const seen=new Set();KONT=[];
   (ck.data||[]).concat(hk.data||[]).forEach(k=>{const nm=[k.vorname,k.name].filter(Boolean).join(' ').trim();if(nm&&!seen.has(nm)){seen.add(nm);KONT.push({id:k.id,label:nm});}});
