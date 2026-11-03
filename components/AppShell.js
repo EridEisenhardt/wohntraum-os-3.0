@@ -7,6 +7,7 @@ import TabShell from './TabShell'
 import Benachrichtigungen from './Benachrichtigungen'
 import CliqTeilen from './CliqTeilen'
 import HilfeInjektor from './HilfeInjektor'
+import Darstellung from './Darstellung'
 
 export default function AppShell({ children }) {
   const [session, setSession] = useState(null)
@@ -90,6 +91,7 @@ export default function AppShell({ children }) {
         <Benachrichtigungen session={session} />
         <CliqTeilen session={session} />
         <HilfeInjektor />
+        <Darstellung session={session} />
       </div>
     </div>
   )
