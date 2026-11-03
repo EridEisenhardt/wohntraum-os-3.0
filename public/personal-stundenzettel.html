@@ -1,0 +1,431 @@
+<!DOCTYPE html>
+<html lang="de"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Personal · Stundenzettel – Macher OS</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js"></script>
+<style>
+:root{--bg:#f6f7f9;--surf:#fff;--surf2:#f1f3f6;--line:#e6e8ec;--text:#1c2024;--muted:#6b7280;--dim:#4b5563;--accent:#185fa5;--green:#1f7a4d;--red:#c0392b;--r:8px;--rl:12px;}
+*{box-sizing:border-box;margin:0;padding:0}body{background:var(--bg);color:var(--text);font-family:'Inter',system-ui,sans-serif;font-size:14px}
+.hdr{background:var(--surf);border-bottom:1px solid var(--line);padding:16px 24px;display:flex;align-items:center;gap:12px;position:sticky;top:0;z-index:10}
+.logo{background:#1a1a2e;color:#fff;font-weight:700;font-size:11px;padding:5px 9px;border-radius:4px}.hdr-title{font-size:16px;font-weight:600}.hdr-sub{font-size:11px;color:var(--muted)}
+.main{padding:20px 24px 60px}
+.bar{display:flex;gap:10px;align-items:center;margin-bottom:14px;flex-wrap:wrap}
+.bar select{font:inherit;font-size:13px;padding:7px 9px;border:1px solid var(--line);border-radius:var(--r);background:var(--surf)}
+.tabs{display:flex;gap:4px;flex-wrap:wrap}.tab{font:inherit;font-size:12px;font-weight:600;padding:6px 11px;border:1px solid var(--line);border-radius:8px;background:var(--surf);color:var(--dim);cursor:pointer}.tab:hover{border-color:var(--accent)}.tab.active{background:var(--accent);color:#fff;border-color:var(--accent)}.tab.hat{border-color:#9fb8d6}.tab.zu{text-decoration:underline}
+.card{background:var(--surf);border:1px solid var(--line);border-radius:var(--rl);overflow:hidden;margin-bottom:16px}
+.card-hd{padding:11px 15px;border-bottom:1px solid var(--line);font-size:13px;font-weight:600;display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.card-hd .sub{font-weight:400;color:var(--muted);font-size:12px}
+.card-hd .rechts{margin-left:auto;display:flex;gap:8px;flex-wrap:wrap}
+.pad{padding:12px 15px}
+.tablewrap{overflow-x:auto}
+table{width:100%;border-collapse:collapse;font-size:12px}
+th,td{border:1px solid var(--line);padding:5px 7px;text-align:right;white-space:nowrap}
+th{background:var(--surf2);font-size:10px;text-transform:uppercase;color:var(--muted);font-weight:700;text-align:center}
+td.l,th.l{text-align:left}
+td.calc{background:var(--surf2);font-weight:600}
+td.end{background:#eef3fb;font-weight:700}
+tr.sum td{font-weight:700;background:var(--surf2)}
+input.c{width:74px;border:1px solid var(--line);background:var(--surf);font:inherit;font-size:12px;text-align:right;border-radius:4px;padding:3px 5px}
+input.c.t{width:160px;text-align:left}input.c.d{width:118px;text-align:left}input.c.s{width:58px}
+input.c:focus,textarea:focus{outline:none;border-color:var(--accent)}
+input.c.vor{background:#f3f7fd;color:#2f5d8a;font-style:italic}
+input:disabled{background:transparent;border-color:transparent;color:var(--text)}
+.pos{color:var(--green)}.neg{color:var(--red)}
+.mut{color:var(--muted);font-size:11px}
+.btn{font:inherit;font-size:12px;font-weight:600;padding:6px 12px;border-radius:7px;border:1px solid var(--accent);background:var(--accent);color:#fff;cursor:pointer}.btn.sec{background:var(--surf);color:var(--accent)}.btn:disabled{opacity:.5;cursor:default}
+.drop{border:2px dashed var(--line);border-radius:10px;padding:16px;text-align:center;color:var(--muted);font-size:13px;background:var(--surf2)}.drop.over{border-color:var(--accent);background:#eef3fb}
+.hinweis{font-size:11.5px;color:var(--muted);margin-top:8px;line-height:1.5}
+.warn{background:#fff6e5;border:1px solid #f1d39a;color:#8a5a00;border-radius:8px;padding:8px 12px;font-size:12px;margin:10px 15px 0}
+textarea{width:100%;min-height:70px;font:inherit;font-size:13px;border:1px solid var(--line);border-radius:6px;padding:8px}
+details.ein>summary{cursor:pointer;list-style:none;padding:11px 15px;font-size:13px;font-weight:600}details.ein>summary::-webkit-details-marker{display:none}
+details.ein>summary::before{content:'+';display:inline-block;width:14px;color:var(--muted)}details.ein[open]>summary::before{content:'−'}
+.ov{display:none;position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:50;align-items:center;justify-content:center;padding:20px}.ov .box{background:#fff;border-radius:12px;width:100%;max-width:1100px;max-height:90vh;overflow:auto;box-shadow:0 20px 60px rgba(0,0,0,.3)}
+.ov .kopf{display:flex;justify-content:space-between;align-items:center;padding:13px 18px;border-bottom:1px solid var(--line)}.ov .fuss{display:flex;justify-content:flex-end;gap:8px;padding:12px 18px;border-top:1px solid var(--line)}
+.toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:var(--surf2);border:1px solid var(--line);border-radius:var(--r);padding:10px 20px;font-size:13px;opacity:0;transition:.3s;pointer-events:none;z-index:60}.toast.show{opacity:1}
+</style></head><body>
+<div class="hdr"><div class="logo">MACHER OS</div><div><div class="hdr-title">Personal · Stundenzettel</div><div class="hdr-sub">Crewmeister-Stundenzettel je Monat · Soll · Ist · über EE ausgezahlt · Endstand · Lohntabelle für den Steuerberater</div></div></div>
+<div class="main" id="main">
+  <div class="bar"><label class="mut">Jahr</label><select id="jahr" onchange="jahrWechsel()"></select><div class="tabs" id="mtabs"></div></div>
+
+  <div class="card">
+    <div class="card-hd">Stundenzettel hochladen <span class="sub">Crewmeister-Export als Excel oder PDF · mehrere Dateien auf einmal möglich · Mitarbeiter und Monat werden erkannt</span></div>
+    <div class="pad">
+      <div class="drop" id="drop">Stundenzettel hierher ziehen oder <label class="btn" style="display:inline-block">Dateien wählen<input type="file" id="fileIn" accept=".xlsx,.xls,.csv,application/pdf" multiple style="display:none" onchange="dateien(this.files);this.value=''"></label></div>
+      <div id="upStatus" class="hinweis"></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-hd" id="stTitel">Stunden</div>
+    <div id="stWarn"></div>
+    <div class="tablewrap pad" id="stTab"></div>
+    <div class="hinweis pad" style="padding-top:0">Endstand = Übertrag aus dem Vormonat + Ist − Soll − über EE ausgezahlte Stunden. Den Startstand trägst du im Startmonat direkt in „Übertrag Vormonat“ ein, ab dann rechnet das OS weiter. Der Endstand wird als Übertrag in den nächsten Monat übernommen. Crewmeister zeigt zum Vergleich den Zeitkontostand am Monatsende laut Stundenzettel. Alle Werte sind änderbar.</div>
+  </div>
+
+  <div class="card">
+    <details class="ein" id="einDet"><summary>Startstand und Einstellungen je Mitarbeiter</summary>
+      <div class="tablewrap pad" id="einTab"></div>
+      <div class="hinweis pad" style="padding-top:0">Startstand = Stundenkonto zu Beginn des angegebenen Monats. Ab diesem Monat rechnet das OS den Endstand fortlaufend weiter. „Auszahlung im Folgemonat“: Die über EE ausgezahlten Stunden eines Monats erscheinen erst in der Lohntabelle des nächsten Monats. „Stunden erfassen“ ausgeschaltet: Der Mitarbeiter erscheint nicht in der Stundenübersicht, bleibt aber in der Lohntabelle.</div>
+    </details>
+  </div>
+
+  <div class="card">
+    <div class="card-hd" id="ltTitel">Lohntabelle<span class="rechts"><button class="btn sec" id="btnZu" onclick="abschluss()">Monat abschließen</button><button class="btn" onclick="exportExcel()">Excel für den Steuerberater herunterladen</button></span></div>
+    <div class="tablewrap pad" id="ltTab"></div>
+    <div class="pad" style="padding-top:0">
+      <div class="mut" style="font-weight:600;margin-bottom:4px">Infos an den Steuerberater (z. B. An- und Abmeldungen, neue Bankverbindung)</div>
+      <textarea id="infos" onchange="infosSpeichern(this.value)" placeholder="Keine Infos für diesen Monat"></textarea>
+      <div class="hinweis">Blau und kursiv = Vorschlag des OS (aus Stundenzettel, Vormonat oder Personalakte), noch nicht gespeichert. Beim Herunterladen der Excel-Datei werden alle Werte des Monats gespeichert. Zusatzstd. der Minijob-Zeile EE kommen aus „über EE ausgezahlt“, Urlaubstage aus dem Stundenzettel.</div>
+    </div>
+  </div>
+</div>
+<div class="toast" id="toast"></div>
+<div class="ov" id="ov"><div class="box">
+  <div class="kopf"><b id="ovTitel">Stundenzettel übernehmen</b><span style="cursor:pointer;color:var(--muted)" onclick="ovZu()">Schließen</span></div>
+  <div class="pad" id="ovBody"></div>
+  <div class="fuss"><button class="btn sec" onclick="ovZu()">Abbrechen</button><button class="btn" id="ovOk" onclick="uebernehmen()">Übernehmen</button></div>
+</div></div>
+<datalist id="dlJN"><option value="Ja"><option value="Nein"></datalist>
+<datalist id="dlMa"></datalist>
+<script>
+const sb=window.supabase.createClient('https://jqzxctfqvcwbctpjksvg.supabase.co','eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpxenhjdGZxdmN3YmN0cGprc3ZnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODIxMzA0MzIsImV4cCI6MjA5NzcwNjQzMn0.RKIbZxJdusKWWPjBJqlxZ8e1m8So02UslOg55YRsn3o');
+const $=id=>document.getElementById(id);
+const esc=s=>(s==null?'':String(s)).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;');
+const MON=['Januar','Februar','März','April','Mai','Juni','Juli','August','September','Oktober','November','Dezember'];
+const MONK=['Jan','Feb','Mär','Apr','Mai','Jun','Jul','Aug','Sep','Okt','Nov','Dez'];
+const n=x=>x==null||x===''?0:Number(x);
+const r2=x=>Math.round(x*100)/100;
+const numDE=v=>{if(v==null)return null;let s=String(v).trim().replace(/€|\s/g,'');if(s==='')return null;if(/,/.test(s))s=s.replace(/\./g,'').replace(',','.');const x=parseFloat(s);return isNaN(x)?null:x;};
+const fh=(x,leer)=>x==null||x===''?(leer||''):new Intl.NumberFormat('de-DE',{minimumFractionDigits:2,maximumFractionDigits:2}).format(Number(x));
+const fs=x=>x==null?'':(x>0?'+':'')+fh(x);
+const eur=x=>x==null||x===''?'':fh(x)+' €';
+const nrm=s=>String(s||'').normalize('NFC').toLowerCase().replace(/\s+/g,' ').trim();
+const mkey=(y,m)=>y*12+(m-1);
+const ym=(y,m)=>y+'-'+String(m).padStart(2,'0');
+function toast(m){const t=$('toast');t.textContent=m;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),1900);}
+
+const EE_FIRMA='Eric Eisenhardt';
+const FIRMEN=['Eric Eisenhardt','Wohntraum Kibo GmbH','Wohn(T)raum Rheinhessen GmbH'];
+const FIRMA_TXT={'Eric Eisenhardt':'Minijob Eric Eisenhardt','Wohntraum Kibo GmbH':'Wohntraum KiBo GmbH','Wohn(T)raum Rheinhessen GmbH':'Wohntraum Rheinhessen GmbH'};
+let MA=[],ST=[],SS={},LT=[],DOCS={},PERS=[],JAHR=0,MONAT=0;
+
+function nm(m){return((m.vorname||'')+' '+(m.name||'')).trim();}
+function personen(){
+  const G={};MA.forEach(m=>{const k=nrm(nm(m));(G[k]=G[k]||[]).push(m);});
+  return Object.values(G).map(rows=>{
+    const main=rows.find(r=>r.unternehmen!==EE_FIRMA)||rows[0];
+    const s=SS[main.id]||{};
+    const ee=rows.find(r=>r.id===s.ee_id)||rows.find(r=>r.unternehmen===EE_FIRMA&&r.id!==main.id)||null;
+    return {key:nrm(nm(main)),name:nm(main),main,ee,rows};
+  }).sort((a,b)=>(a.main.name||'').localeCompare(b.main.name||'','de')||a.name.localeCompare(b.name,'de'));
+}
+const stOf=(id,y,m)=>ST.find(s=>s.mitarbeiter_id===id&&s.jahr===y&&s.monat===m);
+const ltOf=(id,y,m)=>LT.find(s=>s.mitarbeiter_id===id&&s.jahr===y&&s.monat===m);
+
+/* ---------- Stundenkonto ---------- */
+function konto(pid){
+  // liefert {k: {ueb,end}} für alle Monate ab Start; ohne Startstand beginnt die Rechnung mit 0 im ersten Monat mit Daten
+  const s=SS[pid]||{}; const L=ST.filter(x=>x.mitarbeiter_id===pid).sort((a,b)=>mkey(a.jahr,a.monat)-mkey(b.jahr,b.monat));
+  let startK=null,carry=0,fehlt=true;
+  if(s.start_std!=null&&s.start_ab){const [y,m]=s.start_ab.split('-').map(Number);startK=mkey(y,m);carry=Number(s.start_std);fehlt=false;}
+  else if(L.length) startK=mkey(L[0].jahr,L[0].monat);
+  const out={};if(startK==null)return {out,fehlt,startK};
+  const endK=Math.max(startK,...L.map(x=>mkey(x.jahr,x.monat)),mkey(JAHR,12));
+  for(let k=startK;k<=endK;k++){const y=Math.floor(k/12),m=k%12+1;const r=stOf(pid,y,m);const ueb=carry;
+    if(r&&(r.soll!=null||r.ist!=null||r.ee_aus!=null))carry=r2(carry+n(r.ist)-n(r.soll)-n(r.ee_aus));
+    out[k]={ueb:r2(ueb),end:r2(carry)};}
+  return {out,fehlt,startK};
+}
+
+/* ---------- Laden ---------- */
+function initJahr(){const y=new Date().getFullYear();let o='';for(let j=y-1;j<=y+1;j++)o+=`<option ${j===y?'selected':''}>${j}</option>`;$('jahr').innerHTML=o;JAHR=y;}
+async function load(){
+  JAHR=+$('jahr').value;
+  const [a,b,c,d,e]=await Promise.all([
+    sb.from('mitarbeiter').select('id,vorname,name,unternehmen,beschaeftigung,berufsbezeichnung,stundenlohn,monatslohn,aktiv,pos').eq('aktiv',true).order('pos'),
+    sb.from('personal_stunden').select('*'),
+    sb.from('personal_stunden_stamm').select('*'),
+    sb.from('personal_lohntabelle').select('*'),
+    sb.from('os_docs').select('app,pfad,data').eq('app','personal')]);
+  MA=a.data||[];ST=b.data||[];SS={};(c.data||[]).forEach(x=>SS[x.mitarbeiter_id]=x);LT=d.data||[];
+  DOCS={};(e.data||[]).forEach(x=>DOCS[x.pfad]=x.data||{});
+  ST.forEach(x=>{x.jahr=+x.jahr;x.monat=+x.monat;});LT.forEach(x=>{x.jahr=+x.jahr;x.monat=+x.monat;});
+  PERS=personen();
+  $('dlMa').innerHTML=PERS.map(p=>`<option value="${esc(p.name)}">`).join('');
+  if(!MONAT){const mit=ST.filter(x=>x.jahr===JAHR).map(x=>x.monat);const jetzt=new Date();MONAT=mit.length?Math.max(...mit):(jetzt.getFullYear()===JAHR?Math.max(1,jetzt.getMonth()):12);}
+  render();
+}
+function jahrWechsel(){MONAT=0;load();}
+function setMonat(m){MONAT=m;render();}
+const zuDoc=()=>DOCS['stundenzettel/abschluss']||{};
+const istZu=()=>!!zuDoc()[ym(JAHR,MONAT)];
+
+/* ---------- Anzeige ---------- */
+function render(){renderTabs();renderStunden();renderEin();renderLT();}
+function renderTabs(){const zu=zuDoc();
+  $('mtabs').innerHTML=MON.map((x,i)=>{const m=i+1;const hat=ST.some(s=>s.jahr===JAHR&&s.monat===m)||LT.some(s=>s.jahr===JAHR&&s.monat===m);
+    return `<button class="tab ${m===MONAT?'active':''} ${hat?'hat':''} ${zu[ym(JAHR,m)]?'zu':''}" title="${zu[ym(JAHR,m)]?'abgeschlossen':''}" onclick="setMonat(${m})">${MONK[i]}</button>`;}).join('');}
+function inp(val,on,cls,dis){return `<input class="c ${cls||''}" inputmode="decimal" value="${val==null?'':fh(val)}" ${dis?'disabled':''} onchange="${on}">`;}
+function renderStunden(){
+  const zu=istZu(); const k=mkey(JAHR,MONAT);
+  $('stTitel').innerHTML=`Stunden ${MON[MONAT-1]} ${JAHR}${zu?' <span class="sub">abgeschlossen</span>':''}`;
+  const fehlt=[];let h='<table><thead><tr><th class="l">Mitarbeiter</th><th class="l">Gesellschaft</th><th>Übertrag Vormonat</th><th>Soll</th><th>Ist</th><th>Differenz</th><th>Über EE ausgezahlt</th><th>Endstand</th><th>Urlaub (Tage)</th><th>Krank (Tage)</th><th>Crewmeister Monatsende</th><th class="l">Stundenzettel</th></tr></thead><tbody>';
+  PERS.filter(p=>!(SS[p.main.id]||{}).ohne_stunden).forEach(p=>{const id=p.main.id;const r=stOf(id,JAHR,MONAT)||{};const K=konto(id);const kk=K.out[k];
+    if(K.fehlt&&ST.some(x=>x.mitarbeiter_id===id))fehlt.push(p.name);
+    const hat=r.soll!=null||r.ist!=null; const diff=hat?r2(n(r.ist)-n(r.soll)):null;
+    const f=(fld)=>`saveSt('${id}','${fld}',this.value)`;
+    const eeHint=r.ee_kat!=null?`<div class="mut">EE-Kategorie: ${fh(r.ee_kat)}</div>`:'';
+    const dat=r.datei_url?`<a href="${esc(r.datei_url)}" target="_blank">${esc(r.datei_name||'öffnen')}</a>`:(r.datei_name?`<span class="mut" title="${esc(r.pfad||'')}">${esc(r.datei_name)} (im Ordner)</span>`:'<span class="mut">fehlt</span>');
+    h+=`<tr><td class="l"><b>${esc(p.name)}</b></td><td class="l">${esc(FIRMA_TXT[p.main.unternehmen]||p.main.unternehmen||'')}</td>
+      <td>${inp(kk?kk.ueb:null,`saveStart('${id}',this.value)`,(s0=>s0.start_ab===ym(JAHR,MONAT)?'':'vor')(SS[id]||{}),zu)}</td><td>${inp(r.soll,f('soll'),'',zu)}</td><td>${inp(r.ist,f('ist'),'',zu)}</td>
+      <td class="calc ${diff>0?'pos':diff<0?'neg':''}">${diff==null?'':fs(diff)}</td>
+      <td>${p.ee||r.ee_aus!=null?inp(r.ee_aus,f('ee_aus'),'',zu)+eeHint:'<span class="mut">kein EE-Minijob</span>'}</td>
+      <td class="end ${kk&&kk.end<0?'neg':''}">${kk?fh(kk.end):''}</td>
+      <td>${inp(r.urlaub_tage,f('urlaub_tage'),'s',zu)}</td><td>${inp(r.krank_tage,f('krank_tage'),'s',zu)}</td>
+      <td class="${r.cm_ende!=null&&kk&&Math.abs(r.cm_ende-kk.end)>0.5?'mut':''}">${r.cm_ende==null?'':fh(r.cm_ende)}</td><td class="l">${dat}</td></tr>`;});
+  $('stTab').innerHTML=h+'</tbody></table>';
+  $('stWarn').innerHTML=fehlt.length?`<div class="warn">Startstand fehlt bei: ${esc(fehlt.join(', '))}. Bis er eingetragen ist, beginnt die Rechnung mit 0 im ersten Monat mit Stundenzettel. Einfach im ersten Monat in der Spalte „Übertrag Vormonat“ den Stand eintragen.</div>`:'';
+}
+function renderEin(){
+  let h='<table><thead><tr><th class="l">Mitarbeiter</th><th>Startstand (Std.)</th><th>ab Monat</th><th>Crewmeister zu Beginn dieses Monats</th><th>Auszahlung über EE im Folgemonat</th><th class="l">Minijob-Zeile EE</th><th>Stunden erfassen</th></tr></thead><tbody>';
+  PERS.filter(p=>!(SS[p.main.id]||{}).ohne_stunden).forEach(p=>{const id=p.main.id;const s=SS[id]||{};let cm='';
+    if(s.start_ab){const [y,m]=s.start_ab.split('-').map(Number);const r=stOf(id,y,m);if(r&&r.cm_start!=null)cm=fh(r.cm_start);}
+    else{const L=ST.filter(x=>x.mitarbeiter_id===id).sort((a,b)=>mkey(a.jahr,a.monat)-mkey(b.jahr,b.monat));if(L[0]&&L[0].cm_start!=null)cm=fh(L[0].cm_start)+' <span class="mut">(am '+MONK[L[0].monat-1]+' '+L[0].jahr+')</span>';}
+    h+=`<tr><td class="l"><b>${esc(p.name)}</b></td><td>${inp(s.start_std,`saveSS('${id}','start_std',this.value)`)}</td>
+      <td><input class="c d" value="${esc(s.start_ab?monTxt(s.start_ab):'')}" placeholder="z. B. 01/2026" onchange="saveSS('${id}','start_ab',this.value)"></td>
+      <td>${cm}</td><td style="text-align:center"><input type="checkbox" ${s.ee_folgemonat?'checked':''} ${p.ee?'':'disabled'} onchange="saveSS('${id}','ee_folgemonat',this.checked)"></td>
+      <td class="l">${p.ee?esc(nm(p.ee)+' · '+(FIRMA_TXT[p.ee.unternehmen]||p.ee.unternehmen)):'<span class="mut">keine</span>'}</td>
+      <td style="text-align:center"><input type="checkbox" ${s.ohne_stunden?'':'checked'} onchange="saveSS('${id}','ohne_stunden',!this.checked)"></td></tr>`;});
+  const ohne=PERS.filter(p=>(SS[p.main.id]||{}).ohne_stunden);
+  $('einTab').innerHTML=h+'</tbody></table>'+(ohne.length?'<div class="hinweis">Ohne Stundenerfassung (nur in der Lohntabelle): '+ohne.map(p=>esc(p.name)+' <a href="#" onclick="saveSS(\''+p.main.id+'\',\'ohne_stunden\',false);return false">wieder aufnehmen</a>').join(' · ')+'</div>':'');
+}
+
+/* ---------- Lohntabelle ---------- */
+function ltZeilen(){
+  const fi=u=>{const i=FIRMEN.indexOf(u);return i<0?9:i;};
+  return MA.slice().sort((a,b)=>fi(a.unternehmen)-fi(b.unternehmen)||(a.name||'').localeCompare(b.name||'','de')||(a.vorname||'').localeCompare(b.vorname||'','de'));
+}
+function prevLT(id,y,m){const k=mkey(y,m);let best=null;LT.forEach(x=>{if(x.mitarbeiter_id!==id)return;const kx=mkey(x.jahr,x.monat);if(kx<k&&(!best||kx>mkey(best.jahr,best.monat)))best=x;});return best;}
+function eeStunden(ma,y,m){
+  // Zusatzstunden der EE-Zeile = über EE ausgezahlte Stunden der zugehörigen Person (ggf. aus dem Vormonat)
+  const p=PERS.find(p=>p.ee&&p.ee.id===ma.id); if(!p)return null;
+  const s=SS[p.main.id]||{}; let yy=y,mm=m; if(s.ee_folgemonat){mm--; if(!mm){mm=12;yy--;}}
+  const r=stOf(p.main.id,yy,mm); return r&&r.ee_aus!=null?Number(r.ee_aus):null;
+}
+const LTF=['grundgehalt','zusatz_std','stundenlohn','sachbezug','urlaub_tage','au_abfrage','au_lag_vor','au_von','au_bis'];
+function ltWerte(ma,y,m){
+  const rec=ltOf(ma.id,y,m); const v={},vor={};
+  if(rec){LTF.forEach(f=>v[f]=rec[f]);return {v,vor,rec};}
+  const pv=prevLT(ma.id,y,m)||{}; const ee=ma.unternehmen===EE_FIRMA&&PERS.some(p=>p.ee&&p.ee.id===ma.id);
+  const hatPv=!!prevLT(ma.id,y,m);
+  const d={grundgehalt:hatPv?pv.grundgehalt:(ee?null:ma.monatslohn),
+    stundenlohn:hatPv?pv.stundenlohn:ma.stundenlohn,
+    sachbezug:hatPv?pv.sachbezug:null,
+    zusatz_std:ee?eeStunden(ma,y,m):(hatPv?pv.zusatz_std:null)};
+  const p=PERS.find(p=>p.main.id===ma.id); if(p){const r=stOf(ma.id,y,m); d.urlaub_tage=r&&r.urlaub_tage!=null?r.urlaub_tage:null;}
+  LTF.forEach(f=>{v[f]=d[f]==null?null:d[f]; if(v[f]!=null)vor[f]=true;});
+  return {v,vor,rec:null};
+}
+const aushilfe=v=>v.zusatz_std!=null&&v.stundenlohn!=null?r2(n(v.zusatz_std)*n(v.stundenlohn)):null;
+const gesamt=v=>r2(n(v.grundgehalt)+n(aushilfe(v))+n(v.sachbezug));
+function renderLT(){
+  const zu=istZu(); $('ltTitel').firstChild.textContent=`Lohntabelle ${MON[MONAT-1]} ${JAHR} `;
+  $('btnZu').textContent=zu?'Monat wieder öffnen':'Monat abschließen';
+  let h='<table><thead><tr><th class="l">Name</th><th class="l">Berufsbezeichnung</th><th class="l">Unternehmen</th><th>Grundgehalt</th><th>Zusatzstd.</th><th>Stundenlohn</th><th>Aushilfslohn</th><th>Gesamt</th><th>Sachbezug</th><th>Urlaubstage</th><th>AU Abfrage</th><th>AU lag vor</th><th>von</th><th>bis</th></tr></thead><tbody>';
+  let sum=0;
+  ltZeilen().forEach(ma=>{const {v,vor}=ltWerte(ma,JAHR,MONAT);const on=f=>`saveLT('${ma.id}','${f}',this.value)`;const c=f=>vor[f]?'vor':'';
+    const g=gesamt(v);sum+=g;
+    h+=`<tr><td class="l"><b>${esc(nm(ma))}</b></td><td class="l">${esc(ma.berufsbezeichnung||'')}</td><td class="l">${esc(FIRMA_TXT[ma.unternehmen]||ma.unternehmen||'')}</td>
+      <td>${inp(v.grundgehalt,on('grundgehalt'),c('grundgehalt'),zu)}</td><td>${inp(v.zusatz_std,on('zusatz_std'),c('zusatz_std')+' s',zu)}</td><td>${inp(v.stundenlohn,on('stundenlohn'),c('stundenlohn')+' s',zu)}</td>
+      <td class="calc">${eur(aushilfe(v))}</td><td class="calc">${eur(g)}</td>
+      <td>${inp(v.sachbezug,on('sachbezug'),c('sachbezug')+' s',zu)}</td><td>${inp(v.urlaub_tage,on('urlaub_tage'),c('urlaub_tage')+' s',zu)}</td>
+      <td><input class="c s" list="dlJN" value="${esc(v.au_abfrage||'')}" ${zu?'disabled':''} onchange="${on('au_abfrage')}"></td><td><input class="c s" list="dlJN" value="${esc(v.au_lag_vor||'')}" ${zu?'disabled':''} onchange="${on('au_lag_vor')}"></td>
+      <td><input class="c d" type="date" value="${esc(v.au_von||'')}" ${zu?'disabled':''} onchange="${on('au_von')}"></td><td><input class="c d" type="date" value="${esc(v.au_bis||'')}" ${zu?'disabled':''} onchange="${on('au_bis')}"></td></tr>`;});
+  h+=`<tr class="sum"><td class="l" colspan="7">Summe</td><td>${eur(sum)}</td><td colspan="6"></td></tr>`;
+  $('ltTab').innerHTML=h+'</tbody></table>';
+  const inf=DOCS['lohntabelle/'+ym(JAHR,MONAT)]; $('infos').value=inf&&inf.infos||''; $('infos').disabled=zu;
+}
+
+/* ---------- Speichern ---------- */
+async function saveSt(id,f,val){const v=numDE(val);const row={mitarbeiter_id:id,jahr:JAHR,monat:MONAT,[f]:v,updated_at:new Date().toISOString()};
+  const{error}=await sb.from('personal_stunden').upsert(row,{onConflict:'mitarbeiter_id,jahr,monat'});if(error){toast('Fehler: '+error.message);return;}
+  let r=stOf(id,JAHR,MONAT);if(r)r[f]=v;else ST.push({mitarbeiter_id:id,jahr:JAHR,monat:MONAT,[f]:v});render();toast('Gespeichert');}
+function monParse(t){t=String(t||'').trim().toLowerCase();if(!t)return null;let m=t.match(/^(\d{4})-(\d{1,2})$/);if(m)return ym(+m[1],+m[2]);
+  m=t.match(/^(\d{1,2})\s*[./\- ]\s*(\d{2,4})$/);if(m){let y=+m[2];if(y<100)y+=2000;return ym(y,+m[1]);}
+  const i=MON.findIndex(x=>t.startsWith(x.toLowerCase().slice(0,3)));m=t.match(/(\d{2,4})$/);if(i>=0&&m){let y=+m[1];if(y<100)y+=2000;return ym(y,i+1);}return undefined;}
+const monTxt=s=>{const [y,m]=s.split('-');return m+'/'+y;};
+async function saveStart(id,val){const v=numDE(val);const row={mitarbeiter_id:id,start_std:v,start_ab:v==null?null:ym(JAHR,MONAT),updated_at:new Date().toISOString()};
+  const p=PERS.find(p=>p.main.id===id);if(p&&p.ee&&!(SS[id]||{}).ee_id)row.ee_id=p.ee.id;
+  const{error}=await sb.from('personal_stunden_stamm').upsert(row,{onConflict:'mitarbeiter_id'});if(error){toast('Fehler: '+error.message);return;}
+  SS[id]=Object.assign({},SS[id]||{mitarbeiter_id:id},row);render();toast(v==null?'Startstand entfernt':'Startstand '+fh(v)+' ab '+MON[MONAT-1]+' '+JAHR+' gespeichert');}
+async function saveSS(id,f,val){let v=f==='start_std'?numDE(val):val;if(f==='start_ab'){v=monParse(val);if(v===undefined){toast('Monat bitte so eingeben: 01/2026');render();return;}}
+  const row={mitarbeiter_id:id,[f]:v,updated_at:new Date().toISOString()};const p=PERS.find(p=>p.main.id===id);if(p&&p.ee&&!(SS[id]||{}).ee_id)row.ee_id=p.ee.id;
+  const{error}=await sb.from('personal_stunden_stamm').upsert(row,{onConflict:'mitarbeiter_id'});if(error){toast('Fehler: '+error.message);return;}
+  SS[id]=Object.assign({},SS[id]||{mitarbeiter_id:id},row);render();toast('Gespeichert');}
+async function ltSchreiben(id,obj){
+  const rec=ltOf(id,JAHR,MONAT); const ma=MA.find(x=>x.id===id);
+  const basis=rec?{}:ltWerte(ma,JAHR,MONAT).v;  // beim ersten Speichern die Vorschläge mitspeichern
+  const row=Object.assign({mitarbeiter_id:id,jahr:JAHR,monat:MONAT},basis,obj,{updated_at:new Date().toISOString()});
+  const{error}=await sb.from('personal_lohntabelle').upsert(row,{onConflict:'mitarbeiter_id,jahr,monat'});if(error){toast('Fehler: '+error.message);return false;}
+  if(rec)Object.assign(rec,row);else LT.push(row);return true;}
+async function saveLT(id,f,val){let v;
+  if(['au_abfrage','au_lag_vor'].includes(f))v=(val||'').trim()||null;else if(['au_von','au_bis'].includes(f))v=val||null;else v=numDE(val);
+  if(await ltSchreiben(id,{[f]:v})){renderLT();toast('Gespeichert');}}
+async function infosSpeichern(t){const pfad='lohntabelle/'+ym(JAHR,MONAT);const data=Object.assign({},DOCS[pfad]||{},{infos:t});
+  const{error}=await sb.from('os_docs').upsert({app:'personal',pfad,data,updated_at:new Date().toISOString()},{onConflict:'app,pfad'});if(error){toast('Fehler: '+error.message);return;}DOCS[pfad]=data;toast('Gespeichert');}
+async function abschluss(){const d=Object.assign({},zuDoc());const k=ym(JAHR,MONAT);
+  if(d[k])delete d[k];else d[k]=new Date().toISOString().slice(0,10);
+  const{error}=await sb.from('os_docs').upsert({app:'personal',pfad:'stundenzettel/abschluss',data:d,updated_at:new Date().toISOString()},{onConflict:'app,pfad'});if(error){toast('Fehler: '+error.message);return;}
+  DOCS['stundenzettel/abschluss']=d;render();toast(d[k]?'Monat abgeschlossen':'Monat wieder geöffnet');}
+
+/* ---------- Excel für den Steuerberater ---------- */
+async function exportExcel(){
+  if(!window.ExcelJS){toast('Excel-Bibliothek konnte nicht geladen werden');return;}
+  const Z=ltZeilen().map(ma=>({ma,...ltWerte(ma,JAHR,MONAT)}));
+  if(!istZu()) for(const z of Z) if(!z.rec) await ltSchreiben(z.ma.id,{});   // Werte des Monats festhalten
+  const wb=new ExcelJS.Workbook(); const ws=wb.addWorksheet('Tabelle1');
+  const F=(sz,b)=>({name:'Aptos Narrow',size:sz,bold:!!b});
+  ws.getCell('A1').value='Lohntabelle';ws.getCell('A1').font=F(20,true);
+  ws.getCell('A2').value='Monat';ws.getCell('A2').font=F(20);
+  ws.getCell('B2').value=new Date(Date.UTC(JAHR,MONAT-1,1));ws.getCell('B2').numFmt='mmm-yy';ws.getCell('B2').font=F(20);ws.getCell('B2').alignment={horizontal:'left'};
+  const EUR='_-* #,##0.00\\ "€"_-;\\-* #,##0.00\\ "€"_-;_-* "-"??\\ "€"_-;_-@_-';
+  const rows=Z.map((z,i)=>{const r=5+i,v=z.v;const sl=v.stundenlohn;
+    const aus=aushilfe(v);
+    return [nm(z.ma),z.ma.berufsbezeichnung||'',FIRMA_TXT[z.ma.unternehmen]||z.ma.unternehmen||'',
+      v.grundgehalt==null?null:Number(v.grundgehalt),v.zusatz_std==null?null:Number(v.zusatz_std),
+      sl!=null&&v.zusatz_std!=null?{formula:`SUM(E${r}*${Number(sl)})`,result:aus}:(sl!=null?{formula:`SUM(E${r}*${Number(sl)})`,result:0}:null),
+      {formula:`SUM(D${r}+F${r}+H${r})`,result:gesamt(v)},
+      v.sachbezug==null?null:Number(v.sachbezug),v.urlaub_tage==null?null:Number(v.urlaub_tage),
+      v.au_abfrage||null,v.au_lag_vor||null,v.au_von?new Date(v.au_von+'T00:00:00Z'):null,v.au_bis?new Date(v.au_bis+'T00:00:00Z'):null];});
+  const cols=['Name','Berufsbezeichnung','Unternehmen','Grundgehalt','Zusatzstd.','Aushilfslohn Std.','Gesamt','Sachbezug St / Sv-frei','Urlaubstage','AU Abfrage','AU lag vor','von','bis'];
+  ws.addTable({name:'Lohntabelle',ref:'A4',headerRow:true,style:{theme:'TableStyleLight15',showRowStripes:true},columns:cols.map(c=>({name:c})),rows:rows.length?rows:[cols.map(()=>null)]});
+  ws.getRow(4).font=F(20);ws.getRow(4).height=28;
+  for(let i=0;i<rows.length;i++){const row=ws.getRow(5+i);row.font=F(14);ws.getCell('A'+(5+i)).font=F(14,true);
+    ['D','F','G','H'].forEach(c=>ws.getCell(c+(5+i)).numFmt=EUR);['L','M'].forEach(c=>ws.getCell(c+(5+i)).numFmt='dd.mm.yyyy');}
+  const inf=(DOCS['lohntabelle/'+ym(JAHR,MONAT)]||{}).infos||'';
+  let r=5+rows.length+1; ws.getCell('A'+r).value='Infos ';ws.getCell('A'+r).font=F(22);
+  inf.split('\n').map(x=>x.trim()).filter(Boolean).forEach(t=>{r++;ws.getCell('A'+r).value=t;ws.getCell('A'+r).font=F(14);});
+  [20.8,33.5,33,18.8,15.5,25.2,12.5,32.2,18.2,19.5,15,15,15].forEach((w,i)=>ws.getColumn(i+1).width=w);
+  const buf=await wb.xlsx.writeBuffer();
+  const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([buf],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'}));
+  a.download=`WT_${ym(JAHR,MONAT)}_Lohntabelle.xlsx`;document.body.appendChild(a);a.click();setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove();},2000);
+  renderLT();toast('Lohntabelle erstellt');
+}
+
+/* ---------- Stundenzettel einlesen ---------- */
+if(window.pdfjsLib) pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+async function pdfZeilen(file){
+  const pdf=await pdfjsLib.getDocument({data:await file.arrayBuffer()}).promise;const out=[];
+  for(let i=1;i<=pdf.numPages;i++){const tc=await(await pdf.getPage(i)).getTextContent();const rows={};
+    tc.items.forEach(it=>{if(!it.str||!it.str.trim())return;const y=Math.round(it.transform[5]/3)*3;(rows[y]=rows[y]||[]).push({x:it.transform[4],w:it.width||0,s:it.str});});
+    Object.keys(rows).map(Number).sort((a,b)=>b-a).forEach(y=>{const it=rows[y].sort((a,b)=>a.x-b.x);let line='',end=null;
+      it.forEach(o=>{const gap=end==null?99:o.x-end;line+=(line&&gap>1.2?'   ':'')+o.s;end=o.x+o.w;});out.push(line.replace(/[ \t]+/g,' ').trim());});}
+  return out;
+}
+async function xlsxLesen(file){
+  const wb=XLSX.read(await file.arrayBuffer(),{type:'array'});const ws=wb.Sheets[wb.SheetNames[0]];
+  return XLSX.utils.sheet_to_json(ws,{header:1,raw:true,defval:null});
+}
+function xlsxParse(A){
+  // Crewmeister-Export „Arbeitszeiten pro Tag“: Kopfzeile mit „Mitarbeiter … Ist (h) · Soll (h)“, je Tag eine Zeile, danach die Summenzeile
+  const r={};const txt=A.map(z=>z.filter(c=>c!=null&&c!=='').join(' ')).join('\n');
+  const p=txt.match(/(\d\d)\.(\d\d)\.(\d{4})\s*-\s*\d\d\.\d\d\.\d{4}/);if(p){r.monat=+p[2];r.jahr=+p[3];}
+  const ks=[];A.forEach(z=>z.forEach((c,i)=>{if(typeof c==='string'&&/^Am \d{4}-\d\d-\d\d$/.test(c.trim())){const v=z.slice(i+1).find(x=>x!=null&&x!=='');ks.push(typeof v==='number'?v:numDE(v));}}));
+  if(ks.length){r.cm_start=r2(ks[0]);r.cm_ende=r2(ks[ks.length-1]);}
+  const hi=A.findIndex(z=>z.some(c=>c==='Mitarbeiter')&&z.some(c=>/^Ist/.test(String(c||''))));if(hi<0)return r;
+  const H=A[hi].map(c=>String(c||'').trim());const ci=re=>H.findIndex(c=>re.test(c));
+  const cIst=ci(/^Ist/),cSoll=ci(/^Soll/),cKat=ci(/^Zeitkategorien/),cAbw=ci(/^Abwesend \(d\)/);
+  const num=v=>v==null||v===''?null:(typeof v==='number'?v:numDE(v));
+  let ee=0,urlaub=0,krank=0,tot=null,aus=null,ti=-1;
+  for(let i=hi+1;i<A.length;i++){const z=A[i];const name=z[0];
+    if(typeof name==='string'&&name.trim()&&num(z[cIst])!=null){ if(!r.name)r.name=name.trim();
+      if(cKat>=0&&/EE Private/i.test(String(z[cKat]||'')))ee+=num(z[cIst]);
+      const ab=z.map(c=>String(c||'')).join(' ');const u=ab.match(/Urlaub \((\d+(?:[.,]\d+)?)\)/);if(u)urlaub+=numDE(u[1]);const k=ab.match(/Krankheit \((\d+(?:[.,]\d+)?)\)/);if(k)krank+=numDE(k[1]);
+      continue;}
+    if(!tot&&(name==null||name==='')&&num(z[cIst])!=null&&num(z[cSoll])!=null){tot=[num(z[cIst]),num(z[cSoll])];ti=i;
+      if(z.some(c=>/Auszahlung/.test(String(c||'')))){const nx=A[i+1]||[];const v=nx.find(c=>typeof c==='number');if(v!=null)aus=v;}
+      continue;}
+    if(tot&&aus==null){const s=z.map(c=>String(c==null?'':c)).join(' ');if(/Auszahlung/.test(s)){const v=z.find(c=>typeof c==='number');if(v!=null)aus=v;}}
+  }
+  if(tot){r.ist=r2(tot[0]);r.soll=r2(tot[1]);}
+  if(ee)r.ee_kat=r2(ee);if(aus!=null)r.ee_aus=r2(aus);r.urlaub_tage=urlaub||null;r.krank_tage=krank||null;r.nurEE=!tot&&ee>0;
+  return r;
+}
+const WT=/(Mo|Di|Mi|Do|Fr|Sa|So),? \d\d\.\d\d\.\d{4}/;
+const ZAHL=/-?\d+,\d+/g;
+function stzParse(L){
+  const txt=L.join('\n');const r={};
+  const p=txt.match(/(\d\d)\.(\d\d)\.(\d{4})\s*-\s*\d\d\.\d\d\.\d{4}/);if(p){r.monat=+p[2];r.jahr=+p[3];}
+  const ks=[...txt.matchAll(/Am (\d{4}-\d\d-\d\d)\s+(-?[\d.,]+)/g)];if(ks.length){r.cm_start=numDE(ks[0][2]);r.cm_ende=numDE(ks[ks.length-1][2]);}
+  let urlaub=0,krank=0,ee=0,tot=null,aus=null,nachTot=false,totAus=false;
+  for(const l of L){
+    const m=l.match(new RegExp('^(.+?)\\s+'+WT.source));
+    if(m){ if(!r.name)r.name=m[1].trim();
+      const z=l.match(ZAHL)||[]; if(/EE Private/i.test(l)&&z.length>=3)ee+=numDE(z[z.length-3]);
+      continue; }
+    const u=l.match(/Urlaub \((\d+(?:[.,]\d+)?)\)/g);if(u)u.forEach(x=>urlaub+=numDE(x.match(/\((.*)\)/)[1]));
+    const k=l.match(/Krankheit \((\d+(?:[.,]\d+)?)\)/g);if(k)k.forEach(x=>krank+=numDE(x.match(/\((.*)\)/)[1]));
+    const s=l.replace(/Auszahlung.*$/,'').trim();const z=s.match(ZAHL)||[];
+    if(!tot&&z.length>=5&&!/[A-Za-zÄÖÜäöü]{3}/.test(s)){tot=z.map(numDE);nachTot=true;totAus=/Auszahlung/.test(l);continue;}
+    if(nachTot&&aus==null){
+      const a=l.match(/^(-?\d+,\d+)\s*Auszahlung/);if(a){aus=numDE(a[1]);continue;}
+      if(totAus&&/^-?\d+,\d+$/.test(l)){aus=numDE(l);continue;}
+    }
+  }
+  // Urlaub/Krank in Tagesspalten (Excel): "Urlaub (1)" steht in eigener Zelle der Tageszeile
+  L.filter(l=>WT.test(l)).forEach(l=>{const u=l.match(/Urlaub \((\d+(?:[.,]\d+)?)\)/);if(u)urlaub+=numDE(u[1]);const k=l.match(/Krankheit \((\d+(?:[.,]\d+)?)\)/);if(k)krank+=numDE(k[1]);});
+  if(tot){r.ist=r2(tot[tot.length-3]);r.soll=r2(tot[tot.length-2]);}
+  if(ee)r.ee_kat=r2(ee); if(aus!=null)r.ee_aus=aus; r.urlaub_tage=urlaub||null; r.krank_tage=krank||null;
+  r.nurEE=!tot&&ee>0;
+  return r;
+}
+let UP=[];
+async function dateien(files){
+  const L=[...files];if(!L.length)return;$('upStatus').textContent='Lese '+L.length+' Datei(en) …';UP=[];
+  for(const f of L){let z,r;try{if(/\.pdf$/i.test(f.name)){z=await pdfZeilen(f);r=stzParse(z);}else{const A=await xlsxLesen(f);r=xlsxParse(A);z=A.map(x=>x.join(''));}}catch(e){UP.push({file:f,fehler:'Datei konnte nicht gelesen werden: '+e.message});continue;}
+    if(!r.monat||(!r.name&&!r.nurEE)){UP.push({file:f,fehler:z.join('').length<40?'Kein Text gefunden (eingescanntes Blatt?) – bitte Werte von Hand eintragen.':'Monat oder Mitarbeiter nicht erkannt – ist das ein Crewmeister-Stundenzettel?'});continue;}
+    if(!r.name){const t=nrm(f.name);const p=PERS.find(p=>t.includes(nrm(p.main.name))&&t.includes(nrm(p.main.vorname)));if(p)r.name=p.name;}
+    const p=PERS.find(p=>nrm(p.name)===nrm(r.name))||PERS.find(p=>nrm(r.name).includes(nrm(p.main.name)));
+    if(p&&(SS[p.main.id]||{}).ohne_stunden){UP.push({file:f,fehler:p.name+': Stunden werden nicht erfasst (unter Einstellungen einschaltbar).'});continue;}
+    UP.push({file:f,r,pid:p?p.main.id:null,pname:p?p.name:(r.name||''),on:!!p});}
+  $('upStatus').textContent='';zeigeUp();
+}
+function zeigeUp(){
+  $('ovTitel').textContent='Stundenzettel übernehmen ('+UP.length+' Datei'+(UP.length===1?'':'en')+')';
+  let h='<div class="mut" style="margin-bottom:8px">Bitte prüfen. Grau = bisher gespeicherter Wert. Leere Felder aus der Datei überschreiben nichts.</div><div class="tablewrap"><table><thead><tr><th></th><th class="l">Datei</th><th class="l">Mitarbeiter</th><th>Monat</th><th>Soll</th><th>Ist</th><th>Differenz</th><th>Über EE ausgezahlt</th><th>EE-Kategorie</th><th>Urlaub</th><th>Krank</th><th>Crewmeister Anfang / Ende</th></tr></thead><tbody>';
+  UP.forEach((u,i)=>{
+    if(u.fehler){h+=`<tr><td></td><td class="l">${esc(u.file.name)}</td><td class="l neg" colspan="10">${esc(u.fehler)}</td></tr>`;return;}
+    const r=u.r,alt=u.pid?stOf(u.pid,r.jahr,r.monat)||{}:{};
+    const c=(f)=>`${r[f]==null?'':fh(r[f])}${alt[f]!=null&&(r[f]==null||Math.abs(alt[f]-r[f])>0.005)?'<div class="mut">'+fh(alt[f])+'</div>':''}`;
+    h+=`<tr><td><input type="checkbox" ${u.on?'checked':''} ${u.pid?'':'disabled'} onchange="UP[${i}].on=this.checked"></td><td class="l">${esc(u.file.name)}</td>
+      <td class="l"><input class="c t" list="dlMa" value="${esc(u.pname)}" onchange="upMa(${i},this.value)">${u.pid?'':'<div class="neg mut">nicht zugeordnet</div>'}</td>
+      <td>${MONK[r.monat-1]} ${r.jahr}</td><td>${c('soll')}</td><td>${c('ist')}</td><td>${r.ist!=null?fs(r2(r.ist-r.soll)):''}</td><td>${c('ee_aus')}</td><td>${c('ee_kat')}</td><td>${c('urlaub_tage')}</td><td>${c('krank_tage')}</td>
+      <td>${fh(r.cm_start)} / ${fh(r.cm_ende)}</td></tr>`;});
+  $('ovBody').innerHTML=h+'</tbody></table></div><div class="hinweis">„Über EE ausgezahlt“ wird nur übernommen, wenn es im Stundenzettel steht. Sonst trägst du den Wert danach in der Monatstabelle ein. „EE-Kategorie“ = Stunden mit der Zeitkategorie „EE Private Immobilien“ (nur zur Kontrolle).</div>';
+  $('ovOk').disabled=!UP.some(u=>u.on);$('ov').style.display='flex';
+}
+function upMa(i,val){const p=PERS.find(p=>nrm(p.name)===nrm(val));UP[i].pid=p?p.main.id:null;UP[i].pname=val;UP[i].on=!!p;zeigeUp();}
+function ovZu(){$('ov').style.display='none';UP=[];}
+async function uebernehmen(){
+  $('ovOk').disabled=true;let ok=0;
+  for(const u of UP.filter(x=>x.on&&x.pid)){const r=u.r;
+    const row={mitarbeiter_id:u.pid,jahr:r.jahr,monat:r.monat,updated_at:new Date().toISOString(),datei_name:u.file.name};
+    ['soll','ist','ee_aus','ee_kat','urlaub_tage','krank_tage','cm_start','cm_ende'].forEach(f=>{if(r[f]!=null)row[f]=r[f];});
+    if(r.nurEE){['soll','ist','urlaub_tage','krank_tage','cm_start','cm_ende'].forEach(f=>delete row[f]);row.datei_name=undefined;delete row.datei_name;}
+    const pfad='stundenzettel/'+r.jahr+'/'+String(r.monat).padStart(2,'0')+'/'+u.pid+'_'+u.file.name.replace(/[^A-Za-z0-9._-]/g,'_');
+    const up=await sb.storage.from('personal').upload(pfad,u.file,{upsert:true,contentType:u.file.type||undefined});
+    if(!up.error&&!r.nurEE){row.datei_url=sb.storage.from('personal').getPublicUrl(pfad).data.publicUrl;row.pfad=pfad;}
+    const{error}=await sb.from('personal_stunden').upsert(row,{onConflict:'mitarbeiter_id,jahr,monat'});
+    if(error){toast('Fehler bei '+u.file.name+': '+error.message);continue;}
+    const alt=stOf(u.pid,r.jahr,r.monat);if(alt)Object.assign(alt,row);else ST.push(row);ok++;
+    if(r.jahr===JAHR)MONAT=r.monat;}
+  $('ov').style.display='none';UP=[];
+  if(ok){toast(ok+' Stundenzettel übernommen');} await load();
+}
+(function(){const d=$('drop');['dragenter','dragover'].forEach(e=>d.addEventListener(e,ev=>{ev.preventDefault();d.classList.add('over');}));
+  ['dragleave','drop'].forEach(e=>d.addEventListener(e,ev=>{ev.preventDefault();d.classList.remove('over');}));d.addEventListener('drop',ev=>dateien(ev.dataTransfer.files));})();
+
+(async()=>{const{data:{session}}=await sb.auth.getSession();if(!session){$('main').innerHTML='<div style="padding:60px;text-align:center;color:var(--muted)">Bitte einloggen.</div>';return;}initJahr();load();})();
+</script></body></html>

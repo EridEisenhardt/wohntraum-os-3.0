@@ -81,6 +81,7 @@ export const NAV = [
   { type: 'group', key: 'v-personal', icon: 'ti-users-group', label: 'Personal', mod: 'verwalto', items: [
     { href: '/personal/lohnkosten', icon: 'ti-coin', label: 'Lohnkosten' },
     { href: '/personal/akte', icon: 'ti-folder', label: 'Personalakten' },
+    { href: '/personal/stundenzettel', icon: 'ti-clock', label: 'Stundenzettel' },
     { href: '/personal/zustaendigkeiten', icon: 'ti-list-check', label: 'Zuständigkeiten' },
   ] },
   { type: 'group', key: 'v-postfach', icon: 'ti-mail', label: 'Postfach', mod: 'verwalto', items: [
@@ -226,6 +227,7 @@ export const NAV = [
   { type: 'group', key: 'personal', icon: 'ti-users-group', label: 'Personal', area: ['hv', 'backoffice'], mod: 'personal', items: [
     { href: '/personal/zustaendigkeiten', icon: 'ti-list-check', label: 'Zuständigkeiten & SOPs' },
     { href: '/personal/akte', icon: 'ti-id', label: 'Personalakte' },
+    { href: '/personal/stundenzettel', icon: 'ti-clock', label: 'Stundenzettel' },
     { href: '/personal/lohnkosten', icon: 'ti-coin-euro', label: 'Lohnkosten' },
   ] },
   { type: 'group', key: 'eric-privat', icon: 'ti-user-heart', label: 'Eric Privat', area: ['vertrieb', 'hv'], mod: 'privat', items: [

@@ -83,6 +83,7 @@ textarea{width:100%;resize:vertical}
 .kdrw{position:fixed;top:4vh;bottom:4vh;left:50%;transform:translateX(-50%);border-radius:14px;width:min(760px,96vw);background:var(--bg);z-index:61;overflow:auto;box-shadow:-8px 0 24px rgba(0,0,0,.15)}
 .kdrw-h{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px}
 @media (max-width:1100px){ .grid3.kart{grid-template-columns:1fr} .grid3.kart .knav{display:none} .kz{grid-template-columns:24px 1fr 100px} .kz-z2{grid-column:2/-1;border-left:none;padding-left:0} .kz-r{grid-column:2/-1;flex-direction:row;justify-content:flex-end} }
+.bv-vx{border:1px solid var(--line);background:transparent;color:var(--muted);border-radius:5px;cursor:pointer;font:inherit;font-size:11px;line-height:1;padding:2px 6px;margin-left:6px}.bv-vx:hover{color:var(--red,#c0392b);border-color:var(--red,#c0392b)}
 .kcombo{position:relative;display:block}.kc-in{width:100%}.kc-sel{display:none}
 .kc-list{position:absolute;left:0;right:0;top:100%;margin-top:3px;max-height:320px;overflow:auto;background:var(--card,#fff);border:1px solid var(--line);border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,.12);z-index:50;padding:4px 0}
 .kc-g{font-size:11px;font-weight:700;color:var(--muted);padding:8px 12px 3px;text-transform:uppercase;letter-spacing:.03em}
@@ -1283,7 +1284,7 @@ function belEntwurf(it){ if(BEL.id!==it.id||(!BEL.L.length&&!BEL.busy&&!BEL.fehl
   else if(BEL.busy) h+='<div class="sub">'+esc(BEL.busy)+'</div>';
   return h+'</div>'; }
 function belCard(it,ro){ const bl=it.tx.bl||[];
-  if(!BUCH_BELEGE){ if(!bl.length) return '';
+  if(!belAn(it)){ if(!bl.length) return '';
     return '<div class="card"><div class="lab">Zugeordnete Belege <span class="pill ok">'+bl.length+'</span></div>'
       +bl.map((b,i)=>'<div class="bel"><a href="#" data-bopen="'+i+'" title="'+esc(b.pfad?b.pfad.replace(/^Prozesslandkarte 3\.0\//,''):'im OS gespeichert')+'">'+esc(b.n)+'</a></div>').join('')
       +'<div class="sub" style="margin-top:6px">Zuordnung ändern unter Belege.</div><div class="prev" id="prev"><div class="sub">Lade Vorschau …</div></div></div>'; }
@@ -1376,11 +1377,19 @@ function spScore(f,it){ if(f.betrag==null) return -1;
   const a=norm(f.abs).split(' ')[0]; if(a&&a.length>2&&norm((it.tx.n||'')+' '+(it.tx.z||'')).includes(a)) s+=25;
   if(it.needBeleg) s+=10; if(it.tx.b>0) s-=30; return s; }
 function spIndex(){ const idx=new Map(); for(const it of items()){ if(it.tx.b>=0&&!it.split) continue; const keys=new Set([Math.round(Math.abs(it.tx.b)*100),...it.parts.map(p=>Math.round(Math.abs(p.tx&&p.tx.b!=null?p.tx.b:0)*100))]); for(const k of keys){ if(!idx.has(k)) idx.set(k,[]); idx.get(k).push(it); } } return idx; }
-function spVorschlag(f,idx){ if(f.betrag==null) return null; const L=(idx.get(Math.round(f.betrag*100))||[]).filter(it=>!(it.tx.bl||[]).some(b=>b.od===f.id)).map(it=>({it,s:spScore(f,it)})).filter(x=>x.s>=0).sort((a,b)=>b.s-a.s);
+function spVorschlag(f,idx){ if(f.betrag==null) return null; const L=(idx.get(Math.round(f.betrag*100))||[]).filter(it=>!(it.tx.bl||[]).some(b=>b.od===f.id)&&!vwegHat(f.id,it.id)).map(it=>({it,s:spScore(f,it)})).filter(x=>x.s>=0).sort((a,b)=>b.s-a.s);
   if(!L.length) return null; return {it:L[0].it,s:L[0].s,n:L.length,eindeutig:L.length===1||L[0].s-L[1].s>=20}; }
 function spZuordnen(f,it){ if(!canWrite){ toast('Nur Lesezugriff.'); return Promise.resolve(); } const bl=(it.tx.bl||[]).slice(); if(bl.some(b=>b.od===f.id)) return Promise.resolve();
   bl.push({od:f.id,n:f.name,pfad:f.pfad,am:new Date().toISOString().slice(0,10)}); const patch={bl}; if(it.tx.ol){ patch.ol=0; patch.olg=''; }
+  if(istNeu(it)&&!it.split&&it.tx.b<0){ const z=belegKonto(f); if(z) Object.assign(patch,{m:1,ok:1,k:z.k,s:z.s,ka:z.ka,o:z.o,u:z.u||'',kv:''}); }
   return writeTx(it.doc,it.ix,patch); }
+/* Konto aus dem Beleg: Objekt aus Kürzel/Ordner, Art aus dem Ordner (04 Betriebskosten, 05 Instandhaltung, 07 WEG) */
+function belegKonto(f){ const p='/'+String(f.pfad||f.rel||'')+'/';
+  const obj=(f.bereich==='obj'?bvObjKz(f):'')||(objekte.some(o=>o.kz===f.pre)?f.pre:''); if(!obj) return null;
+  if(/\/04 Betriebskosten\//i.test(p)){ if(/\/internet\//i.test(p)){ const w=INET_UML[obj]; return {k:'bk',s:'',ka:'internet',o:obj,u:w?inetUnit(obj,w):''}; } return {k:'bk',s:'',ka:'',o:obj}; }
+  if(/\/07 WEG/i.test(p)) return {k:'bk',s:'',ka:'',o:obj};
+  if(/\/05 Instandhaltung\//i.test(p)) return {k:'inst',s:'',ka:'',o:obj};
+  return null; }
 function spLoesen(f,it){ if(!canWrite){ toast('Nur Lesezugriff.'); return Promise.resolve(); } const bl=(it.tx.bl||[]).filter(b=>b.od!==f.id); return writeTx(it.doc,it.ix,{bl}); }
 const spOrt=f=>esc(f.ort);
 const BEL_WURZELN=[['Prozesslandkarte 3.0/9.000 Buchführung/Gesellschaften Rechnungen','Gesellschaften Rechnungen'],['Prozesslandkarte 3.0/9.000 Buchführung/Gesellschaften Barauslagen','Gesellschaften Barauslagen'],['virt:Objekte','Objektordner – Betriebskosten und Instandhaltung']];
@@ -1499,6 +1508,10 @@ document.addEventListener('click',e=>{ const t=e.target.closest('[data-bvbk],[da
 /* Von Hand als bezahlt markierte Belege (ohne passende Zahlung im OS): stamm/belegbezahlt {liste:[{od,n,am,von,sammel}]}.
    Ändert nur den Status des Belegs, keine Buchung und keinen Kontostand. */
 var MANB=new Map();
+/* Verworfene Zahlungsvorschläge je Beleg: stamm/belegvorschlagweg {liste:[{od,it,am,von}]} */
+var VWEG=new Set();
+const vwegHat=(od,itId)=>VWEG.has(od+'#'+itId);
+function vwegSetzen(od,itId){ const L=[...VWEG].map(k=>{ const [o,i]=k.split('#'); return {od:o,it:i}; }); L.push({od,it:itId,am:new Date().toISOString().slice(0,10),von:(typeof ICH!=='undefined'&&ICH)||''}); VWEG=new Set(L.map(x=>x.od+'#'+x.it)); render(); return saveStamm('belegvorschlagweg',{liste:L}); }
 function manSpeichern(L){ MANB=new Map(L.map(x=>[x.od,x])); render(); return saveStamm('belegbezahlt',{liste:L}); }
 /* Ignorierte Belege (z. B. Mahnung, Angebot, Kopie): stamm/belegignoriert {liste:[{od,n,am,von}]} */
 var IGN=new Map();
@@ -1599,7 +1612,7 @@ function bvZeile(x){ const f=x.f, i=x.i, it=i.it, dd=i.dd, th=BV.th[f.id], typ=(
       :i.ign?'ignoriert<span class="sub">wird keiner Zahlung zugeordnet</span>'
       :(i.sepa&&!i.v)?'<span class="bv-of">offen</span><span class="sub">wird per SEPA-Lastschrift eingezogen</span>'
       :(QRM[f.id]&&!i.v)?'<span class="bv-of">offen</span><span class="sub">Überweisung vorbereitet am '+esc(dmy(QRM[f.id].am))+'</span>'+(canWrite?'<a href="#" class="bv-zwl" data-bvzw="'+esc(f.id)+'">Zahlung zuweisen</a>':'')
-      :i.v?'<span class="bv-of">offen</span><span class="sub">Vorschlag: <a href="#" data-bvzw="'+esc(f.id)+'" data-bvnur="1">'+esc(dmy(i.v.it.tx.d)+' '+(i.v.it.tx.n||'').slice(0,24))+'</a></span>':'<span class="bv-of">offen</span>'+(canWrite?'<a href="#" class="bv-zwl" data-bvzw="'+esc(f.id)+'">Zahlung zuweisen</a>':''))+'</div>';
+      :i.v?'<span class="bv-of">offen</span><span class="sub">Vorschlag: <a href="#" data-bvzw="'+esc(f.id)+'" data-bvnur="1">'+esc(dmy(i.v.it.tx.d)+' '+(i.v.it.tx.n||'').slice(0,24))+'</a>'+(canWrite?'<button class="bv-vx" data-bvvx="'+esc(f.id)+'" data-bvvxit="'+esc(i.v.it.id)+'" title="Vorschlag verwerfen">x</button>':'')+'</span>':'<span class="bv-of">offen</span>'+(canWrite?'<a href="#" class="bv-zwl" data-bvzw="'+esc(f.id)+'">Zahlung zuweisen</a>':''))+'</div>';
   h+='<div class="bv-fld"><small>Wiederkehrend</small>'+(dd?esc(dmy(dd.von))+' bis '+esc(dmy(dd.bis))+'<span class="sub">Abschlag '+(dd.jede?'je nach Zahlung':esc(eur(dd.betrag)))+'</span>':'nein')+'</div>';
   h+='<div class="bv-fld bv-fo"><small>Objekt</small>'+esc(i.obj||'–')+'</div></div>';
   if(it) h+='<div class="bv-hw">Der Beleg ist der Zahlung zugeordnet.'+(canWrite?' <a href="#" data-bvlos="'+esc(f.id)+'">Zuordnung lösen</a>':'')+'</div>'; else if(i.ign){ const g=IGN.get(f.id); h+='<div class="bv-hw">Ignoriert'+(g&&g.am?' seit '+esc(dmy(g.am)):'')+(g&&g.von?' von '+esc(g.von):'')+'.</div>'; } else if(dd) h+='<div class="bv-hw">Dauerbeleg: gilt für alle Abschläge im Zeitraum.</div>';
@@ -1997,7 +2010,7 @@ function renderBelegeTab(){ const h=BV.view==='liste'?bvListeHtml():bvStart(); c
 function bvOeffnen(root,sub){ BV.view='liste'; BV.root=root; BV.sub=sub||(root==='ges'||root==='bar'?String(year):''); BV.menu=''; BV.mehr=100; render(); window.scrollTo(0,0); }
 document.addEventListener('click',async e=>{ if(tab!=='belege') return;
   if(BV.menu&&!e.target.closest('.bv-menu,[data-bvmen]')){ BV.menu=''; render(); }
-  const t=e.target.closest('[data-bvent],[data-bvman],[data-bvmanweg],button[data-bvmanalle],[data-bvlos],button[data-bvsepa],button[data-bvign],[data-bvzw],[data-bvzalle],button[data-bvzzu],button[data-bvzz],[data-bvauf],[data-bvka],[data-bvgo],button[data-bvzur],button[data-bvmen],button[data-bvk],button[data-bvzu],button[data-bvsuch],button[data-bvreset],button[data-bvneu],button[data-bvup],[data-bvupzu],button[data-bvupgo],button[data-bvux],button[data-bvsort],button[data-bvmehr]'); if(!t) return;
+  const t=e.target.closest('button[data-bvvx],[data-bvent],[data-bvman],[data-bvmanweg],button[data-bvmanalle],[data-bvlos],button[data-bvsepa],button[data-bvign],[data-bvzw],[data-bvzalle],button[data-bvzzu],button[data-bvzz],[data-bvauf],[data-bvka],[data-bvgo],button[data-bvzur],button[data-bvmen],button[data-bvk],button[data-bvzu],button[data-bvsuch],button[data-bvreset],button[data-bvneu],button[data-bvup],[data-bvupzu],button[data-bvupgo],button[data-bvux],button[data-bvsort],button[data-bvmehr]'); if(!t) return;
   const d=t.dataset;
   const finde=id=>{ for(const x of bvListe().L) if(x.f.id===id) return x; return null; };
   if(d.bvauf){ e.stopPropagation(); BV.auf.has(d.bvauf)?BV.auf.delete(d.bvauf):BV.auf.add(d.bvauf); render(); return; }
@@ -2021,6 +2034,7 @@ document.addEventListener('click',async e=>{ if(tab!=='belege') return;
     await bvEntSetzen(x.f,an); toast(an?'Beleg im OS entfernt. Die Datei bleibt in OneDrive. Über „Entfernte“ kannst du ihn wiederherstellen.'+(BKM.has(x.f.id)?' Hinweis: Er ist noch für die Betriebskosten vorgemerkt.':''):'Beleg ist wieder im OS sichtbar.'); return; }
   if(d.bvign){ const x=finde(d.bvign); if(!x) return; const an=!x.i.ign; if(BV.zw===x.f.id) BV.zw='';
     await bvIgnSetzen(x.f,an); toast(an?'Beleg wird ignoriert'+(BV.ign?'.':' und ist ausgeblendet. Über „Ignorierte“ siehst du ihn wieder.'):'Beleg ist wieder offen.'); return; }
+  if(d.bvvx){ e.preventDefault(); if(!canWrite){ toast('Nur Lesezugriff.'); return; } await vwegSetzen(d.bvvx,d.bvvxit); toast('Vorschlag verworfen.'); return; }
   if(d.bvzw){ e.preventDefault(); BV.zw=d.bvzw; BV.zq=''; BV.zwNur=!!d.bvnur; BV.menu=''; render(); setTimeout(()=>{ const q=$('bv-zq'); if(q&&!BV.zwNur) q.focus(); },30); return; }
   if(d.bvzalle){ e.preventDefault(); BV.zwNur=false; const c=BV.zwCtx, el=$('bv-zerg'); if(c&&el) el.innerHTML=bvZwErg(c.f,c.i); return; }
   if(d.bvzzu){ BV.zw=''; BV.zq=''; render(); return; }
@@ -2251,8 +2265,8 @@ function kartenLayout(all,list,cnt,nav){ const it=U.dr?all.find(x=>x.id===U.sel)
   return h; }
 /* Detailfenster im Stil des Beleg-Dialogs von BuchhaltungsButler */
 function bbDialog(it,list){ const t=it.tx, bl=t.bl||[], pos=list.findIndex(x=>x.id===it.id), zd=U.zd!==false;
-  let h='<div class="kdrw-h bb-dh"><div><span class="bb-dt">'+(t.b<0&&BUCH_BELEGE?'Belege über ':'Zahlung über ')+'<b>'+eur(Math.abs(t.b))+'</b></span><span class="bb-dg">'+esc(t.n||'')+'</span><span class="bb-dg">'+esc(dmy(t.d))+'</span></div><button class="bb-x" data-kdrzu="1" title="Schließen">Schließen</button></div>';
-  h+='<div class="bb-band">'+(bl.length?bl.map((b,i)=>'<a href="#" data-bopen="'+i+'" class="bb-bel"><span class="bb-thumb"></span>'+esc(b.n)+'</a>').join(''):it.dauer?'<div class="bb-bel"><span class="bb-thumb"></span>Dauerbeleg: '+esc(it.dauer.n||'')+'</div>':t.ol?'<div class="bb-kein">Beleglos'+(t.olg?': '+esc(t.olg):'')+'</div>':BUCH_BELEGE?'<div class="bb-kein">kein Beleg</div>':'')
+  let h='<div class="kdrw-h bb-dh"><div><span class="bb-dt">'+(t.b<0&&belAn(it)?'Belege über ':'Zahlung über ')+'<b>'+eur(Math.abs(t.b))+'</b></span><span class="bb-dg">'+esc(t.n||'')+'</span><span class="bb-dg">'+esc(dmy(t.d))+'</span></div><button class="bb-x" data-kdrzu="1" title="Schließen">Schließen</button></div>';
+  h+='<div class="bb-band">'+(bl.length?bl.map((b,i)=>'<a href="#" data-bopen="'+i+'" class="bb-bel"><span class="bb-thumb"></span>'+esc(b.n)+'</a>').join(''):it.dauer?'<div class="bb-bel"><span class="bb-thumb"></span>Dauerbeleg: '+esc(it.dauer.n||'')+'</div>':t.ol?'<div class="bb-kein">Beleglos'+(t.olg?': '+esc(t.olg):'')+'</div>':belAn(it)?'<div class="bb-kein">kein Beleg</div>':'')
     +'<div class="bb-bk">'+esc(kontoName(it.kkey))+' · '+esc(zuordText(it))+'</div></div>';
   h+='<div class="bb-zdw"><button class="bb-zd" data-kzd="1">'+(zd?'Zahlungsdetails ausblenden':'Zahlungsdetails anzeigen')+'</button></div>';
   if(zd) h+='<div class="bb-zbox">'+renderDetail(it,list,{ohneKopf:true,ohneBelege:true})+'</div>';
@@ -2262,7 +2276,7 @@ function bbDialog(it,list){ const t=it.tx, bl=t.bl||[], pos=list.findIndex(x=>x.
 function kartenListe(list,sum){ const W=[...KS.wahl].filter(id=>list.some(x=>x.id===id));
   let h='<div class="lsum">'+list.length+' Buchungen · Summe <b class="'+cls(sum)+'">'+eur(sum)+'</b>';
   if(canWrite) h+='<span class="kbulk"><label><input type="checkbox" data-kalle="1"'+(W.length&&W.length===Math.min(list.length,KS.mehr)?' checked':'')+'> alle auf dieser Seite</label>'+(W.length?' <button class="primary small" data-kbest="1">'+W.length+' bestätigen</button>':'')+'</span>';
-  if(canWrite&&W.length) h+='<div class="kbulk2" style="flex-basis:100%;display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:8px"><span class="sub">Für die '+W.length+' markierten Buchungen:</span><span style="min-width:320px;flex:0 1 520px">'+kontoSelect('kb-konto',{kat:''},false)+'</span><button class="primary small" data-kbkonto="1">Konto zuordnen und bestätigen</button></div>';
+  if(canWrite&&W.length) h+='<div class="kbulk2" style="flex-basis:100%;display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:8px"><span class="sub">Für die '+W.length+' markierten Buchungen:</span><span style="min-width:320px;flex:0 1 520px">'+kontoSelect('kb-konto',{kat:''},false,W.length>0&&W.every(id=>istNeu(kItem(id))))+'</span><button class="primary small" data-kbkonto="1">Konto zuordnen und bestätigen</button></div>';
   h+='</div><div class="list klist" id="list">';
   if(!list.length) h+='<div class="empty">Keine Buchungen für diesen Filter.</div>';
   { let lm=''; const datum=!U.sort||U.sort==='d'||U.sort==='da';
@@ -2282,24 +2296,24 @@ function karte(it,n){ const t=it.tx, c=it.c, ok=bestaetigt(it), ro=!canWrite||it
   if(bl.length) h+=bl.map(b=>'<div class="kz-bf"><a href="#" data-kdet="'+esc(it.id)+'" title="'+esc(b.n)+'">'+esc(b.n)+'</a></div>').join('');
   else if(it.dauer) h+='<div class="sub">Dauerbeleg: '+esc(it.dauer.n||'')+'</div>';
   else if(t.ol) h+='<div class="bb-ol">Beleglos<small>'+(t.olg?esc(t.olg):'(Markierung)')+'</small></div>';
-  else if(!BUCH_BELEGE&&!(c.kat==='miete'&&t.b>0&&!it.split)) h+='';
+  else if(!belAn(it)&&!(c.kat==='miete'&&t.b>0&&!it.split)) h+='';
   else if(t.b<0&&!it.split&&!BELEG_KATS.includes(c.kat)&&c.kat) h+='<div class="sub">Kein Beleg nötig ('+esc(KATN[c.kat]||c.kat)+')</div>';
   else if(t.b<0){ h+=ro?'<div class="sub">Kein Beleg</div>':'<div class="kz-zwr"><a href="#" class="bb-zw" data-kdet="'+esc(it.id)+'">Belege zuweisen</a><button class="kz-olb" data-kol="'+esc(it.id)+'" title="Als beleglos markieren – den Grund kannst du in den Details eintragen">Beleglos</button></div>';
-    const v=kVorschlag(it); if(v&&!ro) h+='<div class="kz-vb">Vorschlag: <span title="'+esc(v.ort||'')+'">'+esc(v.name)+'</span> <button class="ghost small" data-kspzu="'+esc(v.id)+'" data-kspit="'+esc(it.id)+'">Zuordnen</button></div>'; }
+    const v=kVorschlag(it); if(v&&!ro) h+='<div class="kz-vb">Vorschlag: <span title="'+esc(v.ort||'')+'">'+esc(v.name)+'</span> <button class="ghost small" data-kspzu="'+esc(v.id)+'" data-kspit="'+esc(it.id)+'">Zuordnen</button><button class="bv-vx" data-kspweg="'+esc(v.id)+'" data-kspit="'+esc(it.id)+'" title="Vorschlag verwerfen">x</button></div>'; }
   else if(c.kat==='miete'&&t.b>0&&!it.split) h+=zvZeile(it)+kMieter(it,ro);
   else h+='<div class="sub">Einnahme – kein Beleg nötig</div>';
   h+='</div>';
-  if(!BUCH_BELEGE&&h.endsWith('<div class="kz-bel"></div>')) h=h.slice(0,-'<div class="kz-bel"></div>'.length);
+  if(!belAn(it)&&h.endsWith('<div class="kz-bel"></div>')) h=h.slice(0,-'<div class="kz-bel"></div>'.length);
   if(it.split) h+='<div class="kz-f"><div class="sub">Aufgeteilt in '+it.parts.length+' Teile: '+esc(it.parts.map(p=>kontoLabel(p.c.kat,p.c.sub,p.c.ka)+(p.c.obj?' '+p.c.obj:'')).join(' · '))+'</div><a href="#" data-kdet="'+esc(it.id)+'">ändern</a></div>';
-  else h+='<div class="kz-f'+(ok?'':' vs')+'">'+kontoSelect('kk-'+n,c,ro)+(['intern','ignore','ruecklast'].includes(c.kat)?'<span></span>':objSel('ko-'+n,c.obj||'',c.kat,c.sub).replace('<select ','<select data-kid="'+esc(it.id)+'"'+(ro?' disabled':'')+' title="Objekt" '))+'</div>'
+  else h+='<div class="kz-f'+(ok?'':' vs')+'">'+kontoSelect('kk-'+n,c,ro,istNeu(it))+(['intern','ignore','ruecklast'].includes(c.kat)?'<span></span>':objSel('ko-'+n,c.obj||'',c.kat,c.sub).replace('<select ','<select data-kid="'+esc(it.id)+'"'+(ro?' disabled':'')+' title="Objekt" '))+'</div>'
     +(ok?'':'<div class="kz-src">'+(c.src==='manuell'?'Noch nicht bestätigt – erst mit dem Kreis rechts ist die Buchung erfasst':'Vorschlag: '+esc(c.src||'automatisch'))+'</div>')
     +(!it.split&&c.kat==='bk'&&c.obj?bkUmlage('ku-'+n,c,ro):'');
   h+='</div>';
   /* rechts: Details + Bestätigen */
   const men=KS.menu===it.id;
   h+='<div class="kz-m"><button class="bb-kebab" data-kmen="'+esc(it.id)+'" title="Aktionen"><i></i><i></i><i></i></button>'
-    +(men?'<div class="bb-menu"><button data-kdet="'+esc(it.id)+'">Teilbuchung hinzufügen</button>'+(BUCH_BELEGE?'<button data-kdet="'+esc(it.id)+'">Belege zuweisen</button>':'')
-      +(ro||!BUCH_BELEGE?'':(t.b<0?'<button data-kol="'+esc(it.id)+'">'+(t.ol?'Beleglos-Markierung entfernen':'Als beleglos markieren')+'</button>':''))
+    +(men?'<div class="bb-menu"><button data-kdet="'+esc(it.id)+'">Teilbuchung hinzufügen</button>'+(belAn(it)?'<button data-kdet="'+esc(it.id)+'">Belege zuweisen</button>':'')
+      +(ro||!belAn(it)?'':(t.b<0?'<button data-kol="'+esc(it.id)+'">'+(t.ol?'Beleglos-Markierung entfernen':'Als beleglos markieren')+'</button>':''))
       +'<button data-kdet="'+esc(it.id)+'">Regel anlegen</button><button data-kdet="'+esc(it.id)+'">Kommentieren</button><button class="bb-mt" data-kdet="'+esc(it.id)+'">Details öffnen</button></div>':'')+'</div>';
   h+='<div class="kz-r"><button class="kz-d" data-kdet="'+esc(it.id)+'" title="Details, Aufteilen, Regel">Details</button>'
     +'<button class="kz-ok'+(ok?' on':'')+'" data-kok="'+esc(it.id)+'"'+(ro||(ok&&(it.split||it.nh))?' disabled':'')+' title="'+(ok?'Bestätigt – zum Wieder-Öffnen klicken':it.open?'Ungebucht – erst Konto und Objekt wählen':'Buchung bestätigen')+'"></button></div>';
@@ -2364,7 +2378,7 @@ function kMieter(it,ro){ const t=it.tx; if(!MKload||!Object.keys(MK).length) ret
     h+='<div class="sub">'+(T.length?'Sollstellung: '+esc(T.join(', ')):'Sollstellung: älteste offene zuerst')+'</div>'; }
   if(!ro) h+='<div class="kz-acts"><a href="#" data-kdet="'+esc(it.id)+'">'+(op?'Zuordnung ändern':'Sollstellung zuordnen')+'</a></div>';
   return h; }
-function kVorschlag(it){ if(!BUCH_BELEGE) return null; try{ if(typeof spBereit!=='function'||!spBereit()||!SP.dateien) return null; const f=spTreffer(it,'')[0]; if(!f) return null; const s=spScore(f,it); return s>=100?{id:f.id,name:f.name,ort:f.ort}:null; }catch(e){ return null; } }
+function kVorschlag(it){ if(!belAn(it)) return null; try{ if(typeof spBereit!=='function'||!spBereit()||!SP.dateien) return null; const f=spTreffer(it,'').find(x=>!vwegHat(x.id,it.id)); if(!f) return null; const s=spScore(f,it); return s>=100?{id:f.id,name:f.name,ort:f.ort}:null; }catch(e){ return null; } }
 function kBestaetigen(it){ const c=it.c; return writeTx(it.doc,it.ix,{m:1,ok:1,k:c.kat||'',s:c.sub||'',ka:c.ka||'',o:c.obj||'',u:c.unit||''}); }
 const kItem=id=>items().find(x=>x.id===id);
 document.addEventListener('click',async e=>{ const t=e.target.closest('button,a,input[data-kw],input[data-kalle],.kdrw-bg'); if(!t) return; const d=t.dataset;
@@ -2392,6 +2406,7 @@ document.addEventListener('click',async e=>{ const t=e.target.closest('button,a,
     for(const it of L){ await setKonto(it,v,{ok:1}); n++; } KS.wahl.clear(); toast(n+' Buchung'+(n===1?'':'en')+' zugeordnet und bestätigt.'); render(); return; }
   if(d.kbest){ const L=[...KS.wahl].map(kItem).filter(x=>x&&!x.open&&!bestaetigt(x)&&!x.nh); let n=0; for(const it of L){ await kBestaetigen(it); HALT.delete(it.id); n++; } KS.wahl.clear(); toast(n+' Buchung'+(n===1?'':'en')+' bestätigt.'); render(); return; }
   if(d.kol){ e.preventDefault(); const it=kItem(d.kol); if(!it) return; if(it.tx.ol){ await writeTx(it.doc,it.ix,{ol:0,olg:''}); toast('Markierung beleglos entfernt.'); } else { await writeTx(it.doc,it.ix,{ol:1}); toast('Als beleglos markiert. Den Grund kannst du in den Details eintragen.'); } return; }
+  if(d.kspweg){ const it=kItem(d.kspit); if(!it) return; await vwegSetzen(d.kspweg,it.id); toast('Vorschlag verworfen.'); return; }
   if(d.kspzu){ const f=(SP.dateien||[]).find(x=>x.id===d.kspzu), it=kItem(d.kspit); if(!f||!it) return; await spZuordnen(f,it); toast('Beleg zugeordnet.'); render(); return; } });
 document.addEventListener('change',e=>{ const t=e.target; const m=t.id&&t.id.match(/^k([kou])-(\d+)$/); if(!m) return; const card=t.closest('.kz'); const it=card&&kItem(card.dataset.kid); if(!it) return; U.sel=it.id; HALT.add(it.id);
   if(m[1]==='k'){ setKonto(it,t.value,{ok:0}); return; }
@@ -2422,9 +2437,18 @@ tab='liste';
 /* Belegzuordnung bei den Zahlungen: aus, die Buchhaltung für den Steuerberater läuft über BuchhaltungsButler.
    Zuordnen geht weiter über die Belege (Zahlung zuweisen); vorhandene Zuordnungen werden bei der Zahlung nur angezeigt. */
 var BUCH_BELEGE=false;
+/* Ab November 2026: vereinfachter Kontenplan je Objekt (z. B. M8_Instandhaltung) und Belegzuordnung direkt an der Zahlung.
+   Zahlungseingänge (Mieten) bleiben wie bisher. */
+const NEU_AB='2026-11-01';
+const istNeu=x=>String((x&&x.tx?x.tx.d:x&&x.d)||'')>=NEU_AB;
+const belAn=it=>BUCH_BELEGE||istNeu(it);
+const NEUK=[['4260','Instandhaltung','inst','',''],['4265','Umbau/Sanierung','umbau','',''],['4230','Betriebskosten','bk','',''],['4259','Internet','bk','','internet'],['2100','Zinsen','darl','zins',''],['2110','Tilgung','darl','tilg',''],['8210','Erlöse','sonst_ein','',''],['4970','Bankgebühren','obj_sonst','bank','']];
+const neuWert=(x,kz)=>x[2]+'|'+x[3]+'|'+x[4]+'|'+kz;
+function neuKonto(c){ if(!c||!c.kat) return null; const ka=c.kat==='bk'?(c.ka==='internet'?'internet':''):''; return NEUK.find(x=>x[2]===c.kat&&x[3]===(c.sub||'')&&x[4]===ka)||null; }
+function neuLabel(x,kz){ const on=objNr(kz); return kz+'_'+x[1]+' · '+x[0]+(on||''); }
 const ST_KEY='bu_state';
 let U={status:'offen',konto:'',q:'',sel:'',m:'',sort:'d',kat:'',knZu:false,gZu:{},ansicht:'karten'}; try{ const s=JSON.parse(store(ST_KEY)||'null'); if(s) U=Object.assign(U,s,{q:''}); }catch(e){}
-if(!BUCH_BELEGE){ if(U.status==='beleg') U.status='ung'; U.bz=''; }
+if(!BUCH_BELEGE){ U.bz=''; }
 if(U.status==='offen'&&U.ansicht!=='detail') U.status='ung';
 const saveU=()=>store(ST_KEY,JSON.stringify({status:U.status,konto:U.konto,m:U.m,sort:U.sort,dir:U.dir||'',bz:U.bz||'',ansicht:U.ansicht}));
 let splitDraft=null, ruleDraft=null, sb=null, urlCache={};
@@ -2445,18 +2469,29 @@ const KONTEN=[
 const OBJNR_DEF={A14:'10',E4:'11',H3:'12',K28:'13',R6:'14',S16:'15',H44:'20',K6:'21',K7:'22',Kw30:'23',M8:'24',S58:'25',U6:'26'};
 let objNrMap={};
 const objNr=kz=>kz&&kz!=='__ges'?(objNrMap[kz]||OBJNR_DEF[kz]||''):'';
-const kval=(k,s,ka)=>[k||'',k==='verw'?(s||''):'',k==='bk'?(ka||''):''].join('|');
+const kval=(k,s,ka)=>[k||'',['verw','darl','obj_sonst'].includes(k)?(s||''):'',k==='bk'?(ka||''):''].join('|');
 /* Filter Buchungen: Kategorien und einzelne Konten (z. B. 4806 Software / IT / Lizenzen), durchsuchbar */
 function katFilt(){ const L=[['__offen','ohne Kategorie']].concat(KATS.filter(([k])=>k).map(([k,l])=>[k,'Kategorie: '+l]));
   const seen=new Set(); KONTEN.forEach(([g,l])=>l.forEach(x=>{ const v='k:'+kval(x[2],x[3],x[4]); if(!seen.has(v)){ seen.add(v); L.push([v,x[0]+' '+x[1]]); } }));
   return L; }
 const katFiltLabel=v=>{ if(!v) return ''; const f=katFilt().find(x=>x[0]===v); return f?f[1]:''; };
-const KMAP={}; KONTEN.forEach(([g,l])=>l.forEach(x=>{ KMAP[kval(x[2],x[3],x[4])]=x; }));
+const KMAP={}; KONTEN.forEach(([g,l])=>l.forEach(x=>{ KMAP[kval(x[2],x[3],x[4])]=x; })); NEUK.forEach(x=>{ const k=kval(x[2],x[3],x[4]); if(!KMAP[k]) KMAP[k]=x; });
 function kontoLabel(k,s,ka,obj){ if(!k) return 'nicht zugeordnet'; const x=KMAP[kval(k,s,ka)];
   if(!x){ if(k==='bk') return 'Betriebskosten – Kostenart fehlt'; if(k==='verw') return 'Verwaltung – Art fehlt'; return KATN[k]||k; }
   if(obj===undefined) return x[0]+' '+x[1];
   const on=objNr(obj); return (x[0]+(on||'00'))+' '+(on?obj+' ':'')+x[1]; }
-function kontoSelect(id,c,ro){ const cur=kval(c.kat,c.sub,c.ka), bx=c.kat==='bk'&&c.obj&&c.ka?bkkFuer(c,c.kv):null, ix=c.kat==='inst'&&objNr(c.obj)?c.obj:'', curO=bx?'bk||'+bx.ka+'|'+bx.obj+'|'+bx.id:ix?'inst|||'+ix:'';
+function kontoSelectNeu(id,c,ro){ const x=neuKonto(c), kz=c.obj&&c.obj!=='__ges'?c.obj:'';
+  const curO=x&&kz?neuWert(x,kz):'', cur=kval(c.kat,c.sub,c.ka);
+  const lab=curO?neuLabel(x,kz):c.kat?(KMAP[cur]?KMAP[cur][0]+' '+KMAP[cur][1]:kontoLabel(c.kat,c.sub,c.ka)):'';
+  let h='<div class="kcombo"><input type="text" class="kc-in" id="'+id+'-q" data-kc="'+id+'" value="'+esc(lab)+'" placeholder="Konto: Objekt oder Begriff, z. B. M8 Instandhaltung" autocomplete="off"'+(ro?' disabled':'')+'><div class="kc-list" hidden></div>';
+  h+='<select id="'+id+'" class="kc-sel" tabindex="-1" aria-hidden="true"'+(ro?' disabled':'')+'><option value="||"'+(c.kat?'':' selected')+'>– Konto wählen –</option>';
+  let treffer=!!curO;
+  const kzs=objekte.map(o=>o.kz).sort((a,b)=>a.localeCompare(b,'de',{numeric:true}));
+  h+='<optgroup label="Objektkonten">'+kzs.map(k=>NEUK.map(y=>{ const v=neuWert(y,k); return '<option value="'+esc(v)+'"'+(v===curO?' selected':'')+'>'+esc(neuLabel(y,k))+'</option>'; }).join('')).join('')+'</optgroup>';
+  for(const [g,l] of KONTEN){ if(!['Einnahmen','Verwaltung','Neutral'].includes(g)) continue; h+='<optgroup label="'+esc(g)+'">'+l.map(y=>{ const v=kval(y[2],y[3],y[4]); const sel=!treffer&&v===cur; if(sel) treffer=true; return '<option value="'+esc(v)+'"'+(sel?' selected':'')+'>'+esc(y[0]+' '+y[1])+'</option>'; }).join('')+'</optgroup>'; }
+  if(c.kat&&!treffer) h=h.replace('<option value="||" selected>','<option value="||">').replace('<optgroup label="Objektkonten">','<option value="'+esc(cur+'|'+(kz||''))+'" selected>'+esc(lab||kontoLabel(c.kat,c.sub,c.ka))+'</option><optgroup label="Objektkonten">');
+  return h+'</select></div>'; }
+function kontoSelect(id,c,ro,neu){ if(neu) return kontoSelectNeu(id,c,ro); const cur=kval(c.kat,c.sub,c.ka), bx=c.kat==='bk'&&c.obj&&c.ka?bkkFuer(c,c.kv):null, ix=c.kat==='inst'&&objNr(c.obj)?c.obj:'', curO=bx?'bk||'+bx.ka+'|'+bx.obj+'|'+bx.id:ix?'inst|||'+ix:'';
   const lab=bx?bkkNr(bx)+' '+bx.name:ix?kontoLabel('inst','','',ix):c.kat?(KMAP[cur]?KMAP[cur][0]+' '+KMAP[cur][1]:kontoLabel(c.kat,c.sub,c.ka)):'';
   let h='<div class="kcombo"><input type="text" class="kc-in" id="'+id+'-q" data-kc="'+id+'" value="'+esc(lab)+'" placeholder="Konto: Nummer oder Begriff" autocomplete="off"'+(ro?' disabled':'')+'><div class="kc-list" hidden></div>';
   h+='<select id="'+id+'" class="kc-sel" tabindex="-1" aria-hidden="true"'+(ro?' disabled':'')+'><option value="||"'+(c.kat?'':' selected')+'>– Konto wählen –</option>';
@@ -2474,7 +2509,7 @@ function setKonto(it,val,extra){ const [k,s,ka,o2,kv]=val.split('|'); const c=it
   if(o2&&o2!==obj){ obj=o2; unit=''; }
   if(k!=='miete'&&k!=='bk') unit=''; if(k==='verw'&&!objKz().has(obj)) obj=''; if(['intern','ignore','ruecklast',''].includes(k)) obj='';
   if(c.kat==='ruecklast'&&k!=='ruecklast') setTx(it.id,'k',k);
-  let ka2=ka||''; if(k==='bk'&&ka2==='internet'){ const w=INET_UML[obj]; if(w){ if(!unit) unit=inetUnit(obj,w); } else if(obj){ ka2='bk_nu'; toast('Internet wird bei '+obj+' nicht umgelegt – gebucht auf 4258 Betriebskosten nicht umlagefähig.'); } }
+  let ka2=ka||''; if(k==='bk'&&ka2==='internet'&&istNeu(it)){ const w=INET_UML[obj]; if(w&&!unit) unit=inetUnit(obj,w); } else if(k==='bk'&&ka2==='internet'){ const w=INET_UML[obj]; if(w){ if(!unit) unit=inetUnit(obj,w); } else if(obj){ ka2='bk_nu'; toast('Internet wird bei '+obj+' nicht umgelegt – gebucht auf 4258 Betriebskosten nicht umlagefähig.'); } }
   return writeTx(it.doc,it.ix,Object.assign({m:1,k,s:s||'',ka:ka2,o:obj,u:unit,kv:k==='bk'&&ka2===(ka||'')?(kv||''):''},extra||{ok:1})); }
 const BELEG_KATS=['bk','inst','umbau','obj_sonst','verw'];
 function umlageSubs(){ return new Set(SUBS_UM.map(x=>x[0])); }
@@ -2495,10 +2530,10 @@ function items(){
     if(!it){ const orig=(buch[r.doc].tx||[])[r.ix]||r.tx; it={id,doc:r.doc,ix:r.ix,tx:orig,k:r.k,kkey:r.kkey,m:r.m,parts:[],nh:!!r.nh,split:!!r.split}; map.set(id,it); }
     it.parts.push(r); }
   const out=[...map.values()];
-  for(const it of out){ it.parts=it.parts.map((p,pi)=>{ const sp=Array.isArray(it.tx.sp)&&it.tx.sp.length&&!p.nh?it.tx.sp[pi]:null; let ka=sp?(sp.ka||''):(it.tx.m?(it.tx.ka||''):ruleKa(p.c)), kg=false; if(!ka&&p.c.kat==='bk'&&!sp){ ka=guessKa(it.tx); kg=!!ka; } let unit=p.c.unit||''; if(!it.tx.m&&!sp&&p.c.kat==='bk'&&ka==='internet'){ const w=INET_UML[p.c.obj]; if(w){ if(!unit) unit=inetUnit(p.c.obj,w); } else { ka='bk_nu'; kg=false; } } return Object.assign({},p,{c:Object.assign({},p.c,{ka,kg,unit,kv:!sp&&it.tx.m?(it.tx.kv||''):''})}); });
-    it.c=it.parts[0].c; it.needKA=!it.parts.some(p=>isOpen(p.c))&&it.parts.some(p=>p.c.kat==='bk'&&(!p.c.ka||p.c.kg)); it.open=it.parts.some(p=>isOpen(p.c)); it.bel=(it.tx.bl||[]).length;
+  for(const it of out){ it.parts=it.parts.map((p,pi)=>{ const sp=Array.isArray(it.tx.sp)&&it.tx.sp.length&&!p.nh?it.tx.sp[pi]:null; const nz=istNeu(it); let ka=sp?(sp.ka||''):(it.tx.m?(it.tx.ka||''):ruleKa(p.c)), kg=false; if(nz&&ka!=='internet') ka=''; if(!nz&&!ka&&p.c.kat==='bk'&&!sp){ ka=guessKa(it.tx); kg=!!ka; } let unit=p.c.unit||''; if(!nz&&!it.tx.m&&!sp&&p.c.kat==='bk'&&ka==='internet'){ const w=INET_UML[p.c.obj]; if(w){ if(!unit) unit=inetUnit(p.c.obj,w); } else { ka='bk_nu'; kg=false; } } return Object.assign({},p,{c:Object.assign({},p.c,{ka,kg,unit,kv:!sp&&it.tx.m?(it.tx.kv||''):''})}); });
+    it.c=it.parts[0].c; it.needKA=!istNeu(it)&&!it.parts.some(p=>isOpen(p.c))&&it.parts.some(p=>p.c.kat==='bk'&&(!p.c.ka||p.c.kg)); it.open=it.parts.some(p=>isOpen(p.c)); it.bel=(it.tx.bl||[]).length;
     it.dauer=it.tx.b<0&&DAUER.length?dbFuer(it):null;
-    it.needBeleg=BUCH_BELEGE&&it.tx.b<0&&!it.open&&it.parts.some(p=>BELEG_KATS.includes(p.c.kat)&&!(p.c.kat==='verw'&&p.c.sub==='bank'))&&!it.bel&&!it.tx.ol&&!it.dauer; }
+    it.needBeleg=belAn(it)&&it.tx.b<0&&!it.open&&it.parts.some(p=>BELEG_KATS.includes(p.c.kat)&&!(p.c.kat==='verw'&&p.c.sub==='bank'))&&!it.bel&&!it.tx.ol&&!it.dauer; }
   return out.sort((a,b)=>a.tx.d<b.tx.d?1:a.tx.d>b.tx.d?-1:0);
 }
 var NUR=''; /* aus der Belegverwaltung: nur diese eine Zahlung zeigen */
@@ -2563,7 +2598,7 @@ function renderListe(){
 function midHtml(all,list,cnt){
   /* Mitte: Liste */
   const sum=list.reduce((a,it)=>a+it.tx.b,0);
-  let mid='<div class="tbar"><div class="seg">'+[['offen','Offen'],['best','Zu bestätigen'],['ka','Kostenart prüfen'],['beleg','Beleg fehlt'],['zug','Zugeordnet'],['alle','Alle']].filter(([k])=>BUCH_BELEGE||k!=='beleg').map(([k,l])=>'<button data-st="'+k+'" class="'+(U.status===k?'on':'')+'">'+l+' <span>'+cnt(k)+'</span></button>').join('')+'</div>'
+  let mid='<div class="tbar"><div class="seg">'+[['offen','Offen'],['best','Zu bestätigen'],['ka','Kostenart prüfen'],['beleg','Beleg fehlt'],['zug','Zugeordnet'],['alle','Alle']].map(([k,l])=>'<button data-st="'+k+'" class="'+(U.status===k?'on':'')+'">'+l+' <span>'+cnt(k)+'</span></button>').join('')+'</div>'
     +'<select id="u-m" aria-label="Monat"><option value="">ganzes Jahr</option>'+MON.map((x,i)=>'<option value="'+i+'"'+(U.m!==''&&Number(U.m)===i?' selected':'')+'>'+x+'</option>').join('')+'</select>'
     +'<input type="text" id="u-kat" list="u-kat-l" aria-label="Kategorie oder Konto" placeholder="alle Kategorien / Konten – suchen" value="'+esc(katFiltLabel(U.kat))+'" autocomplete="off" style="width:280px"><datalist id="u-kat-l">'+katFilt().map(([v,l])=>'<option value="'+esc(l)+'"></option>').join('')+'</datalist>'
     +'<select id="u-sort" aria-label="Sortierung">'+[['d','Datum: neueste zuerst'],['da','Datum: älteste zuerst'],['n','Empfänger A–Z'],['nh','Empfänger: häufigste zuerst'],['bh','Betrag: höchster zuerst'],['bn','Betrag: niedrigster zuerst']].map(([k,l])=>'<option value="'+k+'"'+((U.sort||'d')===k?' selected':'')+'>'+l+'</option>').join('')+'</select>'
@@ -2584,7 +2619,7 @@ function midHtml(all,list,cnt){
   mid+='</div>';
   return mid; }
 /* Leiste wie BuchhaltungsButler: Ansicht, Konto, Sortierung, Fehlender Beleg, Ungebucht, Filter */
-const BB_ST=[['alle','alle'],['ung','ungebucht (offen und zu bestätigen)'],['offen','offen (ohne Vorschlag)'],['best','zu bestätigen'],['ka','Kostenart prüfen'],['beleg','Beleg fehlt'],['zug','zugeordnet']].filter(([k])=>BUCH_BELEGE||k!=='beleg');
+const BB_ST=[['alle','alle'],['ung','ungebucht (offen und zu bestätigen)'],['offen','offen (ohne Vorschlag)'],['best','zu bestätigen'],['ka','Kostenart prüfen'],['beleg','Beleg fehlt'],['zug','zugeordnet']];
 const BB_SORT=[['d','Datum absteigend'],['da','Datum aufsteigend'],['n','Gegenpartei aufsteigend'],['nh','Gegenpartei häufigste'],['bh','Betrag absteigend'],['bn','Betrag aufsteigend']];
 function bbKonten(){ const S=new Set(items().map(it=>it.kkey)); return [...S].map(k=>[k,kontoName(k)]).sort((a,b)=>a[1].localeCompare(b[1],'de',{numeric:true})); }
 function bbLeiste(all){ const KL=bbKonten();
@@ -2592,7 +2627,7 @@ function bbLeiste(all){ const KL=bbKonten();
     +'<div class="bb-f">Konto: <input id="u-konto" list="u-konto-l" value="'+esc(U.konto?kontoName(U.konto):'Alle Konten')+'" autocomplete="off"><datalist id="u-konto-l"><option value="Alle Konten"></option>'+KL.map(([k,n])=>'<option value="'+esc(n)+'"></option>').join('')+'</datalist></div>'
     +'<div class="bb-f">Sortierung: <select id="u-sort">'+BB_SORT.map(([k,l])=>'<option value="'+k+'"'+((U.sort||'d')===k?' selected':'')+'>'+l+'</option>').join('')+'</select></div>'
     +'<input type="search" id="u-q" class="bb-q" placeholder="Volltextsuche" value="'+esc(U.q)+'" autocomplete="off">'
-    +'<div class="bb-re">'+(BUCH_BELEGE?'<label><input type="checkbox" id="u-fb"'+(U.status==='beleg'?' checked':'')+'> Fehlender Beleg</label>':'')+'<label><input type="checkbox" id="u-ug"'+(U.status==='ung'?' checked':'')+'> Ungebucht</label>'
+    +'<div class="bb-re">'+(true?'<label><input type="checkbox" id="u-fb"'+(U.status==='beleg'?' checked':'')+'> Fehlender Beleg</label>':'')+'<label><input type="checkbox" id="u-ug"'+(U.status==='ung'?' checked':'')+'> Ungebucht</label>'
     +'<button class="bb-lnk'+(U.fp||bbAktiv()?' on':'')+'" data-bbf="1">Filter auswählen</button><button class="bb-lnk" data-bbreset="1" title="Alle Filter zurücksetzen">Zurücksetzen</button><button class="bb-lnk" data-nhsync="1" title="Zahlungen jetzt abrufen">Aktualisieren</button></div>';
   if(U.fp) h+='<div class="bb-pan">'
     +'<div class="bb-pr"><label>Zeitraum</label><select id="u-m"><option value="">Gesamter Zeitraum '+year+'</option>'+MON.map((x,i)=>'<option value="'+i+'"'+(U.m!==''&&Number(U.m)===i?' selected':'')+'>'+x+' '+year+'</option>').join('')+'</select></div>'
@@ -2626,9 +2661,10 @@ function renderDetail(it,list,o){
   h+='<div class="card"><div class="lab">Zuordnung '+(it.open?'<span class="pill mid">offen</span>':'<span class="pill ok">zugeordnet</span>')+' <span class="pill src" title="Woher kommt die Zuordnung?">'+esc(String(it.split?'aufgeteilt':c.src||'').slice(0,40))+'</span></div>';
   if(it.nh) h+='<div class="sub">Diese Mietzahlung ist in Nahaus abgeglichen – die Zuordnung kommt von dort.</div>';
   if(!it.split){
-    h+='<div class="frm"><label>Konto'+kontoSelect('z-kto',c,ro)+'</label>';
-    if(c.kat&&KMAP[kval(c.kat,c.sub,c.ka)]) h+='<div class="knr">Kontonummer <b>'+esc(kontoLabel(c.kat,c.sub,c.ka,c.obj||''))+'</b>'+(c.obj&&c.obj!=='__ges'&&!objNr(c.obj)?' <span class="pill mid">Objektnummer fehlt</span>':'')+'</div>';
-    if(c.kat==='bk'&&c.kg) h+='<div class="sub" style="color:var(--warn)">Kostenart aus dem Text erkannt – bitte prüfen und mit „Erledigt“ bestätigen.</div>'; else if(c.kat==='bk'&&!c.ka) h+='<div class="sub" style="color:var(--warn)">Bitte die Kostenart wählen – sie wird für die Betriebskostenabrechnung gebraucht.</div>';
+    h+='<div class="frm"><label>Konto'+kontoSelect('z-kto',c,ro,istNeu(it))+'</label>';
+    if(istNeu(it)&&neuKonto(c)&&c.obj&&c.obj!=='__ges') h+='<div class="knr">Konto <b>'+esc(neuLabel(neuKonto(c),c.obj))+'</b></div>';
+    else if(c.kat&&KMAP[kval(c.kat,c.sub,c.ka)]) h+='<div class="knr">Kontonummer <b>'+esc(kontoLabel(c.kat,c.sub,c.ka,c.obj||''))+'</b>'+(c.obj&&c.obj!=='__ges'&&!objNr(c.obj)?' <span class="pill mid">Objektnummer fehlt</span>':'')+'</div>';
+    if(istNeu(it)){} else if(c.kat==='bk'&&c.kg) h+='<div class="sub" style="color:var(--warn)">Kostenart aus dem Text erkannt – bitte prüfen und mit „Erledigt“ bestätigen.</div>'; else if(c.kat==='bk'&&!c.ka) h+='<div class="sub" style="color:var(--warn)">Bitte die Kostenart wählen – sie wird für die Betriebskostenabrechnung gebraucht.</div>';
     if(c.kat==='verw'&&umlageSubs().has(c.sub)) h+='<div class="sub">Wird gleichmäßig auf alle Einheiten umgelegt, wenn kein Objekt gewählt ist.</div>';
     if(c.kat&&!['intern','ignore','ruecklast'].includes(c.kat)) h+='<label>Objekt'+objSel('z-o',c.obj,c.kat,c.sub).replace('<select','<select'+(ro?' disabled':''))+'</label>';
     if(c.kat==='miete'&&c.obj) h+='<label>Einheit / Mieter'+unitSel('z-u',c.obj,c.unit).replace('<select','<select'+(ro?' disabled':''))+'</label>';
@@ -2651,7 +2687,7 @@ function renderDetail(it,list,o){
 function renderSplit(it){ const D=splitDraft; const rest=r2(it.tx.b-D.parts.reduce((a,p)=>a+spWert(p,it.tx.b),0));
   let h='<div class="spl"><div class="lab">Aufteilen auf mehrere Objekte / Kategorien</div>';
   D.parts.forEach((p,i)=>{ h+='<div class="sprow"><input type="text" inputmode="decimal" id="sp-b-'+i+'" class="num" value="'+esc(p.b)+'" placeholder="Betrag">'
-    +kontoSelect('sp-k-'+i,{kat:p.k,sub:p.s,ka:p.ka},false)
+    +kontoSelect('sp-k-'+i,{kat:p.k,sub:p.s,ka:p.ka,obj:p.o},false,istNeu(it))
     +objSel('sp-o-'+i,p.o,p.k,p.s)+(p.k==='miete'&&p.o?unitSel('sp-u-'+i,p.o,p.u):'')
     +'<input type="text" id="sp-t-'+i+'" value="'+esc(p.t||'')+'" placeholder="Text (optional)"><button class="ghost small" data-spdel="'+i+'">✕</button></div>'; });
   h+='<div class="acts"><button class="small" data-spadd="1">+ Zeile</button><span class="sub">Rest: <b id="sp-rest" class="'+(Math.abs(rest)<0.005?'pos':'neg')+'">'+eur(rest)+'</b></span></div>';
@@ -2692,6 +2728,12 @@ function renderKontenplan(){
   h+='</tbody></table></div>';
   /* Objektnummern */
   h+='<div class="tablewrap"><table><thead><tr><th>Objekt</th><th>Ges.</th><th>Objektnummer</th></tr></thead><tbody>'+objekte.map(o=>'<tr><td><b>'+esc(o.kz)+'</b> <span class="sub">'+esc(String(o.name||'').split(',')[0])+'</span></td><td>'+esc(o.ges||'')+'</td><td><input type="text" class="num" style="width:60px" maxlength="2" id="on-'+esc(o.kz)+'" data-onr="'+esc(o.kz)+'" value="'+esc(objNr(o.kz))+'"'+(canWrite?'':' disabled')+'></td></tr>').join('')+'</tbody></table><div class="sub" style="padding:8px">EE 10–19 · WT 20–29 · KiBo 30–39 · ohne Objekt = 00</div></div></div>';
+  /* Objektkonten ab November 2026 */
+  { const S={}; for(const it of items()){ if(!istNeu(it)) continue; for(const p of it.parts){ const x=neuKonto(p.c); if(!x||!p.c.obj||p.c.obj==='__ges') continue; const v=neuWert(x,p.c.obj); const o=S[v]=S[v]||{n:0,b:0}; o.n++; o.b+=p.tx.b; } }
+    const L=objekte.filter(o=>!kpObj||o.kz===kpObj).map(o=>o.kz).sort((a,b)=>a.localeCompare(b,'de',{numeric:true}));
+    h+='<div class="note" style="margin-top:16px"><b>Objektkonten ab November 2026</b> – je Objekt acht Konten, z. B. „M8_Instandhaltung“. Die Kontonummer ist die Kontoart plus Objektnummer. Zahlungseingänge (Mieten) werden weiter wie bisher gebucht. Wird ein Beleg aus 04 Betriebskosten, 05 Instandhaltung oder 07 WEG mit einer Zahlung verknüpft, setzt das OS Objekt und Konto automatisch.</div>';
+    h+='<div class="tablewrap"><table><thead><tr><th>Konto-Nr.</th><th>Konto</th><th class="n">Buchungen</th><th class="n">Summe '+year+'</th></tr></thead><tbody>'
+      +L.map(kz=>NEUK.map(x=>{ const o=S[neuWert(x,kz)]; return '<tr><td>'+esc(x[0]+(objNr(kz)||''))+'</td><td>'+esc(kz+'_'+x[1])+'</td><td class="n">'+(o?o.n:'<span class="mut">–</span>')+'</td><td class="n '+(o?cls(o.b):'')+'">'+(o?eur(o.b):'')+'</td></tr>'; }).join('')).join('')+'</tbody></table></div>'; }
   /* Instandhaltungskonten je Objekt */
   { const S={}; for(const it of items()) for(const p of it.parts){ if(p.c.kat!=='inst'||!p.c.obj) continue; const o=S[p.c.obj]=S[p.c.obj]||{n:0,b:0}; o.n++; o.b+=p.tx.b; }
     const L=objekte.filter(o=>objNr(o.kz)&&(!kpObj||o.kz===kpObj)).map(o=>o.kz).sort((a,b)=>a.localeCompare(b,'de',{numeric:true}));
@@ -2872,6 +2914,7 @@ render();
   db.doc('stamm/kreditoren').onSnapshot(s=>{ KRED=(s.exists?clone(s.data()).map:null)||{}; },()=>{});
   db.doc('stamm/belegqr').onSnapshot(s=>{ QRM=(s.exists?clone(s.data()).map:null)||{}; softRender(); },()=>{});
   db.doc('stamm/belegbezahlt').onSnapshot(s=>{ const L=(s.exists?clone(s.data()).liste:null)||[]; MANB=new Map(L.map(x=>[x.od,x])); softRender(); },()=>{});
+  db.doc('stamm/belegvorschlagweg').onSnapshot(s=>{ const L=(s.exists?clone(s.data()).liste:null)||[]; VWEG=new Set(L.map(x=>x.od+'#'+x.it)); softRender(); },()=>{});
   db.doc('stamm/belegbk').onSnapshot(s=>{ const L=(s.exists?clone(s.data()).liste:null)||[]; BKM=new Map(L.map(x=>[x.od,x])); softRender(); },()=>{});
   db.doc('stamm/bbzuordnung').onSnapshot(s=>{ BB.map=(s.exists?clone(s.data()).map:null)||{}; BB.erg=null; softRender(); },()=>{});
   db.doc('stamm/belegentfernt').onSnapshot(s=>{ const L=(s.exists?clone(s.data()).liste:null)||[]; ENT=new Map(L.map(x=>[x.od,x])); softRender(); },()=>{});
