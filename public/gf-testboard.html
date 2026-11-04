@@ -159,7 +159,8 @@ h1{font-size:21px;font-weight:800}
   </div>
   <div class="addbar"><input id="newT" placeholder="Neue Aufgabe …" onkeydown="if(event.key==='Enter')addTask()">
     <input id="newFaellig" type="date" title="Fällig am (optional)" style="padding:7px 10px;border:1px solid var(--line);border-radius:8px;font:inherit">
-    <select id="newArt" title="Kategorie"><option value="aufgabe">📌 Aufgabe</option><option value="ankauf">🏷️ Ankauf</option><option value="immoentwicklung">🏗️ Immobilienentwicklung</option><option value="ticket">🎫 Ticket</option></select>
+    <select id="newArt" title="Kategorie"><option value="aufgabe">📌 Aufgabe</option><option value="ankauf">🏷️ Ankauf</option><option value="immoentwicklung">🏗️ Immobilienentwicklung</option><option value="routine">🔄 Routine</option><option value="ticket">🎫 Ticket</option></select>
+    <select id="newWdh" title="Routine / Wiederholung"><option value="">↻ einmalig</option><option value="taeglich">↻ täglich</option><option value="werktags">↻ Mo–Fr</option><option value="woechentlich">↻ wöchentlich</option><option value="zweiwoechentlich">↻ 14-tägig</option><option value="monatlich">↻ monatlich</option></select>
     <button class="btn pri" onclick="addTask()">+ anlegen</button></div>
   <div id="view"></div>
   <div class="foot" id="foot"></div>
@@ -176,6 +177,7 @@ h1{font-size:21px;font-weight:800}
       <div class="f"><label>Verantwortlich</label><input id="d_verantwortlich" placeholder="—"></div>
       <div class="f"><label>Fällig am</label><input id="d_faellig" type="date"></div>
       <div class="f"><label>🔔 Wiedervorlage am</label><input id="d_wiedervorlage" type="date"></div>
+      <div class="f"><label>↻ Routine / Wiederholung</label><select id="d_wiederholung"><option value="">— einmalig</option><option value="taeglich">täglich</option><option value="werktags">werktäglich (Mo–Fr)</option><option value="woechentlich">wöchentlich</option><option value="zweiwoechentlich">14-tägig</option><option value="monatlich">monatlich</option></select></div>
       <div class="f"><label>Kontakt</label><select id="d_kont"></select></div>
       <div class="f"><label>Objekt</label><select id="d_obj"></select></div>
       <div class="f wide"><label>Asana-Link</label><input id="d_asana_url" placeholder="https://app.asana.com/…"></div>
@@ -403,11 +405,31 @@ async function calAdd(iso){
 function calMode(m){CALMODE=m;renderCalendar();}
 function calNav(dir){if(CALMODE==='woche'){CALM.setDate(CALM.getDate()+dir*7);CALM=new Date(CALM);}else{CALM=new Date(CALM.getFullYear(),CALM.getMonth()+dir,1);}renderCalendar();}
 function calToday(){CALM=new Date(today);renderCalendar();}
-async function moveTask(id,status){const t=TASKS.find(x=>x.id===id);if(!t)return;t.status=status;await sb.from('os_tasks').update({status,updated_at:new Date().toISOString()}).eq('id',id);render();toast('Status aktualisiert ✓');}
+async function moveTask(id,status){const t=TASKS.find(x=>x.id===id);if(!t)return;const was=t.status;t.status=status;await sb.from('os_tasks').update({status,updated_at:new Date().toISOString()}).eq('id',id);if(status==='erledigt'&&was!=='erledigt')await recurTask(t);render();toast('Status aktualisiert ✓');}
+function nextRecurDate(z){const d=new Date(today+'T00:00:00');
+  if(z==='taeglich')d.setDate(d.getDate()+1);
+  else if(z==='werktags'){do{d.setDate(d.getDate()+1);}while([0,6].indexOf(d.getDay())>=0);}
+  else if(z==='woechentlich')d.setDate(d.getDate()+7);
+  else if(z==='zweiwoechentlich')d.setDate(d.getDate()+14);
+  else if(z==='monatlich')d.setMonth(d.getMonth()+1);
+  else return null;
+  return isoLokal(d);}
+async function recurTask(t){
+  if(!t||!t.wiederholung)return;
+  const nd=nextRecurDate(t.wiederholung);if(!nd)return;
+  const pos=(TASKS.reduce((m,x)=>Math.max(m,x.pos||0),0))+1;
+  const rec={titel:t.titel,art:t.art||'aufgabe',status:'todo',verantwortlich:t.verantwortlich||null,quelle:t.quelle||'os',quelle_bereich:t.quelle_bereich||null,prio:t.prio||null,beschreibung:t.beschreibung||null,projekt:t.projekt||null,kontakt_id:t.kontakt_id||null,kontakt_label:t.kontakt_label||null,object_id:t.object_id||null,object_label:t.object_label||null,wiederholung:t.wiederholung,faellig:nd,pos};
+  if(Array.isArray(t.tags))rec.tags=t.tags;
+  if(Array.isArray(t.beteiligte))rec.beteiligte=t.beteiligte;
+  if(Array.isArray(t.massnahme))rec.massnahme=t.massnahme;
+  const {data,error}=await sb.from('os_tasks').insert(rec).select().maybeSingle();
+  if(error){toast('Routine: '+error.message);return;}
+  if(data){TASKS.push(data);toast('↻ Routine neu für '+nd.split('-').reverse().join('.'));}
+}
 let DRAG=null;
 function drag(e,id){DRAG=id;e.dataTransfer.effectAllowed='move';}
 async function drop(e,status,el){e.preventDefault();el.classList.remove('dragover');if(!DRAG)return;
-  const t=TASKS.find(x=>x.id===DRAG);if(t&&t.status!==status){t.status=status;render();await sb.from('os_tasks').update({status,updated_at:new Date().toISOString()}).eq('id',DRAG);toast('Verschoben ✓');}
+  const t=TASKS.find(x=>x.id===DRAG);if(t&&t.status!==status){const was=t.status;t.status=status;render();await sb.from('os_tasks').update({status,updated_at:new Date().toISOString()}).eq('id',DRAG);if(status==='erledigt'&&was!=='erledigt')await recurTask(t);toast('Verschoben ✓');}
   DRAG=null;}
 async function calDrop(e,iso,el){e.preventDefault();if(el)el.classList.remove('calover');if(!DRAG)return;
   const id=DRAG;DRAG=null;const t=TASKS.find(x=>x.id===id);if(!t||t.faellig===iso)return;
@@ -451,7 +473,7 @@ async function openDetail(id){
   if(alk){if(t.akquise_id){alk.style.display='';alk.innerHTML=`<a href="akquise.html?lead=${encodeURIComponent(t.akquise_id)}" target="_blank" rel="noopener" style="color:var(--accent);font-weight:600;text-decoration:none">🏠 Zum Lead im Akquise-Board ↗</a>`;}else{alk.style.display='none';alk.innerHTML='';}}
   renderGcal();
   setVal('d_verantwortlich',t.verantwortlich||'');setVal('d_faellig',t.faellig||'');
-  setVal('d_wiedervorlage',t.wiedervorlage||'');setVal('d_asana_url',t.asana_url||'');setVal('d_claude_url',t.claude_url||'');setVal('d_beschreibung',t.beschreibung||'');
+  setVal('d_wiedervorlage',t.wiedervorlage||'');setVal('d_wiederholung',t.wiederholung||'');setVal('d_asana_url',t.asana_url||'');setVal('d_claude_url',t.claude_url||'');setVal('d_beschreibung',t.beschreibung||'');
   document.getElementById('d_status').innerHTML=COLS.map(([k,l])=>`<option value="${k}"${(t.status||'todo')===k?' selected':''}>${STLBL[k]}</option>`).join('');
   document.getElementById('d_kont').innerHTML=kontOptions(t.kontakt_label);
   document.getElementById('d_obj').innerHTML=objOptions(t.object_label);
@@ -552,7 +574,7 @@ function autoGrow(el){if(!el)return;el.style.height='auto';el.style.height=(el.s
 async function dAutoBeschreibung(v){if(!DTASK)return;const nv=(v&&v.trim())?v:null;if((DTASK.beschreibung||'')===(nv||''))return;DTASK.beschreibung=nv;const {error}=await sb.from('os_tasks').update({beschreibung:nv,updated_at:new Date().toISOString()}).eq('id',DTASK.id);if(error){toast('Beschreibung: '+error.message);return;}const t=TASKS.find(x=>x.id===DTASK.id);if(t)t.beschreibung=nv;toast('Beschreibung gespeichert ✓');}
 async function dAddComment(){const el=document.getElementById('d_comment');const text=(el.value||'').trim();if(!text)return;await logVer('💬 '+text);el.value='';}
 async function dSave(){
-  if(!DTASK)return;const id=DTASK.id;
+  if(!DTASK)return;const id=DTASK.id;const wasErl=DTASK.status==='erledigt';
   dAddTag(); /* noch nicht bestätigten Tag-Text übernehmen */
   const kv=document.getElementById('d_kont').value, ov=document.getElementById('d_obj').value;
   const [kid,klabel]=kv?kv.split('|'):[null,null];const [oid,olabel]=ov?ov.split('|'):[null,null];
@@ -564,6 +586,7 @@ async function dSave(){
     verantwortlich:document.getElementById('d_verantwortlich').value||null,
     faellig:document.getElementById('d_faellig').value||null,
     wiedervorlage:document.getElementById('d_wiedervorlage').value||null,
+    wiederholung:document.getElementById('d_wiederholung').value||null,
     kontakt_id:kid,kontakt_label:klabel,object_id:oid,object_label:olabel,
     asana_url:document.getElementById('d_asana_url').value||null,
     claude_url:document.getElementById('d_claude_url').value||null,
@@ -579,6 +602,7 @@ async function dSave(){
   if(error){toast('Fehler: '+error.message);return;}
   Object.assign(DTASK,patch);
   if(changes.length)await logVer('✏️ '+changes.join(' · '));
+  if(patch.status==='erledigt'&&!wasErl)await recurTask(DTASK);
   render();toast('Gespeichert ✓');
 }
 function dFollowup(){
