@@ -122,7 +122,13 @@ export async function POST(req) {
         const L = await kinder(pfad); if (!L) return
         await Promise.all(L.map(async x => {
           const r = rel ? rel + '/' + x.name : x.name
-          if (x.ordner) { if (tiefe > 1 && !/abrechnung|altablage/i.test(x.name)) await geh(pfad + '/' + x.name, r, tiefe - 1, info, filter) }
+          if (x.ordner) {
+            if (tiefe > 1 && !/altablage/i.test(x.name)) {
+              // In Abrechnungsordnern (z. B. BK-Abrechnung 2025) nur Rechnungen mit Betrag im Dateinamen, keine Abrechnungen/Bescheide
+              const f2 = /abrechnung/i.test(x.name) ? (f => (!filter || filter(f)) && /\d,\d{2}\s?€/.test(f.name)) : filter
+              await geh(pfad + '/' + x.name, r, tiefe - 1, info, f2)
+            }
+          }
           else if (!filter || filter(x)) dateien.push(Object.assign(x, info, { rel: r, pfad: pfad + '/' + x.name }))
         }))
       }
@@ -134,12 +140,17 @@ export async function POST(req) {
       for (const g of GRUPPEN) {
         const objs = ((await kinder(GEB + '/' + g)) || []).filter(o => o.ordner)
         for (const o of objs) {
-          const n = norm(o.name); const kz = [...wunsch].find(k => n === k); if (!kz) continue
+          const n = norm(o.name); let kz = [...wunsch].find(k => n === k); let verkauft = false
+          if (!kz) {
+            // Verkaufte Objekte (Ordner zz_Kürzel_verkauft …) nur auf Wunsch, z. B. für Belege
+            const m = b.verkauft ? o.name.match(/^zz_([^_]+)_verkauft/i) : null; if (!m) continue
+            kz = m[1]; verkauft = true
+          }
           const basis = GEB + '/' + g + '/' + o.name
           auftraege.push((async () => {
             const top = ((await kinder(basis)) || []).filter(x => x.ordner)
-            const t04 = top.find(x => x.name.startsWith('04 ')), t05 = top.find(x => x.name.startsWith('05 ')), t07 = top.find(x => x.name.startsWith('07 '))
-            const info = { bereich: 'obj', obj: o.name }
+            const t04 = top.find(x => x.name.startsWith('04 ')) || top.find(x => /^02 Betriebskosten/i.test(x.name)), t05 = top.find(x => x.name.startsWith('05 ')), t07 = top.find(x => x.name.startsWith('07 '))
+            const info = { bereich: 'obj', obj: verkauft ? kz : o.name, ges: g.replace(/^Gebäude /, ''), verkauft }
             const jobs = []
             if (t04) jobs.push(geh(basis + '/' + t04.name, t04.name, 2, info, imJahr))
             if (t07) jobs.push(geh(basis + '/' + t07.name, t07.name, 2, info, imJahr))
