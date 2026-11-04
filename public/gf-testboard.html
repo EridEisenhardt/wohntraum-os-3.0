@@ -143,6 +143,7 @@ h1{font-size:21px;font-weight:800}
       <button data-a="aufgabe" onclick="setArt('aufgabe')">📌 Aufgaben</button>
       <button data-a="ankauf" onclick="setArt('ankauf')">🏷️ Ankauf</button>
       <button data-a="immoentwicklung" onclick="setArt('immoentwicklung')">🏗️ Immobilienentwicklung</button>
+      <button data-a="routine" onclick="setArt('routine')">🔄 Routine</button>
       <button data-a="ticket" onclick="setArt('ticket')">🎫 Tickets</button>
       <button data-a="m:followup" onclick="setArt('m:followup')">🔁 Follow-ups</button>
       <button data-a="m:rueckruf" onclick="setArt('m:rueckruf')">📞 Rückrufe</button>
@@ -171,7 +172,7 @@ h1{font-size:21px;font-weight:800}
     <div class="fg">
       <div class="f wide"><label>Titel</label><input id="d_titel"></div>
       <div class="f wide" id="d_akqlink" style="display:none"></div>
-      <div class="f"><label>Kategorie</label><select id="d_art"><option value="aufgabe">📌 Aufgabe</option><option value="ankauf">🏷️ Ankauf</option><option value="immoentwicklung">🏗️ Immobilienentwicklung</option><option value="ticket">🎫 Ticket</option></select></div>
+      <div class="f"><label>Kategorie</label><select id="d_art"><option value="aufgabe">📌 Aufgabe</option><option value="ankauf">🏷️ Ankauf</option><option value="immoentwicklung">🏗️ Immobilienentwicklung</option><option value="routine">🔄 Routine</option><option value="ticket">🎫 Ticket</option></select></div>
       <div class="f"><label>Status</label><select id="d_status"></select></div>
       <div class="f"><label>Priorität</label><select id="d_prio"><option value="">—</option><option>P1</option><option>P2</option><option>P3</option></select></div>
       <div class="f"><label>Verantwortlich</label><input id="d_verantwortlich" placeholder="—"></div>
@@ -241,14 +242,14 @@ const isoLokal=d=>d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'
 const today=isoLokal(new Date());
 function toast(m){const t=document.getElementById('toast');t.textContent=m;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),1600);}
 const COLS=[['todo','📋 To Do'],['inarbeit','🔧 In Arbeit'],['warten','⏳ Wartet'],['wartenrueck','📨 Warten auf Rückmeldung'],['erledigt','✅ Erledigt']];
-const ARTLBL={aufgabe:'Aufgabe',ankauf:'Ankauf',immoentwicklung:'Immobilienentwicklung',ticket:'Ticket'};
-const ARTICON={aufgabe:'📌',ankauf:'🏷️',immoentwicklung:'🏗️',ticket:'🎫'};
+const ARTLBL={aufgabe:'Aufgabe',ankauf:'Ankauf',immoentwicklung:'Immobilienentwicklung',routine:'Routine',ticket:'Ticket'};
+const ARTICON={aufgabe:'📌',ankauf:'🏷️',immoentwicklung:'🏗️',routine:'🔄',ticket:'🎫'};
 const MASSLBL={followup:'Follow-up',rueckruf:'Rückruf',anruf:'Anruf',vortermin:'Vor-Ort-Termin',zuarbeit:'Zuarbeit fürs Team',jourfix:'Jour Fix'};
 const MASSICON={followup:'🔁',rueckruf:'📞',anruf:'☎️',vortermin:'📍',zuarbeit:'🤝',jourfix:'🧭'};
 const MASSORDER=['followup','rueckruf','anruf','vortermin','zuarbeit','jourfix'];
 let TASKS=[], KONT=[], OBJ=[];
 const TEAM=['Eric','Jürgen','Stephan','Ramona','Alexander Buchhaus','Extern'];
-let ART='alle', WVONLY=false, PERSON='', QUERY='', SUBS=[], VER=[], DTASK=null, ICH='', TAGS=[], BETEIL=[], SUBOPEN=new Set(), TAGVORRAT=[];
+let ART='alle', WVONLY=false, PERSON='', QUERY='', HIDEDONE=false, SUBS=[], VER=[], DTASK=null, ICH='', TAGS=[], BETEIL=[], SUBOPEN=new Set(), TAGVORRAT=[];
 function setPerson(v){PERSON=v;render();}
 function personMatch(t){if(!PERSON)return true;if(Array.isArray(t.beteiligte)&&t.beteiligte.includes(PERSON))return true;const v=(t.verantwortlich||'').trim();if(!v)return false;return v===PERSON||v.indexOf(PERSON)>=0||PERSON.indexOf(v.split(' ')[0])===0;}
 function initPersonSel(){const el=document.getElementById('personsel');if(el)el.innerHTML='<option value="">👥 Alle Personen</option>'+TEAM.map(p=>`<option value="${esc(p)}"${PERSON===p?' selected':''}>${esc(p)}</option>`).join('');}
@@ -276,10 +277,11 @@ function dAddTag(){const el=document.getElementById('d_tagnew');const v=(el.valu
   if(!TAGVORRAT.includes(v)){TAGVORRAT.push(v);TAGVORRAT.sort((a,b)=>a.localeCompare(b,'de'));try{sb.from('os_task_tag_vorlage').insert({name:v}).then(()=>{},()=>{});}catch(e){}}
   renderDTags();}
 function dDelTag(tg){TAGS=TAGS.filter(x=>x!==tg);renderDTags();}
-function artMatch(t){if(ART==='alle')return true;if(ART==='aufgabe'||ART==='ticket'||ART==='ankauf'||ART==='immoentwicklung')return (t.art||'aufgabe')===ART;if(ART.indexOf('m:')===0){const ms=Array.isArray(t.massnahme)?t.massnahme:(t.massnahme?[t.massnahme]:[]);return ms.indexOf(ART.slice(2))>=0;}return true;}
+function artMatch(t){if(ART==='alle')return true;if(ART==='aufgabe'||ART==='ticket'||ART==='ankauf'||ART==='immoentwicklung'||ART==='routine')return (t.art||'aufgabe')===ART;if(ART.indexOf('m:')===0){const ms=Array.isArray(t.massnahme)?t.massnahme:(t.massnahme?[t.massnahme]:[]);return ms.indexOf(ART.slice(2))>=0;}return true;}
 function textMatch(t){if(!QUERY)return true;const q=QUERY;return [t.titel,t.beschreibung,t.notiz,t.projekt,t.kontakt_label,t.object_label,t.verantwortlich,Array.isArray(t.tags)?t.tags.join(' '):'',Array.isArray(t.beteiligte)?t.beteiligte.join(' '):''].some(x=>(x||'').toLowerCase().includes(q));}
 function setQuery(v){QUERY=(v||'').trim().toLowerCase();render();}
-function vis(){return TASKS.filter(t=>artMatch(t)&&(!WVONLY||(t.wiedervorlage&&t.wiedervorlage<=today&&t.status!=='erledigt'))&&personMatch(t)&&textMatch(t));}
+function vis(){return TASKS.filter(t=>artMatch(t)&&(!WVONLY||(t.wiedervorlage&&t.wiedervorlage<=today&&t.status!=='erledigt'))&&personMatch(t)&&textMatch(t)&&(!HIDEDONE||t.status!=='erledigt'));}
+function toggleDone(){HIDEDONE=!HIDEDONE;const b=document.getElementById('doneBtn');if(b){b.classList.toggle('pri',HIDEDONE);b.textContent=HIDEDONE?'✅ Nur offene (aktiv)':'✅ Nur offene';}render();}
 function setArt(a){ART=a;document.querySelectorAll('#artseg button').forEach(b=>b.classList.toggle('on',b.dataset.a===a));render();}
 function toggleWV(){WVONLY=!WVONLY;document.getElementById('wvBtn').classList.toggle('pri',WVONLY);render();}
 async function load(){
@@ -454,10 +456,11 @@ async function calReorder(e,targetId,el){
 async function addTask(){const el=document.getElementById('newT');const titel=(el.value||'').trim();if(!titel)return;
   const art=document.getElementById('newArt').value||'aufgabe';
   const fEl=document.getElementById('newFaellig');const faellig=(fEl&&fEl.value)||null;
+  const wEl=document.getElementById('newWdh');const wiederholung=(wEl&&wEl.value)||null;
   const pos=(TASKS.reduce((m,t)=>Math.max(m,t.pos||0),0))+1;
-  const {data,error}=await sb.from('os_tasks').insert({titel,art,status:'todo',verantwortlich:'Eric Eisenhardt',quelle:'os',pos,faellig}).select().maybeSingle();
+  const {data,error}=await sb.from('os_tasks').insert({titel,art,status:'todo',verantwortlich:'Eric Eisenhardt',quelle:'os',pos,faellig,wiederholung}).select().maybeSingle();
   if(error){toast('Fehler: '+error.message);return;}
-  if(data)TASKS.push(data);el.value='';if(fEl)fEl.value='';render();toast('Angelegt ✓');}
+  if(data)TASKS.push(data);el.value='';if(fEl)fEl.value='';if(wEl)wEl.value='';render();toast('Angelegt ✓');}
 async function delTask(id){if(!confirm('Aufgabe entfernen?'))return;await sb.from('os_tasks').delete().eq('id',id);TASKS=TASKS.filter(t=>t.id!==id);render();}
 async function linkKont(id,val){const t=TASKS.find(x=>x.id===id);if(!t)return;const [kid,label]=val?val.split('|'):[null,null];
   t.kontakt_id=kid;t.kontakt_label=label;await sb.from('os_tasks').update({kontakt_id:kid,kontakt_label:label,updated_at:new Date().toISOString()}).eq('id',id);render();}
