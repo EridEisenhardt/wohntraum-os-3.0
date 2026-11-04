@@ -92,7 +92,13 @@ const norm=s=>String(s||'').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,''
 function toast(t,ms){const el=$('toast');el.textContent=t;el.classList.add('on');clearTimeout(toast._t);toast._t=setTimeout(()=>el.classList.remove('on'),ms||3500);}
 const tage=(a,b)=>Math.round((new Date(b+'T00:00:00Z')-new Date(a+'T00:00:00Z'))/864e5)+1;
 async function token(){const {data}=await sb.auth.getSession();return data&&data.session?data.session.access_token:'';}
-async function odApi(body){let r;try{r=await fetch('/api/onedrive',{method:'POST',headers:{'content-type':'application/json',authorization:'Bearer '+await token()},body:JSON.stringify(body)});}catch(e){throw new Error('OneDrive nicht erreichbar.');}
+/* Belege, die nur im OS liegen (id 'os:<Pfad im Bucket belege>') */
+async function odApi(body){const id=body&&body.id;if(id&&String(id).startsWith('os:')&&(body.aktion==='link'||body.aktion==='inhalt')){const p=String(id).slice(3),S=window.osSupabase||sb;
+  if(body.aktion==='link'){const {data,error}=await S.storage.from('belege').createSignedUrl(p,3600);if(error)throw new Error(error.message);return {download:data.signedUrl};}
+  const {data,error}=await S.storage.from('belege').download(p);if(error)throw new Error(error.message);const buf=new Uint8Array(await data.arrayBuffer());let t='';for(let i=0;i<buf.length;i+=0x8000)t+=String.fromCharCode.apply(null,buf.subarray(i,i+0x8000));
+  return {name:p.split('/').pop(),typ:data.type||'',daten:btoa(t)};}
+  return odApi0(body);}
+async function odApi0(body){let r;try{r=await fetch('/api/onedrive',{method:'POST',headers:{'content-type':'application/json',authorization:'Bearer '+await token()},body:JSON.stringify(body)});}catch(e){throw new Error('OneDrive nicht erreichbar.');}
   let j=null;try{j=await r.json();}catch(e){}if(!j)throw new Error('OneDrive nicht erreichbar ('+r.status+').');if(j.error)throw new Error(j.error);return j;}
 /* Hochgeladene Belege liegen in der Abrechnung (Speicher bk-belege), nicht in OneDrive. Belege aus OneDrive werden nur verknüpft. */
 const belegKlick=b=>b&&b.sb?'sbOeffnen(\''+esc(b.sb)+'\')':'odOeffnen(\''+esc(b&&b.od||'')+'\')';
