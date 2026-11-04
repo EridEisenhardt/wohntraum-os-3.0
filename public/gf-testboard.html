@@ -122,6 +122,9 @@ h1{font-size:21px;font-weight:800}
 .dsub b{cursor:pointer;color:var(--red)}
 .vrow{border-left:2px solid var(--line);padding:4px 0 4px 10px;margin:2px 0;font-size:12.5px}
 .vrow .vm{color:var(--muted);font-size:11px}
+.vrow .vtx .vedit{float:right;white-space:nowrap}
+.vrow .vtx .vedit b{cursor:pointer;margin-left:7px;opacity:.35;font-weight:400}
+.vrow:hover .vtx .vedit b{opacity:.7}.vrow .vtx .vedit b:hover{opacity:1}
 .toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:#000c;color:#fff;padding:9px 15px;border-radius:8px;font-size:13px;opacity:0;pointer-events:none;transition:.2s;z-index:50}
 .toast.show{opacity:1}
 </style></head><body>
@@ -288,8 +291,8 @@ async function load(){
   TAGVORRAT=(tv&&!tv.error?(tv.data||[]):[]).map(x=>x.name);
   TASKS=t.data||[];
   const seen=new Set();KONT=[];
-  (ck.data||[]).concat(hk.data||[]).forEach(k=>{const nm=[k.vorname,k.name].filter(Boolean).join(' ').trim();if(nm&&!seen.has(nm)){seen.add(nm);KONT.push({id:k.id,label:nm});}});
-  KONT.sort((a,b)=>a.label.localeCompare(b.label,'de'));
+  (ck.data||[]).concat(hk.data||[]).forEach(k=>{const nm=[k.vorname,k.name].filter(Boolean).join(' ').trim();if(nm&&!seen.has(nm)){seen.add(nm);KONT.push({id:k.id,label:nm,sort:((k.name||'')+' '+(k.vorname||'')).trim().toLowerCase()});}});
+  KONT.sort((a,b)=>(a.sort||a.label).localeCompare(b.sort||b.label,'de'));
   OBJ=(ob.data||[]).map(o=>{const kz=o.kuerzel||o.h_id_text||'';return {id:o.id,label:(kz?kz+' · ':'')+(o.name||'')};}).sort((a,b)=>a.label.localeCompare(b.label,'de',{numeric:true}));
   try{const {data:{session}}=await sb.auth.getSession();if(session&&session.user){ICH=(session.user.user_metadata&&(session.user.user_metadata.name||session.user.user_metadata.full_name))||session.user.email||'';}}catch(e){}
   initPersonSel();
@@ -457,7 +460,7 @@ async function openDetail(id){
   TAGS=Array.isArray(t.tags)?t.tags.slice():[];document.getElementById('d_tagnew').value='';renderDTags();
   BETEIL=Array.isArray(t.beteiligte)?t.beteiligte.slice():[];renderDBeteiligte();
   MASSV=Array.isArray(t.massnahme)?t.massnahme.slice():(t.massnahme?[t.massnahme]:[]);renderDMass();
-  SUBS=[];VER=[];SUBOPEN=new Set();renderDSubs();renderDVer();
+  SUBS=[];VER=[];SUBOPEN=new Set();VEREDIT=null;renderDSubs();renderDVer();
   const [s,v]=await Promise.all([
     sb.from('os_task_subtasks').select('*').eq('task_id',id).order('created_at'),
     sb.from('os_task_verlauf').select('*').eq('task_id',id).order('created_at',{ascending:false})
@@ -481,8 +484,36 @@ function renderDSubs(){
     <b onclick="dDelSub('${s.id}')" title="löschen" style="cursor:pointer">🗑</b></div>${chat}`;
   }).join('')||'<div style="color:var(--muted);font-size:12px">Keine Unteraufgaben.</div>';
 }
+let VEREDIT=null;
 function renderDVer(){
-  document.getElementById('d_ver').innerHTML=VER.map(v=>`<div class="vrow"><div>${v.subtask_id?'<span title="aus einer Unteraufgabe" style="color:var(--accent)">↳ </span>':''}${esc(v.text)}</div><div class="vm">${esc(v.autor||'')} · ${new Date(v.created_at).toLocaleString('de-DE')}</div></div>`).join('')||'<div style="color:var(--muted);font-size:12px">Noch kein Verlauf.</div>';
+  document.getElementById('d_ver').innerHTML=VER.map(v=>{
+    const meta=`<div class="vm">${esc(v.autor||'')} · ${new Date(v.created_at).toLocaleString('de-DE')}</div>`;
+    const isKom=!v.subtask_id && (((v.text||'').indexOf('💬')===0) || v.art==='kommentar');
+    if(VEREDIT===v.id){
+      const raw=(v.text||'').replace(/^💬\s*/,'');
+      return `<div class="vrow"><textarea id="ve_${v.id}" rows="2" style="width:100%;min-height:46px;overflow:hidden" oninput="autoGrow(this)">${esc(raw)}</textarea>
+        <div class="row" style="margin-top:4px"><button class="btn sm" onclick="dVerSave('${v.id}')">Speichern</button><button class="btn sec sm" onclick="dVerCancel()">Abbrechen</button></div></div>`;
+    }
+    const tools=isKom?`<span class="vedit"><b onclick="dVerEdit('${v.id}')" title="bearbeiten">✎</b><b onclick="dVerDel('${v.id}')" title="löschen">🗑</b></span>`:'';
+    return `<div class="vrow"><div class="vtx">${v.subtask_id?'<span title="aus einer Unteraufgabe" style="color:var(--accent)">↳ </span>':''}${esc(v.text)}${tools}</div>${meta}</div>`;
+  }).join('')||'<div style="color:var(--muted);font-size:12px">Noch kein Verlauf.</div>';
+}
+function dVerEdit(id){VEREDIT=id;renderDVer();setTimeout(()=>{const t=document.getElementById('ve_'+id);if(t){autoGrow(t);t.focus();}},0);}
+function dVerCancel(){VEREDIT=null;renderDVer();}
+async function dVerSave(id){
+  const t=document.getElementById('ve_'+id);if(!t)return;const raw=(t.value||'').trim();
+  const v=VER.find(x=>x.id===id);if(!v){VEREDIT=null;return;}
+  if(!raw){dVerCancel();return;}
+  const kept=((v.text||'').indexOf('💬')===0)?('💬 '+raw):raw;
+  const {error}=await sb.from('os_task_verlauf').update({text:kept}).eq('id',id);
+  if(error){toast(error.message);return;}
+  v.text=kept;VEREDIT=null;renderDVer();toast('Kommentar aktualisiert ✓');
+}
+async function dVerDel(id){
+  if(!confirm('Kommentar löschen?'))return;
+  const {error}=await sb.from('os_task_verlauf').delete().eq('id',id);
+  if(error){toast(error.message);return;}
+  VER=VER.filter(x=>x.id!==id);renderDVer();
 }
 function dSubToggle(id){if(SUBOPEN.has(id))SUBOPEN.delete(id);else SUBOPEN.add(id);renderDSubs();}
 async function dSubNote(id){const el=document.getElementById('sn_'+id);if(!el||!DTASK)return;const t=(el.value||'').trim();if(!t)return;
