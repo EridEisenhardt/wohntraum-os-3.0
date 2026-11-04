@@ -250,7 +250,7 @@ const MASSICON={followup:'🔁',rueckruf:'📞',anruf:'☎️',vortermin:'📍',
 const MASSORDER=['followup','rueckruf','anruf','vortermin','zuarbeit','jourfix'];
 let TASKS=[], KONT=[], OBJ=[];
 const TEAM=['Eric','Jürgen','Stephan','Ramona','Alexander Buchhaus','Extern'];
-let ART='alle', WVONLY=false, PERSON='', QUERY='', HIDEDONE=false, SUBS=[], VER=[], DTASK=null, ICH='', TAGS=[], BETEIL=[], SUBOPEN=new Set(), TAGVORRAT=[];
+let ART='alle', WVONLY=false, PERSON='', QUERY='', HIDEDONE=false, SUBS=[], VER=[], DTASK=null, ICH='', TAGS=[], BETEIL=[], SUBOPEN=new Set(), TAGVORRAT=[], SUBCAL=[];
 function setPerson(v){PERSON=v;render();}
 function personMatch(t){if(!PERSON)return true;if(Array.isArray(t.beteiligte)&&t.beteiligte.includes(PERSON))return true;const v=(t.verantwortlich||'').trim();if(!v)return false;return v===PERSON||v.indexOf(PERSON)>=0||PERSON.indexOf(v.split(' ')[0])===0;}
 function initPersonSel(){const el=document.getElementById('personsel');if(el)el.innerHTML='<option value="">👥 Alle Personen</option>'+TEAM.map(p=>`<option value="${esc(p)}"${PERSON===p?' selected':''}>${esc(p)}</option>`).join('');}
@@ -301,6 +301,7 @@ async function load(){
   OBJ=(ob.data||[]).map(o=>{const kz=o.kuerzel||o.h_id_text||'';return {id:o.id,label:(kz?kz+' · ':'')+(o.name||'')};}).sort((a,b)=>a.label.localeCompare(b.label,'de',{numeric:true}));
   try{const {data:{session}}=await sb.auth.getSession();if(session&&session.user){ICH=(session.user.user_metadata&&(session.user.user_metadata.name||session.user.user_metadata.full_name))||session.user.email||'';}}catch(e){}
   initPersonSel();
+  try{const sc=await sb.from('os_task_subtasks').select('id,task_id,titel,done,faellig').not('faellig','is',null);SUBCAL=sc.error?[]:(sc.data||[]);}catch(e){SUBCAL=[];}
   render();
   const qp=new URLSearchParams(location.search);const op=qp.get('task')||qp.get('ticket');if(op)openDetail(op);
 }
@@ -375,6 +376,7 @@ function mondayOf(d){const x=new Date(d);x.setDate(x.getDate()-((x.getDay()+6)%7
 function renderCalendar(){
   if(!CALM)CALM=new Date(today);
   const byDay={};vis().forEach(t=>{if(t.faellig){(byDay[t.faellig]=byDay[t.faellig]||[]).push(t);}});
+  SUBCAL.forEach(s=>{if(s.faellig&&!(HIDEDONE&&s.done)){(byDay[s.faellig]=byDay[s.faellig]||[]).push({__sub:true,id:s.id,task_id:s.task_id,titel:s.titel,done:s.done,faellig:s.faellig});}});
   const dows=['Mo','Di','Mi','Do','Fr','Sa','So'];
   let start,count,label,curM=CALM.getMonth();
   if(CALMODE==='woche'){start=mondayOf(CALM);count=7;const end=new Date(start);end.setDate(start.getDate()+6);
