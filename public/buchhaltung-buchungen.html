@@ -1219,11 +1219,11 @@ async function belObjOrdner(kz){ if(OBJOD[kz]&&OBJOD[kz].basis!==undefined) retu
   try{ OBJOD[kz]=await odApi({aktion:'objektordner',kz}); }catch(e){ OBJOD[kz]={basis:'',top:[],unter:{},fehler:e.message||String(e)}; }
   return OBJOD[kz]; }
 const belTop=(od,nr,def)=>(od.top||[]).find(t=>t.startsWith(nr+' '))||def;
-function belThemaWahl(od,ka){ const bk=belTop(od,'04','04 Betriebskosten'); const vorh=(od.unter&&od.unter[bk])||[]; const want=BEL_THEMA[ka]||['Sonstiges'];
+function belThemaWahl(od,ka){ od=od||{}; const bk=belTop(od,'04','04 Betriebskosten'); const vorh=(od.unter&&od.unter[bk])||[]; const want=BEL_THEMA[ka]||['Sonstiges'];
   for(const w of want){ const f=vorh.find(x=>norm(x)===norm(w)); if(f) return f; }
   for(const w of want){ const f=vorh.find(x=>norm(x).startsWith(norm(w))||norm(w).startsWith(norm(x))); if(f) return f; }
   return want[0]; }
-function belThemen(od){ const bk=belTop(od,'04','04 Betriebskosten'); const s=new Set([...((od.unter&&od.unter[bk])||[]).filter(x=>!/abrechnung/i.test(x)),'Frischwasser','Gas','Grundsteuer','Hausmeister','Heizung','Internet','Müll','Schmutzwasser','Schornsteinfeger','Strom','Versicherung']); return [...s].sort((a,b)=>a.localeCompare(b,'de')); }
+function belThemen(od){ od=od||{}; const bk=belTop(od,'04','04 Betriebskosten'); const s=new Set([...((od.unter&&od.unter[bk])||[]).filter(x=>!/abrechnung/i.test(x)),'Frischwasser','Gas','Grundsteuer','Hausmeister','Heizung','Internet','Müll','Schmutzwasser','Schornsteinfeger','Strom','Versicherung']); return [...s].sort((a,b)=>a.localeCompare(b,'de')); }
 /* Dateiname und Zielordner aus dem Entwurf */
 function belName(d,it){ const z=d.ziel, o=z&&z.obj, k=it.k||{}; const pre=o||(k.ges||'WT');
   const teile=[pre,belFix(d.abs)]; if(z&&z.art==='bk') teile.push(belFix(d.thema)); if(z&&z.art==='weg') teile.push('Hausgeld');
@@ -1242,11 +1242,7 @@ async function belDatumAusPdf(f){ if(!/\.pdf$/i.test(f.name)||typeof pdfText!=='
 async function belQueue(files,ersetze){ const it=items().find(x=>x.id===U.sel); if(!it) return; if(!canWrite){ toast('Nur Lesezugriff.'); return; }
   const ok=files.filter(f=>/\.(pdf|jpe?g|png|heic|webp)$/i.test(f.name)); if(ok.length<files.length) toast('Nur PDF oder Bild.'); if(!ok.length) return;
   if(BEL.id!==it.id){ BEL={id:it.id,L:[],busy:'',fehler:''}; }
-  BEL.busy='Suche Objektordner …'; render();
-  const Z=belZiele(it); for(const kz of [...new Set(Z.filter(z=>z.obj).map(z=>z.obj))]) await belObjOrdner(kz);
-  const zOk=Z.filter(z=>!z.obj||(OBJOD[z.obj]&&OBJOD[z.obj].basis));
-  const fehl=Z.filter(z=>z.obj&&!(OBJOD[z.obj]&&OBJOD[z.obj].basis)).map(z=>z.obj);
-  BEL.fehler=fehl.length?'Kein Objektordner in OneDrive gefunden für: '+[...new Set(fehl)].join(', ')+(OBJOD[fehl[0]]&&OBJOD[fehl[0]].fehler?' ('+OBJOD[fehl[0]].fehler+')':'')+'. Ablage dann unter der Gesellschaft.':'';
+  const zOk=belZiele(it); BEL.fehler='';
   for(const f of ok){ const z=zOk[0]; const pdfD=await belDatumAusPdf(f);
     const d={file:f,ext:belEndung(f),ziele:zOk,zi:0,ziel:z,abs:belAbsender(it.tx.n),datum:pdfD||it.tx.d,betrag:fnum.format(z?z.b:Math.abs(it.tx.b))+'€',thema:'',ersetze:ersetze==null?-1:ersetze,datumPdf:!!pdfD};
     if(z&&z.art==='bk') d.thema=belThemaWahl(OBJOD[z.obj],z.ka);
@@ -1255,12 +1251,10 @@ async function belQueue(files,ersetze){ const it=items().find(x=>x.id===U.sel); 
 /* Liegt die Datei schon in OneDrive? Dann nicht doppelt ablegen, sondern die vorhandene Datei zuordnen */
 async function belDupPruefen(d){ const f=d.file, nm=norm(f.name);
   const lokal=(SP.dateien||[]).find(x=>norm(x.name)===nm); if(lokal){ d.dup={id:lokal.id,name:lokal.name,pfad:lokal.pfad||lokal.rel||''}; render(); return; }
-  d.dupLade=true; render();
-  try{ const r=await odApi({aktion:'dateisuche',name:f.name,size:f.size}); d.dup=(r.treffer||[])[0]||null; }catch(e){ d.dup=null; }
-  d.dupLade=false; render(); }
+  const os=(BOS||[]).find(x=>norm(x.name)===nm); d.dup=os?{id:os.id,name:os.name,pfad:'',p:os.p}:null; render(); }
 async function belDupZuordnen(i){ const d=BEL.L[i], it=items().find(x=>x.id===BEL.id); if(!d||!d.dup||!it) return;
-  const bl=(it.tx.bl||[]).slice(); if(!bl.some(b=>b.od===d.dup.id)) bl.push({od:d.dup.id,n:d.dup.name,pfad:d.dup.pfad,am:new Date().toISOString().slice(0,10)});
-  BEL.L.splice(i,1); if(!BEL.L.length) BEL={id:'',L:[],busy:'',fehler:''}; await writeTx(it.doc,it.ix,{bl}); toast('Vorhandene Datei aus OneDrive zugeordnet – nichts doppelt abgelegt.'); render(); }
+  const bl=(it.tx.bl||[]).slice(); if(!bl.some(b=>b.od===d.dup.id)) bl.push(Object.assign({od:d.dup.id,n:d.dup.name,pfad:d.dup.pfad,am:new Date().toISOString().slice(0,10)},d.dup.p?{p:d.dup.p}:{}));
+  BEL.L.splice(i,1); if(!BEL.L.length) BEL={id:'',L:[],busy:'',fehler:''}; await writeTx(it.doc,it.ix,{bl}); toast('Vorhandenen Beleg aus der Belegablage zugeordnet – nichts doppelt gespeichert.'); render(); }
 async function belNurOS(i){ const d=BEL.L[i], it=items().find(x=>x.id===BEL.id); if(!d||!it||!sb) return; const f=d.file;
   BEL.busy='Speichere im OS …'; render();
   try{ const path='belege/'+year+'/'+Date.now().toString(36)+'_'+String(f.name).replace(/[^A-Za-z0-9._-]+/g,'_');
@@ -1274,9 +1268,9 @@ function belEntwurf(it){ if(BEL.id!==it.id||(!BEL.L.length&&!BEL.busy&&!BEL.fehl
   let h='<div class="belq">';
   if(BEL.fehler) h+='<div class="sub" style="color:var(--warn)">'+esc(BEL.fehler)+'</div>';
   BEL.L.forEach((d,i)=>{ const od=d.ziel&&d.ziel.obj?OBJOD[d.ziel.obj]:null;
-    h+='<div class="belf"><div class="sub"><b>'+esc(d.file.name)+'</b>'+(d.ersetze>=0?' · wird von Supabase nach OneDrive verschoben':'')+'</div>'
-      +(d.dupLade?'<div class="sub">Prüfe, ob die Datei schon in OneDrive liegt …</div>':'')
-      +(d.dup?'<div class="note" style="border:1px solid var(--warn);border-radius:8px;padding:8px 10px;background:var(--warn-bg,#fff7e6)"><b>Diese Datei liegt schon in OneDrive.</b><div class="sub">'+esc(String(d.dup.pfad||'').replace(/^Prozesslandkarte 3\.0\//,''))+'</div><div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:6px"><button class="primary small" data-beldup="'+i+'">Vorhandene Datei zuordnen</button>'+(d.trotzdem?'<span class="sub">wird trotzdem neu abgelegt</span>':'<button class="ghost small" data-beltrotz="'+i+'">trotzdem neu ablegen</button>')+'</div></div>':'')
+    h+='<div class="belf"><div class="sub"><b>'+esc(d.file.name)+'</b>'+''+'</div>'
+      +''
+      +(d.dup?'<div class="note" style="border:1px solid var(--warn);border-radius:8px;padding:8px 10px;background:var(--warn-bg,#fff7e6)"><b>Diese Datei liegt schon in der Belegablage.</b><div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:6px"><button class="primary small" data-beldup="'+i+'">Vorhandene Datei zuordnen</button>'+(d.trotzdem?'<span class="sub">wird trotzdem neu gespeichert</span>':'<button class="ghost small" data-beltrotz="'+i+'">trotzdem neu speichern</button>')+'</div></div>':'')
       +'<div class="frm">'
       +'<label>Ablage<select data-belz="'+i+'">'+d.ziele.map((z,j)=>'<option value="'+j+'"'+(j===d.zi?' selected':'')+'>'+esc(z.label)+'</option>').join('')+'</select></label>'
       +'<label>Absender<input type="text" data-belf="abs" data-beli="'+i+'" value="'+esc(d.abs)+'"></label>'
@@ -1284,9 +1278,9 @@ function belEntwurf(it){ if(BEL.id!==it.id||(!BEL.L.length&&!BEL.busy&&!BEL.fehl
       +'<label>Datum'+(d.datumPdf?' (aus der Rechnung)':' (Buchungstag)')+'<input type="date" data-belf="datum" data-beli="'+i+'" value="'+esc(d.datum)+'"></label>'
       +'<label>Betrag oder Beschreibung<input type="text" data-belf="betrag" data-beli="'+i+'" value="'+esc(d.betrag)+'"></label>'
       +'</div>'
-      +'<div class="belname" id="beln-'+i+'">'+esc(belName(d,it))+'</div><div class="sub" id="belp-'+i+'">'+esc(belPfad(d,it).replace(/^Prozesslandkarte 3\.0\//,''))+'</div>'
-      +'<div style="display:flex;gap:12px;flex-wrap:wrap;margin-top:4px"><button class="ghost small" data-belos="'+i+'" title="Die Datei liegt schon in OneDrive oder soll dort nicht abgelegt werden">Nur zuordnen, nicht in OneDrive ablegen</button><button class="ghost small" data-belx="'+i+'">Verwerfen</button></div></div>'; });
-  if(BEL.L.length) h+='<div class="acts"><button class="primary" data-belgo="1"'+(BEL.busy?' disabled':'')+'>'+(BEL.busy?esc(BEL.busy):'In OneDrive ablegen')+'</button><button class="ghost" data-belweg="1">Alle verwerfen</button></div>';
+      +'<div class="belname" id="beln-'+i+'">'+esc(belName(d,it))+'</div><div class="sub" id="belp-'+i+'">wird im OS gespeichert und erscheint unter Belege</div>'
+      +'<div style="display:flex;gap:12px;flex-wrap:wrap;margin-top:4px"><button class="ghost small" data-belx="'+i+'">Verwerfen</button></div></div>'; });
+  if(BEL.L.length) h+='<div class="acts"><button class="primary" data-belgo="1"'+(BEL.busy?' disabled':'')+'>'+(BEL.busy?esc(BEL.busy):'Im OS speichern')+'</button><button class="ghost" data-belweg="1">Alle verwerfen</button></div>';
   else if(BEL.busy) h+='<div class="sub">'+esc(BEL.busy)+'</div>';
   return h+'</div>'; }
 function belCard(it,ro){ const bl=it.tx.bl||[];
@@ -1298,36 +1292,37 @@ function belCard(it,ro){ const bl=it.tx.bl||[];
   if(!bl.length&&!it.dauer&&it.tx.b<0) h+='<div class="belol"><label><input type="checkbox" id="bel-ol"'+(it.tx.ol?' checked':'')+(ro?' disabled':'')+'> Beleglos – für diese Zahlung gibt es keinen Beleg</label>'
     +(it.tx.ol?'<input type="text" id="bel-olg" placeholder="Grund, z. B. Bankgebühr, Barabhebung, Erstattung" value="'+esc(it.tx.olg||'')+'"'+(ro?' disabled':'')+'>':'')+'</div>';
   h+=bl.map((b,i)=>'<div class="bel"><a href="#" data-bopen="'+i+'" title="'+esc(b.pfad?b.pfad.replace(/^Prozesslandkarte 3\.0\//,''):'im OS gespeichert')+'">'+esc(b.n)+'</a><span>'
-    +(b.od?'<span class="pill src">OneDrive</span>':(ro?'':'<button class="ghost small" data-bmig="'+i+'" title="Datei nach dem Ablageschema in OneDrive ablegen">nach OneDrive</button>'))
-    +(ro?'':'<button class="ghost small" data-bdel="'+i+'" title="'+(b.od?'Verknüpfung entfernen – die Datei bleibt in OneDrive':'Beleg löschen')+'">entfernen</button>')+'</span></div>').join('');
+    +(b.od&&!String(b.od).startsWith('os:')?'<span class="pill src">OneDrive</span>':'')
+    +(ro?'':'<button class="ghost small" data-bdel="'+i+'" title="'+(b.od?'Verknüpfung entfernen – der Beleg bleibt in der Belegablage':'Beleg löschen')+'">entfernen</button>')+'</span></div>').join('');
   h+=dbBox(it,ro);
   if(!ro&&it.tx.b<0&&!it.tx.ol&&!it.dauer) h+=spBox(it,ro);
   if(!ro) h+=belEntwurf(it);
-  if(canWrite&&!ro) h+='<label class="bdrop" id="bdrop" for="bfile">Noch nicht in OneDrive? Datei hierher ziehen oder klicken – sie wird nach Schema benannt und abgelegt<input type="file" id="bfile" accept=".pdf,image/*" multiple hidden></label>';
+  if(canWrite&&!ro) h+='<label class="bdrop" id="bdrop" for="bfile">Beleg hierher ziehen oder klicken – er wird nach Schema benannt, im OS gespeichert und erscheint unter Belege<input type="file" id="bfile" accept=".pdf,image/*" multiple hidden></label>';
   if(bl.length||it.dauer) h+='<div class="prev" id="prev"><div class="sub">Lade Vorschau …</div></div>';
   return h+'</div>'; }
 const b64Datei=f=>new Promise((res,rej)=>{ const r=new FileReader(); r.onload=()=>res(String(r.result).split(',')[1]||''); r.onerror=rej; r.readAsDataURL(f); });
 const z0=d=>d.ziel.art==='ges'?'ges':'obj';
 async function belAblegen(){ const it=items().find(x=>x.id===BEL.id); if(!it){ BEL.L=[]; render(); return; }
   const dup=BEL.L.filter(d=>d.dup&&!d.trotzdem); if(dup.length){ toast(dup.length===1?'Die Datei liegt schon in OneDrive – bitte „Vorhandene Datei zuordnen“ wählen.':dup.length+' Dateien liegen schon in OneDrive – bitte jeweils „Vorhandene Datei zuordnen“ wählen.'); return; }
-  for(const d of BEL.L){ if(!d.ziel||!belPfad(d,it)){ toast('Bitte bei allen Dateien eine Ablage wählen.'); return; } if(!/^\d{4}-\d{2}-\d{2}$/.test(d.datum)){ toast('Bitte ein gültiges Datum eingeben.'); return; } if(!belFix(d.abs)){ toast('Bitte den Absender eintragen.'); return; } }
-  let bl=(it.tx.bl||[]).slice(), n=0, weg=[]; const absNeu=Object.assign({},absMap); let absGeaendert=false;
-  for(const d of BEL.L.slice()){ BEL.busy='Lege ab '+(n+1)+' von '+BEL.L.length+' …'; render();
-    try{ const pfad=belPfad(d,it), name=belName(d,it), f=d.file; let x;
-      await odApi({aktion:'anlegen',pfad});
-      if(f.size<=3*1024*1024) x=(await odApi({aktion:'hochladen',pfad,name,daten:await b64Datei(f),typ:f.type||'application/octet-stream'})).item;
-      else { const s=await odApi({aktion:'sitzung',pfad,name}); const r=await fetch(s.uploadUrl,{method:'PUT',headers:{'Content-Range':'bytes 0-'+(f.size-1)+'/'+f.size},body:f}); if(!r.ok) throw new Error('Hochladen fehlgeschlagen ('+r.status+')'); const j=await r.json(); x={id:j.id,name:j.name}; }
-      const e={od:x.id,n:x.name||name,pfad:pfad+'/'+(x.name||name),am:new Date().toISOString().slice(0,10)};
-      if(SP.dateien&&SP.jahr===year) SP.dateien.push(spMeta({id:x.id,name:e.n,pfad:e.pfad,rel:e.pfad.split('/').slice(-3).join('/'),bereich:z0(d),obj:d.ziel.obj||''}));
+  for(const d of BEL.L){ if(!d.ziel){ toast('Bitte bei allen Dateien eine Ablage wählen.'); return; } if(!/^\d{4}-\d{2}-\d{2}$/.test(d.datum)){ toast('Bitte ein gültiges Datum eingeben.'); return; } if(!belFix(d.abs)){ toast('Bitte den Absender eintragen.'); return; } }
+  let bl=(it.tx.bl||[]).slice(), n=0, weg=[], neuOS=[]; const absNeu=Object.assign({},absMap); let absGeaendert=false; const S=window.osSupabase;
+  for(const d of BEL.L.slice()){ BEL.busy='Speichere '+(n+1)+' von '+BEL.L.length+' …'; render();
+    try{ const name=belName(d,it), f=d.file, heute=new Date().toISOString().slice(0,10);
+      if(f.size>20*1024*1024) throw new Error('Datei zu groß (max. 20 MB)');
+      const p='belege-os/'+(d.datum||heute).slice(0,4)+'/'+Date.now().toString(36)+Math.random().toString(36).slice(2,6)+'_'+name.normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^A-Za-z0-9._-]+/g,'_');
+      const {error}=await S.storage.from('belege').upload(p,f,{contentType:f.type||'application/octet-stream',upsert:false}); if(error) throw error;
+      const e={od:'os:'+p,p,n:name,am:heute};
+      neuOS.push({id:'os:'+p,p,name,am:heute,von:(typeof ICH!=='undefined'&&ICH)||'',size:f.size,typ:f.type||''});
       if(d.ersetze>=0&&bl[d.ersetze]&&bl[d.ersetze].p){ weg.push(bl[d.ersetze].p); bl[d.ersetze]=e; } else bl.push(e);
       const k=belKey(it.tx.n); if(k&&belFix(d.abs)!==belAbsender(it.tx.n)){ absNeu[k]=belFix(d.abs); absGeaendert=true; }
       BEL.L.splice(BEL.L.indexOf(d),1); n++; }
     catch(e){ toast(d.file.name+': '+(e.message||e)); } }
   BEL.busy='';
+  if(neuOS.length){ BOS=BOS.concat(neuOS); bvOsNeu(); try{ await saveStamm('belegeos',{liste:BOS}); }catch(e){ toast('Fehler beim Speichern der Belegliste.'); } }
   if(n){ await writeTx(it.doc,it.ix,{bl}); if(weg.length&&sb) sb.storage.from('belege').remove(weg).catch(()=>{}); if(absGeaendert){ absMap=absNeu; saveStamm('belegabsender',{map:absNeu}); } }
   if(!BEL.L.length) BEL={id:'',L:[],busy:'',fehler:''};
   const list=sortiert(filtered(items())), i=list.findIndex(x=>x.id===it.id), nx=n&&!BEL.L.length&&U.status==='beleg'?(list[i+1]||list[i-1]):null;
-  toast(n?(n===1?'Beleg':n+' Belege')+' in OneDrive abgelegt.'+(nx?' Weiter zur nächsten Buchung ohne Beleg.':''):'Nichts abgelegt.');
+  toast(n?(n===1?'Beleg':n+' Belege')+' im OS gespeichert.'+(nx?' Weiter zur nächsten Buchung ohne Beleg.':''):'Nichts abgelegt.');
   if(nx){ U.sel=nx.id; render.scrollSel=true; } render(); }
 /* Vorschau: OneDrive-Datei über den Server laden */
 function belVorschauUrl(b){ if(!belPrev[b.od]) belPrev[b.od]=belVorschauLaden(b).catch(e=>{ delete belPrev[b.od]; throw e; }); return belPrev[b.od]; }
