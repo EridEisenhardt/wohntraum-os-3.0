@@ -412,6 +412,7 @@ table th{background:var(--bb-grau);color:var(--bb-text2);text-transform:uppercas
 
 .bv-kt{display:flex;align-items:center;gap:12px;max-width:940px}
 .bv-kt .kz-olb{margin-left:auto}
+.bel-einord{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:4px 0 12px}.bel-einord .kz-olb{margin-left:0}.bel-einord .kz-olb.on{border-color:var(--bb-orange);color:var(--bb-orange)}
 .bv-p.ig{background:var(--bb-grau);color:var(--bb-text2)}
 .bv-p.dp{background:#fdf1dc;color:#8a5a00}
 .bv-z.ign{opacity:.75}
@@ -1288,18 +1289,26 @@ function belCard(it,ro){ const bl=it.tx.bl||[];
     return '<div class="card"><div class="lab">Zugeordnete Belege <span class="pill ok">'+bl.length+'</span></div>'
       +bl.map((b,i)=>'<div class="bel"><a href="#" data-bopen="'+i+'" title="'+esc(b.pfad?b.pfad.replace(/^Prozesslandkarte 3\.0\//,''):'im OS gespeichert')+'">'+esc(b.n)+'</a></div>').join('')
       +'<div class="sub" style="margin-top:6px">Zuordnung ändern unter Belege.</div><div class="prev" id="prev"><div class="sub">Lade Vorschau …</div></div></div>'; }
-  let h='<div class="card"><div class="lab">Belege '+(bl.length?'<span class="pill ok">'+bl.length+'</span>':it.dauer?'<span class="pill ok">Dauerbeleg</span>':it.tx.ol?'<span class="pill src">beleglos</span>':it.needBeleg?'<span class="pill mid">fehlt</span>':'')+'</div>';
-  if(!bl.length&&!it.dauer&&it.tx.b<0) h+='<div class="belol"><label><input type="checkbox" id="bel-ol"'+(it.tx.ol?' checked':'')+(ro?' disabled':'')+'> Beleglos – für diese Zahlung gibt es keinen Beleg</label>'
-    +(it.tx.ol?'<input type="text" id="bel-olg" placeholder="Grund, z. B. Bankgebühr, Barabhebung, Erstattung" value="'+esc(it.tx.olg||'')+'"'+(ro?' disabled':'')+'>':'')+'</div>';
-  h+=bl.map((b,i)=>'<div class="bel"><a href="#" data-bopen="'+i+'" title="'+esc(b.pfad?b.pfad.replace(/^Prozesslandkarte 3\.0\//,''):'im OS gespeichert')+'">'+esc(b.n)+'</a><span>'
+  let h='<div class="card"><div class="lab">Belege '+(bl.length?'<span class="pill ok">'+bl.length+'</span>':it.dauer?'<span class="pill ok">Dauerbeleg</span>':it.needBeleg?'<span class="pill mid">fehlt</span>':'')+'</div>';
+  h+=bl.map((b,i)=>{ const f=String(b.od||'').startsWith('os:')?bvFindeDatei(b.od):null;
+    return '<div class="bel"><a href="#" data-bopen="'+i+'" title="'+esc(b.pfad?b.pfad.replace(/^Prozesslandkarte 3\.0\//,''):'im OS gespeichert')+'">'+esc(b.n)+'</a><span>'
     +(b.od&&!String(b.od).startsWith('os:')?'<span class="pill src">OneDrive</span>':'')
-    +(ro?'':'<button class="ghost small" data-bdel="'+i+'" title="'+(b.od?'Verknüpfung entfernen – der Beleg bleibt in der Belegablage':'Beleg löschen')+'">entfernen</button>')+'</span></div>').join('');
-  h+=dbBox(it,ro);
-  if(!ro&&it.tx.b<0&&!it.tx.ol&&!it.dauer) h+=spBox(it,ro);
+    +(ro?'':'<button class="ghost small" data-bdel="'+i+'" title="'+(b.od?'Verknüpfung entfernen – der Beleg bleibt in der Belegablage':'Beleg löschen')+'">entfernen</button>')+'</span></div>'
+    +(f&&!ro&&canWrite?belEinordnen(f):''); }).join('');
   if(!ro) h+=belEntwurf(it);
-  if(canWrite&&!ro) h+='<label class="bdrop" id="bdrop" for="bfile">Beleg hierher ziehen oder klicken – er wird nach Schema benannt, im OS gespeichert und erscheint unter Belege<input type="file" id="bfile" accept=".pdf,image/*" multiple hidden></label>';
+  if(canWrite&&!ro) h+='<label class="bdrop" id="bdrop" for="bfile">Beleg hochladen: Datei hierher ziehen oder klicken<input type="file" id="bfile" accept=".pdf,image/*" multiple hidden></label>';
+  if(!ro) h+=spBox(it,ro);
   if(bl.length||it.dauer) h+='<div class="prev" id="prev"><div class="sub">Lade Vorschau …</div></div>';
   return h+'</div>'; }
+/* Beleg direkt an der Zahlung einordnen – gleiche Knöpfe wie unter Belege */
+function bvFindeDatei(id){ const f=(SP.dateien||[]).find(x=>x.id===id); if(f) return f; const o=(BOS||[]).find(x=>x.id===id); return o?bvOsMeta(o):null; }
+function belEinordnen(f){ const sepa=bvSepa(f), bk=BKM.has(f.id);
+  return '<div class="bel-einord"><span class="sub">Einordnen:</span>'
+    +'<button class="kz-olb" data-bvab="'+esc(f.id)+'" title="Abschlagsplan oder Jahresabrechnung übernehmen">Abschlag</button>'
+    +'<button class="kz-olb" data-bvfix="'+esc(f.id)+'" title="Feste laufende Kosten der Gesellschaft übernehmen">Fixkosten</button>'
+    +'<button class="kz-olb'+(bk?' on':'')+'" data-bvbk="'+esc(f.id)+'" title="Rechnung für die Betriebskostenabrechnung vormerken">Betriebskosten'+(bk?' '+esc(BKM.get(f.id).jahr):'')+'</button>'
+    +'<button class="kz-olb'+(sepa?' on':'')+'" data-bzsepa="'+esc(f.id)+'" title="'+(sepa?'SEPA-Markierung entfernen':'Wird per SEPA-Lastschrift eingezogen – gilt für alle Rechnungen von '+esc(f.abs||'diesem Absender'))+'">SEPA</button></div>'; }
+document.addEventListener('click',async e=>{ const t=e.target.closest&&e.target.closest('button[data-bzsepa]'); if(!t) return; e.preventDefault(); const f=bvFindeDatei(t.dataset.bzsepa); if(!f) return; const an=!bvSepa(f); await bvSepaSetzen(f,an); toast(an?'SEPA-Lastschrift gilt jetzt für alle Rechnungen von '+(f.abs||'diesem Absender')+'.':'SEPA-Markierung entfernt.'); });
 const b64Datei=f=>new Promise((res,rej)=>{ const r=new FileReader(); r.onload=()=>res(String(r.result).split(',')[1]||''); r.onerror=rej; r.readAsDataURL(f); });
 const z0=d=>d.ziel.art==='ges'?'ges':'obj';
 async function belAblegen(){ const it=items().find(x=>x.id===BEL.id); if(!it){ BEL.L=[]; render(); return; }
@@ -1513,7 +1522,7 @@ function bkMerken(){ const b=BV.bk; if(!b) return; for(const [k,id] of [['jahr',
 document.addEventListener('click',e=>{ const t=e.target.closest('[data-bvbk],[data-bkzu],button[data-bksave],button[data-bkweg],button[data-bkzneu],button[data-bkzweg]'); if(!t) return; const d=t.dataset;
   if(d.bkzneu&&BV.bk){ bkMerken(); BV.bk.zeilen.push({ka:'',betrag:''}); render(); setTimeout(()=>{ const el=$('bk-ka-'+(BV.bk.zeilen.length-1)); if(el) el.focus(); },30); return; }
   if(d.bkzweg!=null&&BV.bk){ bkMerken(); BV.bk.zeilen.splice(+d.bkzweg,1); render(); return; }
-  if(d.bvbk){ e.preventDefault(); const x=bvListe().L.find(y=>y.f.id===d.bvbk); if(x) bkOeffnen(x.f); return; }
+  if(d.bvbk){ e.preventDefault(); const x=bvListe().L.find(y=>y.f.id===d.bvbk); const f=x?x.f:bvFindeDatei(d.bvbk); if(f) bkOeffnen(f); return; }
   if(d.bkzu){ BV.bk=null; render(); return; }
   if(d.bksave){ bkSpeichern(); return; }
   if(d.bkweg){ if(d.sure!=='1'){ d.sure='1'; t.textContent='wirklich entfernen?'; return; } bkEntfernen(); } });
@@ -2052,7 +2061,7 @@ document.addEventListener('focusout',e=>{ const t=e.target; if(t&&['ab-ka','ab-s
 document.addEventListener('click',e=>{ const t=e.target.closest('[data-abzu],button[data-abok],button[data-bvab],button[data-bvfix]'); if(!t) return; const d=t.dataset;
   if(d.abzu){ if(BV.ab&&BV.ab.busy) return; BV.ab=null; render(); return; }
   if(d.abok){ abSpeichern(); return; }
-  if(d.bvab||d.bvfix){ const id=d.bvab||d.bvfix; const x=bvListe().L.find(y=>y.f.id===id); if(x) abOeffnen(x.f,d.bvab?'abschlag':'fix'); return; } });
+  if(d.bvab||d.bvfix){ const id=d.bvab||d.bvfix; const x=bvListe().L.find(y=>y.f.id===id); const f=x?x.f:bvFindeDatei(id); if(f) abOeffnen(f,d.bvab?'abschlag':'fix'); return; } });
 
 function renderBelegeTab(){ const h=BV.view==='liste'?bvListeHtml():bvStart(); const r=h+bvUpHtml()+qrHtml()+abHtml()+bkHtml(); if(BV.qr) setTimeout(qrZeichnen,0); return r; }
 function bvOeffnen(root,sub){ BV.view='liste'; BV.root=root; BV.sub=sub||(root==='ges'||root==='bar'?String(year):''); BV.menu=''; BV.mehr=100; render(); window.scrollTo(0,0); }
@@ -2157,20 +2166,12 @@ async function spFreiSuche(it,q){ if(SP.qs[q]) return; SP.qs[q]={lade:true,L:[]}
   const bt=parseNum(q); if(bt!=null&&!isNaN(bt)&&/\d,\d{2}/.test(q)){ try{ const r=await odApi({aktion:'betragsuche',betrag:fnum.format(Math.abs(bt))}); for(const x of (r.treffer||[])) if(!Z[x.id]) out.set(x.id,conv(x)); }catch(e){} }
   SP.qs[q]={L:[...out.values()]}; for(const f of SP.qs[q].L) if(!SP.dateien.some(y=>y.id===f.id)) SP.dateien.push(f);
   const el=$('sp-erg'), cur=items().find(x=>x.id===U.sel); if(el&&cur&&cur.id===it.id&&(SP.such||'').trim()===q) el.innerHTML=spZeilen(cur,q); }
-function spZeilen(it,q){ let L=spTreffer(it,q), hin='';
-  if(q&&q.length>=3){ const S=SP.qs[q]; if(!S){ clearTimeout(spZeilen._t); spZeilen._t=setTimeout(()=>spFreiSuche(it,q),400); }
-    if(S&&S.L.length){ const ids=new Set(L.map(f=>f.id)); L=L.concat(S.L.filter(f=>!ids.has(f.id))).slice(0,15); }
-    if(!L.length) return '<div class="sub">'+(S&&!S.lade?'Keine freie Datei gefunden – auch nicht in OneDrive.':'Suche in OneDrive …')+'</div>'; }
-  if(!L.length&&!q){ const k=spBetragText(it), B=SP.bs[k];
-    if(!B){ setTimeout(()=>spBetragSuche(it),0); return '<div class="sub">Suche in OneDrive nach Belegen über '+esc(k)+' € …</div>'; }
-    if(B.lade) return '<div class="sub">Suche in OneDrive nach Belegen über '+esc(k)+' € …</div>';
-    L=B.L; if(L.length) hin='<div class="sub">In OneDrive gefunden (Betrag '+esc(k)+' € im Dateinamen):</div>'; }
-  if(!L.length) return '<div class="sub">'+(q?'Keine freie Datei gefunden.':'Kein Beleg mit '+esc(spBetragText(it))+' € im Dateinamen in OneDrive. Über die Suche lässt sich jede freie Datei wählen.')+'</div>';
-  return hin+L.map(f=>'<div class="bel"><a href="#" data-kaopen="'+esc(f.id)+'" title="'+esc(f.pfad.replace(/^Prozesslandkarte 3\.0\//,''))+'">'+esc(f.name)+'</a><span><span class="sub">'+spOrt(f)+'</span>'+(canWrite?'<button class="ghost small" data-spzu="'+esc(f.id)+'" data-spit="'+esc(it.id)+'">Zuordnen</button>':'')+'</span></div>').join(''); }
-function spBox(it,ro){ if(ro) return ''; if((it.tx.bl||[]).length&&SP.mehr!==it.id) return '<div class="spbox"><button class="ghost small" data-spmehr="1">Weitere Datei aus OneDrive zuordnen</button></div>'; let h='<div class="spbox"><div class="lab">Aus OneDrive zuordnen: Datei suchen oder unten auf „Zuordnen“ klicken</div>';
-  if(!spBereit()) return h+'<div class="sub">Lade Belege aus OneDrive …</div></div>';
-  if(SP.fehler) return h+'<div class="sub" style="color:var(--warn)">'+esc(SP.fehler)+'</div></div>';
-  h+='<input type="search" id="sp-such" placeholder="Datei suchen, z. B. Absender oder Betrag" value="'+esc(SP.such||'')+'"><div id="sp-erg">'+spZeilen(it,SP.such||'')+'</div>';
+function spZeilen(it,q){ const L=spTreffer(it,q);
+  if(!L.length) return '<div class="sub">'+(q?'Kein freier Beleg in der Belegablage gefunden.':'Kein freier Beleg über '+esc(spBetragText(it))+' € in der Belegablage. Über die Suche lässt sich jeder freie Beleg wählen.')+'</div>';
+  return (q?'':'<div class="sub">Vorschläge mit gleichem Betrag:</div>')+L.map(f=>'<div class="bel"><a href="#" data-kaopen="'+esc(f.id)+'">'+esc(f.name)+'</a><span><span class="sub">'+spOrt(f)+'</span>'+(canWrite?'<button class="ghost small" data-spzu="'+esc(f.id)+'" data-spit="'+esc(it.id)+'">Zuordnen</button>':'')+'</span></div>').join(''); }
+function spBox(it,ro){ if(ro) return ''; let h='<div class="spbox"><div class="lab">Beleg im OS suchen</div>';
+  if(!spBereit()) return h+'<div class="sub">Lade Belegablage …</div></div>';
+  h+='<input type="search" id="sp-such" placeholder="Absender, Dateiname oder Betrag" value="'+esc(SP.such||'')+'"><div id="sp-erg">'+spZeilen(it,SP.such||'')+'</div>';
   return h+'</div>'; }
 document.addEventListener('input',e=>{ const t=e.target;
   if(t.id==='sp-such'){ SP.such=t.value; const it=items().find(x=>x.id===U.sel); const el=$('sp-erg'); if(it&&el) el.innerHTML=spZeilen(it,t.value.trim()); return; }
@@ -2316,8 +2317,9 @@ function bbDialog(it,list){ const t=it.tx, bl=t.bl||[], pos=list.findIndex(x=>x.
   let h='<div class="kdrw-h bb-dh"><div><span class="bb-dt">'+(t.b<0&&belAn(it)?'Belege über ':'Zahlung über ')+'<b>'+eur(Math.abs(t.b))+'</b></span><span class="bb-dg">'+esc(t.n||'')+'</span><span class="bb-dg">'+esc(dmy(t.d))+'</span></div><button class="bb-x" data-kdrzu="1" title="Schließen">Schließen</button></div>';
   h+='<div class="bb-band">'+(bl.length?bl.map((b,i)=>'<a href="#" data-bopen="'+i+'" class="bb-bel"><span class="bb-thumb"></span>'+esc(b.n)+'</a>').join(''):it.dauer?'<div class="bb-bel"><span class="bb-thumb"></span>Dauerbeleg: '+esc(it.dauer.n||'')+'</div>':t.ol?'<div class="bb-kein">Beleglos'+(t.olg?': '+esc(t.olg):'')+'</div>':belAn(it)?'<div class="bb-kein">kein Beleg</div>':'')
     +'<div class="bb-bk">'+esc(kontoName(it.kkey))+' · '+esc(zuordText(it))+'</div></div>';
-  h+='<div class="bb-zdw"><button class="bb-zd" data-kzd="1">'+(zd?'Zahlungsdetails ausblenden':'Zahlungsdetails anzeigen')+'</button></div>';
-  if(zd) h+='<div class="bb-zbox">'+renderDetail(it,list,{ohneKopf:true,ohneBelege:true})+'</div>';
+  const nurBeleg=t.b<0&&belAn(it); /* Belege-Modus: nur Upload und Suche in der Belegablage */
+  if(!nurBeleg){ h+='<div class="bb-zdw"><button class="bb-zd" data-kzd="1">'+(zd?'Zahlungsdetails ausblenden':'Zahlungsdetails anzeigen')+'</button></div>';
+    if(zd) h+='<div class="bb-zbox">'+renderDetail(it,list,{ohneKopf:true,ohneBelege:true})+'</div>'; }
   h+=belCard(it,!canWrite||it.nh);
   h+='<div class="bb-fuss"><div class="bb-pg"><button data-step="-1"'+(pos>0?'':' disabled')+'>vorherige</button><span>'+(pos+1)+' / '+list.length+'</span><button data-step="1"'+(pos>=0&&pos<list.length-1?'':' disabled')+'>nächste</button></div><button class="bb-schl" data-kdrzu="1">Schließen</button></div>';
   return h; }
@@ -2615,7 +2617,7 @@ function render(){
   const f=document.activeElement, fid=f&&f.id, fv=fid?f.value:null, ss=f&&f.selectionStart;
   const keep=f&&f.id==='u-q'?f:null;
   const lsEl=$('list'), lsTop=lsEl?lsEl.scrollTop:0;
-  $('view').innerHTML=tab==='import'?'<div class="pad">'+renderNahaus()+renderBB()+renderImport()+'</div>':tab==='belege'?'<div class="bv-pad">'+renderBelegeTab()+'</div>':tab==='regeln'?'<div class="pad">'+renderRegeln()+'</div>':tab==='konten'?'<div class="pad">'+renderKontenplan()+'</div>':renderListe();
+  $('view').innerHTML=tab==='import'?'<div class="pad">'+renderNahaus()+renderBB()+renderImport()+'</div>':tab==='belege'?'<div class="bv-pad">'+renderBelegeTab()+'</div>':tab==='regeln'?'<div class="pad">'+renderRegeln()+'</div>':tab==='konten'?'<div class="pad">'+renderKontenplan()+'</div>':renderListe()+(BV.ab||BV.bk?abHtml()+bkHtml():'');
   if(keep){ const n=$('u-q'); if(n){ n.replaceWith(keep); keep.focus({preventScroll:true}); } }
   else if(fid){ const el=$(fid); if(el&&(el.tagName==='INPUT'||el.tagName==='TEXTAREA')){ el.focus({preventScroll:true}); if(fv!=null) el.value=fv; try{ if(ss!=null) el.setSelectionRange(ss,ss); }catch(_){} } }
   { const l2=$('list'); if(l2&&lsTop&&!render.scrollSel) l2.scrollTop=lsTop; }
