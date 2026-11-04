@@ -349,14 +349,19 @@ async function bestaetigeBrief(){
 function schedule(forderung,rate,jahresZins,startDate,sonder){
   const i=(jahresZins||0)/100/12; const r2=x=>Math.round(x*100)/100;
   const smapT={},smapZ={};
-  (sonder||[]).forEach(s=>{const b=num(s.betrag);if(s.datum&&b>0){const k=ym(new Date(s.datum+'T00:00:00'));if((s.art||'zinsen')==='tilgung')smapT[k]=(smapT[k]||0)+b;else smapZ[k]=(smapZ[k]||0)+b;}});
-  let R=forderung, rows=[], d=new Date(startDate), guard=0, totalZins=0, totalZinsSonder=0;
+  // Sonderzahlungen vor Planbeginn: vor dem Start fallen keine Zinsen an, daher mindern sie immer die Hauptforderung.
+  const startK=ym(new Date(startDate)); let vorab=0, vorabDatum=null;
+  (sonder||[]).forEach(s=>{const b=num(s.betrag);if(s.datum&&b>0){const sd=new Date(s.datum+'T00:00:00');const k=ym(sd);
+    if(k<startK){vorab+=b;if(!vorabDatum||sd>vorabDatum)vorabDatum=sd;return;}
+    if((s.art||'zinsen')==='tilgung')smapT[k]=(smapT[k]||0)+b;else smapZ[k]=(smapZ[k]||0)+b;}});
+  vorab=r2(Math.min(vorab,forderung));
+  let R=r2(forderung-vorab), rows=[], d=new Date(startDate), guard=0, totalZins=0, totalZinsSonder=0;
   while(R>0.005 && guard++<600){
     const k=ym(d);
     const zins=r2(R*i);
     const szT=smapT[k]||0, szZ=smapZ[k]||0;
     const tilgReg=r2(rate-zins);
-    if(tilgReg<=0 && szT<=0) return {rows,totalZins,fail:true};
+    if(tilgReg<=0 && szT<=0) return {rows,totalZins,fail:true,vorab,vorabDatum};
     let tilg=(tilgReg>0?tilgReg:0)+szT;
     if(tilg>R) tilg=R;
     R=r2(R-tilg);
@@ -364,7 +369,7 @@ function schedule(forderung,rate,jahresZins,startDate,sonder){
     rows.push({nr:rows.length+1,datum:new Date(d),zahlung:r2(zins+tilg+szZ),zins:r2(zins+szZ),tilg:r2(tilg),rest:R,szT:szT,szZ:szZ,sz:szT+szZ});
     d.setMonth(d.getMonth()+1);
   }
-  return {rows,totalZins:r2(totalZins),totalZinsSonder:r2(totalZinsSonder),fail:false};
+  return {rows,totalZins:r2(totalZins),totalZinsSonder:r2(totalZinsSonder),fail:false,vorab,vorabDatum};
 }
 
 async function save(id,field,val,typ){
@@ -444,10 +449,11 @@ function renderCalc(id){
     const paid=(x.sz>0)||paidM.has(ym(x.datum));
     const tag=paid?' <span style="display:inline-block;margin-left:5px;font-size:9.5px;font-weight:700;color:#0f7b57;background:#d5efdf;border-radius:5px;padding:0 5px;vertical-align:middle">bezahlt</span>':'';
     return '<tr'+(paid?' class="paid-row"':'')+'><td style="white-space:nowrap">'+x.nr+tag+'</td><td>'+x.datum.toLocaleDateString('de-DE',{month:'2-digit',year:'numeric'})+'</td><td>'+eur(x.zahlung)+lbl+'</td><td>'+eur(x.zins)+'</td><td>'+eur(x.tilg)+'</td><td>'+eur(x.rest)+'</td></tr>';}).join('');
-  const sumZ=w.rows.reduce((s,x)=>s+(x.zahlung||0),0), sumT=w.rows.reduce((s,x)=>s+(x.tilg||0),0), sumZins=w.rows.reduce((s,x)=>s+(x.zins||0),0);
+  const vorabRow=w.vorab>0?'<tr class="paid-row"><td style="white-space:nowrap">–</td><td>'+(w.vorabDatum?w.vorabDatum.toLocaleDateString('de-DE'):'')+'</td><td>'+eur(w.vorab)+' <span style="font-size:10px">(Sonderzahlung vor Planbeginn)</span></td><td>'+eur(0)+'</td><td>'+eur(w.vorab)+'</td><td>'+eur(Math.round((Number(r.forderung)-w.vorab)*100)/100)+'</td></tr>':'';
+  const sumZ=w.rows.reduce((s,x)=>s+(x.zahlung||0),0)+(w.vorab||0), sumT=w.rows.reduce((s,x)=>s+(x.tilg||0),0)+(w.vorab||0), sumZins=w.rows.reduce((s,x)=>s+(x.zins||0),0);
   const sumRow='<tr style="font-weight:700;border-top:2px solid var(--accent);background:#eef4fb"><td style="text-align:left;font-size:15px">∑</td><td style="text-align:left">Summe (gesamte Laufzeit)</td><td>'+eur(Math.round(sumZ*100)/100)+'</td><td>'+eur(Math.round(sumZins*100)/100)+'</td><td>'+eur(Math.round(sumT*100)/100)+'</td><td>'+eur(0)+'</td></tr>';
   res+='<details style="margin-top:8px"><summary style="cursor:pointer;font-size:12.5px;color:var(--accent)">Zins- und Tilgungsplan ('+w.rows.length+' Raten)</summary>'
-    +'<div class="scroll"><table><thead><tr><th>Nr.</th><th>Fällig</th><th>Zahlung</th><th>Zinsen</th><th>Tilgung</th><th>Restforderung</th></tr></thead><tbody>'+rows+sumRow+'</tbody></table></div></details>';
+    +'<div class="scroll"><table><thead><tr><th>Nr.</th><th>Fällig</th><th>Zahlung</th><th>Zinsen</th><th>Tilgung</th><th>Restforderung</th></tr></thead><tbody>'+vorabRow+rows+sumRow+'</tbody></table></div></details>';
   box.innerHTML=res;
 }
 function renderSonder(id){
