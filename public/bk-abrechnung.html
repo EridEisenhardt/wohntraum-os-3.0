@@ -273,6 +273,11 @@ function mvLaeuft(m){ const heute=new Date().toISOString().slice(0,10); if(!m.mk
 /* neue Vorauszahlung je Objekt: Datum oder 'keine' */
 const vzAb=()=>{ const J=EINST.jahre[String(JAHR)]||{}, v=(J.vzAbObj||{})[D.o.kz]; if(v) return v; if(J.vzAb) return J.vzAb; const d=new Date(); d.setMonth(d.getMonth()+2,1); return d.toISOString().slice(0,10); };
 const vzKeine=()=>vzAb()==='keine';
+/* Neue Vorauszahlung je Mieter: eingetragener Wert, sonst der Vorschlag aus der Abrechnung. Ohne Kosten in einem Bereich bleibt die bisherige Vorauszahlung. null = keine Anpassung. */
+function vzNeu(x){ const m=x.m; if(!x.aktuell||vzKeine()||m.art!=='vorauszahlung') return null;
+  const altB=r2(num(m.vz_bk_mtl)||0), altH=r2(num(m.vz_hk_mtl)||0);
+  const bk=r2(m.vz_neu_bk!=null?m.vz_neu_bk:(x.vorBk!=null&&x.bk>0?x.vorBk:altB)), hk=r2(m.vz_neu_hk!=null?m.vz_neu_hk:(x.vorHk!=null&&x.hk>0?x.vorHk:altH));
+  return bk===altB&&hk===altH?null:{bk,hk,altB,altH}; }
 /* Konten aus dem OS (stamm/konten) */
 let KONTEN=null;
 const BLZ_BANK={'43060967':'GLS Bank','12030000':'DKB','50050201':'Frankfurter Sparkasse','55350010':'Sparkasse Worms-Alzey-Ried','55040022':'Commerzbank','56050180':'Sparkasse Rhein-Nahe','55050120':'Sparkasse Mainz','55090500':'Sparda-Bank Südwest','60050101':'BW-Bank'};
@@ -317,7 +322,7 @@ function ergHtml(){ if(ABSD===null){ absLaden(); } if(KONTEN===null) kontenLaden
       +'<td class="n">'+(va&&x.aktuell&&!vzKeine()?'<input class="zahl" style="width:70px" value="'+esc(m.vz_neu_bk!=null?fnum.format(m.vz_neu_bk):'')+'" placeholder="'+esc(x.vorBk)+'" onchange="mvFeld(\''+m.id+'\',\'vz_neu_bk\',this.value)"> / <input class="zahl" style="width:70px" value="'+esc(m.vz_neu_hk!=null?fnum.format(m.vz_neu_hk):'')+'" placeholder="'+esc(x.vorHk)+'" onchange="mvFeld(\''+m.id+'\',\'vz_neu_hk\',this.value)"><div class="sub">bisher '+eur(m.vz_bk_mtl||0)+' / '+eur(m.vz_hk_mtl||0)+'</div>':'–')+'</td>'
       +'<td class="n" style="white-space:nowrap">'+(va?'<button class="small ghost" onclick="schreibenVorschau(\''+m.id+'\')">Vorschau</button> <button class="small" onclick="schreibenErstellen(\''+m.id+'\',true)">PDF</button>'+(m.schreiben_datei&&m.schreiben_datei.od?'<div class="sub"><a class="lnk" onclick="odOeffnen(\''+esc(m.schreiben_datei.od)+'\')">erstellt '+dmy(String(m.schreiben_am||'').slice(0,10))+'</a></div>':''):'')+'</td></tr>'; }
   h+='</tbody></table></div>';
-  h+='<div class="sub" style="margin-top:6px">Neue Vorauszahlung: Der graue Wert ist der Vorschlag (Kosten '+JAHR+' auf zwölf Monate gerechnet, aufgerundet). Trag den Betrag ein, der ins Schreiben soll. Leer = keine Anpassung.</div>';
+  h+='<div class="sub" style="margin-top:6px">Neue Vorauszahlung: Der graue Wert ist der Vorschlag (Kosten '+JAHR+' auf zwölf Monate gerechnet, aufgerundet). Ist das Feld leer, kommt der Vorschlag ins Schreiben und ins Mieterkonto. Soll es ein anderer Betrag sein, trag ihn ein. Soll bei einem Mieter nichts angepasst werden, trag den bisherigen Betrag ein. Für das ganze Objekt oben bei „Neue Vorauszahlung“ „keine Anpassung“ wählen.</div>';
   h+='<div class="acts"><button onclick="alleVorschau(this)">Vorschau aller Schreiben</button><span class="sub">Zeigt alle markierten Schreiben in einer PDF, ohne sie zu speichern.</span></div>';
   h+='<div class="acts"><button class="primary" onclick="alleSchreiben(this)">Alle markierten Schreiben erstellen</button><span class="sub">Die PDFs werden in OneDrive unter 04 Betriebskosten/BK-Abrechnungen/'+JAHR+' gespeichert.</span></div>';
   return h; }
@@ -360,7 +365,7 @@ function schreibenPdf(x){ const m=x.m, e=D.ein.find(z=>z.id===m.einheit_id)||{},
     doc.setFont('helvetica','normal'); y+=5.2+2.5; };
   if(x.saldo>0){ const k=kontoObj(); paraF([['Bitte überweisen Sie die Nachzahlung von ',0],[eur(x.saldo),1],[' innerhalb von 30 Tagen nach Erhalt dieses Schreibens',0]].concat(k?[[' auf das Konto ',0],[kontoText(k),1],[', Kontoinhaber ',0],[A.name||'',1]]:[]).concat([[' mit dem Verwendungszweck „BK '+JAHR+' '+o.kz+' '+(e.bezeichnung||'')+'“.',0]])); }
   else if(x.saldo<0) para(B.guthaben==='verrechnen'?'Ihr Guthaben verrechnen wir mit Ihrer nächsten Mietzahlung. Sie können die nächste Miete also um diesen Betrag kürzen.':'Ihr Guthaben überweisen wir Ihnen in den nächsten Tagen auf Ihr Konto. Falls sich Ihre Bankverbindung geändert hat, teilen Sie uns diese bitte mit.');
-  if(x.aktuell&&!vzKeine()&&(m.vz_neu_bk!=null||m.vz_neu_hk!=null)){ const nb=m.vz_neu_bk!=null?m.vz_neu_bk:(m.vz_bk_mtl||0), nh=m.vz_neu_hk!=null?m.vz_neu_hk:(m.vz_hk_mtl||0);
+  const VN=vzNeu(x); if(VN){ const nb=VN.bk, nh=VN.hk;
     para('Auf Grundlage dieser Abrechnung passen wir Ihre monatlichen Vorauszahlungen ab dem '+dmy(vzAb())+' an (§ 560 Abs. 4 BGB): Betriebskosten '+eur(nb)+' (bisher '+eur(m.vz_bk_mtl||0)+'), Heizkosten '+eur(nh)+' (bisher '+eur(m.vz_hk_mtl||0)+'). Die übrigen Bestandteile Ihrer Miete bleiben unverändert.'); }
   if(x.lohn>0.005) para('Haushaltsnahe Dienstleistungen und Handwerkerleistungen (§ 35a EStG): Auf Sie entfallen Arbeitskosten von insgesamt '+eur(x.lohn)+' ('+x.lohnPos.map(p=>p.name+' '+eur(p.b)).join(', ')+').');
   para('Bei Fragen sind wir gerne für Sie da.'); y+=2; para('Mit freundlichen Grüßen'); y+=4; need(8); doc.text(gesVon()==='EE'?(A.name||'Eric Eisenhardt'):gesVon()==='WT'?'Ihr Team von Wohntraum Rheinhessen GmbH':'Ihr Team von '+(A.name||''),L,y);
@@ -377,7 +382,7 @@ async function insMieterkonto(x){ const m=x.m; if(!m.mk_pid||m.art!=='vorauszahl
     L.push({id:sid,d,t:'Betriebskostenabrechnung '+JAHR+' – '+(x.saldo>0?'Nachzahlung':'Guthaben'),b:r2(x.saldo),art:'BETRIEBSKOSTEN',abr:D.a.id,am:new Date().toISOString(),von:ICH||''});
     T.push((x.saldo>0?'Nachzahlung ':'Guthaben ')+eur(Math.abs(x.saldo))+' als Sollstellung'); }
   const patch={sollOS:L};
-  if(x.aktuell&&!vzKeine()&&(m.vz_neu_bk!=null||m.vz_neu_hk!=null)){ const ab=vzAb(), nb=r2(m.vz_neu_bk!=null?m.vz_neu_bk:(m.vz_bk_mtl||0)), nh=r2(m.vz_neu_hk!=null?m.vz_neu_hk:(m.vz_hk_mtl||0));
+  const VN=vzNeu(x); if(VN){ const ab=vzAb(), nb=VN.bk, nh=VN.hk;
     const S=(Array.isArray(mk.stufen)?mk.stufen:[]).slice().sort((a,b)=>String(a.ab||'').localeCompare(String(b.ab||''))); let alt=null; for(const z of S) if((z.ab||'')<=ab) alt=z;
     if(alt&&(r2(alt.bk||0)!==nb||r2(alt.hk||0)!==nh||alt.ab===ab)){ const neu=Object.assign({},alt,{ab,bk:nb,hk:nh,quelle:'os',von:'BK-Abrechnung '+JAHR,am:new Date().toISOString()});
       neu.total=r2((Number(alt.total)||0)-(Number(alt.bk)||0)-(Number(alt.hk)||0)+nb+nh);
