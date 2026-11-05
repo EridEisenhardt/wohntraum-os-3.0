@@ -366,12 +366,22 @@ function schreibenPdf(x){ const m=x.m, e=D.ein.find(z=>z.id===m.einheit_id)||{},
   if(x.saldo>0){ const k=kontoObj(); paraF([['Bitte überweisen Sie die Nachzahlung von ',0],[eur(x.saldo),1],[' innerhalb von 30 Tagen nach Erhalt dieses Schreibens',0]].concat(k?[[' auf das Konto ',0],[kontoText(k),1],[', Kontoinhaber ',0],[A.name||'',1]]:[]).concat([[' mit dem Verwendungszweck „BK '+JAHR+' '+o.kz+' '+(e.bezeichnung||'')+'“.',0]])); }
   else if(x.saldo<0) para(B.guthaben==='verrechnen'?'Ihr Guthaben verrechnen wir mit Ihrer nächsten Mietzahlung. Sie können die nächste Miete also um diesen Betrag kürzen.':'Ihr Guthaben überweisen wir Ihnen in den nächsten Tagen auf Ihr Konto. Falls sich Ihre Bankverbindung geändert hat, teilen Sie uns diese bitte mit.');
   const VN=vzNeu(x); if(VN){ const nb=VN.bk, nh=VN.hk;
-    para('Auf Grundlage dieser Abrechnung passen wir Ihre monatlichen Vorauszahlungen ab dem '+dmy(vzAb())+' an (§ 560 Abs. 4 BGB): Betriebskosten '+eur(nb)+' (bisher '+eur(m.vz_bk_mtl||0)+'), Heizkosten '+eur(nh)+' (bisher '+eur(m.vz_hk_mtl||0)+'). Die übrigen Bestandteile Ihrer Miete bleiben unverändert.'); }
+    para('Auf Grundlage dieser Abrechnung passen wir Ihre monatlichen Vorauszahlungen ab dem '+dmy(vzAb())+' an (§ 560 Abs. 4 BGB): Betriebskosten '+eur(nb)+' (bisher '+eur(m.vz_bk_mtl||0)+'), Heizkosten '+eur(nh)+' (bisher '+eur(m.vz_hk_mtl||0)+'). Die übrigen Bestandteile Ihrer Miete bleiben unverändert.');
+    const MN=mieteNeu(x,VN); if(MN) paraF([['Ihre neue monatliche Gesamtmiete ab dem '+dmy(vzAb())+' beträgt ',0],[eur(MN.neu),1],[' (bisher '+eur(MN.bisher)+').',0]]);
+    para('Bitte passen Sie Ihren Dauerauftrag ab dem '+dmy(vzAb())+' entsprechend an. Falls Sie Leistungen vom Jobcenter oder Sozialamt erhalten, reichen Sie diese Abrechnung bitte dort ein.'); }
   if(x.lohn>0.005) para('Haushaltsnahe Dienstleistungen und Handwerkerleistungen (§ 35a EStG): Auf Sie entfallen Arbeitskosten von insgesamt '+eur(x.lohn)+' ('+x.lohnPos.map(p=>p.name+' '+eur(p.b)).join(', ')+').');
   para('Bei Fragen sind wir gerne für Sie da.'); y+=2; para('Mit freundlichen Grüßen'); y+=4; need(8); doc.text(gesVon()==='EE'?(A.name||'Eric Eisenhardt'):gesVon()==='WT'?'Ihr Team von Wohntraum Rheinhessen GmbH':'Ihr Team von '+(A.name||''),L,y);
   const fuss=[A.name,[A.strasse,A.ort].filter(Boolean).join(', ')].filter(Boolean).join(' · '), n=doc.getNumberOfPages();
   for(let i=1;i<=n;i++){ doc.setPage(i); doc.setDrawColor(210); doc.line(L,284,R,284); doc.setFontSize(7.5); doc.setTextColor(120); doc.text(fuss,L,288); if(n>1) doc.text('Seite '+i+' von '+n,R,288,{align:'right'}); }
   return doc; }
+/* Mieterkonten für das Schreiben (neue Gesamtmiete) vorladen */
+const MKD={};
+async function mkVorladen(L){ const P=[...new Set(L.map(x=>x.m.mk_pid).filter(p=>p&&!(p in MKD)))]; if(!P.length) return;
+  try{ const {data}=await sb.from('os_docs').select('pfad,data').eq('app','oc').in('pfad',P.map(p=>'mietkonten/'+p)); P.forEach(p=>MKD[p]=null); (data||[]).forEach(r=>{ MKD[r.pfad.slice(11)]=r.data||null; }); }catch(e){} }
+/* Mietstufe, die am Tag der Anpassung gilt, und daraus die neue Gesamtmiete */
+function mieteNeu(x,VN){ const mk=MKD[x.m.mk_pid]; if(!mk||!VN) return null; const ab=vzAb();
+  const S=(Array.isArray(mk.stufen)?mk.stufen:[]).filter(z=>!(z.ab===ab&&z.von==='BK-Abrechnung '+JAHR)).sort((a,b)=>String(a.ab||'').localeCompare(String(b.ab||''))); let alt=null; for(const z of S) if((z.ab||'')<=ab) alt=z;
+  if(!alt||alt.total==null) return null; const bisher=r2(Number(alt.total)||0); return {bisher,neu:r2(bisher-(Number(alt.bk)||0)-(Number(alt.hk)||0)+VN.bk+VN.hk)}; }
 /* Ergebnis ins Mieterkonto übernehmen: Sollstellung für Nachzahlung/Guthaben und neue Vorauszahlungen als Mietstufe.
    Wiederholtes Erstellen ersetzt die Einträge (gleiche ID), es wird nichts doppelt gebucht. */
 async function insMieterkonto(x){ const m=x.m; if(!m.mk_pid||m.art!=='vorauszahlung') return '';
@@ -392,7 +402,7 @@ async function insMieterkonto(x){ const m=x.m; if(!m.mk_pid||m.art!=='vorauszahl
   if(T.length){ try{ const hid='h'+Date.now().toString(36)+Math.random().toString(36).slice(2,6); await sb.from('os_docs').insert({app:'oc',pfad:'historie/'+hid,data:{pid:m.mk_pid,id:hid,d:new Date().toISOString(),erfasst:new Date().toISOString(),art:'Änderung',t:'BK-Abrechnung '+JAHR+': '+T.join('; '),by:ICH||'BK-Abrechnung'},updated_at:new Date().toISOString()}); }catch(e){} }
   return T.length?' Mieterkonto: '+T.join('; ')+'.':''; }
 /* Vorschau: Schreiben (mit Schütz-Einzelabrechnung) nur anzeigen, nichts speichern */
-async function schreibenBytes(x){ const doc=schreibenPdf(x); let zus=null; try{ zus=await mitSchuetz(doc,x.m.id); }catch(e){} return zus||new Uint8Array(doc.output('arraybuffer')); }
+async function schreibenBytes(x){ await mkVorladen([x]); const doc=schreibenPdf(x); let zus=null; try{ zus=await mitSchuetz(doc,x.m.id); }catch(e){} return zus||new Uint8Array(doc.output('arraybuffer')); }
 async function schreibenVorschau(id){ const R=ergebnis(), x=R.mv[id]; if(!x||x.saldo==null) return; const w=window.open('','_blank');
   try{ await jsPdfLaden(); const b=await schreibenBytes(x); const u=URL.createObjectURL(new Blob([b],{type:'application/pdf'})); if(w) w.location.href=u; else window.open(u,'_blank'); }
   catch(e){ if(w) w.close(); toast('Vorschau nicht möglich: '+(e.message||e),6000); } }
@@ -404,7 +414,7 @@ async function alleVorschau(btn){ const R=ergebnis(), L=Object.values(R.mv).filt
   catch(e){ if(w) w.close(); toast('Vorschau nicht möglich: '+(e.message||e),6000); }
   btn.disabled=false; btn.textContent=t; }
 async function schreibenErstellen(id,zeigen,R0){ const R=R0||ergebnis(), x=R.mv[id]; if(!x||x.saldo==null) return false; const w=zeigen?window.open('','_blank'):null;
-  try{ await jsPdfLaden(); const doc=schreibenPdf(x), name=dateiNameMv(x.m); let zus=null; try{ zus=await mitSchuetz(doc,id); }catch(e){ toast('Schütz-Einzelabrechnung konnte nicht angehängt werden: '+(e.message||e),6000); }
+  try{ await jsPdfLaden(); await mkVorladen([x]); const doc=schreibenPdf(x), name=dateiNameMv(x.m); let zus=null; try{ zus=await mitSchuetz(doc,id); }catch(e){ toast('Schütz-Einzelabrechnung konnte nicht angehängt werden: '+(e.message||e),6000); }
     if(w) w.location.href=zus?URL.createObjectURL(new Blob([zus],{type:'application/pdf'})):doc.output('bloburl');
     const r=await odApi({aktion:'objektbasis',kz:[D.o.kz]}); const Bs=(r.objekte||{})[D.o.kz]; if(!Bs) throw new Error('Kein Objektordner für '+D.o.kz+' gefunden.');
     const t04=(Bs.top||[]).find(t=>/^04 /.test(t))||'04 Betriebskosten', ziel=await abrOrdner(Bs,t04); await odApi({aktion:'anlegen',pfad:ziel});
