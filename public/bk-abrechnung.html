@@ -320,10 +320,11 @@ function ergHtml(){ if(ABSD===null){ absLaden(); } if(KONTEN===null) kontenLaden
       +'<td class="n">'+x.tage+'</td><td class="n">'+eur(x.bk)+'</td><td class="n">'+(va?eur(x.vzb):'–')+'</td><td class="n">'+eur(x.hk)+'</td><td class="n">'+(va?eur(x.vzh):'–')+'</td>'
       +'<td class="n">'+(x.saldo==null?'–':'<b style="color:'+(x.saldo>0?'var(--warn)':'var(--ok,#1a7f37)')+'">'+(x.saldo>0?'Nachzahlung ':x.saldo<0?'Guthaben ':'')+eur(Math.abs(x.saldo))+'</b>')+'</td>'
       +'<td class="n">'+(va&&x.aktuell&&!vzKeine()?'<input class="zahl" style="width:70px" value="'+esc(m.vz_neu_bk!=null?fnum.format(m.vz_neu_bk):'')+'" placeholder="'+esc(x.vorBk)+'" onchange="mvFeld(\''+m.id+'\',\'vz_neu_bk\',this.value)"> / <input class="zahl" style="width:70px" value="'+esc(m.vz_neu_hk!=null?fnum.format(m.vz_neu_hk):'')+'" placeholder="'+esc(x.vorHk)+'" onchange="mvFeld(\''+m.id+'\',\'vz_neu_hk\',this.value)"><div class="sub">bisher '+eur(m.vz_bk_mtl||0)+' / '+eur(m.vz_hk_mtl||0)+'</div>':'–')+'</td>'
-      +'<td class="n" style="white-space:nowrap">'+(va?'<button class="small ghost" onclick="schreibenVorschau(\''+m.id+'\')">Vorschau</button> <button class="small" onclick="schreibenErstellen(\''+m.id+'\',true)">PDF</button>'+(m.schreiben_datei&&m.schreiben_datei.od?'<div class="sub"><a class="lnk" onclick="odOeffnen(\''+esc(m.schreiben_datei.od)+'\')">erstellt '+dmy(String(m.schreiben_am||'').slice(0,10))+'</a></div>':''):'')+'</td></tr>'; }
+      +'<td class="n" style="white-space:nowrap">'+(va?'<button class="small ghost" onclick="schreibenVorschau(\''+m.id+'\')">Vorschau</button> <button class="small" onclick="schreibenErstellen(\''+m.id+'\',true)">PDF</button> <button class="small" onclick="schreibenDrucken(\''+m.id+'\',this)">Drucken</button>'+(m.schreiben_datei&&m.schreiben_datei.od?'<div class="sub"><a class="lnk" onclick="odOeffnen(\''+esc(m.schreiben_datei.od)+'\')">erstellt '+dmy(String(m.schreiben_am||'').slice(0,10))+'</a></div>':''):'')+'</td></tr>'; }
   h+='</tbody></table></div>';
   h+='<div class="sub" style="margin-top:6px">Neue Vorauszahlung: Der graue Wert ist der Vorschlag (Kosten '+JAHR+' auf zwölf Monate gerechnet, aufgerundet). Ist das Feld leer, kommt der Vorschlag ins Schreiben und ins Mieterkonto. Soll es ein anderer Betrag sein, trag ihn ein. Soll bei einem Mieter nichts angepasst werden, trag den bisherigen Betrag ein. Für das ganze Objekt oben bei „Neue Vorauszahlung“ „keine Anpassung“ wählen.</div>';
   h+='<div class="acts"><button onclick="alleVorschau(this)">Vorschau aller Schreiben</button><span class="sub">Zeigt alle markierten Schreiben in einer PDF, ohne sie zu speichern.</span></div>';
+  h+='<div class="acts"><button onclick="alleDrucken(this)">Alle markierten Schreiben drucken</button><span class="sub">Für zweiseitigen Druck: Hat ein Schreiben eine ungerade Seitenzahl, kommt eine leere Seite dazu. So beginnt jedes Schreiben auf einem neuen Blatt.</span></div>';
   h+='<div class="acts"><button class="primary" onclick="alleSchreiben(this)">Alle markierten Schreiben erstellen</button><span class="sub">Die PDFs werden in OneDrive unter 04 Betriebskosten/BK-Abrechnungen/'+JAHR+' gespeichert.</span></div>';
   return h; }
 /* ---------- PDF ---------- */
@@ -406,6 +407,24 @@ async function schreibenBytes(x){ await mkVorladen([x]); const doc=schreibenPdf(
 async function schreibenVorschau(id){ const R=ergebnis(), x=R.mv[id]; if(!x||x.saldo==null) return; const w=window.open('','_blank');
   try{ await jsPdfLaden(); const b=await schreibenBytes(x); const u=URL.createObjectURL(new Blob([b],{type:'application/pdf'})); if(w) w.location.href=u; else window.open(u,'_blank'); }
   catch(e){ if(w) w.close(); toast('Vorschau nicht möglich: '+(e.message||e),6000); } }
+/* Drucken: PDF in einem unsichtbaren Rahmen öffnen und den Druckdialog starten; geht das nicht, in neuem Fenster öffnen */
+function pdfDrucken(bytes){ const u=URL.createObjectURL(new Blob([bytes],{type:'application/pdf'})); const f=document.createElement('iframe');
+  f.style.cssText='position:fixed;right:0;bottom:0;width:1px;height:1px;border:0;opacity:0'; f.src=u;
+  f.onload=()=>{ setTimeout(()=>{ try{ f.contentWindow.focus(); f.contentWindow.print(); }catch(e){ window.open(u,'_blank'); } setTimeout(()=>f.remove(),60000); },300); };
+  document.body.appendChild(f); }
+/* Schreiben auf gerade Seitenzahl auffüllen (leere Seite), damit beim zweiseitigen Druck nichts zusammenrutscht */
+async function aufGerade(bytes){ await pdfLibLaden(); const d=await PDFLib.PDFDocument.load(bytes,{ignoreEncryption:true}); if(d.getPageCount()%2){ const s=d.getPage(0).getSize(); d.addPage([s.width,s.height]); } return d; }
+async function schreibenDrucken(id,btn){ const R=ergebnis(), x=R.mv[id]; if(!x||x.saldo==null) return; const t=btn&&btn.textContent; if(btn){ btn.disabled=true; btn.textContent='Wird vorbereitet …'; }
+  try{ await jsPdfLaden(); const d=await aufGerade(await schreibenBytes(x)); pdfDrucken(await d.save()); }
+  catch(e){ toast('Drucken nicht möglich: '+(e.message||e),6000); }
+  if(btn){ btn.disabled=false; btn.textContent=t; } }
+async function alleDrucken(btn){ const R=ergebnis(), L=Object.values(R.mv).filter(x=>x.saldo!=null&&x.m.schreiben!==false); if(!L.length){ toast('Keine Schreiben markiert.'); return; }
+  const t=btn.textContent; btn.disabled=true;
+  try{ await jsPdfLaden(); await pdfLibLaden(); const out=await PDFLib.PDFDocument.create(); let i=0;
+    for(const x of L){ btn.textContent='Schreiben '+(++i)+' von '+L.length+' …'; const d=await aufGerade(await schreibenBytes(x)); for(const pg of await out.copyPages(d,d.getPageIndices())) out.addPage(pg); }
+    pdfDrucken(await out.save()); }
+  catch(e){ toast('Drucken nicht möglich: '+(e.message||e),6000); }
+  btn.disabled=false; btn.textContent=t; }
 async function alleVorschau(btn){ const R=ergebnis(), L=Object.values(R.mv).filter(x=>x.saldo!=null&&x.m.schreiben!==false); if(!L.length){ toast('Keine Schreiben markiert.'); return; }
   const w=window.open('','_blank'); const t=btn.textContent; btn.disabled=true;
   try{ await jsPdfLaden(); await pdfLibLaden(); const out=await PDFLib.PDFDocument.create(); let i=0;
