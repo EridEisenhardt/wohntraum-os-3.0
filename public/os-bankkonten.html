@@ -31,6 +31,9 @@ input,select{background:var(--soft);border:1px solid var(--line);border-radius:8
 .vgl{background:var(--soft);border-radius:8px;padding:8px 10px;margin-top:6px;font-size:12.5px}
 .ktab tr.auf{cursor:pointer}.ktab tr.auf:hover td{background:#f7f9fc}
 .ktab tr.gkopf td{background:#f1f4f8;font-weight:700;font-size:12px;letter-spacing:.04em;padding-top:10px}
+.kgross{font-size:14px;table-layout:fixed}.kgross th{font-size:11.5px;padding:8px 12px}.kgross td{padding:11px 12px}
+.gch{display:flex;align-items:baseline;gap:10px;font-weight:700;font-size:16px;margin-bottom:8px}.gch .n{margin-left:auto;font-variant-numeric:tabular-nums}
+.gsum{display:flex;justify-content:space-between;font-weight:700;font-size:15px;padding:12px 16px}
 </style></head><body>
 <div class="wrap" id="app"><div class="leer">Lädt …</div></div>
 <div class="toast" id="toast"></div>
@@ -61,10 +64,10 @@ function render(){
   if(!ST.bereit) h+='<div class="note">Die Bankanbindung ist noch nicht eingerichtet. In Vercel fehlt: '+esc(ST.fehlt.join(', '))+'</div>';
   /* Verbindungen */
   const V=(ST.verbindungen||[]).slice().sort((a,b)=>String(a.bank).localeCompare(String(b.bank),'de'));
-  h+='<div class="card"><div class="ch">Verbundene Banken</div>';
-  h+=V.length?'<table class="ktab"><thead><tr><th>Bank</th><th>Art</th><th>Konten</th><th>Freigabe gültig bis</th><th>Verbunden</th><th></th></tr></thead><tbody>'+V.map(v=>{const t=tageBis(v.bis);const p=t==null?'':t<0?'<span class="pill p-bad">abgelaufen</span>':t<=21?'<span class="pill p-warn">noch '+t+' Tage</span>':'';
+  let hb='<div class="card"><div class="ch">Verbundene Banken</div>';
+  hb+=V.length?'<table class="ktab"><thead><tr><th>Bank</th><th>Art</th><th>Konten</th><th>Freigabe gültig bis</th><th>Verbunden</th><th></th></tr></thead><tbody>'+V.map(v=>{const t=tageBis(v.bis);const p=t==null?'':t<0?'<span class="pill p-bad">abgelaufen</span>':t<=21?'<span class="pill p-warn">noch '+t+' Tage</span>':'';
     return '<tr><td><b>'+esc(v.bank)+'</b></td><td>'+(v.art==='personal'?'Privat':'Geschäftlich')+'</td><td>'+v.konten.length+'</td><td>'+esc(dmy(v.bis))+' '+p+'</td><td>'+esc(dmy(v.am))+(v.von?' · '+esc(v.von):'')+'</td><td class="n"><button class="small" data-neu="'+esc(v.bank)+'|'+esc(v.art)+'"'+(BUSY||!ST.bereit?' disabled':'')+'>Neu bestätigen</button> <button class="small" data-trennen="'+esc(v.id)+'"'+(BUSY?' disabled':'')+'>Trennen</button></td></tr>';}).join('')+'</tbody></table>':'<div class="leer">Noch keine Bank verbunden.</div>';
-  h+='<div class="acts" style="margin-top:10px"><input id="b-bank" list="b-banken" placeholder="Bank suchen, z. B. DKB" autocomplete="off" style="width:280px"'+(ST.bereit?'':' disabled')+'><datalist id="b-banken">'+(BANKEN||[]).map(b=>'<option value="'+esc(b.name)+'">').join('')+'</datalist>'
+  hb+='<div class="acts" style="margin-top:10px"><input id="b-bank" list="b-banken" placeholder="Bank suchen, z. B. DKB" autocomplete="off" style="width:280px"'+(ST.bereit?'':' disabled')+'><datalist id="b-banken">'+(BANKEN||[]).map(b=>'<option value="'+esc(b.name)+'">').join('')+'</datalist>'
     +'<select id="b-art"><option value="business">Geschäftlich</option><option value="personal">Privat</option></select>'
     +'<button class="primary" data-a="verbinden"'+(BUSY||!ST.bereit?' disabled':'')+'>'+(BUSY==='verbinden'?'Bank wird geöffnet …':'Bank verbinden')+'</button></div></div>';
   /* Konten */
@@ -75,14 +78,19 @@ function render(){
     const kn=k=>(KN[k.iban]||{}).name||'', gs=k=>kurzInh(k,KN[k.iban]), GO=['EE','WT','KiBo'], gi=k=>{ const i=GO.indexOf(gs(k)); return i<0?GO.length:i; };
     const art=k=>{ const n=kn(k); if(!n) return 4; if(/-Allgemein|-Allg\b/i.test(n)) return 1; if(/-Instandhaltung$/i.test(n)) return 2; if(/^(EE|WT|KiBo)-/i.test(n)) return 3; return 0; };
     const L=KONTEN.slice().sort((a,b)=>gi(a)-gi(b)||String(gs(a)).localeCompare(String(gs(b)),'de')||art(a)-art(b)||kn(a).localeCompare(kn(b),'de',{numeric:true})||(a.bank+a.iban).localeCompare(b.bank+b.iban,'de'));
-    let gAlt=null; const GS={}; let ALL=0; L.forEach(k=>{ if(!k.fehler&&typeof k.saldo==='number'){ const g=gs(k)||'Ohne Gesellschaft'; GS[g]=(GS[g]||0)+k.saldo; ALL+=k.saldo; } });
-    h+='<table class="ktab"><thead><tr><th>Konto</th><th>Bank</th><th>IBAN</th><th>Inhaber</th><th class="n">Kontostand</th><th>Stand</th></tr></thead><tbody>'
-      +L.map(k=>{
-        const kk=KN[k.iban]||{}, g=gs(k)||'Ohne Gesellschaft', kopf=g!==gAlt?'<tr class="gkopf"><td colspan="4">'+esc(g)+'</td><td class="n">'+eur(GS[g]||0)+'</td><td></td></tr>':''; gAlt=g; const ky=kk.key||k.iban, offen=!!AUF[ky]; return kopf+'<tr class="auf" data-auf="'+esc(ky)+'" title="Klicken, um die Umsätze zu sehen"><td class="nw"><b>'+(offen?'− ':'+ ')+esc(kk.name||'–')+'</b></td><td class="nw">'+esc(kurzBank(k.bank))+'</td><td class="nw">'+esc(fiban(k.iban))+'</td><td class="nw">'+esc(kurzInh(k,kk))+'</td><td class="n"><b>'+(k.fehler?'<span class="neg">Fehler</span>':eur(k.saldo))+'</b></td><td>'+esc(dmy(k.saldoAm))+'</td></tr>'
+    const GS={}; let ALL=0; L.forEach(k=>{ if(!k.fehler&&typeof k.saldo==='number'){ const g=gs(k)||'Ohne Gesellschaft'; GS[g]=(GS[g]||0)+k.saldo; ALL+=k.saldo; } });
+    const GR=[]; L.forEach(k=>{ const g=gs(k)||'Ohne Gesellschaft'; let x=GR.find(y=>y.g===g); if(!x){ x={g,L:[]}; GR.push(x); } x.L.push(k); });
+    const kopfT='<colgroup><col style="width:22%"><col style="width:12%"><col style="width:26%"><col style="width:12%"><col style="width:16%"><col style="width:12%"></colgroup><thead><tr><th>Konto</th><th>Bank</th><th>IBAN</th><th>Inhaber</th><th class="n">Kontostand</th><th>Stand</th></tr></thead>';
+    h+='</div>';
+    h+=GR.map(G=>'<div class="card"><div class="gch">'+esc(G.g)+'<span class="n">'+eur(GS[G.g]||0)+'</span></div><table class="ktab kgross">'+kopfT+'<tbody>'
+      +G.L.map(k=>{ const kk=KN[k.iban]||{}, ky=kk.key||k.iban, offen=!!AUF[ky];
+        return '<tr class="auf" data-auf="'+esc(ky)+'" title="Klicken, um die Umsätze zu sehen"><td class="nw"><b>'+(offen?'− ':'+ ')+esc(kk.name||'–')+'</b></td><td class="nw">'+esc(kurzBank(k.bank))+'</td><td class="nw">'+esc(fiban(k.iban))+'</td><td class="nw">'+esc(kurzInh(k,kk))+'</td><td class="n"><b>'+(k.fehler?'<span class="neg">Fehler</span>':eur(k.saldo))+'</b></td><td>'+esc(dmy(k.saldoAm))+'</td></tr>'
           +(offen?'<tr><td colspan="6" style="background:#fafbfd">'+umsaetzeHtml(ky)+'</td></tr>':'')
-          +(k.fehler?'<tr><td colspan="6"><div class="vgl neg">'+esc(k.fehler)+'</div></td></tr>':'');}).join('')+'</tbody><tfoot><tr class="gkopf"><td colspan="4">Summe aller Konten</td><td class="n">'+eur(ALL)+'</td><td></td></tr></tfoot></table>';
+          +(k.fehler?'<tr><td colspan="6"><div class="vgl neg">'+esc(k.fehler)+'</div></td></tr>':''); }).join('')+'</tbody></table></div>').join('');
+    h+='<div class="card gsum"><span>Summe aller Konten</span><span>'+eur(ALL)+'</span></div>';
+    h+=hb; $('app').innerHTML=h; return;
   }
-  h+='</div>';
+  h+='</div>'+hb;
   $('app').innerHTML=h;
 }
 /* Umsätze je Konto aus den Buchungen im OS (buchungen/<Konto>_<Monat>) */
