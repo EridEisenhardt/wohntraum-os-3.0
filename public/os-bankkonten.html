@@ -29,6 +29,7 @@ input,select{background:var(--soft);border:1px solid var(--line);border-radius:8
 .leer{color:var(--muted);padding:8px 4px;font-size:12.5px}
 .toast{position:fixed;left:50%;bottom:20px;transform:translateX(-50%);background:var(--ink);color:var(--bg);padding:9px 16px;border-radius:8px;font-size:13px;opacity:0;pointer-events:none;transition:opacity .2s;z-index:50}.toast.on{opacity:1}
 .vgl{background:var(--soft);border-radius:8px;padding:8px 10px;margin-top:6px;font-size:12.5px}
+.ktab tr.auf{cursor:pointer}.ktab tr.auf:hover td{background:#f7f9fc}
 .ktab tr.gkopf td{background:#f1f4f8;font-weight:700;font-size:12px;letter-spacing:.04em;padding-top:10px}
 </style></head><body>
 <div class="wrap" id="app"><div class="leer">Lädt …</div></div>
@@ -74,16 +75,36 @@ function render(){
     const kn=k=>(KN[k.iban]||{}).name||'', gs=k=>kurzInh(k,KN[k.iban]), GO=['EE','WT','KiBo'], gi=k=>{ const i=GO.indexOf(gs(k)); return i<0?GO.length:i; };
     const art=k=>{ const n=kn(k); if(!n) return 4; if(/-Allgemein|-Allg\b/i.test(n)) return 1; if(/-Instandhaltung$/i.test(n)) return 2; if(/^(EE|WT|KiBo)-/i.test(n)) return 3; return 0; };
     const L=KONTEN.slice().sort((a,b)=>gi(a)-gi(b)||String(gs(a)).localeCompare(String(gs(b)),'de')||art(a)-art(b)||kn(a).localeCompare(kn(b),'de',{numeric:true})||(a.bank+a.iban).localeCompare(b.bank+b.iban,'de'));
-    let gAlt=null;
+    let gAlt=null; const GS={}; let ALL=0; L.forEach(k=>{ if(!k.fehler&&typeof k.saldo==='number'){ const g=gs(k)||'Ohne Gesellschaft'; GS[g]=(GS[g]||0)+k.saldo; ALL+=k.saldo; } });
     h+='<table class="ktab"><thead><tr><th>Konto</th><th>Bank</th><th>IBAN</th><th>Inhaber</th><th class="n">Kontostand</th><th>Stand</th></tr></thead><tbody>'
       +L.map(k=>{
-        const kk=KN[k.iban]||{}, g=gs(k)||'Ohne Gesellschaft', kopf=g!==gAlt?'<tr class="gkopf"><td colspan="6">'+esc(g)+'</td></tr>':''; gAlt=g; return kopf+'<tr><td class="nw"><b>'+esc(kk.name||'–')+'</b></td><td class="nw">'+esc(kurzBank(k.bank))+'</td><td class="nw">'+esc(fiban(k.iban))+'</td><td class="nw">'+esc(kurzInh(k,kk))+'</td><td class="n"><b>'+(k.fehler?'<span class="neg">Fehler</span>':eur(k.saldo))+'</b></td><td>'+esc(dmy(k.saldoAm))+'</td></tr>'
-          +(k.fehler?'<tr><td colspan="6"><div class="vgl neg">'+esc(k.fehler)+'</div></td></tr>':'');}).join('')+'</tbody></table>';
+        const kk=KN[k.iban]||{}, g=gs(k)||'Ohne Gesellschaft', kopf=g!==gAlt?'<tr class="gkopf"><td colspan="4">'+esc(g)+'</td><td class="n">'+eur(GS[g]||0)+'</td><td></td></tr>':''; gAlt=g; const ky=kk.key||k.iban, offen=!!AUF[ky]; return kopf+'<tr class="auf" data-auf="'+esc(ky)+'" title="Klicken, um die Umsätze zu sehen"><td class="nw"><b>'+(offen?'− ':'+ ')+esc(kk.name||'–')+'</b></td><td class="nw">'+esc(kurzBank(k.bank))+'</td><td class="nw">'+esc(fiban(k.iban))+'</td><td class="nw">'+esc(kurzInh(k,kk))+'</td><td class="n"><b>'+(k.fehler?'<span class="neg">Fehler</span>':eur(k.saldo))+'</b></td><td>'+esc(dmy(k.saldoAm))+'</td></tr>'
+          +(offen?'<tr><td colspan="6" style="background:#fafbfd">'+umsaetzeHtml(ky)+'</td></tr>':'')
+          +(k.fehler?'<tr><td colspan="6"><div class="vgl neg">'+esc(k.fehler)+'</div></td></tr>':'');}).join('')+'</tbody><tfoot><tr class="gkopf"><td colspan="4">Summe aller Konten</td><td class="n">'+eur(ALL)+'</td><td></td></tr></tfoot></table>';
   }
   h+='</div>';
   $('app').innerHTML=h;
 }
-async function laden(){ try{ const {data}=await sb.from('os_docs').select('data').eq('app','oc').eq('pfad','stamm/konten').maybeSingle(); KN={}; ((data&&data.data&&data.data.konten)||[]).forEach(k=>{ if(k&&k.iban) KN[String(k.iban).replace(/\s/g,'').toUpperCase()]={name:k.name||'',ges:k.ges||''}; }); }catch(e){}
+/* Umsätze je Konto aus den Buchungen im OS (buchungen/<Konto>_<Monat>) */
+const AUF={}, UMS={};
+async function umsLaden(ky){ UMS[ky]='lade'; render();
+  try{ const {data,error}=await sb.from('os_docs').select('pfad,data').eq('app','oc').like('pfad','buchungen/'+ky+'_%'); if(error) throw error;
+    const L=[]; (data||[]).forEach(r=>{ const d=r.data||{}; if(d.konto&&d.konto!==ky) return; (d.tx||[]).forEach(t=>L.push(t)); });
+    L.sort((a,b)=>a.d<b.d?1:a.d>b.d?-1:0); UMS[ky]=L; }
+  catch(e){ UMS[ky]={fehler:e.message||String(e)}; }
+  render(); }
+function umsaetzeHtml(ky){ const L=UMS[ky];
+  if(!L||L==='lade') return '<div class="klein">Umsätze werden geladen …</div>';
+  if(L.fehler) return '<div class="neg">'+esc(L.fehler)+'</div>';
+  if(!L.length) return '<div class="klein">Für dieses Konto sind noch keine Umsätze im OS.</div>';
+  const M=L.slice(0,AUF[ky]);
+  return '<table class="ktab"><thead><tr><th>Datum</th><th>Empfänger / Absender</th><th>Verwendungszweck</th><th class="n">Betrag</th></tr></thead><tbody>'
+    +M.map(t=>'<tr><td class="nw">'+esc(dmy(t.d))+'</td><td>'+esc(t.n||'')+'</td><td class="klein">'+esc(String(t.z||'').slice(0,140))+'</td><td class="n nw '+(t.b<0?'neg':'pos')+'">'+eur(t.b)+'</td></tr>').join('')+'</tbody></table>'
+    +(L.length>M.length?'<button class="small" data-mehr="'+esc(ky)+'" style="margin-top:6px">Weitere Umsätze zeigen ('+(L.length-M.length)+')</button>':''); }
+document.addEventListener('click',e=>{ const m=e.target.closest('[data-mehr]'); if(m){ const k=m.dataset.mehr; AUF[k]=(AUF[k]||40)+100; render(); return; }
+  const r=e.target.closest('tr[data-auf]'); if(!r) return; const k=r.dataset.auf;
+  if(AUF[k]){ delete AUF[k]; render(); } else { AUF[k]=40; if(!Array.isArray(UMS[k])) umsLaden(k); else render(); } });
+async function laden(){ try{ const {data}=await sb.from('os_docs').select('data').eq('app','oc').eq('pfad','stamm/konten').maybeSingle(); KN={}; ((data&&data.data&&data.data.konten)||[]).forEach(k=>{ if(k&&k.iban) KN[String(k.iban).replace(/\s/g,'').toUpperCase()]={name:k.name||'',ges:k.ges||'',key:k.key||k.iban}; }); }catch(e){}
   try{ ST=await api('/api/bank',{aktion:'status'}); }catch(e){ ST={bereit:false,fehlt:[],verbindungen:[]}; toast(e.message,7000); }
   render(); if(ST.bereit&&!BANKEN){ try{ BANKEN=(await api('/api/bank',{aktion:'banken'})).banken; render(); }catch(e){ toast(e.message,7000); } } }
 async function abruf(){ BUSY='abruf'; render();
