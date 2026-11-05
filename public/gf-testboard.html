@@ -69,6 +69,8 @@ h1{font-size:21px;font-weight:800}
 .cell .ct.ctover{outline:2px dashed var(--accent);outline-offset:-2px}
 .cell .ct .cttags{display:flex;flex-wrap:wrap;gap:3px;margin-top:3px}
 .cell .ct .cttag{font-size:9px;font-weight:600;background:#fde68a;color:#92400e;border-radius:4px;padding:0 4px;line-height:1.5}
+.cell .ct.sub{background:#f7f3ff;border:1px dashed #cbb6f2;color:#6d4aff;font-style:italic}
+.subdate{border:1px solid var(--line);border-radius:6px;padding:2px 4px;font:inherit;font-size:11px;color:var(--muted)}
 .addday{float:right;cursor:pointer;color:var(--muted);font-weight:700;width:18px;height:18px;line-height:17px;text-align:center;border-radius:5px;opacity:0;transition:.1s}
 .cell:hover .addday{opacity:1}
 .addday:hover{background:var(--accent);color:#fff}
@@ -296,7 +298,7 @@ async function load(){
   TAGVORRAT=(tv&&!tv.error?(tv.data||[]):[]).map(x=>x.name);
   TASKS=t.data||[];
   const seen=new Set();KONT=[];
-  (ck.data||[]).concat(hk.data||[]).forEach(k=>{const nm=[k.vorname,k.name].filter(Boolean).join(' ').trim();if(nm&&!seen.has(nm)){seen.add(nm);KONT.push({id:k.id,label:nm,sort:((k.name||'')+' '+(k.vorname||'')).trim().toLowerCase()});}});
+  (ck.data||[]).concat(hk.data||[]).forEach(k=>{const nm=[k.vorname,k.name].filter(Boolean).join(' ').trim();if(nm&&!seen.has(nm)){seen.add(nm);const disp=(k.name&&k.vorname)?(k.name+', '+k.vorname):nm;KONT.push({id:k.id,label:nm,display:disp,sort:((k.name||'')+' '+(k.vorname||'')).trim().toLowerCase()});}});
   KONT.sort((a,b)=>(a.sort||a.label).localeCompare(b.sort||b.label,'de'));
   OBJ=(ob.data||[]).map(o=>{const kz=o.kuerzel||o.h_id_text||'';return {id:o.id,label:(kz?kz+' · ':'')+(o.name||'')};}).sort((a,b)=>a.label.localeCompare(b.label,'de',{numeric:true}));
   try{const {data:{session}}=await sb.auth.getSession();if(session&&session.user){ICH=(session.user.user_metadata&&(session.user.user_metadata.name||session.user.user_metadata.full_name))||session.user.email||'';}}catch(e){}
@@ -305,7 +307,7 @@ async function load(){
   render();
   const qp=new URLSearchParams(location.search);const op=qp.get('task')||qp.get('ticket');if(op)openDetail(op);
 }
-function kontOptions(sel){return `<option value="">+ Kontakt</option>`+KONT.map(k=>`<option value="${k.id}|${esc(k.label)}"${sel===k.label?' selected':''}>${esc(k.label)}</option>`).join('');}
+function kontOptions(sel){return `<option value="">+ Kontakt</option>`+KONT.map(k=>`<option value="${k.id}|${esc(k.label)}"${sel===k.label?' selected':''}>${esc(k.display||k.label)}</option>`).join('');}
 function objOptions(sel){return `<option value="">+ Objekt</option>`+OBJ.map(o=>`<option value="${o.id}|${esc(o.label)}"${sel===o.label?' selected':''}>${esc(o.label)}</option>`).join('');}
 function card(t){
   const over=t.faellig&&t.faellig<today&&t.status!=='erledigt';
@@ -391,7 +393,9 @@ function renderCalendar(){
         if(t.__sub){const so=iso<today&&!t.done;const scl=t.done?'done':(so?'over':'');const st=(t.titel||'');return `<div class="ct sub ${scl}" style="cursor:pointer" onclick="openDetail('${t.task_id}')" title="Unteraufgabe – ${esc(st)}"><div class="ctt">☑ ${esc(CALMODE==='woche'?st:(st.length>22?st.slice(0,20)+'…':st))}</div></div>`;}
         const over=iso<today&&t.status!=='erledigt';const cls=t.status==='erledigt'?'done':(over?'over':'');
         const tg=(Array.isArray(t.tags)?t.tags:[]).map(x=>`<span class="cttag">#${esc(x)}</span>`).join('');
-        return `<div class="ct ${cls}" draggable="true" ondragstart="event.stopPropagation();drag(event,'${t.id}')" ondragover="event.preventDefault();event.stopPropagation();this.classList.add('ctover')" ondragleave="this.classList.remove('ctover')" ondrop="calReorder(event,'${t.id}',this)" style="cursor:grab" onclick="openDetail('${t.id}')" title="Ziehen = verschieben/umsortieren · Klick = öffnen – ${esc(t.titel)}"><div class="ctt">${ARTICON[t.art||'aufgabe']||'📌'} ${esc(CALMODE==='woche'?t.titel:(t.titel.length>24?t.titel.slice(0,22)+'…':t.titel))}</div>${tg?`<div class="cttags">${tg}</div>`:''}</div>`;}).join('')
+        const ms=(Array.isArray(t.massnahme)?t.massnahme:(t.massnahme?[t.massnahme]:[])).filter(m=>MASSICON[m]);
+        const ic=ms.length?ms.map(m=>MASSICON[m]).join(''):(ARTICON[t.art||'aufgabe']||'📌');
+        return `<div class="ct ${cls}" draggable="true" ondragstart="event.stopPropagation();drag(event,'${t.id}')" ondragover="event.preventDefault();event.stopPropagation();this.classList.add('ctover')" ondragleave="this.classList.remove('ctover')" ondrop="calReorder(event,'${t.id}',this)" style="cursor:grab" onclick="openDetail('${t.id}')" title="Ziehen = verschieben/umsortieren · Klick = öffnen – ${esc(t.titel)}"><div class="ctt">${ic} ${esc(CALMODE==='woche'?t.titel:(t.titel.length>24?t.titel.slice(0,22)+'…':t.titel))}</div>${tg?`<div class="cttags">${tg}</div>`:''}</div>`;}).join('')
     }</div>`;
   }
   document.getElementById('view').innerHTML=`<div class="calhead">
@@ -475,7 +479,10 @@ async function linkObj(id,val){const t=TASKS.find(x=>x.id===id);if(!t)return;con
 function setVal(id,v){const e=document.getElementById(id);if(e)e.value=v==null?'':v;}
 async function openDetail(id){
   const t=TASKS.find(x=>x.id===id);if(!t)return;DTASK=t;
-  document.getElementById('dTitle').textContent=(ARTICON[t.art||'aufgabe']||'📌')+' '+(ARTLBL[t.art||'aufgabe']||'Aufgabe');
+  {const hm=(Array.isArray(t.massnahme)?t.massnahme:(t.massnahme?[t.massnahme]:[])).filter(m=>MASSICON[m]);
+   const hi=hm.length?hm.map(m=>MASSICON[m]).join(''):(ARTICON[t.art||'aufgabe']||'📌');
+   const hl=hm.length?hm.map(m=>MASSLBL[m]).join(' · '):(ARTLBL[t.art||'aufgabe']||'Aufgabe');
+   document.getElementById('dTitle').textContent=hi+' '+hl;}
   setVal('d_titel',t.titel);setVal('d_art',t.art||'aufgabe');setVal('d_prio',t.prio||'');
   const alk=document.getElementById('d_akqlink');
   if(alk){if(t.akquise_id){alk.style.display='';alk.innerHTML=`<a href="akquise.html?lead=${encodeURIComponent(t.akquise_id)}" target="_blank" rel="noopener" style="color:var(--accent);font-weight:600;text-decoration:none">🏠 Zum Lead im Akquise-Board ↗</a>`;}else{alk.style.display='none';alk.innerHTML='';}}
@@ -509,8 +516,8 @@ function renderDSubs(){
     return `<div class="dsub ${s.done?'done':''}">
     <input type="checkbox" ${s.done?'checked':''} onchange="dToggleSub('${s.id}',this.checked)">
     <input class="subedit" value="${esc(s.titel)}" onchange="dUpdSub('${s.id}',this.value)" onkeydown="if(event.key==='Enter')this.blur()" title="Zum Bearbeiten klicken">
-
-    <b onclick="dSubToggle('${s.id}')" title="Notizen / Chat" style="margin-left:auto;cursor:pointer">💬${notes.length?' '+notes.length:''}</b>
+    <input type="date" class="subdate" value="${s.faellig||''}" title="Fällig am – erscheint im Kalender" onchange="dSubDate('${s.id}',this.value)" oninput="dSubDate('${s.id}',this.value)">
+    <b onclick="dSubToggle('${s.id}')" title="Notizen / Chat" style="cursor:pointer">💬${notes.length?' '+notes.length:''}</b>
     <b onclick="dDelSub('${s.id}')" title="löschen" style="cursor:pointer">🗑</b></div>${chat}`;
   }).join('')||'<div style="color:var(--muted);font-size:12px">Keine Unteraufgaben.</div>';
 }
@@ -571,13 +578,16 @@ async function logVer(text){if(!DTASK)return;const row={task_id:DTASK.id,text,au
 async function dAddSub(){const el=document.getElementById('d_subnew');const titel=(el.value||'').trim();if(!titel||!DTASK)return;
   const {data}=await sb.from('os_task_subtasks').insert({task_id:DTASK.id,titel,done:false}).select().maybeSingle();
   if(data){SUBS.push(data);el.value='';renderDSubs();}}
-async function dToggleSub(id,v){const {error}=await sb.from('os_task_subtasks').update({done:v}).eq('id',id);if(error){toast(error.message);return;}const s=SUBS.find(x=>x.id===id);if(s)s.done=v;
+async function dToggleSub(id,v){const {error}=await sb.from('os_task_subtasks').update({done:v}).eq('id',id);if(error){toast(error.message);return;}const s=SUBS.find(x=>x.id===id);if(s)s.done=v;SUBCAL.forEach(x=>{if(x.id===id)x.done=v;});
   if(s&&DTASK){const txt=(v?'Unteraufgabe erledigt: «':'Unteraufgabe wieder offen: «')+s.titel+'»';
     const {data}=await sb.from('os_task_verlauf').insert({task_id:DTASK.id,subtask_id:id,text:txt,autor:ICH||'System'}).select().maybeSingle();
     if(data)VER.unshift(data);}
   renderDSubs();renderDVer();}
-async function dDelSub(id){await sb.from('os_task_subtasks').delete().eq('id',id);SUBS=SUBS.filter(x=>x.id!==id);renderDSubs();}
-async function dUpdSub(id,val){const v=(val||'').trim();const s=SUBS.find(x=>x.id===id);if(!s)return;if(!v){renderDSubs();return;}if(v===s.titel)return;s.titel=v;const {error}=await sb.from('os_task_subtasks').update({titel:v}).eq('id',id);if(error){toast(error.message);return;}renderDSubs();}
+async function dDelSub(id){await sb.from('os_task_subtasks').delete().eq('id',id);SUBS=SUBS.filter(x=>x.id!==id);SUBCAL=SUBCAL.filter(x=>x.id!==id);renderDSubs();}
+async function dUpdSub(id,val){const v=(val||'').trim();const s=SUBS.find(x=>x.id===id);if(!s)return;if(!v){renderDSubs();return;}if(v===s.titel)return;s.titel=v;const {error}=await sb.from('os_task_subtasks').update({titel:v}).eq('id',id);if(error){toast(error.message);return;}SUBCAL.forEach(x=>{if(x.id===id)x.titel=v;});renderDSubs();}
+async function dSubDate(id,v){const nv=v||null;const s=SUBS.find(x=>x.id===id);if(s&&(s.faellig||null)===nv)return;if(s)s.faellig=nv;const {error}=await sb.from('os_task_subtasks').update({faellig:nv}).eq('id',id);if(error){toast(error.message);return;}
+  SUBCAL=SUBCAL.filter(x=>x.id!==id);if(nv&&s)SUBCAL.push({id,task_id:s.task_id||(DTASK&&DTASK.id),titel:s.titel,done:s.done,faellig:nv});
+  renderDSubs();render();}
 function autoGrow(el){if(!el)return;el.style.height='auto';el.style.height=(el.scrollHeight+2)+'px';}
 async function dAutoBeschreibung(v){if(!DTASK)return;const nv=(v&&v.trim())?v:null;if((DTASK.beschreibung||'')===(nv||''))return;DTASK.beschreibung=nv;const {error}=await sb.from('os_tasks').update({beschreibung:nv,updated_at:new Date().toISOString()}).eq('id',DTASK.id);if(error){toast('Beschreibung: '+error.message);return;}const t=TASKS.find(x=>x.id===DTASK.id);if(t)t.beschreibung=nv;toast('Beschreibung gespeichert ✓');}
 async function dAddComment(){const el=document.getElementById('d_comment');const text=(el.value||'').trim();if(!text)return;await logVer('💬 '+text);el.value='';}
