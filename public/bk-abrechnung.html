@@ -732,7 +732,7 @@ async function stapelHoch(files){ if(!K) return; if(K.neu){ toast('Bitte zuerst 
       const it={beleg:b,empfaenger:m.abs,datum:m.datum,betrag:m.betrag!=null?fnum.format(m.betrag):'',von:'',bis:'',rechnungsnr:'',nicht_umlagefaehig:'',lohnanteil:'',verbrauch:'',info:''};
       try{ const t=await pdfTextVon(null,f); const R=rechnungLesen(t);
         for(const k of ['von','bis','rechnungsnr','datum']) if(R[k]) it[k]=R[k];
-        if(R.betrag!=null) it.betrag=fnum.format(R.betrag); if(R.lohnanteil!=null&&LOHN(ka)) it.lohnanteil=fnum.format(R.lohnanteil);
+        if(R.betrag!=null&&m.betrag==null) it.betrag=fnum.format(R.betrag); if(R.lohnanteil!=null&&LOHN(ka)) it.lohnanteil=fnum.format(R.lohnanteil);
         if(R.nicht_umlagefaehig!=null) it.nicht_umlagefaehig=fnum.format(R.nicht_umlagefaehig); if(R.verbrauch!=null) it.verbrauch=fnum.format(R.verbrauch);
         if(!t) it.info='nicht lesbar'; }catch(e){ it.info='nicht gelesen'; }
       S.L.push(it); }
@@ -866,7 +866,10 @@ function rechnungLesen(t){ const o={}; const G=String(t||''); const geld=s=>{ co
   if(z){ o.von=iso(z[1]); o.bis=iso(z[2]); }
   const rn=G.match(/Rechnungs?\s*-?\s*(?:nr|nummer|no)\.?\s*:?\s*([A-Z0-9][A-Z0-9\-\/\.]{2,30})/i)||G.match(/Bescheid\s*(?:nr|nummer)\.?\s*:?\s*([A-Z0-9][A-Z0-9\-\/\.]{2,30})/i); if(rn) o.rechnungsnr=rn[1];
   const rd=G.match(/(?:Rechnungsdatum|Datum|Bescheiddatum)\s*:?\s*(\d{1,2}\.\d{1,2}\.\d{4})/i); if(rd) o.datum=iso(rd[1]);
-  const gb=G.match(/(?:Gesamtbetrag|Rechnungsbetrag|Endbetrag|Bruttobetrag|Summe (?:Ihrer )?(?:Kosten|Entgelte)|Gesamtkosten|zu zahlender Betrag|Festgesetzt[^0-9]{0,30})[^0-9]{0,40}(\d{1,3}(?:\.\d{3})*,\d{2})/i); if(gb) o.betrag=geld(gb[1]);
+  /* Bruttobetrag: alle Gesamt-Angaben suchen, Netto-Angaben auslassen und den größten Betrag nehmen (brutto ist immer größer als netto) */
+  { const re=/(Gesamtbetrag|Rechnungsbetrag|Endbetrag|Bruttobetrag|Brutto(?:summe|gesamt)?|Gesamtsumme|Zahlbetrag|Summe (?:Ihrer )?(?:Kosten|Entgelte)|Gesamtkosten|zu zahlender Betrag|zu zahlen|Festgesetzt[^0-9]{0,30})([^0-9]{0,40})(\d{1,3}(?:\.\d{3})*,\d{2})/gi; let mm, best=null;
+    while((mm=re.exec(G))){ if(/netto|zzgl|zuzügl|ohne\s*(?:MwSt|USt)|exkl/i.test(mm[1]+mm[2])) continue; const v=geld(mm[3]); if(v!=null&&(best==null||v>best)) best=v; }
+    if(best!=null) o.betrag=best; }
   const lo=G.match(/(?:Arbeitskosten|Lohnkosten|Lohnanteil|Arbeitslohn|Anteil Arbeitslohn|§\s*35a[^0-9]{0,40})[^0-9]{0,40}(\d{1,3}(?:\.\d{3})*,\d{2})/i); if(lo) o.lohnanteil=geld(lo[1]);
   const zn=G.match(/(?:Zählernummer|Zähler-Nr\.?|Zählernr\.?)\s*:?\s*([A-Z0-9][A-Z0-9\-\/ ]{3,24}[A-Z0-9])/i); if(zn) o.zaehler=zn[1].trim();
   const vb=G.match(/(?:Verbrauch|Menge)[^0-9]{0,30}(\d{1,3}(?:\.\d{3})*(?:,\d{1,3})?)\s*(kWh|m³|m3|cbm)/i); if(vb){ o.verbrauch=parseNum(vb[1]); o.einheit=vb[2]; }
@@ -881,7 +884,8 @@ async function belegVorbereiten(b,file){ const m=nameMeta(b.n), ka=kKa();
   if(!K.neu.von&&m.datum&&m.datum.slice(0,4)===String(JAHR)){ } kNeu2();
   try{ const t=await pdfTextVon(b.od,file); const R=rechnungLesen(t); const n=K.neu; if(!n) return;
     for(const f of ['von','bis','rechnungsnr','datum']) if(R[f]&&!n.edit[f]) n[f]=R[f];
-    if(R.betrag!=null&&!n.edit.betrag) n.betrag=fnum.format(R.betrag);
+    /* Betrag aus dem Dateinamen (Belegablage: Bruttobetrag) hat Vorrang; sonst der Bruttobetrag aus der Rechnung */
+    if(R.betrag!=null&&!n.edit.betrag&&m.betrag==null) n.betrag=fnum.format(R.betrag);
     if(R.lohnanteil!=null&&!n.edit.lohnanteil&&LOHN(ka)) n.lohnanteil=fnum.format(R.lohnanteil);
     if(R.nicht_umlagefaehig!=null&&!n.edit.nicht_umlagefaehig) n.nicht_umlagefaehig=fnum.format(R.nicht_umlagefaehig);
     if(R.verbrauch!=null&&!n.edit.verbrauch) n.verbrauch=fnum.format(R.verbrauch);
