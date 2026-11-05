@@ -2289,14 +2289,37 @@ function renderNahaus(){ const S=NHS.ergebnis||NHS.stand||{}; const E=new Map((S
     +'<button class="primary small" data-nhsync="1"'+(NHS.lauf||!canWrite?' disabled':'')+'>'+(NHS.lauf?esc(NHS.info||'Rufe ab …'):'Jetzt abrufen')+'</button></div>';
   if(NHS.fehler) h+='<div class="neg">'+esc(NHS.fehler)+'</div>';
   if(NHS.konten||NHS.bank){ const byIban=new Map((NHS.konten||[]).map(k=>[k.iban,k])), byBank=new Map((NHS.bank||[]).map(k=>[k.iban,k]));
-    h+='<div class="tablewrap"><table><thead><tr><th>Konto</th><th>Bank</th><th>Quelle</th><th>Letzter Abruf</th></tr></thead><tbody>';
-    for(const k of konten.filter(x=>x.iban&&x.obj!=='__aus').slice().sort(kontoSort)){ const b=byBank.get(k.iban), n=byIban.get(k.iban), e=E.get(k.key||k.iban);
+    if(!KST.konten&&!KST.lade) setTimeout(()=>kstLaden(false),0);
+    const KB=new Map((KST.konten||[]).filter(x=>x.saldo!=null).map(x=>[x.iban,x])), saldoVon=k=>{ const a=KB.get(k.iban); if(a) return a; const n=byIban.get(k.iban); return n&&n.saldo!=null?{saldo:n.saldo,saldoAm:n.saldoAm||''}:null; };
+    const KL=konten.filter(x=>x.iban&&x.obj!=='__aus').slice().sort(kontoSort), sumG={}; let sumA=0;
+    for(const k of KL){ const v=saldoVon(k); if(v){ sumA+=v.saldo; const g=k.ges||'ohne'; sumG[g]=(sumG[g]||0)+v.saldo; } }
+    h+='<div class="row" style="margin:6px 0 10px;gap:14px;flex-wrap:wrap"><span><b>Summe aller Konten:</b> '+esc(eur(sumA))+'</span>'+Object.keys(sumG).sort().map(g=>'<span class="sub">'+esc(g)+': '+esc(eur(sumG[g]))+'</span>').join('')
+      +'<span class="sub">'+(KST.lade?'Lade Kontostände …':KST.am?'Kontostände von der Bank: '+esc(nhZeit(KST.am)):'')+'</span><button class="ghost small" data-kstneu="1"'+(KST.lade?' disabled':'')+'>Kontostände aktualisieren</button>'+(KST.fehler?'<span class="neg">'+esc(KST.fehler)+'</span>':'')+'</div>';
+    h+='<div class="tablewrap"><table><thead><tr><th>Konto</th><th>Bank</th><th style="text-align:right">Kontostand</th><th>Quelle</th><th>Letzter Abruf</th></tr></thead><tbody>';
+    for(const k of KL){ const b=byBank.get(k.iban), n=byIban.get(k.iban), e=E.get(k.key||k.iban), v=saldoVon(k), kk=k.key||k.iban;
       const st=b?(b.abgelaufen?'<span class="pill mid">Freigabe unter Bankkonten erneuern</span>':'<span class="pill ok">Bank direkt</span>'):!n?'<span class="neg">nicht verbunden</span>':n.abgelaufen?'<span class="pill mid">Freigabe in Nahaus erneuern</span>':'<span class="pill mid">über Nahaus</span>';
-      h+='<tr><td>'+esc(k.name)+' <span class="sub">'+esc(k.ges||'')+'</span></td><td class="sub">'+esc(b?b.bank:n?n.bank:'')+'</td><td>'+st+'</td><td class="sub">'+(e?(e.fehler?'<span class="neg">'+esc(e.fehler)+'</span>':(e.neu||0)+' neu'+(e.verkn?', '+e.verkn+' verknüpft':'')):'–')+'</td></tr>'; }
+      h+='<tr style="cursor:pointer" data-kstauf="'+esc(kk)+'"><td>'+(KAUF[kk]?'− ':'+ ')+esc(k.name)+' <span class="sub">'+esc(k.ges||'')+'</span></td><td class="sub">'+esc(b?b.bank:n?n.bank:'')+'</td><td style="text-align:right">'+(v?'<b class="'+(v.saldo<0?'neg':'')+'">'+esc(eur(v.saldo))+'</b>'+(v.saldoAm?'<div class="sub">'+esc(dmyK(v.saldoAm))+'</div>':''):'<span class="sub">–</span>')+'</td><td>'+st+'</td><td class="sub">'+(e?(e.fehler?'<span class="neg">'+esc(e.fehler)+'</span>':(e.neu||0)+' neu'+(e.verkn?', '+e.verkn+' verknüpft':'')):'–')+'</td></tr>';
+      if(KAUF[kk]) h+='<tr><td colspan="5" style="background:var(--bb-grau2,#f5f7f9)">'+kstUmsaetze(kk)+'</td></tr>'; }
     h+='</tbody></table></div>'; }
   else h+='<div class="sub">Verbindungsstatus erscheint nach dem ersten Abruf.</div>';
   return h+'</div>'; }
 document.addEventListener('click',e=>{ const t=e.target.closest('button[data-nhsync]'); if(!t) return; nhSync(true); });
+/* Kontostände (zwischengespeichert, höchstens 4 Stunden alt – schont die Abrufe je Tag) und Umsätze je Konto */
+var KST={lade:false,konten:null,am:'',fehler:''}, KAUF={};
+const dmyK=d=>d?String(d).slice(0,10).split('-').reverse().join('.'):'';
+async function kstLaden(neu){ if(KST.lade) return; KST.lade=true; KST.fehler='';
+  try{ const r=await bankApi({aktion:'kontostaende',maxStunden:neu?0.25:4}); KST.konten=r.konten||[]; KST.am=r.am||''; }
+  catch(e){ KST.fehler='Kontostände: '+(e.message||e); KST.konten=KST.konten||[]; }
+  KST.lade=false; render(); }
+function kstUmsaetze(kk){ const L=[]; for(const d of Object.values(buch)) if(d&&d.konto===kk) for(const t of (d.tx||[])) L.push(t);
+  L.sort((a,b)=>a.d<b.d?1:a.d>b.d?-1:0); const M=L.slice(0,KAUF[kk]||40);
+  if(!L.length) return '<span class="sub">Keine Umsätze im OS.</span>';
+  return '<table class="mini" style="width:100%"><thead><tr><th>Datum</th><th>Empfänger / Absender</th><th>Verwendungszweck</th><th style="text-align:right">Betrag</th></tr></thead><tbody>'
+    +M.map(t=>'<tr><td style="white-space:nowrap">'+esc(dmyK(t.d))+'</td><td>'+esc(t.n||'')+'</td><td class="sub">'+esc(String(t.z||'').slice(0,140))+'</td><td class="'+(t.b<0?'neg':'pos')+'" style="white-space:nowrap;text-align:right">'+esc(eur(t.b))+'</td></tr>').join('')+'</tbody></table>'
+    +(L.length>M.length?'<button class="ghost small" data-kstmehr="'+esc(kk)+'" style="margin-top:6px">Weitere Umsätze zeigen ('+(L.length-M.length)+')</button>':''); }
+document.addEventListener('click',e=>{ const a=e.target.closest('[data-kstneu]'); if(a){ kstLaden(true); return; }
+  const m=e.target.closest('[data-kstmehr]'); if(m){ const k=m.dataset.kstmehr; KAUF[k]=(KAUF[k]||40)+100; render(); return; }
+  const r=e.target.closest('tr[data-kstauf]'); if(r){ const k=r.dataset.kstauf; if(KAUF[k]) delete KAUF[k]; else KAUF[k]=40; render(); } });
 /* ---------- Kartenansicht im Stil von BuchhaltungsButler ----------
    Jede Zahlung als Zeile: links Empfänger, Datum, Konto, Verwendungszweck; Betrag; rechts Belege, Konto (Buchungstext) und Objekt;
    ganz rechts der Bestätigen-Knopf. Vorschläge des OS (Regel, Fixkosten, automatisch) erscheinen orange, bis sie bestätigt sind. */
