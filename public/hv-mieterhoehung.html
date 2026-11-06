@@ -232,7 +232,7 @@ function fallOeffnen(id){const f=F[id];if(!f)return;SEL=id;const mk=MK.find(m=>m
   dlg(h);}
 const neinBtn=(g)=>`<input class="inp" id="nein-g" list="dl-nein" placeholder="Grund" value="${esc(g||'')}" style="width:200px" autocomplete="off"><datalist id="dl-nein">${GRUENDE_NEIN.map(x=>`<option value="${esc(x)}">`).join('')}</datalist><button onclick="abbrechen()">Nicht durchführen</button>`;
 const akt=()=>F[SEL];
-/* Unterschriebene Zustimmungserklärung hochladen: OneDrive-Mieterordner (05 Schriftverkehr), sonst Mieterakte im OS */
+/* Unterschriebene Zustimmungserklärung hochladen: OneDrive-Mieterordner (02 Vertrag & Nachträge), sonst Mieterakte im OS */
 function dateiZeile(f){const D=f.zustDateien||[];
   return `<div style="margin-top:8px;font-weight:700">Unterschriebene Zustimmungserklärung</div>
   ${D.map((d,i)=>`<div class="kvr"><span>${esc(dmy(d.am))}${d.von?' · '+esc(d.von):''}</span><b><button class="small" onclick="dateiOeffnen(${i})">${esc(d.n)}</button></b></div>`).join('')||'<div class="sub">Noch keine Datei hochgeladen.</div>'}
@@ -244,15 +244,15 @@ async function dateiHoch(inp){const f=akt(),files=[...(inp.files||[])];if(!f||!f
     if(file.size>20*1024*1024){toast(file.name+' ist zu groß (max. 20 MB).',6000);continue;}
     const ext=(file.name.match(/\.[A-Za-z0-9]+$/)||['.pdf'])[0].toLowerCase(),name=odSafe(mk.obj+'_'+String(e.bezeichnung||mk.einheit||'').replace(/\s+/g,'')+'_'+nn+'_'+HEUTE+'_Zustimmung Mieterhöhung'+(files.length>1?' '+i:''))+ext;
     try{let d;
-      if(od){const pfad=od+'/05 Schriftverkehr';let it;
+      if(od){const pfad=od+'/02 Vertrag & Nachträge';let it;
         if(file.size<=3*1024*1024){const b64=await new Promise((res,rej)=>{const r=new FileReader();r.onload=()=>res(String(r.result).split(',')[1]||'');r.onerror=rej;r.readAsDataURL(file);});it=(await odApi({aktion:'hochladen',pfad,name,daten:b64,typ:file.type||'application/pdf'})).item;}
         else{const ss=await odApi({aktion:'sitzung',pfad,name});const r=await fetch(ss.uploadUrl,{method:'PUT',headers:{'Content-Range':'bytes 0-'+(file.size-1)+'/'+file.size},body:file});if(!r.ok)throw new Error('Hochladen nach OneDrive fehlgeschlagen ('+r.status+').');const j=await r.json();it={id:j.id,name:j.name};}
         d={od:it&&it.id,n:(it&&it.name)||name};}
-      else{const pf=String(mk.obj).replace(/[^A-Za-z0-9]/g,'')+'/'+mk.pid+'/05 Schriftverkehr/'+name.normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/[^A-Za-z0-9 ._-]/g,'_');
+      else{const pf=String(mk.obj).replace(/[^A-Za-z0-9]/g,'')+'/'+mk.pid+'/02 Vertrag und Nachtraege/'+name.normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/[^A-Za-z0-9 ._-]/g,'_');
         const {error}=await sb.storage.from('mieterakten').upload(pf,file,{contentType:file.type||undefined,upsert:true});if(error)throw error;d={pfad:pf,n:name};}
       d.am=HEUTE;d.von=ICH;f.zustDateien.push(d);}
     catch(er){toast('Nicht hochgeladen: '+(er.message||er),7000);}}
-  if(await fallSpeichern(f,'Zustimmungserklärung hochgeladen ('+f.zustDateien.length+' Datei'+(f.zustDateien.length===1?'':'en')+')')){toast(od?'In OneDrive unter 05 Schriftverkehr abgelegt.':'In der Mieterakte im OS abgelegt.');fallOeffnen(f.id);}}
+  if(await fallSpeichern(f,'Zustimmungserklärung hochgeladen ('+f.zustDateien.length+' Datei'+(f.zustDateien.length===1?'':'en')+')')){toast(od?'In OneDrive unter 02 Vertrag & Nachträge abgelegt.':'In der Mieterakte im OS abgelegt.');fallOeffnen(f.id);}}
 async function dateiOeffnen(i){const f=akt(),d=(f.zustDateien||[])[i];if(!d)return;const w=window.open('','_blank');
   try{let u;if(d.od){const r=await odApi({aktion:'link',id:d.od});u=r.web||r.download;}else{const {data,error}=await sb.storage.from('mieterakten').createSignedUrl(d.pfad,600);if(error)throw error;u=data.signedUrl;}
     if(w)w.location.href=u;else window.open(u,'_blank');}catch(e){if(w)w.close();toast('Öffnen nicht möglich: '+(e.message||e),6000);}}
@@ -283,7 +283,7 @@ async function vergleichFertig(){const f=akt(),mk=MK.find(m=>m.pid===f.pid);cons
   if(!(neu>f.kaltAlt)){toast('Die neue Kaltmiete muss höher sein als die jetzige.');return;}
   f.kaltNeu=r2(neu);f.status='anschreiben';f.zugang=addD(HEUTE,3);if(await fallSpeichern(f,(ohne?'Zustimmung ohne Vergleichsmiete':'Begründung festgelegt')+', neue Kaltmiete '+eur(f.kaltNeu))){render();fallOeffnen(f.id);}}
 async function zugangSetzen(v){const f=akt();if(!/^\d{4}-\d\d-\d\d$/.test(v))return;f.zugang=v;if(await fallSpeichern(f,''))fallOeffnen(f.id);}
-async function versendet(){const f=akt(),mk=MK.find(m=>m.pid===f.pid),FR=fristen(f.zugang||addD(HEUTE,3),mk);f.versendet=HEUTE;f.ab=FR.ab;f.frist=FR.frist;f.status='zustimmung';
+async function versendet(){let f=akt();if(!f.datei){await schreibenPdf(f.id,'akte');f=F[f.id];if(!f.datei)return;}const mk=MK.find(m=>m.pid===f.pid),FR=fristen(f.zugang||addD(HEUTE,3),mk);f.versendet=HEUTE;f.ab=FR.ab;f.frist=FR.frist;f.status='zustimmung';
   if(await fallSpeichern(f,'Anschreiben versendet, Zustimmung bis '+dmy(f.frist)+', neue Miete ab '+dmy(f.ab))){histLog(f.pid,'Mieterhöhungsverlangen versendet: Kaltmiete '+eur(f.kaltAlt)+' → '+eur(f.kaltNeu)+' ab '+dmy(f.ab)+', Zustimmung bis '+dmy(f.frist));render();fallOeffnen(f.id);}}
 async function zugestimmt(){const f=akt();f.zustimmung=$('f-zu').value||HEUTE;f.status='miete';if(await fallSpeichern(f,'Zustimmung erhalten am '+dmy(f.zustimmung))){histLog(f.pid,'Mieterhöhung: Zustimmung erhalten am '+dmy(f.zustimmung));render();fallOeffnen(f.id);}}
 async function abbrechen(){const f=akt(),g=($('nein-g').value||'').trim();if(!g){toast('Bitte einen Grund eintragen.');$('nein-g').focus();return;}f.status='abgelehnt';f.grund=g;f.wiederAb=g==='Später noch einmal prüfen'?addM(HEUTE,6):addM(HEUTE,12);
