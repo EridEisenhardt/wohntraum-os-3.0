@@ -218,12 +218,13 @@ function fallOeffnen(id){const f=F[id];if(!f)return;SEL=id;const mk=MK.find(m=>m
       <div class="kvr"><span>Zustimmung bis</span><b>${esc(dmy(f.frist))}</b></div><div class="kvr"><span>Neue Miete ab</span><b>${esc(dmy(f.ab))}</b></div>
       ${f.frist&&f.frist<HEUTE&&f.quelle!=='vereinbarung'?`<div class="note">Die Frist ist abgelaufen. Ohne Zustimmung kann innerhalb von drei weiteren Monaten (bis ${esc(dmy(letzterVon(f.frist,3)))}) auf Zustimmung geklagt werden (§ 558b BGB).</div>`:''}
       <div class="acts"><label class="fl">Zustimmung erhalten am<input type="date" id="f-zu" value="${esc(HEUTE)}"></label></div>
+      ${dateiZeile(f)}
       <div class="acts"><button class="primary" onclick="zugestimmt()">Zustimmung erhalten</button><button onclick="schreibenPdf('${esc(id)}','zeigen')">Anschreiben ansehen</button>${neinBtn('Mieter stimmt nicht zu')}</div>`;}
   else if(f.status==='miete'){const st=stufeAm(mk,f.ab)||{};const neuT=r2((num(st.total)||0)-(num(st.kalt)||0)+num(f.kaltNeu));
-    h+=`<div class="kvr"><span>Zustimmung erhalten am</span><b>${esc(dmy(f.zustimmung))}</b></div><div class="kvr"><span>Neue Kaltmiete ab ${esc(dmy(f.ab))}</span><b>${eur(f.kaltNeu)}</b></div>
+    h+=`<div class="kvr"><span>Zustimmung erhalten am</span><b>${esc(dmy(f.zustimmung))}</b></div>${dateiZeile(f)}<div class="kvr"><span>Neue Kaltmiete ab ${esc(dmy(f.ab))}</span><b>${eur(f.kaltNeu)}</b></div>
       <div class="kvr"><span>Neue Gesamtmiete (Vorauszahlungen und Zuschläge bleiben)</span><b>${eur(neuT)}</b></div>
       <div class="acts"><button class="primary" onclick="mieteAnlegen()">Neue Miete im Mieterkonto anlegen</button><button onclick="(window.top||window).location.href='/hausverwaltung/mieterkonten?pid='+encodeURIComponent('${esc(mk.pid)}')">Mieterkonto öffnen</button></div>`;}
-  else if(f.status==='erledigt'){h+=`<div class="kvr"><span>Kaltmiete</span><b>${eur(f.kaltAlt)} → ${eur(f.kaltNeu)} ab ${esc(dmy(f.ab))}</b></div><div class="info">Die neue Miete ist im Mieterkonto angelegt.</div>
+  else if(f.status==='erledigt'){h+=`<div class="kvr"><span>Kaltmiete</span><b>${eur(f.kaltAlt)} → ${eur(f.kaltNeu)} ab ${esc(dmy(f.ab))}</b></div>${dateiZeile(f)}<div class="info">Die neue Miete ist im Mieterkonto angelegt.</div>
       <div class="acts"><button onclick="schreibenPdf('${esc(id)}','zeigen')">Anschreiben ansehen</button></div>`;}
   else if(f.status==='abgelehnt'){h+=`<div class="kvr"><span>Grund</span><b>${esc(f.grund||'')}</b></div><div class="kvr"><span>Wieder vorschlagen ab</span><b>${esc(dmy(f.wiederAb))||'nie'}</b></div>
       <div class="acts"><button onclick="wiederAufnehmen()">Doch durchführen</button></div>`;}
@@ -231,6 +232,30 @@ function fallOeffnen(id){const f=F[id];if(!f)return;SEL=id;const mk=MK.find(m=>m
   dlg(h);}
 const neinBtn=(g)=>`<input class="inp" id="nein-g" list="dl-nein" placeholder="Grund" value="${esc(g||'')}" style="width:200px" autocomplete="off"><datalist id="dl-nein">${GRUENDE_NEIN.map(x=>`<option value="${esc(x)}">`).join('')}</datalist><button onclick="abbrechen()">Nicht durchführen</button>`;
 const akt=()=>F[SEL];
+/* Unterschriebene Zustimmungserklärung hochladen: OneDrive-Mieterordner (05 Schriftverkehr), sonst Mieterakte im OS */
+function dateiZeile(f){const D=f.zustDateien||[];
+  return `<div style="margin-top:8px;font-weight:700">Unterschriebene Zustimmungserklärung</div>
+  ${D.map((d,i)=>`<div class="kvr"><span>${esc(dmy(d.am))}${d.von?' · '+esc(d.von):''}</span><b><button class="small" onclick="dateiOeffnen(${i})">${esc(d.n)}</button></b></div>`).join('')||'<div class="sub">Noch keine Datei hochgeladen.</div>'}
+  <div class="acts"><label class="small" style="border:1px solid var(--line);border-radius:8px;padding:4px 10px;background:var(--card);cursor:pointer;font-size:12.5px">Datei hochladen<input type="file" accept="application/pdf,image/*" multiple hidden onchange="dateiHoch(this)"></label><span class="sub">PDF oder Foto, z. B. Scan der unterschriebenen Erklärung</span></div>`;}
+async function dateiHoch(inp){const f=akt(),files=[...(inp.files||[])];if(!f||!files.length)return;const mk=MK.find(m=>m.pid===f.pid),od=ed(mk).od,e=einVon(mk)||{};
+  const p=String(ed(mk).mieter||'').split(/,| und /)[0].trim().split(/\s+/),nn=p.length>1?p[p.length-1].toUpperCase()+' '+p.slice(0,-1).join(' '):(p[0]||'').toUpperCase();
+  f.zustDateien=f.zustDateien||[];let i=0;
+  for(const file of files){i++;toast('Lade hoch '+i+' von '+files.length+' …',20000);
+    if(file.size>20*1024*1024){toast(file.name+' ist zu groß (max. 20 MB).',6000);continue;}
+    const ext=(file.name.match(/\.[A-Za-z0-9]+$/)||['.pdf'])[0].toLowerCase(),name=odSafe(mk.obj+'_'+String(e.bezeichnung||mk.einheit||'').replace(/\s+/g,'')+'_'+nn+'_'+HEUTE+'_Zustimmung Mieterhöhung'+(files.length>1?' '+i:''))+ext;
+    try{let d;
+      if(od){const pfad=od+'/05 Schriftverkehr';let it;
+        if(file.size<=3*1024*1024){const b64=await new Promise((res,rej)=>{const r=new FileReader();r.onload=()=>res(String(r.result).split(',')[1]||'');r.onerror=rej;r.readAsDataURL(file);});it=(await odApi({aktion:'hochladen',pfad,name,daten:b64,typ:file.type||'application/pdf'})).item;}
+        else{const ss=await odApi({aktion:'sitzung',pfad,name});const r=await fetch(ss.uploadUrl,{method:'PUT',headers:{'Content-Range':'bytes 0-'+(file.size-1)+'/'+file.size},body:file});if(!r.ok)throw new Error('Hochladen nach OneDrive fehlgeschlagen ('+r.status+').');const j=await r.json();it={id:j.id,name:j.name};}
+        d={od:it&&it.id,n:(it&&it.name)||name};}
+      else{const pf=String(mk.obj).replace(/[^A-Za-z0-9]/g,'')+'/'+mk.pid+'/05 Schriftverkehr/'+name.normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/[^A-Za-z0-9 ._-]/g,'_');
+        const {error}=await sb.storage.from('mieterakten').upload(pf,file,{contentType:file.type||undefined,upsert:true});if(error)throw error;d={pfad:pf,n:name};}
+      d.am=HEUTE;d.von=ICH;f.zustDateien.push(d);}
+    catch(er){toast('Nicht hochgeladen: '+(er.message||er),7000);}}
+  if(await fallSpeichern(f,'Zustimmungserklärung hochgeladen ('+f.zustDateien.length+' Datei'+(f.zustDateien.length===1?'':'en')+')')){toast(od?'In OneDrive unter 05 Schriftverkehr abgelegt.':'In der Mieterakte im OS abgelegt.');fallOeffnen(f.id);}}
+async function dateiOeffnen(i){const f=akt(),d=(f.zustDateien||[])[i];if(!d)return;const w=window.open('','_blank');
+  try{let u;if(d.od){const r=await odApi({aktion:'link',id:d.od});u=r.web||r.download;}else{const {data,error}=await sb.storage.from('mieterakten').createSignedUrl(d.pfad,600);if(error)throw error;u=data.signedUrl;}
+    if(w)w.location.href=u;else window.open(u,'_blank');}catch(e){if(w)w.close();toast('Öffnen nicht möglich: '+(e.message||e),6000);}}
 /* Vergleichswohnungen von Hand: drei Zeilen. Jede Zeile kann aus dem eigenen Bestand gefüllt werden. */
 const vgText=x=>x.obj+' · '+x.einheit+' · '+fnum.format(x.qm)+' m² · '+fnum.format(x.qmm)+' €/m²';
 function vgFormular(f,mk){const V=(f.vergleich||[]).slice();while(V.length<3)V.push({});
