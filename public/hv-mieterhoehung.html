@@ -26,10 +26,6 @@ button:disabled{opacity:.6;cursor:default}
 .bar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:12px}
 .card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:10px 14px;margin-bottom:12px}
 .ch{font-weight:700;display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:6px}
-.board{display:grid;grid-template-columns:repeat(7,minmax(230px,1fr));gap:10px;overflow-x:auto;padding-bottom:8px}
-.spalte{background:var(--soft);border:1px solid var(--line);border-radius:12px;padding:8px;min-height:120px}
-.spalte .sk{font-weight:700;font-size:13px;display:flex;justify-content:space-between;margin:2px 4px 8px}
-.spalte .sk span{color:var(--muted);font-weight:600}
 .k{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:8px 10px;margin-bottom:8px;cursor:pointer;font-size:13px}
 .k:hover{border-color:var(--accent)}
 .k .t{font-weight:700}.k .z{display:flex;justify-content:space-between;gap:6px;margin-top:3px}
@@ -49,6 +45,8 @@ button:disabled{opacity:.6;cursor:default}
 .dlg{position:fixed;inset:0;background:rgba(15,23,42,.35);display:flex;align-items:center;justify-content:center;z-index:60}
 .dlg .card{width:min(860px,94vw);max-height:90vh;overflow:auto;margin:0}
 .schritte{display:flex;gap:4px;flex-wrap:wrap;margin:6px 0 10px}.schritte span{font-size:11px;padding:2px 8px;border-radius:999px;background:var(--chip);color:var(--muted)}.schritte span.on{background:var(--accent);color:#fff}.schritte span.ok{background:var(--pos-bg);color:var(--pos)}
+.tab tr.kl td{cursor:pointer}.tab tr.kl:hover td{background:var(--accent-soft)}
+details.abschn>summary.ch{cursor:pointer;list-style:none;justify-content:flex-start;margin-bottom:0}details.abschn>summary::-webkit-details-marker{display:none}details.abschn>summary .sub{margin-left:auto}details.abschn[open]>summary.ch{margin-bottom:8px}
 .empty{color:var(--muted);font-size:12px;padding:10px;text-align:center}
 .toast{position:fixed;left:50%;bottom:20px;transform:translateX(-50%);background:var(--ink);color:#fff;padding:8px 14px;border-radius:8px;font-size:13px;opacity:0;pointer-events:none;transition:opacity .2s;z-index:80}.toast.on{opacity:1}
 </style></head><body>
@@ -119,9 +117,9 @@ function pruefen(mk,fall){const e=einVon(mk),o=objVon(mk),ort=ortVon(o),C=ortCfg
   if(stufen(mk).some(s=>s.ab>HEUTE&&!(fall&&fall.stufeAb===s.ab)))grenze.push('Künftige Mietstufe vorhanden (Staffel- oder Indexmiete?)');
   if(st&&!(num(st.bk)>0)&&!(num(st.hk)>0))grenze.push('Keine Vorauszahlungen: Pauschal- oder Inklusivmiete prüfen');
   const K=kappung(mk,FR.ab,num(fall&&fall.kappung)||C.kappung);
-  let V=(fall&&fall.vergleich)||vergleichVorschlag(mk);let vqm=null,quelle='';
+  let V=(fall&&Array.isArray(fall.vergleich))?fall.vergleich:[];let vqm=null,quelle='';
   if(C.mietspiegel){vqm=num(fall&&fall.mietspiegelQm);quelle='mietspiegel';}else{vqm=V.length>=3?Math.min(...V.map(x=>x.qmm)):null;quelle='vergleich';}
-  const ziel=vqm&&qm?r2(Math.floor(vqm*qm*100)/100):null;if(ziel==null&&!C.mietspiegel)grenze.push('Vergleichsmiete noch nicht ermittelt');if(!C.mietspiegel&&V.some(x=>x.ort!==ort))grenze.push('Vergleichswohnungen teils aus anderen Orten: Vergleichbarkeit prüfen');
+  const ziel=vqm&&qm?r2(Math.floor(vqm*qm*100)/100):null;
   let neu=ziel!=null?Math.min(ziel,K.max):K.max;if(fall&&num(fall.kaltNeu)!=null)neu=num(fall.kaltNeu);neu=r2(neu);
   const plus=r2(neu-kalt);
   return {mk,e,o,ort,C,st,qm,kalt,zugang,FR,K,V,vqm,quelle,ziel,neu,plus,proz:kalt?r2(plus/kalt*100):0,grenze,zeitOk:!FR.fruehZugang||FR.fruehZugang<=addD(HEUTE,60)};}
@@ -129,7 +127,7 @@ function pruefen(mk,fall){const e=einVon(mk),o=objVon(mk),ort=ortVon(o),C=ortCfg
 function vorschlaege(){const offen=new Set(Object.values(F).filter(f=>f.status!=='erledigt'&&!(f.status==='abgelehnt'&&f.wiederAb&&f.wiederAb<=HEUTE)).map(f=>f.pid));
   const L=[];for(const mk of MK){if(!aktiv(mk)||offen.has(mk.pid))continue;const e=einVon(mk);if(!wohnraum(mk,e))continue;const erl=Object.values(F).find(f=>f.pid===mk.pid&&f.status==='erledigt'&&f.ab&&f.ab>addM(HEUTE,-12));if(erl)continue;
     const R=pruefen(mk,null);if(!R.zeitOk)continue;if(R.grenze.includes('Keine Kaltmiete im Mieterkonto'))continue;
-    if(R.C.mietspiegel){if(R.K.max-R.kalt<1)continue;}else if(!(R.plus>=1))continue;L.push(R);}
+    if(R.K.max-R.kalt<1)continue;L.push(R);}
   return L.sort((a,b)=>(a.mk.obj+a.mk.einheit).localeCompare(b.mk.obj+b.mk.einheit,'de',{numeric:true}));}
 
 /* ---------- Laden und Speichern ---------- */
@@ -153,14 +151,13 @@ function render(){const q=($('q').value||'').toLowerCase().trim(),hit=t=>!q||t.t
   const FL=Object.values(F),cnt=s=>FL.filter(f=>f.status===s).length;
   $('kpis').innerHTML=[['Vorschläge',VOR.length],['In Bearbeitung',FL.filter(f=>['vergleich','anschreiben','zustimmung','miete'].includes(f.status)).length],['Warten auf Zustimmung',cnt('zustimmung')],['Erledigt',cnt('erledigt')],['Mehr Kaltmiete im Monat (erledigt)',eur(FL.filter(f=>f.status==='erledigt').reduce((a,f)=>a+(num(f.kaltNeu)-num(f.kaltAlt)||0),0))]].map(([l,v])=>`<div class="kpi"><div class="l">${l}</div><div class="v">${v}</div></div>`).join('');
   $('oben').innerHTML=EINST.offen?einstCard():'';
-  let h='<div class="board">';
-  for(const [s,t] of SPALTEN){let K;
-    if(s==='vorschlag')K=VOR.filter(R=>hit(label(R.mk))).map(R=>`<div class="k" onclick="vorschlagOeffnen('${esc(R.mk.pid)}')"><div class="t">${esc(R.mk.obj)} · ${esc(R.e&&R.e.bezeichnung||R.mk.einheit||'')}</div><div class="sub">${esc(namen(R.mk))}</div>
-      <div class="z"><span>${eur(R.kalt)}</span><span class="pos">${R.C.mietspiegel||R.ziel==null?'bis '+eur(R.K.max):'+'+eur(R.plus)}</span></div><div class="sub">${R.C.mietspiegel?'Mietspiegel '+esc(R.ort):'Vergleichsmiete '+(R.vqm?fnum.format(R.vqm)+' €/m²':'–')} · möglich ab ${esc(dmy(R.FR.ab))}</div>${R.grenze.length?`<div class="sub warn">${esc(R.grenze.join(' · '))}</div>`:''}</div>`);
-    else K=FL.filter(f=>f.status===s).filter(f=>{const mk=MK.find(m=>m.pid===f.pid);return mk&&hit(label(mk));}).sort((a,b)=>String(a.titel||'').localeCompare(String(b.titel||''),'de',{numeric:true})).map(f=>{const mk=MK.find(m=>m.pid===f.pid);
-      return `<div class="k" onclick="fallOeffnen('${esc(f.id)}')"><div class="t">${esc(f.titel||mk.obj)}</div><div class="sub">${esc(namen(mk))}</div><div class="z"><span>${eur(f.kaltAlt)}</span><span class="pos">${f.kaltNeu!=null?eur(f.kaltNeu):''}</span></div><div class="sub">${f.status==='abgelehnt'?esc(f.grund||''):f.ab?'ab '+esc(dmy(f.ab)):''}${f.status==='zustimmung'&&f.frist?' · Frist '+esc(dmy(f.frist)):''}</div></div>`;});
-    h+=`<div class="spalte"><div class="sk">${t}<span>${K.length}</span></div>${K.join('')||'<div class="empty">Keine</div>'}</div>`;}
-  $('board').innerHTML=h+'</div>';}
+  let h='';
+  for(const [s,t] of SPALTEN){let Z;
+    if(s==='vorschlag')Z=VOR.filter(R=>hit(label(R.mk))).map(R=>`<tr class="kl" onclick="vorschlagOeffnen('${esc(R.mk.pid)}')"><td><b>${esc(R.mk.obj)} · ${esc(R.e&&R.e.bezeichnung||R.mk.einheit||'')}</b></td><td>${esc(namen(R.mk))}</td><td class="n">${eur(R.kalt)}</td><td class="n pos">bis ${eur(R.K.max)}</td><td>${esc(dmy(R.FR.ab))}</td><td class="sub">${R.C.mietspiegel?'Mietspiegel '+esc(R.ort):'Vergleichswohnungen'}${R.grenze.length?`<div class="warn">${esc(R.grenze.join(' · '))}</div>`:''}</td></tr>`);
+    else Z=FL.filter(f=>f.status===s).filter(f=>{const mk=MK.find(m=>m.pid===f.pid);return mk&&hit(label(mk));}).sort((a,b)=>String(a.titel||'').localeCompare(String(b.titel||''),'de',{numeric:true})).map(f=>{const mk=MK.find(m=>m.pid===f.pid);
+      return `<tr class="kl" onclick="fallOeffnen('${esc(f.id)}')"><td><b>${esc(f.titel||mk.obj)}</b></td><td>${esc(namen(mk))}</td><td class="n">${eur(f.kaltAlt)}</td><td class="n pos">${f.kaltNeu!=null?eur(f.kaltNeu):''}</td><td>${f.ab?esc(dmy(f.ab)):''}</td><td class="sub">${f.status==='abgelehnt'?esc(f.grund||''):f.status==='zustimmung'&&f.frist?'Zustimmung bis '+esc(dmy(f.frist)):''}</td></tr>`;});
+    h+=`<details class="card abschn"${Z.length?' open':''}><summary class="ch">${t}<span class="sub">${Z.length}</span></summary>${Z.length?`<table class="tab"><thead><tr><th>Objekt · Einheit</th><th>Mieter</th><th class="n">Kaltmiete jetzt</th><th class="n">${s==='vorschlag'?'Höchstens (Kappungsgrenze)':'Kaltmiete neu'}</th><th>${s==='vorschlag'?'Möglich ab':'Neue Miete ab'}</th><th>Hinweis</th></tr></thead><tbody>${Z.join('')}</tbody></table>`:'<div class="empty">Keine</div>'}</details>`;}
+  $('board').innerHTML=h;}
 function einstCard(){const orte=[...new Set(O.map(ortVon).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'de'));
   return `<div class="card"><div class="ch">Orte und Mietspiegel<button class="ghost small" onclick="EINST.offen=false;render()">Schließen</button></div>
   <div class="sub">Gibt es für einen Ort einen Mietspiegel, wird die Erhöhung damit begründet. Den Wert je m² trägst du im Fall aus dem Mietspiegel ein. Sonst sucht das OS drei Vergleichswohnungen aus dem eigenen Bestand. Kappungsgrenze: 20 % in drei Jahren, 15 % in Orten mit Kappungsgrenzenverordnung.</div>
@@ -188,12 +185,12 @@ function pruefHtml(R){return `<div class="kvr"><span>Kaltmiete jetzt</span><b>${
 function vergleichTab(V){return V.length?`<table class="tab"><thead><tr><th>Objekt</th><th>Anschrift</th><th>Lage</th><th class="n">Fläche</th><th class="n">Kaltmiete</th><th class="n">€/m²</th></tr></thead><tbody>${V.map(x=>`<tr><td>${esc(x.obj)} · ${esc(x.einheit)}</td><td>${esc(x.adr)}</td><td>${esc(x.lage)}</td><td class="n">${fnum.format(x.qm)} m²</td><td class="n">${eur(x.kalt)}</td><td class="n">${fnum.format(x.qmm)}</td></tr>`).join('')}</tbody></table>`:'<div class="sub">Keine passenden Vergleichswohnungen im Bestand gefunden.</div>';}
 function vorschlagOeffnen(pid){const R=VOR.find(x=>x.mk.pid===pid);if(!R)return;
   dlg(kopfHtml(R,null)+pruefHtml(R)+(R.C.mietspiegel?`<div class="info">${esc(R.ort)} hat einen Mietspiegel. Den Wert je m² trägst du im nächsten Schritt ein. Die Vergleichswohnungen unten sind nur zur Orientierung.</div>`:'')
-    +`<div style="margin-top:10px;font-weight:700">Vergleichswohnungen (Vorschlag des OS)</div>${vergleichTab(R.V)}
+    +`<div class="info">${R.C.mietspiegel?'Im nächsten Schritt trägst du die Vergleichsmiete je m² aus dem Mietspiegel ein.':'Im nächsten Schritt trägst du drei Vergleichswohnungen ein.'} Die neue Miete darf höchstens ${eur(R.K.max)} betragen (Kappungsgrenze).</div>
     <div class="acts" style="margin-top:12px"><button class="primary" onclick="durchfuehren('${esc(pid)}')">Mieterhöhung durchführen</button>
     <input class="inp" id="nein-g" list="dl-nein" placeholder="Grund, falls nicht" style="width:240px" autocomplete="off"><datalist id="dl-nein">${GRUENDE_NEIN.map(g=>`<option value="${esc(g)}">`).join('')}</datalist>
     <label class="sub">wieder vorschlagen ab <input class="inp" type="date" id="nein-ab" value="${esc(addM(HEUTE,12))}"></label><button onclick="nichtDurchfuehren('${esc(pid)}')">Nicht durchführen</button></div>`);}
 async function durchfuehren(pid){const R=VOR.find(x=>x.mk.pid===pid);if(!R)return;const f={id:fallId(),pid,titel:R.mk.obj+' · '+(R.e&&R.e.bezeichnung||R.mk.einheit||''),status:'vergleich',angelegt:HEUTE,von:ICH,
-    kaltAlt:R.kalt,qm:R.qm,kappung:R.K.proz,vergleich:R.V,quelle:R.quelle,mietspiegelName:R.C.name||'',kaltNeu:null};
+    kaltAlt:R.kalt,qm:R.qm,kappung:R.K.proz,vergleich:[],quelle:R.quelle,mietspiegelName:R.C.name||'',kaltNeu:null};
   if(!await fallSpeichern(f,'Mieterhöhung wird durchgeführt'))return;VOR=vorschlaege();render();fallOeffnen(f.id);}
 async function nichtDurchfuehren(pid){const R=VOR.find(x=>x.mk.pid===pid);if(!R)return;const g=($('nein-g').value||'').trim();if(!g){toast('Bitte einen Grund eintragen.');$('nein-g').focus();return;}
   const f={id:fallId(),pid,titel:R.mk.obj+' · '+(R.e&&R.e.bezeichnung||R.mk.einheit||''),status:'abgelehnt',angelegt:HEUTE,von:ICH,kaltAlt:R.kalt,kaltNeu:null,grund:g,wiederAb:$('nein-ab').value||''};
@@ -204,9 +201,7 @@ function fallOeffnen(id){const f=F[id];if(!f)return;SEL=id;const mk=MK.find(m=>m
   if(f.status==='vergleich'){h+=pruefHtml(R);
     if(R.C.mietspiegel)h+=`<div style="margin-top:10px;font-weight:700">Mietspiegel ${esc(R.ort)}</div><div class="sub">Ermittle die ortsübliche Vergleichsmiete für diese Wohnung ${R.C.link?`im <a href="${esc(R.C.link)}" target="_blank" rel="noopener">Mietspiegel</a>`:'im Mietspiegel'} und trag den Wert je m² ein.</div>
       <div class="acts"><label class="fl" style="min-width:260px">Bezeichnung im Schreiben<input id="f-msn" value="${esc(f.mietspiegelName||R.C.name||'')}"></label><label class="fl">Vergleichsmiete €/m²<input id="f-msq" value="${f.mietspiegelQm!=null?esc(fnum.format(f.mietspiegelQm)):''}" style="width:110px"></label></div>`;
-    else h+=`<div style="margin-top:10px;font-weight:700">Vergleichswohnungen</div><div class="sub">Das OS hat die drei Wohnungen mit der höchsten Miete je m² herausgesucht, die vergleichbar sind. Du kannst jede austauschen. Die neue Miete darf je m² nicht höher sein als die günstigste der drei.</div>${vergleichTab(R.V)}
-      <div class="acts">${[0,1,2].map(i=>`<input class="inp" list="dl-vg" id="vg-${i}" data-wahl="1" value="${esc(R.V[i]?R.V[i].obj+' · '+R.V[i].einheit+' · '+fnum.format(R.V[i].qmm)+' €/m²':'')}" style="width:250px" autocomplete="off">`).join('')}
-      <datalist id="dl-vg">${vergleichPool(mk).map(x=>`<option value="${esc(x.obj+' · '+x.einheit+' · '+fnum.format(x.qmm)+' €/m²')}">${esc(x.ort+', '+fnum.format(x.qm)+' m²')}</option>`).join('')}</datalist><button class="small" onclick="vgTauschen()">Übernehmen</button></div>`;
+    else h+=vgFormular(f,mk);
     h+=`<div class="acts"><label class="fl">Neue Kaltmiete (€)<input id="f-neu" value="${esc(fnum.format(R.neu))}" style="width:130px"></label><label class="fl">Wohnfläche (m²)<input id="f-qm" value="${R.qm?esc(fnum.format(R.qm)):''}" style="width:110px"></label></div>
       <div class="acts"><button class="primary" onclick="vergleichFertig()">Weiter zum Anschreiben</button>${neinBtn()}</div>`;}
   else if(f.status==='anschreiben'){const zg=f.zugang||addD(HEUTE,3),FR=fristen(zg,mk);
@@ -234,12 +229,24 @@ function fallOeffnen(id){const f=F[id];if(!f)return;SEL=id;const mk=MK.find(m=>m
   dlg(h);}
 const neinBtn=(g)=>`<input class="inp" id="nein-g" list="dl-nein" placeholder="Grund" value="${esc(g||'')}" style="width:200px" autocomplete="off"><datalist id="dl-nein">${GRUENDE_NEIN.map(x=>`<option value="${esc(x)}">`).join('')}</datalist><button onclick="abbrechen()">Nicht durchführen</button>`;
 const akt=()=>F[SEL];
-async function vgTauschen(){const f=akt(),mk=MK.find(m=>m.pid===f.pid),P=vergleichPool(mk),V=[];
-  for(const i of [0,1,2]){const v=($('vg-'+i).value||'').trim();const x=P.find(p=>(p.obj+' · '+p.einheit+' · '+fnum.format(p.qmm)+' €/m²')===v);if(x)V.push(x);}
-  if(V.length<3){toast('Bitte drei Wohnungen aus der Liste wählen.');return;}f.vergleich=V;f.kaltNeu=null;if(await fallSpeichern(f,'Vergleichswohnungen geändert'))fallOeffnen(f.id);}
+/* Vergleichswohnungen von Hand: drei Zeilen. Jede Zeile kann aus dem eigenen Bestand gefüllt werden. */
+const vgText=x=>x.obj+' · '+x.einheit+' · '+fnum.format(x.qm)+' m² · '+fnum.format(x.qmm)+' €/m²';
+function vgFormular(f,mk){const V=(f.vergleich||[]).slice();while(V.length<3)V.push({});
+  return `<div style="margin-top:10px;font-weight:700">Vergleichswohnungen</div><div class="sub">Trag drei vergleichbare Wohnungen ein, z. B. von Haus & Grund oder aus eurem Bestand. Die neue Miete je m² darf nicht höher sein als die günstigste der drei. Mit „aus dem Bestand“ kannst du eine eigene Wohnung übernehmen.</div>
+  <table class="tab" style="margin-top:6px"><thead><tr><th></th><th>Anschrift</th><th>Lage</th><th class="n">Fläche m²</th><th class="n">Kaltmiete €</th><th>aus dem Bestand</th></tr></thead><tbody>
+  ${V.map((v,i)=>`<tr><td>${i+1}</td><td><input class="inp" id="vg-a-${i}" value="${esc(v.adr?(v.adr+(v.einheit?', '+v.einheit:'')):'')}" style="width:260px"></td><td><input class="inp" id="vg-l-${i}" value="${esc(v.lage||'')}" style="width:110px"></td>
+    <td class="n"><input class="inp" id="vg-q-${i}" value="${v.qm?esc(fnum.format(v.qm)):''}" style="width:80px;text-align:right"></td><td class="n"><input class="inp" id="vg-k-${i}" value="${v.kalt?esc(fnum.format(v.kalt)):''}" style="width:90px;text-align:right"></td>
+    <td><input class="inp" list="dl-vg" data-vgi="${i}" placeholder="eintippen" style="width:200px" autocomplete="off" onchange="vgAusBestand(this)"></td></tr>`).join('')}</tbody></table>
+  <datalist id="dl-vg">${vergleichPool(mk).map(x=>`<option value="${esc(vgText(x))}">${esc(x.ort)}</option>`).join('')}</datalist>
+  <div class="acts"><button class="small" onclick="vgSpeichern()">Vergleichswohnungen speichern</button></div>`;}
+function vgAusBestand(el){const f=akt(),mk=MK.find(m=>m.pid===f.pid),x=vergleichPool(mk).find(p=>vgText(p)===el.value.trim());if(!x)return;const i=el.dataset.vgi;
+  $('vg-a-'+i).value=x.adr+(x.einheit?', '+x.einheit:'');$('vg-l-'+i).value=x.lage||'';$('vg-q-'+i).value=fnum.format(x.qm);$('vg-k-'+i).value=fnum.format(x.kalt);el.value='';el.dataset.alt='';}
+function vgLesen(){const V=[];for(const i of [0,1,2]){const adr=($('vg-a-'+i).value||'').trim(),qm=num($('vg-q-'+i).value),kalt=num($('vg-k-'+i).value);if(!adr&&!qm&&!kalt)continue;
+    if(!adr||!qm||!kalt)return {fehler:'Zeile '+(i+1)+': bitte Anschrift, Fläche und Kaltmiete eintragen.'};V.push({adr,einheit:'',lage:($('vg-l-'+i).value||'').trim(),qm:r2(qm),kalt:r2(kalt),qmm:r2(kalt/qm)});}return {V};}
+async function vgSpeichern(){const f=akt(),r=vgLesen();if(r.fehler){toast(r.fehler,5000);return;}f.vergleich=r.V;f.kaltNeu=null;if(await fallSpeichern(f,'Vergleichswohnungen eingetragen ('+r.V.length+')'))fallOeffnen(f.id);}
 async function vergleichFertig(){const f=akt(),mk=MK.find(m=>m.pid===f.pid);const qm=num($('f-qm').value);if(qm)f.qm=qm;
   if($('f-msq')){const v=num($('f-msq').value);if(!v){toast('Bitte die Vergleichsmiete je m² aus dem Mietspiegel eintragen.');return;}f.mietspiegelQm=v;f.mietspiegelName=($('f-msn').value||'').trim()||'Mietspiegel';f.quelle='mietspiegel';}
-  else if(!(f.vergleich||[]).length||f.vergleich.length<3){toast('Es werden drei Vergleichswohnungen gebraucht.');return;}
+  else{const r=vgLesen();if(r.fehler){toast(r.fehler,5000);return;}if(r.V.length<3){toast('Es werden drei Vergleichswohnungen gebraucht.');return;}f.vergleich=r.V;f.quelle='vergleich';}
   const R=pruefen(mk,Object.assign({},f,{kaltNeu:null}));let neu=num($('f-neu').value);if(neu==null)neu=R.neu;
   if(neu>R.K.max+0.005){toast('Die neue Kaltmiete liegt über der Kappungsgrenze ('+eur(R.K.max)+').',6000);return;}
   if(R.ziel!=null&&neu>R.ziel+0.005){toast('Die neue Kaltmiete liegt über der Vergleichsmiete ('+eur(R.ziel)+').',6000);return;}
