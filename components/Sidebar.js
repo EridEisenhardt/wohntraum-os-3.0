@@ -69,6 +69,7 @@ export const NAV = [
   { type: 'group', key: 'v-hausverwaltung', icon: 'ti-home-cog', label: 'Hausverwaltung', mod: 'verwalto', items: [
     { href: '/verwalto/objekte', icon: 'ti-building-skyscraper', label: 'Objekte', perm: '/hausverwaltung/objekte' },
     { href: '/hausverwaltung/mieterkonten', icon: 'ti-users', label: 'Mieterkonten' },
+    { href: '/hausverwaltung/mieterhoehung', icon: 'ti-trending-up', label: 'Mieterhöhungen', perm: '/hausverwaltung/mieterkonten' },
     { href: '/verwalto/neuvermietung', icon: 'ti-key', label: 'Neuvermietung', offen: true },
     { href: '/vermietung/selbstauskuenfte', icon: 'ti-forms', label: 'Selbstauskünfte', offen: true },
     { href: '/hausverwaltung/stoerungen', icon: 'ti-tool', label: 'Störungsmeldungen', perm: '/hausverwaltung/objekte' },
