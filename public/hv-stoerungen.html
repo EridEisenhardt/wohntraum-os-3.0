@@ -141,7 +141,8 @@ function render(){
   qrZeichnen();}
 const dPill=d=>d==='Notfall'?'<span class="pill p-notfall">Notfall</span>':d==='Dringend'?'<span class="pill p-dringend">Dringend</span>':'<span class="pill">Normal</span>';
 const zuText=s=>[s.zustaendig?'zuständig: '+s.zustaendig:'',s.faellig?'fällig '+dfmt(s.faellig):''].filter(Boolean).join(' · ');
-const sPill=s=>(s.status==='Erledigt'?`<span class="pill p-ok">Erledigt</span>`:s.status==='In Arbeit'?'<span class="pill p-arbeit">In Arbeit</span>':'<span class="pill p-neu">Neu</span>')+(s.hw_erledigt&&s.status!=='Erledigt'?'<div class="sub">Handwerker meldet erledigt</div>':'');
+const erlGrund=s=>{const v=(s.verlauf||[]).filter(x=>x.art==='Status').sort((a,b)=>String(a.d).localeCompare(String(b.d))).pop();return v&&v.grund||'';};
+const sPill=s=>(s.status==='Erledigt'?`<span class="pill p-ok">Erledigt</span>${erlGrund(s)?`<div class="sub">${esc(erlGrund(s))}</div>`:''}`:s.status==='In Arbeit'?'<span class="pill p-arbeit">In Arbeit</span>':'<span class="pill p-neu">Neu</span>')+(s.hw_erledigt&&s.status!=='Erledigt'?'<div class="sub">Handwerker meldet erledigt</div>':'');
 const kv=(l,v)=>`<div class="kvr"><span>${l}</span><b>${v==null||v===''?'<span class="sub">–</span>':v}</b></div>`;
 const spalten=L=>{const n=Math.ceil(L.length/2);return '<div class="kvgrid"><div class="kvcol">'+L.slice(0,n).join('')+'</div><div class="kvcol">'+L.slice(n).join('')+'</div></div>';};
 const hwLink=s=>location.origin+'/stoerung.html?h='+s.hw_token;
@@ -160,7 +161,7 @@ function detail(s){const o=objVon(s),e=einVon(s),m=mieterVon(e);let h='';
      <div class="acts"><span class="sub" style="width:72px">Zuständig</span><input class="inp" id="zu-${s.id}" list="dl-asu" data-wahl="1" value="${esc(s.zustaendig||'')}" placeholder="${ASU?'Name eintippen':'Lade Personen aus Asana …'}" style="width:220px">
       <span class="sub" style="margin-left:8px">Fällig am</span><input class="inp" type="date" id="fa-${s.id}" value="${esc(s.faellig||'')}"><button class="small primary" onclick="zuSpeichern('${s.id}')">Übernehmen</button>
       <span class="sub">${s.asana_gid?'wird in Asana übernommen':'wird beim Anlegen in Asana übernommen'}</span></div>
-     <div class="acts"><span class="sub" style="width:72px">Status</span><div class="seg">${['Neu','In Arbeit','Erledigt'].map(x=>`<button class="${s.status===x?'on':''}" onclick="statusSetzen('${s.id}','${x}')">${x}</button>`).join('')}</div>
+     <div class="acts"><span class="sub" style="width:72px">Status</span><div class="seg">${['Neu','In Arbeit','Erledigt'].map(x=>`<button class="${s.status===x?'on':''}" onclick="${x==='Erledigt'?`erledigtDialog('${s.id}')`:`statusSetzen('${s.id}','${x}')`}">${x}</button>`).join('')}</div>
       ${s.asana_link?`<a class="lnk" href="${esc(s.asana_link)}" target="_blank" rel="noopener" style="margin-left:8px">In Asana öffnen</a>`:`<button class="small" onclick="asanaAnlegen('${s.id}')">In Asana anlegen</button>`}
       <button class="small" onclick="cliqTeilen(stTitel('${s.id}'),'/hausverwaltung/stoerungen?id=${s.id}')">An Kollegen senden</button>
       ${s.pid||(m&&m.pid)?`<button class="small" onclick="(window.top||window).location.href='/hausverwaltung/mieterkonten?pid='+encodeURIComponent('${jq(s.pid||m.pid)}')">Mieterkonto öffnen</button>`:''}
@@ -237,10 +238,23 @@ document.addEventListener('focusout',e=>{const t=e.target;if(t&&t.dataset&&t.dat
 
 async function speichern(s,patch,log){if(log)patch.verlauf=(s.verlauf||[]).concat([log]);patch.updated_at=new Date().toISOString();
   const {error}=await sb.from('stoerungen').update(patch).eq('id',s.id);if(error){toast('Speichern fehlgeschlagen: '+error.message);return false;}Object.assign(s,patch);return true;}
-async function statusSetzen(sid,st,ausAsana){const s=S.find(x=>x.id===sid);if(!s||s.status===st)return;
+async function statusSetzen(sid,st,ausAsana,grund){const s=S.find(x=>x.id===sid);if(!s||s.status===st)return;
   const patch={status:st,erledigt_am:st==='Erledigt'?new Date().toISOString():null};if(st!=='Erledigt'&&s.hw_erledigt&&!ausAsana)patch.hw_erledigt=false;
-  if(!await speichern(s,patch,eintrag('Status',(ausAsana?'aus Asana übernommen: ':'')+st)))return;render();
+  const lg=eintrag('Status',(ausAsana?'aus Asana übernommen: ':'')+st+(grund?' · Grund: '+grund:''));if(grund)lg.grund=grund;
+  if(!await speichern(s,patch,lg))return;render();
   if(!ausAsana&&s.asana_gid){try{await asApi({aktion:'abschnitt',gid:s.asana_gid,abschnitt:ABSCHNITT[st],erledigt:st==='Erledigt'});toast('Status gespeichert und in Asana verschoben.');}catch(e){toast('Status gespeichert, Asana nicht aktualisiert: '+e.message);}}}
+/* Erledigt mit Grund: Dialog in der Mitte, Grund frei eintippen oder aus Vorschlägen wählen */
+const ERL_GRUENDE=['Behoben','Durch Handwerker behoben','Durch Hausmeister behoben','Vom Mieter selbst behoben','Kein Mangel festgestellt','Doppelte Meldung','Sache des Mieters','Mieter ausgezogen'];
+function erledigtDialog(sid){const s=S.find(x=>x.id===sid);if(!s||s.status==='Erledigt')return;document.getElementById('erl-dlg')?.remove();
+  const d=document.createElement('div');d.id='erl-dlg';d.style.cssText='position:fixed;inset:0;background:rgba(15,23,42,.35);display:flex;align-items:center;justify-content:center;z-index:60';
+  d.innerHTML=`<div class="card" style="width:min(460px,92vw);margin:0"><div class="ch">Störung ${esc(tk(s))} erledigt</div>
+    <label class="fl">Grund<input class="inp" id="erl-grund" list="dl-erlg" placeholder="Grund eintippen oder auswählen" autocomplete="off" style="width:100%"><datalist id="dl-erlg">${ERL_GRUENDE.map(g=>`<option value="${esc(g)}">`).join('')}</datalist></label>
+    <div class="sub" style="margin-top:4px">Der Grund steht im Verlauf der Störung. Er ist freiwillig.</div>
+    <div class="acts" style="margin-top:10px"><button class="primary" id="erl-ok">Erledigt setzen</button><button id="erl-ab">Abbrechen</button></div></div>`;
+  document.body.appendChild(d);const inp=d.querySelector('#erl-grund');inp.focus();
+  const zu=()=>d.remove(), ok=()=>{const g=inp.value.trim();zu();statusSetzen(sid,'Erledigt',false,g);};
+  d.querySelector('#erl-ok').onclick=ok;d.querySelector('#erl-ab').onclick=zu;d.addEventListener('click',e=>{if(e.target===d)zu();});
+  inp.addEventListener('keydown',e=>{if(e.key==='Enter')ok();if(e.key==='Escape')zu();});}
 function asanaNotiz(s){const o=objVon(s),e=einVon(s),F=s.fotos||[];
   return [(s.dringlichkeit&&s.dringlichkeit!=='Normal'?'DRINGLICHKEIT: '+s.dringlichkeit+'\n':'')+(s.beschreibung||''),'Objekt: '+(o.kz||'')+' · '+[o.strasse,[o.plz,o.ort].filter(Boolean).join(' ')].filter(Boolean).join(', ')+(e?' · '+e.bezeichnung:''),
     'Kategorie: '+(s.kategorie||'–'),'Gemeldet von: '+(s.melder_name||'–')+(s.melder_kontakt?' · '+s.melder_kontakt:''),F.length?'Fotos:\n'+F.map(f=>'- '+(f.name||'Foto')+': '+FOTO_URL+f.pfad).join('\n'):'',
