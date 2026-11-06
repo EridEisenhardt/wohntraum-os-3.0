@@ -118,7 +118,7 @@ function pruefen(mk,fall){const e=einVon(mk),o=objVon(mk),ort=ortVon(o),C=ortCfg
   if(st&&!(num(st.bk)>0)&&!(num(st.hk)>0))grenze.push('Keine Vorauszahlungen: Pauschal- oder Inklusivmiete prüfen');
   const K=kappung(mk,FR.ab,num(fall&&fall.kappung)||C.kappung);
   let V=(fall&&Array.isArray(fall.vergleich))?fall.vergleich:[];let vqm=null,quelle='';
-  if(C.mietspiegel){vqm=num(fall&&fall.mietspiegelQm);quelle='mietspiegel';}else{vqm=V.length>=3?Math.min(...V.map(x=>x.qmm)):null;quelle='vergleich';}
+  if(fall&&fall.quelle==='vereinbarung'){vqm=null;quelle='vereinbarung';}else if(C.mietspiegel){vqm=num(fall&&fall.mietspiegelQm);quelle='mietspiegel';}else{vqm=V.length>=3?Math.min(...V.map(x=>x.qmm)):null;quelle='vergleich';}
   const ziel=vqm&&qm?r2(Math.floor(vqm*qm*100)/100):null;
   let neu=ziel!=null?Math.min(ziel,K.max):K.max;if(fall&&num(fall.kaltNeu)!=null)neu=num(fall.kaltNeu);neu=r2(neu);
   const plus=r2(neu-kalt);
@@ -198,15 +198,17 @@ async function nichtDurchfuehren(pid){const R=VOR.find(x=>x.mk.pid===pid);if(!R)
 
 /* Fall in Bearbeitung */
 function fallOeffnen(id){const f=F[id];if(!f)return;SEL=id;const mk=MK.find(m=>m.pid===f.pid);if(!mk){toast('Mieterkonto nicht gefunden.');return;}const R=pruefen(mk,f);let h=kopfHtml(R,f);
-  if(f.status==='vergleich'){h+=pruefHtml(R);
+  if(f.status==='vergleich'){h+=pruefHtml(R);const ohne=f.quelle==='vereinbarung';
+    h+=`<label class="info" style="display:flex;gap:8px;align-items:flex-start;cursor:pointer;margin-top:10px"><input type="checkbox" id="f-ohne"${ohne?' checked':''} onchange="document.getElementById('vg-block').style.display=this.checked?'none':''" style="margin-top:3px"><span><b>Zustimmung des Mieters ohne Vergleichsmiete</b><br><span class="sub">Vereinbarung nach § 557 Abs. 1 BGB: Der Mieter stimmt der neuen Miete freiwillig zu. Vergleichswohnungen oder Mietspiegel sind dann nicht nötig. Das Anschreiben bittet nur um Zustimmung, ohne Hinweis auf eine Klage.</span></span></label><div id="vg-block"${ohne?' style="display:none"':''}>`;
     if(R.C.mietspiegel)h+=`<div style="margin-top:10px;font-weight:700">Mietspiegel ${esc(R.ort)}</div><div class="sub">Ermittle die ortsübliche Vergleichsmiete für diese Wohnung ${R.C.link?`im <a href="${esc(R.C.link)}" target="_blank" rel="noopener">Mietspiegel</a>`:'im Mietspiegel'} und trag den Wert je m² ein.</div>
       <div class="acts"><label class="fl" style="min-width:260px">Bezeichnung im Schreiben<input id="f-msn" value="${esc(f.mietspiegelName||R.C.name||'')}"></label><label class="fl">Vergleichsmiete €/m²<input id="f-msq" value="${f.mietspiegelQm!=null?esc(fnum.format(f.mietspiegelQm)):''}" style="width:110px"></label></div>`;
     else h+=vgFormular(f,mk);
+    h+='</div>';
     h+=`<div class="acts"><label class="fl">Neue Kaltmiete (€)<input id="f-neu" value="${esc(fnum.format(R.neu))}" style="width:130px"></label><label class="fl">Wohnfläche (m²)<input id="f-qm" value="${R.qm?esc(fnum.format(R.qm)):''}" style="width:110px"></label></div>
       <div class="acts"><button class="primary" onclick="vergleichFertig()">Weiter zum Anschreiben</button>${neinBtn()}</div>`;}
   else if(f.status==='anschreiben'){const zg=f.zugang||addD(HEUTE,3),FR=fristen(zg,mk);
     h+=`<div class="kvr"><span>Kaltmiete</span><b>${eur(f.kaltAlt)} → ${eur(f.kaltNeu)} (+${eur(r2(f.kaltNeu-f.kaltAlt))})</b></div>
-      <div class="kvr"><span>Begründung</span><b>${f.quelle==='mietspiegel'?esc(f.mietspiegelName||'Mietspiegel')+', '+fnum.format(f.mietspiegelQm)+' €/m²':'3 Vergleichswohnungen'}</b></div>
+      <div class="kvr"><span>Begründung</span><b>${f.quelle==='vereinbarung'?'Zustimmung ohne Vergleichsmiete (§ 557 Abs. 1 BGB)':f.quelle==='mietspiegel'?esc(f.mietspiegelName||'Mietspiegel')+', '+fnum.format(f.mietspiegelQm)+' €/m²':'3 Vergleichswohnungen'}</b></div>
       <div class="acts"><label class="fl">Zugang beim Mieter (voraussichtlich)<input type="date" id="f-zg" value="${esc(zg)}" onchange="zugangSetzen(this.value)"></label></div>
       <div class="kvr"><span>Zustimmung bis</span><b>${esc(dmy(FR.frist))}</b></div><div class="kvr"><span>Neue Miete ab</span><b>${esc(dmy(FR.ab))}</b></div>
       <div class="info">Das Anschreiben ist für alle Mieter gleich aufgebaut. Seite 2 ist die Zustimmungserklärung, die der Mieter unterschrieben zurückschickt.</div>
@@ -214,7 +216,7 @@ function fallOeffnen(id){const f=F[id];if(!f)return;SEL=id;const mk=MK.find(m=>m
       <button class="primary" onclick="versendet()">Anschreiben ist versendet</button>${neinBtn()}</div>`;}
   else if(f.status==='zustimmung'){h+=`<div class="kvr"><span>Kaltmiete</span><b>${eur(f.kaltAlt)} → ${eur(f.kaltNeu)}</b></div><div class="kvr"><span>Versendet am</span><b>${esc(dmy(f.versendet))}</b></div>
       <div class="kvr"><span>Zustimmung bis</span><b>${esc(dmy(f.frist))}</b></div><div class="kvr"><span>Neue Miete ab</span><b>${esc(dmy(f.ab))}</b></div>
-      ${f.frist&&f.frist<HEUTE?`<div class="note">Die Frist ist abgelaufen. Ohne Zustimmung kann innerhalb von drei weiteren Monaten (bis ${esc(dmy(letzterVon(f.frist,3)))}) auf Zustimmung geklagt werden (§ 558b BGB).</div>`:''}
+      ${f.frist&&f.frist<HEUTE&&f.quelle!=='vereinbarung'?`<div class="note">Die Frist ist abgelaufen. Ohne Zustimmung kann innerhalb von drei weiteren Monaten (bis ${esc(dmy(letzterVon(f.frist,3)))}) auf Zustimmung geklagt werden (§ 558b BGB).</div>`:''}
       <div class="acts"><label class="fl">Zustimmung erhalten am<input type="date" id="f-zu" value="${esc(HEUTE)}"></label></div>
       <div class="acts"><button class="primary" onclick="zugestimmt()">Zustimmung erhalten</button><button onclick="schreibenPdf('${esc(id)}','zeigen')">Anschreiben ansehen</button>${neinBtn('Mieter stimmt nicht zu')}</div>`;}
   else if(f.status==='miete'){const st=stufeAm(mk,f.ab)||{};const neuT=r2((num(st.total)||0)-(num(st.kalt)||0)+num(f.kaltNeu));
@@ -245,13 +247,16 @@ function vgLesen(){const V=[];for(const i of [0,1,2]){const adr=($('vg-a-'+i).va
     if(!adr||!qm||!kalt)return {fehler:'Zeile '+(i+1)+': bitte Anschrift, Fläche und Kaltmiete eintragen.'};V.push({adr,einheit:'',lage:($('vg-l-'+i).value||'').trim(),qm:r2(qm),kalt:r2(kalt),qmm:r2(kalt/qm)});}return {V};}
 async function vgSpeichern(){const f=akt(),r=vgLesen();if(r.fehler){toast(r.fehler,5000);return;}f.vergleich=r.V;f.kaltNeu=null;if(await fallSpeichern(f,'Vergleichswohnungen eingetragen ('+r.V.length+')'))fallOeffnen(f.id);}
 async function vergleichFertig(){const f=akt(),mk=MK.find(m=>m.pid===f.pid);const qm=num($('f-qm').value);if(qm)f.qm=qm;
-  if($('f-msq')){const v=num($('f-msq').value);if(!v){toast('Bitte die Vergleichsmiete je m² aus dem Mietspiegel eintragen.');return;}f.mietspiegelQm=v;f.mietspiegelName=($('f-msn').value||'').trim()||'Mietspiegel';f.quelle='mietspiegel';}
+  const ohne=$('f-ohne')&&$('f-ohne').checked;
+  if(ohne){f.quelle='vereinbarung';}
+  else if($('f-msq')){const v=num($('f-msq').value);if(!v){toast('Bitte die Vergleichsmiete je m² aus dem Mietspiegel eintragen.');return;}f.mietspiegelQm=v;f.mietspiegelName=($('f-msn').value||'').trim()||'Mietspiegel';f.quelle='mietspiegel';}
   else{const r=vgLesen();if(r.fehler){toast(r.fehler,5000);return;}if(r.V.length<3){toast('Es werden drei Vergleichswohnungen gebraucht.');return;}f.vergleich=r.V;f.quelle='vergleich';}
   const R=pruefen(mk,Object.assign({},f,{kaltNeu:null}));let neu=num($('f-neu').value);if(neu==null)neu=R.neu;
-  if(neu>R.K.max+0.005){toast('Die neue Kaltmiete liegt über der Kappungsgrenze ('+eur(R.K.max)+').',6000);return;}
-  if(R.ziel!=null&&neu>R.ziel+0.005){toast('Die neue Kaltmiete liegt über der Vergleichsmiete ('+eur(R.ziel)+').',6000);return;}
+  if(!ohne&&neu>R.K.max+0.005){toast('Die neue Kaltmiete liegt über der Kappungsgrenze ('+eur(R.K.max)+').',6000);return;}
+  if(ohne&&neu>R.K.max+0.005)toast('Hinweis: Die neue Kaltmiete liegt über der Kappungsgrenze ('+eur(R.K.max)+'). Bei einer freiwilligen Vereinbarung ist das möglich.',7000);
+  if(!ohne&&R.ziel!=null&&neu>R.ziel+0.005){toast('Die neue Kaltmiete liegt über der Vergleichsmiete ('+eur(R.ziel)+').',6000);return;}
   if(!(neu>f.kaltAlt)){toast('Die neue Kaltmiete muss höher sein als die jetzige.');return;}
-  f.kaltNeu=r2(neu);f.status='anschreiben';f.zugang=addD(HEUTE,3);if(await fallSpeichern(f,'Begründung festgelegt, neue Kaltmiete '+eur(f.kaltNeu))){render();fallOeffnen(f.id);}}
+  f.kaltNeu=r2(neu);f.status='anschreiben';f.zugang=addD(HEUTE,3);if(await fallSpeichern(f,(ohne?'Zustimmung ohne Vergleichsmiete':'Begründung festgelegt')+', neue Kaltmiete '+eur(f.kaltNeu))){render();fallOeffnen(f.id);}}
 async function zugangSetzen(v){const f=akt();if(!/^\d{4}-\d\d-\d\d$/.test(v))return;f.zugang=v;if(await fallSpeichern(f,''))fallOeffnen(f.id);}
 async function versendet(){const f=akt(),mk=MK.find(m=>m.pid===f.pid),FR=fristen(f.zugang||addD(HEUTE,3),mk);f.versendet=HEUTE;f.ab=FR.ab;f.frist=FR.frist;f.status='zustimmung';
   if(await fallSpeichern(f,'Anschreiben versendet, Zustimmung bis '+dmy(f.frist)+', neue Miete ab '+dmy(f.ab))){histLog(f.pid,'Mieterhöhungsverlangen versendet: Kaltmiete '+eur(f.kaltAlt)+' → '+eur(f.kaltNeu)+' ab '+dmy(f.ab)+', Zustimmung bis '+dmy(f.frist));render();fallOeffnen(f.id);}}
@@ -283,19 +288,20 @@ function schreibenDoc(f){const B=briefDaten(f),{m,e,o,A,FR,st}=B;const doc=new w
   kopf();y=45;doc.setFontSize(7.5);doc.setTextColor(110);doc.text([A.name,A.strasse,A.ort].join(' · '),L,y);y+=6;doc.setFontSize(11);doc.setTextColor(20);
   for(const l of [m.mieter||m.anrede,o.strasse,[o.plz,o.ort].filter(Boolean).join(' ')].filter(Boolean)){doc.text(String(l),L,y);y+=5;}
   y=Math.max(y,90)+6;doc.setFontSize(10);doc.setTextColor(60);doc.text((A.datumOrt?A.datumOrt+', ':'')+dmy(HEUTE),R,y,{align:'right'});doc.setTextColor(20);
-  y+=12;doc.setFontSize(11.5);doc.setFont('helvetica','bold');doc.text('Mieterhöhungsverlangen nach § 558 BGB',L,y);y+=5.5;doc.setFont('helvetica','normal');doc.setFontSize(10);doc.text(adrObj,L,y);y+=9;doc.setFontSize(10.5);
+  y+=12;doc.setFontSize(11.5);doc.setFont('helvetica','bold');doc.text(f.quelle==='vereinbarung'?'Anpassung der Nettokaltmiete':'Mieterhöhungsverlangen nach § 558 BGB',L,y);y+=5.5;doc.setFont('helvetica','normal');doc.setFontSize(10);doc.text(adrObj,L,y);y+=9;doc.setFontSize(10.5);
   const anr=String(m.anrede||'').trim();para(anr?(/^Frau/.test(anr)?'Sehr geehrte ':/^Herr/.test(anr)?'Sehr geehrter ':'Guten Tag ')+anr+',':'Guten Tag '+(m.mieter||'')+',');
   const qm=num(f.qm);
   para('die Nettokaltmiete für Ihre Wohnung beträgt derzeit '+eur(f.kaltAlt)+' monatlich'+(qm?' ('+fnum.format(r2(f.kaltAlt/qm))+' €/m² bei '+fnum.format(qm)+' m² Wohnfläche)':'')+'. Sie ist seit dem '+dmy(FR.lk)+' unverändert.');
   para('Wir bitten Sie, einer Erhöhung der Nettokaltmiete auf '+eur(f.kaltNeu)+' monatlich'+(qm?' ('+fnum.format(r2(f.kaltNeu/qm))+' €/m²)':'')+' mit Wirkung ab dem '+dmy(FR.ab)+' zuzustimmen. Das ist eine Erhöhung um '+eur(r2(f.kaltNeu-f.kaltAlt))+' monatlich.');
-  if(f.quelle==='mietspiegel')para('Zur Begründung beziehen wir uns auf den '+(f.mietspiegelName||'Mietspiegel')+' (§ 558a Abs. 2 Nr. 1 BGB). Danach beträgt die ortsübliche Vergleichsmiete für Ihre Wohnung '+fnum.format(f.mietspiegelQm)+' €/m², für Ihre Wohnfläche also '+eur(r2(f.mietspiegelQm*(qm||0)))+' monatlich. Die verlangte Miete liegt nicht darüber. Der Mietspiegel ist öffentlich zugänglich; auf Wunsch senden wir Ihnen gern eine Kopie.');
+  if(f.quelle==='vereinbarung'){}
+  else if(f.quelle==='mietspiegel')para('Zur Begründung beziehen wir uns auf den '+(f.mietspiegelName||'Mietspiegel')+' (§ 558a Abs. 2 Nr. 1 BGB). Danach beträgt die ortsübliche Vergleichsmiete für Ihre Wohnung '+fnum.format(f.mietspiegelQm)+' €/m², für Ihre Wohnfläche also '+eur(r2(f.mietspiegelQm*(qm||0)))+' monatlich. Die verlangte Miete liegt nicht darüber. Der Mietspiegel ist öffentlich zugänglich; auf Wunsch senden wir Ihnen gern eine Kopie.');
   else{para('Zur Begründung benennen wir drei vergleichbare Wohnungen (§ 558a Abs. 2 Nr. 4 BGB). Für diese wird mindestens die von Ihnen verlangte Miete je Quadratmeter gezahlt:');
     need(8+6*(f.vergleich||[]).length);doc.setFont('helvetica','bold');doc.setFontSize(8.5);doc.text('Anschrift',L,y);doc.text('Lage',112,y);doc.text('Fläche',150,y,{align:'right'});doc.text('Nettokaltmiete je m²',R,y,{align:'right'});y+=1.5;doc.setDrawColor(180);doc.line(L,y,R,y);y+=4;doc.setFont('helvetica','normal');
     for(const v of (f.vergleich||[])){doc.text(doc.splitTextToSize(v.adr+(v.einheit?', '+v.einheit:''),84)[0],L,y);doc.text(String(v.lage||'').slice(0,22),112,y);doc.text(fnum.format(v.qm)+' m²',150,y,{align:'right'});doc.text(fnum.format(v.qmm)+' €',R,y,{align:'right'});y+=5;}
     y+=3;doc.setFontSize(10.5);}
-  para('Die Miete ist seit mindestens 15 Monaten unverändert (§ 558 Abs. 1 BGB). Die Erhöhung liegt innerhalb der Kappungsgrenze von '+(f.kappung||20)+' % in drei Jahren (§ 558 Abs. 3 BGB).');
+  if(f.quelle!=='vereinbarung')para('Die Miete ist seit mindestens 15 Monaten unverändert (§ 558 Abs. 1 BGB). Die Erhöhung liegt innerhalb der Kappungsgrenze von '+(f.kappung||20)+' % in drei Jahren (§ 558 Abs. 3 BGB).');
   para('Ihre Vorauszahlungen auf die Betriebs- und Heizkosten bleiben unverändert. Ihre neue monatliche Gesamtmiete ab dem '+dmy(FR.ab)+' beträgt damit '+eur(B.gesNeu)+' (bisher '+eur(B.gesAlt)+').');
-  para('Bitte senden Sie uns die beigefügte Zustimmungserklärung bis zum '+dmy(FR.frist)+' unterschrieben zurück. Stimmen Sie bis dahin nicht zu, können wir auf Zustimmung klagen (§ 558b BGB).');
+  para('Bitte senden Sie uns die beigefügte Zustimmungserklärung bis zum '+dmy(FR.frist)+' unterschrieben zurück.'+(f.quelle==='vereinbarung'?'':' Stimmen Sie bis dahin nicht zu, können wir auf Zustimmung klagen (§ 558b BGB).'));
   para('Bitte passen Sie nach Ihrer Zustimmung Ihren Dauerauftrag ab dem '+dmy(FR.ab)+' an. Falls Sie Leistungen vom Jobcenter oder Sozialamt erhalten, reichen Sie dieses Schreiben bitte dort ein.');
   para('Bei Fragen sind wir gerne für Sie da.');y+=2;para('Mit freundlichen Grüßen');y+=4;need(8);doc.text(B.ges==='EE'?A.name:'Ihr Team von '+(B.ges==='WT'?'Wohntraum Rheinhessen GmbH':A.name),L,y);
   /* Seite 2: Zustimmungserklärung */
