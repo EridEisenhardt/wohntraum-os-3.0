@@ -1852,6 +1852,17 @@ async function mfSpeichern(){ const mk=MK[MF.pid]; if(!mk||!db||!canWrite) retur
     const m=MF.ab.slice(0,7), lauf=Object.keys(SL).filter(k=>k>=m).sort(); MF=null; render();
     toast(lauf.length?'Miete gespeichert. Der Sollstellungslauf für '+lauf.map(k=>k.slice(5)+'/'+k.slice(0,4)).join(', ')+' ist schon erstellt – bitte dort „neu erstellen“, damit die neue Miete gilt.':'Miete gespeichert.',lauf.length?10000:4000); }
   catch(e){ toast('Nicht gespeichert: '+(e.message||e),8000); } }
+/* Gültig-ab-Datum einer künftigen Mietstufe ändern (z. B. Mieterhöhung später wirksam). Ein Fall im Board Mieterhöhungen wird mitgeändert. */
+async function stufeDatum(mk,alt,neu){ if(!db||!canWrite) return; if(!/^\d{4}-\d\d-\d\d$/.test(neu)){ toast('Bitte ein Datum eintragen.'); return; } if(neu===alt) return;
+  if(neu<=today){ toast('Das Datum muss in der Zukunft liegen. Für eine Änderung ab heute oder rückwirkend bitte „Miete ändern“ nutzen.',7000); return; }
+  if((mk.stufen||[]).some(z=>z.ab===neu)){ toast('Ab dem '+dmy(neu)+' gibt es schon eine Mietstufe.',6000); return; }
+  const stufen=(mk.stufen||[]).map(z=>z.ab===alt?Object.assign({},z,{ab:neu,am:new Date().toISOString()}):z).sort((a,b)=>String(a.ab).localeCompare(String(b.ab)));
+  try{ await queue('mietkonten/'+mk.pid,()=>db.doc('mietkonten/'+mk.pid).update({stufen})); mk.stufen=stufen; calc=null;
+    histLog(mk.pid,'Änderung','Mietänderung verschoben: gültig ab '+dmy(neu)+' statt '+dmy(alt));
+    try{ const sb=window.osSupabase, {data}=await sb.from('os_docs').select('pfad,data').eq('app','oc').like('pfad','mieterhoehung/%').eq('data->>pid',mk.pid);
+      for(const r of (data||[])) if(r.data&&r.data.ab===alt){ const f=Object.assign({},r.data,{ab:neu,verlauf:(r.data.verlauf||[]).concat([{d:new Date().toISOString(),by:ICH||'OS',t:'Neue Miete ab '+dmy(neu)+' statt '+dmy(alt)+' (im Mieterkonto geändert)'}])}); await sb.from('os_docs').update({data:f,updated_at:new Date().toISOString()}).eq('app','oc').eq('pfad',r.pfad); } }catch(e){}
+    render(); toast('Neue Miete gilt ab '+dmy(neu)+'.'); }
+  catch(e){ toast('Nicht gespeichert: '+(e.message||e),8000); } }
 async function mfEntfernen(mk,ab){ const stufen=(mk.stufen||[]).filter(z=>!(z.ab===ab&&z.quelle==='os')); if(stufen.length===(mk.stufen||[]).length) return;
   try{ await queue('mietkonten/'+mk.pid,()=>db.doc('mietkonten/'+mk.pid).update({stufen})); mk.stufen=stufen; calc=null; histLog(mk.pid,'Änderung','Mietänderung ab '+dmy(ab)+' entfernt'); render(); toast('Mietänderung entfernt.'); }
   catch(e){ toast('Nicht entfernt: '+(e.message||e),8000); } }
@@ -1897,7 +1908,8 @@ function renderDash(x){ const mk=ed(x.mk), sn=STN[x.status], a=ampel(x), K=mk.ko
   const kuenftig=(x.mk.stufen||[]).filter(z=>z.total>0&&(z.ab||'')>(st.ab||'')&&(z.ab||'')>today);
   if(MF&&MF.pid===x.mk.pid){ h+=mieteForm(); }
   else h+='<div class="card"><div class="ch">Warmmiete'+(canWrite?'<button class="ghost small" data-mfneu="1">Miete ändern</button>':'')+'</div><div class="big">'+(st.total?eur(st.total):'–')+'</div><span class="sub">'+(st.ab?'seit '+esc(dmy(st.ab)):'')+'</span>'
-    +kuenftig.map(z=>'<div class="note" style="margin:6px 0">Ab '+esc(dmy(z.ab))+': '+eur(z.total)+' (geändert'+(z.von?' von '+esc(z.von):'')+')</div>').join('')
+    +kuenftig.map(z=>'<div class="note" style="margin:6px 0">Ab '+esc(dmy(z.ab))+': '+eur(z.total)+' (geändert'+(z.von?' von '+esc(z.von):'')+')'
+      +(canWrite?'<div class="acts" style="margin-top:6px"><span class="sub">Gültig ab</span><input type="date" data-stabin="'+esc(z.ab)+'" value="'+esc(z.ab)+'"><button class="small" data-stabok="'+esc(z.ab)+'">Datum ändern</button></div>':'')+'</div>').join('')
     +'<details open><summary>Zusammensetzung</summary>'+kv('Kaltmiete',eur(st.kalt))+kv('Betriebskosten',eur(st.bk))+kv('Heizkosten',eur(st.hk))+(st.strom?kv('Strom',eur(st.strom)):'')+others.map(o=>kv(esc(o.t||'Sonstiges'),eur(o.b))).join('')+(!others.length&&st.sonst?kv('Sonstiges',eur(st.sonst)):'')+'</details>'
     +((x.mk.stufen||[]).length>1?'<details><summary>Mietentwicklung</summary><table class="mini">'+x.mk.stufen.map(z=>'<tr><td>ab '+esc(dmy(z.ab))+(z.quelle==='os'?' <span class="pill src">im OS geändert</span>':'')+'</td><td class="n">'+eur(z.total)+'</td><td class="n">'+(z.quelle==='os'&&canWrite?'<button class="ghost small" data-mfweg="'+esc(z.ab)+'">entfernen</button>':'')+'</td></tr>').join('')+'</table></details>':'')+'</div>';
   h+=mahnstandCard(x);
@@ -1990,6 +2002,7 @@ document.addEventListener('click',async e=>{ const t=e.target.closest('button,tr
   if(t.dataset.mfneu){ const mk=MK[M.sel]; if(mk) mfStart(mk); return; }
   if(t.dataset.mfcancel){ MF=null; render(); return; }
   if(t.dataset.mfsave){ mfSpeichern(); return; }
+  if(t.dataset.stabok){ const mk=MK[M.sel], alt=t.dataset.stabok, inp=[...document.querySelectorAll('input[data-stabin]')].find(x=>x.dataset.stabin===alt); if(mk&&inp) stufeDatum(mk,alt,inp.value); return; }
   if(t.dataset.mfoadd){ MF.others.push({t:'',b:0}); render(); return; }
   if(t.dataset.mfodel){ MF.others.splice(+t.dataset.mfodel,1); render(); return; }
   if(t.dataset.mfweg){ if(t.dataset.sure!=='1'){ t.dataset.sure='1'; t.textContent='wirklich entfernen?'; return; } const mk=MK[M.sel]; if(mk) mfEntfernen(mk,t.dataset.mfweg); return; }
