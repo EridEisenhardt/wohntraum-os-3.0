@@ -652,9 +652,9 @@ function kHtml(){ const k=K, ka=kKa(), Ko=kostenVon(ka), sum=summe(ka), V=vertei
   if(!k.neu) h+='<div class="dropz">Dateien hierher ziehen (auch mehrere, z. B. alle Monatsrechnungen) – sie werden gelesen und nur hier in der Abrechnung gespeichert, nicht zusätzlich in OneDrive.</div>';
   if(k.lade) h+='<div class="sub" style="margin-top:6px">'+esc(k.lade)+'</div>';
   if(k.treffer){ h+='<div style="margin-top:6px">'+(k.treffer.length?k.treffer.slice(0,15).map((f,i)=>'<div class="such"><div><a class="lnk" onclick="odOeffnen(\''+esc(f.id)+'\')">'+esc(f.name)+'</a><div class="sub">'+esc(String(f.pfad||'').replace(/^Prozesslandkarte 3\.0\//,'').split('/').slice(0,-1).join('/'))+'</div></div><button class="small" onclick="kWaehle('+i+')">Übernehmen</button></div>').join(''):'<div class="sub">Nichts gefunden.</div>')+'</div>'; }
-  if(k.neu) h+=belegForm(k.neu,true);
+  if(k.neu&&!k.neu.id) h+=belegForm(k.neu,true);
   if(k.stapel) h+=stapelHtml(k.stapel);
-  h+=Ko.length?Ko.map(c=>belegZeile(c)).join(''):(!k.neu?'<div class="sub" style="margin-top:8px">Noch keine Belege für diese Kostenart.</div>':'');
+  h+=Ko.length?Ko.map(c=>k.neu&&k.neu.id===c.id?belegForm(k.neu,false):belegZeile(c)).join(''):(!k.neu?'<div class="sub" style="margin-top:8px">Noch keine Belege für diese Kostenart.</div>':'');
   /* Einheiten und Schlüssel */
   h+='<div class="abs">Einheiten und Verteilerschlüssel</div><div class="acts" style="margin-top:0"><span class="sub">Schlüssel für alle</span><input id="k-schl" class="inp" list="dl-schl" data-wahl="1" value="'+esc(schlLabel(k.schluessel))+'" onchange="schlWahl(this,\'\')" style="width:240px;padding:4px 8px"><datalist id="dl-schl">'+SCHLUESSEL.map(([v,l])=>'<option value="'+esc(l)+'">').join('')+'</datalist><datalist id="dl-schl2">'+SCHLUESSEL.filter(x=>!['direkt','nicht_umlegen'].includes(x[0])).map(([v,l])=>'<option value="'+esc(l)+'">').join('')+'</datalist>'
     +'<label class="sub"><input type="checkbox" '+(k.umlagefaehig?'checked':'')+' onchange="K.umlagefaehig=this.checked;K.geaendert=true"> umlagefähig</label></div>';
@@ -912,9 +912,9 @@ function belegForm(n,neu){ const a=anteilBerechnen(n); const f=(k,l,ph)=>{ const
     +(man?f('notiz','Bezeichnung','z. B. Hausmeister 2025')+f('empfaenger','Wer (z. B. Hausmeister)')+f('datum','Datum'):f('empfaenger','Rechnungssteller')+f('datum','Rechnungsdatum')+f('rechnungsnr','Rechnungs- / Kundennummer'))+f('von','Leistung von')+f('bis','Leistung bis')+f('betrag','Gesamtbetrag brutto (€)')
     +f('nicht_umlagefaehig','davon nicht umlagefähig (€)','z. B. Mahngebühr, Reparatur')+f('lohnanteil','davon Lohnanteil § 35a (€)')+f('verbrauch','Verbrauch (kWh / m³)')+'</div>'
     +(n.teile||D.ein.length<2?'':'<div class="acts" style="margin-top:6px;flex-wrap:wrap"><span class="sub">Gilt für:</span><label class="sub"><input type="checkbox" '+(!(n.einheiten||[]).length?'checked':'')+' onchange="K.neu.einheiten=[];kNeu2()"> alle Einheiten</label>'+D.ein.map(e=>'<label class="sub"><input type="checkbox" '+((n.einheiten||[]).includes(e.id)?'checked':'')+' onchange="belegEinheit(\''+e.id+'\',this.checked)"> '+esc(e.bezeichnung)+'</label>').join('')+'</div>')
-    +(n.teile?teileHtml(n):man?'':'<div class="acts" style="margin-top:6px"><button class="small" onclick="teileAn()">Auf mehrere Kostenarten aufteilen</button><span class="sub">z. B. Wasser, Schmutzwasser und Niederschlagswasser auf einem Bescheid</span></div>')
+    +(n.teile?teileHtml(n):man||n.id?'':'<div class="acts" style="margin-top:6px"><button class="small" onclick="teileAn()">Auf mehrere Kostenarten aufteilen</button><span class="sub">z. B. Wasser, Schmutzwasser und Niederschlagswasser auf einem Bescheid</span></div>')
     +(n.teile?'<div class="acts"><span class="sub">Je Kostenart wird ein eigener Eintrag mit dem Teilbetrag angelegt, alle mit derselben Datei.</span>':'<div class="acts"><span class="sub">Anteil für '+JAHR+': <b style="color:var(--ink)">'+(a!=null?eur(a-(parseNum(n.nicht_umlagefaehig)||0)*(a&&parseNum(n.betrag)?a/parseNum(n.betrag):1)):'–')+'</b>'+(n.von&&n.bis&&(n.von<D.a.zeitraum_von||n.bis>D.a.zeitraum_bis)?' (zeitanteilig, '+dmy(n.von)+' bis '+dmy(n.bis)+')':'')+'</span>')
-    +'<button class="primary small" style="margin-left:auto" onclick="belegSpeichern()">'+(n.teile?'Aufteilung übernehmen':man?'Betrag übernehmen':'Beleg übernehmen')+'</button><button class="small" onclick="K.neu=null;kNeu2()">Verwerfen</button></div></div>'; }
+    +'<button class="primary small" style="margin-left:auto" onclick="belegSpeichern()">'+(n.id?'Änderung speichern':n.teile?'Aufteilung übernehmen':man?'Betrag übernehmen':'Beleg übernehmen')+'</button><button class="small" onclick="K.neu=null;kNeu2()">'+(n.id?'Abbrechen':'Verwerfen')+'</button></div></div>'; }
 /* Belege aus OneDrive automatisch den Kostenarten zuordnen */
 function kaFuerOrdner(sub){ const n=norm(sub); if(!n) return null; const L=D.kas.filter(k=>!k.ausgeblendet).sort((a,b)=>(a.pos||0)-(b.pos||0));
   return L.find(k=>norm(k.name)===n)||L.find(k=>(ORDNER_WORT[norm(k.name)]||[norm(k.name).split(' ')[0]]).some(w=>n.split(' ').some(t=>t.startsWith(w))))||null; }
@@ -1012,6 +1012,10 @@ async function belegSpeichern(){ const n=K.neu, ka=kKa(); if(n.teile) return tei
   const man=!!(n.beleg&&n.beleg.manuell);
   const row={abrechnung_id:D.a.id,kostenart_id:ka.id,datum:n.datum||n.bis||D.a.zeitraum_bis,betrag:b,empfaenger:n.empfaenger||null,verwendungszweck:n.rechnungsnr?'Rechnung '+n.rechnungsnr:null,quelle:man?'manuell':'beleg',notiz:man?(String(n.notiz||'').trim()||ka.name+' '+JAHR+' (ohne Beleg)'):n.beleg.n,
     beleg:n.beleg,von:n.von||null,bis:n.bis||null,anteil:r2(a-nu*faktor),nicht_umlagefaehig:nu||null,lohnanteil:parseNum(n.lohnanteil),rechnungsnr:n.rechnungsnr||null,verbrauch:parseNum(n.verbrauch),einheiten:(n.einheiten||[]).length?n.einheiten:null};
+  if(n.id){ const alt=D.kos.find(c=>c.id===n.id)||{}; delete row.abrechnung_id; delete row.kostenart_id; row.quelle=alt.quelle; row.beleg=alt.beleg; if(!man) row.notiz=alt.notiz;
+    if(alt.beleg&&alt.beleg.teil){ row.verwendungszweck=alt.verwendungszweck; }
+    const {data,error}=await sb.from('bk_kosten').update(row).eq('id',n.id).select().single(); if(error){ toast('Nicht gespeichert: '+error.message,6000); return; }
+    D.kos=D.kos.map(c=>c.id===n.id?data:c); K.neu=null; toast('Beleg geändert: '+eur(data.anteil)+' für '+JAHR+'.'); kNeu2(); return; }
   const {data,error}=await sb.from('bk_kosten').insert(row).select().single(); if(error){ toast('Nicht gespeichert: '+error.message,6000); return; }
   D.kos.push(data); K.neu=null; toast((man?'Betrag':'Beleg')+' übernommen: '+eur(data.anteil)+' für '+JAHR+'.'); kNeu2(); }
 /* Betrag ohne Rechnung (z. B. Hausmeister) */
@@ -1019,7 +1023,13 @@ function manuellNeu(){ if(!K) return; const ka=kKa(); K.treffer=null;
   K.neu={beleg:{manuell:true,n:'ohne Beleg'},notiz:ka.name+' '+JAHR,empfaenger:'',datum:D.a.zeitraum_bis,betrag:'',von:D.a.zeitraum_von,bis:D.a.zeitraum_bis,rechnungsnr:'',nicht_umlagefaehig:'',lohnanteil:'',verbrauch:'',info:'Betrag für den Abrechnungszeitraum eintragen. Ein Beleg ist nicht nötig.',edit:{}}; kNeu2(); }
 function belegZeile(c){ return '<div class="bel"><div class="k"><span>'+(c.beleg&&(c.beleg.od||c.beleg.sb)?'<a class="lnk" onclick="'+belegKlick(c.beleg)+'">'+esc(c.beleg.n||c.notiz||'Beleg')+'</a>':'<b>'+esc(c.notiz||c.empfaenger||'Kostenbuchung')+'</b>'+(c.quelle==='manuell'?' <span class="sub">ohne Beleg</span>':''))+'</span><span><b>'+eur(c.anteil!=null?c.anteil:c.betrag)+'</b> <span class="sub">für '+JAHR+'</span></span></div>'
   +'<div class="sub">'+esc([c.empfaenger,c.rechnungsnr?'Nr. '+c.rechnungsnr:'',c.datum?'vom '+dmy(c.datum):'',c.von&&c.bis?'Leistung '+dmy(c.von)+' bis '+dmy(c.bis):'',c.beleg&&c.beleg.teil?'Teilbetrag '+eur(c.betrag)+(c.beleg.gesamt!=null?' aus Beleg über '+eur(c.beleg.gesamt):''):'Gesamtbetrag '+eur(c.betrag),c.nicht_umlagefaehig?'nicht umlagefähig '+eur(c.nicht_umlagefaehig):'',c.lohnanteil?'Lohnanteil '+eur(c.lohnanteil):'',Array.isArray(c.einheiten)&&c.einheiten.length?'nur für '+einheitenText(c.einheiten):'',c.verbrauch?'Verbrauch '+fnum.format(c.verbrauch):''].filter(Boolean).join(' · '))+'</div>'
-  +'<div class="acts" style="margin-top:4px"><button class="small ghost" onclick="belegWeg(\''+c.id+'\',this)">Entfernen</button></div></div>'; }
+  +'<div class="acts" style="margin-top:4px"><button class="small" onclick="belegAendern(\''+c.id+'\')">Ändern</button><button class="small ghost" onclick="belegWeg(\''+c.id+'\',this)">Entfernen</button></div></div>'; }
+/* vorhandenen Beleg ändern: Formular erscheint an der Stelle des Belegs */
+function belegAendern(id){ const c=D.kos.find(x=>x.id===id); if(!c||!K) return; K.treffer=null; const z=v=>v==null||v===''?'':fnum.format(Number(v));
+  const man=c.quelle==='manuell'||!(c.beleg&&(c.beleg.od||c.beleg.sb));
+  K.neu={id:c.id,beleg:man?{manuell:true,n:c.notiz||'ohne Beleg'}:c.beleg,notiz:c.notiz||'',empfaenger:c.empfaenger||'',datum:c.datum||'',rechnungsnr:c.rechnungsnr||'',von:c.von||'',bis:c.bis||'',
+    betrag:z(c.betrag),nicht_umlagefaehig:z(c.nicht_umlagefaehig),lohnanteil:z(c.lohnanteil),verbrauch:z(c.verbrauch),einheiten:Array.isArray(c.einheiten)?c.einheiten.slice():[],
+    info:'Beleg ändern',edit:{empfaenger:1,datum:1,rechnungsnr:1,von:1,bis:1,betrag:1,nicht_umlagefaehig:1,lohnanteil:1,verbrauch:1,notiz:1}}; kNeu2(); }
 async function belegWeg(id,btn){ if(btn.dataset.sure!=='1'){ btn.dataset.sure='1'; btn.textContent='wirklich entfernen?'; return; }
   const alt=D.kos.find(c=>c.id===id), sp=alt&&alt.beleg&&alt.beleg.sb;
   const {error}=await sb.from('bk_kosten').delete().eq('id',id); if(error){ toast('Nicht entfernt: '+error.message); return; } D.kos=D.kos.filter(c=>c.id!==id);
