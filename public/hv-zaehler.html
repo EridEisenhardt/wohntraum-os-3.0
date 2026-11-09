@@ -218,6 +218,7 @@ function wechselDialog(i){const z=Z.find(x=>x.id===i);
 
 /* ---------- Ableseaufforderung: Schreiben hochladen, Zähler erkennen, Asana-Aufgabe für Stephan Klopsch ---------- */
 const STEPHAN_GID='1211245615080644';
+const JUERGEN_GID='1213804521846631';
 const AU={datei:null,daten:'',typ:'',status:'',erg:null,sel:{},fehlt:[],busy:false};
 let AUFTR=[];
 async function tok(){const {data}=await sb.auth.getSession();return data&&data.session?data.session.access_token:'';}
@@ -228,7 +229,7 @@ const zLabel=z=>{const o=objVon(z.object_id)||{};return (o.kz||'')+' · '+(z.typ
 const zLink=id=>location.origin+'/hausverwaltung/zaehler?zaehler='+encodeURIComponent(id);
 function auftragErledigt(a){return (a.zaehler||[]).length&&(a.zaehler||[]).every(id=>{const s=letzter(id);return s&&String(s.datum)>=String(a.am).slice(0,10);});}
 function auftragCard(){
-  let h='<div class="acard"><h4>Ableseaufforderung</h4><div class="mut" style="margin-bottom:8px">Schreiben eines Versorgers hochladen (PDF oder Foto). Das OS liest die Zählernummern aus, ordnet sie den Zählern zu und legt eine Asana-Aufgabe für Stephan Klopsch mit Link zum Zähler an.</div>';
+  let h='<div class="acard"><h4>Ableseaufforderung</h4><div class="mut" style="margin-bottom:8px">Schreiben eines Versorgers hochladen (PDF oder Foto). Das OS liest die Zählernummern aus, ordnet sie den Zählern zu und legt eine Asana-Aufgabe für Stephan Klopsch mit Link zum Zähler an, dazu die Unteraufgabe „Meldung an Versorger“ für Jürgen Reuter.</div>';
   h+='<label class="btn kl" style="display:inline-block">Schreiben hochladen<input type="file" accept="application/pdf,image/*" hidden onchange="auDatei(this)"></label>';
   if(AU.status) h+=' <span class="mut">'+esc(AU.status)+'</span>';
   const E=AU.erg;
@@ -266,7 +267,7 @@ async function auAsana(){const ids=Object.keys(AU.sel).filter(id=>AU.sel[id]);if
     let zust=STEPHAN_GID; try{ const n=(await apiPost('/api/asana',{aktion:'nutzer'})).nutzer||[]; const s=n.find(u=>/klopsch/i.test(u.name+' '+u.email))||n.find(u=>/stephan/i.test(u.name+' '+u.email)); if(s) zust=s.gid; }catch(e){}
     const notiz='Ableseaufforderung'+(E.versorger?' von '+E.versorger:'')+(E.datum?' vom '+dfmt(E.datum):'')+'.'+(E.frist?' Bitte ablesen bis '+dfmt(E.frist)+'.':'')+(E.stichtag?' Stichtag: '+dfmt(E.stichtag)+'.':'')+(E.kundennummer?'\nKundennummer: '+E.kundennummer:'')
       +'\n\nBitte diese Zähler ablesen und den Stand mit Foto direkt im OS eintragen (Link öffnet den Zähler):\n\n'+ZL.map(z=>'- '+zLabel(z)+'\n  '+zLink(z.id)).join('\n\n')+'\n\nDas Schreiben ist als Anhang beigefügt.';
-    const r=await apiPost('/api/asana',{aktion:'anlegen',name:'Zähler ablesen: '+kz.join(', ')+(E.versorger?' ('+E.versorger+')':''),notiz,faellig:heute(),zustaendig:zust});
+    const r=await apiPost('/api/asana',{aktion:'anlegen',name:'Zähler ablesen: '+kz.join(', ')+(E.versorger?' ('+E.versorger+')':''),notiz,faellig:heute(),zustaendig:zust,unteraufgaben:[{name:'Meldung an Versorger'+(E.versorger?' ('+E.versorger+')':''),zustaendig:JUERGEN_GID,faellig:E.frist||''}]});
     const t=r.aufgabe||{};
     if(t.gid&&AU.datei){ try{ const fd=new FormData(); fd.append('gid',t.gid); fd.append('datei',AU.typ==='image/jpeg'?await (await fetch('data:image/jpeg;base64,'+AU.daten)).blob():AU.datei,AU.datei.name||'Schreiben'); await fetch('/api/asana',{method:'POST',headers:{authorization:'Bearer '+await tok()},body:fd}); }catch(e){} }
     const rec={id,am:new Date().toISOString(),von:ICH||'',versorger:E.versorger||'',datum:E.datum||'',frist:E.frist||'',stichtag:E.stichtag||'',kundennummer:E.kundennummer||'',zaehler:ids,datei,asana:{gid:t.gid||'',link:t.link||''}};
