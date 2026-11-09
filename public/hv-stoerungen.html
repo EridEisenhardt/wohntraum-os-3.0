@@ -156,7 +156,7 @@ function detail(s){const o=objVon(s),e=einVon(s),m=mieterVon(e);let h='';
      <div class="acts"><button class="primary" onclick="bearbeitenSpeichern('${s.id}')">Speichern</button><button onclick="EDIT=null;render()">Abbrechen</button><button class="ghost" style="margin-left:auto;color:var(--neg)" onclick="stoerungLoeschen('${s.id}')">Störung löschen</button></div></div>`;}
   else{h+=`<div class="card"><div class="ch">Meldung Nr. ${esc(s.nr)} (Ticket ${tk(s)}) – ${esc(s.titel)}<button class="ghost small" onclick="EDIT='${s.id}';render()">Bearbeiten</button></div>${spalten([
       kv('Objekt',esc(objLabel(o))),kv('Einheit',e?esc(e.bezeichnung)+(e.lage?' · '+esc(e.lage):''):''),kv('Kategorie',esc(s.kategorie||'')),kv('Dringlichkeit',dPill(s.dringlichkeit)),
-      kv('Gemeldet von',esc(s.melder_name||'')+(s.melder_rolle&&s.melder_rolle!=='Mieter'?' ('+esc(s.melder_rolle)+')':'')),kv('Betrifft',esc(s.betrifft||'–')),kv('Kontakt',esc(s.melder_kontakt||'')),kv('Gemeldet am',zeit(s.created_at)),kv('Eingang über',esc(eingangVon(s)||'–')+(s.erfasst_von?' · erfasst von '+esc(s.erfasst_von):''))])}
+      kv('Gemeldet von',esc(s.melder_name||'')+(s.melder_rolle&&s.melder_rolle!=='Mieter'?' ('+esc(s.melder_rolle)+')':'')),kv('Betrifft',esc(s.betrifft||'–')),kv('Kontakt',kontaktHtml(s)),kv('Gemeldet am',zeit(s.created_at)),kv('Eingang über',esc(eingangVon(s)||'–')+(s.erfasst_von?' · erfasst von '+esc(s.erfasst_von):''))])}
      ${s.beschreibung?`<div class="txt">${esc(s.beschreibung)}</div>`:''}
      <div class="acts"><span class="sub" style="width:72px">Zuständig</span><input class="inp" id="zu-${s.id}" list="dl-asu" data-wahl="1" value="${esc(s.zustaendig||'')}" placeholder="${ASU?'Name eintippen':'Lade Personen aus Asana …'}" style="width:220px">
       <span class="sub" style="margin-left:8px">Fällig am</span><input class="inp" type="date" id="fa-${s.id}" value="${esc(s.faellig||'')}"><button class="small primary" onclick="zuSpeichern('${s.id}')">Übernehmen</button>
@@ -414,6 +414,13 @@ function mieterImObjekt(oid){const U=E.filter(e=>e.objekt_id===oid),akt=x=>{cons
   return MK.filter(x=>U.some(u=>u.nahaus_id===x.unit||u.id===x.unit)&&akt(x)).map(x=>{const u=U.find(v=>v.nahaus_id===x.unit||v.id===x.unit);return {pid:x.pid,label:((MKE[x.pid]||{}).mieter||x.mieter||(x.namen||[]).join(', '))+(u?' · '+u.bezeichnung:'')};}).sort((a,b)=>a.label.localeCompare(b.label,'de',{numeric:true}));}
 function betrAus(oid,v){v=String(v||'').trim();if(!v)return {betrifft:null,betrifft_pid:null};const t=mieterImObjekt(oid).find(x=>x.label===v);return {betrifft:v,betrifft_pid:t?t.pid:null};}
 const betrDl=(id,oid)=>`<datalist id="${id}">${mieterImObjekt(oid).map(x=>`<option value="${esc(x.label)}">`).join('')}</datalist>`;
+/* Kontaktdaten aus dem Mieterkonto: betroffener Mieter, sonst der Mieter aus der Meldung, sonst der aktuelle Mieter der Einheit */
+function mkKontakt(s){let pid=s.betrifft_pid||s.pid||'';if(!pid){const e=einVon(s),mi=e?mieterVon(e):null;if(mi)pid=mi.pid;}if(!pid)return null;
+  const m=MK.find(x=>x.pid===pid);if(!m)return null;const ed=MKE[pid]||{},k=(m.kontakte||[])[0]||{};
+  const tel=ed.tel||k.tel||'',mail=ed.email||k.email||'';if(!tel&&!mail)return null;return {name:ed.mieter||m.mieter||k.name||'',tel,mail};}
+function kontaktHtml(s){const own=String(s.melder_kontakt||'').trim(),k=mkKontakt(s);let h=own?esc(own):'';
+  if(k)h+=(h?'<div class="sub">':'')+esc([k.tel,k.mail].filter(Boolean).join(' · '))+'<div class="sub">'+esc(k.name)+' (aus Mieterkonto)</div>'+(h?'</div>':'');
+  return h||'–';}
 function mailAdr(s){const m1=String(s.melder_kontakt||'').match(/[^\s<>,;·]+@[^\s<>,;·]+\.[a-z]{2,}/i);if(m1)return m1[0].toLowerCase();
   const ein=(s.mails||[]).find(m=>m.richtung==='ein'&&m.von&&m.von.mail);if(ein)return ein.von.mail;const mi=mieterVon(einVon(s));return mi&&mi.email?String(mi.email).split(/[,;\s]+/)[0]:'';}
 function mailEntwurf(s,art){const T=MTPL[art]||{betreff:'{titel}',text:'Guten Tag {name},\n\n\n\n'+MAIL_SIG};let b=mFuellen(T.betreff,s);if(!b.includes(tk(s)))b+=' ['+tk(s)+']';
