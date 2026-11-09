@@ -107,7 +107,7 @@ async function asApi(body){let r;try{r=await fetch('/api/asana',{method:'POST',h
 const objVon=s=>O.find(o=>o.id===s.objekt_id)||{};const einVon=s=>E.find(e=>e.id===s.einheit_id)||null;
 const objLabel=o=>o&&o.kz?o.kz+' · '+o.name:'';
 function mieterVon(u){if(!u||!u.nahaus_id)return null;const akt=m=>{const bis=(MKE[m.pid]||{}).bis||m.bis;return (!m.von||m.von<=HEUTE)&&(!bis||bis>=HEUTE);};
-  const m=MK.find(x=>x.unit===u.nahaus_id&&akt(x));if(!m)return null;const e=MKE[m.pid]||{},k=(m.kontakte||[])[0]||{};return {pid:m.pid,name:e.mieter||m.mieter||(m.namen||[]).join(', '),tel:e.tel||k.tel||'',email:e.email||k.email||''};}
+  const m=MK.find(x=>x.unit===u.nahaus_id&&akt(x));if(!m)return null;const e=MKE[m.pid]||{},K=m.kontakte||[],tk1=(K.find(k=>k.tel)||{}).tel,em1=(K.find(k=>k.email)||{}).email;return {pid:m.pid,name:e.mieter||m.mieter||(m.namen||[]).join(', '),tel:e.tel||tk1||'',email:e.email||em1||''};}
 async function laden(){
   const [s,o,e,l,mk,me,f,u,vs]=await Promise.all([sb.from('stoerungen').select('*').order('created_at',{ascending:false}),sb.from('obj_objekte').select('id,kz,name,strasse,plz,ort,status,gesellschaft').order('sort'),
     sb.from('obj_einheiten').select('id,objekt_id,bezeichnung,lage,nahaus_id,aktiv').order('sort'),sb.from('stoerung_links').select('*'),
@@ -416,8 +416,11 @@ function betrAus(oid,v){v=String(v||'').trim();if(!v)return {betrifft:null,betri
 const betrDl=(id,oid)=>`<datalist id="${id}">${mieterImObjekt(oid).map(x=>`<option value="${esc(x.label)}">`).join('')}</datalist>`;
 /* Kontaktdaten aus dem Mieterkonto: betroffener Mieter, sonst der Mieter aus der Meldung, sonst der aktuelle Mieter der Einheit */
 function mkKontakt(s){let pid=s.betrifft_pid||s.pid||'';if(!pid){const e=einVon(s),mi=e?mieterVon(e):null;if(mi)pid=mi.pid;}if(!pid)return null;
-  const m=MK.find(x=>x.pid===pid);if(!m)return null;const ed=MKE[pid]||{},k=(m.kontakte||[])[0]||{};
-  const tel=ed.tel||k.tel||'',mail=ed.email||k.email||'';if(!tel&&!mail)return null;return {name:ed.mieter||m.mieter||k.name||'',tel,mail};}
+  const m=MK.find(x=>x.pid===pid);if(!m)return null;const ed=MKE[pid]||{},K=(m.kontakte||[]);
+  /* alle Kontakte des Mieterkontos (z. B. beide Ehepartner), doppelte weglassen */
+  const tel=[...new Set([ed.tel].concat(K.map(k=>k.tel)).map(x=>String(x||'').trim()).filter(Boolean))].join(', ');
+  const mail=[...new Set([ed.email].concat(K.map(k=>k.email)).map(x=>String(x||'').trim().toLowerCase()).filter(Boolean))].join(', ');
+  if(!tel&&!mail)return null;return {name:ed.mieter||m.mieter||(K[0]||{}).name||'',tel,mail};}
 function kontaktHtml(s){const own=String(s.melder_kontakt||'').trim(),k=mkKontakt(s);let h=own?esc(own):'';
   if(k)h+=(h?'<div class="sub">':'')+esc([k.tel,k.mail].filter(Boolean).join(' · '))+'<div class="sub">'+esc(k.name)+' (aus Mieterkonto)</div>'+(h?'</div>':'');
   return h||'–';}
