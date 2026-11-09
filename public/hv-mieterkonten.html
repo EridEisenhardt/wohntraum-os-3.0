@@ -668,7 +668,7 @@ function compute(opt){ opt=opt||{}; const ZMAP={}, BU={};
     /* Nahaus-Zahlungen für Zeiträume ohne Kontoauszüge im OS */
     for(const p of mk.nhIst||[]){ const m=(p.d||'').slice(0,7); if(m<START) continue; const uebP=U&&p.d<=U; if(!uebP&&m>=first) continue;
       let pn=''; if(uebP){ const L=BU[mk.pid]||[]; const i=L.findIndex(q=>!q.u&&Math.abs(q.b-p.b)<0.01&&Math.abs(dnum2(q.d)-dnum2(p.d))<=4); if(i>=0){ L[i].u=1; pn=L[i].n; } }
-      x.rows.push({d:p.d,nhid:p.id||'',t:p.t||'Zahlung',pn,h:p.b,s:0,src:uebP?'Nahaus (Übernahme bis '+dmy(U)+')':'Zahlung laut Nahaus',k:kautIds.has(p.bk),alloc:(ed(mk).nhZu||{})[p.id]?[{id:(ed(mk).nhZu||{})[p.id],b:p.b}]:uebP&&p.bk?[{id:p.bk,b:p.b}]:null,nh:1}); } /* nhZu: im OS geänderte Zuordnung einer Nahaus-Zahlung (nur Anzeige) */
+      x.rows.push({d:p.d,nhid:p.id||'',t:p.t||'Zahlung',pn,h:p.b,s:0,src:uebP?'Nahaus (Übernahme bis '+dmy(U)+')':'Zahlung laut Nahaus',k:kautIds.has(p.bk),alloc:(ed(mk).nhZu||{})[p.id]?[{id:(ed(mk).nhZu||{})[p.id].id||(ed(mk).nhZu||{})[p.id],b:(ed(mk).nhZu||{})[p.id].b!=null?(ed(mk).nhZu||{})[p.id].b:p.b}]:uebP&&p.bk?[{id:p.bk,b:p.b}]:null,nh:1,nhZu:!!(ed(mk).nhZu||{})[p.id]}); } /* nhZu: im OS geänderte Zuordnung einer Nahaus-Zahlung (nur Anzeige) */
     /* Zahlungen, die manuell erfasst wurden (z. B. Kaution auf ein Kautionskonto ohne Zugriff, Barzahlung) */
     for(const z of (ed(mk).manZ||[])){ const zb=Number(z&&z.b)||0; if(zb<=0||!z.d) continue;
       x.rows.push({d:z.d,t:'Zahlung manuell erfasst'+(z.t?' · '+z.t:''),pn:'',h:zb,s:0,src:'manuell erfasst',k:z.sid?kautIds.has(z.sid):!!z.k,alloc:z.sid?[{id:z.sid,b:zb}]:null,mz:z.id}); }
@@ -1784,7 +1784,7 @@ document.addEventListener('click',e=>{ const t=e.target.closest('button'); if(!t
   kSetzen(d.ksave,w,'Gespeichert.',(r.s>0?'Sollstellung':'Buchung')+' geändert: '+r.t+(w.b!=null?' '+eur(bAlt)+' → '+eur(w.b):'')+(w.d&&w.d!==r.d?', Datum '+dmy(r.d)+' → '+dmy(w.d):'')+(w.t&&w.t!==r.t?', Text „'+w.t+'“':'')); },true);
 /* ---------- Sollstellungen (wie in Nahaus: Sollstellung anklicken, Zahlung zuordnen) ---------- */
 let solSel=null, solNurOffen=false;
-function solLinks(x){ const L={}; for(const r of x.rows){ if(!r.h) continue; for(const a of (r.alloc||[])) (L[a.id]=L[a.id]||[]).push({r,b:Number(a.b)||0,w:'manuell'}); for(const a of (r.ia||[])) (L[a.id]=L[a.id]||[]).push({r,b:a.b,w:'automatisch'}); } return L; }
+function solLinks(x){ const L={}; for(const r of x.rows){ if(!r.h) continue; for(const a of (r.alloc||[])) (L[a.id]=L[a.id]||[]).push({r,b:Number(a.b)||0,w:'manuell'}); for(const a of (r.ia||[])) (L[a.id]=L[a.id]||[]).push({r,b:a.b,w:'automatisch'}); for(const a of (r.va||[])) (L[a.id]=L[a.id]||[]).push({r,b:a.b,w:'älteste zuerst'}); } return L; }
 function solStatus(r){ if(r.offen==null) return ['src','–']; if(r.offen<=0.005) return ['ok','bezahlt']; if(r.fut) return ['src',r.offen<r.s-0.005?'teilweise vorausbezahlt':'noch nicht fällig']; return r.offen<r.s-0.005?['mid','teilweise bezahlt']:['bad','offen']; }
 function payRows(x){ const seen={}, out=[]; for(const r of x.rows.slice().reverse()){ if(!r.key||!r.h||r.doc==null) continue; if(seen[r.key]){ seen[r.key].rest=r2((seen[r.key].rest||0)+(r.rest||0)); continue; } const o=Object.assign({},r); seen[r.key]=o; out.push(o); } return out; }
 function sollCard(x){ const idT={}; for(const r of x.rows) if(r.id) idT[r.id]=r.t;
@@ -1803,28 +1803,49 @@ function sollCard(x){ const idT={}; for(const r of x.rows) if(r.id) idT[r.id]=r.
 function solPanel(x,r,links,idT){ const bez=r2(r.s-(r.offen||0)), lsum=r2(links.reduce((a,l)=>a+l.b,0));
   let h='<div class="solp"><div class="rh">Zahlungen auf diese Sollstellung</div>';
   if(!links.length&&bez<=0.005) h+='<div class="sub">Noch keine Zahlung zugeordnet.</div>';
-  for(const l of links) h+='<div class="kvr"><span>'+esc(dmy(l.r.d))+' · '+esc(l.r.pn||l.r.t)+' <span class="pill src">'+l.w+'</span></span><b>'+eur(l.b)+(l.r.mz?' <button class="ghost small" data-mzdel="'+esc(l.r.mz)+'">entfernen</button>':l.w==='manuell'?' <button class="ghost small" data-solx="'+esc(l.r.key)+'">lösen</button>':'')+'</b></div>';
+  for(const l of links) h+='<div class="kvr"><span>'+esc(dmy(l.r.d))+' · '+esc(l.r.pn||l.r.t)+' <span class="pill src">'+l.w+'</span></span><b>'+eur(l.b)+(l.r.mz?' <button class="ghost small" data-mzdel="'+esc(l.r.mz)+'">entfernen</button>':l.r.nhZu?' <button class="ghost small" data-nhlos="'+esc(l.r.nhid)+'">lösen</button>':l.w==='manuell'&&l.r.key?' <button class="ghost small" data-solx="'+esc(l.r.key)+'">lösen</button>':'')+'</b></div>';
   if(bez-lsum>0.005) h+='<div class="kvr"><span>aus Zahlungen ohne feste Zuordnung (älteste Posten zuerst) bzw. aus Nahaus</span><b>'+eur(bez-lsum)+'</b></div>';
-  const P=payRows(x).slice(0,18);
-  h+='<div class="rh" style="margin-top:10px">Zahlung zuordnen</div>';
   const vorB=r.offen>0.005?r.offen:r.s;
   const manH='<div class="rh" style="margin-top:12px">Zahlung manuell erfassen</div>'
     +'<div class="acts" style="flex-wrap:wrap;align-items:flex-end"><label class="fl" style="min-width:140px">Datum<input type="date" id="mz-d" value="'+esc(today)+'"></label>'
     +'<label class="fl" style="min-width:120px">Betrag (€)<input type="text" class="amt" id="mz-b" value="'+esc(fnum.format(vorB))+'"></label>'
     +'<label class="fl" style="flex:1;min-width:200px">Bemerkung<input type="text" id="mz-t" placeholder="'+(r.k?'z. B. Kautionskonto Sparkasse':'z. B. Barzahlung')+'"></label>'
     +'<button class="primary small" data-mzadd="'+esc(r.id)+'">Zahlung erfassen</button></div>';
-  if(!P.length) h+='<div class="sub">Für diesen Mieter gibt es keine Zahlungen aus den Kontoauszügen im OS.</div>';
-  else { h+='<table class="mini pay"><thead><tr><th>Eingang</th><th>Zahler / Verwendungszweck</th><th class="n">Betrag</th><th>derzeit auf</th><th class="n">frei</th><th class="n">zuordnen</th><th></th></tr></thead><tbody>';
-    for(const p of P){ const cur=(p.alloc&&p.alloc.length?p.alloc:p.ia||[]).filter(a=>Number(a.b)>0); const here=cur.filter(a=>a.id===r.id).reduce((a,y)=>a+Number(y.b),0);
-      const vor=r2(Math.max(0,Math.min(r.offen>0.005?r.offen:r.s,(p.rest||0)>0.005?p.rest:p.tb)));
-      h+='<tr><td>'+esc(dmy(p.d))+'</td><td class="wrapc">'+esc(p.t)+'</td><td class="n">'+eur(p.tb)+'</td><td class="sub">'+(cur.length?cur.map(a=>esc(idT[a.id]||'Posten')+' '+eur(a.b)).join(', '):'ältester offener Posten')+'</td><td class="n">'+((p.rest||0)>0.005?eur(p.rest):'')+'</td>'
-        +'<td class="n"><input type="text" class="amt" data-sola="'+esc(p.key)+'" value="'+esc(fnum.format(here||vor))+'"></td><td><button class="small '+(here?'ghost':'primary')+'" data-solz="'+esc(p.key)+'">'+(here?'ändern':'zuordnen')+'</button></td></tr>'; }
-    h+='</tbody></table>'; }
+  ZZ={pid:x.mk.pid,sid:r.id};
+  h+='<div class="rh" style="margin-top:10px">Zahlung zuordnen</div><input type="search" id="zz-q" class="amt" style="width:100%;text-align:left" placeholder="Zahlung suchen: Name, Verwendungszweck oder Betrag" value="'+esc(ZZQ)+'" autocomplete="off"><div id="zz-list">'+zzListe()+'</div>';
   /* alle manuell erfassten Zahlungen dieses Mieters, damit man sie von hier aus wieder entfernen kann */
   const MZ=((x.mk&&ed(x.mk).manZ)||[]).slice().sort((a,b)=>String(b.am||b.d).localeCompare(String(a.am||a.d)));
   let mzH=''; if(MZ.length){ mzH='<div class="rh" style="margin-top:12px">Manuell erfasste Zahlungen</div><table class="mini pay"><thead><tr><th>Datum</th><th>auf Sollstellung</th><th>Bemerkung</th><th class="n">Betrag</th><th>erfasst</th><th></th></tr></thead><tbody>'
     +MZ.map(z=>'<tr><td>'+esc(dmy(z.d))+'</td><td>'+esc(z.sid?(idT[z.sid]||'Posten'):'ältester offener Posten')+'</td><td class="wrapc sub">'+esc(z.t||'')+'</td><td class="n">'+eur(Number(z.b)||0)+'</td><td class="sub">'+esc(dmy(z.am||''))+(z.von?' · '+esc(z.von):'')+'</td><td class="n"><button class="ghost small" data-mzdel="'+esc(z.id)+'">entfernen</button></td></tr>').join('')+'</tbody></table>'; }
   return h+manH+mzH+'</div>'; }
+/* Zahlung zuordnen: Suche über alle Zahlungseingänge, mit Hinweis, ob und wo sie schon zugeordnet sind */
+var ZZ={pid:null,sid:null}, ZZQ='';
+function zzListe(){ const x=calc&&calc.res[ZZ.pid]; if(!x) return ''; const r=x.rows.find(q=>q.id===ZZ.sid); if(!r) return ''; const idT={}; for(const q of x.rows) if(q.id) idT[q.id]=q.t;
+  const q=norm(ZZQ||''), qn=parseNum(ZZQ), soll=r.offen>0.005?r.offen:r.s, it=[];
+  const auf=p=>[].concat(p.vt||[],p.ia||[],p.va||[]).filter(a=>Number(a.b)>0.005).map(a=>(idT[a.id]||'Posten')+' '+eur(a.b)).join(', ');
+  /* Zahlungen dieses Mieters (Kontoauszug und Nahaus) */
+  for(const p of payRows(x)) it.push({art:'bank',k:p.key,d:p.d,t:p.t,b:p.tb,frei:r2(p.uebrig||0),auf:auf(p),txt:p.t});
+  for(const p of x.rows.filter(q=>q.nhid&&q.h>0)) it.push({art:'nh',k:p.nhid,d:p.d,t:(p.pn?p.pn+' · ':'')+p.t+' (Nahaus)',b:p.h,frei:r2(p.uebrig||0),auf:auf(p),txt:p.t+' '+(p.pn||'')});
+  /* bei Suche: alle übrigen Zahlungseingänge aus den Kontoauszügen */
+  if(q.length>=2||qn!=null){ const Z=calc.ZMAP||{}, ab=new Date(Date.now()-400*864e5).toISOString().slice(0,10);
+    for(const id in buch){ const dd=buch[id]; if(!dd||dd.konto===MANKEY) continue; (dd.tx||[]).forEach((t,ix)=>{ if(!(t.b>0)||String(t.d)<ab) return; const key=(t.h||'')+'|'+t.b; if(Z[key]===ZZ.pid) return;
+      const anders=Z[key]&&MK[Z[key]]; it.push({art:'fremd',k:id+'|'+ix,d:t.d,t:(t.n||'')+(t.z?' · '+t.z:''),b:t.b,frei:anders?0:t.b,auf:anders?'bei '+(ed(anders).mieter||anders.obj)+' ('+anders.obj+')':'',konto:kontoName(dd.konto),txt:(t.n||'')+' '+(t.z||'')}); }); } }
+  let L=it.filter(p=>!q&&qn==null||(q.length>=2&&norm(p.txt).includes(q))||(qn!=null&&Math.abs(p.b-qn)<0.01));
+  L.sort((a,b)=>(b.frei>0.005)-(a.frei>0.005)||String(b.d).localeCompare(String(a.d)));
+  const mehr=L.length>50; L=L.slice(0,50);
+  if(!L.length) return '<div class="sub" style="margin-top:6px">Keine Zahlung gefunden.'+(q.length<2&&qn==null?' Tipp: nach Name oder Betrag suchen, dann erscheinen alle Zahlungseingänge.':'')+'</div>';
+  return '<table class="mini pay" style="margin-top:6px"><thead><tr><th>Eingang</th><th>Zahler / Verwendungszweck</th><th class="n">Betrag</th><th>Stand</th><th class="n">zuordnen</th><th></th></tr></thead><tbody>'
+    +L.map(p=>{ const vor=r2(Math.max(0,Math.min(soll,p.frei>0.005?p.frei:p.b))), a='data-zza="'+esc(p.art+'|'+p.k)+'"';
+      const st=p.art==='fremd'&&!p.auf?'<span class="pill mid">noch keinem Mieter zugeordnet</span>':p.frei>0.005?'<span class="pill mid">frei '+eur(p.frei)+'</span>'+(p.auf?'<div class="sub">auf '+esc(p.auf)+'</div>':''):'<span class="pill ok">zugeordnet</span><div class="sub">'+esc(p.auf.startsWith('bei ')?p.auf:'auf '+p.auf)+'</div>';
+      return '<tr><td>'+esc(dmy(p.d))+'</td><td class="wrapc">'+esc(p.t)+(p.konto?'<div class="sub">'+esc(p.konto)+'</div>':'')+'</td><td class="n">'+eur(p.b)+'</td><td>'+st+'</td><td class="n"><input type="text" class="amt" '+a+' value="'+esc(fnum.format(vor))+'"></td><td><button class="small '+(p.frei>0.005?'primary':'ghost')+'" data-zzgo="'+esc(p.art+'|'+p.k)+'">zuordnen</button></td></tr>'; }).join('')
+    +'</tbody></table>'+(mehr?'<div class="sub">Es gibt mehr Treffer. Bitte die Suche genauer machen.</div>':''); }
+document.addEventListener('input',e=>{ if(e.target&&e.target.id==='zz-q'){ ZZQ=e.target.value; const el=document.getElementById('zz-list'); if(el) el.innerHTML=zzListe(); } });
+async function zzZuordnen(code,b){ const x=calc&&calc.res[ZZ.pid]; if(!x) return; const mk=x.mk, sid=ZZ.sid, i=code.indexOf('|'), art=code.slice(0,i), k=code.slice(i+1);
+  if(art==='bank'){ const p=solAssign(mk.pid,k,sid,b); if(p) await p; }
+  else if(art==='nh'){ const Z=Object.assign({},ed(mk).nhZu||{}); if(b>0.005) Z[k]={id:sid,b:r2(b)}; else delete Z[k]; saveEdit(mk.pid,{nhZu:Z},b>0.005?'Zahlung zugeordnet.':'Zuordnung entfernt.','Nahaus-Zahlung '+k+(b>0.005?' zugeordnet: '+eur(b):' Zuordnung entfernt')); }
+  else { const [doc,ix]=k.split('|'); const d=buch[doc], tx=d&&d.tx[Number(ix)]; if(!tx){ toast('Zahlung nicht gefunden.'); return; }
+    await mkWriteTx(doc,Number(ix),{op:{pid:mk.pid,a:[{id:sid,b:r2(Math.min(b,tx.b))}]},m:1,k:'miete',s:'',ka:'',o:mk.obj||'',u:mk.unit||''}); histLog(mk.pid,'Änderung','Zahlung vom '+dmy(tx.d)+' über '+eur(tx.b)+' zugeordnet ('+eur(b)+')'); }
+  toast(b>0.005?'Zahlung zugeordnet.':'Zuordnung entfernt.'); }
 function mkWriteTx(doc,ix,patch){ if(!db||!canWrite){ toast('Nur Lesezugriff.'); return Promise.resolve(); } const d=buch[doc]; if(!d) return Promise.resolve();
   const tx=d.tx.slice(); tx[ix]=Object.assign({},tx[ix],patch); d.tx=tx; invalidate(); calc=null; render(); return queue('buchungen/'+doc,()=>db.doc('buchungen/'+doc).update({tx:d.tx})); }
 function solAssign(pid,key,sid,b){ const x=calc&&calc.res[pid]; if(!x) return; const r=x.rows.find(q=>q.key===key&&!q.k)||x.rows.find(q=>q.key===key); if(!r) return;
@@ -1972,6 +1993,8 @@ document.addEventListener('click',async e=>{ const t=e.target.closest('button,tr
   if(t.dataset.bzsave){ const ab=$('bz-ab').value, v=parseNum($('bz-satz').value); if(!ab||v==null||isNaN(v)){ toast('Bitte Datum und Satz eintragen.'); return; } MBZ=MBZ.filter(z=>z.ab!==ab).concat([{ab,satz:v}]); saveStamm('mahnung',{bz:MBZ}).then(()=>toast('Basiszinssatz gespeichert.')); render(); return; }
   if(t.dataset.solf!==undefined){ solNurOffen=t.dataset.solf==='1'; render(); return; }
   if(t.dataset.sol){ solSel=solSel===t.dataset.sol?null:t.dataset.sol; render(); return; }
+  if(t.dataset.zzgo){ if(!canWrite){ toast('Nur Lesezugriff.'); return; } const inp=document.querySelector('[data-zza="'+CSS.escape(t.dataset.zzgo)+'"]'); const b=parseNum(inp?inp.value:''); if(b==null||isNaN(b)||b<0){ toast('Bitte einen Betrag eingeben.'); return; } zzZuordnen(t.dataset.zzgo,b); return; }
+  if(t.dataset.nhlos){ const mk=MK[M.sel]; if(!mk) return; const Z=Object.assign({},ed(mk).nhZu||{}); delete Z[t.dataset.nhlos]; saveEdit(mk.pid,{nhZu:Z},'Zuordnung gelöst.','Zuordnung einer Nahaus-Zahlung gelöst'); return; }
   if(t.dataset.solz){ const inp=document.querySelector('[data-sola="'+CSS.escape(t.dataset.solz)+'"]'); const b=parseNum(inp?inp.value:''); if(b==null||isNaN(b)||b<0){ toast('Bitte einen Betrag eingeben.'); return; } const p=solAssign(M.sel,t.dataset.solz,solSel,b); if(p) p.then(()=>toast(b>0?'Zahlung zugeordnet.':'Zuordnung entfernt.')); return; }
   if(t.dataset.mzadd){ if(!canWrite){ toast('Nur Lesezugriff.'); return; } const d=($('mz-d')||{}).value||'', b=parseNum(($('mz-b')||{}).value||''), bem=String(($('mz-t')||{}).value||'').trim();
     if(!/^\d{4}-\d\d-\d\d$/.test(d)){ toast('Bitte ein Datum eingeben.'); return; } if(b==null||isNaN(b)||b<=0){ toast('Bitte einen Betrag eingeben.'); return; }
