@@ -583,9 +583,15 @@ async function belegmappe(btn){ const w=window.open('','_blank'); const alt=btn.
       catch(e){ fehlt.push('Beleg '+c._nr+' ('+(e.message||e)+')'); } }
     const bytes=await mappe.save(); const blob=new Blob([bytes],{type:'application/pdf'}); if(w) w.location.href=URL.createObjectURL(blob);
     const name=odSafe(o.kz+'_'+new Date().toISOString().slice(0,10)+'_Belegmappe Betriebskosten '+JAHR)+'.pdf';
-    if(bytes.length<=3*1024*1024){ try{ const rB=await odApi({aktion:'objektbasis',kz:[o.kz]}), Bs=(rB.objekte||{})[o.kz]; if(Bs){ const t04=(Bs.top||[]).find(t=>/^04 /.test(t))||'04 Betriebskosten', ziel=await abrOrdner(Bs,t04); await odApi({aktion:'anlegen',pfad:ziel});
-        let b64=''; for(let j=0;j<bytes.length;j+=32768) b64+=String.fromCharCode.apply(null,bytes.subarray(j,j+32768)); await odApi({aktion:'hochladen',pfad:ziel,name,daten:btoa(b64),typ:'application/pdf'}); toast('Belegmappe in OneDrive gespeichert (04 Betriebskosten/BK-Abrechnungen/'+JAHR+').'+(fehlt.length?' Nicht enthalten: '+fehlt.join(', '):''),9000); } }catch(e){ toast('Belegmappe erstellt, aber nicht in OneDrive gespeichert: '+(e.message||e),8000); } }
-    else toast('Belegmappe erstellt ('+Math.round(bytes.length/1048576)+' MB). Zu groß für OneDrive-Upload – bitte im geöffneten Fenster speichern.'+(fehlt.length?' Nicht enthalten: '+fehlt.join(', '):''),10000); }
+    /* Ablage in OneDrive: kleine Dateien direkt, große über eine Upload-Sitzung in Teilen */
+    try{ const rB=await odApi({aktion:'objektbasis',kz:[o.kz]}), Bs=(rB.objekte||{})[o.kz]; if(!Bs) throw new Error('Kein Objektordner für '+o.kz+' gefunden.');
+      const t04=(Bs.top||[]).find(t=>/^04 /.test(t))||'04 Betriebskosten', ziel=await abrOrdner(Bs,t04); await odApi({aktion:'anlegen',pfad:ziel});
+      if(bytes.length<=3*1024*1024){ let b64=''; for(let j=0;j<bytes.length;j+=32768) b64+=String.fromCharCode.apply(null,bytes.subarray(j,j+32768)); await odApi({aktion:'hochladen',pfad:ziel,name,daten:btoa(b64),typ:'application/pdf'}); }
+      else { const ss=await odApi({aktion:'sitzung',pfad:ziel,name}), N=bytes.length, T=10*1024*1024;
+        for(let a=0;a<N;a+=T){ const e=Math.min(N,a+T); btn.textContent='Speichere in OneDrive '+Math.round(e/N*100)+' % …';
+          const r=await fetch(ss.uploadUrl,{method:'PUT',headers:{'Content-Range':'bytes '+a+'-'+(e-1)+'/'+N},body:bytes.slice(a,e)}); if(!r.ok&&r.status!==202) throw new Error('Hochladen nach OneDrive fehlgeschlagen ('+r.status+').'); } }
+      toast('Belegmappe in OneDrive gespeichert (04 Betriebskosten/BK-Abrechnungen/'+JAHR+', '+Math.round(bytes.length/104857.6)/10+' MB).'+(fehlt.length?' Nicht enthalten: '+fehlt.join(', '):''),9000); }
+    catch(e){ toast('Belegmappe erstellt, aber nicht in OneDrive gespeichert: '+(e.message||e)+' Bitte im geöffneten Fenster speichern.',10000); } }
   catch(e){ if(w) w.close(); toast('Belegmappe nicht erstellt: '+(e.message||e),7000); }
   btn.disabled=false; btn.textContent=alt; }
 function renderObjekt(){ const o=D.o, a=D.a;
