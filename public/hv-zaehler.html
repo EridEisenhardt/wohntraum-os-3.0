@@ -223,7 +223,16 @@ const AU={datei:null,daten:'',typ:'',status:'',erg:null,sel:{},fehlt:[],busy:fal
 let AUFTR=[];
 async function tok(){const {data}=await sb.auth.getSession();return data&&data.session?data.session.access_token:'';}
 async function apiPost(pfad,body){const r=await fetch(pfad,{method:'POST',headers:{'content-type':'application/json',authorization:'Bearer '+await tok()},body:JSON.stringify(body)});let j=null;try{j=await r.json();}catch(e){}if(!j)throw new Error('Dienst nicht erreichbar ('+r.status+').');if(j.error)throw new Error(j.error);return j;}
-async function auftraegeLaden(){try{const {data}=await sb.from('os_docs').select('data').eq('app','oc').like('pfad','zaehlerauftraege/%');AUFTR=(data||[]).map(r=>r.data).filter(Boolean).sort((a,b)=>String(b.am).localeCompare(String(a.am)));}catch(e){AUFTR=[];}}
+async function auftraegeLaden(){try{const {data}=await sb.from('os_docs').select('data').eq('app','oc').like('pfad','zaehlerauftraege/%');AUFTR=(data||[]).map(r=>r.data).filter(Boolean).sort((a,b)=>String(b.am).localeCompare(String(a.am)));}catch(e){AUFTR=[];}
+  asanaStand();}
+/* Stand aus Asana: ist die Unteraufgabe „Meldung an Versorger“ (oder die ganze Aufgabe) erledigt, gilt der Auftrag als gemeldet */
+async function asanaStand(){const L=AUFTR.filter(a=>!a.gemeldetAm&&a.asana&&a.asana.gid).slice(0,30);if(!L.length)return;
+  const gids=[];L.forEach(a=>{gids.push(a.asana.gid);if(a.asana.unterGid)gids.push(a.asana.unterGid);});
+  try{const st=(await apiPost('/api/asana',{aktion:'status',gids})).aufgaben||{};let neu=false;
+    for(const a of L){const h=st[a.asana.gid]||{},u=a.asana.unterGid?(st[a.asana.unterGid]||{}):null;a.stephanErledigt=!!h.erledigt;
+      if((u&&u.erledigt)||h.erledigt){a.gemeldetAm=(u&&u.erledigtAm)||h.erledigtAm||new Date().toISOString();neu=true;
+        try{await sb.from('os_docs').upsert({app:'oc',pfad:'zaehlerauftraege/'+a.id,data:a,updated_at:new Date().toISOString()});}catch(e){}}}
+    if(neu||L.length)render();}catch(e){}}
 const nrNorm=s=>String(s||'').replace(/[^0-9a-z]/gi,'').toLowerCase().replace(/^0+/,'');
 const zLabel=z=>{const o=objVon(z.object_id)||{};return (o.kz||'')+' · '+(z.typ||'Zähler')+' · Nr. '+(z.nummer||'–')+' · '+einLabel(z.unit_id);};
 const zLink=id=>location.origin+'/hausverwaltung/zaehler?zaehler='+encodeURIComponent(id);
@@ -242,7 +251,7 @@ function auftragCard(){
     h+='<div style="margin-top:8px"><input class="inp" list="dlZAll" placeholder="Zähler hinzufügen: Objekt, Nummer, Typ eintippen" style="width:420px" onchange="auDazu(this.value);this.value=\'\'"><datalist id="dlZAll">'+Z.filter(z=>z.aktiv!==false).sort((a,b)=>nat(zLabel(a),zLabel(b))).map(z=>'<option value="'+esc(zLabel(z))+'">').join('')+'</datalist></div>';
     h+='<div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap"><button class="btn" '+(AU.busy?'disabled':'')+' onclick="auAsana()">'+(AU.busy?'Wird angelegt …':'Asana-Aufgabe für Stephan Klopsch anlegen')+'</button><button class="btn zw" onclick="auReset()">Verwerfen</button></div>'; }
   if(AUFTR.length){ h+='<div style="margin-top:12px;font-weight:700">Letzte Ableseaufträge</div><table><tr><th>Erstellt</th><th>Versorger</th><th>Zähler</th><th>Stand</th><th></th></tr>'
-    +AUFTR.slice(0,10).map(a=>{const ok=auftragErledigt(a);return '<tr><td>'+esc(dfmt(a.am))+'</td><td>'+esc(a.versorger||'–')+(a.frist?'<div class="mut">bis '+esc(dfmt(a.frist))+'</div>':'')+'</td><td>'+(a.zaehler||[]).map(id=>{const z=Z.find(x=>x.id===id);return z?esc(zLabel(z)):'';}).join('<br>')+'</td><td class="'+(ok?'ok':'warn')+'">'+(ok?'abgelesen':'offen')+'</td><td style="white-space:nowrap">'+(a.asana&&a.asana.link?'<a class="btn kl" style="text-decoration:none" href="'+esc(a.asana.link)+'" target="_blank" rel="noopener">Asana-Aufgabe öffnen</a> ':'<span class="mut">keine Asana-Aufgabe</span> ')+(a.datei&&a.datei.pfad?'<button class="btn zw kl" onclick="foto(\''+esc(a.datei.pfad)+'\')">Schreiben öffnen</button>':'')+'</td></tr>';}).join('')+'</table>'; }
+    +AUFTR.slice(0,10).map(a=>{const ok=auftragErledigt(a),gm=!!a.gemeldetAm;return '<tr><td>'+esc(dfmt(a.am))+'</td><td>'+esc(a.versorger||'–')+(a.frist?'<div class="mut">bis '+esc(dfmt(a.frist))+'</div>':'')+'</td><td>'+(a.zaehler||[]).map(id=>{const z=Z.find(x=>x.id===id);return z?esc(zLabel(z)):'';}).join('<br>')+'</td><td class="'+(gm||ok?'ok':'warn')+'">'+(gm?'gemeldet<div class="mut">'+esc(dfmt(a.gemeldetAm))+'</div>':ok?'abgelesen':'offen')+'</td><td style="white-space:nowrap">'+(a.asana&&a.asana.link?'<a class="btn kl" style="text-decoration:none" href="'+esc(a.asana.link)+'" target="_blank" rel="noopener">Asana-Aufgabe öffnen</a> ':'<span class="mut">keine Asana-Aufgabe</span> ')+(a.datei&&a.datei.pfad?'<button class="btn zw kl" onclick="foto(\''+esc(a.datei.pfad)+'\')">Schreiben öffnen</button>':'')+'</td></tr>';}).join('')+'</table>'; }
   return h+'</div>';}
 function auReset(){Object.assign(AU,{datei:null,daten:'',typ:'',status:'',erg:null,sel:{},fehlt:[],busy:false});render();}
 function auDazu(v){const z=Z.find(x=>x.aktiv!==false&&zLabel(x)===String(v||'').trim());if(!z){toast('Bitte einen Zähler aus der Liste wählen.');return;}AU.sel[z.id]=true;render();}
@@ -270,7 +279,7 @@ async function auAsana(){const ids=Object.keys(AU.sel).filter(id=>AU.sel[id]);if
     const r=await apiPost('/api/asana',{aktion:'anlegen',name:'Zähler ablesen: '+kz.join(', ')+(E.versorger?' ('+E.versorger+')':''),notiz,faellig:heute(),zustaendig:zust,unteraufgaben:[{name:'Meldung an Versorger'+(E.versorger?' ('+E.versorger+')':''),zustaendig:JUERGEN_GID,faellig:heute()}]});
     const t=r.aufgabe||{};
     if(t.gid&&AU.datei){ try{ const fd=new FormData(); fd.append('gid',t.gid); fd.append('datei',AU.typ==='image/jpeg'?await (await fetch('data:image/jpeg;base64,'+AU.daten)).blob():AU.datei,AU.datei.name||'Schreiben'); await fetch('/api/asana',{method:'POST',headers:{authorization:'Bearer '+await tok()},body:fd}); }catch(e){} }
-    const rec={id,am:new Date().toISOString(),von:ICH||'',versorger:E.versorger||'',datum:E.datum||'',frist:E.frist||'',stichtag:E.stichtag||'',kundennummer:E.kundennummer||'',zaehler:ids,datei,asana:{gid:t.gid||'',link:t.link||''}};
+    const rec={id,am:new Date().toISOString(),von:ICH||'',versorger:E.versorger||'',datum:E.datum||'',frist:E.frist||'',stichtag:E.stichtag||'',kundennummer:E.kundennummer||'',zaehler:ids,datei,asana:{gid:t.gid||'',link:t.link||'',unterGid:((r.unteraufgaben||[])[0]||{}).gid||''}};
     await sb.from('os_docs').upsert({app:'oc',pfad:'zaehlerauftraege/'+id,data:rec,updated_at:new Date().toISOString()});
     AUFTR.unshift(rec); auReset(); toast('Asana-Aufgabe für Stephan Klopsch angelegt.');
   }catch(e){ AU.busy=false; render(); toast('Nicht angelegt: '+(e.message||e)); } }
