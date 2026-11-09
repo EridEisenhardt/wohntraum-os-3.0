@@ -865,7 +865,8 @@ async function mahnMail(datum,nr,still){ const lauf=MAHN[datum], p=lauf&&(lauf.p
     try{ await mailSpeichern(mk,{richtung:'Ausgang',von:'Hausverwaltung <'+r.von+'>',an:an.join(', '),betreff,datum:am,msgId:r.msgId||'',text:text+'\n\nAnhang: '+fn},r.mime||'','os'); }catch(e){}
     const neu=Object.assign({},MAHN[datum]); neu.posten=Object.assign({},neu.posten,{[nr]:Object.assign({},p,{mail:{an:an.join(', '),am,von:ICH||''}})});
     MAHN=Object.assign({},MAHN,{[datum]:neu}); await queue('mahnlaeufe/'+datum,()=>db.doc('mahnlaeufe/'+datum).set(neu));
-    if(p.regId){ try{ await window.osSupabase.from('mahn_historie').insert({register_id:p.regId,typ:'Versendet',notiz:'Per Mail an '+an.join(', '),mahnstufe:p.stufe}); }catch(e){} }
+    if(p.regId){ try{ await window.osSupabase.from('mahn_historie').insert({register_id:p.regId,typ:'Versendet',notiz:'Per Mail an '+an.join(', '),mahnstufe:p.stufe}); }catch(e){}
+      try{ await window.osSupabase.from('mahn_register').update({status:'Versandt'}).eq('id',p.regId).eq('status','Erstellt'); const rg=REGM.find(x=>x.id===p.regId); if(rg&&rg.status==='Erstellt') rg.status='Versandt'; }catch(e){} }
     histLog(p.pid,'Änderung','Mahnung '+nr+' per Mail an '+an.join(', ')+' gesendet');
     if(!still){ toast('Mahnung '+nr+' per Mail gesendet.'); render(); } return true; }
   catch(e){ if(!still) toast('Senden fehlgeschlagen: '+(e.message||e),9000); else throw e; return false; } }
@@ -873,7 +874,12 @@ async function mahnMailAlle(datum){ const lauf=MAHN[datum]; if(!lauf) return; co
   if(!L.length){ toast('Keine offenen Mahnungen mit E-Mail-Adresse.'); return; } let ok=0; const f=[];
   for(let i=0;i<L.length;i++){ MR.busy='Sende '+(i+1)+' von '+L.length+' …'; render(); try{ if(await mahnMail(datum,L[i].nr,true)) ok++; }catch(e){ f.push(L[i].nr+': '+(e.message||e)); } }
   MR.busy=false; render(); toast(ok+' Mahnung'+(ok===1?'':'en')+' per Mail gesendet.'+(f.length?' Fehler: '+f.join('; '):''),9000); }
-const mahnMailZelle=(datum,p)=>{ const mk=MK[p.pid]; if(p.mail) return '<span class="sub">per Mail '+esc(dmy(String(p.mail.am||'').slice(0,10)))+'</span>'; if(!mk||!mieterMails(mk).length) return '<span class="sub">keine E-Mail</span>'; return '<button class="ghost small" data-mmail="'+esc(datum+'|'+p.nr)+'"'+(MR.busy?' disabled':'')+'>per Mail senden</button>'; };
+/* Mahnung als PDF herunterladen (für den Versand per Post) */
+async function mahnPdfLaden(datum,nr){ const lauf=MAHN[datum], p=lauf&&(lauf.posten||{})[nr], mk=p&&MK[p.pid]; if(!p||!mk){ toast('Mahnung nicht gefunden.'); return; }
+  if(p.akte&&p.akte.od){ odOeffnen(p.akte.od.id,true); return; }
+  const w=window.open('','_blank'); const {data,error}=await window.osSupabase.storage.from('mieterakten').createSignedUrl((p.akte&&p.akte.pfad)||mahnAkte(mk,datum,p),3600,{download:p.datei||true});
+  if(error){ if(w) w.close(); toast('PDF nicht gefunden: '+error.message,7000); return; } if(w) w.location.href=data.signedUrl; else window.open(data.signedUrl,'_blank'); }
+const mahnMailZelle=(datum,p)=>{ const mk=MK[p.pid]; if(p.mail) return '<span class="sub">per Mail '+esc(dmy(String(p.mail.am||'').slice(0,10)))+'</span>'; if(!mk||!mieterMails(mk).length) return '<span class="sub">keine E-Mail</span> <button class="ghost small" data-mpdf="'+esc(datum+'|'+p.nr)+'">PDF herunterladen</button>'; return '<button class="ghost small" data-mmail="'+esc(datum+'|'+p.nr)+'"'+(MR.busy?' disabled':'')+'>per Mail senden</button>'; };
 async function mahnungEntfernen(datum,p,fehler){ const sb=window.osSupabase;
   try{ if(p.url){ const i=String(p.url).indexOf('/mahnungen/'); if(i>=0){ const {error}=await sb.storage.from('mahnungen').remove([decodeURIComponent(p.url.slice(i+11))]); if(error) fehler.push(p.nr+' PDF: '+error.message); } } }catch(e){ fehler.push(p.nr+' PDF: '+e.message); }
   const mk=MK[p.pid]; if(p.akte&&p.akte.od){ try{ await odApi({aktion:'loeschen',id:p.akte.od.id}); }catch(e){ fehler.push(p.nr+' OneDrive: '+(e.message||e)); } }
@@ -1942,6 +1948,7 @@ document.addEventListener('click',async e=>{ const t=e.target.closest('button,tr
   if(t.dataset.dopen){ e.preventDefault(); const w=window.open('','_blank'); const [f,n]=t.dataset.dopen.split('|'); const mk=MK[M.sel]; const {data,error}=await window.osSupabase.storage.from('mieterakten').createSignedUrl(docBase(mk)+'/'+enc(f)+'/'+n,3600); if(error){ if(w) w.close(); toast(error.message); return; } if(w) w.location.href=data.signedUrl; else window.open(data.signedUrl,'_blank'); return; }
   if(t.dataset.mahnopen){ mahnOpen=true; modal=false; mahnInit(); if(!REGload) loadRegM(); render(); return; }
   if(t.dataset.mahnclose){ mahnOpen=false; render(); return; }
+  if(t.dataset.mpdf){ const [d,nr]=t.dataset.mpdf.split('|'); mahnPdfLaden(d,nr); return; }
   if(t.dataset.mmail){ if(MR.busy) return; const [d,nr]=t.dataset.mmail.split('|'); t.disabled=true; t.textContent='Wird gesendet …'; mahnMail(d,nr); return; }
   if(t.dataset.mmailalle){ if(MR.busy) return; if(t.dataset.sure!=='1'){ t.dataset.sure='1'; t.textContent='Wirklich alle senden? Nochmal klicken'; return; } mahnMailAlle(t.dataset.mmailalle); return; }
   if(t.dataset.mzx){ if(MR.busy) return; if(t.dataset.sure!=='1'){ t.dataset.sure='1'; t.textContent='Wirklich? Nochmal klicken'; return; } const [d,nr]=t.dataset.mzx.split('|'); t.disabled=true; mahnungZurueck(d,nr); return; }
