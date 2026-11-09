@@ -225,12 +225,12 @@ async function tok(){const {data}=await sb.auth.getSession();return data&&data.s
 async function apiPost(pfad,body){const r=await fetch(pfad,{method:'POST',headers:{'content-type':'application/json',authorization:'Bearer '+await tok()},body:JSON.stringify(body)});let j=null;try{j=await r.json();}catch(e){}if(!j)throw new Error('Dienst nicht erreichbar ('+r.status+').');if(j.error)throw new Error(j.error);return j;}
 async function auftraegeLaden(){try{const {data}=await sb.from('os_docs').select('data').eq('app','oc').like('pfad','zaehlerauftraege/%');AUFTR=(data||[]).map(r=>r.data).filter(Boolean).sort((a,b)=>String(b.am).localeCompare(String(a.am)));}catch(e){AUFTR=[];}
   asanaStand();}
-/* Stand aus Asana: ist die Unteraufgabe „Meldung an Versorger“ (oder die ganze Aufgabe) erledigt, gilt der Auftrag als gemeldet */
+/* Stand aus Asana: Hauptaufgabe (Jürgen, Meldung an Versorger) erledigt = gemeldet; Unteraufgabe (Stephan, Ablesen) erledigt = abgelesen */
 async function asanaStand(){const L=AUFTR.filter(a=>!a.gemeldetAm&&a.asana&&a.asana.gid).slice(0,30);if(!L.length)return;
   const gids=[];L.forEach(a=>{gids.push(a.asana.gid);if(a.asana.unterGid)gids.push(a.asana.unterGid);});
   try{const st=(await apiPost('/api/asana',{aktion:'status',gids})).aufgaben||{};let neu=false;
-    for(const a of L){const h=st[a.asana.gid]||{},u=a.asana.unterGid?(st[a.asana.unterGid]||{}):null;a.stephanErledigt=!!h.erledigt;
-      if((u&&u.erledigt)||h.erledigt){a.gemeldetAm=(u&&u.erledigtAm)||h.erledigtAm||new Date().toISOString();neu=true;
+    for(const a of L){const h=st[a.asana.gid]||{},u=a.asana.unterGid?(st[a.asana.unterGid]||{}):null;a.stephanErledigt=!!(u&&u.erledigt);
+      if(h.erledigt){a.gemeldetAm=h.erledigtAm||new Date().toISOString();neu=true;
         try{await sb.from('os_docs').upsert({app:'oc',pfad:'zaehlerauftraege/'+a.id,data:a,updated_at:new Date().toISOString()});}catch(e){}}}
     if(neu||L.length)render();}catch(e){}}
 const nrNorm=s=>String(s||'').replace(/[^0-9a-z]/gi,'').toLowerCase().replace(/^0+/,'');
@@ -238,7 +238,7 @@ const zLabel=z=>{const o=objVon(z.object_id)||{};return (o.kz||'')+' · '+(z.typ
 const zLink=id=>location.origin+'/hausverwaltung/zaehler?zaehler='+encodeURIComponent(id);
 function auftragErledigt(a){return (a.zaehler||[]).length&&(a.zaehler||[]).every(id=>{const s=letzter(id);return s&&String(s.datum)>=String(a.am).slice(0,10);});}
 function auftragCard(){
-  let h='<div class="acard"><h4>Ableseaufforderung</h4><div class="mut" style="margin-bottom:8px">Schreiben eines Versorgers hochladen (PDF oder Foto). Das OS liest die Zählernummern aus, ordnet sie den Zählern zu und legt eine Asana-Aufgabe für Stephan Klopsch mit Link zum Zähler an, dazu die Unteraufgabe „Meldung an Versorger“ für Jürgen Reuter.</div>';
+  let h='<div class="acard"><h4>Ableseaufforderung</h4><div class="mut" style="margin-bottom:8px">Schreiben eines Versorgers hochladen (PDF oder Foto). Das OS liest die Zählernummern aus, ordnet sie den Zählern zu und legt eine Asana-Aufgabe für Jürgen Reuter (Meldung an den Versorger) an, mit der Unteraufgabe „Zähler ablesen“ für Stephan Klopsch und Link zum Zähler.</div>';
   h+='<label class="btn kl" style="display:inline-block">Schreiben hochladen<input type="file" accept="application/pdf,image/*" hidden onchange="auDatei(this)"></label>';
   if(AU.status) h+=' <span class="mut">'+esc(AU.status)+'</span>';
   const E=AU.erg;
@@ -249,9 +249,9 @@ function auftragCard(){
     h+=ids.length?'<table>'+ids.map(id=>{const z=Z.find(x=>x.id===id);return z?'<tr><td style="width:28px"><input type="checkbox" '+(AU.sel[id]?'checked':'')+' onchange="AU.sel[\''+id+'\']=this.checked"></td><td>'+esc(zLabel(z))+'</td></tr>':'';}).join('')+'</table>':'<div class="mut">Kein Zähler zugeordnet.</div>';
     if(AU.fehlt.length) h+='<div class="warn" style="margin-top:6px">Nicht im OS gefunden: '+esc(AU.fehlt.join(', '))+'. Bitte den Zähler unten von Hand hinzufügen oder im OS anlegen.</div>';
     h+='<div style="margin-top:8px"><input class="inp" list="dlZAll" placeholder="Zähler hinzufügen: Objekt, Nummer, Typ eintippen" style="width:420px" onchange="auDazu(this.value);this.value=\'\'"><datalist id="dlZAll">'+Z.filter(z=>z.aktiv!==false).sort((a,b)=>nat(zLabel(a),zLabel(b))).map(z=>'<option value="'+esc(zLabel(z))+'">').join('')+'</datalist></div>';
-    h+='<div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap"><button class="btn" '+(AU.busy?'disabled':'')+' onclick="auAsana()">'+(AU.busy?'Wird angelegt …':'Asana-Aufgabe für Stephan Klopsch anlegen')+'</button><button class="btn zw" onclick="auReset()">Verwerfen</button></div>'; }
+    h+='<div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap"><button class="btn" '+(AU.busy?'disabled':'')+' onclick="auAsana()">'+(AU.busy?'Wird angelegt …':'Asana-Aufgabe anlegen (Jürgen melden, Stephan ablesen)')+'</button><button class="btn zw" onclick="auReset()">Verwerfen</button></div>'; }
   if(AUFTR.length){ h+='<div style="margin-top:12px;font-weight:700">Letzte Ableseaufträge</div><table><tr><th>Erstellt</th><th>Versorger</th><th>Zähler</th><th>Stand</th><th></th></tr>'
-    +AUFTR.slice(0,10).map(a=>{const ok=auftragErledigt(a),gm=!!a.gemeldetAm;return '<tr><td>'+esc(dfmt(a.am))+'</td><td>'+esc(a.versorger||'–')+(a.frist?'<div class="mut">bis '+esc(dfmt(a.frist))+'</div>':'')+'</td><td>'+(a.zaehler||[]).map(id=>{const z=Z.find(x=>x.id===id);return z?esc(zLabel(z)):'';}).join('<br>')+'</td><td class="'+(gm||ok?'ok':'warn')+'">'+(gm?'gemeldet<div class="mut">'+esc(dfmt(a.gemeldetAm))+'</div>':ok?'abgelesen':'offen')+'</td><td style="white-space:nowrap">'+(a.asana&&a.asana.link?'<a class="btn kl" style="text-decoration:none" href="'+esc(a.asana.link)+'" target="_blank" rel="noopener">Asana-Aufgabe öffnen</a> ':'<span class="mut">keine Asana-Aufgabe</span> ')+(a.datei&&a.datei.pfad?'<button class="btn zw kl" onclick="foto(\''+esc(a.datei.pfad)+'\')">Schreiben öffnen</button>':'')+'</td></tr>';}).join('')+'</table>'; }
+    +AUFTR.slice(0,10).map(a=>{const ok=auftragErledigt(a)||!!a.stephanErledigt,gm=!!a.gemeldetAm;return '<tr><td>'+esc(dfmt(a.am))+'</td><td>'+esc(a.versorger||'–')+(a.frist?'<div class="mut">bis '+esc(dfmt(a.frist))+'</div>':'')+'</td><td>'+(a.zaehler||[]).map(id=>{const z=Z.find(x=>x.id===id);return z?esc(zLabel(z)):'';}).join('<br>')+'</td><td class="'+(gm||ok?'ok':'warn')+'">'+(gm?'gemeldet<div class="mut">'+esc(dfmt(a.gemeldetAm))+'</div>':ok?'abgelesen':'offen')+'</td><td style="white-space:nowrap">'+(a.asana&&a.asana.link?'<a class="btn kl" style="text-decoration:none" href="'+esc(a.asana.link)+'" target="_blank" rel="noopener">Asana-Aufgabe öffnen</a> ':'<span class="mut">keine Asana-Aufgabe</span> ')+(a.datei&&a.datei.pfad?'<button class="btn zw kl" onclick="foto(\''+esc(a.datei.pfad)+'\')">Schreiben öffnen</button>':'')+'</td></tr>';}).join('')+'</table>'; }
   return h+'</div>';}
 function auReset(){Object.assign(AU,{datei:null,daten:'',typ:'',status:'',erg:null,sel:{},fehlt:[],busy:false});render();}
 function auDazu(v){const z=Z.find(x=>x.aktiv!==false&&zLabel(x)===String(v||'').trim());if(!z){toast('Bitte einen Zähler aus der Liste wählen.');return;}AU.sel[z.id]=true;render();}
@@ -276,12 +276,12 @@ async function auAsana(){const ids=Object.keys(AU.sel).filter(id=>AU.sel[id]);if
     let zust=STEPHAN_GID; try{ const n=(await apiPost('/api/asana',{aktion:'nutzer'})).nutzer||[]; const s=n.find(u=>/klopsch/i.test(u.name+' '+u.email))||n.find(u=>/stephan/i.test(u.name+' '+u.email)); if(s) zust=s.gid; }catch(e){}
     const notiz='Ableseaufforderung'+(E.versorger?' von '+E.versorger:'')+(E.datum?' vom '+dfmt(E.datum):'')+'.'+(E.frist?' Bitte ablesen bis '+dfmt(E.frist)+'.':'')+(E.stichtag?' Stichtag: '+dfmt(E.stichtag)+'.':'')+(E.kundennummer?'\nKundennummer: '+E.kundennummer:'')
       +'\n\nBitte diese Zähler ablesen und den Stand mit Foto direkt im OS eintragen (Link öffnet den Zähler):\n\n'+ZL.map(z=>'- '+zLabel(z)+'\n  '+zLink(z.id)).join('\n\n')+'\n\nDas Schreiben ist als Anhang beigefügt.';
-    const r=await apiPost('/api/asana',{aktion:'anlegen',name:'Zähler ablesen: '+kz.join(', ')+(E.versorger?' ('+E.versorger+')':''),notiz,faellig:heute(),zustaendig:zust,unteraufgaben:[{name:'Meldung an Versorger'+(E.versorger?' ('+E.versorger+')':''),zustaendig:JUERGEN_GID,faellig:heute()}]});
+    const r=await apiPost('/api/asana',{aktion:'anlegen',name:'Zählerstände melden: '+kz.join(', ')+(E.versorger?' ('+E.versorger+')':''),notiz:notiz+'\n\nAblauf: Stephan liest ab und hakt die Unteraufgabe ab. Danach meldet Jürgen die Stände an den Versorger und hakt diese Aufgabe ab.',faellig:heute(),zustaendig:JUERGEN_GID,unteraufgaben:[{name:'Zähler ablesen: '+kz.join(', '),zustaendig:zust,faellig:heute(),notiz}]});
     const t=r.aufgabe||{};
     if(t.gid&&AU.datei){ try{ const fd=new FormData(); fd.append('gid',t.gid); fd.append('datei',AU.typ==='image/jpeg'?await (await fetch('data:image/jpeg;base64,'+AU.daten)).blob():AU.datei,AU.datei.name||'Schreiben'); await fetch('/api/asana',{method:'POST',headers:{authorization:'Bearer '+await tok()},body:fd}); }catch(e){} }
     const rec={id,am:new Date().toISOString(),von:ICH||'',versorger:E.versorger||'',datum:E.datum||'',frist:E.frist||'',stichtag:E.stichtag||'',kundennummer:E.kundennummer||'',zaehler:ids,datei,asana:{gid:t.gid||'',link:t.link||'',unterGid:((r.unteraufgaben||[])[0]||{}).gid||''}};
     await sb.from('os_docs').upsert({app:'oc',pfad:'zaehlerauftraege/'+id,data:rec,updated_at:new Date().toISOString()});
-    AUFTR.unshift(rec); auReset(); toast('Asana-Aufgabe für Stephan Klopsch angelegt.');
+    AUFTR.unshift(rec); auReset(); toast('Asana-Aufgabe angelegt: Jürgen meldet, Stephan liest ab.');
   }catch(e){ AU.busy=false; render(); toast('Nicht angelegt: '+(e.message||e)); } }
 
 /* ---------- Ablesen (Tablet) ---------- */
