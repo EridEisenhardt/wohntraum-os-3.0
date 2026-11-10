@@ -118,6 +118,8 @@ h1{font-size:21px;font-weight:800}
 .btn.sm{font-size:12px;padding:5px 11px}
 .dsub{display:flex;gap:8px;align-items:center;padding:3px 0}
 .dsub span{flex:1;font-size:13px}.dsub.done span{text-decoration:line-through;color:var(--muted)}
+.subgrip{cursor:grab;color:#c3c8d0;font-size:13px;user-select:none;padding:0 2px}.subgrip:active{cursor:grabbing}
+.dsub.subover{box-shadow:inset 0 2px 0 var(--accent)}
 .subedit{flex:1;font-size:13px;border:1px solid transparent;border-radius:6px;padding:3px 6px;background:transparent;font:inherit;color:inherit}
 .subedit:hover{border-color:var(--line)}.subedit:focus{border-color:var(--accent);background:#fff;outline:none}
 .dsub.done .subedit{text-decoration:line-through;color:var(--muted)}
@@ -510,7 +512,7 @@ async function openDetail(id){
   MASSV=Array.isArray(t.massnahme)?t.massnahme.slice():(t.massnahme?[t.massnahme]:[]);renderDMass();
   SUBS=[];VER=[];SUBOPEN=new Set();VEREDIT=null;renderDSubs();renderDVer();
   const [s,v]=await Promise.all([
-    sb.from('os_task_subtasks').select('*').eq('task_id',id).order('created_at'),
+    sb.from('os_task_subtasks').select('*').eq('task_id',id).order('pos',{nullsFirst:true}).order('created_at'),
     sb.from('os_task_verlauf').select('*').eq('task_id',id).order('created_at',{ascending:false})
   ]);
   SUBS=s.data||[];VER=v.data||[];renderDSubs();renderDVer();
@@ -524,7 +526,8 @@ function renderDSubs(){
     const chat=SUBOPEN.has(s.id)?`<div style="margin:2px 0 8px 26px;padding:6px 9px;border-left:2px solid var(--line);display:flex;flex-direction:column;gap:5px">`
       +(notes.length?notes.slice().reverse().map(v=>`<div style="font-size:12px"><div>${esc(v.text)}</div><div class="vm">${esc(v.autor||'')} · ${new Date(v.created_at).toLocaleString('de-DE')}</div></div>`).join(''):'<div class="vm" style="font-size:12px">Noch keine Notizen – unten festhalten, was hier gelaufen ist.</div>')
       +`<div class="row"><input id="sn_${s.id}" placeholder="Notiz / was ist hier gelaufen?" onkeydown="if(event.key==='Enter')dSubNote('${s.id}')"><button class="btn sec sm" onclick="dSubNote('${s.id}')">+</button></div></div>`:'';
-    return `<div class="dsub ${s.done?'done':''}">
+    return `<div class="dsub ${s.done?'done':''}" ondragover="event.preventDefault();this.classList.add('subover')" ondragleave="this.classList.remove('subover')" ondrop="subDrop(event,'${s.id}',this)">
+    <span class="subgrip" draggable="true" ondragstart="subDragStart(event,'${s.id}')" ondragend="document.querySelectorAll('.dsub').forEach(x=>x.classList.remove('subover'))" title="Ziehen zum Sortieren">⠿</span>
     <input type="checkbox" ${s.done?'checked':''} onchange="dToggleSub('${s.id}',this.checked)">
     <input class="subedit" value="${esc(s.titel)}" onchange="dUpdSub('${s.id}',this.value)" onkeydown="if(event.key==='Enter')this.blur()" title="Zum Bearbeiten klicken">
     <input type="date" class="subdate" value="${s.faellig||''}" title="Fällig am – erscheint im Kalender" onchange="dSubDate('${s.id}',this.value)" oninput="dSubDate('${s.id}',this.value)">
@@ -595,6 +598,20 @@ async function dToggleSub(id,v){const {error}=await sb.from('os_task_subtasks').
     if(data)VER.unshift(data);}
   renderDSubs();renderDVer();}
 async function dDelSub(id){await sb.from('os_task_subtasks').delete().eq('id',id);SUBS=SUBS.filter(x=>x.id!==id);SUBCAL=SUBCAL.filter(x=>x.id!==id);renderDSubs();}
+let SUBDRAG=null;
+function subDragStart(e,id){SUBDRAG=id;e.dataTransfer.effectAllowed='move';}
+async function subDrop(e,targetId,el){
+  e.preventDefault();if(el)el.classList.remove('subover');
+  const id=SUBDRAG;SUBDRAG=null;if(!id||id===targetId)return;
+  const src=SUBS.find(x=>x.id===id);if(!src)return;
+  const without=SUBS.filter(x=>x.id!==id);
+  const idx=without.findIndex(x=>x.id===targetId);
+  without.splice(idx<0?without.length:idx,0,src);
+  SUBS=without;renderDSubs();
+  const ups=[];SUBS.forEach((s,i)=>{if(s.pos!==i+1){s.pos=i+1;ups.push([s.id,i+1]);}});
+  for(const u of ups){await sb.from('os_task_subtasks').update({pos:u[1]}).eq('id',u[0]);SUBCAL.forEach(x=>{if(x.id===u[0])x.pos=u[1];});}
+  if(ups.length)toast('Reihenfolge aktualisiert ✓');
+}
 async function dUpdSub(id,val){const v=(val||'').trim();const s=SUBS.find(x=>x.id===id);if(!s)return;if(!v){renderDSubs();return;}if(v===s.titel)return;s.titel=v;const {error}=await sb.from('os_task_subtasks').update({titel:v}).eq('id',id);if(error){toast(error.message);return;}SUBCAL.forEach(x=>{if(x.id===id)x.titel=v;});renderDSubs();}
 async function dSubDate(id,v){const nv=v||null;const s=SUBS.find(x=>x.id===id);if(s&&(s.faellig||null)===nv)return;if(s)s.faellig=nv;const {error}=await sb.from('os_task_subtasks').update({faellig:nv}).eq('id',id);if(error){toast(error.message);return;}
   SUBCAL=SUBCAL.filter(x=>x.id!==id);if(nv&&s)SUBCAL.push({id,task_id:s.task_id||(DTASK&&DTASK.id),titel:s.titel,done:s.done,faellig:nv});
