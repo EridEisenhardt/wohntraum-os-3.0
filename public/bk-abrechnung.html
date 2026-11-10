@@ -301,18 +301,50 @@ async function vzAbSetzen(t){ t=String(t||'').trim(); let v=/keine|kein /i.test(
 function versandVermerk(m){ const t=String((m.zustellung||{}).art||'').trim(); if(!t||/^(per )?post$/i.test(t)) return '';
   if(/brief ?kasten/i.test(t)) return 'Durch Boten'; if(/^(per )?bote/i.test(t)) return 'Durch Boten'; if(/persönlich/i.test(t)) return 'Persönliche Übergabe'; if(/mail/i.test(t)) return 'Per E-Mail';
   const v=t.replace(/^per\s+/i,''); return v.charAt(0).toUpperCase()+v.slice(1); }
-const ZUST_ARTEN=['per Post','per Einwurf-Einschreiben','in den Briefkasten eingeworfen'];
+const ZUST_ARTEN=['per Post','per Einwurf-Einschreiben','in den Briefkasten eingeworfen','per E-Mail'];
+/* Abrechnung per E-Mail: Dialog mit Empfänger, Betreff und Text; Schreiben wird neu erstellt und als Anhang verschickt */
+function mailAdressen(x){ const pid=x.m.mk_pid, e=(D.mke||{})[pid]||{}, k=((MKD[pid]||{}).kontakte)||[], L=[];
+  String(e.email||'').split(/[,;\s]+/).concat(k.map(c=>c&&c.email)).forEach(a=>{ a=String(a||'').trim(); if(/@/.test(a)&&!L.includes(a)) L.push(a); }); return L; }
+async function zustMail(id){ const R=ergebnis(), x=R.mv[id]; if(!x||x.saldo==null){ toast('Für dieses Mietverhältnis gibt es kein Schreiben.'); return; }
+  await mkVorladen([x]); const m=x.m, e=D.ein.find(z=>z.id===m.einheit_id)||{}, A=absenderVon(gesVon()), L=mailAdressen(x);
+  const erg=x.saldo>0?'Daraus ergibt sich eine Nachzahlung von '+eur(x.saldo)+'. Bitte überweisen Sie den Betrag bis zum '+dmy(zahlBis())+'. Die Bankverbindung finden Sie im Schreiben.':x.saldo<0?'Daraus ergibt sich ein Guthaben von '+eur(-x.saldo)+'.':'';
+  const gruss=gesVon()==='EE'?(A.name||'Eric Eisenhardt'):'Ihr Team von '+(A.name||'Wohn(T)raum Rheinhessen GmbH');
+  const text='Guten Tag '+m.mieter+',\n\nanbei erhalten Sie Ihre Betriebskostenabrechnung '+JAHR+' für '+[D.o.strasse||D.o.name,e.bezeichnung].filter(Boolean).join(', ')+'.'+(erg?'\n\n'+erg:'')+'\n\nBei Fragen sind wir gerne für Sie da.\n\nMit freundlichen Grüßen\n'+gruss;
+  const alt=document.getElementById('mail-dlg'); if(alt) alt.remove();
+  const w=document.createElement('div'); w.id='mail-dlg';
+  w.innerHTML='<div class="ov"></div><section role="dialog" aria-label="Abrechnung per E-Mail" style="position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);width:min(680px,96vw);max-height:92vh;overflow:auto;background:var(--card);border-radius:14px;z-index:61;box-shadow:0 18px 50px rgba(0,0,0,.25);padding:18px 20px">'
+    +'<b style="font-size:15px">Abrechnung per E-Mail senden</b><div class="sub" style="margin:2px 0 12px">'+esc((e.bezeichnung||'')+' · '+m.mieter)+'</div>'
+    +'<label class="fl">An<input class="inp" id="md-an" list="md-dl" value="'+esc(L.join(', '))+'" placeholder="E-Mail-Adresse"><datalist id="md-dl">'+L.map(a=>'<option value="'+esc(a)+'">').join('')+'</datalist></label>'
+    +(L.length?'':'<div class="note" style="margin:6px 0">Im Mieterkonto ist keine E-Mail-Adresse hinterlegt. Bitte eintragen.</div>')
+    +'<label class="fl" style="margin-top:8px">Betreff<input class="inp" id="md-betr" value="'+esc('Betriebskostenabrechnung '+JAHR+' – '+[D.o.strasse||D.o.name,e.bezeichnung].filter(Boolean).join(', '))+'"></label>'
+    +'<label class="fl" style="margin-top:8px">Text<textarea class="inp" id="md-text" rows="13" style="width:100%;font:inherit;resize:vertical">'+esc(text)+'</textarea></label>'
+    +'<div class="sub" style="margin-top:8px">Anhang: '+esc(dateiNameMv(m))+' (wird beim Senden neu erstellt, mit Schütz-Einzelabrechnung, und in OneDrive abgelegt)</div>'
+    +'<div class="acts" style="margin-top:14px;justify-content:flex-end"><button onclick="document.getElementById(\'mail-dlg\').remove()">Abbrechen</button><button class="primary" id="md-send" onclick="zustMailSenden(\''+id+'\',this)">Senden</button></div></section>';
+  document.body.appendChild(w); w.querySelector('.ov').onclick=()=>w.remove(); }
+async function zustMailSenden(id,btn){ const an=document.getElementById('md-an').value.trim(), betreff=document.getElementById('md-betr').value.trim(), text=document.getElementById('md-text').value;
+  if(!/@/.test(an)){ toast('Bitte eine E-Mail-Adresse eintragen.'); return; }
+  btn.disabled=true; btn.textContent='Schreiben wird erstellt …';
+  try{ const R=ergebnis(), x=R.mv[id]; if(!(await schreibenErstellen(id,false,R))) throw new Error('Schreiben konnte nicht erstellt werden.');
+    const m=D.mvs.find(v=>v.id===id)||x.m, od=(x.m.schreiben_datei||m.schreiben_datei||{}).od; if(!od) throw new Error('Schreiben nicht in OneDrive gefunden.');
+    btn.textContent='Mail wird gesendet …';
+    const r=await fetch('/api/postfach',{method:'POST',headers:{'content-type':'application/json',authorization:'Bearer '+await token()},body:JSON.stringify({aktion:'senden',modus:'neu',an,betreff,text,anhaenge:[{typ:'onedrive',id:od}]})});
+    const j=await r.json().catch(()=>({})); if(!r.ok||j.error) throw new Error(j.error||('Fehler '+r.status));
+    const z=Object.assign({},m.zustellung||{},{art:'per E-Mail',datum:new Date().toISOString().slice(0,10),notiz:'an '+an}); await zustSpeichern(m,z); if(x.m!==m) x.m.zustellung=z;
+    document.getElementById('mail-dlg').remove(); toast('Abrechnung per E-Mail an '+an+' gesendet.',7000); render(); }
+  catch(e){ btn.disabled=false; btn.textContent='Senden'; toast('Nicht gesendet: '+(e.message||e),8000); } }
+
 function zustHtml(m){ const z=m.zustellung||{}, B=z.bilder||[];
   return '<tr><td></td><td colspan="9" style="padding-top:0;border-top:0"><div class="acts" style="margin:0;flex-wrap:wrap;align-items:center;gap:6px"><span class="sub">Übergabe:</span>'
     +'<input class="inp" list="dl-zust" data-wahl="1" style="width:220px" value="'+esc(z.art||'')+'" placeholder="Wie übergeben?" onchange="zustSetzen(\''+m.id+'\',\'art\',this.value)">'
     +'<span class="sub">am</span><input class="inp" style="width:110px" value="'+esc(z.datum?dmy(z.datum):'')+'" placeholder="TT.MM.JJJJ" onchange="zustDatum(\''+m.id+'\',this)">'
     +'<input class="inp" style="flex:1;min-width:160px" value="'+esc(z.notiz||'')+'" placeholder="Notiz, z. B. Sendungsnummer" onchange="zustSetzen(\''+m.id+'\',\'notiz\',this.value)">'
+    +(/mail/i.test(z.art||'')?'<button class="small" onclick="zustMail(\''+m.id+'\')">Mail senden</button>':'')
     +'<label class="small" style="cursor:pointer;border:1px solid var(--line);border-radius:8px;padding:4px 10px;background:var(--card)">Bild hochladen<input type="file" accept="image/*,application/pdf" multiple style="display:none" onchange="zustBild(\''+m.id+'\',this)"></label>'
     +B.map((b,i)=>'<span class="sub"><a class="lnk" onclick="sbOeffnen(\''+esc(b.sb)+'\')">'+esc(b.n||('Bild '+(i+1)))+'</a> <a class="lnk" style="color:var(--muted)" onclick="zustBildWeg(\''+m.id+'\','+i+',this)">entfernen</a></span>').join('')
     +'</div></td></tr>'; }
 async function zustSpeichern(m,z){ const {error}=await sb.from('bk_mietverhaeltnisse').update({zustellung:z}).eq('id',m.id); if(error){ toast('Nicht gespeichert: '+error.message); return false; } m.zustellung=z; return true; }
 async function zustSetzen(id,feld,wert){ const m=D.mvs.find(x=>x.id===id); if(!m) return; const z=Object.assign({},m.zustellung||{}); z[feld]=String(wert||'').trim();
-  if(feld==='art'&&z.art&&!z.datum) z.datum=new Date().toISOString().slice(0,10); if(await zustSpeichern(m,z)){ toast('Übergabe gespeichert.'); setTimeout(render,0); } }
+  if(feld==='art'&&z.art&&!z.datum) z.datum=new Date().toISOString().slice(0,10); if(await zustSpeichern(m,z)){ toast('Übergabe gespeichert.'); setTimeout(render,0); if(feld==='art'&&/mail/i.test(z.art)) setTimeout(()=>zustMail(id),50); } }
 async function zustDatum(id,inp){ const m=D.mvs.find(x=>x.id===id); if(!m) return; const v=inp.value.trim()?datIso(inp.value):''; if(v===null){ toast('Bitte das Datum als TT.MM.JJJJ eingeben.'); inp.focus(); return; }
   const z=Object.assign({},m.zustellung||{},{datum:v||null}); if(await zustSpeichern(m,z)){ toast('Übergabe gespeichert.'); setTimeout(render,0); } }
 async function zustBild(id,inp){ const m=D.mvs.find(x=>x.id===id); if(!m||!inp.files.length) return; const L=[];
