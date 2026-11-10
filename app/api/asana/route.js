@@ -126,8 +126,13 @@ export async function POST(req) {
       const t = await asana('/tasks?opt_fields=' + FELDER, { method: 'POST', json: d })
       // Unteraufgaben (z. B. Schadenersatz: Geltendmachung, Rechnungen, Inrechnungstellung)
       const unter = []
-      for (const n of (b.unteraufgaben || []).map(x => String(x || '').trim()).filter(Boolean).slice(0, 20)) {
-        const u = await asana('/tasks/' + t.gid + '/subtasks?opt_fields=name', { method: 'POST', json: Object.assign({ name: n }, b.zustaendig ? { assignee: String(b.zustaendig) } : {}) })
+      // Unteraufgabe als Text (zuständig wie die Aufgabe) oder als { name, zustaendig, faellig, notiz }
+      for (const x of (b.unteraufgaben || []).slice(0, 20)) {
+        const o = typeof x === 'object' && x ? x : { name: x }
+        const n = String(o.name || '').trim(); if (!n) continue
+        const zu = o.zustaendig !== undefined ? o.zustaendig : b.zustaendig
+        const d = Object.assign({ name: n }, zu ? { assignee: String(zu) } : {}, /^\d{4}-\d\d-\d\d$/.test(o.faellig || '') ? { due_on: o.faellig } : {}, o.notiz ? { notes: String(o.notiz) } : {})
+        const u = await asana('/tasks/' + t.gid + '/subtasks?opt_fields=name', { method: 'POST', json: d })
         unter.push({ gid: u.gid, name: u.name })
       }
       return antwort({ aufgabe: aufgabe(t), unteraufgaben: unter })

@@ -28,6 +28,7 @@ table{width:100%;border-collapse:collapse;font-size:13px}
 th{text-align:left;font-size:10.5px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);padding:6px 8px;border-bottom:1px solid var(--line);white-space:nowrap}
 td{padding:8px;border-bottom:1px solid var(--line);vertical-align:top}
 tr.aus td{color:var(--muted)}
+.acard{background:var(--surf);border:1px solid var(--line);border-radius:10px;padding:12px 14px;margin-bottom:14px}.acard h4{margin:0 0 6px;font-size:15px}.acard table{width:100%;border-collapse:collapse;font-size:13px}.acard td,.acard th{padding:5px 6px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}
 .mut{color:var(--muted);font-size:12px}.warn{color:var(--warn)}.ok{color:var(--green)}
 .lnk{color:var(--accent2);cursor:pointer;background:none;border:0;font:inherit;padding:0;text-decoration:underline}
 .verl{background:var(--surf2);border-radius:8px;padding:8px 10px}.verl .vz{display:flex;gap:14px;flex-wrap:wrap;padding:4px 0;border-bottom:1px solid var(--line);font-size:12.5px}.verl .vz:last-child{border-bottom:0}
@@ -91,7 +92,7 @@ async function laden(){
   const ids=Z.map(x=>x.id);for(let i=0;i<ids.length;i+=150){const {data}=await sb.from('objekt_zaehlerstaende').select('*').in('zaehler_id',ids.slice(i,i+150)).order('datum',{ascending:false}).order('created_at',{ascending:false});ZS=ZS.concat(data||[]);}
   $('dlObj').innerHTML=objListe().map(x=>'<option value="'+esc(objLabel(x))+'">').join('');
   $('dlTyp').innerHTML=[...new Set(ZTYPEN.concat(Z.map(x=>x.typ).filter(Boolean)))].map(t=>'<option value="'+esc(t)+'">').join('');
-  versListe(); if(window.__objP){const o=objVon(window.__objP);if(o){F.obj=objLabel(o);OFFEN[o.id]=true;}window.__objP='';}
+  versListe(); await auftraegeLaden(); if(window.__zP){const zid=window.__zP;window.__zP='';if(Z.some(z=>z.id===zid))setTimeout(()=>ablesenEinzeln(zid),0);} if(window.__objP){const o=objVon(window.__objP);if(o){F.obj=objLabel(o);OFFEN[o.id]=true;}window.__objP='';}
   $('dlAnl').innerHTML=ANLAESSE.map(t=>'<option value="'+esc(t)+'">').join('');
   render();
 }
@@ -117,6 +118,7 @@ function renderListe(){
     +'<label class="cb"><input type="checkbox" '+(F.jahr?'checked':'')+' onchange="F.jahr=this.checked;render()"> nur Jahresablesung</label>'
     +'<label class="cb"><input type="checkbox" '+(F.fehlt?'checked':'')+' onchange="F.fehlt=this.checked;render()"> Ablesung fehlt oder älter als 12 Monate</label>'
     +'<label class="cb"><input type="checkbox" '+(F.aus?'checked':'')+' onchange="F.aus=this.checked;render()"> ausgebaute zeigen</label>'+(F.obj||F.typ||F.q||F.jahr||F.fehlt||F.aus?'<button class="btn zw kl" style="margin-bottom:8px" onclick="Object.assign(F,{obj:\'\',typ:\'\',q:\'\',jahr:false,fehlt:false,aus:false});render()">Zurücksetzen</button>':'')+'</div>';
+  h+=auftragCard();
   const akt=Z.filter(z=>z.aktiv!==false), jahr=String(new Date().getFullYear());
   h+='<div class="kpis"><div class="kpi"><b>'+akt.length+'</b><span>eingebaute Zähler</span></div><div class="kpi"><b>'+akt.filter(z=>(letzter(z.id)||{}).datum&&letzter(z.id).datum.startsWith(jahr)).length+'</b><span>mit Ablesung '+jahr+'</span></div><div class="kpi"><b class="warn">'+akt.filter(z=>alt(letzter(z.id))).length+'</b><span>ohne Ablesung oder älter als 12 Monate</span></div><div class="kpi"><b>'+ZS.filter(s=>s.uebergabe_id).length+'</b><span>Stände aus Übergabeprotokollen</span></div></div>';
   const objs=objListe().filter(o=>!oSel||o.id===oSel.id).filter(o=>L.some(z=>String(z.object_id)===String(o.id)));
@@ -214,6 +216,74 @@ function wechselDialog(i){const z=Z.find(x=>x.id===i);
       r=await sb.from('objekt_zaehlerstaende').insert({zaehler_id:n.data.id,datum:d,wert:zahl(dv('wW2')),anlass:'Zählerwechsel neu',bild_pfad:await hoch(n.data.id,$('wF2').files[0]),erfasst_von:ICH||null});if(r.error)throw r.error;
       zu();toast('Zählerwechsel gespeichert.');DET={};DET[n.data.id]=true;laden();}catch(e){this.disabled=false;$('wH').innerHTML='<span class="warn">Fehler: '+esc(e.message||e)+'</span>';}};}
 
+/* ---------- Ableseaufforderung: Schreiben hochladen, Zähler erkennen, Asana-Aufgabe für Stephan Klopsch ---------- */
+const STEPHAN_GID='1211245615080644';
+const JUERGEN_GID='1213804521846631';
+const AU={datei:null,daten:'',typ:'',status:'',erg:null,sel:{},fehlt:[],busy:false};
+let AUFTR=[];
+async function tok(){const {data}=await sb.auth.getSession();return data&&data.session?data.session.access_token:'';}
+async function apiPost(pfad,body){const r=await fetch(pfad,{method:'POST',headers:{'content-type':'application/json',authorization:'Bearer '+await tok()},body:JSON.stringify(body)});let j=null;try{j=await r.json();}catch(e){}if(!j)throw new Error('Dienst nicht erreichbar ('+r.status+').');if(j.error)throw new Error(j.error);return j;}
+async function auftraegeLaden(){try{const {data}=await sb.from('os_docs').select('data').eq('app','oc').like('pfad','zaehlerauftraege/%');AUFTR=(data||[]).map(r=>r.data).filter(Boolean).sort((a,b)=>String(b.am).localeCompare(String(a.am)));}catch(e){AUFTR=[];}
+  asanaStand();}
+/* Stand aus Asana: Hauptaufgabe (Jürgen, Meldung an Versorger) erledigt = gemeldet; Unteraufgabe (Stephan, Ablesen) erledigt = abgelesen */
+async function asanaStand(){const L=AUFTR.filter(a=>!a.gemeldetAm&&a.asana&&a.asana.gid).slice(0,30);if(!L.length)return;
+  const gids=[];L.forEach(a=>{gids.push(a.asana.gid);if(a.asana.unterGid)gids.push(a.asana.unterGid);});
+  try{const st=(await apiPost('/api/asana',{aktion:'status',gids})).aufgaben||{};let neu=false;
+    for(const a of L){const h=st[a.asana.gid]||{},u=a.asana.unterGid?(st[a.asana.unterGid]||{}):null;a.stephanErledigt=!!(u&&u.erledigt);
+      if(h.erledigt){a.gemeldetAm=h.erledigtAm||new Date().toISOString();neu=true;
+        try{await sb.from('os_docs').upsert({app:'oc',pfad:'zaehlerauftraege/'+a.id,data:a,updated_at:new Date().toISOString()});}catch(e){}}}
+    if(neu||L.length)render();}catch(e){}}
+const nrNorm=s=>String(s||'').replace(/[^0-9a-z]/gi,'').toLowerCase().replace(/^0+/,'');
+const zLabel=z=>{const o=objVon(z.object_id)||{};return (o.kz||'')+' · '+(z.typ||'Zähler')+' · Nr. '+(z.nummer||'–')+' · '+einLabel(z.unit_id);};
+const zLink=id=>location.origin+'/hausverwaltung/zaehler?zaehler='+encodeURIComponent(id);
+function auftragErledigt(a){return (a.zaehler||[]).length&&(a.zaehler||[]).every(id=>{const s=letzter(id);return s&&String(s.datum)>=String(a.am).slice(0,10);});}
+function auftragCard(){
+  let h='<div class="acard"><h4>Ableseaufforderung</h4><div class="mut" style="margin-bottom:8px">Schreiben eines Versorgers hochladen (PDF oder Foto). Das OS liest die Zählernummern aus, ordnet sie den Zählern zu und legt eine Asana-Aufgabe für Jürgen Reuter (Meldung an den Versorger) an, mit der Unteraufgabe „Zähler ablesen“ für Stephan Klopsch und Link zum Zähler.</div>';
+  h+='<label class="btn kl" style="display:inline-block">Schreiben hochladen<input type="file" accept="application/pdf,image/*" hidden onchange="auDatei(this)"></label>';
+  if(AU.status) h+=' <span class="mut">'+esc(AU.status)+'</span>';
+  const E=AU.erg;
+  if(E){ h+='<table style="margin-top:10px"><tr><th style="width:140px">Versorger</th><td>'+esc(E.versorger||'–')+'</td></tr><tr><th>Schreiben vom</th><td>'+esc(dfmt(E.datum))+'</td></tr><tr><th>Ablesen bis</th><td>'+esc(E.frist?dfmt(E.frist):'nicht angegeben')+(E.stichtag?' · Stichtag '+esc(dfmt(E.stichtag)):'')+'</td></tr>'
+      +(E.kundennummer?'<tr><th>Kundennummer</th><td>'+esc(E.kundennummer)+'</td></tr>':'')+(E.adresse?'<tr><th>Abnahmestelle</th><td>'+esc(E.adresse)+'</td></tr>':'')+'</table>';
+    const ids=Object.keys(AU.sel);
+    h+='<div style="margin-top:10px;font-weight:700">Zähler, die abgelesen werden sollen</div>';
+    h+=ids.length?'<table>'+ids.map(id=>{const z=Z.find(x=>x.id===id);return z?'<tr><td style="width:28px"><input type="checkbox" '+(AU.sel[id]?'checked':'')+' onchange="AU.sel[\''+id+'\']=this.checked"></td><td>'+esc(zLabel(z))+'</td></tr>':'';}).join('')+'</table>':'<div class="mut">Kein Zähler zugeordnet.</div>';
+    if(AU.fehlt.length) h+='<div class="warn" style="margin-top:6px">Nicht im OS gefunden: '+esc(AU.fehlt.join(', '))+'. Bitte den Zähler unten von Hand hinzufügen oder im OS anlegen.</div>';
+    h+='<div style="margin-top:8px"><input class="inp" list="dlZAll" placeholder="Zähler hinzufügen: Objekt, Nummer, Typ eintippen" style="width:420px" onchange="auDazu(this.value);this.value=\'\'"><datalist id="dlZAll">'+Z.filter(z=>z.aktiv!==false).sort((a,b)=>nat(zLabel(a),zLabel(b))).map(z=>'<option value="'+esc(zLabel(z))+'">').join('')+'</datalist></div>';
+    h+='<div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap"><button class="btn" '+(AU.busy?'disabled':'')+' onclick="auAsana()">'+(AU.busy?'Wird angelegt …':'Asana-Aufgabe anlegen (Jürgen melden, Stephan ablesen)')+'</button><button class="btn zw" onclick="auReset()">Verwerfen</button></div>'; }
+  if(AUFTR.length){ h+='<div style="margin-top:12px;font-weight:700">Letzte Ableseaufträge</div><table><tr><th>Erstellt</th><th>Versorger</th><th>Zähler</th><th>Stand</th><th></th></tr>'
+    +AUFTR.slice(0,10).map(a=>{const ok=auftragErledigt(a)||!!a.stephanErledigt,gm=!!a.gemeldetAm;return '<tr><td>'+esc(dfmt(a.am))+'</td><td>'+esc(a.versorger||'–')+(a.frist?'<div class="mut">bis '+esc(dfmt(a.frist))+'</div>':'')+'</td><td>'+(a.zaehler||[]).map(id=>{const z=Z.find(x=>x.id===id);return z?esc(zLabel(z)):'';}).join('<br>')+'</td><td class="'+(gm||ok?'ok':'warn')+'">'+(gm?'gemeldet<div class="mut">'+esc(dfmt(a.gemeldetAm))+'</div>':ok?'abgelesen':'offen')+'</td><td style="white-space:nowrap">'+(a.asana&&a.asana.link?'<a class="btn kl" style="text-decoration:none" href="'+esc(a.asana.link)+'" target="_blank" rel="noopener">Asana-Aufgabe öffnen</a> ':'<span class="mut">keine Asana-Aufgabe</span> ')+(a.datei&&a.datei.pfad?'<button class="btn zw kl" onclick="foto(\''+esc(a.datei.pfad)+'\')">Schreiben öffnen</button>':'')+'</td></tr>';}).join('')+'</table>'; }
+  return h+'</div>';}
+function auReset(){Object.assign(AU,{datei:null,daten:'',typ:'',status:'',erg:null,sel:{},fehlt:[],busy:false});render();}
+function auDazu(v){const z=Z.find(x=>x.aktiv!==false&&zLabel(x)===String(v||'').trim());if(!z){toast('Bitte einen Zähler aus der Liste wählen.');return;}AU.sel[z.id]=true;render();}
+async function auDatei(inp){const f=inp.files&&inp.files[0];if(!f)return;auReset();AU.datei=f;AU.status='Lese das Schreiben …';render();
+  try{ let body;
+    if(/pdf/i.test(f.type||f.name)){ if(f.size>3*1024*1024) throw new Error('Das PDF ist zu groß (höchstens 3 MB).'); AU.daten=await new Promise((res,rej)=>{const r=new FileReader();r.onload=()=>res(String(r.result).split(',')[1]||'');r.onerror=rej;r.readAsDataURL(f);}); AU.typ='application/pdf'; }
+    else { const b=await bildKlein(f,1800); AU.daten=await new Promise((res,rej)=>{const r=new FileReader();r.onload=()=>res(String(r.result).split(',')[1]||'');r.onerror=rej;r.readAsDataURL(b);}); AU.typ='image/jpeg'; }
+    const prompt='Das ist ein Schreiben eines Versorgers, Netzbetreibers oder Messdienstes mit der Aufforderung, Zählerstände abzulesen bzw. mitzuteilen. Gib ausschließlich dieses JSON zurück: {"versorger":"Name des Absenders","datum":"Datum des Schreibens als JJJJ-MM-TT oder leer","frist":"bis wann abgelesen oder gemeldet werden soll als JJJJ-MM-TT oder leer","stichtag":"Ablesestichtag als JJJJ-MM-TT oder leer","kundennummer":"","adresse":"Abnahmestelle (Straße, Ort)","zaehler":[{"nummer":"Zählernummer genau wie im Schreiben","art":"Strom, Gas, Wasser oder Wärme","adresse":"Abnahmestelle"}]}. Nur Angaben aus dem Schreiben, nichts erfinden.';
+    body=AU.typ==='application/pdf'?{aufgabe:'beleg_json',text:prompt,pdf:{daten:AU.daten}}:{aufgabe:'beleg_json',text:prompt,bild:{daten:AU.daten,typ:AU.typ}};
+    const j=await apiPost('/api/ki',body), E=j.json||{}; AU.erg=E; AU.sel={}; AU.fehlt=[];
+    const akt=Z.filter(z=>z.aktiv!==false);
+    for(const x of (E.zaehler||[])){ const n=nrNorm(x.nummer); if(!n) continue; const t=akt.find(z=>nrNorm(z.nummer)===n)||akt.find(z=>{const m=nrNorm(z.nummer);return m.length>=5&&n.length>=5&&(m.endsWith(n)||n.endsWith(m));});
+      if(t) AU.sel[t.id]=true; else AU.fehlt.push(String(x.nummer)); }
+    AU.status=Object.keys(AU.sel).length?Object.keys(AU.sel).length+' Zähler zugeordnet.':'Keine Zählernummer zugeordnet – bitte Zähler von Hand hinzufügen.';
+  }catch(e){ AU.status='Lesen nicht möglich: '+(e.message||e)+' Bitte Zähler von Hand hinzufügen.'; AU.erg=AU.erg||{}; }
+  render(); }
+async function auAsana(){const ids=Object.keys(AU.sel).filter(id=>AU.sel[id]);if(!ids.length){toast('Bitte mindestens einen Zähler wählen.');return;}if(AU.busy)return;AU.busy=true;render();
+  const E=AU.erg||{}, id='za'+rnd(), ZL=ids.map(i=>Z.find(x=>x.id===i)).filter(Boolean), kz=[...new Set(ZL.map(z=>(objVon(z.object_id)||{}).kz).filter(Boolean))];
+  try{ let datei=null;
+    if(AU.datei){ const nm=(AU.datei.name||'Schreiben').replace(/[^A-Za-z0-9._-]+/g,'_'), pf='auftraege/'+id+'/'+(AU.typ==='image/jpeg'?nm.replace(/\.[^.]+$/,'')+'.jpg':nm);
+      const blob=AU.typ==='image/jpeg'?await (await fetch('data:image/jpeg;base64,'+AU.daten)).blob():AU.datei; const up=await sb.storage.from('objekt-zaehler').upload(pf,blob,{contentType:AU.typ,upsert:true}); if(!up.error) datei={pfad:pf,name:AU.datei.name}; }
+    let zust=STEPHAN_GID; try{ const n=(await apiPost('/api/asana',{aktion:'nutzer'})).nutzer||[]; const s=n.find(u=>/klopsch/i.test(u.name+' '+u.email))||n.find(u=>/stephan/i.test(u.name+' '+u.email)); if(s) zust=s.gid; }catch(e){}
+    const notiz='Ableseaufforderung'+(E.versorger?' von '+E.versorger:'')+(E.datum?' vom '+dfmt(E.datum):'')+'.'+(E.frist?' Bitte ablesen bis '+dfmt(E.frist)+'.':'')+(E.stichtag?' Stichtag: '+dfmt(E.stichtag)+'.':'')+(E.kundennummer?'\nKundennummer: '+E.kundennummer:'')
+      +'\n\nBitte diese Zähler ablesen und den Stand mit Foto direkt im OS eintragen (Link öffnet den Zähler):\n\n'+ZL.map(z=>'- '+zLabel(z)+'\n  '+zLink(z.id)).join('\n\n')+'\n\nDas Schreiben ist als Anhang beigefügt.';
+    const r=await apiPost('/api/asana',{aktion:'anlegen',name:'Zählerstände melden: '+kz.join(', ')+(E.versorger?' ('+E.versorger+')':''),notiz:notiz+'\n\nAblauf: Stephan liest ab und hakt die Unteraufgabe ab. Danach meldet Jürgen die Stände an den Versorger und hakt diese Aufgabe ab.',faellig:heute(),zustaendig:JUERGEN_GID,unteraufgaben:[{name:'Zähler ablesen: '+kz.join(', '),zustaendig:zust,faellig:heute(),notiz}]});
+    const t=r.aufgabe||{};
+    if(t.gid&&AU.datei){ try{ const fd=new FormData(); fd.append('gid',t.gid); fd.append('datei',AU.typ==='image/jpeg'?await (await fetch('data:image/jpeg;base64,'+AU.daten)).blob():AU.datei,AU.datei.name||'Schreiben'); await fetch('/api/asana',{method:'POST',headers:{authorization:'Bearer '+await tok()},body:fd}); }catch(e){} }
+    const rec={id,am:new Date().toISOString(),von:ICH||'',versorger:E.versorger||'',datum:E.datum||'',frist:E.frist||'',stichtag:E.stichtag||'',kundennummer:E.kundennummer||'',zaehler:ids,datei,asana:{gid:t.gid||'',link:t.link||'',unterGid:((r.unteraufgaben||[])[0]||{}).gid||''}};
+    await sb.from('os_docs').upsert({app:'oc',pfad:'zaehlerauftraege/'+id,data:rec,updated_at:new Date().toISOString()});
+    AUFTR.unshift(rec); auReset(); toast('Asana-Aufgabe angelegt: Jürgen meldet, Stephan liest ab.');
+  }catch(e){ AU.busy=false; render(); toast('Nicht angelegt: '+(e.message||e)); } }
+
 /* ---------- Ablesen (Tablet) ---------- */
 function ablesenStart(oid){A.obj=oid;A.einh='__alle';TAB='ablesen';tabsSetzen();render();window.scrollTo(0,0);}
 function ablesenEinzeln(zid){const z=Z.find(x=>x.id===zid);if(!z)return;A.obj=z.object_id;A.einh=z.unit_id||'';A.nur=zid;TAB='ablesen';tabsSetzen();render();window.scrollTo(0,0);}
@@ -266,5 +336,6 @@ document.addEventListener('focusout',e=>{const t=e.target;if(t.matches&&t.matche
 (async()=>{const {data:{session}}=await sb.auth.getSession();if(!session){$('main').innerHTML='<div class="empty">Bitte im OS anmelden.</div>';return;}
   ICH=String(session.user&&session.user.email||'').split('@')[0];
   const p=new URLSearchParams(location.search);if(p.get('ablesen')!=null){TAB='ablesen';tabsSetzen();}if(p.get('objekt')){if(TAB==='ablesen')A.obj=p.get('objekt');else window.__objP=p.get('objekt');}
+  if(p.get('zaehler'))window.__zP=p.get('zaehler');
   laden();})();
 </script></body></html>

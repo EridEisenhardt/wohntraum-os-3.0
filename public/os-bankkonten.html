@@ -101,14 +101,44 @@ async function umsLaden(ky){ UMS[ky]='lade'; render();
     L.sort((a,b)=>a.d<b.d?1:a.d>b.d?-1:0); UMS[ky]=L; }
   catch(e){ UMS[ky]={fehler:e.message||String(e)}; }
   render(); }
+/* Filter je Konto: Suche, Zeitraum von/bis */
+const UF={};
+const ufVon=ky=>UF[ky]||(UF[ky]={q:'',von:'',bis:''});
+function umsGefiltert(ky){ const L=Array.isArray(UMS[ky])?UMS[ky]:[], f=ufVon(ky), q=f.q.trim().toLowerCase();
+  return L.filter(t=>(!f.von||String(t.d)>=f.von)&&(!f.bis||String(t.d).slice(0,10)<=f.bis)&&(!q||[t.n,t.z,dmy(t.d),eur(t.b),String(t.b)].join(' ').toLowerCase().includes(q))); }
+function umsListe(ky){ const F=umsGefiltert(ky), M=F.slice(0,AUF[ky]), ein=F.filter(t=>t.b>0).reduce((a,t)=>a+t.b,0), aus=F.filter(t=>t.b<0).reduce((a,t)=>a+t.b,0);
+  if(!F.length) return '<div class="klein">Keine Umsätze für diese Auswahl.</div>';
+  return '<div class="klein" style="margin:4px 0 6px">'+F.length+(F.length===1?' Umsatz':' Umsätze')+' · Eingänge <span class="pos">'+eur(ein)+'</span> · Ausgänge <span class="neg">'+eur(aus)+'</span></div>'
+    +'<table class="ktab"><thead><tr><th>Datum</th><th>Empfänger / Absender</th><th>Verwendungszweck</th><th class="n">Betrag</th></tr></thead><tbody>'
+    +M.map(t=>'<tr><td class="nw">'+esc(dmy(t.d))+'</td><td>'+esc(t.n||'')+'</td><td class="klein">'+esc(String(t.z||'').slice(0,140))+'</td><td class="n nw '+(t.b<0?'neg':'pos')+'">'+eur(t.b)+'</td></tr>').join('')+'</tbody></table>'
+    +(F.length>M.length?'<button class="small" data-mehr="'+esc(ky)+'" style="margin-top:6px">Weitere Umsätze zeigen ('+(F.length-M.length)+')</button>':''); }
 function umsaetzeHtml(ky){ const L=UMS[ky];
   if(!L||L==='lade') return '<div class="klein">Umsätze werden geladen …</div>';
   if(L.fehler) return '<div class="neg">'+esc(L.fehler)+'</div>';
   if(!L.length) return '<div class="klein">Für dieses Konto sind noch keine Umsätze im OS.</div>';
-  const M=L.slice(0,AUF[ky]);
-  return '<table class="ktab"><thead><tr><th>Datum</th><th>Empfänger / Absender</th><th>Verwendungszweck</th><th class="n">Betrag</th></tr></thead><tbody>'
-    +M.map(t=>'<tr><td class="nw">'+esc(dmy(t.d))+'</td><td>'+esc(t.n||'')+'</td><td class="klein">'+esc(String(t.z||'').slice(0,140))+'</td><td class="n nw '+(t.b<0?'neg':'pos')+'">'+eur(t.b)+'</td></tr>').join('')+'</tbody></table>'
-    +(L.length>M.length?'<button class="small" data-mehr="'+esc(ky)+'" style="margin-top:6px">Weitere Umsätze zeigen ('+(L.length-M.length)+')</button>':''); }
+  const f=ufVon(ky), k=esc(ky);
+  return '<div class="acts" style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:4px">'
+    +'<input type="search" data-ufq="'+k+'" value="'+esc(f.q)+'" placeholder="Suche: Name, Verwendungszweck, Betrag" style="flex:1;min-width:220px">'
+    +'<label class="klein">von <input type="date" data-ufvon="'+k+'" value="'+esc(f.von)+'"></label>'
+    +'<label class="klein">bis <input type="date" data-ufbis="'+k+'" value="'+esc(f.bis)+'"></label>'
+    +'<button class="small" data-ufdruck="'+k+'">Kontoumsätze drucken</button></div>'
+    +'<div data-ufl="'+k+'">'+umsListe(ky)+'</div>'; }
+function umsNeu(ky){ const el=[...document.querySelectorAll('[data-ufl]')].find(x=>x.dataset.ufl===ky); if(el) el.innerHTML=umsListe(ky); }
+document.addEventListener('input',e=>{ const t=e.target; if(t.dataset.ufq!=null){ ufVon(t.dataset.ufq).q=t.value; umsNeu(t.dataset.ufq); } });
+document.addEventListener('change',e=>{ const t=e.target; if(t.dataset.ufvon!=null){ ufVon(t.dataset.ufvon).von=t.value; umsNeu(t.dataset.ufvon); } if(t.dataset.ufbis!=null){ ufVon(t.dataset.ufbis).bis=t.value; umsNeu(t.dataset.ufbis); } });
+/* Ausdruck: alle Umsätze der aktuellen Auswahl (nicht nur die angezeigten) */
+function umsDrucken(ky){ const F=umsGefiltert(ky), f=ufVon(ky), iban=Object.keys(KN).find(i=>KN[i].key===ky)||ky, kk=KN[iban]||{};
+  const ein=F.filter(t=>t.b>0).reduce((a,t)=>a+t.b,0), aus=F.filter(t=>t.b<0).reduce((a,t)=>a+t.b,0);
+  const zr=(f.von||f.bis)?'Zeitraum: '+(f.von?dmy(f.von):'Anfang')+' bis '+(f.bis?dmy(f.bis):'heute'):'Zeitraum: alle Umsätze im OS';
+  const w=window.open('','_blank'); if(!w){ toast('Bitte Pop-ups für das OS erlauben.'); return; }
+  w.document.write('<!doctype html><html lang="de"><head><meta charset="utf-8"><title>Kontoumsätze '+esc(kk.name||'')+'</title><style>body{font-family:Arial,Helvetica,sans-serif;font-size:11px;margin:16mm 12mm;color:#111}h1{font-size:16px;margin:0 0 4px}.k{color:#555;margin:0 0 2px}table{width:100%;border-collapse:collapse;margin-top:10px}th,td{border-bottom:1px solid #ddd;padding:4px 6px;text-align:left;vertical-align:top}th{background:#f1f4f8}td.n,th.n{text-align:right;white-space:nowrap}.neg{color:#b42318}.pos{color:#1a7f37}@page{size:A4;margin:12mm}@media print{body{margin:0}}</style></head><body>'
+    +'<h1>Kontoumsätze '+esc(kk.name||'')+'</h1><p class="k">'+esc(kk.ges||'')+' · IBAN '+esc(fiban(iban))+'</p><p class="k">'+esc(zr)+(f.q.trim()?' · Suche: „'+esc(f.q.trim())+'“':'')+'</p>'
+    +'<p class="k">'+F.length+(F.length===1?' Umsatz':' Umsätze')+' · Eingänge '+eur(ein)+' · Ausgänge '+eur(aus)+' · Saldo der Auswahl '+eur(ein+aus)+'</p>'
+    +'<table><thead><tr><th>Datum</th><th>Empfänger / Absender</th><th>Verwendungszweck</th><th class="n">Betrag</th></tr></thead><tbody>'
+    +F.map(t=>'<tr><td>'+esc(dmy(t.d))+'</td><td>'+esc(t.n||'')+'</td><td>'+esc(t.z||'')+'</td><td class="n '+(t.b<0?'neg':'pos')+'">'+eur(t.b)+'</td></tr>').join('')
+    +'</tbody></table><p class="k" style="margin-top:10px">Gedruckt am '+esc(dmy(new Date().toISOString().slice(0,10)))+'</p><script>window.onload=()=>setTimeout(()=>window.print(),200)<\/script></body></html>');
+  w.document.close(); }
+document.addEventListener('click',e=>{ const b=e.target.closest('[data-ufdruck]'); if(b) umsDrucken(b.dataset.ufdruck); });
 document.addEventListener('click',e=>{ const m=e.target.closest('[data-mehr]'); if(m){ const k=m.dataset.mehr; AUF[k]=(AUF[k]||40)+100; render(); return; }
   const r=e.target.closest('tr[data-auf]'); if(!r) return; const k=r.dataset.auf;
   if(AUF[k]){ delete AUF[k]; render(); } else { AUF[k]=40; if(!Array.isArray(UMS[k])) umsLaden(k); else render(); } });
