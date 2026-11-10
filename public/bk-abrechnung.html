@@ -297,7 +297,11 @@ async function absLaden(){ if(ABSD) return; try{ const {data}=await sb.from('os_
 async function briefSetzen(feld,wert){ const B=briefE(); if(feld==='bank') B.bank[gesVon()]=String(wert).trim(); else if(feld==='guthaben'){ const t=norm(wert); B.guthaben=/verrech/.test(t)?'verrechnen':'ueberweisen'; } else B[feld]=String(wert).trim(); EINST.brief=B; await einstSpeichern(); render(); }
 async function vzAbSetzen(t){ t=String(t||'').trim(); let v=/keine|kein /i.test(t)?'keine':datIso(t); if(!v){ toast('Bitte ein Datum eintragen oder „keine Anpassung“ wählen.'); render(); return; } const J=jahrSichern(); J.vzAbObj=Object.assign({},J.vzAbObj||{},{[D.o.kz]:v}); await einstSpeichern(); render(); }
 /* Übergabe der Abrechnung an den Mieter: Art, Datum, Notiz, Fotos (z. B. Einlieferungsbeleg) */
-const ZUST_ARTEN=['per Post','per Einschreiben','per Einwurf-Einschreiben','per Einschreiben mit Rückschein','per E-Mail','persönlich übergeben','in den Briefkasten eingeworfen'];
+/* Versandvermerk über der Anschrift (DIN 5008), z. B. „Einschreiben“; normale Post ohne Vermerk */
+function versandVermerk(m){ const t=String((m.zustellung||{}).art||'').trim(); if(!t||/^(per )?post$/i.test(t)) return '';
+  if(/brief ?kasten/i.test(t)) return 'Durch Boten'; if(/^(per )?bote/i.test(t)) return 'Durch Boten'; if(/persönlich/i.test(t)) return 'Persönliche Übergabe'; if(/mail/i.test(t)) return 'Per E-Mail';
+  const v=t.replace(/^per\s+/i,''); return v.charAt(0).toUpperCase()+v.slice(1); }
+const ZUST_ARTEN=['per Post','per Einschreiben','per Einwurf-Einschreiben','per Einschreiben mit Rückschein','per Bote','per E-Mail','persönlich übergeben','in den Briefkasten eingeworfen'];
 function zustHtml(m){ const z=m.zustellung||{}, B=z.bilder||[];
   return '<tr><td></td><td colspan="9" style="padding-top:0;border-top:0"><div class="acts" style="margin:0;flex-wrap:wrap;align-items:center;gap:6px"><span class="sub">Übergabe:</span>'
     +'<input class="inp" list="dl-zust" data-wahl="1" style="width:220px" value="'+esc(z.art||'')+'" placeholder="Wie übergeben?" onchange="zustSetzen(\''+m.id+'\',\'art\',this.value)">'
@@ -364,6 +368,7 @@ function schreibenPdf(x){ const m=x.m, e=D.ein.find(z=>z.id===m.einheit_id)||{},
   doc.setFont('helvetica','bold'); doc.setFontSize(13); doc.setTextColor(20); doc.text(A.name||'',R,y,{align:'right'});
   doc.setFont('helvetica','normal'); doc.setFontSize(8.5); doc.setTextColor(90); doc.text([A.strasse,A.ort].filter(Boolean).join(' · '),R,y+5,{align:'right'});
   y=45; doc.setFontSize(7.5); doc.setTextColor(110); doc.text([A.name,A.strasse,A.ort].filter(Boolean).join(' · '),L,y);
+  const vv=versandVermerk(m); if(vv){ y+=5; doc.setFont('helvetica','bold'); doc.setFontSize(9.5); doc.setTextColor(20); doc.text(vv,L,y); doc.setFont('helvetica','normal'); }
   y+=6; doc.setFontSize(11); doc.setTextColor(20); const adr=m.anschrift&&String(m.anschrift).trim()?[m.mieter].concat(String(m.anschrift).split(/\n|,\s*(?=\d{5})/)):[m.mieter,o.strasse,[o.plz,o.ort].filter(Boolean).join(' ')];
   for(const l of adr.filter(Boolean)){ doc.text(String(l).trim(),L,y); y+=5; }
   y=Math.max(y,90)+6; doc.setFontSize(10); doc.setTextColor(60); doc.text((A.datumOrt?A.datumOrt+', ':'')+dmy(heute),R,y,{align:'right'});
