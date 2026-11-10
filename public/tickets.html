@@ -272,12 +272,13 @@ function fillForm(t){
        <div style="font-size:11.5px;color:var(--muted);margin-top:4px">Der Bearbeitungsstand wird in Asana gepflegt. Dieses Ticket verweist nur darauf.</div>`
     : '<div style="font-size:11.5px;color:var(--muted)">Noch kein Asana-Link hinterlegt. Aufgaben-URL aus Asana kopieren und oben einfügen.</div>';
 }
-let SUBS=[], VER=[];
+let SUBS=[], VER=[], SUBOPEN=new Set();
 async function openTicket(id){
   const t=T.find(x=>x.id===id);if(!t)return;
   CUR={id,snap:t};$('dlgTitle').textContent='Ticket #'+t.nummer;
   fillForm(t);$('ov').classList.add('show');
   $('tkSubWrap').style.display='';$('tkVerWrap').style.display='';
+  SUBOPEN=new Set();
   const [s,v]=await Promise.all([
     sb.from('os_task_subtasks').select('*').eq('task_id',id).order('pos',{ascending:true}).order('created_at',{ascending:true}),
     sb.from('os_task_verlauf').select('*').eq('task_id',id).order('created_at',{ascending:false})
@@ -287,16 +288,32 @@ async function openTicket(id){
 function openNew(){
   CUR={id:null};$('dlgTitle').textContent='Neues Ticket';
   fillForm({status:'Neu',prio:'P2',quelle:fQuelle||'vertrieb'});$('ov').classList.add('show');
-  SUBS=[];VER=[];$('tkSubWrap').style.display='none';$('tkVerWrap').style.display='none';
+  SUBS=[];VER=[];SUBOPEN=new Set();$('tkSubWrap').style.display='none';$('tkVerWrap').style.display='none';
 }
 function renderSubs(){
   const done=SUBS.filter(s=>s.done).length;
   $('tkSubCnt').textContent=SUBS.length?('· '+done+'/'+SUBS.length+' erledigt'):'';
-  $('tkSubList').innerHTML=SUBS.map(s=>`<div style="display:flex;gap:8px;align-items:center;padding:3px 0">
+  $('tkSubList').innerHTML=SUBS.map(s=>{
+    const notes=VER.filter(v=>v.subtask_id===s.id);
+    const chat=SUBOPEN.has(s.id)?`<div style="margin:2px 0 8px 26px;padding:6px 9px;border-left:2px solid var(--line,#e4e7ec);display:flex;flex-direction:column;gap:5px">`
+      +(notes.length?notes.slice().reverse().map(v=>`<div style="font-size:12px"><div>${esc(v.text)}</div><div style="color:var(--muted,#6b7280);font-size:11px">${esc(v.autor||'')} · ${new Date(v.created_at).toLocaleString('de-DE')}</div></div>`).join(''):'<div style="color:var(--muted,#6b7280);font-size:12px">Noch keine Notizen – unten festhalten, was hier gelaufen ist.</div>')
+      +`<div style="display:flex;gap:6px"><input id="tksn_${s.id}" placeholder="Notiz / was ist hier gelaufen?" style="flex:1;border:1px solid var(--line,#e4e7ec);border-radius:8px;padding:6px 9px;font:inherit;font-size:12px" onkeydown="if(event.key==='Enter')subNote('${s.id}')"><button class="btn sec" style="font-size:12px" onclick="subNote('${s.id}')">+</button></div></div>`:'';
+    return `<div style="display:flex;gap:8px;align-items:center;padding:3px 0" ondragover="event.preventDefault();this.style.boxShadow='inset 0 2px 0 var(--accent,#6d4aff)'" ondragleave="this.style.boxShadow=''" ondrop="subDrop(event,'${s.id}',this)">
+    <span draggable="true" ondragstart="subDragStart(event,'${s.id}')" ondragend="renderSubs()" title="Ziehen zum Sortieren" style="cursor:grab;color:#c3c8d0;font-size:13px;user-select:none">⠿</span>
     <input type="checkbox" ${s.done?'checked':''} onchange="toggleSub('${s.id}')" style="width:15px;height:15px;cursor:pointer">
-    <span style="flex:1;font-size:13px;${s.done?'text-decoration:line-through;color:var(--muted,#6b7280)':''}">${esc(s.titel||'')}</span>
-    <b style="cursor:pointer;color:#c0392b" onclick="delSub('${s.id}')">×</b></div>`).join('')||'<div style="color:var(--muted,#6b7280);font-size:12px">Noch keine Unteraufgaben.</div>';
+    <input value="${esc(s.titel||'')}" onchange="updSub('${s.id}',this.value)" onkeydown="if(event.key==='Enter')this.blur()" title="Zum Bearbeiten klicken" style="flex:1;font-size:13px;border:1px solid transparent;border-radius:6px;padding:3px 6px;background:transparent;font:inherit;color:inherit;${s.done?'text-decoration:line-through;color:var(--muted,#6b7280)':''}" onfocus="this.style.borderColor='var(--accent,#6d4aff)';this.style.background='#fff'" onblur="this.style.borderColor='transparent';this.style.background='transparent'">
+    <input type="date" value="${s.faellig||''}" title="Fällig am" onchange="subDate('${s.id}',this.value)" style="border:1px solid var(--line,#e4e7ec);border-radius:6px;padding:2px 4px;font:inherit;font-size:11px;color:var(--muted,#6b7280)">
+    <b onclick="subToggleNote('${s.id}')" title="Notizen / Chat" style="cursor:pointer">💬${notes.length?' '+notes.length:''}</b>
+    <b style="cursor:pointer;color:#c0392b" onclick="delSub('${s.id}')">×</b></div>${chat}`;
+  }).join('')||'<div style="color:var(--muted,#6b7280);font-size:12px">Noch keine Unteraufgaben.</div>';
 }
+async function updSub(id,val){const v=(val||'').trim();const s=SUBS.find(x=>x.id===id);if(!s)return;if(!v){renderSubs();return;}if(v===s.titel)return;s.titel=v;const{error}=await sb.from('os_task_subtasks').update({titel:v}).eq('id',id);if(error){toast(error.message);return;}renderSubs();}
+async function subDate(id,val){const s=SUBS.find(x=>x.id===id);if(!s)return;s.faellig=val||null;const{error}=await sb.from('os_task_subtasks').update({faellig:s.faellig}).eq('id',id);if(error){toast(error.message);return;}toast(val?'Fällig am '+val.split('-').reverse().join('.'):'Fälligkeit entfernt');}
+function subToggleNote(id){if(SUBOPEN.has(id))SUBOPEN.delete(id);else SUBOPEN.add(id);renderSubs();}
+async function subNote(id){const el=$('tksn_'+id);if(!el)return;const t=(el.value||'').trim();if(!t)return;const s=SUBS.find(x=>x.id===id);const pre=s?'↳ '+(s.titel||'')+': ':'';const{data,error}=await sb.from('os_task_verlauf').insert({task_id:CUR.id,subtask_id:id,art:'kommentar',text:pre+t,autor:ICH||null}).select().maybeSingle();if(error){toast(error.message);return;}if(data){VER.unshift(data);SUBOPEN.add(id);renderSubs();renderVer();}}
+let SUBDRAG=null;
+function subDragStart(e,id){SUBDRAG=id;e.dataTransfer.effectAllowed='move';}
+async function subDrop(e,targetId,el){e.preventDefault();if(el)el.style.boxShadow='';const id=SUBDRAG;SUBDRAG=null;if(!id||id===targetId)return;const src=SUBS.find(x=>x.id===id);if(!src)return;const without=SUBS.filter(x=>x.id!==id);const idx=without.findIndex(x=>x.id===targetId);without.splice(idx<0?without.length:idx,0,src);SUBS=without;renderSubs();const ups=[];SUBS.forEach((s,i)=>{if(s.pos!==i+1){s.pos=i+1;ups.push([s.id,i+1]);}});for(const u of ups){await sb.from('os_task_subtasks').update({pos:u[1]}).eq('id',u[0]);}if(ups.length)toast('Reihenfolge aktualisiert ✓');}
 function renderVer(){
   $('tkVerList').innerHTML=VER.length?VER.map(v=>{
     const dt=new Date(v.created_at).toLocaleString('de-DE',{dateStyle:'short',timeStyle:'short'});
@@ -311,7 +328,10 @@ async function addSub(){
   const {data,error}=await sb.from('os_task_subtasks').insert({task_id:CUR.id,titel:t,pos}).select().maybeSingle();
   if(error){toast(error.message);return;}if(data)SUBS.push(data);el.value='';renderSubs();
 }
-async function toggleSub(id){const s=SUBS.find(x=>x.id===id);if(!s)return;s.done=!s.done;renderSubs();await sb.from('os_task_subtasks').update({done:s.done}).eq('id',id);}
+async function toggleSub(id){const s=SUBS.find(x=>x.id===id);if(!s)return;s.done=!s.done;renderSubs();const{error}=await sb.from('os_task_subtasks').update({done:s.done}).eq('id',id);if(error){toast(error.message);return;}
+  const txt=(s.done?'Unteraufgabe erledigt: «':'Unteraufgabe wieder offen: «')+(s.titel||'')+'»';
+  const{data}=await sb.from('os_task_verlauf').insert({task_id:CUR.id,subtask_id:id,text:txt,autor:ICH||'System'}).select().maybeSingle();
+  if(data){VER.unshift(data);renderVer();}}
 async function delSub(id){await sb.from('os_task_subtasks').delete().eq('id',id);SUBS=SUBS.filter(s=>s.id!==id);renderSubs();}
 async function addComment(){
   if(!CUR||!CUR.id){toast('Erst Ticket speichern');return;}
