@@ -440,6 +440,7 @@ function mailSek(s){const st=MV[s.id]||{};if(SEC['Mails']&&!st.L&&!st.lade&&!st.
       ${C.ohne&&C.ohne.length?`<div class="note">Ohne E-Mail-Adresse (bekommen diese Mail nicht): ${esc(C.ohne.join(', '))}</div>`:''}</div>`:`<label class="fl">An<input value="${esc(C.an)}" list="dl-an-${s.id}" autocomplete="off" oninput="MV['${s.id}'].C.an=this.value" onchange="MV['${s.id}'].C.an=this.value" placeholder="E-Mail-Adresse oder Name eintippen"><datalist id="dl-an-${s.id}">${adrVorschlaege(s).map(([m,n])=>`<option value="${esc(m)}">${esc(n)}</option>`).join('')}</datalist></label>`}
     <label class="fl">Betreff<input value="${esc(C.betreff)}" oninput="MV['${s.id}'].C.betreff=this.value"></label>
     <label class="fl">Text<textarea rows="12" oninput="MV['${s.id}'].C.text=this.value">${esc(C.text)}</textarea></label>
+    ${mailAnhHtml(s,C)}
     <div class="acts" style="margin-top:-4px"><button class="small" onclick="mailKi('${s.id}')"${st.ki?' disabled':''}>${st.ki?'KI formuliert …':'Mit KI formulieren'}</button>${st.kiAlt!=null?`<button class="ghost small" onclick="mailKiZurueck('${s.id}')">Rückgängig</button>`:''}<span class="sub">Stichworte in den Text schreiben, die KI macht daraus eine fertige Mail. Anrede und Signatur bleiben.</span></div>
     <div class="acts"><button class="primary" onclick="mailSenden('${s.id}')"${st.busy?' disabled':''}>${st.busy?'Wird gesendet …':'Senden'}</button><span class="sub">Gesendet wird von hausverwaltung@andersmacher.info${(s.mails||[]).some(m=>m.richtung==='ein'&&m.id)?' als Antwort auf die ursprüngliche Mail':''}. Die Ticketnummer muss im Betreff bleiben.</span></div></div>`;}
   if(st.err)h+=`<div class="note">Postfach: ${esc(st.err)}</div>`;
@@ -498,16 +499,33 @@ async function mailSenden(sid){const s=S.find(x=>x.id===sid),st=MV[sid];if(!st||
   if(!String(C.betreff).includes(tk(s))&&!confirm('Die Ticketnummer '+tk(s)+' fehlt im Betreff. Dann wird eine Antwort nicht dieser Störung zugeordnet. Trotzdem senden?'))return;
   st.busy=true;render();const ok=await mailVersand(s,C);st.busy=false;if(ok)st.C=null;render();
   if(ok&&C.art==='abschluss'&&s.status!=='Erledigt'&&confirm('Die Störung jetzt auf „Erledigt“ setzen?'))statusSetzen(sid,'Erledigt');}
+/* Anhänge in Mails: eigene Dateien hochladen oder Fotos/Dateien der Störung auswählen */
+function mailAnhHtml(s,C){const A=C.anh||[],F=s.fotos||[],sel=new Set(A.map(a=>a.pfad));
+  return `<div class="fl">Anhänge${A.length?' ('+A.length+')':''}<div>${A.map((a,i)=>`<div class="kvr"><span>${esc(a.name)}</span><b><button class="ghost small" onclick="mailAnhWeg('${s.id}',${i})">entfernen</button></b></div>`).join('')}</div>
+    <div class="acts" style="margin-top:4px"><label class="small" style="cursor:pointer;border:1px solid var(--line);border-radius:8px;padding:4px 10px;background:var(--card)">Datei anhängen<input type="file" multiple style="display:none" onchange="mailAnhDazu('${s.id}',this)"></label>${MV[s.id]&&MV[s.id].anhLade?'<span class="sub">Lädt hoch …</span>':''}<span class="sub">Bilder, PDFs oder andere Dateien, zusammen bis etwa 25 MB.</span></div>
+    ${F.length?`<div class="sub" style="margin-top:4px">Aus der Störung: ${F.map((f,i)=>`<label style="margin-right:10px;white-space:nowrap"><input type="checkbox" ${sel.has(f.pfad)?'checked':''} onchange="mailAnhFoto('${s.id}',${i},this.checked)"> ${esc(f.name||('Datei '+(i+1)))}</label>`).join('')}</div>`:''}</div>`;}
+function mailAnhListe(C){return (C.anh||[]).map(a=>({typ:'speicher',bucket:'stoerungen',pfad:a.pfad,name:a.name,contentType:a.typ||undefined}));}
+async function mailAnhDazu(sid,inp){const st=MV[sid];if(!st||!st.C)return;const L=[...inp.files];inp.value='';if(!L.length)return;
+  if(L.reduce((x,f)=>x+f.size,0)+(st.C.anh||[]).reduce((x,a)=>x+(a.groesse||0),0)>25e6){toast('Die Anhänge sind zusammen zu groß (höchstens etwa 25 MB).');return;}
+  st.anhLade=true;render();
+  try{const ordner='mail-anhaenge/'+sid+'/'+Date.now();const neu=[];
+    for(const f of L){const pfad=ordner+'/'+neu.length+'_'+f.name.replace(/[^\w.\-]+/g,'_').slice(-80);const {error}=await sb.storage.from('stoerungen').upload(pfad,f,{contentType:f.type||undefined});if(error)throw new Error(f.name+': '+error.message);neu.push({pfad,name:f.name,typ:f.type||'',groesse:f.size});}
+    st.C.anh=(st.C.anh||[]).concat(neu);toast(neu.length===1?'Datei angehängt.':neu.length+' Dateien angehängt.');}
+  catch(e){toast('Hochladen fehlgeschlagen: '+(e.message||e));}
+  st.anhLade=false;render();}
+function mailAnhFoto(sid,i,an){const st=MV[sid],s=S.find(x=>x.id===sid);if(!st||!st.C||!s)return;const f=(s.fotos||[])[i];if(!f)return;
+  const A=(st.C.anh||[]).filter(a=>a.pfad!==f.pfad);if(an)A.push({pfad:f.pfad,name:f.name||'Datei',typ:f.typ||''});st.C.anh=A;render();}
+function mailAnhWeg(sid,i){const st=MV[sid];if(!st||!st.C)return;st.C.anh=(st.C.anh||[]).filter((_,j)=>j!==i);render();}
 async function mailVersand(s,C){
   if(C.sammel){if(!C.bcc.length){toast('Keine Empfänger in Bcc.');return false;}
-    try{const r=await pf({aktion:'senden',modus:'neu',an:HV_MAIL,bcc:C.bcc.map(x=>x.mail).join(', '),betreff:C.betreff,text:C.text,anhaenge:[]});
-      const m={msgId:r.msgId||'',betreff:C.betreff,an:[{name:'',mail:HV_MAIL}],bcc:C.bcc.map(x=>({name:x.name,mail:x.mail})),von:{name:'Hausverwaltung',mail:r.von||HV_MAIL},datum:new Date().toISOString(),richtung:'aus',art:'sammel'};
+    try{const r=await pf({aktion:'senden',modus:'neu',an:HV_MAIL,bcc:C.bcc.map(x=>x.mail).join(', '),betreff:C.betreff,text:C.text,anhaenge:mailAnhListe(C)});
+      const m={msgId:r.msgId||'',betreff:C.betreff,an:[{name:'',mail:HV_MAIL}],bcc:C.bcc.map(x=>({name:x.name,mail:x.mail})),von:{name:'Hausverwaltung',mail:r.von||HV_MAIL},datum:new Date().toISOString(),richtung:'aus',art:'sammel',anhaenge:(C.anh||[]).map(a=>({name:a.name,pfad:a.pfad}))};
       await speichern(s,{mails:(s.mails||[]).concat([m])},eintrag('Mail','Sammelmail an '+C.bcc.length+' Mieter (Bcc) gesendet: '+C.betreff));
       const st=MV[s.id]=MV[s.id]||{};if(st.L)st.L.unshift(m);toast('Sammelmail an '+C.bcc.length+' Empfänger gesendet.');return true;}
     catch(e){toast('Nicht gesendet: '+(e.message||e));return false;}}
   const ur=(s.mails||[]).find(m=>m.richtung==='ein'&&m.id);
-  const body={aktion:'senden',modus:ur?'antworten':'neu',an:String(C.an).trim(),betreff:C.betreff,text:C.text,anhaenge:[]};if(ur){body.bezug=ur.id;body.bezugMsgId=ur.msgId||'';body.fallbackNeu=true;}
-  try{const r=await pf(body);const m={msgId:r.msgId||'',betreff:C.betreff,an:[{name:'',mail:String(C.an).trim()}],von:{name:'Hausverwaltung',mail:r.von||'hausverwaltung@andersmacher.info'},datum:new Date().toISOString(),richtung:'aus',art:C.art||''};
+  const body={aktion:'senden',modus:ur?'antworten':'neu',an:String(C.an).trim(),betreff:C.betreff,text:C.text,anhaenge:mailAnhListe(C)};if(ur){body.bezug=ur.id;body.bezugMsgId=ur.msgId||'';body.fallbackNeu=true;}
+  try{const r=await pf(body);const m={msgId:r.msgId||'',betreff:C.betreff,an:[{name:'',mail:String(C.an).trim()}],von:{name:'Hausverwaltung',mail:r.von||'hausverwaltung@andersmacher.info'},datum:new Date().toISOString(),richtung:'aus',art:C.art||'',anhaenge:(C.anh||[]).map(a=>({name:a.name,pfad:a.pfad}))};
     await speichern(s,{mails:(s.mails||[]).concat([m])},eintrag('Mail',(C.art?MTPL[C.art].titel:'Mail')+' an '+m.an[0].mail+' gesendet'));
     const st=MV[s.id]=MV[s.id]||{};if(st.L)st.L.unshift(m);toast((C.art?MTPL[C.art].titel:'Mail')+' gesendet.');return true;}
   catch(e){toast('Nicht gesendet: '+(e.message||e));return false;}}
