@@ -185,7 +185,11 @@ h1{font-size:21px;font-weight:800}
       <div class="f"><label>Verantwortlich</label><input id="d_verantwortlich" placeholder="—"></div>
       <div class="f"><label>Fällig am</label><input id="d_faellig" type="date"></div>
       <div class="f"><label>🔔 Wiedervorlage am</label><input id="d_wiedervorlage" type="date"></div>
-      <div class="f"><label>↻ Routine / Wiederholung</label><select id="d_wiederholung"><option value="">— einmalig</option><option value="taeglich">täglich</option><option value="werktags">werktäglich (Mo–Fr)</option><option value="woechentlich">wöchentlich</option><option value="zweiwoechentlich">14-tägig</option><option value="monatlich">monatlich</option></select></div>
+      <div class="f"><label>↻ Routine / Wiederholung</label>
+        <div class="row" style="align-items:center">
+          <select id="d_wiederholung" onchange="updWdhDom()"><option value="">— einmalig</option><option value="taeglich">täglich</option><option value="werktags">werktäglich (Mo–Fr)</option><option value="woechentlich">wöchentlich</option><option value="zweiwoechentlich">14-tägig</option><option value="monatlich">monatlich</option></select>
+          <span id="d_wdh_dom_wrap" style="display:none;white-space:nowrap;font-size:12px;color:var(--muted)">am <input id="d_wdh_dom" type="number" min="1" max="31" placeholder="z. B. 1" style="width:64px">. Tag</span>
+        </div></div>
       <div class="f"><label>Kontakt</label><select id="d_kont"></select></div>
       <div class="f"><label>Objekt</label><select id="d_obj"></select></div>
       <div class="f wide"><label>Asana-Link <a href="#" onclick="oeffneLink('d_asana_url');return false" style="margin-left:8px;color:var(--accent);font-weight:600;font-size:11px">↗ öffnen</a></label><input id="d_asana_url" placeholder="https://app.asana.com/…"></div>
@@ -426,7 +430,11 @@ function nextRecurDate(z,baseISO){const d=new Date((baseISO||today)+'T00:00:00')
   else if(z==='werktags'){do{d.setDate(d.getDate()+1);}while([0,6].indexOf(d.getDay())>=0);}
   else if(z==='woechentlich')d.setDate(d.getDate()+7);
   else if(z==='zweiwoechentlich')d.setDate(d.getDate()+14);
-  else if(z==='monatlich')d.setMonth(d.getMonth()+1);
+  else if(z.indexOf('monatlich')===0){
+    const dom=z.indexOf(':')>=0?parseInt(z.split(':')[1],10):null;
+    if(dom&&dom>=1&&dom<=31){d.setDate(1);d.setMonth(d.getMonth()+1);const last=new Date(d.getFullYear(),d.getMonth()+1,0).getDate();d.setDate(Math.min(dom,last));}
+    else d.setMonth(d.getMonth()+1);
+  }
   else return null;
   return isoLokal(d);}
 function nextRecurAfterToday(z,baseISO){
@@ -488,6 +496,23 @@ async function linkObj(id,val){const t=TASKS.find(x=>x.id===id);if(!t)return;con
 /* ---------- Detail-Dialog ---------- */
 function setVal(id,v){const e=document.getElementById(id);if(e)e.value=v==null?'':v;}
 function oeffneLink(id){const el=document.getElementById(id);let v=(el&&el.value||'').trim();if(!v){toast('Kein Link hinterlegt');return;}if(!/^https?:\/\//i.test(v))v='https://'+v;window.open(v,'_blank','noopener');}
+function updWdhDom(){
+  const sel=document.getElementById('d_wiederholung');const wrap=document.getElementById('d_wdh_dom_wrap');
+  if(!sel||!wrap)return;wrap.style.display=(sel.value==='monatlich')?'':'none';
+}
+function setWdhFields(val){
+  const v=val||'';const base=v.indexOf('monatlich')===0?'monatlich':v;
+  setVal('d_wiederholung',base);
+  const dom=document.getElementById('d_wdh_dom');
+  if(dom)dom.value=(v.indexOf('monatlich:')===0)?v.split(':')[1]:'';
+  updWdhDom();
+}
+function getWdhValue(){
+  const base=document.getElementById('d_wiederholung').value||'';
+  if(base!=='monatlich')return base||null;
+  const dom=parseInt((document.getElementById('d_wdh_dom')||{}).value,10);
+  return (dom>=1&&dom<=31)?('monatlich:'+dom):'monatlich';
+}
 function updErlBtn(){
   const b=document.getElementById('d_erlbtn');if(!b||!DTASK)return;
   if(DTASK.status==='erledigt'){b.textContent='↩ Wieder öffnen';b.style.background='#fff';b.style.color='var(--accent)';b.style.borderColor='var(--accent)';}
@@ -527,7 +552,7 @@ async function openDetail(id){
   if(alk){if(t.akquise_id){alk.style.display='';alk.innerHTML=`<a href="akquise.html?lead=${encodeURIComponent(t.akquise_id)}" target="_blank" rel="noopener" style="color:var(--accent);font-weight:600;text-decoration:none">🏠 Zum Lead im Akquise-Board ↗</a>`;}else{alk.style.display='none';alk.innerHTML='';}}
   renderGcal();
   setVal('d_verantwortlich',t.verantwortlich||'');setVal('d_faellig',t.faellig||'');
-  setVal('d_wiedervorlage',t.wiedervorlage||'');setVal('d_wiederholung',t.wiederholung||'');setVal('d_asana_url',t.asana_url||'');setVal('d_claude_url',t.claude_url||'');setVal('d_beschreibung',t.beschreibung||'');
+  setVal('d_wiedervorlage',t.wiedervorlage||'');setWdhFields(t.wiederholung||'');setVal('d_asana_url',t.asana_url||'');setVal('d_claude_url',t.claude_url||'');setVal('d_beschreibung',t.beschreibung||'');
   document.getElementById('d_status').innerHTML=COLS.map(([k,l])=>`<option value="${k}"${(t.status||'todo')===k?' selected':''}>${STLBL[k]}</option>`).join('');
   updErlBtn();
   document.getElementById('d_kont').innerHTML=kontOptions(t.kontakt_label);
@@ -659,7 +684,7 @@ async function dSave(){
     verantwortlich:document.getElementById('d_verantwortlich').value||null,
     faellig:document.getElementById('d_faellig').value||null,
     wiedervorlage:document.getElementById('d_wiedervorlage').value||null,
-    wiederholung:document.getElementById('d_wiederholung').value||null,
+    wiederholung:getWdhValue(),
     kontakt_id:kid,kontakt_label:klabel,object_id:oid,object_label:olabel,
     asana_url:document.getElementById('d_asana_url').value||null,
     claude_url:document.getElementById('d_claude_url').value||null,
