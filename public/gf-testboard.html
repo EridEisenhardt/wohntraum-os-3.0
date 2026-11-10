@@ -180,7 +180,7 @@ h1{font-size:21px;font-weight:800}
       <div class="f wide"><label>Titel</label><input id="d_titel"></div>
       <div class="f wide" id="d_akqlink" style="display:none"></div>
       <div class="f"><label>Kategorie</label><select id="d_art"><option value="aufgabe">📌 Aufgabe</option><option value="ankauf">🏷️ Ankauf</option><option value="immoentwicklung">🏗️ Immobilienentwicklung</option><option value="routine">🔄 Routine</option><option value="ticket">🎫 Ticket</option></select></div>
-      <div class="f"><label>Status</label><select id="d_status"></select></div>
+      <div class="f"><label>Status</label><select id="d_status" onchange="if(DTASK){DTASK.status=this.value;updErlBtn();}"></select></div>
       <div class="f"><label>Priorität</label><select id="d_prio"><option value="">—</option><option>P1</option><option>P2</option><option>P3</option></select></div>
       <div class="f"><label>Verantwortlich</label><input id="d_verantwortlich" placeholder="—"></div>
       <div class="f"><label>Fällig am</label><input id="d_faellig" type="date"></div>
@@ -212,7 +212,7 @@ h1{font-size:21px;font-weight:800}
       <textarea id="d_comment" class="komment" rows="2" placeholder="Kommentar … – oder 🎤 reinsprechen"></textarea>
       <div class="row"><button class="btn sec sm" id="mic_d_comment" onclick="diktieren('d_comment','mic_d_comment')">🎤</button><button class="btn sec sm" onclick="kiZusammenfassen('d_comment')">✨</button><button class="btn sm" onclick="dAddComment()">Kommentar</button></div></div>
   </div>
-  <div class="dlg-ft"><button class="btn sec" onclick="dFollowup()">🔁 Follow-up (Datum verschieben)</button><button class="btn" style="background:#0f9d6b;color:#fff;border-color:#0f9d6b" onclick="dErledigt()">✓ Erledigt</button><span style="flex:1"></span><button class="btn" onclick="closeDetail()">Schließen</button><button class="btn pri" onclick="dSave()">Speichern</button></div>
+  <div class="dlg-ft"><button class="btn sec" onclick="dFollowup()">🔁 Follow-up (Datum verschieben)</button><button class="btn" id="d_erlbtn" style="background:#0f9d6b;color:#fff;border-color:#0f9d6b" onclick="dErledigtToggle()">✓ Erledigt</button><span style="flex:1"></span><button class="btn" onclick="closeDetail()">Schließen</button><button class="btn pri" onclick="dSave()">Speichern</button></div>
 </div></div>
 <div class="ov" id="statov" style="z-index:110" onclick="if(event.target===this)statsClose()"><div class="dlg" style="width:680px">
   <div class="dlg-hd"><span>📊 Statistik · Fällig &amp; Überfällig pro Tag</span><span class="x" onclick="statsClose()">✕</span></div>
@@ -488,6 +488,24 @@ async function linkObj(id,val){const t=TASKS.find(x=>x.id===id);if(!t)return;con
 /* ---------- Detail-Dialog ---------- */
 function setVal(id,v){const e=document.getElementById(id);if(e)e.value=v==null?'':v;}
 function oeffneLink(id){const el=document.getElementById(id);let v=(el&&el.value||'').trim();if(!v){toast('Kein Link hinterlegt');return;}if(!/^https?:\/\//i.test(v))v='https://'+v;window.open(v,'_blank','noopener');}
+function updErlBtn(){
+  const b=document.getElementById('d_erlbtn');if(!b||!DTASK)return;
+  if(DTASK.status==='erledigt'){b.textContent='↩ Wieder öffnen';b.style.background='#fff';b.style.color='var(--accent)';b.style.borderColor='var(--accent)';}
+  else{b.textContent='✓ Erledigt';b.style.background='#0f9d6b';b.style.color='#fff';b.style.borderColor='#0f9d6b';}
+}
+async function dErledigtToggle(){
+  if(!DTASK)return;
+  if(DTASK.status==='erledigt')return dReopen();
+  return dErledigt();
+}
+async function dReopen(){
+  if(!DTASK)return;const id=DTASK.id;
+  const {error}=await sb.from('os_tasks').update({status:'todo',updated_at:new Date().toISOString()}).eq('id',id);
+  if(error){toast('Fehler: '+error.message);return;}
+  DTASK.status='todo';setVal('d_status','todo');updErlBtn();
+  await logVer('↩ Wieder geöffnet (aktiv)');
+  render();toast('Wieder aktiv ✓');
+}
 async function dErledigt(){
   if(!DTASK)return;const id=DTASK.id;const was=DTASK.status;
   if(was==='erledigt'){toast('Ist bereits erledigt');return;}
@@ -511,6 +529,7 @@ async function openDetail(id){
   setVal('d_verantwortlich',t.verantwortlich||'');setVal('d_faellig',t.faellig||'');
   setVal('d_wiedervorlage',t.wiedervorlage||'');setVal('d_wiederholung',t.wiederholung||'');setVal('d_asana_url',t.asana_url||'');setVal('d_claude_url',t.claude_url||'');setVal('d_beschreibung',t.beschreibung||'');
   document.getElementById('d_status').innerHTML=COLS.map(([k,l])=>`<option value="${k}"${(t.status||'todo')===k?' selected':''}>${STLBL[k]}</option>`).join('');
+  updErlBtn();
   document.getElementById('d_kont').innerHTML=kontOptions(t.kontakt_label);
   document.getElementById('d_obj').innerHTML=objOptions(t.object_label);
   document.getElementById('dov').classList.add('show');
