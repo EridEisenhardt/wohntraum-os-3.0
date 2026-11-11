@@ -190,6 +190,9 @@ h1{font-size:21px;font-weight:800}
           <select id="d_wiederholung" onchange="updWdhDom()"><option value="">— einmalig</option><option value="taeglich">täglich</option><option value="werktags">werktäglich (Mo–Fr)</option><option value="woechentlich">wöchentlich</option><option value="zweiwoechentlich">14-tägig</option><option value="monatlich">monatlich</option></select>
           <span id="d_wdh_dom_wrap" style="display:none;white-space:nowrap;font-size:12px;color:var(--muted)">am <input id="d_wdh_dom" type="number" min="1" max="31" placeholder="z. B. 1" style="width:64px">. Tag</span>
         </div></div>
+      <div class="f"><label>Projekt</label><input id="d_projekt" list="dlProjekte" placeholder="z. B. Gipfelkreuzmission" oninput="updAbschnittDL()"></div>
+      <div class="f"><label>Abschnitt</label><input id="d_abschnitt" list="dlAbschnitte" placeholder="Abschnitt im Projekt"></div>
+      <datalist id="dlProjekte"></datalist><datalist id="dlAbschnitte"></datalist>
       <div class="f"><label>Kontakt</label><select id="d_kont"></select></div>
       <div class="f"><label>Objekt</label><select id="d_obj"></select></div>
       <div class="f wide"><label>Asana-Link <a href="#" onclick="oeffneLink('d_asana_url');return false" style="margin-left:8px;color:var(--accent);font-weight:600;font-size:11px">↗ öffnen</a></label><input id="d_asana_url" placeholder="https://app.asana.com/…"></div>
@@ -217,6 +220,17 @@ h1{font-size:21px;font-weight:800}
       <div class="row"><button class="btn sec sm" id="mic_d_comment" onclick="diktieren('d_comment','mic_d_comment')">🎤</button><button class="btn sec sm" onclick="kiZusammenfassen('d_comment')">✨</button><button class="btn sm" onclick="dAddComment()">Kommentar</button></div></div>
   </div>
   <div class="dlg-ft"><button class="btn sec" onclick="dFollowup()">🔁 Follow-up (Datum verschieben)</button><button class="btn" id="d_erlbtn" style="background:#0f9d6b;color:#fff;border-color:#0f9d6b" onclick="dErledigtToggle()">✓ Erledigt</button><button class="btn" style="color:#c0392b;border-color:#e6b5ae" onclick="dDelete()">🗑 Löschen</button><span style="flex:1"></span><button class="btn" onclick="closeDetail()">Schließen</button><button class="btn pri" onclick="dSave()">Speichern</button></div>
+</div></div>
+<div class="ov" id="projov" style="z-index:112" onclick="if(event.target===this)projClose()"><div class="dlg" style="width:1000px;max-width:96vw">
+  <div class="dlg-hd"><span id="proj_title">📁 Projekt</span><span class="x" onclick="projClose()">✕</span></div>
+  <div class="dlg-bd">
+    <div style="display:flex;gap:8px;align-items:center;margin-bottom:12px;flex-wrap:wrap">
+      <div class="seg"><button id="pv_liste" class="segbtn" onclick="projSetView('liste')">☰ Liste</button><button id="pv_board" class="segbtn" onclick="projSetView('board')">▦ Board</button></div>
+      <span id="proj_stats" style="color:var(--muted);font-size:12.5px;margin-left:6px"></span>
+    </div>
+    <div id="proj_body"></div>
+  </div>
+  <div class="dlg-ft"><span style="flex:1"></span><button class="btn" onclick="projClose()">Schließen</button></div>
 </div></div>
 <div class="ov" id="statov" style="z-index:110" onclick="if(event.target===this)statsClose()"><div class="dlg" style="width:680px">
   <div class="dlg-hd"><span>📊 Statistik · Fällig &amp; Überfällig pro Tag</span><span class="x" onclick="statsClose()">✕</span></div>
@@ -326,7 +340,7 @@ function card(t){
   const prio=t.prio?`<span class="pill prio">${esc(t.prio)}</span>`:'';
   const wvOver=t.wiedervorlage&&t.wiedervorlage<=today&&t.status!=='erledigt';
   const wv=t.wiedervorlage?`<span class="pill wv ${wvOver?'over':''}">🔔 ${dfmt(t.wiedervorlage)}</span>`:'';
-  const proj=t.projekt?`<span class="pill">${esc(t.projekt)}</span>`:'';
+  const proj=t.projekt?`<span class="pill" style="cursor:pointer" title="Projekt öffnen" onclick="event.stopPropagation();openProject('${esc(t.projekt).replace(/'/g,"\\'")}')">📁 ${esc(t.projekt)}</span>`:'';
   const kont=t.kontakt_label?`<span class="pill kontakt">👤 ${esc(t.kontakt_label)}</span>`:'';
   const obj=t.object_label?`<span class="pill obj">🏠 ${esc(t.object_label)}</span>`:'';
   const bet=(t.beteiligte||[]).map(p=>`<span class="pill bet">🧑 ${esc(p)}</span>`).join('');
@@ -375,12 +389,90 @@ function renderList(){
       <td><span class="tt" style="cursor:pointer;text-decoration:underline;text-decoration-style:dotted" onclick="openDetail('${t.id}')">${esc(t.titel)}</span>${t.asana_url?` <a href="${esc(t.asana_url)}" target="_blank">↗</a>`:''}</td>
       <td><select onchange="moveTask('${t.id}',this.value)">${COLS.map(([k,l])=>`<option value="${k}"${(t.status||'todo')===k?' selected':''}>${STLBL[k]}</option>`).join('')}</select></td>
       <td>${t.faellig?dfmt(t.faellig)+(over?' · überfällig':''):'—'}</td>
-      <td>${esc(t.projekt||'—')}</td>
+      <td>${t.projekt?`<span class="pill" style="cursor:pointer" title="Projekt öffnen" onclick="openProject('${esc(t.projekt).replace(/'/g,"\\'")}')">${esc(t.projekt)} ↗</span>`:'—'}</td>
       <td><select onchange="linkKont('${t.id}',this.value)">${kontOptions(t.kontakt_label)}</select></td>
       <td><select onchange="linkObj('${t.id}',this.value)">${objOptions(t.object_label)}</select></td>
       <td><button class="del" onclick="delTask('${t.id}')">🗑</button></td></tr>`;}).join('')||'<tr><td colspan="7" style="text-align:center;color:var(--muted);padding:24px">Keine Aufgaben.</td></tr>'}
   </tbody></table></div>`;
 }
+function fillProjektDL(){const names=[...new Set(TASKS.map(t=>t.projekt).filter(Boolean))].sort();
+  const dl=document.getElementById('dlProjekte');if(dl)dl.innerHTML=names.map(n=>`<option value="${esc(n)}">`).join('');}
+function updAbschnittDL(){const p=(document.getElementById('d_projekt').value||'').trim();
+  const secs=[...new Set(TASKS.filter(t=>t.projekt===p&&t.abschnitt).map(t=>t.abschnitt))].sort();
+  const dl=document.getElementById('dlAbschnitte');if(dl)dl.innerHTML=secs.map(n=>`<option value="${esc(n)}">`).join('');}
+/* ---------- Projektansicht (Asana-Stil, 4 Ebenen) ---------- */
+let PROJ=null, PROJVIEW='liste', PROJSUBS=[], PROJSECS=[];
+async function openProject(name){
+  PROJ=name;PROJVIEW='liste';
+  document.getElementById('proj_title').textContent='📁 '+name;
+  document.getElementById('projov').classList.add('show');
+  const ids=TASKS.filter(t=>t.projekt===name).map(t=>t.id);
+  PROJSUBS=[];
+  if(ids.length){for(let i=0;i<ids.length;i+=100){const {data}=await sb.from('os_task_subtasks').select('id,task_id,titel,done,faellig,pos').in('task_id',ids.slice(i,i+100));PROJSUBS=PROJSUBS.concat(data||[]);}}
+  const {data:secs}=await sb.from('os_projekt_abschnitte').select('*').eq('projekt',name).order('pos');
+  PROJSECS=secs||[];
+  projSetView('liste');
+}
+function projClose(){document.getElementById('projov').classList.remove('show');PROJ=null;}
+function projSections(){
+  // Abschnitte aus Tabelle + evtl. in Aufgaben vorkommende, die noch keine Zeile haben
+  const names=PROJSECS.map(s=>s.name);
+  projTasks().forEach(t=>{if(t.abschnitt&&!names.includes(t.abschnitt)){names.push(t.abschnitt);PROJSECS.push({name:t.abschnitt,faellig:null,pos:999});}});
+  const ohne=projTasks().some(t=>!t.abschnitt);
+  const list=PROJSECS.slice().sort((a,b)=>(a.pos||0)-(b.pos||0));
+  if(ohne)list.push({name:null,faellig:null,pos:10000});
+  return list;
+}
+function projSetView(v){PROJVIEW=v;
+  document.getElementById('pv_liste').classList.toggle('on',v==='liste');
+  document.getElementById('pv_board').classList.toggle('on',v==='board');
+  projRender();
+}
+function projTasks(){return TASKS.filter(t=>t.projekt===PROJ).slice().sort((a,b)=>(a.pos||0)-(b.pos||0)||((a.faellig||'9999')<(b.faellig||'9999')?-1:1));}
+function projSubsOf(id){return PROJSUBS.filter(s=>s.task_id===id).sort((a,b)=>(a.pos||0)-(b.pos||0));}
+function projTasksOf(sec){return projTasks().filter(t=>(t.abschnitt||null)===sec);}
+function projTaskCard(t){const sub=projSubsOf(t.id);const sd=sub.filter(s=>s.done).length;const over=t.faellig&&t.faellig<today&&t.status!=='erledigt';
+  return `<div class="card" style="cursor:pointer" onclick="projOpenTask('${t.id}')"><div class="tt">${esc(t.titel)}</div><div class="meta"><span class="pill" style="background:${t.status==='erledigt'?'#e7f6ef':'#fff'};color:${t.status==='erledigt'?'var(--green)':'var(--muted)'}">${STLBL[t.status||'todo']}</span>${t.faellig?`<span class="pill" style="${over?'color:var(--red);border-color:var(--red)':''}">📅 ${dfmt(t.faellig)}</span>`:''}${sub.length?`<span class="pill">☑ ${sd}/${sub.length}</span>`:''}</div></div>`;}
+function projRender(){
+  const ts=projTasks();
+  const done=ts.filter(t=>t.status==='erledigt').length;
+  const over=ts.filter(t=>t.faellig&&t.faellig<today&&t.status!=='erledigt').length;
+  const secs=projSections();
+  document.getElementById('proj_stats').innerHTML=`${secs.filter(s=>s.name).length} Abschnitte · ${ts.length} Aufgaben · <b style="color:var(--green)">${done}</b> erledigt${over?` · <b style="color:var(--red)">${over}</b> überfällig`:''}`;
+  const body=document.getElementById('proj_body');
+  if(!ts.length&&!secs.filter(s=>s.name).length){body.innerHTML='<div style="color:var(--muted);padding:24px;text-align:center">Keine Abschnitte/Aufgaben in diesem Projekt.</div>';return;}
+  const secLbl=s=>{const tl=projTasksOf(s.name);const d=tl.filter(t=>t.status==='erledigt').length;const ov=s.faellig&&s.faellig<today;
+    return `${s.name?esc(s.name):'<span style="color:var(--muted)">Ohne Abschnitt</span>'}${s.faellig?` <span class="pill" style="${ov?'color:var(--red);border-color:var(--red)':''}">🎯 ${dfmt(s.faellig)}</span>`:''} <span class="pill">${d}/${tl.length}</span>`;};
+  if(PROJVIEW==='board'){
+    // Spalten = Abschnitte (wie Asana-Board)
+    body.innerHTML='<div class="cols" style="min-height:200px">'+secs.map(s=>{
+      const list=projTasksOf(s.name);
+      return `<div class="col"><div class="col-h">${secLbl(s)}</div>${list.map(projTaskCard).join('')||'<div style="color:var(--muted);font-size:12px;padding:6px">—</div>'}</div>`;
+    }).join('')+'</div>';
+    return;
+  }
+  // Liste – Abschnitt → Aufgaben → Unteraufgaben
+  body.innerHTML=secs.map(s=>{
+    const list=projTasksOf(s.name);
+    const tasksHtml=list.map(t=>{
+      const sub=projSubsOf(t.id);const sd=sub.filter(x=>x.done).length;
+      const over=t.faellig&&t.faellig<today&&t.status!=='erledigt';
+      const subrows=sub.map(x=>`<div style="display:flex;gap:8px;align-items:center;padding:3px 0 3px 42px;font-size:13px;color:${x.done?'var(--muted)':'inherit'}">
+        <span>${x.done?'☑':'☐'}</span><span style="flex:1;${x.done?'text-decoration:line-through':''}">${esc(x.titel)}</span>${x.faellig?`<span class="pill">${dfmt(x.faellig)}</span>`:''}</div>`).join('');
+      return `<div style="border-top:1px solid var(--line)">
+        <div style="display:flex;gap:10px;align-items:center;padding:8px 12px;cursor:pointer" onclick="projOpenTask('${t.id}')">
+          <span style="color:var(--muted)">↳</span><b style="flex:1">${esc(t.titel)}</b>
+          <span class="pill" style="background:${t.status==='erledigt'?'#e7f6ef':'#fff'};color:${t.status==='erledigt'?'var(--green)':'var(--muted)'}">${STLBL[t.status||'todo']}</span>
+          ${t.faellig?`<span class="pill" style="${over?'color:var(--red);border-color:var(--red)':''}">📅 ${dfmt(t.faellig)}</span>`:''}
+          ${sub.length?`<span class="pill">☑ ${sd}/${sub.length}</span>`:''}
+        </div>${sub.length?`<div style="padding:0 12px 6px">${subrows}</div>`:''}</div>`;
+    }).join('')||'<div style="padding:8px 12px;color:var(--muted);font-size:13px;border-top:1px solid var(--line)">Noch keine Aufgaben in diesem Abschnitt.</div>';
+    return `<div style="border:1px solid var(--line);border-radius:10px;margin-bottom:12px;overflow:hidden">
+      <div style="padding:10px 12px;background:var(--surf2);font-weight:700;font-size:14px">${secLbl(s)}</div>
+      ${tasksHtml}</div>`;
+  }).join('');
+}
+function projOpenTask(id){projClose();openDetail(id);}
 let CALMODE='woche';
 function mondayOf(d){const x=new Date(d);x.setDate(x.getDate()-((x.getDay()+6)%7));x.setHours(0,0,0,0);return x;}
 function renderCalendar(){
@@ -563,6 +655,7 @@ async function openDetail(id){
   renderGcal();
   setVal('d_verantwortlich',t.verantwortlich||'');setVal('d_faellig',t.faellig||'');
   setVal('d_wiedervorlage',t.wiedervorlage||'');setWdhFields(t.wiederholung||'');setVal('d_asana_url',t.asana_url||'');setVal('d_claude_url',t.claude_url||'');setVal('d_beschreibung',t.beschreibung||'');
+  setVal('d_projekt',t.projekt||'');setVal('d_abschnitt',t.abschnitt||'');fillProjektDL();updAbschnittDL();
   document.getElementById('d_status').innerHTML=COLS.map(([k,l])=>`<option value="${k}"${(t.status||'todo')===k?' selected':''}>${STLBL[k]}</option>`).join('');
   updErlBtn();
   document.getElementById('d_kont').innerHTML=kontOptions(t.kontakt_label);
@@ -699,6 +792,8 @@ async function dSave(){
     asana_url:document.getElementById('d_asana_url').value||null,
     claude_url:document.getElementById('d_claude_url').value||null,
     beschreibung:document.getElementById('d_beschreibung').value||null,
+    projekt:document.getElementById('d_projekt').value.trim()||null,
+    abschnitt:document.getElementById('d_abschnitt').value.trim()||null,
     tags:TAGS.slice(),
     beteiligte:BETEIL.slice(),
     massnahme:MASSV.slice(),
