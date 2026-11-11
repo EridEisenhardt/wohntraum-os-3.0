@@ -7,6 +7,9 @@ import { NAV, farbeFuerPfad } from './Sidebar'
 
 const MAX = 10
 const SPEICHER = 'os_tabs'
+const FEST = 'os_tabs_fest' // angeheftete Reiter: bleiben dauerhaft offen (auch nach dem Schließen des Browsers)
+const festLesen = () => { try { const L = JSON.parse(localStorage.getItem(FEST) || '[]'); return Array.isArray(L) ? L.filter((t) => t && t.key && t.pfad) : [] } catch (e) { return [] } }
+const festSchreiben = (L) => { try { localStorage.setItem(FEST, JSON.stringify(L)) } catch (e) {} }
 const blaetter = []
 NAV.forEach((n) => {
   if (n.type === 'link') blaetter.push({ href: n.href, label: n.label })
@@ -38,14 +41,19 @@ export default function TabShell() {
   const geladen = useRef(false)
   const rahmen = useRef({})
   const umleiten = useRef(false)
+  const [fest, setFest] = useState([]) // Schlüssel der angehefteten Reiter
+  const festRef = useRef([]); festRef.current = fest
+  const [menue, setMenue] = useState(null) // Kontextmenü {x, y, key}
 
   // gespeicherte Tabs nach dem Neuladen wiederherstellen
   // Neuer Start des OS (frische Browsersitzung): immer mit dem Cockpit beginnen, außer bei einem gezielten Link (mit ?…)
   useEffect(() => {
     let s = null
     try { s = JSON.parse(sessionStorage.getItem(SPEICHER) || 'null') } catch (e) {}
-    if (s && Array.isArray(s.tabs)) setTabs(s.tabs.slice(0, MAX))
-    else if (window.location.pathname !== '/' && !window.location.search) { geladen.current = true; umleiten.current = true; router.replace('/'); return }
+    const F = festLesen(); setFest(F.map((t) => t.key))
+    const mitFest = (L) => { const da = new Set(L.map((t) => t.key)); return F.filter((t) => !da.has(t.key)).map((t, i) => ({ key: t.key, pfad: t.pfad, titel: t.titel || labelFuer(t.pfad), pos: -100 + i })).concat(L) }
+    if (s && Array.isArray(s.tabs)) setTabs(mitFest(s.tabs.slice(0, MAX)))
+    else { setTabs(mitFest([])); if (window.location.pathname !== '/' && !window.location.search) { geladen.current = true; umleiten.current = true; router.replace('/'); return } }
     geladen.current = true
   }, [])
   useEffect(() => { if (geladen.current) try { sessionStorage.setItem(SPEICHER, JSON.stringify({ tabs })) } catch (e) {} }, [tabs])
@@ -62,7 +70,7 @@ export default function TabShell() {
       }
       const pos = alt.reduce((m, t, i) => Math.max(m, t.pos || i + 1), 0) + 1
       let L = alt.concat([{ key: k, pfad: voll, titel: labelFuer(voll), pos }])
-      if (L.length > MAX) { const weg = L.find((t) => t.key !== k); L = L.filter((t) => t !== weg) }
+      if (L.length > MAX + festRef.current.length) { const weg = L.find((t) => t.key !== k && !festRef.current.includes(t.key)); if (weg) L = L.filter((t) => t !== weg) }
       return L
     })
     setAktiv(k)
@@ -112,8 +120,15 @@ export default function TabShell() {
   }, [])
 
   const wechseln = (t) => { if (t.key === aktiv) return; setAktiv(t.key); router.push(t.pfad) }
+  const anheften = (t, an) => {
+    const L = festLesen().filter((x) => x.key !== t.key)
+    if (an) L.push({ key: t.key, pfad: t.pfad, titel: t.titel })
+    festSchreiben(L); setFest(L.map((x) => x.key)); setMenue(null)
+  }
+  useEffect(() => { if (!menue) return; const zu = () => setMenue(null); window.addEventListener('click', zu); window.addEventListener('blur', zu); return () => { window.removeEventListener('click', zu); window.removeEventListener('blur', zu) } }, [menue])
   const schliessen = (t, e) => {
-    e.stopPropagation()
+    if (e) e.stopPropagation()
+    if (fest.includes(t.key)) return // angeheftete Reiter erst lösen
     const i = tabs.findIndex((x) => x.key === t.key); const rest = tabs.filter((x) => x.key !== t.key)
     if (!rest.length) { setTabs([]); router.push('/'); return }
     setTabs(rest)
@@ -123,7 +138,7 @@ export default function TabShell() {
   // Reiter mit der Maus verschieben: nur die Reihenfolge in der Leiste ändert sich (pos), die Seiten bleiben geladen
   const [zieh, setZieh] = useState(null)
   const [ziel, setZiel] = useState(null)
-  const reihe = tabs.map((t, i) => Object.assign({ _i: i }, t)).sort((a, b) => (a.pos || a._i + 1) - (b.pos || b._i + 1))
+  const reihe = tabs.map((t, i) => Object.assign({ _i: i }, t)).sort((a, b) => (fest.includes(b.key) - fest.includes(a.key)) || ((a.pos || a._i + 1) - (b.pos || b._i + 1)))
   const ablegen = (k, vor) => {
     if (!zieh || zieh === k) return
     const keys = reihe.map(t => t.key).filter(x => x !== zieh)
@@ -137,18 +152,28 @@ export default function TabShell() {
       <div className="ostabs" role="tablist">
         {reihe.map((t) => (
           <div key={t.key} role="tab" aria-selected={t.key === aktiv}
-            className={'ostab' + (t.key === aktiv ? ' on' : '') + (zieh === t.key ? ' zieht' : '') + (ziel && ziel.k === t.key && zieh !== t.key ? (ziel.vor ? ' drop-l' : ' drop-r') : '')}
+            className={'ostab' + (fest.includes(t.key) ? ' fest' : '') + (t.key === aktiv ? ' on' : '') + (zieh === t.key ? ' zieht' : '') + (ziel && ziel.k === t.key && zieh !== t.key ? (ziel.vor ? ' drop-l' : ' drop-r') : '')}
             draggable onDragStart={(e) => { setZieh(t.key); try { e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', t.titel) } catch (x) {} }}
             onDragOver={(e) => { if (!zieh) return; e.preventDefault(); const b = e.currentTarget.getBoundingClientRect(); const vor = e.clientX < b.left + b.width / 2; if (!ziel || ziel.k !== t.key || ziel.vor !== vor) setZiel({ k: t.key, vor }) }}
             onDrop={(e) => { e.preventDefault(); if (ziel) ablegen(t.key, ziel.vor); setZieh(null); setZiel(null) }}
             onDragEnd={() => { setZieh(null); setZiel(null) }}
             style={(() => { let b = ''; try { b = localStorage.getItem('os_bereich') || '' } catch (x) {} const f = farbeFuerPfad(t.pfad, b); return f ? { '--kc': f } : undefined })()}
-            onClick={() => wechseln(t)} onAuxClick={(e) => { if (e.button === 1) schliessen(t, e) }} title={t.titel}>
+            onClick={() => wechseln(t)} onAuxClick={(e) => { if (e.button === 1) schliessen(t, e) }}
+            onContextMenu={(e) => { e.preventDefault(); setMenue({ x: e.clientX, y: e.clientY, key: t.key }) }}
+            title={t.titel + (fest.includes(t.key) ? ' (angeheftet, Rechtsklick zum Lösen)' : ' (Rechtsklick zum Anheften)')}>
             <span className="ostab-t">{t.titel}</span>
-            <button className="ostab-x" onClick={(e) => schliessen(t, e)} aria-label={t.titel + ' schließen'}>×</button>
+            {fest.includes(t.key)
+              ? <span className="ostab-fest">fest</span>
+              : <button className="ostab-x" onClick={(e) => schliessen(t, e)} aria-label={t.titel + ' schließen'}>×</button>}
           </div>
         ))}
       </div>
+      {menue && (() => { const t = tabs.find((x) => x.key === menue.key); if (!t) return null; const an = fest.includes(t.key)
+        return (
+          <div className="ostab-menue" style={{ left: Math.min(menue.x, window.innerWidth - 200), top: menue.y }} onClick={(e) => e.stopPropagation()}>
+            <button onClick={() => anheften(t, !an)}>{an ? 'Reiter lösen' : 'Reiter anheften'}</button>
+            {!an && <button onClick={() => { setMenue(null); schliessen(t) }}>Reiter schließen</button>}
+          </div>) })()}
       <div className="ostabs-flaeche">
         {tabs.map((t) => (
           <iframe key={t.key + ':' + (t.v || 0)} ref={(el) => { if (el) rahmen.current[t.key] = el }} src={mitTab(t.pfad)} title={t.titel}
