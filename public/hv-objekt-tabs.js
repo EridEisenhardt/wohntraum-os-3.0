@@ -129,23 +129,24 @@ function zRender(){
     <span style="margin-left:auto;display:flex;gap:8px;flex-wrap:wrap">
       ${zFiltE||zFiltT?'<button class="btn zw" onclick="zFiltE=\'\';zFiltT=\'\';zRender()">Filter zurücksetzen</button>':''}
       <button class="btn" onclick="(window.top||window).location.href='/hausverwaltung/zaehler?objekt='+encodeURIComponent(id)">Im Bereich Zähler bearbeiten und ablesen</button></span></div>
-    <div style="font-size:12.5px;color:var(--muted);margin:-4px 0 8px">Diese Übersicht dient nur zur Information. Ablesen, Anlegen, Wechsel, Versorger und Verträge laufen im Bereich Hausverwaltung, Zähler.</div>
+    <div style="font-size:12.5px;color:var(--muted);margin:-4px 0 8px">Pro Zähler rechts auf <b>„📷 Ablesen"</b> tippen, um einen Zählerstand (mit Foto) zu erfassen. Anlegen, Wechsel, Versorger und Verträge laufen im Bereich Hausverwaltung, Zähler.</div>
     ${dl('dlZE',uopts())}${dl('dlZT',typen)}`;
   if(!liste.length){box.innerHTML=html+'<div class="empty">Keine Zähler gefunden.</div>';return;}
   gruppen.forEach(g=>{
     const zs=liste.filter(z=>(z.unit_id||null)===g).sort((a,b)=>(ZTYPEN.indexOf(a.typ)-ZTYPEN.indexOf(b.typ))||String(a.nummer||'').localeCompare(String(b.nummer||'')));
     if(!zs.length)return;
-    html+=`<div class="zgr">${esc(ulabel(g))}</div><div style="overflow-x:auto"><table class="ztab"><thead><tr><th>Zählertyp</th><th>Zählernummer</th><th>Standort</th><th>Letzter Stand</th><th>Datum</th><th>Anlass</th></tr></thead><tbody>`;
+    html+=`<div class="zgr">${esc(ulabel(g))}</div><div style="overflow-x:auto"><table class="ztab"><thead><tr><th>Zählertyp</th><th>Zählernummer</th><th>Standort</th><th>Letzter Stand</th><th>Datum</th><th>Anlass</th><th>Aktion</th></tr></thead><tbody>`;
     zs.forEach(z=>{
       const s=zStaende(z.id)[0];
       html+=`<tr class="zr ${z.aktiv?'':'inaktiv'}" onclick="zOffen['${z.id}']=!zOffen['${z.id}'];zRender()">
         <td><b>${esc(z.typ)}</b>${z.aktiv?'':' (ausgebaut)'}${z.bemerkung?`<div style="font-size:12px;color:var(--muted)">${esc(z.bemerkung)}</div>`:''}</td>
         <td>${esc(z.nummer||'—')}</td><td>${esc(z.standort||'—')}</td>
         <td>${s?zfmt(s.wert):'—'}</td><td>${s?dfmt(s.datum):'—'}</td><td>${s?esc(s.anlass||''):''}</td>
+        <td>${z.aktiv?`<button class="btn" style="padding:4px 10px;font-size:12.5px" onclick="event.stopPropagation();zAblesung('${z.id}')">📷 Ablesen</button>`:'<span style="color:var(--muted);font-size:12px">—</span>'}</td>
         </tr>`;
       if(zOffen[z.id]){
         const v=zStaende(z.id);
-        html+=`<tr><td colspan="6"><div class="zverl">${v.length?v.map(x=>`<div class="vz"><b style="min-width:90px">${dfmt(x.datum)}</b><span style="min-width:110px">${zfmt(x.wert)}</span><span style="min-width:130px">${esc(x.anlass||'')}</span>${x.notiz?`<span>${esc(x.notiz)}</span>`:''}${x.bild_pfad?`<button class="lnk" onclick="zFoto('${esc(x.bild_pfad)}')">Foto ansehen</button>`:''}<span style="margin-left:auto;color:var(--muted);font-size:11.5px">${esc(x.erfasst_von||'')}</span></div>`).join(''):'<div style="color:var(--muted);font-size:13px">Noch keine Ablesungen.</div>'}</div></td></tr>`;
+        html+=`<tr><td colspan="7"><div class="zverl">${v.length?v.map(x=>`<div class="vz"><b style="min-width:90px">${dfmt(x.datum)}</b><span style="min-width:110px">${zfmt(x.wert)}</span><span style="min-width:130px">${esc(x.anlass||'')}</span>${x.notiz?`<span>${esc(x.notiz)}</span>`:''}${x.bild_pfad?`<button class="lnk" onclick="event.stopPropagation();zFoto('${esc(x.bild_pfad)}')">Foto ansehen</button>`:''}<span style="margin-left:auto;color:var(--muted);font-size:11.5px">${esc(x.erfasst_von||'')}</span></div>`).join(''):'<div style="color:var(--muted);font-size:13px">Noch keine Ablesungen.</div>'}</div></td></tr>`;
       }
     });
     html+='</tbody></table></div>';
