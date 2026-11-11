@@ -157,6 +157,7 @@ h1{font-size:21px;font-weight:800}
       <button data-a="m:vortermin" onclick="setArt('m:vortermin')">📍 Vor-Ort</button>
       <button data-a="m:zuarbeit" onclick="setArt('m:zuarbeit')">🤝 Zuarbeit fürs Team</button>
       <button data-a="m:jourfix" onclick="setArt('m:jourfix')">🧭 Jour Fix</button>
+      <button data-a="projekte" onclick="openProjekte()" style="color:var(--accent);font-weight:700">📁 Projekte</button>
     </div>
     <input id="qSuche" type="search" placeholder="🔍 Aufgaben durchsuchen …" oninput="setQuery(this.value)" title="Nach Stichwort in Titel, Beschreibung, Kontakt, Objekt, Projekt, Tags, Verantwortlich suchen" style="flex:1;min-width:200px;padding:7px 10px;border:1px solid var(--line);border-radius:8px;font:inherit">
     <button class="btn" id="doneBtn" onclick="toggleDone()" title="Erledigte Aufgaben ausblenden">✅ Nur offene</button>
@@ -220,6 +221,11 @@ h1{font-size:21px;font-weight:800}
       <div class="row"><button class="btn sec sm" id="mic_d_comment" onclick="diktieren('d_comment','mic_d_comment')">🎤</button><button class="btn sec sm" onclick="kiZusammenfassen('d_comment')">✨</button><button class="btn sm" onclick="dAddComment()">Kommentar</button></div></div>
   </div>
   <div class="dlg-ft"><button class="btn sec" onclick="dFollowup()">🔁 Follow-up (Datum verschieben)</button><button class="btn" id="d_erlbtn" style="background:#0f9d6b;color:#fff;border-color:#0f9d6b" onclick="dErledigtToggle()">✓ Erledigt</button><button class="btn" style="color:#c0392b;border-color:#e6b5ae" onclick="dDelete()">🗑 Löschen</button><span style="flex:1"></span><button class="btn" onclick="closeDetail()">Schließen</button><button class="btn pri" onclick="dSave()">Speichern</button></div>
+</div></div>
+<div class="ov" id="projidxov" style="z-index:111" onclick="if(event.target===this)projIdxClose()"><div class="dlg" style="width:720px;max-width:96vw">
+  <div class="dlg-hd"><span>📁 Projekte</span><span class="x" onclick="projIdxClose()">✕</span></div>
+  <div class="dlg-bd"><div id="projidx_body"></div></div>
+  <div class="dlg-ft"><span style="flex:1"></span><button class="btn" onclick="projIdxClose()">Schließen</button></div>
 </div></div>
 <div class="ov" id="projov" style="z-index:112" onclick="if(event.target===this)projClose()"><div class="dlg" style="width:1000px;max-width:96vw">
   <div class="dlg-hd"><span id="proj_title">📁 Projekt</span><span class="x" onclick="projClose()">✕</span></div>
@@ -400,6 +406,32 @@ function fillProjektDL(){const names=[...new Set(TASKS.map(t=>t.projekt).filter(
 function updAbschnittDL(){const p=(document.getElementById('d_projekt').value||'').trim();
   const secs=[...new Set(TASKS.filter(t=>t.projekt===p&&t.abschnitt).map(t=>t.abschnitt))].sort();
   const dl=document.getElementById('dlAbschnitte');if(dl)dl.innerHTML=secs.map(n=>`<option value="${esc(n)}">`).join('');}
+/* ---------- Projektübersicht ---------- */
+async function openProjekte(){
+  document.querySelectorAll('#artseg button').forEach(b=>b.classList.toggle('on',b.dataset.a==='projekte'));
+  const names=[...new Set(TASKS.map(t=>t.projekt).filter(Boolean))].sort();
+  const {data:allSecs}=await sb.from('os_projekt_abschnitte').select('projekt,name,faellig');
+  const secBy={};(allSecs||[]).forEach(s=>{(secBy[s.projekt]=secBy[s.projekt]||[]).push(s);});
+  const body=document.getElementById('projidx_body');
+  if(!names.length){body.innerHTML='<div style="color:var(--muted);padding:24px;text-align:center">Noch keine Projekte. Trage bei einer Aufgabe im Detail ein Projekt ein.</div>';}
+  else body.innerHTML=names.map(n=>{
+    const ts=TASKS.filter(t=>t.projekt===n);const done=ts.filter(t=>t.status==='erledigt').length;
+    const over=ts.filter(t=>t.faellig&&t.faellig<today&&t.status!=='erledigt').length;
+    const secs=secBy[n]||[];const secCount=new Set(secs.map(s=>s.name).concat(ts.map(t=>t.abschnitt).filter(Boolean))).size;
+    const next=secs.filter(s=>s.faellig).sort((a,b)=>a.faellig<b.faellig?-1:1)[0];
+    const pct=ts.length?Math.round(done/ts.length*100):0;
+    return `<div style="border:1px solid var(--line);border-radius:12px;padding:14px 16px;margin-bottom:10px;cursor:pointer" onclick="projIdxClose();openProject('${esc(n).replace(/'/g,"\\'")}')">
+      <div style="display:flex;align-items:center;gap:10px"><b style="flex:1;font-size:15px">📁 ${esc(n)}</b>
+        <span class="pill">${secCount} Abschnitte</span><span class="pill">${ts.length} Aufgaben</span>
+        <span class="pill" style="color:var(--green)">${done} erledigt</span>${over?`<span class="pill" style="color:var(--red);border-color:var(--red)">${over} überfällig</span>`:''}</div>
+      <div style="height:7px;background:var(--surf2);border-radius:999px;margin:10px 0 4px;overflow:hidden"><div style="height:100%;width:${pct}%;background:var(--green)"></div></div>
+      <div style="font-size:12px;color:var(--muted)">${pct}% erledigt${next?` · nächster Zieltermin: ${dfmt(next.faellig)} (${esc(next.name)})`:''}</div>
+    </div>`;
+  }).join('');
+  document.getElementById('projidxov').classList.add('show');
+}
+function projIdxClose(){document.getElementById('projidxov').classList.remove('show');
+  document.querySelectorAll('#artseg button').forEach(b=>b.classList.toggle('on',b.dataset.a===ART));}
 /* ---------- Projektansicht (Asana-Stil, 4 Ebenen) ---------- */
 let PROJ=null, PROJVIEW='liste', PROJSUBS=[], PROJSECS=[];
 async function openProject(name){
@@ -413,7 +445,8 @@ async function openProject(name){
   PROJSECS=secs||[];
   projSetView('liste');
 }
-function projClose(){document.getElementById('projov').classList.remove('show');PROJ=null;}
+function projClose(){document.getElementById('projov').classList.remove('show');PROJ=null;
+  document.querySelectorAll('#artseg button').forEach(b=>b.classList.toggle('on',b.dataset.a===ART));}
 function projSections(){
   // Abschnitte aus Tabelle + evtl. in Aufgaben vorkommende, die noch keine Zeile haben
   const names=PROJSECS.map(s=>s.name);
