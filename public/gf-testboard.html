@@ -528,15 +528,18 @@ function projRender(){
   if(!ts.length&&!secs.filter(s=>s.name).length){body.innerHTML='<div style="color:var(--muted);padding:24px;text-align:center">Keine Abschnitte/Aufgaben in diesem Projekt.</div>';return;}
   const secLbl=s=>{const tl=projTasksOf(s.name);const d=tl.filter(t=>t.status==='erledigt').length;const ov=s.faellig&&s.faellig<today;
     return `${s.name?esc(s.name):'<span style="color:var(--muted)">Ohne Abschnitt</span>'}${s.faellig?` <span class="pill" style="${ov?'color:var(--red);border-color:var(--red)':''}">🎯 ${dfmt(s.faellig)}</span>`:''} <span class="pill">${d}/${tl.length}</span>`;};
+  const secArgB=n=>(n==null?'':String(n)).replace(/'/g,"\\'");
   if(PROJVIEW==='board'){
     // Spalten = Abschnitte (wie Asana-Board)
     body.innerHTML='<div class="cols" style="min-height:200px">'+secs.map(s=>{
       const list=projTasksOf(s.name);
-      return `<div class="col"><div class="col-h">${secLbl(s)}</div>${list.map(projTaskCard).join('')||'<div style="color:var(--muted);font-size:12px;padding:6px">—</div>'}</div>`;
-    }).join('')+'</div>';
+      return `<div class="col"><div class="col-h"><span style="flex:1">${secLbl(s)}</span></div>${list.map(projTaskCard).join('')||'<div style="color:var(--muted);font-size:12px;padding:6px">—</div>'}<button class="btn sec sm" style="margin:6px" onclick="projAddTask('${secArgB(s.name)}')">+ Aufgabe</button></div>`;
+    }).join('')+'</div>'
+    +`<button class="btn sec" style="margin-top:8px" onclick="projAddAbschnitt()">+ Abschnitt</button>`;
     return;
   }
   // Liste – Abschnitt → Aufgaben → Unteraufgaben
+  const secArg=n=>(n==null?'':String(n)).replace(/'/g,"\\'");
   body.innerHTML=secs.map(s=>{
     const list=projTasksOf(s.name);
     const tasksHtml=list.map(t=>{
@@ -550,12 +553,36 @@ function projRender(){
           <span class="pill" style="background:${t.status==='erledigt'?'#e7f6ef':'#fff'};color:${t.status==='erledigt'?'var(--green)':'var(--muted)'}">${STLBL[t.status||'todo']}</span>
           ${t.faellig?`<span class="pill" style="${over?'color:var(--red);border-color:var(--red)':''}">📅 ${dfmt(t.faellig)}</span>`:''}
           ${sub.length?`<span class="pill">☑ ${sd}/${sub.length}</span>`:''}
+          <button class="btn sec sm" title="Unteraufgabe hinzufügen" onclick="event.stopPropagation();projAddSub('${t.id}')">+ Unteraufg.</button>
         </div>${sub.length?`<div style="padding:0 12px 6px">${subrows}</div>`:''}</div>`;
     }).join('')||'<div style="padding:8px 12px;color:var(--muted);font-size:13px;border-top:1px solid var(--line)">Noch keine Aufgaben in diesem Abschnitt.</div>';
     return `<div style="border:1px solid var(--line);border-radius:10px;margin-bottom:12px;overflow:hidden">
-      <div style="padding:10px 12px;background:var(--surf2);font-weight:700;font-size:14px">${secLbl(s)}</div>
+      <div style="padding:10px 12px;background:var(--surf2);font-weight:700;font-size:14px;display:flex;align-items:center;gap:8px"><span style="flex:1">${secLbl(s)}</span><button class="btn sec sm" onclick="projAddTask('${secArg(s.name)}')">+ Aufgabe</button></div>
       ${tasksHtml}</div>`;
-  }).join('');
+  }).join('')
+  +`<button class="btn sec" style="margin-top:4px" onclick="projAddAbschnitt()">+ Abschnitt</button>`;
+}
+async function projAddAbschnitt(){
+  if(!PROJ)return;const name=(prompt('Name des neuen Abschnitts:')||'').trim();if(!name)return;
+  const pos=(PROJSECS.reduce((m,s)=>Math.max(m,s.pos||0),0))+1;
+  const {data,error}=await sb.from('os_projekt_abschnitte').insert({projekt:PROJ,name,pos}).select().maybeSingle();
+  if(error){toast('Fehler: '+error.message);return;}
+  if(data)PROJSECS.push(data);projRender();toast('Abschnitt angelegt ✓');
+}
+async function projAddTask(sec){
+  if(!PROJ)return;const titel=(prompt('Titel der neuen Aufgabe:')||'').trim();if(!titel)return;
+  const pos=(TASKS.reduce((m,t)=>Math.max(m,t.pos||0),0))+1;
+  const row={titel,art:'aufgabe',status:'todo',verantwortlich:'Eric Eisenhardt',quelle:'os',projekt:PROJ,abschnitt:sec||null,pos};
+  const {data,error}=await sb.from('os_tasks').insert(row).select().maybeSingle();
+  if(error){toast('Fehler: '+error.message);return;}
+  if(data)TASKS.push(data);projRender();toast('Aufgabe angelegt ✓');
+}
+async function projAddSub(taskId){
+  const titel=(prompt('Titel der neuen Unteraufgabe:')||'').trim();if(!titel)return;
+  const pos=(projSubsOf(taskId).reduce((m,s)=>Math.max(m,s.pos||0),0))+1;
+  const {data,error}=await sb.from('os_task_subtasks').insert({task_id:taskId,titel,pos,done:false}).select().maybeSingle();
+  if(error){toast('Fehler: '+error.message);return;}
+  if(data)PROJSUBS.push(data);projRender();toast('Unteraufgabe angelegt ✓');
 }
 function projOpenTask(id){projClose();openDetail(id);}
 let CALMODE='woche';
