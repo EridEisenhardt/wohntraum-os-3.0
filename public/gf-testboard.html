@@ -424,6 +424,40 @@ function fillProjektDL(){const names=[...new Set(TASKS.map(t=>t.projekt).filter(
 function updAbschnittDL(){const p=(document.getElementById('d_projekt').value||'').trim();
   const secs=[...new Set(TASKS.filter(t=>t.projekt===p&&t.abschnitt).map(t=>t.abschnitt))].sort();
   const dl=document.getElementById('dlAbschnitte');if(dl)dl.innerHTML=secs.map(n=>`<option value="${esc(n)}">`).join('');}
+/* ---------- Team-Besprechung ---------- */
+const BESPPERS=[['Jürgen','austausch_juergen'],['Stephan','austausch_stephan'],['Ramona','austausch_ramona'],['Stefan Schnatz','austausch_stefan_schnatz']];
+let BESPSEL='Jürgen';
+function bespTasks(name,mass){return TASKS.filter(t=>t.status!=='erledigt'&&(
+  (Array.isArray(t.massnahme)&&t.massnahme.includes(mass))||
+  (Array.isArray(t.beteiligte)&&t.beteiligte.includes(name))
+)).sort((a,b)=>((a.faellig||'9999')<(b.faellig||'9999')?-1:(a.faellig||'9999')>(b.faellig||'9999')?1:(a.pos||0)-(b.pos||0)));}
+function openBesprechung(){
+  document.querySelectorAll('#artseg button').forEach(b=>b.classList.toggle('on',b.dataset.a==='besprechung'));
+  document.getElementById('bespov').classList.add('show');renderBesp();
+}
+function bespClose(){document.getElementById('bespov').classList.remove('show');
+  document.querySelectorAll('#artseg button').forEach(b=>b.classList.toggle('on',b.dataset.a===ART));}
+function bespSel(name){BESPSEL=name;renderBesp();}
+function renderBesp(){
+  document.getElementById('besp_tabs').innerHTML=BESPPERS.map(([name,mass])=>{
+    const n=bespTasks(name,mass).length;
+    return `<button class="${BESPSEL===name?'on':''}" onclick="bespSel('${name.replace(/'/g,"\\'")}')">🗣️ ${esc(name)} <span style="opacity:.7">(${n})</span></button>`;
+  }).join('');
+  const mass=(BESPPERS.find(p=>p[0]===BESPSEL)||[])[1];
+  const list=bespTasks(BESPSEL,mass);
+  const body=document.getElementById('besp_body');
+  if(!list.length){body.innerHTML=`<div style="color:var(--muted);padding:24px;text-align:center">Keine offenen Aufgaben für ${esc(BESPSEL)}. Setze bei einer Aufgabe die Maßnahme „Austausch mit ${esc(BESPSEL)}" oder füge ${esc(BESPSEL)} als Beteiligten hinzu.</div>`;return;}
+  body.innerHTML=`<div style="font-weight:600;margin-bottom:8px">${list.length} Aufgabe${list.length===1?'':'n'} für ${esc(BESPSEL)}</div>`
+    +list.map(t=>{const over=t.faellig&&t.faellig<today&&t.status!=='erledigt';
+      const warum=[];if(Array.isArray(t.massnahme)&&t.massnahme.includes(mass))warum.push('Austausch');if(Array.isArray(t.beteiligte)&&t.beteiligte.includes(BESPSEL))warum.push('Beteiligt');
+      return `<div style="display:flex;gap:10px;align-items:center;padding:9px 10px;border:1px solid var(--line);border-radius:9px;margin-bottom:7px;cursor:pointer" onclick="bespOpenTask('${t.id}')">
+        <span style="flex:1"><b>${esc(t.titel)}</b>${t.kontakt_label?` <span class="pill kontakt">👤 ${esc(t.kontakt_label)}</span>`:''}${t.projekt?` <span class="pill">📁 ${esc(t.projekt)}</span>`:''}</span>
+        <span class="pill">${STLBL[t.status||'todo']}</span>
+        ${t.faellig?`<span class="pill" style="${over?'color:var(--red);border-color:var(--red)':''}">📅 ${dfmt(t.faellig)}</span>`:''}
+        <span class="pill" style="opacity:.7">${warum.join(' · ')}</span>
+      </div>`;}).join('');
+}
+function bespOpenTask(id){bespClose();openDetail(id);}
 /* ---------- Projektübersicht ---------- */
 async function openProjekte(){
   document.querySelectorAll('#artseg button').forEach(b=>b.classList.toggle('on',b.dataset.a==='projekte'));
