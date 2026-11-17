@@ -165,7 +165,7 @@ body.embed #dov .dlg{max-height:100vh}
       <button data-a="besprechung" onclick="openBesprechung()" style="color:var(--accent);font-weight:700">🗣️ Besprechung</button>
     </div>
     <input id="qSuche" type="search" placeholder="🔍 Aufgaben durchsuchen …" oninput="setQuery(this.value)" title="Nach Stichwort in Titel, Beschreibung, Kontakt, Objekt, Projekt, Tags, Verantwortlich suchen" style="flex:1;min-width:200px;padding:7px 10px;border:1px solid var(--line);border-radius:8px;font:inherit">
-    <button class="btn" id="doneBtn" onclick="toggleDone()" title="Erledigte Aufgaben ausblenden">✅ Nur offene</button>
+    <button class="btn pri" id="doneBtn" onclick="toggleDone()" title="Erledigte Aufgaben ausblenden">✅ Nur offene (aktiv)</button>
     <button class="btn" id="wvBtn" onclick="toggleWV()" title="Nur fällige Wiedervorlagen">🔔 Wiedervorlagen</button>
     <select id="personsel" onchange="setPerson(this.value)" title="Nach Person filtern (verantwortlich oder beteiligt)"><option value="">👥 Alle Personen</option></select>
     <button class="btn" id="asImpBtn" onclick="asImportOpen()" title="Eine Asana-Aufgabe per Link ins OS übertragen">⇅ Asana-Übertragung</button>
@@ -290,12 +290,15 @@ function toast(m){const t=document.getElementById('toast');t.textContent=m;t.cla
 const COLS=[['todo','📋 To Do'],['inarbeit','🔧 In Arbeit'],['warten','⏳ Wartet'],['wartenrueck','📨 Warten auf Rückmeldung'],['erledigt','✅ Erledigt']];
 const ARTLBL={aufgabe:'Aufgabe',ankauf:'Ankauf',immoentwicklung:'Immobilienentwicklung',routine:'Routine',ticket:'Ticket'};
 const ARTICON={aufgabe:'📌',ankauf:'🏷️',immoentwicklung:'🏗️',routine:'🔄',ticket:'🎫'};
-const MASSLBL={followup:'Follow-up',rueckruf:'Rückruf',anruf:'Anruf',vortermin:'Vor-Ort-Termin',zuarbeit:'Zuarbeit fürs Team',jourfix:'Jour Fix',fristsache:'Fristsache',notfall:'Notfall',eskalation:'Eskalationsstufe',austausch_juergen:'Austausch mit Jürgen',austausch_stephan:'Austausch mit Stephan',austausch_ramona:'Austausch mit Ramona',austausch_stefan_schnatz:'Austausch mit Stefan Schnatz',austausch_alexander_buchhaus:'Austausch mit Alexander Buchhaus (RESANIVO)'};
-const MASSICON={followup:'🔁',rueckruf:'📞',anruf:'☎️',vortermin:'📍',zuarbeit:'🤝',jourfix:'🧭',fristsache:'⏰',notfall:'🚨',eskalation:'⚠️',austausch_juergen:'🗣️',austausch_stephan:'🗣️',austausch_ramona:'🗣️',austausch_stefan_schnatz:'🗣️',austausch_alexander_buchhaus:'🗣️'};
-const MASSORDER=['followup','rueckruf','anruf','vortermin','zuarbeit','jourfix','fristsache','notfall','eskalation','austausch_juergen','austausch_stephan','austausch_ramona','austausch_stefan_schnatz','austausch_alexander_buchhaus'];
+const MASSLBL={top3:'Top 3',followup:'Follow-up',rueckruf:'Rückruf',anruf:'Anruf',vortermin:'Vor-Ort-Termin',zuarbeit:'Zuarbeit fürs Team',jourfix:'Jour Fix',fristsache:'Fristsache',notfall:'Notfall',eskalation:'Eskalationsstufe',austausch_juergen:'Austausch mit Jürgen',austausch_stephan:'Austausch mit Stephan',austausch_ramona:'Austausch mit Ramona',austausch_stefan_schnatz:'Austausch mit Stefan Schnatz',austausch_alexander_buchhaus:'Austausch mit Alexander Buchhaus (RESANIVO)'};
+const MASSICON={top3:'🔝',followup:'🔁',rueckruf:'📞',anruf:'☎️',vortermin:'📍',zuarbeit:'🤝',jourfix:'🧭',fristsache:'⏰',notfall:'🚨',eskalation:'⚠️',austausch_juergen:'🗣️',austausch_stephan:'🗣️',austausch_ramona:'🗣️',austausch_stefan_schnatz:'🗣️',austausch_alexander_buchhaus:'🗣️'};
+const MASSORDER=['top3','followup','rueckruf','anruf','vortermin','zuarbeit','jourfix','fristsache','notfall','eskalation','austausch_juergen','austausch_stephan','austausch_ramona','austausch_stefan_schnatz','austausch_alexander_buchhaus'];
+function massHas(t,m){const a=Array.isArray(t.massnahme)?t.massnahme:(t.massnahme?[t.massnahme]:[]);return a.includes(m);}
+function top3OfDay(day){return TASKS.filter(t=>t.faellig===day&&t.status!=='erledigt'&&massHas(t,'top3')).sort((a,b)=>(a.pos||0)-(b.pos||0));}
+function top3Info(t){if(!massHas(t,'top3'))return null;if(!t.faellig)return {n:0,total:0};const l=top3OfDay(t.faellig);return {n:l.findIndex(x=>x.id===t.id)+1,total:l.length};}
 let TASKS=[], KONT=[], OBJ=[];
 const TEAM=['Eric','Jürgen','Stephan','Ramona','Alexander Buchhaus','Extern'];
-let ART='alle', WVONLY=false, PERSON='', QUERY='', HIDEDONE=false, SUBS=[], VER=[], DTASK=null, ICH='', TAGS=[], BETEIL=[], SUBOPEN=new Set(), TAGVORRAT=[], SUBCAL=[];
+let ART='alle', WVONLY=false, PERSON='', QUERY='', HIDEDONE=true, SUBS=[], VER=[], DTASK=null, ICH='', TAGS=[], BETEIL=[], SUBOPEN=new Set(), TAGVORRAT=[], SUBCAL=[];
 function setPerson(v){PERSON=v;render();}
 function personMatch(t){if(!PERSON)return true;if(Array.isArray(t.beteiligte)&&t.beteiligte.includes(PERSON))return true;const v=(t.verantwortlich||'').trim();if(!v)return false;return v===PERSON||v.indexOf(PERSON)>=0||PERSON.indexOf(v.split(' ')[0])===0;}
 function initPersonSel(){const el=document.getElementById('personsel');if(el)el.innerHTML='<option value="">👥 Alle Personen</option>'+TEAM.map(p=>`<option value="${esc(p)}"${PERSON===p?' selected':''}>${esc(p)}</option>`).join('');}
@@ -306,7 +309,12 @@ function renderDMass(){document.getElementById('d_mass').innerHTML=MASSORDER.map
 function toggleMass(m){
   if(m===''){MASSV=[];renderDMass();return;}
   if(MASSV.includes(m))MASSV=MASSV.filter(x=>x!==m);
-  else{MASSV.push(m);if(m==='followup')dFollowup();}
+  else{
+    if(m==='top3'){const day=(document.getElementById('d_faellig')||{}).value||(DTASK&&DTASK.faellig)||'';
+      if(day){const cnt=top3OfDay(day).filter(t=>!DTASK||t.id!==DTASK.id).length;
+        if(cnt>=3)toast('Achtung: am '+day.split('-').reverse().join('.')+' sind schon 3 Top-3-Aufgaben gesetzt.');}
+      else toast('Tipp: Fälligkeitsdatum setzen, dann wird Top 3 pro Tag gezählt.');}
+    MASSV.push(m);if(m==='followup')dFollowup();}
   renderDMass();
 }
 function renderDTags(){
@@ -359,7 +367,10 @@ function card(t){
   const due=t.faellig?`<span class="pill ${over?'over':'due'}">📅 ${dfmt(t.faellig)}${over?' · überfällig':''}</span>`:'';
   const a=t.art||'aufgabe';
   const artb=`<span class="pill art">${ARTICON[a]||'📌'} ${ARTLBL[a]||'Aufgabe'}</span>`;
-  const mb=(Array.isArray(t.massnahme)?t.massnahme:(t.massnahme?[t.massnahme]:[])).filter(m=>MASSLBL[m]).map(m=>`<span class="pill mass">${MASSICON[m]} ${MASSLBL[m]}</span>`).join('');
+  const mb=(Array.isArray(t.massnahme)?t.massnahme:(t.massnahme?[t.massnahme]:[])).filter(m=>MASSLBL[m]).map(m=>{
+    if(m==='top3'){const ti=top3Info(t);const over3=ti&&ti.total>3;const lbl=ti&&ti.n?`Top 3 (${ti.n}/3)`:'Top 3';
+      return `<span class="pill" style="background:${over3?'#fdecea':'#fff7e0'};color:${over3?'#c0392b':'#8a6d00'};border-color:${over3?'#e6b5ae':'#e8d48a'};font-weight:700" title="${over3?'Mehr als 3 Top-3-Aufgaben an diesem Tag!':'Top-3-Aufgabe des Tages'}">🔝 ${lbl}</span>`;}
+    return `<span class="pill mass">${MASSICON[m]} ${MASSLBL[m]}</span>`;}).join('');
   const prio=t.prio?`<span class="pill prio">${esc(t.prio)}</span>`:'';
   const wvOver=t.wiedervorlage&&t.wiedervorlage<=today&&t.status!=='erledigt';
   const wv=t.wiedervorlage?`<span class="pill wv ${wvOver?'over':''}">🔔 ${dfmt(t.wiedervorlage)}</span>`:'';
