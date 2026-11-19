@@ -273,12 +273,34 @@ function gStatus(p){const n=(p.medien||[]).length;const v=(p.medien||[]).filter(
   if(!n&&!(p.text||'').trim())return '<span class="gs fehlt">fehlt</span>';
   const t=[];if(n-v)t.push((n-v)+(n-v===1?' Foto':' Fotos'));if(v)t.push(v+(v===1?' Video':' Videos'));if(!t.length)t.push('nur Text');return `<span class="gs">${t.join(', ')}</span>`;}
 function gUmschalten(kk){const k=decodeURIComponent(kk);gOffen[k]=!gOffen[k];gRender();}
+/* ---------- Bildauswahl & ZIP-Download (intern) ---------- */
+let GSEL=new Set();
+function gSelToggle(url,on){if(on)GSEL.add(url);else GSEL.delete(url);const b=document.getElementById('gzipbtn');if(b)b.textContent='⬇ Auswahl als ZIP ('+GSEL.size+')';}
+function gSelClear(){GSEL=new Set();gRender();}
+function jszipLib(){return new Promise((res,rej)=>{if(window.JSZip)return res();const s=document.createElement('script');s.src='https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js';s.onload=()=>res();s.onerror=()=>rej(new Error('ZIP-Bibliothek konnte nicht geladen werden.'));document.head.appendChild(s);});}
+async function gZipDownload(){
+  if(!GSEL.size){alert('Bitte zuerst Bilder anklicken (Kästchen oben links).');return;}
+  const b=document.getElementById('gzipbtn');const alt=b?b.textContent:'';if(b){b.disabled=true;b.textContent='Erstelle ZIP …';}
+  try{
+    await jszipLib();const zip=new JSZip();let n=0;const used={};
+    for(const url of GSEL){
+      try{const r=await fetch(url,{cache:'no-store'});if(!r.ok)throw 0;const blob=await r.blob();
+        let name=decodeURIComponent((url.split('?')[0].split('/').pop())||('bild'+(++n)+'.jpg'));
+        if(used[name]){name=name.replace(/(\.[^.]+)?$/,'_'+(used[name]++)+'$1');}else used[name]=1;
+        zip.file(name,blob);}catch(e){console.warn('Bild übersprungen:',url);}
+    }
+    const out=await zip.generateAsync({type:'blob'});
+    const a=document.createElement('a');a.href=URL.createObjectURL(out);a.download='Haustechnik-Guide_Auswahl.zip';document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(a.href),4000);
+  }catch(e){alert('Download fehlgeschlagen: '+e.message);}
+  if(b){b.disabled=false;b.textContent=alt||('⬇ Auswahl als ZIP ('+GSEL.size+')');}
+}
 function gRender(){
   const box=document.getElementById('guideBox');
   const alle=gBereiche().flatMap(gPunkte);const gefuellt=alle.filter(p=>(p.medien||[]).length||(p.text||'').trim()).length;
   let html=`<div class="gbar"><div style="margin-right:auto;font-size:13.5px;color:var(--muted)">Haustechnik-Guide für Dienstleister und Handwerker. ${gefuellt} von ${alle.length} Punkten ausgefüllt.</div>
    <button class="btn zw" onclick="window.open('/guide.html?objekt=${encodeURIComponent(id)}','_blank')">Vorschau</button>
-   <button class="btn" onclick="guideTeilen()">QR / Link teilen</button></div>`;
+   <button class="btn" onclick="guideTeilen()">QR / Link teilen</button>
+   <button class="btn zw" id="gzipbtn" onclick="gZipDownload()" title="Ausgewählte Bilder als ZIP herunterladen (intern)">⬇ Auswahl als ZIP (${GSEL.size})</button>${GSEL.size?`<button class="btn zw" onclick="gSelClear()" title="Auswahl leeren">✕</button>`:''}</div>`;
   gBereiche().forEach((ber,bi)=>{
     html+=`<div class="gber">${esc(ber)}</div><div class="glist">`;
     gPunkte(ber).forEach(p=>{
@@ -286,7 +308,7 @@ function gRender(){
       html+=`<div class="gp"><div class="gph" onclick="gUmschalten('${kk}')"><span class="gn">${esc(p.punkt)}</span>${gStatus(p)}<span class="gs">${offen?'zuklappen':'öffnen'}</span></div>`;
       if(offen){
         html+=`<div class="gpb"><textarea placeholder="Beschreibung: Wo genau? Wie kommt man hin? Was ist zu beachten?" onchange="gText('${kk}',this.value)">${esc(p.text||'')}</textarea>
-          <div class="gmed">${(p.medien||[]).map((m,i)=>`<div class="gm">${m.typ==='video'?`<video src="${esc(m.url)}" controls preload="metadata" playsinline></video>`:`<img src="${esc(m.url)}" loading="lazy" onclick="window.open(this.src,'_blank')">`}<input value="${esc(m.text||'')}" placeholder="Bildunterschrift" onchange="gMedText('${kk}',${i},this.value)"><button class="lnk" onclick="gMedWeg('${kk}',${i})">entfernen</button></div>`).join('')}</div>
+          <div class="gmed">${(p.medien||[]).map((m,i)=>`<div class="gm">${m.typ==='video'?`<video src="${esc(m.url)}" controls preload="metadata" playsinline></video>`:`<label style="position:relative;display:block"><input type="checkbox" onclick="event.stopPropagation();gSelToggle('${esc(m.url).replace(/'/g,"\\'")}',this.checked)"${GSEL.has(m.url)?' checked':''} title="für Download auswählen" style="position:absolute;top:6px;left:6px;width:18px;height:18px;z-index:2;cursor:pointer;accent-color:var(--accent,#6d4aff)"><img src="${esc(m.url)}" loading="lazy" onclick="window.open(this.src,'_blank')"></label>`}<input value="${esc(m.text||'')}" placeholder="Bildunterschrift" onchange="gMedText('${kk}',${i},this.value)"><button class="lnk" onclick="gMedWeg('${kk}',${i})">entfernen</button></div>`).join('')}</div>
           <div class="gadd"><label class="btn zw kl" style="cursor:pointer">Fotos / Videos hinzufügen<input type="file" accept="image/*,video/*" multiple hidden onchange="gHoch('${kk}',this)"></label>
           ${p.vorlage?'':`<button class="btn rot kl" onclick="gPunktWeg('${kk}')">Punkt entfernen</button>`}<span class="gs" id="gi_${kz(kk)}"></span></div></div>`;
       }
