@@ -189,7 +189,8 @@ let BRIEF_ID=null, BRIEF_STUFE=1;
 const ABS={ wt:{name:'Wohn(T)raum Rheinhessen GmbH',str:'Dalheimer Straße 70',ort:'55278 Dexheim',stadt:'Dexheim'}, ee:{name:'Eric Eisenhardt',str:'Dalheimer Straße 70',ort:'55278 Dexheim',stadt:'Dexheim'} };
 // Anschrift aus "Objekt" zerlegen: "Hochstr. 44 55545 Bad Kreuznach" -> Straße / PLZ Ort; sonst Adresse aus dem Portfolio (Kürzel)
 function splitAdresse(r){
-  let t=String(r.objekt||'').replace(/\s+/g,' ').trim().replace(/,\s*$/,'');
+  // Abweichende Anschrift des Mieters (z. B. nach Auszug) hat Vorrang vor der Objektadresse
+  let t=String(r.anschrift||'').trim()?String(r.anschrift).replace(/\s+/g,' ').trim():String(r.objekt||'').replace(/\s+/g,' ').trim().replace(/,\s*$/,'');
   const pf=PORTFOLIO.find(k=>(k.kennung||'').toLowerCase()===t.toLowerCase());
   if(pf&&pf.adresse) t=pf.adresse;
   const m=t.match(/^(.+?)[\s,]+(\d{5,6})\s+(.+?)[\s,]*$/);
@@ -336,7 +337,12 @@ async function bestaetigeBrief(){
   if(btn){btn.disabled=false;btn.textContent='Als verschickt markieren (PDF speichern)';}
   const schreiben=(r.schreiben||[]).concat([eintrag]);
   r.mahnstufe=BRIEF_STUFE; r.letzte_mahnung=heuteIso; r.status=BRIEF_STUFE===3?'Inkasso':'Verzug'; r.schreiben=schreiben;
-  const upd=await sb.from('zahlungsvereinbarungen').update({mahnstufe:BRIEF_STUFE,letzte_mahnung:heuteIso,status:r.status,schreiben}).eq('id',BRIEF_ID);
+  // Im Schreiben geänderte Anschrift merken, damit sie beim nächsten Schreiben wieder vorbelegt ist
+  const eStr=$('briefStr').value.trim(), eOrt=$('briefOrt').value.trim(), eAns=[eStr,eOrt].filter(Boolean).join(', ');
+  const objAd=splitAdresse({objekt:r.objekt}); const objAns=[objAd.str,objAd.ort].filter(Boolean).join(', ');
+  const updData={mahnstufe:BRIEF_STUFE,letzte_mahnung:heuteIso,status:r.status,schreiben};
+  if(eAns && eAns!==objAns && eAns!==(r.anschrift||'')){ updData.anschrift=eAns; r.anschrift=eAns; }
+  const upd=await sb.from('zahlungsvereinbarungen').update(updData).eq('id',BRIEF_ID);
   if(upd.error){toast('Fehler: '+upd.error.message);return;}
   if(!eintrag.url) toast('Hinweis: PDF konnte nicht gespeichert werden – bitte über „Drucken / PDF“ sichern');
   closeBrief(); render();
