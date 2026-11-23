@@ -56,8 +56,8 @@ textarea{resize:vertical;min-height:54px}
     <h2>Wohnungsdaten</h2>
 
     <div class="row">
-      <div><label>Objektkennung</label><input id="objekt" placeholder="z. B. R6"></div>
-      <div><label>Wohneinheit</label><input id="we" placeholder="z. B. WE 3 / 2. OG links"></div>
+      <div><label>Objektkennung</label><select id="objekt"><option value="">— Objekt wählen —</option></select></div>
+      <div><label>Wohneinheit</label><select id="we"><option value="">— erst Objekt wählen —</option></select></div>
     </div>
 
     <div class="row3">
@@ -169,10 +169,46 @@ textarea{resize:vertical;min-height:54px}
   </div>
 </div>
 
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script>
 const LINK="https://mieteranfrage.onepage.me/mieteranfrage";
 let mode="wa";
 const $=id=>document.getElementById(id);
+/* ---------- Einheiten aus den Mieterkonten laden ---------- */
+const SBURL='https://jqzxctfqvcwbctpjksvg.supabase.co';
+const SBKEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpxenhjdGZxdmN3YmN0cGprc3ZnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODIxMzA0MzIsImV4cCI6MjA5NzcwNjQzMn0.RKIbZxJdusKWWPjBJqlxZ8e1m8So02UslOg55YRsn3o';
+const sgSb=window.supabase.createClient(SBURL,SBKEY);
+let SG_GEB=[], SG_EINH=[], SG_MV=[];
+async function sgLoad(){
+  try{
+    const [g,e,m]=await Promise.all([
+      sgSb.from('gebaeude').select('id,kennung,name,ort,plz').order('pos').order('name'),
+      sgSb.from('einheiten').select('id,gebaeude_id,bezeichnung,flaeche_qm,kategorie,pos').order('pos'),
+      sgSb.from('mietvertraege').select('einheit_id,kaltmiete,betriebskosten,heizung,warmmiete,status')
+    ]);
+    SG_GEB=g.data||[];SG_EINH=e.data||[];SG_MV=m.data||[];
+    const sel=$('objekt');sel.innerHTML='<option value="">— Objekt wählen —</option>'+SG_GEB.map(x=>`<option value="${x.kennung||x.name}" data-gid="${x.id}">${x.kennung?x.kennung+' · ':''}${x.name||''}</option>`).join('');
+  }catch(err){console.warn('Steckbrief: Einheiten konnten nicht geladen werden',err);}
+}
+function sgFillWe(){
+  const sel=$('objekt');const gid=sel.options[sel.selectedIndex]?.dataset.gid||'';
+  const we=$('we');
+  const list=SG_EINH.filter(x=>x.gebaeude_id===gid).sort((a,b)=>(a.pos||0)-(b.pos||0)||String(a.bezeichnung||'').localeCompare(String(b.bezeichnung||''),'de',{numeric:true}));
+  we.innerHTML=gid
+    ? '<option value="">— Einheit wählen —</option>'+list.map(x=>`<option value="WE ${x.bezeichnung||''}" data-eid="${x.id}">WE ${x.bezeichnung||''}${x.flaeche_qm?' · '+x.flaeche_qm+' m²':''}${x.kategorie?' · '+x.kategorie:''}</option>`).join('')
+    : '<option value="">— erst Objekt wählen —</option>';
+  // Ort aus Gebäude vorbefüllen
+  const g=SG_GEB.find(x=>x.id===gid);if(g&&$('ort')&&!$('ort').value)$('ort').value=[g.ort].filter(Boolean).join('');
+  render();
+}
+function sgPrefillEinheit(){
+  const we=$('we');const eid=we.options[we.selectedIndex]?.dataset.eid||'';if(!eid){render();return;}
+  const e=SG_EINH.find(x=>x.id===eid);if(!e)return;
+  if($('qm')&&e.flaeche_qm)$('qm').value=Math.round(Number(e.flaeche_qm));
+  const TYP={'Wohnung':'Wohnung','Apartment':'Apartment','Maisonette':'Maisonette','Zimmer':'Zimmer','EFH':'EFH','Penthouse':'Penthouse'};
+  if($('typ')&&e.kategorie&&TYP[e.kategorie])$('typ').value=TYP[e.kategorie];
+  render();
+}
 
 document.querySelectorAll('.chip').forEach(c=>c.addEventListener('click',()=>{c.classList.toggle('on');render();}));
 document.querySelectorAll('.tab').forEach(t=>t.addEventListener('click',()=>{
@@ -286,7 +322,10 @@ $('copyBtn').addEventListener('click',()=>{
     setTimeout(()=>{b.textContent="In Zwischenablage kopieren";b.classList.remove('ok');},1600);
   });
 });
+$('objekt').addEventListener('change',sgFillWe);
+$('we').addEventListener('change',sgPrefillEinheit);
 render();
+sgLoad();
 </script>
 </body>
 </html>
