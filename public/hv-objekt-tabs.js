@@ -129,23 +129,24 @@ function zRender(){
     <span style="margin-left:auto;display:flex;gap:8px;flex-wrap:wrap">
       ${zFiltE||zFiltT?'<button class="btn zw" onclick="zFiltE=\'\';zFiltT=\'\';zRender()">Filter zurücksetzen</button>':''}
       <button class="btn" onclick="(window.top||window).location.href='/hausverwaltung/zaehler?objekt='+encodeURIComponent(id)">Im Bereich Zähler bearbeiten und ablesen</button></span></div>
-    <div style="font-size:12.5px;color:var(--muted);margin:-4px 0 8px">Diese Übersicht dient nur zur Information. Ablesen, Anlegen, Wechsel, Versorger und Verträge laufen im Bereich Hausverwaltung, Zähler.</div>
+    <div style="font-size:12.5px;color:var(--muted);margin:-4px 0 8px">Pro Zähler rechts auf <b>„📷 Ablesen"</b> tippen, um einen Zählerstand (mit Foto) zu erfassen. Anlegen, Wechsel, Versorger und Verträge laufen im Bereich Hausverwaltung, Zähler.</div>
     ${dl('dlZE',uopts())}${dl('dlZT',typen)}`;
   if(!liste.length){box.innerHTML=html+'<div class="empty">Keine Zähler gefunden.</div>';return;}
   gruppen.forEach(g=>{
     const zs=liste.filter(z=>(z.unit_id||null)===g).sort((a,b)=>(ZTYPEN.indexOf(a.typ)-ZTYPEN.indexOf(b.typ))||String(a.nummer||'').localeCompare(String(b.nummer||'')));
     if(!zs.length)return;
-    html+=`<div class="zgr">${esc(ulabel(g))}</div><div style="overflow-x:auto"><table class="ztab"><thead><tr><th>Zählertyp</th><th>Zählernummer</th><th>Standort</th><th>Letzter Stand</th><th>Datum</th><th>Anlass</th></tr></thead><tbody>`;
+    html+=`<div class="zgr">${esc(ulabel(g))}</div><div style="overflow-x:auto"><table class="ztab"><thead><tr><th>Zählertyp</th><th>Zählernummer</th><th>Standort</th><th>Letzter Stand</th><th>Datum</th><th>Anlass</th><th>Aktion</th></tr></thead><tbody>`;
     zs.forEach(z=>{
       const s=zStaende(z.id)[0];
       html+=`<tr class="zr ${z.aktiv?'':'inaktiv'}" onclick="zOffen['${z.id}']=!zOffen['${z.id}'];zRender()">
         <td><b>${esc(z.typ)}</b>${z.aktiv?'':' (ausgebaut)'}${z.bemerkung?`<div style="font-size:12px;color:var(--muted)">${esc(z.bemerkung)}</div>`:''}</td>
         <td>${esc(z.nummer||'—')}</td><td>${esc(z.standort||'—')}</td>
         <td>${s?zfmt(s.wert):'—'}</td><td>${s?dfmt(s.datum):'—'}</td><td>${s?esc(s.anlass||''):''}</td>
+        <td>${z.aktiv?`<button class="btn" style="padding:4px 10px;font-size:12.5px" onclick="event.stopPropagation();zAblesung('${z.id}')">📷 Ablesen</button>`:'<span style="color:var(--muted);font-size:12px">—</span>'}</td>
         </tr>`;
       if(zOffen[z.id]){
         const v=zStaende(z.id);
-        html+=`<tr><td colspan="6"><div class="zverl">${v.length?v.map(x=>`<div class="vz"><b style="min-width:90px">${dfmt(x.datum)}</b><span style="min-width:110px">${zfmt(x.wert)}</span><span style="min-width:130px">${esc(x.anlass||'')}</span>${x.notiz?`<span>${esc(x.notiz)}</span>`:''}${x.bild_pfad?`<button class="lnk" onclick="zFoto('${esc(x.bild_pfad)}')">Foto ansehen</button>`:''}<span style="margin-left:auto;color:var(--muted);font-size:11.5px">${esc(x.erfasst_von||'')}</span></div>`).join(''):'<div style="color:var(--muted);font-size:13px">Noch keine Ablesungen.</div>'}</div></td></tr>`;
+        html+=`<tr><td colspan="7"><div class="zverl">${v.length?v.map(x=>`<div class="vz"><b style="min-width:90px">${dfmt(x.datum)}</b><span style="min-width:110px">${zfmt(x.wert)}</span><span style="min-width:130px">${esc(x.anlass||'')}</span>${x.notiz?`<span>${esc(x.notiz)}</span>`:''}${x.bild_pfad?`<button class="lnk" onclick="event.stopPropagation();zFoto('${esc(x.bild_pfad)}')">Foto ansehen</button>`:''}<span style="margin-left:auto;color:var(--muted);font-size:11.5px">${esc(x.erfasst_von||'')}</span></div>`).join(''):'<div style="color:var(--muted);font-size:13px">Noch keine Ablesungen.</div>'}</div></td></tr>`;
       }
     });
     html+='</tbody></table></div>';
@@ -272,12 +273,57 @@ function gStatus(p){const n=(p.medien||[]).length;const v=(p.medien||[]).filter(
   if(!n&&!(p.text||'').trim())return '<span class="gs fehlt">fehlt</span>';
   const t=[];if(n-v)t.push((n-v)+(n-v===1?' Foto':' Fotos'));if(v)t.push(v+(v===1?' Video':' Videos'));if(!t.length)t.push('nur Text');return `<span class="gs">${t.join(', ')}</span>`;}
 function gUmschalten(kk){const k=decodeURIComponent(kk);gOffen[k]=!gOffen[k];gRender();}
+/* ---------- Bildauswahl & ZIP-Download (intern) ---------- */
+let GSEL=new Set();
+function gSelToggle(url,on){if(on)GSEL.add(url);else GSEL.delete(url);const z=document.getElementById('gzipbtn');if(z)z.textContent='⬇ Auswahl als ZIP ('+GSEL.size+')';const p=document.getElementById('gpdfbtn');if(p)p.textContent='⬇ Auswahl als PDF ('+GSEL.size+')';}
+function gSelClear(){GSEL=new Set();gRender();}
+function jszipLib(){return new Promise((res,rej)=>{if(window.JSZip)return res();const s=document.createElement('script');s.src='https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js';s.onload=()=>res();s.onerror=()=>rej(new Error('ZIP-Bibliothek konnte nicht geladen werden.'));document.head.appendChild(s);});}
+async function gZipDownload(){
+  if(!GSEL.size){alert('Bitte zuerst Bilder anklicken (Kästchen oben links).');return;}
+  const b=document.getElementById('gzipbtn');const alt=b?b.textContent:'';if(b){b.disabled=true;b.textContent='Erstelle ZIP …';}
+  try{
+    await jszipLib();const zip=new JSZip();let n=0;const used={};
+    for(const url of GSEL){
+      try{const r=await fetch(url,{cache:'no-store'});if(!r.ok)throw 0;const blob=await r.blob();
+        let name=decodeURIComponent((url.split('?')[0].split('/').pop())||('bild'+(++n)+'.jpg'));
+        if(used[name]){name=name.replace(/(\.[^.]+)?$/,'_'+(used[name]++)+'$1');}else used[name]=1;
+        zip.file(name,blob);}catch(e){console.warn('Bild übersprungen:',url);}
+    }
+    const out=await zip.generateAsync({type:'blob'});
+    const a=document.createElement('a');a.href=URL.createObjectURL(out);a.download='Haustechnik-Guide_Auswahl.zip';document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(a.href),4000);
+  }catch(e){alert('Download fehlgeschlagen: '+e.message);}
+  if(b){b.disabled=false;b.textContent=alt||('⬇ Auswahl als ZIP ('+GSEL.size+')');}
+}
+function jspdfLib(){return new Promise((res,rej)=>{if(window.jspdf&&window.jspdf.jsPDF)return res();const s=document.createElement('script');s.src='https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js';s.onload=()=>res();s.onerror=()=>rej(new Error('PDF-Bibliothek konnte nicht geladen werden.'));document.head.appendChild(s);});}
+function ladeBild(url){return new Promise((res,rej)=>{const img=new Image();img.crossOrigin='anonymous';img.onload=()=>res(img);img.onerror=()=>rej(new Error('Bild konnte nicht geladen werden'));img.src=url;});}
+async function gPdfDownload(){
+  if(!GSEL.size){alert('Bitte zuerst Bilder anklicken (Kästchen oben links).');return;}
+  const b=document.getElementById('gpdfbtn');const alt=b?b.textContent:'';if(b){b.disabled=true;b.textContent='Erstelle PDF …';}
+  try{
+    await jspdfLib();const {jsPDF}=window.jspdf;const doc=new jsPDF({unit:'mm',format:'a4'});
+    const pw=210,ph=297,mg=10,maxW=pw-2*mg,maxH=ph-2*mg;let first=true;
+    for(const url of GSEL){
+      try{const img=await ladeBild(url);
+        const c=document.createElement('canvas');c.width=img.naturalWidth;c.height=img.naturalHeight;c.getContext('2d').drawImage(img,0,0);
+        const data=c.toDataURL('image/jpeg',.9);
+        let w=img.naturalWidth,h=img.naturalHeight;const f=Math.min(maxW/w,maxH/h);w*=f;h*=f;
+        if(!first)doc.addPage();first=false;
+        doc.addImage(data,'JPEG',(pw-w)/2,(ph-h)/2,w,h);
+      }catch(e){console.warn('Bild übersprungen:',url);}
+    }
+    if(first){alert('Keine Bilder konnten geladen werden.');}
+    else doc.save('Haustechnik-Guide_Auswahl.pdf');
+  }catch(e){alert('PDF fehlgeschlagen: '+e.message);}
+  if(b){b.disabled=false;b.textContent=alt||('⬇ Auswahl als PDF ('+GSEL.size+')');}
+}
 function gRender(){
   const box=document.getElementById('guideBox');
   const alle=gBereiche().flatMap(gPunkte);const gefuellt=alle.filter(p=>(p.medien||[]).length||(p.text||'').trim()).length;
   let html=`<div class="gbar"><div style="margin-right:auto;font-size:13.5px;color:var(--muted)">Haustechnik-Guide für Dienstleister und Handwerker. ${gefuellt} von ${alle.length} Punkten ausgefüllt.</div>
    <button class="btn zw" onclick="window.open('/guide.html?objekt=${encodeURIComponent(id)}','_blank')">Vorschau</button>
-   <button class="btn" onclick="guideTeilen()">QR / Link teilen</button></div>`;
+   <button class="btn" onclick="guideTeilen()">QR / Link teilen</button>
+   <button class="btn zw" id="gzipbtn" onclick="gZipDownload()" title="Ausgewählte Bilder als ZIP herunterladen (intern)">⬇ Auswahl als ZIP (${GSEL.size})</button>
+   <button class="btn zw" id="gpdfbtn" onclick="gPdfDownload()" title="Ausgewählte Bilder als PDF herunterladen (intern)">⬇ Auswahl als PDF (${GSEL.size})</button>${GSEL.size?`<button class="btn zw" onclick="gSelClear()" title="Auswahl leeren">✕</button>`:''}</div>`;
   gBereiche().forEach((ber,bi)=>{
     html+=`<div class="gber">${esc(ber)}</div><div class="glist">`;
     gPunkte(ber).forEach(p=>{
@@ -285,7 +331,9 @@ function gRender(){
       html+=`<div class="gp"><div class="gph" onclick="gUmschalten('${kk}')"><span class="gn">${esc(p.punkt)}</span>${gStatus(p)}<span class="gs">${offen?'zuklappen':'öffnen'}</span></div>`;
       if(offen){
         html+=`<div class="gpb"><textarea placeholder="Beschreibung: Wo genau? Wie kommt man hin? Was ist zu beachten?" onchange="gText('${kk}',this.value)">${esc(p.text||'')}</textarea>
-          <div class="gmed">${(p.medien||[]).map((m,i)=>`<div class="gm">${m.typ==='video'?`<video src="${esc(m.url)}" controls preload="metadata" playsinline></video>`:`<img src="${esc(m.url)}" loading="lazy" onclick="window.open(this.src,'_blank')">`}<input value="${esc(m.text||'')}" placeholder="Bildunterschrift" onchange="gMedText('${kk}',${i},this.value)"><button class="lnk" onclick="gMedWeg('${kk}',${i})">entfernen</button></div>`).join('')}</div>
+          <div class="gmed">${(p.medien||[]).map((m,i)=>{const nb=!!m.nachbessern;
+            const media=m.typ==='video'?`<video src="${esc(m.url)}" controls preload="metadata" playsinline></video>`:`<label style="position:relative;display:block"><input type="checkbox" onclick="event.stopPropagation();gSelToggle('${esc(m.url).replace(/'/g,"\\'")}',this.checked)"${GSEL.has(m.url)?' checked':''} title="für Download auswählen" style="position:absolute;top:6px;left:6px;width:18px;height:18px;z-index:2;cursor:pointer;accent-color:var(--accent,#6d4aff)"><img src="${esc(m.url)}" loading="lazy" onclick="window.open(this.src,'_blank')"></label>`;
+            return `<div class="gm" style="${nb?'outline:2px solid #c0392b;outline-offset:2px;border-radius:8px':''}">${nb?`<div style="background:#fdecea;color:#c0392b;font-size:11.5px;font-weight:700;padding:3px 7px;border-radius:6px;margin-bottom:4px">⚠ Nachbesserung${m.nachbesserung_grund?': '+esc(m.nachbesserung_grund):''}</div>`:''}${media}<input value="${esc(m.text||'')}" placeholder="Bildunterschrift" onchange="gMedText('${kk}',${i},this.value)"><div style="display:flex;gap:12px;align-items:center;margin-top:2px"><button class="lnk" onclick="gNachbessern('${kk}',${i})" style="color:${nb?'#c0392b':'var(--muted)'};font-weight:${nb?'700':'400'}">${nb?'✓ Nachbesserung aufheben':'⚠ Nachbesserung'}</button><button class="lnk" onclick="gMedWeg('${kk}',${i})">entfernen</button></div></div>`;}).join('')}</div>
           <div class="gadd"><label class="btn zw kl" style="cursor:pointer">Fotos / Videos hinzufügen<input type="file" accept="image/*,video/*" multiple hidden onchange="gHoch('${kk}',this)"></label>
           ${p.vorlage?'':`<button class="btn rot kl" onclick="gPunktWeg('${kk}')">Punkt entfernen</button>`}<span class="gs" id="gi_${kz(kk)}"></span></div></div>`;
       }
@@ -305,6 +353,16 @@ async function gSpeichern(p){
 }
 async function gText(kk,v){const p=gFinde(kk);p.text=v.trim();await gSpeichern(p);gRender();}
 async function gMedText(kk,i,v){const p=gFinde(kk);p.medien=[...p.medien];p.medien[i]=Object.assign({},p.medien[i],{text:v.trim()});await gSpeichern(p);}
+async function gNachbessern(kk,i){const p=gFinde(kk);const m=p.medien[i];
+  if(m.nachbessern){
+    const r=prompt('Kommentar zur Nachbesserung bearbeiten.\n(Leeren und OK = Nachbesserung aufheben, Abbrechen = unverändert)',m.nachbesserung_grund||'');
+    if(r===null)return;const g=r.trim();
+    p.medien=[...p.medien];p.medien[i]=g===''?Object.assign({},m,{nachbessern:false,nachbesserung_grund:''}):Object.assign({},m,{nachbessern:true,nachbesserung_grund:g});
+  } else {
+    const r=prompt('Was soll verbessert werden? (z. B. unscharf, nicht alles sichtbar, zu dunkel)',m.nachbesserung_grund||'');
+    if(r===null)return;p.medien=[...p.medien];p.medien[i]=Object.assign({},m,{nachbessern:true,nachbesserung_grund:r.trim()});
+  }
+  if(await gSpeichern(p))gRender();}
 async function gMedWeg(kk,i){if(!confirm('Foto/Video entfernen?'))return;const p=gFinde(kk);const m=p.medien[i];p.medien=p.medien.filter((x,j)=>j!==i);if(await gSpeichern(p)&&m.pfad)await sb.storage.from('objekt-guide').remove([m.pfad]);gRender();}
 async function gHoch(kk,inp){
   const p=gFinde(kk);const files=[...inp.files];if(!files.length)return;

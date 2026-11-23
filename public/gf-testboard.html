@@ -71,6 +71,7 @@ h1{font-size:21px;font-weight:800}
 .cell .ct .cttag{font-size:9px;font-weight:600;background:#fde68a;color:#92400e;border-radius:4px;padding:0 4px;line-height:1.5}
 .cell .ct.sub{background:#f7f3ff;border:1px dashed #cbb6f2;color:#6d4aff;font-style:italic}
 .subdate{border:1px solid var(--line);border-radius:6px;padding:2px 4px;font:inherit;font-size:11px;color:var(--muted)}
+.submass{border:1px solid var(--line);border-radius:6px;padding:2px 4px;font:inherit;font-size:11px;color:var(--muted);max-width:140px}
 .addday{float:right;cursor:pointer;color:var(--muted);font-weight:700;width:18px;height:18px;line-height:17px;text-align:center;border-radius:5px;opacity:0;transition:.1s}
 .cell:hover .addday{opacity:1}
 .addday:hover{background:var(--accent);color:#fff}
@@ -133,6 +134,10 @@ h1{font-size:21px;font-weight:800}
 .vrow:hover .vtx .vedit b{opacity:.7}.vrow .vtx .vedit b:hover{opacity:1}
 .toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:#000c;color:#fff;padding:9px 15px;border-radius:8px;font-size:13px;opacity:0;pointer-events:none;transition:.2s;z-index:50}
 .toast.show{opacity:1}
+body.embed .wrap{display:none}
+body.embed{background:transparent}
+body.embed .ov{position:fixed;inset:0}
+body.embed #dov .dlg{max-height:100vh}
 </style></head><body>
 <div class="wrap">
   <h1>🗂 GF Testboard · Aufgaben</h1>
@@ -157,9 +162,12 @@ h1{font-size:21px;font-weight:800}
       <button data-a="m:vortermin" onclick="setArt('m:vortermin')">📍 Vor-Ort</button>
       <button data-a="m:zuarbeit" onclick="setArt('m:zuarbeit')">🤝 Zuarbeit fürs Team</button>
       <button data-a="m:jourfix" onclick="setArt('m:jourfix')">🧭 Jour Fix</button>
+      <button data-a="m:fristsache" onclick="setArt('m:fristsache')">⏰ Fristsache</button>
+      <button data-a="projekte" onclick="openProjekte()" style="color:var(--accent);font-weight:700">📁 Projekte</button>
+      <button data-a="besprechung" onclick="openBesprechung()" style="color:var(--accent);font-weight:700">🗣️ Besprechung</button>
     </div>
     <input id="qSuche" type="search" placeholder="🔍 Aufgaben durchsuchen …" oninput="setQuery(this.value)" title="Nach Stichwort in Titel, Beschreibung, Kontakt, Objekt, Projekt, Tags, Verantwortlich suchen" style="flex:1;min-width:200px;padding:7px 10px;border:1px solid var(--line);border-radius:8px;font:inherit">
-    <button class="btn" id="doneBtn" onclick="toggleDone()" title="Erledigte Aufgaben ausblenden">✅ Nur offene</button>
+    <button class="btn pri" id="doneBtn" onclick="toggleDone()" title="Erledigte Aufgaben ausblenden">✅ Nur offene (aktiv)</button>
     <button class="btn" id="wvBtn" onclick="toggleWV()" title="Nur fällige Wiedervorlagen">🔔 Wiedervorlagen</button>
     <select id="personsel" onchange="setPerson(this.value)" title="Nach Person filtern (verantwortlich oder beteiligt)"><option value="">👥 Alle Personen</option></select>
     <button class="btn" id="asImpBtn" onclick="asImportOpen()" title="Eine Asana-Aufgabe per Link ins OS übertragen">⇅ Asana-Übertragung</button>
@@ -168,13 +176,13 @@ h1{font-size:21px;font-weight:800}
   <div class="addbar"><input id="newT" placeholder="Neue Aufgabe …" onkeydown="if(event.key==='Enter')addTask()">
     <input id="newFaellig" type="date" title="Fällig am (optional)" style="padding:7px 10px;border:1px solid var(--line);border-radius:8px;font:inherit">
     <select id="newArt" title="Kategorie"><option value="aufgabe">📌 Aufgabe</option><option value="ankauf">🏷️ Ankauf</option><option value="immoentwicklung">🏗️ Immobilienentwicklung</option><option value="routine">🔄 Routine</option><option value="ticket">🎫 Ticket</option></select>
-    <select id="newWdh" title="Routine / Wiederholung"><option value="">↻ einmalig</option><option value="taeglich">↻ täglich</option><option value="werktags">↻ Mo–Fr</option><option value="woechentlich">↻ wöchentlich</option><option value="zweiwoechentlich">↻ 14-tägig</option><option value="monatlich">↻ monatlich</option></select>
+    <select id="newWdh" title="Routine / Wiederholung"><option value="">↻ einmalig</option><option value="taeglich">↻ täglich</option><option value="werktags">↻ Mo–Fr</option><option value="woechentlich">↻ wöchentlich</option><option value="zweiwoechentlich">↻ 14-tägig</option><option value="monatlich">↻ monatlich</option><option value="vierteljaehrlich">↻ vierteljährlich</option><option value="quartalsmitte">↻ Quartalsmitte (15.2/5/8/11)</option></select>
     <button class="btn pri" onclick="addTask()">+ anlegen</button></div>
   <div id="view"></div>
   <div class="foot" id="foot"></div>
 </div>
 <div class="ov" id="dov" onclick="if(event.target===this)closeDetail()"><div class="dlg">
-  <div class="dlg-hd"><span id="dTitle">Aufgabe</span><span class="x" onclick="closeDetail()">✕</span></div>
+  <div class="dlg-hd"><span id="dTitle">Aufgabe</span><span id="d_kontbadge" style="margin-left:10px"></span><span class="x" onclick="closeDetail()">✕</span></div>
   <div class="dlg-bd">
     <div class="fg">
       <div class="f wide"><label>Titel</label><input id="d_titel"></div>
@@ -187,13 +195,17 @@ h1{font-size:21px;font-weight:800}
       <div class="f"><label>🔔 Wiedervorlage am</label><input id="d_wiedervorlage" type="date"></div>
       <div class="f"><label>↻ Routine / Wiederholung</label>
         <div class="row" style="align-items:center">
-          <select id="d_wiederholung" onchange="updWdhDom()"><option value="">— einmalig</option><option value="taeglich">täglich</option><option value="werktags">werktäglich (Mo–Fr)</option><option value="woechentlich">wöchentlich</option><option value="zweiwoechentlich">14-tägig</option><option value="monatlich">monatlich</option></select>
+          <select id="d_wiederholung" onchange="updWdhDom()"><option value="">— einmalig</option><option value="taeglich">täglich</option><option value="werktags">werktäglich (Mo–Fr)</option><option value="woechentlich">wöchentlich</option><option value="zweiwoechentlich">14-tägig</option><option value="monatlich">monatlich</option><option value="vierteljaehrlich">vierteljährlich (Quartal)</option><option value="quartalsmitte">Quartalsmitte (15.2/5/8/11)</option></select>
           <span id="d_wdh_dom_wrap" style="display:none;white-space:nowrap;font-size:12px;color:var(--muted)">am <input id="d_wdh_dom" type="number" min="1" max="31" placeholder="z. B. 1" style="width:64px">. Tag</span>
         </div></div>
-      <div class="f"><label>Kontakt</label><select id="d_kont"></select></div>
+      <div class="f"><label>Projekt</label><input id="d_projekt" list="dlProjekte" placeholder="z. B. Gipfelkreuzmission" oninput="updAbschnittDL()"></div>
+      <div class="f"><label>Abschnitt</label><input id="d_abschnitt" list="dlAbschnitte" placeholder="Abschnitt im Projekt"></div>
+      <datalist id="dlProjekte"></datalist><datalist id="dlAbschnitte"></datalist>
+      <div class="f"><label>Kontakt</label><select id="d_kont" onchange="updKontBadge()"></select></div>
       <div class="f"><label>Objekt</label><select id="d_obj"></select></div>
       <div class="f wide"><label>Asana-Link <a href="#" onclick="oeffneLink('d_asana_url');return false" style="margin-left:8px;color:var(--accent);font-weight:600;font-size:11px">↗ öffnen</a></label><input id="d_asana_url" placeholder="https://app.asana.com/…"></div>
       <div class="f wide"><label>Claude-Chat <a href="#" onclick="oeffneLink('d_claude_url');return false" style="margin-left:8px;color:var(--accent);font-weight:600;font-size:11px">↗ öffnen</a></label><input id="d_claude_url" placeholder="https://claude.ai/…"></div>
+      <div class="f wide"><label>Link / Webseite <a href="#" onclick="oeffneLink('d_link_url');return false" style="margin-left:8px;color:var(--accent);font-weight:600;font-size:11px">↗ öffnen</a></label><input id="d_link_url" placeholder="https://… – beliebige Seite, öffnet im neuen Tab"></div>
       <div class="f wide" id="d_gcal"></div>
       <div class="f wide"><label>Maßnahme / nächster Schritt</label>
         <div id="d_mass" class="pbox"></div>
@@ -212,11 +224,38 @@ h1{font-size:21px;font-weight:800}
     </div>
     <div class="sec"><div class="st">☑ Unteraufgaben <span id="d_subcnt"></span></div><div id="d_subs"></div>
       <div class="row"><input id="d_subnew" placeholder="Neue Unteraufgabe …" onkeydown="if(event.key==='Enter')dAddSub()"><button class="btn sec sm" onclick="dAddSub()">+</button></div></div>
+    <div class="sec"><div class="st">📎 Anhänge / Dateien <span id="d_dateicnt" style="font-weight:400;color:var(--muted)"></span></div><div id="d_dateien"></div>
+      <div class="row"><label class="btn sec sm" style="cursor:pointer">📎 Datei / Bild hochladen<input type="file" multiple accept="image/*,application/pdf,.doc,.docx,.xls,.xlsx,.eml,.msg,.txt,.csv,.zip" hidden onchange="dDateiHoch(this)"></label><span id="d_datei_msg" style="font-size:12px;color:var(--muted)"></span></div></div>
     <div class="sec"><div class="st">🕓 Verlauf &amp; Kommentare</div><div id="d_ver"></div>
       <textarea id="d_comment" class="komment" rows="2" placeholder="Kommentar … – oder 🎤 reinsprechen"></textarea>
       <div class="row"><button class="btn sec sm" id="mic_d_comment" onclick="diktieren('d_comment','mic_d_comment')">🎤</button><button class="btn sec sm" onclick="kiZusammenfassen('d_comment')">✨</button><button class="btn sm" onclick="dAddComment()">Kommentar</button></div></div>
   </div>
-  <div class="dlg-ft"><button class="btn sec" onclick="dFollowup()">🔁 Follow-up (Datum verschieben)</button><button class="btn" id="d_erlbtn" style="background:#0f9d6b;color:#fff;border-color:#0f9d6b" onclick="dErledigtToggle()">✓ Erledigt</button><span style="flex:1"></span><button class="btn" onclick="closeDetail()">Schließen</button><button class="btn pri" onclick="dSave()">Speichern</button></div>
+  <div class="dlg-ft"><button class="btn sec" onclick="dFollowup()">🔁 Follow-up (Datum verschieben)</button><button class="btn" id="d_erlbtn" style="background:#0f9d6b;color:#fff;border-color:#0f9d6b" onclick="dErledigtToggle()">✓ Erledigt</button><button class="btn" style="color:#c0392b;border-color:#e6b5ae" onclick="dDelete()">🗑 Löschen</button><span id="d_saveind" style="flex:1;font-size:12px;color:var(--green);padding-left:10px;align-self:center"></span><button class="btn" onclick="closeDetail()">Schließen</button></div>
+</div></div>
+<div class="ov" id="bespov" style="z-index:111" onclick="if(event.target===this)bespClose()"><div class="dlg" style="width:860px;max-width:96vw">
+  <div class="dlg-hd"><span>🗣️ Team-Besprechung</span><span class="x" onclick="bespClose()">✕</span></div>
+  <div class="dlg-bd">
+    <div style="font-size:12.5px;color:var(--muted);margin-bottom:10px">Zeigt offene Aufgaben, die du mit der Person besprechen kannst – erkannt über Maßnahme „Austausch mit …" oder Beteiligte.</div>
+    <div id="besp_tabs" class="seg" style="flex-wrap:wrap;margin-bottom:12px"></div>
+    <div id="besp_body"></div>
+  </div>
+  <div class="dlg-ft"><span style="flex:1"></span><button class="btn" onclick="bespClose()">Schließen</button></div>
+</div></div>
+<div class="ov" id="projidxov" style="z-index:111" onclick="if(event.target===this)projIdxClose()"><div class="dlg" style="width:720px;max-width:96vw">
+  <div class="dlg-hd"><span>📁 Projekte</span><span class="x" onclick="projIdxClose()">✕</span></div>
+  <div class="dlg-bd"><div id="projidx_body"></div></div>
+  <div class="dlg-ft"><span style="flex:1"></span><button class="btn" onclick="projIdxClose()">Schließen</button></div>
+</div></div>
+<div class="ov" id="projov" style="z-index:112" onclick="if(event.target===this)projClose()"><div class="dlg" style="width:1000px;max-width:96vw">
+  <div class="dlg-hd"><span id="proj_title">📁 Projekt</span><span class="x" onclick="projClose()">✕</span></div>
+  <div class="dlg-bd">
+    <div style="display:flex;gap:8px;align-items:center;margin-bottom:12px;flex-wrap:wrap">
+      <div class="seg"><button id="pv_liste" class="segbtn" onclick="projSetView('liste')">☰ Liste</button><button id="pv_board" class="segbtn" onclick="projSetView('board')">▦ Board</button></div>
+      <span id="proj_stats" style="color:var(--muted);font-size:12.5px;margin-left:6px"></span>
+    </div>
+    <div id="proj_body"></div>
+  </div>
+  <div class="dlg-ft"><span style="flex:1"></span><button class="btn" onclick="projClose()">Schließen</button></div>
 </div></div>
 <div class="ov" id="statov" style="z-index:110" onclick="if(event.target===this)statsClose()"><div class="dlg" style="width:680px">
   <div class="dlg-hd"><span>📊 Statistik · Fällig &amp; Überfällig pro Tag</span><span class="x" onclick="statsClose()">✕</span></div>
@@ -228,7 +267,7 @@ h1{font-size:21px;font-weight:800}
   <div class="dlg-bd">
     <div class="f wide"><label>Asana-Link der Aufgabe</label><input id="as_link" placeholder="https://app.asana.com/…" onkeydown="if(event.key==='Enter')asImportRun()"></div>
     <label style="display:flex;align-items:center;gap:8px;margin-top:10px;font-size:13px;cursor:pointer"><input type="checkbox" id="as_close" checked style="width:16px;height:16px"> In Asana gleich abschließen (umgezogen)</label>
-    <div style="font-size:12px;color:var(--muted);margin-top:8px">Überträgt die Aufgabe mit allen Unteraufgaben und Kommentaren ins OS. In Asana wird sie mit dem Tag <b>WohntraumOS-Übertragen</b> markiert und – wenn angehakt – gleich abgeschlossen.</div>
+    <div style="font-size:12px;color:var(--muted);margin-top:8px">Überträgt die Aufgabe mit allen Unteraufgaben und Kommentaren ins OS. Das Fälligkeitsdatum wird dabei <b>in Asana gelöscht</b> (lebt ab jetzt im OS). In Asana wird sie mit dem Tag <b>WohntraumOS-Übertragen</b> markiert und – wenn angehakt – gleich abgeschlossen.</div>
     <div id="as_status" style="margin-top:10px;font-size:12.5px"></div>
   </div>
   <div class="dlg-ft"><span style="flex:1"></span><button class="btn" onclick="asImportClose()">Schließen</button><button class="btn pri" id="as_go" onclick="asImportRun()">Übertragen</button></div>
@@ -252,27 +291,35 @@ const dfmt=d=>d?new Date(d).toLocaleDateString('de-DE'):'—';
 const isoLokal=d=>d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
 const today=isoLokal(new Date());
 function toast(m){const t=document.getElementById('toast');t.textContent=m;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),1600);}
-const COLS=[['todo','📋 To Do'],['inarbeit','🔧 In Arbeit'],['warten','⏳ Wartet'],['wartenrueck','📨 Warten auf Rückmeldung'],['erledigt','✅ Erledigt']];
+const COLS=[['todo','📋 To Do'],['inarbeit','🔧 In Arbeit'],['warten','⏳ Wartet'],['wartenrueck','📨 Warten auf Rückmeldung'],['abgegeben','🤝 Abgegeben ans Team'],['erledigt','✅ Erledigt']];
 const ARTLBL={aufgabe:'Aufgabe',ankauf:'Ankauf',immoentwicklung:'Immobilienentwicklung',routine:'Routine',ticket:'Ticket'};
 const ARTICON={aufgabe:'📌',ankauf:'🏷️',immoentwicklung:'🏗️',routine:'🔄',ticket:'🎫'};
-const MASSLBL={followup:'Follow-up',rueckruf:'Rückruf',anruf:'Anruf',vortermin:'Vor-Ort-Termin',zuarbeit:'Zuarbeit fürs Team',jourfix:'Jour Fix',austausch_juergen:'Austausch mit Jürgen',austausch_stephan:'Austausch mit Stephan',austausch_ramona:'Austausch mit Ramona'};
-const MASSICON={followup:'🔁',rueckruf:'📞',anruf:'☎️',vortermin:'📍',zuarbeit:'🤝',jourfix:'🧭',austausch_juergen:'🗣️',austausch_stephan:'🗣️',austausch_ramona:'🗣️'};
-const MASSORDER=['followup','rueckruf','anruf','vortermin','zuarbeit','jourfix','austausch_juergen','austausch_stephan','austausch_ramona'];
+const MASSLBL={top3:'Top 3',followup:'Follow-up',rueckruf:'Rückruf',anruf:'Anruf',vortermin:'Vor-Ort-Termin',zuarbeit:'Zuarbeit fürs Team',jourfix:'Jour Fix',fristsache:'Fristsache',notfall:'Notfall',eskalation:'Eskalationsstufe',austausch_juergen:'Austausch mit Jürgen',austausch_stephan:'Austausch mit Stephan',austausch_ramona:'Austausch mit Ramona',austausch_stefan_schnatz:'Austausch mit Stefan Schnatz',austausch_alexander_buchhaus:'Austausch mit Alexander Buchhaus (RESANIVO)'};
+const MASSICON={top3:'🔝',followup:'🔁',rueckruf:'📞',anruf:'☎️',vortermin:'📍',zuarbeit:'🤝',jourfix:'🧭',fristsache:'⏰',notfall:'🚨',eskalation:'⚠️',austausch_juergen:'🗣️',austausch_stephan:'🗣️',austausch_ramona:'🗣️',austausch_stefan_schnatz:'🗣️',austausch_alexander_buchhaus:'🗣️'};
+const MASSORDER=['top3','followup','rueckruf','anruf','vortermin','zuarbeit','jourfix','fristsache','notfall','eskalation','austausch_juergen','austausch_stephan','austausch_ramona','austausch_stefan_schnatz','austausch_alexander_buchhaus'];
+function massHas(t,m){const a=Array.isArray(t.massnahme)?t.massnahme:(t.massnahme?[t.massnahme]:[]);return a.includes(m);}
+function top3OfDay(day){return TASKS.filter(t=>t.faellig===day&&t.status!=='erledigt'&&massHas(t,'top3')).sort((a,b)=>(a.pos||0)-(b.pos||0));}
+function top3Info(t){if(!massHas(t,'top3'))return null;if(!t.faellig)return {n:0,total:0};const l=top3OfDay(t.faellig);return {n:l.findIndex(x=>x.id===t.id)+1,total:l.length};}
 let TASKS=[], KONT=[], OBJ=[];
 const TEAM=['Eric','Jürgen','Stephan','Ramona','Alexander Buchhaus','Extern'];
-let ART='alle', WVONLY=false, PERSON='', QUERY='', HIDEDONE=false, SUBS=[], VER=[], DTASK=null, ICH='', TAGS=[], BETEIL=[], SUBOPEN=new Set(), TAGVORRAT=[], SUBCAL=[];
+let ART='alle', WVONLY=false, PERSON='', QUERY='', HIDEDONE=true, SUBS=[], VER=[], DTASK=null, ICH='', TAGS=[], BETEIL=[], SUBOPEN=new Set(), TAGVORRAT=[], SUBCAL=[];
 function setPerson(v){PERSON=v;render();}
 function personMatch(t){if(!PERSON)return true;if(Array.isArray(t.beteiligte)&&t.beteiligte.includes(PERSON))return true;const v=(t.verantwortlich||'').trim();if(!v)return false;return v===PERSON||v.indexOf(PERSON)>=0||PERSON.indexOf(v.split(' ')[0])===0;}
 function initPersonSel(){const el=document.getElementById('personsel');if(el)el.innerHTML='<option value="">👥 Alle Personen</option>'+TEAM.map(p=>`<option value="${esc(p)}"${PERSON===p?' selected':''}>${esc(p)}</option>`).join('');}
 function renderDBeteiligte(){document.getElementById('d_beteiligte').innerHTML=TEAM.map(p=>`<button type="button" class="pbtn${BETEIL.includes(p)?' on':''}" onclick="toggleBeteil('${p.replace(/'/g,"\\'")}')">${BETEIL.includes(p)?'✓ ':''}${esc(p)}</button>`).join('');}
-function toggleBeteil(p){if(BETEIL.includes(p))BETEIL=BETEIL.filter(x=>x!==p);else BETEIL.push(p);renderDBeteiligte();}
+function toggleBeteil(p){if(BETEIL.includes(p))BETEIL=BETEIL.filter(x=>x!==p);else BETEIL.push(p);renderDBeteiligte();scheduleAutoSave();}
 let MASSV=[];
 function renderDMass(){document.getElementById('d_mass').innerHTML=MASSORDER.map(m=>`<button type="button" class="pbtn${MASSV.includes(m)?' on':''}" onclick="toggleMass('${m}')">${MASSICON[m]} ${MASSLBL[m]}</button>`).join('')+`<button type="button" class="pbtn${MASSV.length===0?' on':''}" onclick="toggleMass('')" style="opacity:.8">— keine</button>`;}
 function toggleMass(m){
   if(m===''){MASSV=[];renderDMass();return;}
   if(MASSV.includes(m))MASSV=MASSV.filter(x=>x!==m);
-  else{MASSV.push(m);if(m==='followup')dFollowup();}
-  renderDMass();
+  else{
+    if(m==='top3'){const day=(document.getElementById('d_faellig')||{}).value||(DTASK&&DTASK.faellig)||'';
+      if(day){const cnt=top3OfDay(day).filter(t=>!DTASK||t.id!==DTASK.id).length;
+        if(cnt>=3)toast('Achtung: am '+day.split('-').reverse().join('.')+' sind schon 3 Top-3-Aufgaben gesetzt.');}
+      else toast('Tipp: Fälligkeitsdatum setzen, dann wird Top 3 pro Tag gezählt.');}
+    MASSV.push(m);if(m==='followup')dFollowup();}
+  renderDMass();scheduleAutoSave();
 }
 function renderDTags(){
   document.getElementById('d_tags').innerHTML=TAGS.map(tg=>`<span class="tagchip">#${esc(tg)}<b onclick="dDelTag('${esc(tg).replace(/'/g,"\\'")}')">✕</b></span>`).join('');
@@ -286,8 +333,8 @@ function dAddSug(tg){if(tg&&!TAGS.includes(tg))TAGS.push(tg);renderDTags();}
 function dAddTag(){const el=document.getElementById('d_tagnew');const v=(el.value||'').trim().replace(/^#/,'');if(!v){return;}
   if(!TAGS.includes(v))TAGS.push(v);el.value='';
   if(!TAGVORRAT.includes(v)){TAGVORRAT.push(v);TAGVORRAT.sort((a,b)=>a.localeCompare(b,'de'));try{sb.from('os_task_tag_vorlage').insert({name:v}).then(()=>{},()=>{});}catch(e){}}
-  renderDTags();}
-function dDelTag(tg){TAGS=TAGS.filter(x=>x!==tg);renderDTags();}
+  renderDTags();scheduleAutoSave();}
+function dDelTag(tg){TAGS=TAGS.filter(x=>x!==tg);renderDTags();scheduleAutoSave();}
 function artMatch(t){if(ART==='alle')return true;if(ART==='aufgabe'||ART==='ticket'||ART==='ankauf'||ART==='immoentwicklung'||ART==='routine')return (t.art||'aufgabe')===ART;if(ART.indexOf('m:')===0){const ms=Array.isArray(t.massnahme)?t.massnahme:(t.massnahme?[t.massnahme]:[]);return ms.indexOf(ART.slice(2))>=0;}return true;}
 function textMatch(t){if(!QUERY)return true;const q=QUERY;return [t.titel,t.beschreibung,t.notiz,t.projekt,t.kontakt_label,t.object_label,t.verantwortlich,Array.isArray(t.tags)?t.tags.join(' '):'',Array.isArray(t.beteiligte)?t.beteiligte.join(' '):''].some(x=>(x||'').toLowerCase().includes(q));}
 function setQuery(v){QUERY=(v||'').trim().toLowerCase();render();}
@@ -313,7 +360,9 @@ async function load(){
   initPersonSel();
   try{const sc=await sb.from('os_task_subtasks').select('id,task_id,titel,done,faellig').not('faellig','is',null);SUBCAL=sc.error?[]:(sc.data||[]);}catch(e){SUBCAL=[];}
   render();
-  const qp=new URLSearchParams(location.search);const op=qp.get('task')||qp.get('ticket');if(op)openDetail(op);
+  const qp=new URLSearchParams(location.search);const op=qp.get('task')||qp.get('ticket');
+  if(qp.get('embed')==='1')document.body.classList.add('embed');
+  if(op){if(qp.get('ticket')&&!TASKS.some(t=>t.id===op)){const m=TASKS.find(t=>String(t.nummer)===String(op));if(m)return openDetail(m.id);}openDetail(op);}
 }
 function kontOptions(sel){return `<option value="">+ Kontakt</option>`+KONT.map(k=>`<option value="${k.id}|${esc(k.label)}"${sel===k.label?' selected':''}>${esc(k.display||k.label)}</option>`).join('');}
 function objOptions(sel){return `<option value="">+ Objekt</option>`+OBJ.map(o=>`<option value="${o.id}|${esc(o.label)}"${sel===o.label?' selected':''}>${esc(o.label)}</option>`).join('');}
@@ -322,28 +371,32 @@ function card(t){
   const due=t.faellig?`<span class="pill ${over?'over':'due'}">📅 ${dfmt(t.faellig)}${over?' · überfällig':''}</span>`:'';
   const a=t.art||'aufgabe';
   const artb=`<span class="pill art">${ARTICON[a]||'📌'} ${ARTLBL[a]||'Aufgabe'}</span>`;
-  const mb=(Array.isArray(t.massnahme)?t.massnahme:(t.massnahme?[t.massnahme]:[])).filter(m=>MASSLBL[m]).map(m=>`<span class="pill mass">${MASSICON[m]} ${MASSLBL[m]}</span>`).join('');
+  const mb=(Array.isArray(t.massnahme)?t.massnahme:(t.massnahme?[t.massnahme]:[])).filter(m=>MASSLBL[m]).map(m=>{
+    if(m==='top3'){const ti=top3Info(t);const over3=ti&&ti.total>3;const lbl=ti&&ti.n?`Top 3 (${ti.n}/3)`:'Top 3';
+      return `<span class="pill" style="background:${over3?'#fdecea':'#fff7e0'};color:${over3?'#c0392b':'#8a6d00'};border-color:${over3?'#e6b5ae':'#e8d48a'};font-weight:700" title="${over3?'Mehr als 3 Top-3-Aufgaben an diesem Tag!':'Top-3-Aufgabe des Tages'}">🔝 ${lbl}</span>`;}
+    return `<span class="pill mass">${MASSICON[m]} ${MASSLBL[m]}</span>`;}).join('');
   const prio=t.prio?`<span class="pill prio">${esc(t.prio)}</span>`:'';
   const wvOver=t.wiedervorlage&&t.wiedervorlage<=today&&t.status!=='erledigt';
   const wv=t.wiedervorlage?`<span class="pill wv ${wvOver?'over':''}">🔔 ${dfmt(t.wiedervorlage)}</span>`:'';
-  const proj=t.projekt?`<span class="pill">${esc(t.projekt)}</span>`:'';
+  const proj=t.projekt?`<span class="pill" style="cursor:pointer" title="Projekt öffnen" onclick="event.stopPropagation();openProject('${esc(t.projekt).replace(/'/g,"\\'")}')">📁 ${esc(t.projekt)}</span>`:'';
   const kont=t.kontakt_label?`<span class="pill kontakt">👤 ${esc(t.kontakt_label)}</span>`:'';
   const obj=t.object_label?`<span class="pill obj">🏠 ${esc(t.object_label)}</span>`:'';
   const bet=(t.beteiligte||[]).map(p=>`<span class="pill bet">🧑 ${esc(p)}</span>`).join('');
   const tags=(t.tags||[]).map(tg=>`<span class="pill tag">#${esc(tg)}</span>`).join('');
   const asana=t.asana_url?`<a href="${esc(t.asana_url)}" target="_blank">↗ Asana</a>`:'';
   const claude=t.claude_url?`<a href="${esc(t.claude_url)}" target="_blank">✦ Claude</a>`:'';
+  const weblink=t.link_url?`<a href="${esc(/^https?:\/\//i.test(t.link_url)?t.link_url:'https://'+t.link_url)}" target="_blank" rel="noopener">🔗 Link</a>`:'';
   return `<div class="card" draggable="true" ondragstart="drag(event,'${t.id}')" onclick="openDetail('${t.id}')" style="cursor:pointer">
     <div class="tt">${esc(t.titel)}</div>
     <div class="meta">${artb}${mb}${prio}${due}${wv}${proj}${kont}${obj}${bet}${tags}</div>
-    <div class="links" onclick="event.stopPropagation()">${asana}${claude}
+    <div class="links" onclick="event.stopPropagation()">${asana}${claude}${weblink}
       <select onchange="linkKont('${t.id}',this.value)">${kontOptions(t.kontakt_label)}</select>
       <select onchange="linkObj('${t.id}',this.value)">${objOptions(t.object_label)}</select>
       <button class="del" onclick="delTask('${t.id}')">🗑</button></div>
   </div>`;
 }
 let VIEW='kalender', CALM=null;
-const STLBL={todo:'To Do',inarbeit:'In Arbeit',warten:'Wartet',wartenrueck:'Warten auf Rückmeldung',erledigt:'Erledigt'};
+const STLBL={todo:'To Do',inarbeit:'In Arbeit',warten:'Wartet',wartenrueck:'Warten auf Rückmeldung',abgegeben:'Abgegeben ans Team',erledigt:'Erledigt'};
 function setView(v){VIEW=v;document.querySelectorAll('#seg button').forEach(b=>b.classList.toggle('on',b.dataset.v===v));render();}
 function render(){
   const V=vis();
@@ -354,7 +407,8 @@ function render(){
     ['Aufgaben gesamt',V.length,''],['offen',V.filter(t=>t.status!=='erledigt').length,''],
     ['überfällig',over,over?'red':'green'],['🔔 Wiedervorlage fällig',wvDue,wvDue?'amber':''],['erledigt',done,'green']
   ].map(k=>`<div class="kpi ${k[2]}"><div class="l">${k[0]}</div><div class="v">${k[1]}</div></div>`).join('');
-  if(VIEW==='liste')renderList();else if(VIEW==='kalender')renderCalendar();else renderBoard();
+  if(QUERY&&QUERY.trim())renderList(true);
+  else if(VIEW==='liste')renderList();else if(VIEW==='kalender')renderCalendar();else renderBoard();
   document.getElementById('foot').textContent='Verknüpfe Aufgaben mit Kontakten (CRM & Hausverwaltung) und Objekten – genau das kann Asana nicht. Umschalten zwischen Board, Liste und Kalender oben.';
 }
 function renderBoard(){
@@ -367,20 +421,187 @@ function renderBoard(){
       ${list.map(card).join('')}</div>`;
   }).join('');
 }
-function renderList(){
+function renderList(sucheModus){
   const rows=vis().slice().sort((a,b)=>{const av=a.faellig||'9999',bv=b.faellig||'9999';return av<bv?-1:av>bv?1:(a.pos||0)-(b.pos||0);});
-  document.getElementById('view').innerHTML=`<div style="overflow:auto"><table class="ltab"><thead><tr>
+  const hint=sucheModus?`<div style="font-size:12.5px;color:var(--accent);font-weight:600;margin-bottom:8px">🔍 Suchergebnisse für „${esc(QUERY)}" · ${rows.length} Treffer · alle Ansichten (Board/Liste/Kalender) werden durchsucht</div>`:'';
+  document.getElementById('view').innerHTML=hint+`<div style="overflow:auto"><table class="ltab"><thead><tr>
     <th>Aufgabe</th><th>Status</th><th>Fällig</th><th>Projekt</th><th>Kontakt</th><th>Objekt</th><th></th></tr></thead><tbody>
     ${rows.map(t=>{const over=t.faellig&&t.faellig<today&&t.status!=='erledigt';return `<tr class="${over?'over':''}">
       <td><span class="tt" style="cursor:pointer;text-decoration:underline;text-decoration-style:dotted" onclick="openDetail('${t.id}')">${esc(t.titel)}</span>${t.asana_url?` <a href="${esc(t.asana_url)}" target="_blank">↗</a>`:''}</td>
       <td><select onchange="moveTask('${t.id}',this.value)">${COLS.map(([k,l])=>`<option value="${k}"${(t.status||'todo')===k?' selected':''}>${STLBL[k]}</option>`).join('')}</select></td>
       <td>${t.faellig?dfmt(t.faellig)+(over?' · überfällig':''):'—'}</td>
-      <td>${esc(t.projekt||'—')}</td>
+      <td>${t.projekt?`<span class="pill" style="cursor:pointer" title="Projekt öffnen" onclick="openProject('${esc(t.projekt).replace(/'/g,"\\'")}')">${esc(t.projekt)} ↗</span>`:'—'}</td>
       <td><select onchange="linkKont('${t.id}',this.value)">${kontOptions(t.kontakt_label)}</select></td>
       <td><select onchange="linkObj('${t.id}',this.value)">${objOptions(t.object_label)}</select></td>
       <td><button class="del" onclick="delTask('${t.id}')">🗑</button></td></tr>`;}).join('')||'<tr><td colspan="7" style="text-align:center;color:var(--muted);padding:24px">Keine Aufgaben.</td></tr>'}
   </tbody></table></div>`;
 }
+function fillProjektDL(){const names=[...new Set(TASKS.map(t=>t.projekt).filter(Boolean))].sort();
+  const dl=document.getElementById('dlProjekte');if(dl)dl.innerHTML=names.map(n=>`<option value="${esc(n)}">`).join('');}
+function updAbschnittDL(){const p=(document.getElementById('d_projekt').value||'').trim();
+  const secs=[...new Set(TASKS.filter(t=>t.projekt===p&&t.abschnitt).map(t=>t.abschnitt))].sort();
+  const dl=document.getElementById('dlAbschnitte');if(dl)dl.innerHTML=secs.map(n=>`<option value="${esc(n)}">`).join('');}
+/* ---------- Team-Besprechung ---------- */
+const BESPPERS=[['Jürgen','austausch_juergen'],['Stephan','austausch_stephan'],['Ramona','austausch_ramona'],['Stefan Schnatz','austausch_stefan_schnatz'],['Alexander Buchhaus','austausch_alexander_buchhaus']];
+let BESPSEL='Jürgen';
+function bespTasks(name,mass){return TASKS.filter(t=>t.status!=='erledigt'&&(
+  (Array.isArray(t.massnahme)&&t.massnahme.includes(mass))||
+  (Array.isArray(t.beteiligte)&&t.beteiligte.includes(name))
+)).sort((a,b)=>((a.faellig||'9999')<(b.faellig||'9999')?-1:(a.faellig||'9999')>(b.faellig||'9999')?1:(a.pos||0)-(b.pos||0)));}
+function openBesprechung(){
+  document.querySelectorAll('#artseg button').forEach(b=>b.classList.toggle('on',b.dataset.a==='besprechung'));
+  document.getElementById('bespov').classList.add('show');renderBesp();
+}
+function bespClose(){document.getElementById('bespov').classList.remove('show');
+  document.querySelectorAll('#artseg button').forEach(b=>b.classList.toggle('on',b.dataset.a===ART));}
+function bespSel(name){BESPSEL=name;renderBesp();}
+function renderBesp(){
+  document.getElementById('besp_tabs').innerHTML=BESPPERS.map(([name,mass])=>{
+    const n=bespTasks(name,mass).length;
+    return `<button class="${BESPSEL===name?'on':''}" onclick="bespSel('${name.replace(/'/g,"\\'")}')">🗣️ ${esc(name)} <span style="opacity:.7">(${n})</span></button>`;
+  }).join('');
+  const mass=(BESPPERS.find(p=>p[0]===BESPSEL)||[])[1];
+  const list=bespTasks(BESPSEL,mass);
+  const body=document.getElementById('besp_body');
+  if(!list.length){body.innerHTML=`<div style="color:var(--muted);padding:24px;text-align:center">Keine offenen Aufgaben für ${esc(BESPSEL)}. Setze bei einer Aufgabe die Maßnahme „Austausch mit ${esc(BESPSEL)}" oder füge ${esc(BESPSEL)} als Beteiligten hinzu.</div>`;return;}
+  body.innerHTML=`<div style="font-weight:600;margin-bottom:8px">${list.length} Aufgabe${list.length===1?'':'n'} für ${esc(BESPSEL)}</div>`
+    +list.map(t=>{const over=t.faellig&&t.faellig<today&&t.status!=='erledigt';
+      const warum=[];if(Array.isArray(t.massnahme)&&t.massnahme.includes(mass))warum.push('Austausch');if(Array.isArray(t.beteiligte)&&t.beteiligte.includes(BESPSEL))warum.push('Beteiligt');
+      return `<div style="display:flex;gap:10px;align-items:center;padding:9px 10px;border:1px solid var(--line);border-radius:9px;margin-bottom:7px;cursor:pointer" onclick="bespOpenTask('${t.id}')">
+        <span style="flex:1"><b>${esc(t.titel)}</b>${t.kontakt_label?` <span class="pill kontakt">👤 ${esc(t.kontakt_label)}</span>`:''}${t.projekt?` <span class="pill">📁 ${esc(t.projekt)}</span>`:''}</span>
+        <span class="pill">${STLBL[t.status||'todo']}</span>
+        ${t.faellig?`<span class="pill" style="${over?'color:var(--red);border-color:var(--red)':''}">📅 ${dfmt(t.faellig)}</span>`:''}
+        <span class="pill" style="opacity:.7">${warum.join(' · ')}</span>
+      </div>`;}).join('');
+}
+function bespOpenTask(id){bespClose();openDetail(id);}
+/* ---------- Projektübersicht ---------- */
+async function openProjekte(){
+  document.querySelectorAll('#artseg button').forEach(b=>b.classList.toggle('on',b.dataset.a==='projekte'));
+  const names=[...new Set(TASKS.map(t=>t.projekt).filter(Boolean))].sort();
+  const {data:allSecs}=await sb.from('os_projekt_abschnitte').select('projekt,name,faellig');
+  const secBy={};(allSecs||[]).forEach(s=>{(secBy[s.projekt]=secBy[s.projekt]||[]).push(s);});
+  const body=document.getElementById('projidx_body');
+  if(!names.length){body.innerHTML='<div style="color:var(--muted);padding:24px;text-align:center">Noch keine Projekte. Trage bei einer Aufgabe im Detail ein Projekt ein.</div>';}
+  else body.innerHTML=names.map(n=>{
+    const ts=TASKS.filter(t=>t.projekt===n);const done=ts.filter(t=>t.status==='erledigt').length;
+    const over=ts.filter(t=>t.faellig&&t.faellig<today&&t.status!=='erledigt').length;
+    const secs=secBy[n]||[];const secCount=new Set(secs.map(s=>s.name).concat(ts.map(t=>t.abschnitt).filter(Boolean))).size;
+    const next=secs.filter(s=>s.faellig).sort((a,b)=>a.faellig<b.faellig?-1:1)[0];
+    const pct=ts.length?Math.round(done/ts.length*100):0;
+    return `<div style="border:1px solid var(--line);border-radius:12px;padding:14px 16px;margin-bottom:10px;cursor:pointer" onclick="projIdxClose();openProject('${esc(n).replace(/'/g,"\\'")}')">
+      <div style="display:flex;align-items:center;gap:10px"><b style="flex:1;font-size:15px">📁 ${esc(n)}</b>
+        <span class="pill">${secCount} Abschnitte</span><span class="pill">${ts.length} Aufgaben</span>
+        <span class="pill" style="color:var(--green)">${done} erledigt</span>${over?`<span class="pill" style="color:var(--red);border-color:var(--red)">${over} überfällig</span>`:''}</div>
+      <div style="height:7px;background:var(--surf2);border-radius:999px;margin:10px 0 4px;overflow:hidden"><div style="height:100%;width:${pct}%;background:var(--green)"></div></div>
+      <div style="font-size:12px;color:var(--muted)">${pct}% erledigt${next?` · nächster Zieltermin: ${dfmt(next.faellig)} (${esc(next.name)})`:''}</div>
+    </div>`;
+  }).join('');
+  document.getElementById('projidxov').classList.add('show');
+}
+function projIdxClose(){document.getElementById('projidxov').classList.remove('show');
+  document.querySelectorAll('#artseg button').forEach(b=>b.classList.toggle('on',b.dataset.a===ART));}
+/* ---------- Projektansicht (Asana-Stil, 4 Ebenen) ---------- */
+let PROJ=null, PROJVIEW='liste', PROJSUBS=[], PROJSECS=[];
+async function openProject(name){
+  PROJ=name;PROJVIEW='liste';
+  document.getElementById('proj_title').textContent='📁 '+name;
+  document.getElementById('projov').classList.add('show');
+  const ids=TASKS.filter(t=>t.projekt===name).map(t=>t.id);
+  PROJSUBS=[];
+  if(ids.length){for(let i=0;i<ids.length;i+=100){const {data}=await sb.from('os_task_subtasks').select('id,task_id,titel,done,faellig,pos').in('task_id',ids.slice(i,i+100));PROJSUBS=PROJSUBS.concat(data||[]);}}
+  const {data:secs}=await sb.from('os_projekt_abschnitte').select('*').eq('projekt',name).order('pos');
+  PROJSECS=secs||[];
+  projSetView('liste');
+}
+function projClose(){document.getElementById('projov').classList.remove('show');PROJ=null;
+  document.querySelectorAll('#artseg button').forEach(b=>b.classList.toggle('on',b.dataset.a===ART));}
+function projSections(){
+  // Abschnitte aus Tabelle + evtl. in Aufgaben vorkommende, die noch keine Zeile haben
+  const names=PROJSECS.map(s=>s.name);
+  projTasks().forEach(t=>{if(t.abschnitt&&!names.includes(t.abschnitt)){names.push(t.abschnitt);PROJSECS.push({name:t.abschnitt,faellig:null,pos:999});}});
+  const ohne=projTasks().some(t=>!t.abschnitt);
+  const list=PROJSECS.slice().sort((a,b)=>(a.pos||0)-(b.pos||0));
+  if(ohne)list.push({name:null,faellig:null,pos:10000});
+  return list;
+}
+function projSetView(v){PROJVIEW=v;
+  document.getElementById('pv_liste').classList.toggle('on',v==='liste');
+  document.getElementById('pv_board').classList.toggle('on',v==='board');
+  projRender();
+}
+function projTasks(){return TASKS.filter(t=>t.projekt===PROJ).slice().sort((a,b)=>(a.pos||0)-(b.pos||0)||((a.faellig||'9999')<(b.faellig||'9999')?-1:1));}
+function projSubsOf(id){return PROJSUBS.filter(s=>s.task_id===id).sort((a,b)=>(a.pos||0)-(b.pos||0));}
+function projTasksOf(sec){return projTasks().filter(t=>(t.abschnitt||null)===sec);}
+function projTaskCard(t){const sub=projSubsOf(t.id);const sd=sub.filter(s=>s.done).length;const over=t.faellig&&t.faellig<today&&t.status!=='erledigt';
+  return `<div class="card" style="cursor:pointer" onclick="projOpenTask('${t.id}')"><div class="tt">${esc(t.titel)}</div><div class="meta"><span class="pill" style="background:${t.status==='erledigt'?'#e7f6ef':'#fff'};color:${t.status==='erledigt'?'var(--green)':'var(--muted)'}">${STLBL[t.status||'todo']}</span>${t.faellig?`<span class="pill" style="${over?'color:var(--red);border-color:var(--red)':''}">📅 ${dfmt(t.faellig)}</span>`:''}${sub.length?`<span class="pill">☑ ${sd}/${sub.length}</span>`:''}</div></div>`;}
+function projRender(){
+  const ts=projTasks();
+  const done=ts.filter(t=>t.status==='erledigt').length;
+  const over=ts.filter(t=>t.faellig&&t.faellig<today&&t.status!=='erledigt').length;
+  const secs=projSections();
+  document.getElementById('proj_stats').innerHTML=`${secs.filter(s=>s.name).length} Abschnitte · ${ts.length} Aufgaben · <b style="color:var(--green)">${done}</b> erledigt${over?` · <b style="color:var(--red)">${over}</b> überfällig`:''}`;
+  const body=document.getElementById('proj_body');
+  if(!ts.length&&!secs.filter(s=>s.name).length){body.innerHTML='<div style="color:var(--muted);padding:24px;text-align:center">Keine Abschnitte/Aufgaben in diesem Projekt.</div>';return;}
+  const secLbl=s=>{const tl=projTasksOf(s.name);const d=tl.filter(t=>t.status==='erledigt').length;const ov=s.faellig&&s.faellig<today;
+    return `${s.name?esc(s.name):'<span style="color:var(--muted)">Ohne Abschnitt</span>'}${s.faellig?` <span class="pill" style="${ov?'color:var(--red);border-color:var(--red)':''}">🎯 ${dfmt(s.faellig)}</span>`:''} <span class="pill">${d}/${tl.length}</span>`;};
+  const secArgB=n=>(n==null?'':String(n)).replace(/'/g,"\\'");
+  if(PROJVIEW==='board'){
+    // Spalten = Abschnitte (wie Asana-Board)
+    body.innerHTML='<div class="cols" style="min-height:200px">'+secs.map(s=>{
+      const list=projTasksOf(s.name);
+      return `<div class="col"><div class="col-h"><span style="flex:1">${secLbl(s)}</span></div>${list.map(projTaskCard).join('')||'<div style="color:var(--muted);font-size:12px;padding:6px">—</div>'}<button class="btn sec sm" style="margin:6px" onclick="projAddTask('${secArgB(s.name)}')">+ Aufgabe</button></div>`;
+    }).join('')+'</div>'
+    +`<button class="btn sec" style="margin-top:8px" onclick="projAddAbschnitt()">+ Abschnitt</button>`;
+    return;
+  }
+  // Liste – Abschnitt → Aufgaben → Unteraufgaben
+  const secArg=n=>(n==null?'':String(n)).replace(/'/g,"\\'");
+  body.innerHTML=secs.map(s=>{
+    const list=projTasksOf(s.name);
+    const tasksHtml=list.map(t=>{
+      const sub=projSubsOf(t.id);const sd=sub.filter(x=>x.done).length;
+      const over=t.faellig&&t.faellig<today&&t.status!=='erledigt';
+      const subrows=sub.map(x=>`<div style="display:flex;gap:8px;align-items:center;padding:3px 0 3px 42px;font-size:13px;color:${x.done?'var(--muted)':'inherit'}">
+        <span>${x.done?'☑':'☐'}</span><span style="flex:1;${x.done?'text-decoration:line-through':''}">${esc(x.titel)}</span>${x.faellig?`<span class="pill">${dfmt(x.faellig)}</span>`:''}</div>`).join('');
+      return `<div style="border-top:1px solid var(--line)">
+        <div style="display:flex;gap:10px;align-items:center;padding:8px 12px;cursor:pointer" onclick="projOpenTask('${t.id}')">
+          <span style="color:var(--muted)">↳</span><b style="flex:1">${esc(t.titel)}</b>
+          <span class="pill" style="background:${t.status==='erledigt'?'#e7f6ef':'#fff'};color:${t.status==='erledigt'?'var(--green)':'var(--muted)'}">${STLBL[t.status||'todo']}</span>
+          ${t.faellig?`<span class="pill" style="${over?'color:var(--red);border-color:var(--red)':''}">📅 ${dfmt(t.faellig)}</span>`:''}
+          ${sub.length?`<span class="pill">☑ ${sd}/${sub.length}</span>`:''}
+          <button class="btn sec sm" title="Unteraufgabe hinzufügen" onclick="event.stopPropagation();projAddSub('${t.id}')">+ Unteraufg.</button>
+        </div>${sub.length?`<div style="padding:0 12px 6px">${subrows}</div>`:''}</div>`;
+    }).join('')||'<div style="padding:8px 12px;color:var(--muted);font-size:13px;border-top:1px solid var(--line)">Noch keine Aufgaben in diesem Abschnitt.</div>';
+    return `<div style="border:1px solid var(--line);border-radius:10px;margin-bottom:12px;overflow:hidden">
+      <div style="padding:10px 12px;background:var(--surf2);font-weight:700;font-size:14px;display:flex;align-items:center;gap:8px"><span style="flex:1">${secLbl(s)}</span><button class="btn sec sm" onclick="projAddTask('${secArg(s.name)}')">+ Aufgabe</button></div>
+      ${tasksHtml}</div>`;
+  }).join('')
+  +`<button class="btn sec" style="margin-top:4px" onclick="projAddAbschnitt()">+ Abschnitt</button>`;
+}
+async function projAddAbschnitt(){
+  if(!PROJ)return;const name=(prompt('Name des neuen Abschnitts:')||'').trim();if(!name)return;
+  const pos=(PROJSECS.reduce((m,s)=>Math.max(m,s.pos||0),0))+1;
+  const {data,error}=await sb.from('os_projekt_abschnitte').insert({projekt:PROJ,name,pos}).select().maybeSingle();
+  if(error){toast('Fehler: '+error.message);return;}
+  if(data)PROJSECS.push(data);projRender();toast('Abschnitt angelegt ✓');
+}
+async function projAddTask(sec){
+  if(!PROJ)return;const titel=(prompt('Titel der neuen Aufgabe:')||'').trim();if(!titel)return;
+  const pos=(TASKS.reduce((m,t)=>Math.max(m,t.pos||0),0))+1;
+  const row={titel,art:'aufgabe',status:'todo',verantwortlich:'Eric Eisenhardt',quelle:'os',projekt:PROJ,abschnitt:sec||null,pos};
+  const {data,error}=await sb.from('os_tasks').insert(row).select().maybeSingle();
+  if(error){toast('Fehler: '+error.message);return;}
+  if(data)TASKS.push(data);projRender();toast('Aufgabe angelegt ✓');
+}
+async function projAddSub(taskId){
+  const titel=(prompt('Titel der neuen Unteraufgabe:')||'').trim();if(!titel)return;
+  const pos=(projSubsOf(taskId).reduce((m,s)=>Math.max(m,s.pos||0),0))+1;
+  const {data,error}=await sb.from('os_task_subtasks').insert({task_id:taskId,titel,pos,done:false}).select().maybeSingle();
+  if(error){toast('Fehler: '+error.message);return;}
+  if(data)PROJSUBS.push(data);projRender();toast('Unteraufgabe angelegt ✓');
+}
+function projOpenTask(id){projClose();openDetail(id);}
 let CALMODE='woche';
 function mondayOf(d){const x=new Date(d);x.setDate(x.getDate()-((x.getDay()+6)%7));x.setHours(0,0,0,0);return x;}
 function renderCalendar(){
@@ -395,7 +616,8 @@ function renderCalendar(){
   let cells='';
   for(let i=0;i<count;i++){const d=new Date(start);d.setDate(start.getDate()+i);const iso=isoLokal(d);
     const out=CALMODE==='monat'&&d.getMonth()!==curM, isToday=iso===today;
-    const list=(byDay[iso]||[]).slice().sort((a,b)=>(a.pos||0)-(b.pos||0)||((a.created_at||'')<(b.created_at||'')?-1:1));
+    const calRank=x=>{const m=Array.isArray(x.massnahme)?x.massnahme:(x.massnahme?[x.massnahme]:[]);if(m.includes('fristsache'))return 0;if(m.includes('top3'))return 1;return 2;};
+    const list=(byDay[iso]||[]).slice().sort((a,b)=>calRank(a)-calRank(b)||(a.pos||0)-(b.pos||0)||((a.created_at||'')<(b.created_at||'')?-1:1));
     cells+=`<div class="cell ${out?'out':''} ${isToday?'today':''}" ondragover="event.preventDefault();this.classList.add('calover')" ondragleave="this.classList.remove('calover')" ondrop="calDrop(event,'${iso}',this)"><div class="dn">${d.getDate()}. <span class="addday" title="Hier eine Aufgabe anlegen" onclick="event.stopPropagation();calAdd('${iso}')">＋</span></div>${
       list.map(t=>{
         if(t.__sub){const so=iso<today&&!t.done;const scl=t.done?'done':(so?'over':'');const st=(t.titel||'');return `<div class="ct sub ${scl}" style="cursor:pointer" onclick="openDetail('${t.task_id}')" title="Unteraufgabe – ${esc(st)}"><div class="ctt">☑ ${esc(CALMODE==='woche'?st:(st.length>22?st.slice(0,20)+'…':st))}</div></div>`;}
@@ -430,6 +652,8 @@ function nextRecurDate(z,baseISO){const d=new Date((baseISO||today)+'T00:00:00')
   else if(z==='werktags'){do{d.setDate(d.getDate()+1);}while([0,6].indexOf(d.getDay())>=0);}
   else if(z==='woechentlich')d.setDate(d.getDate()+7);
   else if(z==='zweiwoechentlich')d.setDate(d.getDate()+14);
+  else if(z==='vierteljaehrlich')d.setMonth(d.getMonth()+3);
+  else if(z==='quartalsmitte'){const T=[[1,15],[4,15],[7,15],[10,15]];let best=null;for(const [m,day] of T){const c=new Date(d.getFullYear(),m,day);if(c>d){best=c;break;}}if(!best)best=new Date(d.getFullYear()+1,1,15);d.setTime(best.getTime());}
   else if(z.indexOf('monatlich')===0){
     const dom=z.indexOf(':')>=0?parseInt(z.split(':')[1],10):null;
     if(dom&&dom>=1&&dom<=31){d.setDate(1);d.setMonth(d.getMonth()+1);const last=new Date(d.getFullYear(),d.getMonth()+1,0).getDate();d.setDate(Math.min(dom,last));}
@@ -489,6 +713,9 @@ async function addTask(){const el=document.getElementById('newT');const titel=(e
   if(error){toast('Fehler: '+error.message);return;}
   if(data)TASKS.push(data);el.value='';if(fEl)fEl.value='';if(wEl)wEl.value='';render();toast('Angelegt ✓');}
 async function delTask(id){if(!confirm('Aufgabe entfernen?'))return;await sb.from('os_tasks').delete().eq('id',id);TASKS=TASKS.filter(t=>t.id!==id);render();}
+function updKontBadge(){const sel=document.getElementById('d_kont');const b=document.getElementById('d_kontbadge');if(!sel||!b)return;
+  const v=sel.value;const label=v?v.split('|')[1]:'';
+  b.innerHTML=label?`<span style="background:#eef;color:var(--accent);border:1px solid #cdd;border-radius:999px;padding:3px 10px;font-size:12.5px;font-weight:700">👤 ${esc(label)}</span>`:`<span style="color:var(--muted);font-size:12px;font-weight:400">· kein Kontakt zugeordnet</span>`;}
 async function linkKont(id,val){const t=TASKS.find(x=>x.id===id);if(!t)return;const [kid,label]=val?val.split('|'):[null,null];
   t.kontakt_id=kid;t.kontakt_label=label;await sb.from('os_tasks').update({kontakt_id:kid,kontakt_label:label,updated_at:new Date().toISOString()}).eq('id',id);render();}
 async function linkObj(id,val){const t=TASKS.find(x=>x.id===id);if(!t)return;const [oid,label]=val?val.split('|'):[null,null];
@@ -517,6 +744,16 @@ function updErlBtn(){
   const b=document.getElementById('d_erlbtn');if(!b||!DTASK)return;
   if(DTASK.status==='erledigt'){b.textContent='↩ Wieder öffnen';b.style.background='#fff';b.style.color='var(--accent)';b.style.borderColor='var(--accent)';}
   else{b.textContent='✓ Erledigt';b.style.background='#0f9d6b';b.style.color='#fff';b.style.borderColor='#0f9d6b';}
+}
+async function dDelete(){
+  if(!DTASK)return;const id=DTASK.id;
+  if(!confirm('Diese Aufgabe mit allen Unteraufgaben und dem Verlauf endgültig löschen?'))return;
+  await sb.from('os_task_subtasks').delete().eq('task_id',id);
+  await sb.from('os_task_verlauf').delete().eq('task_id',id);
+  const {error}=await sb.from('os_tasks').delete().eq('id',id);
+  if(error){toast('Fehler: '+error.message);return;}
+  TASKS=TASKS.filter(t=>t.id!==id);SUBCAL=SUBCAL.filter(s=>s.task_id!==id);
+  closeDetail();render();toast('Aufgabe gelöscht ✓');
 }
 async function dErledigtToggle(){
   if(!DTASK)return;
@@ -552,24 +789,57 @@ async function openDetail(id){
   if(alk){if(t.akquise_id){alk.style.display='';alk.innerHTML=`<a href="akquise.html?lead=${encodeURIComponent(t.akquise_id)}" target="_blank" rel="noopener" style="color:var(--accent);font-weight:600;text-decoration:none">🏠 Zum Lead im Akquise-Board ↗</a>`;}else{alk.style.display='none';alk.innerHTML='';}}
   renderGcal();
   setVal('d_verantwortlich',t.verantwortlich||'');setVal('d_faellig',t.faellig||'');
-  setVal('d_wiedervorlage',t.wiedervorlage||'');setWdhFields(t.wiederholung||'');setVal('d_asana_url',t.asana_url||'');setVal('d_claude_url',t.claude_url||'');setVal('d_beschreibung',t.beschreibung||'');
+  setVal('d_wiedervorlage',t.wiedervorlage||'');setWdhFields(t.wiederholung||'');setVal('d_asana_url',t.asana_url||'');setVal('d_claude_url',t.claude_url||'');setVal('d_link_url',t.link_url||'');setVal('d_beschreibung',t.beschreibung||'');
+  setVal('d_projekt',t.projekt||'');setVal('d_abschnitt',t.abschnitt||'');fillProjektDL();updAbschnittDL();
   document.getElementById('d_status').innerHTML=COLS.map(([k,l])=>`<option value="${k}"${(t.status||'todo')===k?' selected':''}>${STLBL[k]}</option>`).join('');
   updErlBtn();
-  document.getElementById('d_kont').innerHTML=kontOptions(t.kontakt_label);
+  document.getElementById('d_kont').innerHTML=kontOptions(t.kontakt_label);updKontBadge();
   document.getElementById('d_obj').innerHTML=objOptions(t.object_label);
   document.getElementById('dov').classList.add('show');
   {const _bd=document.getElementById('d_beschreibung');if(_bd)setTimeout(()=>autoGrow(_bd),0);}
   TAGS=Array.isArray(t.tags)?t.tags.slice():[];document.getElementById('d_tagnew').value='';renderDTags();
   BETEIL=Array.isArray(t.beteiligte)?t.beteiligte.slice():[];renderDBeteiligte();
   MASSV=Array.isArray(t.massnahme)?t.massnahme.slice():(t.massnahme?[t.massnahme]:[]);renderDMass();
-  SUBS=[];VER=[];SUBOPEN=new Set();VEREDIT=null;renderDSubs();renderDVer();
-  const [s,v]=await Promise.all([
+  SUBS=[];VER=[];DATEIEN=[];SUBOPEN=new Set();VEREDIT=null;renderDSubs();renderDVer();renderDDateien();
+  const [s,v,dz]=await Promise.all([
     sb.from('os_task_subtasks').select('*').eq('task_id',id).order('pos',{nullsFirst:true}).order('created_at'),
-    sb.from('os_task_verlauf').select('*').eq('task_id',id).order('created_at',{ascending:false})
+    sb.from('os_task_verlauf').select('*').eq('task_id',id).order('created_at',{ascending:false}),
+    sb.from('os_task_dateien').select('*').eq('task_id',id).order('created_at',{ascending:false})
   ]);
-  SUBS=s.data||[];VER=v.data||[];renderDSubs();renderDVer();
+  SUBS=s.data||[];VER=v.data||[];DATEIEN=dz.data||[];renderDSubs();renderDVer();renderDDateien();
 }
-function closeDetail(){document.getElementById('dov').classList.remove('show');DTASK=null;}
+let DATEIEN=[];
+function renderDDateien(){
+  const box=document.getElementById('d_dateien');if(!box)return;
+  document.getElementById('d_dateicnt').textContent=DATEIEN.length?`(${DATEIEN.length})`:'';
+  box.innerHTML=DATEIEN.length?DATEIEN.map(d=>{
+    const kb=d.groesse?(d.groesse<1024*1024?Math.round(d.groesse/1024)+' KB':(d.groesse/1048576).toFixed(1)+' MB'):'';
+    const ic=(d.typ||'').indexOf('image/')===0?'🖼️':((d.typ||'').indexOf('pdf')>=0?'📄':'📎');
+    return `<div style="display:flex;gap:8px;align-items:center;padding:4px 0;font-size:13px">
+      <span>${ic}</span><span class="lnk" style="flex:1;cursor:pointer;text-decoration:underline;text-decoration-style:dotted" onclick="dDateiOeffnen('${d.pfad.replace(/'/g,"\\'")}')" title="öffnen">${esc(d.name)}</span>
+      <span style="color:var(--muted);font-size:11.5px">${kb}${d.erfasst_von?' · '+esc(d.erfasst_von):''}</span>
+      <b style="cursor:pointer" title="löschen" onclick="dDateiWeg('${d.id}','${d.pfad.replace(/'/g,"\\'")}')">🗑</b></div>`;
+  }).join(''):'<div style="color:var(--muted);font-size:12px">Noch keine Dateien.</div>';
+}
+async function dDateiHoch(inp){
+  if(!DTASK){inp.value='';return;}const files=[...inp.files];inp.value='';if(!files.length)return;
+  const msg=document.getElementById('d_datei_msg');let n=0;
+  for(const f of files){msg.textContent='Lade '+(++n)+'/'+files.length+' …';
+    try{const ext=(f.name.split('.').pop()||'bin').toLowerCase();const pfad=`${DTASK.id}/${Date.now()}_${Math.random().toString(36).slice(2,8)}.${ext}`;
+      const {error}=await sb.storage.from('os-task-dateien').upload(pfad,f,{contentType:f.type||'application/octet-stream',upsert:false});
+      if(error)throw error;
+      const {data,error:e2}=await sb.from('os_task_dateien').insert({task_id:DTASK.id,name:f.name,pfad,typ:f.type||null,groesse:f.size||null,erfasst_von:ICH||null}).select().maybeSingle();
+      if(e2)throw e2;if(data)DATEIEN.unshift(data);
+    }catch(e){msg.textContent='Fehler: '+(e.message||e);renderDDateien();return;}
+  }
+  msg.textContent='';renderDDateien();toast(files.length+' Datei(en) hochgeladen ✓');
+  await logVer('📎 '+files.length+' Datei(en) angehängt'+(files.length===1?': '+files[0].name:''));
+}
+async function dDateiOeffnen(pfad){const {data,error}=await sb.storage.from('os-task-dateien').createSignedUrl(pfad,600);if(error||!data){toast('Datei konnte nicht geöffnet werden.');return;}window.open(data.signedUrl,'_blank','noopener');}
+async function dDateiWeg(id,pfad){if(!confirm('Diese Datei entfernen?'))return;const {error}=await sb.from('os_task_dateien').delete().eq('id',id);if(error){toast(error.message);return;}await sb.storage.from('os-task-dateien').remove([pfad]);DATEIEN=DATEIEN.filter(d=>d.id!==id);renderDDateien();toast('Datei entfernt ✓');}
+async function closeDetail(){if(DAUTOSAVET){clearTimeout(DAUTOSAVET);DAUTOSAVET=null;await dAutoSave();}
+  document.getElementById('dov').classList.remove('show');DTASK=null;
+  if(document.body.classList.contains('embed')){try{parent.postMessage({type:'gf-detail-closed'},'*');}catch(e){}}}
 function renderDSubs(){
   const open=SUBS.filter(x=>!x.done).length;
   document.getElementById('d_subcnt').textContent=SUBS.length?`(${SUBS.length-open}/${SUBS.length})`:'';
@@ -583,6 +853,7 @@ function renderDSubs(){
     <input type="checkbox" ${s.done?'checked':''} onchange="dToggleSub('${s.id}',this.checked)">
     <input class="subedit" value="${esc(s.titel)}" onchange="dUpdSub('${s.id}',this.value)" onkeydown="if(event.key==='Enter')this.blur()" title="Zum Bearbeiten klicken">
     <input type="date" class="subdate" value="${s.faellig||''}" title="Fällig am – erscheint im Kalender" onchange="dSubDate('${s.id}',this.value)" oninput="dSubDate('${s.id}',this.value)">
+    <select class="submass" title="Nächste Maßnahme" onchange="dSubMass('${s.id}',this.value)"><option value="">＋ Maßnahme</option>${MASSORDER.map(m=>`<option value="${m}"${s.massnahme===m?' selected':''}>${MASSICON[m]} ${MASSLBL[m]}</option>`).join('')}</select>
     <b onclick="dSubToggle('${s.id}')" title="Notizen / Chat" style="cursor:pointer">💬${notes.length?' '+notes.length:''}</b>
     <b onclick="dDelSub('${s.id}')" title="löschen" style="cursor:pointer">🗑</b></div>${chat}`;
   }).join('')||'<div style="color:var(--muted);font-size:12px">Keine Unteraufgaben.</div>';
@@ -665,18 +936,17 @@ async function subDrop(e,targetId,el){
   if(ups.length)toast('Reihenfolge aktualisiert ✓');
 }
 async function dUpdSub(id,val){const v=(val||'').trim();const s=SUBS.find(x=>x.id===id);if(!s)return;if(!v){renderDSubs();return;}if(v===s.titel)return;s.titel=v;const {error}=await sb.from('os_task_subtasks').update({titel:v}).eq('id',id);if(error){toast(error.message);return;}SUBCAL.forEach(x=>{if(x.id===id)x.titel=v;});renderDSubs();}
+async function dSubMass(id,v){const nv=v||null;const s=SUBS.find(x=>x.id===id);if(!s)return;if((s.massnahme||null)===nv)return;s.massnahme=nv;const {error}=await sb.from('os_task_subtasks').update({massnahme:nv}).eq('id',id);if(error){toast(error.message);return;}toast(nv?'Maßnahme: '+MASSLBL[nv]:'Maßnahme entfernt');}
 async function dSubDate(id,v){const nv=v||null;const s=SUBS.find(x=>x.id===id);if(s&&(s.faellig||null)===nv)return;if(s)s.faellig=nv;const {error}=await sb.from('os_task_subtasks').update({faellig:nv}).eq('id',id);if(error){toast(error.message);return;}
   SUBCAL=SUBCAL.filter(x=>x.id!==id);if(nv&&s)SUBCAL.push({id,task_id:s.task_id||(DTASK&&DTASK.id),titel:s.titel,done:s.done,faellig:nv});
   renderDSubs();render();}
 function autoGrow(el){if(!el)return;el.style.height='auto';el.style.height=(el.scrollHeight+2)+'px';}
 async function dAutoBeschreibung(v){if(!DTASK)return;const nv=(v&&v.trim())?v:null;if((DTASK.beschreibung||'')===(nv||''))return;DTASK.beschreibung=nv;const {error}=await sb.from('os_tasks').update({beschreibung:nv,updated_at:new Date().toISOString()}).eq('id',DTASK.id);if(error){toast('Beschreibung: '+error.message);return;}const t=TASKS.find(x=>x.id===DTASK.id);if(t)t.beschreibung=nv;toast('Beschreibung gespeichert ✓');}
 async function dAddComment(){const el=document.getElementById('d_comment');const text=(el.value||'').trim();if(!text)return;await logVer('💬 '+text);el.value='';}
-async function dSave(){
-  if(!DTASK)return;const id=DTASK.id;const wasErl=DTASK.status==='erledigt';
-  dAddTag(); /* noch nicht bestätigten Tag-Text übernehmen */
+function dBuildPatch(){
   const kv=document.getElementById('d_kont').value, ov=document.getElementById('d_obj').value;
   const [kid,klabel]=kv?kv.split('|'):[null,null];const [oid,olabel]=ov?ov.split('|'):[null,null];
-  const patch={
+  return {
     titel:document.getElementById('d_titel').value.trim(),
     art:document.getElementById('d_art').value,
     status:document.getElementById('d_status').value,
@@ -688,12 +958,34 @@ async function dSave(){
     kontakt_id:kid,kontakt_label:klabel,object_id:oid,object_label:olabel,
     asana_url:document.getElementById('d_asana_url').value||null,
     claude_url:document.getElementById('d_claude_url').value||null,
+    link_url:document.getElementById('d_link_url').value.trim()||null,
     beschreibung:document.getElementById('d_beschreibung').value||null,
-    tags:TAGS.slice(),
-    beteiligte:BETEIL.slice(),
-    massnahme:MASSV.slice(),
+    projekt:document.getElementById('d_projekt').value.trim()||null,
+    abschnitt:document.getElementById('d_abschnitt').value.trim()||null,
+    tags:TAGS.slice(),beteiligte:BETEIL.slice(),massnahme:MASSV.slice(),
     updated_at:new Date().toISOString()
   };
+}
+let DAUTOSAVET=null, DAUTOSAVING=false;
+function scheduleAutoSave(){if(!DTASK)return;clearTimeout(DAUTOSAVET);DAUTOSAVET=setTimeout(dAutoSave,500);}
+async function dAutoSave(){
+  if(!DTASK||DAUTOSAVING)return;const id=DTASK.id;const wasErl=DTASK.status==='erledigt';
+  const patch=dBuildPatch();
+  // nichts tun, wenn sich nichts geändert hat
+  const diff=Object.keys(patch).some(k=>k!=='updated_at'&&JSON.stringify(DTASK[k]??(Array.isArray(patch[k])?[]:null))!==JSON.stringify(patch[k]??(Array.isArray(patch[k])?[]:null)));
+  if(!diff)return;
+  DAUTOSAVING=true;
+  const {error}=await sb.from('os_tasks').update(patch).eq('id',id);
+  DAUTOSAVING=false;
+  if(error){toast('Auto-Speichern: '+error.message);return;}
+  Object.assign(DTASK,patch);const t=TASKS.find(x=>x.id===id);if(t)Object.assign(t,patch);
+  if(patch.status==='erledigt'&&!wasErl)await recurTask(DTASK);
+  const ind=document.getElementById('d_saveind');if(ind){ind.textContent='✓ automatisch gespeichert';setTimeout(()=>{if(ind)ind.textContent='';},1500);}
+}
+async function dSave(){
+  if(!DTASK)return;const id=DTASK.id;const wasErl=DTASK.status==='erledigt';
+  dAddTag(); /* noch nicht bestätigten Tag-Text übernehmen */
+  const patch=dBuildPatch();
   const changes=[];const map={status:'Status',prio:'Priorität',faellig:'Fällig',wiedervorlage:'Wiedervorlage',verantwortlich:'Verantwortlich',art:'Art'};
   for(const k in map){if((DTASK[k]||'')!==(patch[k]||'')&&!(DTASK[k]==null&&patch[k]==null))changes.push(`${map[k]}: ${DTASK[k]||'—'} → ${patch[k]||'—'}`);}
   const {error}=await sb.from('os_tasks').update(patch).eq('id',id);
@@ -833,10 +1125,14 @@ async function asImportRun(){
     if((j.unteraufgaben||[]).length)await sb.from('os_task_subtasks').insert(j.unteraufgaben.map((u,i)=>({task_id:ins.id,titel:u.name,done:u.erledigt,pos:i+1})));
     if((j.kommentare||[]).length)await sb.from('os_task_verlauf').insert(j.kommentare.map(k=>({task_id:ins.id,art:'kommentar',text:(k.autor?k.autor+': ':'')+k.text,autor:k.autor||null})));
     if(ins)TASKS.push(ins);render();
-    st.innerHTML='✓ Übertragen: „'+esc(j.task.name||'')+'" · '+(j.unteraufgaben||[]).length+' Unteraufgaben · '+(j.kommentare||[]).length+' Kommentare'+(j.getaggt?' · getaggt':'')+(j.abgeschlossen?' · <span style="color:var(--green)">in Asana abgeschlossen</span>':(abschliessen?' · <span style="color:var(--amber)">Abschließen fehlgeschlagen</span>':''));
+    st.innerHTML='✓ Übertragen: „'+esc(j.task.name||'')+'" · '+(j.unteraufgaben||[]).length+' Unteraufgaben · '+(j.kommentare||[]).length+' Kommentare'+(j.getaggt?' · getaggt':'')+(j.faelligGeleert?' · <span style="color:var(--green)">Fälligkeit in Asana gelöscht</span>':'')+(j.abgeschlossen?' · <span style="color:var(--green)">in Asana abgeschlossen</span>':(abschliessen?' · <span style="color:var(--amber)">Abschließen fehlgeschlagen</span>':''));
     document.getElementById('as_link').value='';toast('Aus Asana übertragen ✓');
   }catch(e){st.textContent='Fehler: '+e.message;}
   go.disabled=false;
 }
+(function(){const dov=document.getElementById('dov');if(!dov)return;
+  const AUTOIDS=new Set(['d_titel','d_art','d_status','d_prio','d_verantwortlich','d_faellig','d_wiedervorlage','d_wiederholung','d_wdh_dom','d_kont','d_obj','d_asana_url','d_claude_url','d_link_url','d_projekt','d_abschnitt']);
+  dov.addEventListener('change',e=>{if(e.target&&AUTOIDS.has(e.target.id))scheduleAutoSave();});
+})();
 load();
 </script></body></html>

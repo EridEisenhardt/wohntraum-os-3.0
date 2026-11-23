@@ -135,8 +135,8 @@ select.inl.st{font-weight:700;color:var(--accent);border-color:var(--line);backg
     <div style="display:flex;justify-content:space-between;align-items:center;padding:14px 18px;border-bottom:1px solid var(--line)"><b>+ Nachträgliche Vermietung erfassen</b><span style="cursor:pointer;font-size:20px;color:var(--muted)" onclick="closeNachtrag()">✕</span></div>
     <div style="padding:16px 18px;display:grid;grid-template-columns:1fr 1fr;gap:10px">
       <div style="grid-column:1/-1;font-size:11.5px;color:var(--muted)">Direkt ins Register — ohne Mietinteressenten/Wohnung anzulegen oder zu verknüpfen. Wird als „nachträglich" markiert.</div>
-      <label>Gebäude / Objekt<input id="nt_geb" style="width:100%" placeholder="z. B. M8"></label>
-      <label>Einheit<input id="nt_einh" style="width:100%" placeholder="z. B. WE 3"></label>
+      <label>Gebäude / Objekt<select id="nt_geb" style="width:100%" onchange="ntFillEinh()"></select></label>
+      <label>Einheit<select id="nt_einh" style="width:100%"><option value="">— erst Gebäude wählen —</option></select></label>
       <label>Vormieter<input id="nt_vor" style="width:100%"></label>
       <label>Neuer Mieter<input id="nt_mieter" style="width:100%"></label>
       <label>Auszug (Vormieter)<input id="nt_auszug" type="date" style="width:100%"></label>
@@ -332,15 +332,19 @@ function optlist(arr,sel){return arr.map(o=>`<option ${o===sel?'selected':''}>${
 function unitsOf(g){return EINH.filter(e=>e.gebaeude===g).map(e=>e.name);}
 function fillEinheit(){/* Einheit wird jetzt manuell eingetragen */}
 function clearForm(){['f_grund','f_ziel','f_einzug','f_auszug','f_vormieter'].forEach(id=>$(id).value='');$('msg').textContent='';}
+let MKGEB=[], MKEINH=[];
 async function loadRefs(){
-  const[g,e,i,v,nz,td]=await Promise.all([
+  const[g,e,i,v,nz,td,mg,me]=await Promise.all([
     sb.from('gebaeude').select('name,kennung').order('pos').order('name'),
     sb.from('wohneinheiten').select('gebaeude,name').order('name'),
     sb.from('mietinteressenten').select('id,name,status').order('created_at',{ascending:false}),
     sb.from('vermietung_leads').select('id,vermietung_id,interessent_id'),
     sb.from('vermietung_notizen').select('*').order('created_at',{ascending:false}),
-    sb.from('vermietung_todos').select('*').order('created_at',{ascending:true})
+    sb.from('vermietung_todos').select('*').order('created_at',{ascending:true}),
+    sb.from('gebaeude').select('id,name,kennung,pos').order('pos').order('name'),
+    sb.from('einheiten').select('id,gebaeude_id,bezeichnung,pos').order('pos')
   ]);
+  MKGEB=mg.data||[];MKEINH=me.data||[];
   GEB=(g.data||[]).map(r=>r.name);KENN={};(g.data||[]).forEach(r=>{KENN[r.name]=r.kennung||'';});EINH=e.data||[];INT=i.data||[];VL=v.data||[];NOTIZ=nz.data||[];TODO=td.data||[];
   $('f_geb').innerHTML='<option value="">—</option>'+GEB.map(x=>`<option value="${esc(x)}">${KENN[x]?esc(KENN[x])+' · ':''}${esc(x)}</option>`).join('');
   if($('fObj'))$('fObj').innerHTML='<option value="">Alle Objekte</option>'+GEB.map(x=>`<option value="${esc(x)}"${x===FOBJ?' selected':''}>${KENN[x]?esc(KENN[x])+' · ':''}${esc(x)}</option>`).join('');
@@ -532,13 +536,29 @@ function render(){
       ${notizBlock(r.id)}
     </div>`;}).join('')+'</div>';
 }
-function openNachtrag(){['nt_geb','nt_einh','nt_vor','nt_mieter','nt_auszug','nt_einzug','nt_wm'].forEach(i=>{if($(i))$(i).value='';});if($('nt_msg'))$('nt_msg').textContent='';$('ntOv').style.display='flex';}
+function openNachtrag(){
+  ['nt_vor','nt_mieter','nt_auszug','nt_einzug','nt_wm'].forEach(i=>{if($(i))$(i).value='';});
+  const gs=MKGEB.slice().sort((a,b)=>(a.pos||0)-(b.pos||0));
+  $('nt_geb').innerHTML='<option value="">— Gebäude wählen —</option>'+gs.map(g=>`<option value="${esc(g.id)}">${g.kennung?esc(g.kennung)+' · ':''}${esc(g.name)}</option>`).join('');
+  $('nt_einh').innerHTML='<option value="">— erst Gebäude wählen —</option>';
+  if($('nt_msg'))$('nt_msg').textContent='';$('ntOv').style.display='flex';
+}
+function ntFillEinh(){
+  const gid=$('nt_geb').value;
+  const list=MKEINH.filter(e=>e.gebaeude_id===gid).sort((a,b)=>(a.pos||0)-(b.pos||0)||String(a.bezeichnung||'').localeCompare(String(b.bezeichnung||''),'de',{numeric:true}));
+  $('nt_einh').innerHTML=list.length
+    ?'<option value="">— Einheit wählen —</option>'+list.map(e=>`<option value="${esc(e.bezeichnung||'')}">${esc(e.bezeichnung||'(ohne)')}</option>`).join('')
+    :'<option value="">Keine Einheiten hinterlegt</option>';
+}
 function closeNachtrag(){$('ntOv').style.display='none';}
 async function saveNachtrag(){
-  const geb=$('nt_geb').value.trim();
-  if(!geb){$('nt_msg').textContent='Bitte Gebäude/Objekt angeben';return;}
+  const gid=$('nt_geb').value;
+  if(!gid){$('nt_msg').style.color='var(--red)';$('nt_msg').textContent='Bitte Gebäude/Objekt wählen';return;}
+  const g=MKGEB.find(x=>x.id===gid); const geb=g?(g.kennung||g.name):gid;
+  const einh=$('nt_einh').value.trim();
+  if(!einh){$('nt_msg').style.color='var(--red)';$('nt_msg').textContent='Bitte Einheit wählen';return;}
   const wmRaw=($('nt_wm').value||'').trim().replace(',','.'); const wm=wmRaw===''?null:Number(wmRaw);
-  const row={gebaeude:geb,einheit:$('nt_einh').value.trim()||null,vormieter:$('nt_vor').value.trim()||null,mieter_text:$('nt_mieter').value.trim()||null,
+  const row={gebaeude:geb,einheit:einh||null,vormieter:$('nt_vor').value.trim()||null,mieter_text:$('nt_mieter').value.trim()||null,
     auszug:$('nt_auszug').value||null,einzug:$('nt_einzug').value||null,warmmiete:(wm!=null&&!isNaN(wm))?wm:null,
     status:'8 · Erledigt',vermietet:true,nachtraglich:true,freigabe:false};
   const mx=await sb.from('wohnungsvermietung').select('nummer').order('nummer',{ascending:false}).limit(1);

@@ -201,10 +201,13 @@ export async function POST(req) {
       } catch (e) { /* Tag setzen ist optional – Übertragung bleibt gültig */ }
       let abgeschlossen = false
       if (b.abschliessen) { try { await asana('/tasks/' + gid, { method: 'PUT', json: { completed: true } }); abgeschlossen = true } catch (e) { /* Abschließen optional */ } }
+      // Fälligkeitsdatum in Asana entfernen (die Fälligkeit lebt ab jetzt im Wohntraum OS)
+      let faelligGeleert = false
+      if (t.due_on) { try { await asana('/tasks/' + gid, { method: 'PUT', json: { due_on: null, due_at: null } }); faelligGeleert = true } catch (e) { /* optional */ } }
       return antwort({
         task: { gid, name: t.name || '', notiz: String(t.notes || ''), faellig: t.due_on || '', zustaendig: (t.assignee && t.assignee.name) || '', completed: !!t.completed, link: t.permalink_url || raw },
         unteraufgaben: subs.map(s => ({ name: s.name || '', erledigt: !!s.completed, faellig: s.due_on || '' })),
-        kommentare, getaggt, abgeschlossen
+        kommentare, getaggt, abgeschlossen, faelligGeleert
       })
     }
 
