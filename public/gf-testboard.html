@@ -224,6 +224,8 @@ body.embed #dov .dlg{max-height:100vh}
     </div>
     <div class="sec"><div class="st">☑ Unteraufgaben <span id="d_subcnt"></span></div><div id="d_subs"></div>
       <div class="row"><input id="d_subnew" placeholder="Neue Unteraufgabe …" onkeydown="if(event.key==='Enter')dAddSub()"><button class="btn sec sm" onclick="dAddSub()">+</button></div></div>
+    <div class="sec"><div class="st">📎 Anhänge / Dateien <span id="d_dateicnt" style="font-weight:400;color:var(--muted)"></span></div><div id="d_dateien"></div>
+      <div class="row"><label class="btn sec sm" style="cursor:pointer">📎 Datei / Bild hochladen<input type="file" multiple accept="image/*,application/pdf,.doc,.docx,.xls,.xlsx,.eml,.msg,.txt,.csv,.zip" hidden onchange="dDateiHoch(this)"></label><span id="d_datei_msg" style="font-size:12px;color:var(--muted)"></span></div></div>
     <div class="sec"><div class="st">🕓 Verlauf &amp; Kommentare</div><div id="d_ver"></div>
       <textarea id="d_comment" class="komment" rows="2" placeholder="Kommentar … – oder 🎤 reinsprechen"></textarea>
       <div class="row"><button class="btn sec sm" id="mic_d_comment" onclick="diktieren('d_comment','mic_d_comment')">🎤</button><button class="btn sec sm" onclick="kiZusammenfassen('d_comment')">✨</button><button class="btn sm" onclick="dAddComment()">Kommentar</button></div></div>
@@ -797,13 +799,43 @@ async function openDetail(id){
   TAGS=Array.isArray(t.tags)?t.tags.slice():[];document.getElementById('d_tagnew').value='';renderDTags();
   BETEIL=Array.isArray(t.beteiligte)?t.beteiligte.slice():[];renderDBeteiligte();
   MASSV=Array.isArray(t.massnahme)?t.massnahme.slice():(t.massnahme?[t.massnahme]:[]);renderDMass();
-  SUBS=[];VER=[];SUBOPEN=new Set();VEREDIT=null;renderDSubs();renderDVer();
-  const [s,v]=await Promise.all([
+  SUBS=[];VER=[];DATEIEN=[];SUBOPEN=new Set();VEREDIT=null;renderDSubs();renderDVer();renderDDateien();
+  const [s,v,dz]=await Promise.all([
     sb.from('os_task_subtasks').select('*').eq('task_id',id).order('pos',{nullsFirst:true}).order('created_at'),
-    sb.from('os_task_verlauf').select('*').eq('task_id',id).order('created_at',{ascending:false})
+    sb.from('os_task_verlauf').select('*').eq('task_id',id).order('created_at',{ascending:false}),
+    sb.from('os_task_dateien').select('*').eq('task_id',id).order('created_at',{ascending:false})
   ]);
-  SUBS=s.data||[];VER=v.data||[];renderDSubs();renderDVer();
+  SUBS=s.data||[];VER=v.data||[];DATEIEN=dz.data||[];renderDSubs();renderDVer();renderDDateien();
 }
+let DATEIEN=[];
+function renderDDateien(){
+  const box=document.getElementById('d_dateien');if(!box)return;
+  document.getElementById('d_dateicnt').textContent=DATEIEN.length?`(${DATEIEN.length})`:'';
+  box.innerHTML=DATEIEN.length?DATEIEN.map(d=>{
+    const kb=d.groesse?(d.groesse<1024*1024?Math.round(d.groesse/1024)+' KB':(d.groesse/1048576).toFixed(1)+' MB'):'';
+    const ic=(d.typ||'').indexOf('image/')===0?'🖼️':((d.typ||'').indexOf('pdf')>=0?'📄':'📎');
+    return `<div style="display:flex;gap:8px;align-items:center;padding:4px 0;font-size:13px">
+      <span>${ic}</span><span class="lnk" style="flex:1;cursor:pointer;text-decoration:underline;text-decoration-style:dotted" onclick="dDateiOeffnen('${d.pfad.replace(/'/g,"\\'")}')" title="öffnen">${esc(d.name)}</span>
+      <span style="color:var(--muted);font-size:11.5px">${kb}${d.erfasst_von?' · '+esc(d.erfasst_von):''}</span>
+      <b style="cursor:pointer" title="löschen" onclick="dDateiWeg('${d.id}','${d.pfad.replace(/'/g,"\\'")}')">🗑</b></div>`;
+  }).join(''):'<div style="color:var(--muted);font-size:12px">Noch keine Dateien.</div>';
+}
+async function dDateiHoch(inp){
+  if(!DTASK){inp.value='';return;}const files=[...inp.files];inp.value='';if(!files.length)return;
+  const msg=document.getElementById('d_datei_msg');let n=0;
+  for(const f of files){msg.textContent='Lade '+(++n)+'/'+files.length+' …';
+    try{const ext=(f.name.split('.').pop()||'bin').toLowerCase();const pfad=`${DTASK.id}/${Date.now()}_${Math.random().toString(36).slice(2,8)}.${ext}`;
+      const {error}=await sb.storage.from('os-task-dateien').upload(pfad,f,{contentType:f.type||'application/octet-stream',upsert:false});
+      if(error)throw error;
+      const {data,error:e2}=await sb.from('os_task_dateien').insert({task_id:DTASK.id,name:f.name,pfad,typ:f.type||null,groesse:f.size||null,erfasst_von:ICH||null}).select().maybeSingle();
+      if(e2)throw e2;if(data)DATEIEN.unshift(data);
+    }catch(e){msg.textContent='Fehler: '+(e.message||e);renderDDateien();return;}
+  }
+  msg.textContent='';renderDDateien();toast(files.length+' Datei(en) hochgeladen ✓');
+  await logVer('📎 '+files.length+' Datei(en) angehängt'+(files.length===1?': '+files[0].name:''));
+}
+async function dDateiOeffnen(pfad){const {data,error}=await sb.storage.from('os-task-dateien').createSignedUrl(pfad,600);if(error||!data){toast('Datei konnte nicht geöffnet werden.');return;}window.open(data.signedUrl,'_blank','noopener');}
+async function dDateiWeg(id,pfad){if(!confirm('Diese Datei entfernen?'))return;const {error}=await sb.from('os_task_dateien').delete().eq('id',id);if(error){toast(error.message);return;}await sb.storage.from('os-task-dateien').remove([pfad]);DATEIEN=DATEIEN.filter(d=>d.id!==id);renderDDateien();toast('Datei entfernt ✓');}
 function closeDetail(){document.getElementById('dov').classList.remove('show');DTASK=null;
   if(document.body.classList.contains('embed')){try{parent.postMessage({type:'gf-detail-closed'},'*');}catch(e){}}}
 function renderDSubs(){
