@@ -230,7 +230,7 @@ body.embed #dov .dlg{max-height:100vh}
       <textarea id="d_comment" class="komment" rows="2" placeholder="Kommentar … – oder 🎤 reinsprechen"></textarea>
       <div class="row"><button class="btn sec sm" id="mic_d_comment" onclick="diktieren('d_comment','mic_d_comment')">🎤</button><button class="btn sec sm" onclick="kiZusammenfassen('d_comment')">✨</button><button class="btn sm" onclick="dAddComment()">Kommentar</button></div></div>
   </div>
-  <div class="dlg-ft"><button class="btn sec" onclick="dFollowup()">🔁 Follow-up (Datum verschieben)</button><button class="btn" id="d_erlbtn" style="background:#0f9d6b;color:#fff;border-color:#0f9d6b" onclick="dErledigtToggle()">✓ Erledigt</button><button class="btn" style="color:#c0392b;border-color:#e6b5ae" onclick="dDelete()">🗑 Löschen</button><span style="flex:1"></span><button class="btn" onclick="closeDetail()">Schließen</button><button class="btn pri" onclick="dSave()">Speichern</button></div>
+  <div class="dlg-ft"><button class="btn sec" onclick="dFollowup()">🔁 Follow-up (Datum verschieben)</button><button class="btn" id="d_erlbtn" style="background:#0f9d6b;color:#fff;border-color:#0f9d6b" onclick="dErledigtToggle()">✓ Erledigt</button><button class="btn" style="color:#c0392b;border-color:#e6b5ae" onclick="dDelete()">🗑 Löschen</button><span id="d_saveind" style="flex:1;font-size:12px;color:var(--green);padding-left:10px;align-self:center"></span><button class="btn" onclick="closeDetail()">Schließen</button></div>
 </div></div>
 <div class="ov" id="bespov" style="z-index:111" onclick="if(event.target===this)bespClose()"><div class="dlg" style="width:860px;max-width:96vw">
   <div class="dlg-hd"><span>🗣️ Team-Besprechung</span><span class="x" onclick="bespClose()">✕</span></div>
@@ -307,7 +307,7 @@ function setPerson(v){PERSON=v;render();}
 function personMatch(t){if(!PERSON)return true;if(Array.isArray(t.beteiligte)&&t.beteiligte.includes(PERSON))return true;const v=(t.verantwortlich||'').trim();if(!v)return false;return v===PERSON||v.indexOf(PERSON)>=0||PERSON.indexOf(v.split(' ')[0])===0;}
 function initPersonSel(){const el=document.getElementById('personsel');if(el)el.innerHTML='<option value="">👥 Alle Personen</option>'+TEAM.map(p=>`<option value="${esc(p)}"${PERSON===p?' selected':''}>${esc(p)}</option>`).join('');}
 function renderDBeteiligte(){document.getElementById('d_beteiligte').innerHTML=TEAM.map(p=>`<button type="button" class="pbtn${BETEIL.includes(p)?' on':''}" onclick="toggleBeteil('${p.replace(/'/g,"\\'")}')">${BETEIL.includes(p)?'✓ ':''}${esc(p)}</button>`).join('');}
-function toggleBeteil(p){if(BETEIL.includes(p))BETEIL=BETEIL.filter(x=>x!==p);else BETEIL.push(p);renderDBeteiligte();}
+function toggleBeteil(p){if(BETEIL.includes(p))BETEIL=BETEIL.filter(x=>x!==p);else BETEIL.push(p);renderDBeteiligte();scheduleAutoSave();}
 let MASSV=[];
 function renderDMass(){document.getElementById('d_mass').innerHTML=MASSORDER.map(m=>`<button type="button" class="pbtn${MASSV.includes(m)?' on':''}" onclick="toggleMass('${m}')">${MASSICON[m]} ${MASSLBL[m]}</button>`).join('')+`<button type="button" class="pbtn${MASSV.length===0?' on':''}" onclick="toggleMass('')" style="opacity:.8">— keine</button>`;}
 function toggleMass(m){
@@ -319,7 +319,7 @@ function toggleMass(m){
         if(cnt>=3)toast('Achtung: am '+day.split('-').reverse().join('.')+' sind schon 3 Top-3-Aufgaben gesetzt.');}
       else toast('Tipp: Fälligkeitsdatum setzen, dann wird Top 3 pro Tag gezählt.');}
     MASSV.push(m);if(m==='followup')dFollowup();}
-  renderDMass();
+  renderDMass();scheduleAutoSave();
 }
 function renderDTags(){
   document.getElementById('d_tags').innerHTML=TAGS.map(tg=>`<span class="tagchip">#${esc(tg)}<b onclick="dDelTag('${esc(tg).replace(/'/g,"\\'")}')">✕</b></span>`).join('');
@@ -333,8 +333,8 @@ function dAddSug(tg){if(tg&&!TAGS.includes(tg))TAGS.push(tg);renderDTags();}
 function dAddTag(){const el=document.getElementById('d_tagnew');const v=(el.value||'').trim().replace(/^#/,'');if(!v){return;}
   if(!TAGS.includes(v))TAGS.push(v);el.value='';
   if(!TAGVORRAT.includes(v)){TAGVORRAT.push(v);TAGVORRAT.sort((a,b)=>a.localeCompare(b,'de'));try{sb.from('os_task_tag_vorlage').insert({name:v}).then(()=>{},()=>{});}catch(e){}}
-  renderDTags();}
-function dDelTag(tg){TAGS=TAGS.filter(x=>x!==tg);renderDTags();}
+  renderDTags();scheduleAutoSave();}
+function dDelTag(tg){TAGS=TAGS.filter(x=>x!==tg);renderDTags();scheduleAutoSave();}
 function artMatch(t){if(ART==='alle')return true;if(ART==='aufgabe'||ART==='ticket'||ART==='ankauf'||ART==='immoentwicklung'||ART==='routine')return (t.art||'aufgabe')===ART;if(ART.indexOf('m:')===0){const ms=Array.isArray(t.massnahme)?t.massnahme:(t.massnahme?[t.massnahme]:[]);return ms.indexOf(ART.slice(2))>=0;}return true;}
 function textMatch(t){if(!QUERY)return true;const q=QUERY;return [t.titel,t.beschreibung,t.notiz,t.projekt,t.kontakt_label,t.object_label,t.verantwortlich,Array.isArray(t.tags)?t.tags.join(' '):'',Array.isArray(t.beteiligte)?t.beteiligte.join(' '):''].some(x=>(x||'').toLowerCase().includes(q));}
 function setQuery(v){QUERY=(v||'').trim().toLowerCase();render();}
@@ -616,7 +616,8 @@ function renderCalendar(){
   let cells='';
   for(let i=0;i<count;i++){const d=new Date(start);d.setDate(start.getDate()+i);const iso=isoLokal(d);
     const out=CALMODE==='monat'&&d.getMonth()!==curM, isToday=iso===today;
-    const list=(byDay[iso]||[]).slice().sort((a,b)=>(a.pos||0)-(b.pos||0)||((a.created_at||'')<(b.created_at||'')?-1:1));
+    const calRank=x=>{const m=Array.isArray(x.massnahme)?x.massnahme:(x.massnahme?[x.massnahme]:[]);if(m.includes('fristsache'))return 0;if(m.includes('top3'))return 1;return 2;};
+    const list=(byDay[iso]||[]).slice().sort((a,b)=>calRank(a)-calRank(b)||(a.pos||0)-(b.pos||0)||((a.created_at||'')<(b.created_at||'')?-1:1));
     cells+=`<div class="cell ${out?'out':''} ${isToday?'today':''}" ondragover="event.preventDefault();this.classList.add('calover')" ondragleave="this.classList.remove('calover')" ondrop="calDrop(event,'${iso}',this)"><div class="dn">${d.getDate()}. <span class="addday" title="Hier eine Aufgabe anlegen" onclick="event.stopPropagation();calAdd('${iso}')">＋</span></div>${
       list.map(t=>{
         if(t.__sub){const so=iso<today&&!t.done;const scl=t.done?'done':(so?'over':'');const st=(t.titel||'');return `<div class="ct sub ${scl}" style="cursor:pointer" onclick="openDetail('${t.task_id}')" title="Unteraufgabe – ${esc(st)}"><div class="ctt">☑ ${esc(CALMODE==='woche'?st:(st.length>22?st.slice(0,20)+'…':st))}</div></div>`;}
@@ -836,7 +837,8 @@ async function dDateiHoch(inp){
 }
 async function dDateiOeffnen(pfad){const {data,error}=await sb.storage.from('os-task-dateien').createSignedUrl(pfad,600);if(error||!data){toast('Datei konnte nicht geöffnet werden.');return;}window.open(data.signedUrl,'_blank','noopener');}
 async function dDateiWeg(id,pfad){if(!confirm('Diese Datei entfernen?'))return;const {error}=await sb.from('os_task_dateien').delete().eq('id',id);if(error){toast(error.message);return;}await sb.storage.from('os-task-dateien').remove([pfad]);DATEIEN=DATEIEN.filter(d=>d.id!==id);renderDDateien();toast('Datei entfernt ✓');}
-function closeDetail(){document.getElementById('dov').classList.remove('show');DTASK=null;
+async function closeDetail(){if(DAUTOSAVET){clearTimeout(DAUTOSAVET);DAUTOSAVET=null;await dAutoSave();}
+  document.getElementById('dov').classList.remove('show');DTASK=null;
   if(document.body.classList.contains('embed')){try{parent.postMessage({type:'gf-detail-closed'},'*');}catch(e){}}}
 function renderDSubs(){
   const open=SUBS.filter(x=>!x.done).length;
@@ -941,12 +943,10 @@ async function dSubDate(id,v){const nv=v||null;const s=SUBS.find(x=>x.id===id);i
 function autoGrow(el){if(!el)return;el.style.height='auto';el.style.height=(el.scrollHeight+2)+'px';}
 async function dAutoBeschreibung(v){if(!DTASK)return;const nv=(v&&v.trim())?v:null;if((DTASK.beschreibung||'')===(nv||''))return;DTASK.beschreibung=nv;const {error}=await sb.from('os_tasks').update({beschreibung:nv,updated_at:new Date().toISOString()}).eq('id',DTASK.id);if(error){toast('Beschreibung: '+error.message);return;}const t=TASKS.find(x=>x.id===DTASK.id);if(t)t.beschreibung=nv;toast('Beschreibung gespeichert ✓');}
 async function dAddComment(){const el=document.getElementById('d_comment');const text=(el.value||'').trim();if(!text)return;await logVer('💬 '+text);el.value='';}
-async function dSave(){
-  if(!DTASK)return;const id=DTASK.id;const wasErl=DTASK.status==='erledigt';
-  dAddTag(); /* noch nicht bestätigten Tag-Text übernehmen */
+function dBuildPatch(){
   const kv=document.getElementById('d_kont').value, ov=document.getElementById('d_obj').value;
   const [kid,klabel]=kv?kv.split('|'):[null,null];const [oid,olabel]=ov?ov.split('|'):[null,null];
-  const patch={
+  return {
     titel:document.getElementById('d_titel').value.trim(),
     art:document.getElementById('d_art').value,
     status:document.getElementById('d_status').value,
@@ -962,11 +962,30 @@ async function dSave(){
     beschreibung:document.getElementById('d_beschreibung').value||null,
     projekt:document.getElementById('d_projekt').value.trim()||null,
     abschnitt:document.getElementById('d_abschnitt').value.trim()||null,
-    tags:TAGS.slice(),
-    beteiligte:BETEIL.slice(),
-    massnahme:MASSV.slice(),
+    tags:TAGS.slice(),beteiligte:BETEIL.slice(),massnahme:MASSV.slice(),
     updated_at:new Date().toISOString()
   };
+}
+let DAUTOSAVET=null, DAUTOSAVING=false;
+function scheduleAutoSave(){if(!DTASK)return;clearTimeout(DAUTOSAVET);DAUTOSAVET=setTimeout(dAutoSave,500);}
+async function dAutoSave(){
+  if(!DTASK||DAUTOSAVING)return;const id=DTASK.id;const wasErl=DTASK.status==='erledigt';
+  const patch=dBuildPatch();
+  // nichts tun, wenn sich nichts geändert hat
+  const diff=Object.keys(patch).some(k=>k!=='updated_at'&&JSON.stringify(DTASK[k]??(Array.isArray(patch[k])?[]:null))!==JSON.stringify(patch[k]??(Array.isArray(patch[k])?[]:null)));
+  if(!diff)return;
+  DAUTOSAVING=true;
+  const {error}=await sb.from('os_tasks').update(patch).eq('id',id);
+  DAUTOSAVING=false;
+  if(error){toast('Auto-Speichern: '+error.message);return;}
+  Object.assign(DTASK,patch);const t=TASKS.find(x=>x.id===id);if(t)Object.assign(t,patch);
+  if(patch.status==='erledigt'&&!wasErl)await recurTask(DTASK);
+  const ind=document.getElementById('d_saveind');if(ind){ind.textContent='✓ automatisch gespeichert';setTimeout(()=>{if(ind)ind.textContent='';},1500);}
+}
+async function dSave(){
+  if(!DTASK)return;const id=DTASK.id;const wasErl=DTASK.status==='erledigt';
+  dAddTag(); /* noch nicht bestätigten Tag-Text übernehmen */
+  const patch=dBuildPatch();
   const changes=[];const map={status:'Status',prio:'Priorität',faellig:'Fällig',wiedervorlage:'Wiedervorlage',verantwortlich:'Verantwortlich',art:'Art'};
   for(const k in map){if((DTASK[k]||'')!==(patch[k]||'')&&!(DTASK[k]==null&&patch[k]==null))changes.push(`${map[k]}: ${DTASK[k]||'—'} → ${patch[k]||'—'}`);}
   const {error}=await sb.from('os_tasks').update(patch).eq('id',id);
@@ -1111,5 +1130,9 @@ async function asImportRun(){
   }catch(e){st.textContent='Fehler: '+e.message;}
   go.disabled=false;
 }
+(function(){const dov=document.getElementById('dov');if(!dov)return;
+  const AUTOIDS=new Set(['d_titel','d_art','d_status','d_prio','d_verantwortlich','d_faellig','d_wiedervorlage','d_wiederholung','d_wdh_dom','d_kont','d_obj','d_asana_url','d_claude_url','d_link_url','d_projekt','d_abschnitt']);
+  dov.addEventListener('change',e=>{if(e.target&&AUTOIDS.has(e.target.id))scheduleAutoSave();});
+})();
 load();
 </script></body></html>
