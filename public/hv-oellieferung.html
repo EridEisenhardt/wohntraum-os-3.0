@@ -41,7 +41,7 @@ td{padding:7px 8px;border-bottom:1px solid var(--line);vertical-align:top}td.n,t
 .toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:#1c2024;color:#fff;border-radius:var(--r);padding:10px 20px;font-size:14px;opacity:0;transition:.3s;pointer-events:none;z-index:60}.toast.show{opacity:1}
 @media (max-width:700px){.main{padding:12px}.hdr{padding:12px}}
 </style></head><body>
-<div class="hdr"><div><div class="hdr-title">Öllieferung</div><div class="hdr-sub">Ölstand je Objekt · Lieferungen und Rechnungen · Bestellung per Mail · Vorauskalkulation mit Meldung, wann bestellt werden muss</div></div>
+<div class="hdr"><div><div class="hdr-title">Öllieferung</div><div class="hdr-sub">Ölstand je Objekt mit Foto · Lieferungen und Rechnungen · Bestellung per Mail · Vorauskalkulation mit Meldung, wann bestellt werden muss</div></div>
   <div style="margin-left:auto;display:flex;gap:8px;align-items:center"><input class="inp" id="neuObj" list="dlObj" placeholder="Objekt hinzufügen, z. B. S58" style="width:240px" onchange="tankNeu(this.value);this.value=''"></div></div>
 <div class="main" id="main"><div class="empty">Lade Öltanks …</div></div>
 <div class="toast" id="toast"></div>
@@ -53,7 +53,7 @@ const esc=s=>(s==null?'':String(s)).replace(/&/g,'&amp;').replace(/</g,'&lt;').r
 const heute=()=>new Date().toISOString().slice(0,10);
 const dfmt=d=>{const m=String(d||'').match(/^(\d{4})-(\d{2})-(\d{2})/);return m?m[3]+'.'+m[2]+'.'+m[1]:'–';};
 const dIso=v=>{v=String(v||'').trim();let m=v.match(/^(\d{4})-(\d{2})-(\d{2})/);if(m)return m[0];m=v.match(/^(\d{1,2})\.(\d{1,2})\.(\d{2,4})$/);if(!m)return '';const y=m[3].length===2?'20'+m[3]:m[3];return y+'-'+m[2].padStart(2,'0')+'-'+m[1].padStart(2,'0');};
-const zahl=v=>{v=String(v==null?'':v).trim().replace(/\s|€|l$/gi,'');if(v.includes(','))v=v.replace(/\./g,'').replace(',','.');return v===''||isNaN(Number(v))?null:Number(v);};
+const zahl=v=>{v=String(v==null?'':v).trim().replace(/\s|€|l$/gi,'');if(v.includes(','))v=v.replace(/\./g,'').replace(',','.');else if(/^\d{1,3}(\.\d{3})+$/.test(v))v=v.replace(/\./g,'');return v===''||isNaN(Number(v))?null:Number(v);};
 const lit=n=>n==null||isNaN(n)?'–':Math.round(n).toLocaleString('de-DE')+' l';
 const eur=n=>n==null||isNaN(n)?'–':Number(n).toLocaleString('de-DE',{style:'currency',currency:'EUR'});
 const nat=(a,b)=>String(a||'').localeCompare(String(b||''),'de',{numeric:true,sensitivity:'base'});
@@ -88,10 +88,6 @@ async function tankNeu(v){ v=String(v||'').trim(); if(!v)return; const kz=v.spli
   const t={obj:o.id,kz:o.kz,volumen:null,mindest:null,vorlaufWochen:4,jahresverbrauch:null,lieferadresse:objAdr(o),zufahrt:'',lieferant:{name:'',mail:''},peil:'',ablesungen:[],lieferungen:[],bestellungen:[],angelegt:heute(),angelegtVon:ICH};
   OFFEN[o.id]=true; if(await speichern(t,'Öltank für '+o.kz+' angelegt. Bitte Tankvolumen und Mindestbestand eintragen.')) $('dlObj').innerHTML=OBJ.filter(x=>!T[x.id]).map(x=>'<option value="'+esc(x.kz+' – '+(x.strasse||''))+'">').join(''); }
 
-/* ---------- Peiltabelle: Zentimeter in Liter ---------- */
-function peilPunkte(t){ return String(t.peil||'').split(/\n|;/).map(z=>z.split(/[=:\t]/)).map(([c,l])=>[zahl(c),zahl(l)]).filter(([c,l])=>c!=null&&l!=null).sort((a,b)=>a[0]-b[0]); }
-function cmZuLiter(t,cm){ const P=peilPunkte(t); if(cm==null||P.length<2) return null; if(cm<=P[0][0]) return P[0][1]*(P[0][0]?cm/P[0][0]:1);
-  for(let i=1;i<P.length;i++){ if(cm<=P[i][0]){ const [c0,l0]=P[i-1],[c1,l1]=P[i]; return l0+(l1-l0)*(cm-c0)/(c1-c0); } } return P[P.length-1][1]; }
 
 /* ---------- Vorauskalkulation ---------- */
 function prognose(t){
@@ -148,12 +144,11 @@ function tankHtml(t,o,p){ const id=t.obj, E=ENTW[id]=ENTW[id]||{}; let h='';
   /* Ölstand */
   h+='<div class="sec">Ölstand eintragen</div><div class="grid">'
     +'<label>Datum<input class="inp" id="ad-'+id+'" value="'+esc(E.ad||dfmt(heute()))+'" placeholder="TT.MM.JJJJ" oninput="ENTW[\''+id+'\'].ad=this.value"></label>'
-    +'<label>Zentimeter (Peilstab)<input class="inp" id="ac-'+id+'" inputmode="decimal" value="'+esc(E.ac||'')+'" placeholder="z. B. 85" oninput="ENTW[\''+id+'\'].ac=this.value;cmRechnen(\''+id+'\')"></label>'
-    +'<label>Liter<input class="inp" id="al-'+id+'" inputmode="decimal" value="'+esc(E.al||'')+'" placeholder="'+(peilPunkte(t).length>=2?'wird aus cm berechnet':'z. B. 2.400')+'" oninput="ENTW[\''+id+'\'].al=this.value"></label>'
+    +'<label>Liter<input class="inp" id="al-'+id+'" inputmode="decimal" value="'+esc(E.al||'')+'" placeholder="z. B. 2.400" oninput="ENTW[\''+id+'\'].al=this.value"></label>'
     +'<label>Notiz<input class="inp" id="an-'+id+'" value="'+esc(E.an||'')+'" oninput="ENTW[\''+id+'\'].an=this.value"></label></div>'
-    +'<div class="acts"><button class="btn" onclick="ablesungSpeichern(\''+id+'\')">Ölstand speichern</button>'+(peilPunkte(t).length<2?'<span class="mut">Ohne Peiltabelle bitte die Liter eintragen. Die Peiltabelle für die Umrechnung von cm in Liter steht unten bei den Einstellungen.</span>':'')+'</div>';
+    +'<div class="acts"><label class="btn zw" style="cursor:pointer">'+(E.foto?'Foto ändern':'Foto hochladen')+'<input type="file" accept="image/*" capture="environment" hidden onchange="fotoWahl(\''+id+'\',this)"></label>'+(E.foto?'<span class="mut">'+esc(E.foto.name||'Foto')+' <button class="lnk" onclick="ENTW[\''+id+'\'].foto=null;render()">entfernen</button></span>':'')+'<button class="btn" id="as-'+id+'" onclick="ablesungSpeichern(\''+id+'\')">Ölstand speichern</button></div>';
   const A=(t.ablesungen||[]).slice().sort((a,b)=>b.d.localeCompare(a.d));
-  if(A.length) h+='<table><thead><tr><th>Datum</th><th class="n">Zentimeter</th><th class="n">Liter</th><th>Erfasst von</th><th>Notiz</th><th></th></tr></thead><tbody>'+A.map(a=>'<tr><td>'+dfmt(a.d)+'</td><td class="n">'+(a.cm!=null?String(a.cm).replace('.',',')+' cm':'–')+'</td><td class="n">'+lit(a.l)+'</td><td>'+esc(a.von||'')+'</td><td>'+esc(a.notiz||'')+'</td><td class="n"><button class="lnk" onclick="eintragWeg(\''+id+'\',\'ablesungen\',\''+a.id+'\')">entfernen</button></td></tr>').join('')+'</tbody></table>';
+  if(A.length) h+='<table><thead><tr><th>Datum</th><th class="n">Liter</th><th>Foto</th><th>Erfasst von</th><th>Notiz</th><th></th></tr></thead><tbody>'+A.map(a=>'<tr><td>'+dfmt(a.d)+'</td><td class="n">'+lit(a.l)+'</td><td>'+(a.foto?'<button class="lnk" onclick="dateiOeffnen(\''+esc(a.foto)+'\')">Foto ansehen</button>':'<span class="mut">kein Foto</span>')+'</td><td>'+esc(a.von||'')+'</td><td>'+esc(a.notiz||'')+'</td><td class="n"><button class="lnk" onclick="eintragWeg(\''+id+'\',\'ablesungen\',\''+a.id+'\')">entfernen</button></td></tr>').join('')+'</tbody></table>';
   /* Lieferungen und Rechnungen */
   h+='<div class="sec">Lieferungen und Rechnungen</div>'
     +'<div class="acts" style="margin-top:0"><label class="btn zw kl" style="cursor:pointer">Rechnung hochladen<input type="file" accept="application/pdf,image/*" hidden onchange="rechnungDatei(\''+id+'\',this)"></label><button class="btn zw kl" onclick="lieferungForm(\''+id+'\',null)">Lieferung ohne Rechnung eintragen</button>'+(E.lstat?'<span class="mut">'+esc(E.lstat)+'</span>':'')+'</div>';
@@ -175,8 +170,7 @@ function tankHtml(t,o,p){ const id=t.obj, E=ENTW[id]=ENTW[id]||{}; let h='';
     +feld(id,'lieferant.mail','E-Mail Lieferant',t.lieferant&&t.lieferant.mail,'bestellung@…')
     +feld(id,'lieferadresse','Lieferadresse',t.lieferadresse,objAdr(o))
     +feld(id,'zufahrt','Zufahrt / Ansprechpartner vor Ort',t.zufahrt,'z. B. Tank im Keller, Schlauchlänge 30 m')
-    +'</div><label class="fl" style="margin-top:10px">Peiltabelle (je Zeile: Zentimeter = Liter)<textarea class="inp" rows="4" placeholder="10 = 180&#10;50 = 1.900&#10;100 = 4.100" onchange="setzen(\''+id+'\',\'peil\',this.value)">'+esc(t.peil||'')+'</textarea></label>'
-    +'<div class="mut" style="margin-top:4px">Die Peiltabelle steht meist am Tank oder in den Unterlagen des Tankherstellers. Zwischenwerte rechnet das OS selbst aus.</div>';
+    +'</div>';
   return h; }
 function feld(id,k,lab,v,ph){ return '<label>'+esc(lab)+'<input class="inp" value="'+esc(v==null?'':(typeof v==='number'?String(v).replace('.',','):v))+'" placeholder="'+esc(ph||'')+'" onchange="setzen(\''+id+'\',\''+k+'\',this.value)"></label>'; }
 async function setzen(id,k,v){ const t=JSON.parse(JSON.stringify(T[id])); v=String(v||'').trim();
@@ -185,12 +179,17 @@ async function setzen(id,k,v){ const t=JSON.parse(JSON.stringify(T[id])); v=Stri
   else if(k.startsWith('lieferant.')){ t.lieferant=Object.assign({},t.lieferant||{}); t.lieferant[k.split('.')[1]]=v; }
   else t[k]=v;
   await speichern(t,'Gespeichert.'); }
-function cmRechnen(id){ const t=T[id], cm=zahl($('ac-'+id).value), l=cmZuLiter(t,cm); if(l!=null){ $('al-'+id).value=Math.round(l).toLocaleString('de-DE'); ENTW[id].al=$('al-'+id).value; } }
-async function ablesungSpeichern(id){ const t=JSON.parse(JSON.stringify(T[id])), E=ENTW[id]||{}, d=dIso($('ad-'+id).value), cm=zahl($('ac-'+id).value); let l=zahl($('al-'+id).value);
-  if(!d){toast('Bitte ein gültiges Datum eintragen.');return;} if(l==null&&cm!=null) l=cmZuLiter(t,cm);
-  if(l==null){toast('Bitte die Liter eintragen oder eine Peiltabelle hinterlegen.');return;}
+function fotoWahl(id,inp){ const f=inp.files&&inp.files[0]; if(!f)return; ENTW[id]=ENTW[id]||{}; ENTW[id].ad=$('ad-'+id).value; ENTW[id].al=$('al-'+id).value; ENTW[id].an=$('an-'+id).value; ENTW[id].foto=f; render(); }
+function bildKlein(file,max){return new Promise((res,rej)=>{const img=new Image();img.onload=()=>{let w=img.width,h=img.height;const f=Math.min(1,max/Math.max(w,h));w=Math.round(w*f);h=Math.round(h*f);const c=document.createElement('canvas');c.width=w;c.height=h;c.getContext('2d').drawImage(img,0,0,w,h);c.toBlob(b=>b?res(b):rej(new Error('Bild konnte nicht gelesen werden')),'image/jpeg',.85);URL.revokeObjectURL(img.src);};img.onerror=()=>rej(new Error('Bild konnte nicht gelesen werden'));img.src=URL.createObjectURL(file);});}
+async function ablesungSpeichern(id){ const t=JSON.parse(JSON.stringify(T[id])), E=ENTW[id]||{}, d=dIso($('ad-'+id).value), l=zahl($('al-'+id).value);
+  if(!d){toast('Bitte ein gültiges Datum eintragen.');return;}
+  if(l==null){toast('Bitte die Liter eintragen.');return;}
   if(t.volumen&&l>t.volumen*1.02){toast('Mehr Liter als das Tankvolumen, bitte prüfen.');return;}
-  t.ablesungen=(t.ablesungen||[]).concat([{id:rnd(),d,cm,l:Math.round(l),notiz:String($('an-'+id).value||'').trim(),von:ICH,am:new Date().toISOString()}]);
+  const btn=$('as-'+id); if(btn){btn.disabled=true;btn.textContent='Wird gespeichert …';}
+  let foto=null;
+  if(E.foto){ try{ const blob=await bildKlein(E.foto,1600), pf='oel/'+id+'/stand_'+d+'_'+rnd()+'.jpg', up=await sb.storage.from('objekt-zaehler').upload(pf,blob,{contentType:'image/jpeg'}); if(up.error) throw new Error(up.error.message); foto=pf; }
+    catch(e){ if(btn){btn.disabled=false;btn.textContent='Ölstand speichern';} toast('Foto konnte nicht hochgeladen werden: '+(e.message||e),5000); return; } }
+  t.ablesungen=(t.ablesungen||[]).concat([{id:rnd(),d,l:Math.round(l),foto,notiz:String($('an-'+id).value||'').trim(),von:ICH,am:new Date().toISOString()}]);
   ENTW[id]={}; await speichern(t,'Ölstand gespeichert.'); }
 async function eintragWeg(id,feldname,eid){ if(!confirm('Diesen Eintrag entfernen?'))return; const t=JSON.parse(JSON.stringify(T[id])); t[feldname]=(t[feldname]||[]).filter(x=>x.id!==eid); await speichern(t,'Entfernt.'); }
 
