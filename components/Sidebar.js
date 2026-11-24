@@ -75,6 +75,7 @@ export const NAV = [
     { href: '/hausverwaltung/stoerungen', icon: 'ti-tool', label: 'Störungsmeldungen', perm: '/hausverwaltung/objekte' },
     { href: '/hausverwaltung/uebergaben', icon: 'ti-clipboard-check', label: 'Übergabeprotokolle', perm: '/hausverwaltung/objekte' },
     { href: '/hausverwaltung/zaehler', icon: 'ti-gauge', label: 'Zähler', perm: '/hausverwaltung/objekte' },
+    { href: '/hausverwaltung/oellieferung', icon: 'ti-droplet', label: 'Öllieferung', perm: '/hausverwaltung/objekte' },
   ] },
   { type: 'group', key: 'v-mahnwesen', icon: 'ti-cash-off', label: 'Mahnwesen & Forderungen', mod: 'verwalto', items: [
     { href: '/hausverwaltung/offene-mieten', icon: 'ti-cash-off', label: 'Offene Mieten' },
