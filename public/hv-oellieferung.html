@@ -45,7 +45,7 @@ td{padding:7px 8px;border-bottom:1px solid var(--line);vertical-align:top}td.n,t
   <div style="margin-left:auto;display:flex;gap:8px;align-items:center"><input class="inp" id="neuObj" list="dlObj" placeholder="Objekt hinzufügen, z. B. S58" style="width:240px" onchange="tankNeu(this.value);this.value=''"></div></div>
 <div class="main" id="main"><div class="empty">Lade Öltanks …</div></div>
 <div class="toast" id="toast"></div>
-<datalist id="dlObj"></datalist>
+<datalist id="dlObj"></datalist><datalist id="dlGes"></datalist>
 <script>
 const sb=window.supabase.createClient('https://jqzxctfqvcwbctpjksvg.supabase.co','eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpxenhjdGZxdmN3YmN0cGprc3ZnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODIxMzA0MzIsImV4cCI6MjA5NzcwNjQzMn0.RKIbZxJdusKWWPjBJqlxZ8e1m8So02UslOg55YRsn3o');
 const $=id=>document.getElementById(id);
@@ -61,7 +61,12 @@ const rnd=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,8);
 const addT=(d,n)=>{const x=new Date(d+'T12:00:00');x.setDate(x.getDate()+n);return x.toISOString().slice(0,10);};
 function toast(m,ms){const t=$('toast');t.textContent=m;t.classList.add('show');clearTimeout(window.__tt);window.__tt=setTimeout(()=>t.classList.remove('show'),ms||2600);}
 const NUTZER={'ramona@andersmacher.info':'Ramona','juergen@andersmacher.info':'Jürgen','eric@andersmacher.info':'Eric'};
-const GES={WT:{name:'Wohn(T)raum Rheinhessen GmbH',strasse:'Dalheimer Straße 70',ort:'55278 Dexheim'},EE:{name:'Eric Eisenhardt',strasse:'Dalheimer Straße 70',ort:'55278 Dexheim'}};
+const GES_DEF={WT:{name:'Wohn(T)raum Rheinhessen GmbH',strasse:'Dalheimer Straße 70',ort:'55278 Dexheim'},EE:{name:'Eric Eisenhardt',strasse:'Dalheimer Straße 70',ort:'55278 Dexheim'},KiBo:{name:'Wohn(T)raum KiBo GmbH',strasse:'Dalheimer Straße 70',ort:'55278 Dexheim'}};
+let ABSD={}; /* gepflegte Absender aus Anschreiben (stamm/briefabsender) */
+const gesAdr=k=>Object.assign({},GES_DEF[k]||{},ABSD[k]||{});
+const gesKeys=()=>[...new Set(Object.keys(GES_DEF).concat(Object.keys(ABSD)))];
+const gesLabel=k=>k+' – '+(gesAdr(k).name||k);
+const RECHNUNG_STD='KiBo'; /* Heizungen gehören der KiBo, auch wenn das Objekt einer anderen Gesellschaft gehört */
 const MAIL_SIG='Mit freundlichen Grüßen\n\nWohn(T)raum Rheinhessen GmbH\nbewusst sozial engagiert\nE-Mail: hausverwaltung@andersmacher.info\nTelefon: 06133-9382937\nDalheimer Str. 70, 55278 Dexheim\nHRB 45997, Amtsgericht Mainz\nGeschäftsführer: Eric Eisenhardt';
 /* Verteilung des Jahresverbrauchs auf die Monate (Gradtagszahlen nach VDI 2067, Promille) */
 const MONAT=[170,150,130,80,40,13.3,13.3,13.3,30,80,120,160];
@@ -72,11 +77,13 @@ let OBJ=[],T={},ICH='',OFFEN={},ENTW={};
 
 /* ---------- Laden und Speichern ---------- */
 async function laden(){
-  const [o,d]=await Promise.all([sb.from('obj_objekte').select('id,kz,strasse,plz,ort,status,gesellschaft'),sb.from('os_docs').select('pfad,data').eq('app','oc').like('pfad','oel/%')]);
+  const [o,d,ab]=await Promise.all([sb.from('obj_objekte').select('id,kz,strasse,plz,ort,status,gesellschaft'),sb.from('os_docs').select('pfad,data').eq('app','oc').like('pfad','oel/%'),sb.from('os_docs').select('data').eq('app','oc').eq('pfad','stamm/briefabsender').maybeSingle()]);
+  ABSD=(ab&&ab.data&&ab.data.data&&ab.data.data.g)||{};
   if(o.error||d.error){$('main').innerHTML='<div class="empty">Daten konnten nicht geladen werden: '+esc((o.error||d.error).message)+'</div>';return;}
   OBJ=(o.data||[]).filter(x=>x.status!=='Verkauft').sort((a,b)=>nat(a.kz,b.kz)); T={};
   for(const r of d.data||[]){ if(r.data&&r.data.obj) T[r.data.obj]=r.data; }
   $('dlObj').innerHTML=OBJ.filter(x=>!T[x.id]).map(x=>'<option value="'+esc(x.kz+' – '+(x.strasse||''))+'">').join('');
+  $('dlGes').innerHTML=gesKeys().map(k=>'<option value="'+esc(gesLabel(k))+'">').join('');
   render(); }
 async function speichern(t,msg){ t.geaendert=new Date().toISOString(); t.geaendertVon=ICH;
   const {error}=await sb.from('os_docs').upsert({app:'oc',pfad:'oel/'+t.obj,data:t,updated_at:new Date().toISOString()},{onConflict:'app,pfad'});
@@ -85,7 +92,7 @@ const objVon=id=>OBJ.find(o=>String(o.id)===String(id))||{};
 const objAdr=o=>[o.strasse,[o.plz,o.ort].filter(Boolean).join(' ')].filter(Boolean).join(', ');
 async function tankNeu(v){ v=String(v||'').trim(); if(!v)return; const kz=v.split(' – ')[0].trim().toLowerCase(); const o=OBJ.find(x=>String(x.kz).toLowerCase()===kz);
   if(!o){toast('Objekt nicht gefunden. Bitte aus der Liste wählen.');return;} if(T[o.id]){OFFEN[o.id]=true;render();return;}
-  const t={obj:o.id,kz:o.kz,volumen:null,mindest:null,vorlaufWochen:4,jahresverbrauch:null,lieferadresse:objAdr(o),zufahrt:'',lieferant:{name:'',mail:''},peil:'',ablesungen:[],lieferungen:[],bestellungen:[],angelegt:heute(),angelegtVon:ICH};
+  const t={obj:o.id,kz:o.kz,volumen:null,mindest:null,vorlaufWochen:4,jahresverbrauch:null,lieferadresse:objAdr(o),zufahrt:'',ansprechpartner:'',rechnungAn:RECHNUNG_STD,lieferant:{name:'',mail:''},peil:'',ablesungen:[],lieferungen:[],bestellungen:[],angelegt:heute(),angelegtVon:ICH};
   OFFEN[o.id]=true; if(await speichern(t,'Öltank für '+o.kz+' angelegt. Bitte Tankvolumen und Mindestbestand eintragen.')) $('dlObj').innerHTML=OBJ.filter(x=>!T[x.id]).map(x=>'<option value="'+esc(x.kz+' – '+(x.strasse||''))+'">').join(''); }
 
 
@@ -169,9 +176,12 @@ function tankHtml(t,o,p){ const id=t.obj, E=ENTW[id]=ENTW[id]||{}; let h='';
     +feld(id,'lieferant.name','Lieferant',t.lieferant&&t.lieferant.name,'Name des Öllieferanten')
     +feld(id,'lieferant.mail','E-Mail Lieferant',t.lieferant&&t.lieferant.mail,'bestellung@…')
     +feld(id,'lieferadresse','Lieferadresse',t.lieferadresse,objAdr(o))
-    +feld(id,'zufahrt','Zufahrt / Ansprechpartner vor Ort',t.zufahrt,'z. B. Tank im Keller, Schlauchlänge 30 m')
+    +feld(id,'ansprechpartner','Ansprechpartner vor Ort und Terminabsprache',t.ansprechpartner,'Name und Telefon')
+    +feld(id,'zufahrt','Hinweis zur Lieferung',t.zufahrt,'z. B. Tank im Keller, Schlauchlänge 30 m')
+    +'<label>Rechnung an<input class="inp" list="dlGes" value="'+esc(gesLabel(t.rechnungAn||RECHNUNG_STD))+'" onchange="gesSetzen(\''+id+'\',this.value)"><span class="mut" style="text-transform:none;letter-spacing:0;font-weight:400">'+esc([gesAdr(t.rechnungAn||RECHNUNG_STD).strasse,gesAdr(t.rechnungAn||RECHNUNG_STD).ort].filter(Boolean).join(', '))+'</span></label>'
     +'</div>';
   return h; }
+async function gesSetzen(id,v){ const k=gesKeys().find(x=>gesLabel(x)===String(v).trim()||x.toLowerCase()===String(v).trim().toLowerCase()); if(!k){toast('Bitte eine Gesellschaft aus der Liste wählen.');render();return;} const t=JSON.parse(JSON.stringify(T[id])); t.rechnungAn=k; await speichern(t,'Rechnungsadresse gespeichert.'); }
 function feld(id,k,lab,v,ph){ return '<label>'+esc(lab)+'<input class="inp" value="'+esc(v==null?'':(typeof v==='number'?String(v).replace('.',','):v))+'" placeholder="'+esc(ph||'')+'" onchange="setzen(\''+id+'\',\''+k+'\',this.value)"></label>'; }
 async function setzen(id,k,v){ const t=JSON.parse(JSON.stringify(T[id])); v=String(v||'').trim();
   const num=['volumen','mindest','vorlaufWochen','jahresverbrauch'].includes(k);
@@ -226,16 +236,17 @@ async function lieferungSpeichern(id){ const F=ENTW[id]&&ENTW[id].lf; if(!F)retu
 async function dateiOeffnen(p){ const w=window.open('','_blank'); const {data,error}=await sb.storage.from('objekt-zaehler').createSignedUrl(p,600); if(error||!data){if(w)w.close();toast('Datei konnte nicht geöffnet werden.');return;} if(w)w.location.href=data.signedUrl; else window.open(data.signedUrl,'_blank'); }
 
 /* ---------- Bestellung per Mail ---------- */
-function bestellungStart(id){ const t=T[id], o=objVon(id), p=prognose(t), g=GES[o.gesellschaft]||GES.WT, menge=p.menge?String(p.menge):'';
+function bestellungStart(id){ const t=T[id], o=objVon(id), p=prognose(t), g=gesAdr(t.rechnungAn||RECHNUNG_STD), menge=p.menge?String(p.menge):'';
   const text='Guten Tag,\n\nhiermit bestellen wir Heizöl für folgende Lieferadresse:\n\n'
     +'Lieferadresse: '+(t.lieferadresse||objAdr(o))+'\n'
     +'Menge: '+(menge?Number(menge).toLocaleString('de-DE')+' Liter':'… Liter')+'\n'
     +'Heizöl: EL schwefelarm\n'
     +'Wunschtermin: \n'
     +(t.volumen?'Tankvolumen: '+Number(t.volumen).toLocaleString('de-DE')+' Liter\n':'')
+    +(t.ansprechpartner?'Ansprechpartner vor Ort und Terminabsprache: '+t.ansprechpartner+'\n':'')
     +(t.zufahrt?'Hinweis zur Lieferung: '+t.zufahrt+'\n':'')
     +'\nRechnungsadresse:\n'+g.name+'\n'+g.strasse+'\n'+g.ort+'\n\n'
-    +'Bitte bestätigen Sie uns die Bestellung mit Preis und Liefertermin.\n\n'+MAIL_SIG;
+    +'Bitte bestätigen Sie uns die Bestellung mit Preis'+(t.ansprechpartner?' und stimmen Sie den Liefertermin direkt mit '+t.ansprechpartner.split(/\s+\d|,/)[0].trim()+' ab':' und Liefertermin')+'.\n\n'+MAIL_SIG;
   ENTW[id]=ENTW[id]||{}; ENTW[id].bs={an:(t.lieferant&&t.lieferant.mail)||'',betreff:'Heizölbestellung – '+(t.lieferadresse||objAdr(o)),menge,termin:'',text}; render(); }
 function bestellFormHtml(t,o,id,B){ return '<div style="background:var(--surf2);border-radius:10px;padding:12px"><div class="grid">'
   +'<label>An<input class="inp" value="'+esc(B.an)+'" placeholder="E-Mail des Lieferanten" oninput="ENTW[\''+id+'\'].bs.an=this.value"></label>'
