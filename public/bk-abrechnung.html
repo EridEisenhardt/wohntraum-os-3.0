@@ -322,7 +322,10 @@ async function zustMail(id){ const R=ergebnis(), x=R.mv[id]; if(!x||x.saldo==nul
     +'<div class="sub" style="margin-top:8px">Anhang: '+esc(dateiNameMv(m))+' (wird beim Senden neu erstellt, mit Schütz-Einzelabrechnung, und in OneDrive abgelegt)</div>'
     +'<div class="acts" style="margin-top:14px;justify-content:flex-end"><button onclick="document.getElementById(\'mail-dlg\').remove()">Abbrechen</button><button class="primary" id="md-send" onclick="zustMailSenden(\''+id+'\',this)">Senden</button></div></section>';
   document.body.appendChild(w); w.querySelector('.ov').onclick=()=>w.remove(); }
-async function zustMailSenden(id,btn){ const an=document.getElementById('md-an').value.trim(), betreff=document.getElementById('md-betr').value.trim(), text=document.getElementById('md-text').value;
+/* Mailadresse für den Vermerk „Per E-Mail“ im Schreiben: beim Senden die eingegebene Adresse, sonst die gespeicherte oder die aus dem Mieterkonto */
+const MAIL_AN={};
+function mailAnVon(x){ const m=x.m; if(MAIL_AN[m.id]) return MAIL_AN[m.id]; const n=String((m.zustellung||{}).notiz||'').match(/^an\s+(.+@.+)$/i); if(n) return n[1]; try{ return mailAdressen(x).join(', '); }catch(e){ return ''; } }
+async function zustMailSenden(id,btn){ const an=document.getElementById('md-an').value.trim(), betreff=document.getElementById('md-betr').value.trim(), text=document.getElementById('md-text').value; MAIL_AN[id]=an;
   if(!/@/.test(an)){ toast('Bitte eine E-Mail-Adresse eintragen.'); return; }
   btn.disabled=true; btn.textContent='Schreiben wird erstellt …';
   try{ const R=ergebnis(), x=R.mv[id]; if(!(await schreibenErstellen(id,false,R))) throw new Error('Schreiben konnte nicht erstellt werden.');
@@ -422,7 +425,8 @@ function schreibenPdf(x){ const m=x.m, e=D.ein.find(z=>z.id===m.einheit_id)||{},
   doc.setFont('helvetica','bold'); doc.setFontSize(13); doc.setTextColor(20); doc.text(A.name||'',R,y,{align:'right'});
   doc.setFont('helvetica','normal'); doc.setFontSize(8.5); doc.setTextColor(90); doc.text([A.strasse,A.ort].filter(Boolean).join(' · '),R,y+5,{align:'right'}); doc.text('E-Mail: '+(A.mail||'hausverwaltung@andersmacher.info'),R,y+9,{align:'right'});
   y=45; doc.setFontSize(7.5); doc.setTextColor(110); doc.text([A.name,A.strasse,A.ort].filter(Boolean).join(' · '),L,y);
-  const vv=versandVermerk(m); if(vv){ y+=5; doc.setFont('helvetica','bold'); doc.setFontSize(9.5); doc.setTextColor(20); doc.text(vv,L,y); doc.setFont('helvetica','normal'); }
+  const vv=versandVermerk(m); if(vv){ y+=5; doc.setFont('helvetica','bold'); doc.setFontSize(9.5); doc.setTextColor(20); doc.text(vv,L,y); doc.setFont('helvetica','normal');
+    if(vv==='Per E-Mail'){ const ma=mailAnVon(x); if(ma) doc.text(ma,L+doc.getTextWidth(vv+'  ')+1,y); } }
   y+=6; doc.setFontSize(11); doc.setTextColor(20); const adr=m.anschrift&&String(m.anschrift).trim()?[m.mieter].concat(String(m.anschrift).split(/\n|,\s*(?=\d{5})/)):[m.mieter,o.strasse,[o.plz,o.ort].filter(Boolean).join(' ')];
   for(const l of adr.filter(Boolean)){ doc.text(String(l).trim(),L,y); y+=5; }
   y=Math.max(y,90)+6; doc.setFontSize(10); doc.setTextColor(60); doc.text((A.datumOrt?A.datumOrt+', ':'')+dmy(heute),R,y,{align:'right'});
