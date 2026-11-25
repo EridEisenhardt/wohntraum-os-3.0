@@ -542,6 +542,14 @@ async function alleSchreiben(btn){ const R0=ergebnis(); if((R0.nichtVerteilt.len
   toast(n+' von '+L.length+' Schreiben in OneDrive gespeichert (04 Betriebskosten/BK-Abrechnungen/'+JAHR+').',7000); render(); }
 
 /* ---------- Schritt 2: Mietverhältnisse und Vorauszahlungen ---------- */
+/* Einheit nur aus dieser Abrechnung entfernen (z. B. nach Umbau gab es sie im Abrechnungsjahr noch nicht). Die Einheit im Objekt bleibt unverändert. */
+async function einheitAusAbr(id,btn){ const be=D.ein.find(e=>e.id===id); if(!be) return;
+  const n=D.mvs.filter(m=>m.einheit_id===id&&m.art!=='leerstand').length;
+  if(btn.dataset.sure!=='1'){ btn.dataset.sure='1'; btn.textContent=n?'Achtung: '+n+' Mietverhältnis(se) mit Mietern – trotzdem entfernen?':'Wirklich entfernen? Nur aus der Abrechnung '+JAHR; return; }
+  btn.disabled=true; btn.textContent='Wird entfernt …';
+  const {error}=await sb.from('bk_einheiten').delete().eq('id',id).eq('abrechnung_id',D.a.id);
+  if(error){ btn.disabled=false; btn.dataset.sure=''; btn.textContent='Einheit aus dieser Abrechnung entfernen'; toast('Nicht entfernt: '+error.message,6000); return; }
+  toast(be.bezeichnung+' aus der Abrechnung '+JAHR+' entfernt. Die Einheit im Objekt bleibt unverändert.',6000); await objLaden(); }
 const MV_ARTEN=[['vorauszahlung','Vorauszahlung'],['pauschale','Pauschale'],['leerstand','Leerstand'],['eigennutzung','Eigennutzung']];
 const mvArtLabel=v=>(MV_ARTEN.find(x=>x[0]===v)||[,v||''])[1];
 const tagPlus=(d,n)=>new Date(Date.parse(d+'T00:00:00Z')+n*864e5).toISOString().slice(0,10);
@@ -597,7 +605,7 @@ function mvHtml(){ const pv=D.a.zeitraum_von, pb=D.a.zeitraum_bis, T=tage(pv,pb)
   for(const be of D.ein){ const L=D.mvs.filter(m=>m.einheit_id===be.id).sort((a,b)=>String(a.von).localeCompare(String(b.von)));
     let td=0, ueber=false, cur=pv; for(const m of L){ const v=m.von>pv?m.von:pv, b=(m.bis||pb)<pb?m.bis:pb; if(b>=v){ td+=tage(v,b); if(v<cur) ueber=true; if(tagPlus(b,1)>cur) cur=tagPlus(b,1); } }
     const ok=td===T&&!ueber; if(!ok) warn.push(be.bezeichnung);
-    h+='<tr class="gr"><td colspan="11" style="background:var(--bg)"><b>'+esc(be.bezeichnung)+'</b> <span class="sub">'+(be.flaeche?fnum.format(be.flaeche)+' m²':'')+'</span>'+(ok?'':' <span class="pill p-warn">'+(ueber?'Zeiträume überschneiden sich':'Zeitraum nicht vollständig: '+td+' von '+T+' Tagen')+'</span>')+' <button class="small ghost" onclick="mvNeu(\''+be.id+'\')">Mietverhältnis hinzufügen</button></td></tr>';
+    h+='<tr class="gr"><td colspan="11" style="background:var(--bg)"><b>'+esc(be.bezeichnung)+'</b> <span class="sub">'+(be.flaeche?fnum.format(be.flaeche)+' m²':'')+'</span>'+(ok?'':' <span class="pill p-warn">'+(ueber?'Zeiträume überschneiden sich':'Zeitraum nicht vollständig: '+td+' von '+T+' Tagen')+'</span>')+' <button class="small ghost" onclick="mvNeu(\''+be.id+'\')">Mietverhältnis hinzufügen</button> <button class="small ghost" onclick="einheitAusAbr(\''+be.id+'\',this)">Einheit aus dieser Abrechnung entfernen</button></td></tr>';
     for(const m of L){ const ls=m.art==='leerstand', ausz=!ls; /* Anschrift bei jedem Mieter eintragbar, z. B. wenn er erst nach dem Abrechnungsjahr ausgezogen ist */ if(m.art==='vorauszahlung'){ sBk+=Number(m.vz_bk_gezahlt)||0; sHk+=Number(m.vz_hk_gezahlt)||0; }
       const z=(f,w)=>'<input class="zahl" style="width:100px" inputmode="decimal" value="'+(m[f]!=null?esc(fnum.format(m[f])):'')+'" onchange="mvSetzen(\''+m.id+'\',\''+f+'\',this.value)"'+(w?'':' disabled')+'>';
       h+='<tr><td><input value="'+esc(m.mieter||'')+'" style="width:190px" onchange="mvSetzen(\''+m.id+'\',\'mieter\',this.value)">'+(m.notiz?'<div class="sub">'+esc(m.notiz)+'</div>':'')+(m.geaendert?'<div class="sub">von Hand angepasst</div>':'')+'</td>'
