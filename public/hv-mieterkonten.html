@@ -165,6 +165,7 @@ input.zsel{width:240px}
 .adot{display:inline-block;width:11px;height:11px;border-radius:50%;vertical-align:-1px}.adot.big{width:16px;height:16px;vertical-align:-2px}
 .ov{position:fixed;inset:0;background:rgba(15,20,30,.45);z-index:20;overflow:auto;padding:24px 16px}
 .ov2{position:fixed;inset:0;background:rgba(15,20,30,.45);z-index:30;display:flex;align-items:center;justify-content:center;padding:16px}.ov2 .box{background:var(--bg);border-radius:14px;padding:18px 20px;max-width:460px;width:100%;box-shadow:0 20px 60px rgba(0,0,0,.3)}.ov2 .box h3{margin:0 0 8px;font-size:16px}.ov2 .acts{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px}
+.dlg.breit{max-width:none;width:calc(100vw - 40px)}.kpi.on{border-color:var(--accent);box-shadow:inset 0 0 0 1px var(--accent)}.bkst{cursor:pointer}.bkst:hover{text-decoration:underline}
 .dlg{max-width:1250px;margin:0 auto;background:var(--bg);border-radius:16px;padding:18px 20px;box-shadow:0 20px 60px rgba(0,0,0,.3)}
 .dtop{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;margin-bottom:12px}
 .dname{font-size:22px;font-weight:800}
@@ -786,7 +787,8 @@ const MVERSAND=['E-Mail','Post','Einwurf-Einschreiben','Bote / Briefkasten'];
 const mrVersand=x=>MR.vs[x.mk.pid]||(mieterMails(x.mk).length?'E-Mail':'Post');
 const mVermerk=v=>v==='E-Mail'?'Per E-Mail':v==='Einwurf-Einschreiben'?'Einwurf-Einschreiben':/bote/i.test(v||'')?'Durch Boten':'';
 /* ---------- Betriebskostenabrechnungen: Übersicht Nachzahlungen und Guthaben ---------- */
-var bkaOpen=false, BKA={jahr:'',obj:'',st:'',q:'',abr:null,mvs:null,busy:false};
+var bkaOpen=false, BKA={jahr:'',obj:'',st:'',q:'',abr:null,mvs:null,busy:false,sk:'',sab:false};
+const bkaStPasst=(y,st)=>!st||(st==='offen'?(y.typ==='Nachzahlung'&&y.offen>0.005):st==='erledigt'?/bezahlt|ausgezahlt|verrechnet/.test(y.st):y.st===st);
 async function bkaLaden(){ const sb=window.osSupabase; if(!sb||BKA.busy) return; BKA.busy=true;
   try{ const [a,m]=await Promise.all([sb.from('bk_abrechnungen').select('id,kennung,jahr'),sb.from('bk_mietverhaeltnisse').select('id,abrechnung_id,mieter,zustellung')]); BKA.abr={}; for(const r of a.data||[]) BKA.abr[r.id]=r; BKA.mvs={}; for(const r of m.data||[]) BKA.mvs[r.id]=r; }
   catch(e){ BKA.abr=BKA.abr||{}; BKA.mvs=BKA.mvs||{}; } BKA.busy=false; render(); }
@@ -813,29 +815,35 @@ function bkaZeilen(){ const out=[]; if(!calc) calc=compute();
         else { y.st='auszuzahlen'; y.stx='noch auszuzahlen'; y.offen=y.betrag; } }
       out.push(y); } }
   return out.sort((a,b)=>String(a.obj).localeCompare(String(b.obj),'de',{numeric:true})||String(a.einheit).localeCompare(String(b.einheit),'de',{numeric:true})||String(a.mieter).localeCompare(String(b.mieter),'de')); }
-const BKA_ST=[['','alle'],['mahnbar','fällig, mahnbar'],['gemahnt','gemahnt'],['nicht faellig','noch nicht fällig'],['bezahlt','bezahlt'],['auszuzahlen','Guthaben noch auszuzahlen'],['ausgezahlt','Guthaben ausgezahlt'],['verrechnet','Guthaben verrechnet'],['gesperrt','Mahnsperre']];
+const BKA_ST=[['','alle'],['offen','Nachzahlung offen'],['erledigt','bezahlt / ausgezahlt / verrechnet'],['mahnbar','fällig, mahnbar'],['gemahnt','gemahnt'],['nicht faellig','noch nicht fällig'],['bezahlt','bezahlt'],['auszuzahlen','Guthaben noch auszuzahlen'],['ausgezahlt','Guthaben ausgezahlt'],['verrechnet','Guthaben verrechnet'],['gesperrt','Mahnsperre']];
 function bkaBox(){ if(!BKA.abr) return ''; let L=[]; try{ L=bkaZeilen(); }catch(e){ return ''; } const m=L.filter(y=>y.st==='mahnbar').length, g=L.filter(y=>y.st==='auszuzahlen').length;
   return '<button class="kpi kbtn'+(m||g?' kueber':'')+'" data-bkaopen="1"><div class="l">Betriebskostenabrechnungen</div><div class="v">'+m+' mahnbar</div><div class="s">'+g+' Guthaben auszuzahlen</div></button>'; }
 function renderBka(){ if(!BKA.abr){ return '<div class="dtop"><div><div class="dname">Betriebskostenabrechnungen</div></div><button data-bkaclose="1">Schließen</button></div><div class="sub">Lade Abrechnungen …</div>'; }
   const A=bkaZeilen(), jahre=[...new Set(A.map(y=>y.jahr).filter(Boolean))].sort().reverse(), objs=[...new Set(A.map(y=>y.obj))].sort((a,b)=>a.localeCompare(b,'de',{numeric:true})), q=norm(BKA.q);
-  const L=A.filter(y=>(!BKA.jahr||y.jahr===BKA.jahr)&&(!BKA.obj||y.obj===BKA.obj)&&(!BKA.st||y.st===BKA.st)&&(!q||norm(y.obj+' '+y.einheit+' '+y.mieter).includes(q)));
+  const L=A.filter(y=>(!BKA.jahr||y.jahr===BKA.jahr)&&(!BKA.obj||y.obj===BKA.obj)&&bkaStPasst(y,BKA.st)&&(!q||norm(y.obj+' '+y.einheit+' '+y.mieter).includes(q)));
+  if(BKA.sk){ const v=y=>BKA.sk==='faellig'?y.faellig:BKA.sk==='betrag'?y.betrag:BKA.sk==='bez'?(y.bez||0):BKA.sk==='offen'?y.offen:BKA.sk==='status'?y.stx:BKA.sk==='mieter'?y.mieter:BKA.sk==='typ'?y.typ:BKA.sk==='vers'?y.vers:BKA.sk==='jahr'?y.jahr:y.obj+' '+y.einheit;
+    L.sort((a,b)=>{ const x=v(a),z=v(b); const c=typeof x==='number'?x-z:String(x||'').localeCompare(String(z||''),'de',{numeric:true}); return BKA.sab?-c:c; }); }
   const sum=f=>L.filter(f).reduce((s2,y)=>s2+y.offen,0);
+  const kp=(st,l,v,sub)=>'<button class="kpi kbtn'+(BKA.st===st?' on':'')+'" data-bkafil="'+st+'" title="Klick filtert die Tabelle"><div class="l">'+l+'</div><div class="v">'+v+'</div><div class="s">'+sub+'</div></button>';
+  const th=(k,l,c)=>'<th class="'+(c||'')+'" data-bkasort="'+k+'" style="cursor:pointer;white-space:nowrap" title="Klick sortiert">'+l+(BKA.sk===k?(BKA.sab?' (absteigend)':' (aufsteigend)'):'')+'</th>';
   let h='<div class="dtop"><div><div class="dname">Betriebskostenabrechnungen</div><div class="sub">Nachzahlungen und Guthaben aus den Abrechnungen im OS · Zahlungen bis '+esc(dmy(calc.stich))+'</div></div><button data-bkaclose="1">Schließen</button></div>';
-  h+='<div class="kpis"><div class="kpi"><div class="l">Nachzahlungen offen</div><div class="v">'+eur(sum(y=>y.typ==='Nachzahlung'))+'</div><div class="s">'+L.filter(y=>y.typ==='Nachzahlung'&&y.offen>0.005).length+' Mieter</div></div>'
-    +'<div class="kpi"><div class="l">davon fällig und mahnbar</div><div class="v">'+eur(sum(y=>y.st==='mahnbar'))+'</div><div class="s">'+L.filter(y=>y.st==='mahnbar').length+' Mieter</div></div>'
-    +'<div class="kpi"><div class="l">Guthaben noch auszuzahlen</div><div class="v">'+eur(sum(y=>y.st==='auszuzahlen'))+'</div><div class="s">'+L.filter(y=>y.st==='auszuzahlen').length+' Mieter</div></div>'
-    +'<div class="kpi"><div class="l">bezahlt / ausgezahlt / verrechnet</div><div class="v">'+L.filter(y=>/bezahlt|ausgezahlt|verrechnet/.test(y.st)).length+'</div><div class="s">von '+L.length+'</div></div></div>';
+  { const B=A.filter(y=>(!BKA.jahr||y.jahr===BKA.jahr)&&(!BKA.obj||y.obj===BKA.obj)), su=f=>B.filter(f).reduce((s2,y)=>s2+y.offen,0);
+    h+='<div class="kpis" style="grid-template-columns:repeat(5,minmax(0,1fr))">'+kp('offen','Nachzahlungen offen',eur(su(y=>y.typ==='Nachzahlung')),B.filter(y=>y.typ==='Nachzahlung'&&y.offen>0.005).length+' Mieter')
+      +kp('nicht faellig','noch nicht fällig',eur(su(y=>y.st==='nicht faellig')),B.filter(y=>y.st==='nicht faellig').length+' Mieter')
+      +kp('mahnbar','fällig und mahnbar',eur(su(y=>y.st==='mahnbar')),B.filter(y=>y.st==='mahnbar').length+' Mieter')
+      +kp('auszuzahlen','Guthaben noch auszuzahlen',eur(su(y=>y.st==='auszuzahlen')),B.filter(y=>y.st==='auszuzahlen').length+' Mieter')
+      +kp('erledigt','bezahlt / ausgezahlt / verrechnet',String(B.filter(y=>/bezahlt|ausgezahlt|verrechnet/.test(y.st)).length),'von '+B.length+(BKA.st?' · Klick auf eine aktive Kachel zeigt wieder alle':''))+'</div>'; }
   h+='<div class="tbar"><label class="fl inl">Jahr<input list="bka-dlj" id="bka-jahr" value="'+esc(BKA.jahr||'alle')+'" style="width:90px"></label><datalist id="bka-dlj"><option value="alle">'+jahre.map(j=>'<option value="'+esc(j)+'">').join('')+'</datalist>'
     +'<label class="fl inl">Objekt<input list="bka-dlo" id="bka-obj" value="'+esc(BKA.obj||'alle')+'" style="width:110px"></label><datalist id="bka-dlo"><option value="alle">'+objs.map(o=>'<option value="'+esc(o)+'">').join('')+'</datalist>'
     +'<label class="fl inl">Status<input list="bka-dls" id="bka-st" value="'+esc((BKA_ST.find(z=>z[0]===BKA.st)||BKA_ST[0])[1])+'" style="width:220px"></label><datalist id="bka-dls">'+BKA_ST.map(z=>'<option value="'+esc(z[1])+'">').join('')+'</datalist>'
     +'<input type="search" id="bka-q" placeholder="Mieter, Objekt, Einheit" value="'+esc(BKA.q)+'" autocomplete="off"></div>';
-  h+='<div class="tablewrap"><table class="mlist"><thead><tr><th>Jahr</th><th>Objekt</th><th>Einheit</th><th>Mieter</th><th>Ergebnis</th><th class="n">Betrag</th><th>versendet</th><th>fällig</th><th class="n">bezahlt</th><th class="n">offen</th><th>Status</th><th></th></tr></thead><tbody>';
+  h+='<div class="tablewrap"><table class="mlist"><thead><tr>'+th('jahr','Jahr')+th('obj','Objekt')+'<th>Einheit</th>'+th('mieter','Mieter')+th('typ','Ergebnis')+th('betrag','Betrag','n')+th('vers','versendet')+th('faellig','fällig')+th('bez','bezahlt','n')+th('offen','offen','n')+th('status','Status')+'<th></th></tr></thead><tbody>';
   for(const y of L){ const cls=y.st==='mahnbar'||y.st==='auszuzahlen'?'neg':/bezahlt|ausgezahlt|verrechnet/.test(y.st)?'pos':''; const k=esc(y.pid+'|'+y.id);
     let akt='<button class="ghost small" data-bkakonto="'+esc(y.pid)+'">Mieterkonto</button>';
     if(y.st==='mahnbar') akt='<button class="primary small" data-bkamahn="'+esc(y.pid)+'">Mahnen</button> '+akt;
     if(y.typ==='Guthaben'){ if(y.st==='auszuzahlen') akt+=' <input type="date" data-bkaausd="'+k+'" title="ausgezahlt am" style="width:135px"> <button class="ghost small" data-bkaaus="'+k+'">ausgezahlt</button> <button class="ghost small" data-bkaverr="'+k+'">verrechnet</button>';
       else if(y.man.ausgezahlt||y.man.verrechnet) akt+=' <button class="ghost small" data-bkareset="'+k+'">zurücksetzen</button>'; }
-    h+='<tr><td>'+esc(y.jahr)+'</td><td><b>'+esc(y.obj)+'</b></td><td>'+esc(y.einheit)+'</td><td class="wrapc">'+esc(y.mieter)+'</td><td>'+esc(y.typ)+'</td><td class="n">'+eur(y.betrag)+'</td><td class="sub">'+esc(y.vers||'–')+'</td><td>'+esc(dmy(y.faellig))+'</td><td class="n">'+(y.typ==='Nachzahlung'?eur(y.bez):'–')+'</td><td class="n '+cls+'">'+(y.offen>0.005?eur(y.offen):'–')+'</td><td class="'+cls+'">'+esc(y.stx)+'</td><td style="white-space:nowrap">'+akt+'</td></tr>'; }
+    h+='<tr><td>'+esc(y.jahr)+'</td><td><b>'+esc(y.obj)+'</b></td><td>'+esc(y.einheit)+'</td><td class="wrapc">'+esc(y.mieter)+'</td><td>'+esc(y.typ)+'</td><td class="n">'+eur(y.betrag)+'</td><td class="sub">'+esc(y.vers||'–')+'</td><td>'+esc(dmy(y.faellig))+'</td><td class="n">'+(y.typ==='Nachzahlung'?eur(y.bez):'–')+'</td><td class="n '+cls+'">'+(y.offen>0.005?eur(y.offen):'–')+'</td><td class="'+cls+' bkst" data-bkastz="'+esc(y.st)+'" title="Klick filtert nach diesem Status">'+esc(y.stx)+'</td><td style="white-space:nowrap">'+akt+'</td></tr>'; }
   if(!L.length) h+='<tr><td colspan="12" class="empty">Keine Abrechnungen für diesen Filter.</td></tr>';
   h+='</tbody></table></div><div class="note">Mahnen öffnet den Mahnlauf nur für diesen Mieter. Dort wählst du Mahnstufe und Versand (E-Mail, Post, Einwurf-Einschreiben, Bote). Die Mahnung enthält alle überfälligen Posten des Mieters und steht danach im Mahnregister und im Mieterkonto. Guthaben gelten als ausgezahlt, wenn eine passende Auszahlung in den Kontoauszügen gefunden wird oder ihr sie hier eintragt.</div>';
   return h; }
@@ -844,7 +852,10 @@ function bkaMarke(k,feld,datum){ const i=k.indexOf('|'), pid=k.slice(0,i), id=k.
   saveEdit(pid,{bka:neu},feld==='reset'?'Vermerk entfernt.':'Gespeichert.',feld==='reset'?'BK-Guthaben: Vermerk entfernt':'BK-Guthaben '+(feld==='ausgezahlt'?'ausgezahlt am ':'verrechnet am ')+dmy(datum||today)); }
 function bkaMahnen(pid){ mahnOpen=true; modal=false; mahnInit(); if(MR.sel[pid]===undefined){ mahnOpen=false; toast('Für diesen Mieter ist zurzeit nichts überfällig (Zahlungen bis '+dmy(calc.stich)+').',6000); render(); return; }
   for(const k in MR.sel) MR.sel[k]=false; MR.sel[pid]=true; MR.q=ed(MK[pid]).mieter||''; if(!REGload) loadRegM(); render(); }
+document.addEventListener('click',e=>{ const c=e.target.closest('th[data-bkasort],td[data-bkastz]'); if(!c) return; if(c.dataset.bkasort){ if(BKA.sk===c.dataset.bkasort) BKA.sab=!BKA.sab; else { BKA.sk=c.dataset.bkasort; BKA.sab=false; } } else { BKA.st=BKA.st===c.dataset.bkastz?'':c.dataset.bkastz; } render(); });
 document.addEventListener('click',e=>{ const t=e.target.closest('button'); if(!t) return; const d=t.dataset;
+  if(d.bkafil!=null){ BKA.st=BKA.st===d.bkafil?'':d.bkafil; render(); return; }
+  if(d.bkasort){ if(BKA.sk===d.bkasort) BKA.sab=!BKA.sab; else { BKA.sk=d.bkasort; BKA.sab=false; } render(); return; }
   if(d.bkaopen){ bkaOpen=true; if(!BKA.abr) bkaLaden(); render(); return; }
   if(d.bkaclose){ if(/[?&]nur=1/.test(location.search)&&window.parent!==window){ window.parent.postMessage({bkaClose:1},'*'); return; } bkaOpen=false; render(); return; }
   if(d.bkamahn){ bkaMahnen(d.bkamahn); return; }
@@ -1749,7 +1760,7 @@ function render(){
   h+='</tbody></table></div>';
   if(mahnOpen) h+='<div class="ov" id="ov"><div class="dlg">'+renderMahn()+'</div></div>';
   else if(modal&&calc.res[M.sel]) h+='<div class="ov" id="ov"><div class="dlg">'+renderDash(calc.res[M.sel])+'</div></div>';
-  else if(bkaOpen) h+='<div class="ov" id="ov"><div class="dlg">'+renderBka()+'</div></div>';
+  else if(bkaOpen) h+='<div class="ov" id="ov"><div class="dlg breit">'+renderBka()+'</div></div>';
   if(BFRAGE) h+='<div class="ov2"><div class="box"><h3>Betreuer wechselt</h3><div>Der Betreuer wird von <b>'+esc(BFRAGE.altB)+'</b> auf <b>'+esc(BFRAGE.neuB||'(leer)')+'</b> geändert.</div><div style="margin-top:8px">Soll der bisherige Betreuer archiviert werden? Er bleibt dann im Mieterkonto unter „Frühere Betreuer“ sichtbar.</div><div class="acts"><button class="primary small" data-bfrage="ja">Ja, archivieren</button><button class="ghost small" data-bfrage="nein">Nein, nur ändern</button><button class="ghost small" data-bfrage="abbr">Abbrechen</button></div></div></div>';
   h+='<div style="margin:10px 0"></div>'+'<label class="sub"><input type="checkbox" id="m-alle"'+(M.alle?' checked':'')+'> auch nicht aktive / verkaufte Objekte zeigen</label>'+inboxCard();
   const keep=f&&(f.id==='inb-von'||f.id==='bka-q'||f.id==='m-q'||f.id==='m-betr'||f.id==='mr-q'||f.id==='n-text'||f.id==='ne-text')?f:null; const sc=$('ov')?$('ov').scrollTop:0;
