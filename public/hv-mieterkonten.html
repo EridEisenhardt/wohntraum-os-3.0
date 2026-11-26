@@ -165,7 +165,7 @@ input.zsel{width:240px}
 .adot{display:inline-block;width:11px;height:11px;border-radius:50%;vertical-align:-1px}.adot.big{width:16px;height:16px;vertical-align:-2px}
 .ov{position:fixed;inset:0;background:rgba(15,20,30,.45);z-index:20;overflow:auto;padding:24px 16px}
 .ov2{position:fixed;inset:0;background:rgba(15,20,30,.45);z-index:30;display:flex;align-items:center;justify-content:center;padding:16px}.ov2 .box{background:var(--bg);border-radius:14px;padding:18px 20px;max-width:460px;width:100%;box-shadow:0 20px 60px rgba(0,0,0,.3)}.ov2 .box h3{margin:0 0 8px;font-size:16px}.ov2 .acts{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px}
-.dlg.breit{max-width:none;width:calc(100vw - 40px)}.kpi.on{border-color:var(--accent);box-shadow:inset 0 0 0 1px var(--accent)}.bkst{cursor:pointer}.bkst:hover{text-decoration:underline}
+.dlg.breit{max-width:none;width:calc(100vw - 40px)}.bkpill{display:inline-block;border-radius:999px;padding:2px 10px;font-size:12px;font-weight:700}.bkpill.nz{background:#fbeaea;color:#b3261e}.bkpill.gh{background:#e3f2e8;color:#1f7a4d}tr.bkgh td{background:#f3faf5}.bkgut{color:#1f7a4d;font-weight:700}.kpi.on{border-color:var(--accent);box-shadow:inset 0 0 0 1px var(--accent)}.bkst{cursor:pointer}.bkst:hover{text-decoration:underline}
 .dlg{max-width:1250px;margin:0 auto;background:var(--bg);border-radius:16px;padding:18px 20px;box-shadow:0 20px 60px rgba(0,0,0,.3)}
 .dtop{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;margin-bottom:12px}
 .dname{font-size:22px;font-weight:800}
@@ -790,7 +790,7 @@ const mVermerk=v=>v==='E-Mail'?'Per E-Mail':v==='Einwurf-Einschreiben'?'Einwurf-
 var bkaOpen=false, BKA={jahr:'',obj:'',st:'',q:'',abr:null,mvs:null,busy:false,sk:'',sab:false};
 const bkaStPasst=(y,st)=>!st||(st==='offen'?(y.typ==='Nachzahlung'&&y.offen>0.005):st==='erledigt'?/bezahlt|ausgezahlt|verrechnet/.test(y.st):y.st===st);
 async function bkaLaden(){ const sb=window.osSupabase; if(!sb||BKA.busy) return; BKA.busy=true;
-  try{ const [a,m]=await Promise.all([sb.from('bk_abrechnungen').select('id,kennung,jahr'),sb.from('bk_mietverhaeltnisse').select('id,abrechnung_id,mieter,zustellung')]); BKA.abr={}; for(const r of a.data||[]) BKA.abr[r.id]=r; BKA.mvs={}; for(const r of m.data||[]) BKA.mvs[r.id]=r; }
+  try{ const [a,m]=await Promise.all([sb.from('bk_abrechnungen').select('id,kennung,jahr'),sb.from('bk_mietverhaeltnisse').select('id,abrechnung_id,mieter,zustellung,schreiben_datei,schreiben_am')]); BKA.abr={}; for(const r of a.data||[]) BKA.abr[r.id]=r; BKA.mvs={}; for(const r of m.data||[]) BKA.mvs[r.id]=r; }
   catch(e){ BKA.abr=BKA.abr||{}; BKA.mvs=BKA.mvs||{}; } BKA.busy=false; render(); }
 /* ausgehende Zahlungen (Guthaben-Auszahlung) in den Kontoauszügen, die dem Guthaben oder dem Mieter zugeordnet sind */
 function bkaAuszahlung(mk,r,am){ const ab=am?String(am).slice(0,10):r.d, ziel=r.h; let best=null;
@@ -800,7 +800,7 @@ function bkaAuszahlung(mk,r,am){ const ab=am?String(am).slice(0,10):r.d, ziel=r.
 function bkaZeilen(){ const out=[]; if(!calc) calc=compute();
   for(const x of Object.values(calc.res)){ const mk=x.mk, E=ed(mk).bka||{};
     for(const r of x.rows){ if(!/^bka:/.test(r.id||'')) continue; const pa=String(r.id).split(':'), abr=(BKA.abr||{})[pa[1]]||{}, mv=(BKA.mvs||{})[pa[2]]||{}, z=mv.zustellung||{}, man=E[r.id]||{}, so=(mk.sollOS||[]).find(q=>q.id===r.id)||{};
-      const y={x,r,id:r.id,pid:mk.pid,obj:mk.obj,einheit:uName(mk.einheit),mieter:ed(mk).mieter||'',jahr:abr.jahr?String(abr.jahr):'',typ:r.s>0?'Nachzahlung':'Guthaben',betrag:r.s>0?r.s:r.h,faellig:r.d,vers:z.art&&!/nicht/i.test(z.art)?z.art+(z.datum?' am '+dmy(z.datum):''):(z.art||''),man};
+      const y={x,r,id:r.id,pid:mk.pid,obj:mk.obj,einheit:uName(mk.einheit),mieter:ed(mk).mieter||'',jahr:abr.jahr?String(abr.jahr):'',typ:r.s>0?'Nachzahlung':'Guthaben',betrag:r.s>0?r.s:r.h,faellig:r.d,pdf:(mv.schreiben_datei&&mv.schreiben_datei.od)||'',pdfAm:mv.schreiben_am||'',vers:z.art&&!/nicht/i.test(z.art)?z.art+(z.datum?' am '+dmy(z.datum):''):(z.art||''),man};
       if(y.typ==='Nachzahlung'){ y.offen=r.offen==null?r.s:r.offen; y.bez=r2(r.s-y.offen);
         const lm=(x.mahn||[]).filter(m=>m.d>=r.d&&m.art!=='kaution').sort((a,b)=>a.d.localeCompare(b.d)).pop(); y.lm=lm||null;
         if(y.offen<=0.005){ y.st='bezahlt'; y.stx='bezahlt'; }
@@ -837,14 +837,14 @@ function renderBka(){ if(!BKA.abr){ return '<div class="dtop"><div><div class="d
     +'<label class="fl inl">Objekt<input list="bka-dlo" id="bka-obj" value="'+esc(BKA.obj||'')+'" placeholder="alle" autocomplete="off" style="width:110px"></label><datalist id="bka-dlo"><option value="alle">'+objs.map(o=>'<option value="'+esc(o)+'">').join('')+'</datalist>'
     +'<label class="fl inl">Status<input list="bka-dls" id="bka-st" value="'+esc(BKA.st?(BKA_ST.find(z=>z[0]===BKA.st)||['',''])[1]:'')+'" placeholder="alle" autocomplete="off" style="width:260px"></label><datalist id="bka-dls">'+BKA_ST.map(z=>'<option value="'+esc(z[1])+'">').join('')+'</datalist>'
     +'<input type="search" id="bka-q" placeholder="Mieter, Objekt, Einheit" value="'+esc(BKA.q)+'" autocomplete="off"></div>';
-  h+='<div class="tablewrap"><table class="mlist"><thead><tr>'+th('jahr','Jahr')+th('obj','Objekt')+'<th>Einheit</th>'+th('mieter','Mieter')+th('typ','Ergebnis')+th('betrag','Betrag','n')+th('vers','versendet')+th('faellig','fällig')+th('bez','bezahlt','n')+th('offen','offen','n')+th('status','Status')+'<th></th></tr></thead><tbody>';
-  for(const y of L){ const cls=y.st==='mahnbar'||y.st==='auszuzahlen'?'neg':/bezahlt|ausgezahlt|verrechnet/.test(y.st)?'pos':''; const k=esc(y.pid+'|'+y.id);
+  h+='<div class="tablewrap"><table class="mlist"><thead><tr>'+th('jahr','Jahr')+th('obj','Objekt')+'<th>Einheit</th>'+th('mieter','Mieter')+th('typ','Ergebnis')+th('betrag','Betrag','n')+th('vers','versendet')+th('faellig','fällig')+th('bez','bezahlt','n')+th('offen','offen','n')+th('status','Status')+'<th>Schreiben</th><th></th></tr></thead><tbody>';
+  for(const y of L){ const gh=y.typ==='Guthaben', cls=y.st==='mahnbar'?'neg':y.st==='auszuzahlen'?'bkgut':/bezahlt|ausgezahlt|verrechnet/.test(y.st)?'pos':''; const k=esc(y.pid+'|'+y.id);
     let akt='<button class="ghost small" data-bkakonto="'+esc(y.pid)+'">Mieterkonto</button>';
     if(y.st==='mahnbar') akt='<button class="primary small" data-bkamahn="'+esc(y.pid)+'">Mahnen</button> '+akt;
     if(y.typ==='Guthaben'){ if(y.st==='auszuzahlen') akt+=' <input type="date" data-bkaausd="'+k+'" title="ausgezahlt am" style="width:135px"> <button class="ghost small" data-bkaaus="'+k+'">ausgezahlt</button> <button class="ghost small" data-bkaverr="'+k+'">verrechnet</button>';
       else if(y.man.ausgezahlt||y.man.verrechnet) akt+=' <button class="ghost small" data-bkareset="'+k+'">zurücksetzen</button>'; }
-    h+='<tr><td>'+esc(y.jahr)+'</td><td><b>'+esc(y.obj)+'</b></td><td>'+esc(y.einheit)+'</td><td class="wrapc">'+esc(y.mieter)+'</td><td>'+esc(y.typ)+'</td><td class="n">'+eur(y.betrag)+'</td><td class="sub">'+esc(y.vers||'–')+'</td><td>'+esc(dmy(y.faellig))+'</td><td class="n">'+(y.typ==='Nachzahlung'?eur(y.bez):'–')+'</td><td class="n '+cls+'">'+(y.offen>0.005?eur(y.offen):'–')+'</td><td class="'+cls+' bkst" data-bkastz="'+esc(y.st)+'" title="Klick filtert nach diesem Status">'+esc(y.stx)+'</td><td style="white-space:nowrap">'+akt+'</td></tr>'; }
-  if(!L.length) h+='<tr><td colspan="12" class="empty">Keine Abrechnungen für diesen Filter.</td></tr>';
+    h+='<tr'+(gh?' class="bkgh"':'')+'><td>'+esc(y.jahr)+'</td><td><b>'+esc(y.obj)+'</b></td><td>'+esc(y.einheit)+'</td><td class="wrapc">'+esc(y.mieter)+'</td><td><span class="bkpill '+(gh?'gh':'nz')+'">'+esc(y.typ)+'</span></td><td class="n'+(gh?' bkgut':'')+'">'+(gh?'+ ':'')+eur(y.betrag)+'</td><td class="sub">'+esc(y.vers||'–')+'</td><td>'+esc(dmy(y.faellig))+'</td><td class="n">'+(y.typ==='Nachzahlung'?eur(y.bez):'–')+'</td><td class="n '+cls+'">'+(y.offen>0.005?eur(y.offen):'–')+'</td><td class="'+cls+' bkst" data-bkastz="'+esc(y.st)+'" title="Klick filtert nach diesem Status">'+esc(y.stx)+'</td><td>'+(y.pdf?'<button class="ghost small" data-bkapdf="'+esc(y.pdf)+'" title="Schreiben vom '+esc(dmy(String(y.pdfAm).slice(0,10)))+'">PDF öffnen</button>':'<span class="sub">kein PDF</span>')+'</td><td style="white-space:nowrap">'+akt+'</td></tr>'; }
+  if(!L.length) h+='<tr><td colspan="13" class="empty">Keine Abrechnungen für diesen Filter.</td></tr>';
   h+='</tbody></table></div><div class="note">Mahnen öffnet den Mahnlauf nur für diesen Mieter. Dort wählst du Mahnstufe und Versand (E-Mail, Post, Einwurf-Einschreiben, Bote). Die Mahnung enthält alle überfälligen Posten des Mieters und steht danach im Mahnregister und im Mieterkonto. Guthaben gelten als ausgezahlt, wenn eine passende Auszahlung in den Kontoauszügen gefunden wird oder ihr sie hier eintragt.</div>';
   return h; }
 function bkaMarke(k,feld,datum){ const i=k.indexOf('|'), pid=k.slice(0,i), id=k.slice(i+1), mk=MK[pid]; if(!mk) return; const neu=Object.assign({},ed(mk).bka||{});
@@ -856,6 +856,7 @@ document.addEventListener('click',e=>{ const c=e.target.closest('th[data-bkasort
 document.addEventListener('click',e=>{ const t=e.target.closest('button'); if(!t) return; const d=t.dataset;
   if(d.bkafil!=null){ BKA.st=BKA.st===d.bkafil?'':d.bkafil; render(); return; }
   if(d.bkasort){ if(BKA.sk===d.bkasort) BKA.sab=!BKA.sab; else { BKA.sk=d.bkasort; BKA.sab=false; } render(); return; }
+  if(d.bkapdf){ odOeffnen(d.bkapdf); return; }
   if(d.bkaopen){ bkaOpen=true; if(!BKA.abr) bkaLaden(); render(); return; }
   if(d.bkaclose){ if(/[?&]nur=1/.test(location.search)&&window.parent!==window){ window.parent.postMessage({bkaClose:1},'*'); return; } bkaOpen=false; render(); return; }
   if(d.bkamahn){ bkaMahnen(d.bkamahn); return; }
