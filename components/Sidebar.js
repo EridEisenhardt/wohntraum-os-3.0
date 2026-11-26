@@ -52,6 +52,7 @@ export const NAV = [
     { href: '/buchhaltung/buchungen', icon: 'ti-arrows-exchange', label: 'Buchungen' },
     { href: '/controlling/monatswechsel-fixkosten', icon: 'ti-calendar-check', label: 'Monatswechsel Fixkosten' },
     { href: '/betriebskosten', icon: 'ti-receipt-2', label: 'Betriebskostenabrechnung' },
+    { href: '/betriebskosten/zahlungen', icon: 'ti-receipt-2', label: 'BK-Abrechnungen: Zahlungen & Mahnungen' },
     { href: '/controlling/objekt-controlling', icon: 'ti-building-bank', label: 'Objekt-Controlling' },
   ] },
   { type: 'group', key: 'v-dokumente', icon: 'ti-files', label: 'Dokumente erstellen', mod: 'verwalto', items: [
@@ -127,6 +128,7 @@ export const NAV = [
     { href: '/hausverwaltung/portfolio', icon: 'ti-building-community', label: 'Portfolio' },
     { href: '/hausverwaltung/objekte', icon: 'ti-building-skyscraper', label: 'Objekte' },
     { href: '/betriebskosten', icon: 'ti-receipt-2', label: 'Betriebskostenabrechnung' },
+    { href: '/betriebskosten/zahlungen', icon: 'ti-receipt-2', label: 'BK-Abrechnungen: Zahlungen & Mahnungen' },
     { href: '/hausverwaltung/einheiten', icon: 'ti-home', label: 'Einheiten' },
     { href: '/hausverwaltung/vertraege', icon: 'ti-file-certificate', label: 'Verträge' },
     { href: '/hausverwaltung/mieterkonten', icon: 'ti-users', label: 'Mieterkonten' },
