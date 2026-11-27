@@ -10,7 +10,7 @@ export const maxDuration = 60
 const NROOT = (process.env.NAHAUS_API_URL || 'https://europe-west3-pool-nahaus-de.cloudfunctions.net').replace(/\/+$/, '')
 const ZIEL = 'Prozesslandkarte 3.0/30.000 Banken & Dienstleister/Dienstleister/Nahaus/Nahaus Datensicherung 2026-11'
 const SITE = () => process.env.MS_SP_SITE || 'andersmacher.sharepoint.com:/sites/WohnTraumRheinhessenGmbH9'
-const DATEI_HOST = 'https://firebasestorage.googleapis.com/v0/b/pool-nahaus-de.appspot.com/'
+const DATEI_HOSTS = ['https://firebasestorage.googleapis.com/v0/b/pool-nahaus-de.appspot.com/', 'https://firebasestorage.googleapis.com/v0/b/mieter-nahaus-de.appspot.com/']
 let TOKEN = { wert: '', bis: 0 }, DRIVE = { id: '', bis: 0 }
 
 async function token(neu) {
@@ -41,7 +41,7 @@ async function drive() {
   return d.id
 }
 const enc = p => p.split('/').map(encodeURIComponent).join('/')
-const sauber = s => String(s || '').replace(/[\\:*?"<>|#%\u0000-\u001f]/g, '_').replace(/\s+/g, ' ').trim().replace(/^\.+/, '').slice(0, 150) || 'ohne Name'
+const sauber = s => String(s || '').replace(/[\\:*?"<>|#%\u0000-\u001f]/g, '_').replace(/\s+/g, ' ').trim().replace(/^\.+/, '').slice(0, 150).replace(/[. ]+$/, '') || 'ohne Name'
 function zielPfad(rel) {
   const teile = String(rel || '').split('/').filter(Boolean).map(sauber)
   if (!teile.length || teile.some(t => t === '..' || t === '.')) throw new Error('Pfad nicht erlaubt.')
@@ -81,7 +81,7 @@ export async function POST(req) {
     }
     if (b.aktion === 'datei') {
       const url = String(b.url || '')
-      if (!url.startsWith(DATEI_HOST)) return antwort({ error: 'Nur Dateien aus dem Nahaus-Speicher.' }, 400)
+      if (!DATEI_HOSTS.some(h => url.startsWith(h))) return antwort({ error: 'Nur Dateien aus dem Nahaus-Speicher.' }, 400)
       const r = await fetch(url, { cache: 'no-store' })
       if (!r.ok) return antwort({ error: 'Datei nicht abrufbar (' + r.status + ').' })
       const bytes = new Uint8Array(await r.arrayBuffer())
