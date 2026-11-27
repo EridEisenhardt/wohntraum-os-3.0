@@ -162,6 +162,7 @@ body.embed #dov .dlg{max-height:100vh}
       <button data-a="m:vortermin" onclick="setArt('m:vortermin')">📍 Vor-Ort</button>
       <button data-a="m:zuarbeit" onclick="setArt('m:zuarbeit')">🤝 Zuarbeit fürs Team</button>
       <button data-a="m:jourfix" onclick="setArt('m:jourfix')">🧭 Jour Fix</button>
+      <button data-a="m:top3" onclick="setArt('m:top3')">🔝 Top 3</button>
       <button data-a="m:fristsache" onclick="setArt('m:fristsache')">⏰ Fristsache</button>
       <button data-a="projekte" onclick="openProjekte()" style="color:var(--accent);font-weight:700">📁 Projekte</button>
       <button data-a="besprechung" onclick="openBesprechung()" style="color:var(--accent);font-weight:700">🗣️ Besprechung</button>
@@ -359,6 +360,7 @@ async function load(){
   try{const {data:{session}}=await sb.auth.getSession();if(session&&session.user){ICH=(session.user.user_metadata&&(session.user.user_metadata.name||session.user.user_metadata.full_name))||session.user.email||'';}}catch(e){}
   initPersonSel();
   try{const sc=await sb.from('os_task_subtasks').select('id,task_id,titel,done,faellig').not('faellig','is',null);SUBCAL=sc.error?[]:(sc.data||[]);}catch(e){SUBCAL=[];}
+  try{const sm=await sb.from('os_task_subtasks').select('task_id,titel,done,massnahme').not('massnahme','is',null);SUBMASS=sm.error?[]:(sm.data||[]);}catch(e){SUBMASS=[];}
   render();
   const qp=new URLSearchParams(location.search);const op=qp.get('task')||qp.get('ticket');
   if(qp.get('embed')==='1')document.body.classList.add('embed');
@@ -442,11 +444,14 @@ function updAbschnittDL(){const p=(document.getElementById('d_projekt').value||'
   const secs=[...new Set(TASKS.filter(t=>t.projekt===p&&t.abschnitt).map(t=>t.abschnitt))].sort();
   const dl=document.getElementById('dlAbschnitte');if(dl)dl.innerHTML=secs.map(n=>`<option value="${esc(n)}">`).join('');}
 /* ---------- Team-Besprechung ---------- */
+let SUBMASS=[];
 const BESPPERS=[['Jürgen','austausch_juergen'],['Stephan','austausch_stephan'],['Ramona','austausch_ramona'],['Stefan Schnatz','austausch_stefan_schnatz'],['Alexander Buchhaus','austausch_alexander_buchhaus']];
 let BESPSEL='Jürgen';
+function bespSubHit(taskId,mass){return SUBMASS.some(s=>s.task_id===taskId&&!s.done&&s.massnahme===mass);}
 function bespTasks(name,mass){return TASKS.filter(t=>t.status!=='erledigt'&&(
   (Array.isArray(t.massnahme)&&t.massnahme.includes(mass))||
-  (Array.isArray(t.beteiligte)&&t.beteiligte.includes(name))
+  (Array.isArray(t.beteiligte)&&t.beteiligte.includes(name))||
+  bespSubHit(t.id,mass)
 )).sort((a,b)=>((a.faellig||'9999')<(b.faellig||'9999')?-1:(a.faellig||'9999')>(b.faellig||'9999')?1:(a.pos||0)-(b.pos||0)));}
 function openBesprechung(){
   document.querySelectorAll('#artseg button').forEach(b=>b.classList.toggle('on',b.dataset.a==='besprechung'));
@@ -466,7 +471,7 @@ function renderBesp(){
   if(!list.length){body.innerHTML=`<div style="color:var(--muted);padding:24px;text-align:center">Keine offenen Aufgaben für ${esc(BESPSEL)}. Setze bei einer Aufgabe die Maßnahme „Austausch mit ${esc(BESPSEL)}" oder füge ${esc(BESPSEL)} als Beteiligten hinzu.</div>`;return;}
   body.innerHTML=`<div style="font-weight:600;margin-bottom:8px">${list.length} Aufgabe${list.length===1?'':'n'} für ${esc(BESPSEL)}</div>`
     +list.map(t=>{const over=t.faellig&&t.faellig<today&&t.status!=='erledigt';
-      const warum=[];if(Array.isArray(t.massnahme)&&t.massnahme.includes(mass))warum.push('Austausch');if(Array.isArray(t.beteiligte)&&t.beteiligte.includes(BESPSEL))warum.push('Beteiligt');
+      const warum=[];if(Array.isArray(t.massnahme)&&t.massnahme.includes(mass))warum.push('Austausch');if(Array.isArray(t.beteiligte)&&t.beteiligte.includes(BESPSEL))warum.push('Beteiligt');if(bespSubHit(t.id,mass))warum.push('↳ Unteraufgabe');
       return `<div style="display:flex;gap:10px;align-items:center;padding:9px 10px;border:1px solid var(--line);border-radius:9px;margin-bottom:7px;cursor:pointer" onclick="bespOpenTask('${t.id}')">
         <span style="flex:1"><b>${esc(t.titel)}</b>${t.kontakt_label?` <span class="pill kontakt">👤 ${esc(t.kontakt_label)}</span>`:''}${t.projekt?` <span class="pill">📁 ${esc(t.projekt)}</span>`:''}</span>
         <span class="pill">${STLBL[t.status||'todo']}</span>
