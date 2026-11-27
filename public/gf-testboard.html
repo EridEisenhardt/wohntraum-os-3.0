@@ -126,6 +126,7 @@ h1{font-size:21px;font-weight:800}
 .subedit{flex:1;font-size:13px;border:1px solid transparent;border-radius:6px;padding:3px 6px;background:transparent;font:inherit;color:inherit}
 .subedit:hover{border-color:var(--line)}.subedit:focus{border-color:var(--accent);background:#fff;outline:none}
 .dsub.done .subedit{text-decoration:line-through;color:var(--muted)}
+.dsub.storno .subedit{text-decoration:line-through;color:var(--muted);font-style:italic}.dsub.storno{opacity:.75}
 .dsub b{cursor:pointer;color:var(--red)}
 .vrow{border-left:2px solid var(--line);padding:4px 0 4px 10px;margin:2px 0;font-size:12.5px}
 .vrow .vm{color:var(--muted);font-size:11px}
@@ -359,8 +360,8 @@ async function load(){
   OBJ=(ob.data||[]).map(o=>{const kz=o.kuerzel||o.h_id_text||'';return {id:o.id,label:(kz?kz+' · ':'')+(o.name||'')};}).sort((a,b)=>a.label.localeCompare(b.label,'de',{numeric:true}));
   try{const {data:{session}}=await sb.auth.getSession();if(session&&session.user){ICH=(session.user.user_metadata&&(session.user.user_metadata.name||session.user.user_metadata.full_name))||session.user.email||'';}}catch(e){}
   initPersonSel();
-  try{const sc=await sb.from('os_task_subtasks').select('id,task_id,titel,done,faellig').not('faellig','is',null);SUBCAL=sc.error?[]:(sc.data||[]);}catch(e){SUBCAL=[];}
-  try{const sm=await sb.from('os_task_subtasks').select('task_id,titel,done,massnahme').not('massnahme','is',null);SUBMASS=sm.error?[]:(sm.data||[]);}catch(e){SUBMASS=[];}
+  try{const sc=await sb.from('os_task_subtasks').select('id,task_id,titel,done,faellig,storniert').not('faellig','is',null);SUBCAL=sc.error?[]:(sc.data||[]);}catch(e){SUBCAL=[];}
+  try{const sm=await sb.from('os_task_subtasks').select('id,task_id,titel,done,faellig,massnahme,storniert').not('massnahme','is',null);SUBMASS=sm.error?[]:(sm.data||[]);}catch(e){SUBMASS=[];}
   render();
   const qp=new URLSearchParams(location.search);const op=qp.get('task')||qp.get('ticket');
   if(qp.get('embed')==='1')document.body.classList.add('embed');
@@ -447,12 +448,20 @@ function updAbschnittDL(){const p=(document.getElementById('d_projekt').value||'
 let SUBMASS=[];
 const BESPPERS=[['Jürgen','austausch_juergen'],['Stephan','austausch_stephan'],['Ramona','austausch_ramona'],['Stefan Schnatz','austausch_stefan_schnatz'],['Alexander Buchhaus','austausch_alexander_buchhaus']];
 let BESPSEL='Jürgen';
-function bespSubHit(taskId,mass){return SUBMASS.some(s=>s.task_id===taskId&&!s.done&&s.massnahme===mass);}
-function bespTasks(name,mass){return TASKS.filter(t=>t.status!=='erledigt'&&(
-  (Array.isArray(t.massnahme)&&t.massnahme.includes(mass))||
-  (Array.isArray(t.beteiligte)&&t.beteiligte.includes(name))||
-  bespSubHit(t.id,mass)
-)).sort((a,b)=>((a.faellig||'9999')<(b.faellig||'9999')?-1:(a.faellig||'9999')>(b.faellig||'9999')?1:(a.pos||0)-(b.pos||0)));}
+function bespItems(name,mass){
+  const items=[];
+  // Treffer auf Aufgaben-Ebene (Maßnahme oder Beteiligte)
+  TASKS.forEach(t=>{if(t.status==='erledigt')return;
+    const viaM=Array.isArray(t.massnahme)&&t.massnahme.includes(mass);
+    const viaB=Array.isArray(t.beteiligte)&&t.beteiligte.includes(name);
+    if(viaM||viaB){const warum=[];if(viaM)warum.push('Austausch');if(viaB)warum.push('Beteiligt');
+      items.push({kind:'task',t,titel:t.titel,faellig:t.faellig,warum:warum.join(' · ')});}
+  });
+  // Treffer auf Unteraufgaben-Ebene → Titel der Unteraufgabe nennen
+  SUBMASS.forEach(s=>{if(s.done||s.storniert||s.massnahme!==mass)return;const t=TASKS.find(x=>x.id===s.task_id&&x.status!=='erledigt');if(!t)return;
+    items.push({kind:'sub',t,sub:s,titel:s.titel,faellig:s.faellig||t.faellig,warum:'↳ Unteraufgabe'});});
+  return items.sort((a,b)=>((a.faellig||'9999')<(b.faellig||'9999')?-1:(a.faellig||'9999')>(b.faellig||'9999')?1:0));
+}
 function openBesprechung(){
   document.querySelectorAll('#artseg button').forEach(b=>b.classList.toggle('on',b.dataset.a==='besprechung'));
   document.getElementById('bespov').classList.add('show');renderBesp();
@@ -462,21 +471,21 @@ function bespClose(){document.getElementById('bespov').classList.remove('show');
 function bespSel(name){BESPSEL=name;renderBesp();}
 function renderBesp(){
   document.getElementById('besp_tabs').innerHTML=BESPPERS.map(([name,mass])=>{
-    const n=bespTasks(name,mass).length;
+    const n=bespItems(name,mass).length;
     return `<button class="${BESPSEL===name?'on':''}" onclick="bespSel('${name.replace(/'/g,"\\'")}')">🗣️ ${esc(name)} <span style="opacity:.7">(${n})</span></button>`;
   }).join('');
   const mass=(BESPPERS.find(p=>p[0]===BESPSEL)||[])[1];
-  const list=bespTasks(BESPSEL,mass);
+  const list=bespItems(BESPSEL,mass);
   const body=document.getElementById('besp_body');
-  if(!list.length){body.innerHTML=`<div style="color:var(--muted);padding:24px;text-align:center">Keine offenen Aufgaben für ${esc(BESPSEL)}. Setze bei einer Aufgabe die Maßnahme „Austausch mit ${esc(BESPSEL)}" oder füge ${esc(BESPSEL)} als Beteiligten hinzu.</div>`;return;}
-  body.innerHTML=`<div style="font-weight:600;margin-bottom:8px">${list.length} Aufgabe${list.length===1?'':'n'} für ${esc(BESPSEL)}</div>`
-    +list.map(t=>{const over=t.faellig&&t.faellig<today&&t.status!=='erledigt';
-      const warum=[];if(Array.isArray(t.massnahme)&&t.massnahme.includes(mass))warum.push('Austausch');if(Array.isArray(t.beteiligte)&&t.beteiligte.includes(BESPSEL))warum.push('Beteiligt');if(bespSubHit(t.id,mass))warum.push('↳ Unteraufgabe');
+  if(!list.length){body.innerHTML=`<div style="color:var(--muted);padding:24px;text-align:center">Nichts offen für ${esc(BESPSEL)}. Setze bei einer Aufgabe oder Unteraufgabe die Maßnahme „Austausch mit ${esc(BESPSEL)}" oder füge ${esc(BESPSEL)} als Beteiligten hinzu.</div>`;return;}
+  body.innerHTML=`<div style="font-weight:600;margin-bottom:8px">${list.length} Punkt${list.length===1?'':'e'} für ${esc(BESPSEL)}</div>`
+    +list.map(it=>{const t=it.t;const over=it.faellig&&it.faellig<today&&t.status!=='erledigt';
+      const sub=it.kind==='sub'?`<div style="font-size:11.5px;color:var(--muted);margin-top:2px">↳ in: ${esc(t.titel)}</div>`:'';
       return `<div style="display:flex;gap:10px;align-items:center;padding:9px 10px;border:1px solid var(--line);border-radius:9px;margin-bottom:7px;cursor:pointer" onclick="bespOpenTask('${t.id}')">
-        <span style="flex:1"><b>${esc(t.titel)}</b>${t.kontakt_label?` <span class="pill kontakt">👤 ${esc(t.kontakt_label)}</span>`:''}${t.projekt?` <span class="pill">📁 ${esc(t.projekt)}</span>`:''}</span>
-        <span class="pill">${STLBL[t.status||'todo']}</span>
-        ${t.faellig?`<span class="pill" style="${over?'color:var(--red);border-color:var(--red)':''}">📅 ${dfmt(t.faellig)}</span>`:''}
-        <span class="pill" style="opacity:.7">${warum.join(' · ')}</span>
+        <span style="flex:1">${it.kind==='sub'?'☑ ':''}<b>${esc(it.titel)}</b>${sub}${t.kontakt_label?` <span class="pill kontakt">👤 ${esc(t.kontakt_label)}</span>`:''}${t.projekt?` <span class="pill">📁 ${esc(t.projekt)}</span>`:''}</span>
+        ${it.kind==='task'?`<span class="pill">${STLBL[t.status||'todo']}</span>`:''}
+        ${it.faellig?`<span class="pill" style="${over?'color:var(--red);border-color:var(--red)':''}">📅 ${dfmt(it.faellig)}</span>`:''}
+        <span class="pill" style="opacity:.7">${it.warum}</span>
       </div>`;}).join('');
 }
 function bespOpenTask(id){bespClose();openDetail(id);}
@@ -514,7 +523,7 @@ async function openProject(name){
   document.getElementById('projov').classList.add('show');
   const ids=TASKS.filter(t=>t.projekt===name).map(t=>t.id);
   PROJSUBS=[];
-  if(ids.length){for(let i=0;i<ids.length;i+=100){const {data}=await sb.from('os_task_subtasks').select('id,task_id,titel,done,faellig,pos').in('task_id',ids.slice(i,i+100));PROJSUBS=PROJSUBS.concat(data||[]);}}
+  if(ids.length){for(let i=0;i<ids.length;i+=100){const {data}=await sb.from('os_task_subtasks').select('id,task_id,titel,done,faellig,pos,storniert').in('task_id',ids.slice(i,i+100));PROJSUBS=PROJSUBS.concat(data||[]);}}
   const {data:secs}=await sb.from('os_projekt_abschnitte').select('*').eq('projekt',name).order('pos');
   PROJSECS=secs||[];
   projSetView('liste');
@@ -567,8 +576,8 @@ function projRender(){
     const tasksHtml=list.map(t=>{
       const sub=projSubsOf(t.id);const sd=sub.filter(x=>x.done).length;
       const over=t.faellig&&t.faellig<today&&t.status!=='erledigt';
-      const subrows=sub.map(x=>`<div style="display:flex;gap:8px;align-items:center;padding:3px 0 3px 42px;font-size:13px;color:${x.done?'var(--muted)':'inherit'}">
-        <span>${x.done?'☑':'☐'}</span><span style="flex:1;${x.done?'text-decoration:line-through':''}">${esc(x.titel)}</span>${x.faellig?`<span class="pill">${dfmt(x.faellig)}</span>`:''}</div>`).join('');
+      const subrows=sub.map(x=>`<div onclick="projOpenTask('${t.id}')" title="Zum Bearbeiten öffnen" style="display:flex;gap:8px;align-items:center;padding:3px 0 3px 42px;font-size:13px;cursor:pointer;color:${x.done||x.storniert?'var(--muted)':'inherit'}" onmouseover="this.style.background='var(--surf2)'" onmouseout="this.style.background=''">
+        <span>${x.storniert?'⊘':(x.done?'☑':'☐')}</span><span style="flex:1;${x.done||x.storniert?'text-decoration:line-through':''}">${esc(x.titel)}</span>${x.storniert?'<span style="font-size:10px;color:#9a3412">storniert</span>':''}${x.faellig?`<span class="pill">${dfmt(x.faellig)}</span>`:''}</div>`).join('');
       return `<div style="border-top:1px solid var(--line)">
         <div style="display:flex;gap:10px;align-items:center;padding:8px 12px;cursor:pointer" onclick="projOpenTask('${t.id}')">
           <span style="color:var(--muted)">↳</span><b style="flex:1">${esc(t.titel)}</b>
@@ -612,7 +621,7 @@ function mondayOf(d){const x=new Date(d);x.setDate(x.getDate()-((x.getDay()+6)%7
 function renderCalendar(){
   if(!CALM)CALM=new Date(today);
   const byDay={};vis().forEach(t=>{if(t.faellig){(byDay[t.faellig]=byDay[t.faellig]||[]).push(t);}});
-  SUBCAL.forEach(s=>{if(s.faellig&&!(HIDEDONE&&s.done)){(byDay[s.faellig]=byDay[s.faellig]||[]).push({__sub:true,id:s.id,task_id:s.task_id,titel:s.titel,done:s.done,faellig:s.faellig});}});
+  SUBCAL.forEach(s=>{if(s.faellig&&!s.storniert&&!(HIDEDONE&&s.done)){(byDay[s.faellig]=byDay[s.faellig]||[]).push({__sub:true,id:s.id,task_id:s.task_id,titel:s.titel,done:s.done,faellig:s.faellig});}});
   const dows=['Mo','Di','Mi','Do','Fr','Sa','So'];
   let start,count,label,curM=CALM.getMonth();
   if(CALMODE==='woche'){start=mondayOf(CALM);count=7;const end=new Date(start);end.setDate(start.getDate()+6);
@@ -846,19 +855,21 @@ async function closeDetail(){if(DAUTOSAVET){clearTimeout(DAUTOSAVET);DAUTOSAVET=
   document.getElementById('dov').classList.remove('show');DTASK=null;
   if(document.body.classList.contains('embed')){try{parent.postMessage({type:'gf-detail-closed'},'*');}catch(e){}}}
 function renderDSubs(){
-  const open=SUBS.filter(x=>!x.done).length;
-  document.getElementById('d_subcnt').textContent=SUBS.length?`(${SUBS.length-open}/${SUBS.length})`:'';
+  const aktiv=SUBS.filter(x=>!x.storniert);const erl=aktiv.filter(x=>x.done).length;const sto=SUBS.length-aktiv.length;
+  document.getElementById('d_subcnt').textContent=SUBS.length?`(${erl}/${aktiv.length}${sto?' · '+sto+' storniert':''})`:'';
   document.getElementById('d_subs').innerHTML=SUBS.map(s=>{
     const notes=VER.filter(v=>v.subtask_id===s.id);
     const chat=SUBOPEN.has(s.id)?`<div style="margin:2px 0 8px 26px;padding:6px 9px;border-left:2px solid var(--line);display:flex;flex-direction:column;gap:5px">`
       +(notes.length?notes.slice().reverse().map(v=>`<div style="font-size:12px"><div>${esc(v.text)}</div><div class="vm">${esc(v.autor||'')} · ${new Date(v.created_at).toLocaleString('de-DE')}</div></div>`).join(''):'<div class="vm" style="font-size:12px">Noch keine Notizen – unten festhalten, was hier gelaufen ist.</div>')
       +`<div class="row"><input id="sn_${s.id}" placeholder="Notiz / was ist hier gelaufen?" onkeydown="if(event.key==='Enter')dSubNote('${s.id}')"><button class="btn sec sm" onclick="dSubNote('${s.id}')">+</button></div></div>`:'';
-    return `<div class="dsub ${s.done?'done':''}" ondragover="event.preventDefault();this.classList.add('subover')" ondragleave="this.classList.remove('subover')" ondrop="subDrop(event,'${s.id}',this)">
+    return `<div class="dsub ${s.done?'done':''}${s.storniert?' storno':''}" ondragover="event.preventDefault();this.classList.add('subover')" ondragleave="this.classList.remove('subover')" ondrop="subDrop(event,'${s.id}',this)">
     <span class="subgrip" draggable="true" ondragstart="subDragStart(event,'${s.id}')" ondragend="document.querySelectorAll('.dsub').forEach(x=>x.classList.remove('subover'))" title="Ziehen zum Sortieren">⠿</span>
-    <input type="checkbox" ${s.done?'checked':''} onchange="dToggleSub('${s.id}',this.checked)">
+    <input type="checkbox" ${s.done?'checked':''} onchange="dToggleSub('${s.id}',this.checked)" ${s.storniert?'title="storniert – Haken hebt die Stornierung auf"':''}>
     <input class="subedit" value="${esc(s.titel)}" onchange="dUpdSub('${s.id}',this.value)" onkeydown="if(event.key==='Enter')this.blur()" title="Zum Bearbeiten klicken">
+    ${s.storniert?'<span style="font-size:10px;color:#9a3412;background:#ffedd5;border:1px solid #f0c9a0;border-radius:6px;padding:1px 5px;white-space:nowrap">storniert</span>':''}
     <input type="date" class="subdate" value="${s.faellig||''}" title="Fällig am – erscheint im Kalender" onchange="dSubDate('${s.id}',this.value)" oninput="dSubDate('${s.id}',this.value)">
     <select class="submass" title="Nächste Maßnahme" onchange="dSubMass('${s.id}',this.value)"><option value="">＋ Maßnahme</option>${MASSORDER.map(m=>`<option value="${m}"${s.massnahme===m?' selected':''}>${MASSICON[m]} ${MASSLBL[m]}</option>`).join('')}</select>
+    <b onclick="dSubStorno('${s.id}')" title="${s.storniert?'Stornierung aufheben':'Beendet, nicht ausgeführt / storniert'}" style="cursor:pointer;color:${s.storniert?'#0f9d6b':'#9a3412'}">${s.storniert?'↩':'⊘'}</b>
     <b onclick="dSubToggle('${s.id}')" title="Notizen / Chat" style="cursor:pointer">💬${notes.length?' '+notes.length:''}</b>
     <b onclick="dDelSub('${s.id}')" title="löschen" style="cursor:pointer">🗑</b></div>${chat}`;
   }).join('')||'<div style="color:var(--muted);font-size:12px">Keine Unteraufgaben.</div>';
@@ -920,11 +931,16 @@ async function logVer(text){if(!DTASK)return;const row={task_id:DTASK.id,text,au
 async function dAddSub(){const el=document.getElementById('d_subnew');const titel=(el.value||'').trim();if(!titel||!DTASK)return;
   const {data}=await sb.from('os_task_subtasks').insert({task_id:DTASK.id,titel,done:false}).select().maybeSingle();
   if(data){SUBS.push(data);el.value='';renderDSubs();}}
-async function dToggleSub(id,v){const {error}=await sb.from('os_task_subtasks').update({done:v}).eq('id',id);if(error){toast(error.message);return;}const s=SUBS.find(x=>x.id===id);if(s)s.done=v;SUBCAL.forEach(x=>{if(x.id===id)x.done=v;});
+async function dToggleSub(id,v){const patch=v?{done:true,storniert:false}:{done:false};const {error}=await sb.from('os_task_subtasks').update(patch).eq('id',id);if(error){toast(error.message);return;}const s=SUBS.find(x=>x.id===id);if(s){s.done=v;if(v)s.storniert=false;}SUBCAL.forEach(x=>{if(x.id===id){x.done=v;if(v)x.storniert=false;}});
   if(s&&DTASK){const txt=(v?'Unteraufgabe erledigt: «':'Unteraufgabe wieder offen: «')+s.titel+'»';
     const {data}=await sb.from('os_task_verlauf').insert({task_id:DTASK.id,subtask_id:id,text:txt,autor:ICH||'System'}).select().maybeSingle();
     if(data)VER.unshift(data);}
-  renderDSubs();renderDVer();}
+  renderDSubs();renderDVer();render();}
+async function dSubStorno(id){const s=SUBS.find(x=>x.id===id);if(!s)return;const nv=!s.storniert;const {error}=await sb.from('os_task_subtasks').update({storniert:nv,done:false}).eq('id',id);if(error){toast(error.message);return;}s.storniert=nv;s.done=false;SUBCAL.forEach(x=>{if(x.id===id){x.storniert=nv;x.done=false;}});SUBMASS.forEach(x=>{if(x.id===id)x.storniert=nv;});
+  if(DTASK){const txt=(nv?'Unteraufgabe storniert (beendet, nicht ausgeführt): «':'Stornierung aufgehoben: «')+s.titel+'»';
+    const {data}=await sb.from('os_task_verlauf').insert({task_id:DTASK.id,subtask_id:id,text:txt,autor:ICH||'System'}).select().maybeSingle();
+    if(data)VER.unshift(data);}
+  renderDSubs();renderDVer();render();toast(nv?'Storniert ✓':'Stornierung aufgehoben');}
 async function dDelSub(id){await sb.from('os_task_subtasks').delete().eq('id',id);SUBS=SUBS.filter(x=>x.id!==id);SUBCAL=SUBCAL.filter(x=>x.id!==id);renderDSubs();}
 let SUBDRAG=null;
 function subDragStart(e,id){SUBDRAG=id;e.dataTransfer.effectAllowed='move';}

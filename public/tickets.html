@@ -216,13 +216,28 @@ function rows(list){
     <td>${t.asana_url?`<a class="asana" href="${esc(t.asana_url)}" target="_blank" rel="noopener">● Asana ↗</a>`:'—'}</td>
     <td><button class="abtn" onclick="delTicket('${t.id}')">✕</button></td></tr>`).join('');
 }
+let SORT=null;
+const SORTVAL={
+  nr:t=>t.nummer||0,
+  titel:t=>(t.titel||'').toLowerCase(),
+  status:t=>(t.status||'').toLowerCase(),
+  prio:t=>(t.prio||''),
+  bereich:t=>(QLBL[t.quelle]||'Vertrieb').toLowerCase(),
+  bezug:t=>(refName(t)||'').toLowerCase(),
+  verantwortlich:t=>(t.verantwortlich||'').toLowerCase(),
+  faellig:t=>(t.faellig||'9999-99-99')
+};
+function setSort(k){if(SORT&&SORT.key===k)SORT.dir*=-1;else SORT={key:k,dir:1};render();}
+function applySort(list){if(!SORT||!SORTVAL[SORT.key])return list;const f=SORTVAL[SORT.key];return list.slice().sort((a,b)=>{const av=f(a),bv=f(b);if(av<bv)return -SORT.dir;if(av>bv)return SORT.dir;return 0;});}
+function thS(k,label){const ar=SORT&&SORT.key===k?(SORT.dir>0?' ▲':' ▼'):' ⇅';return '<th style="cursor:pointer;user-select:none" title="Zum Sortieren klicken" onclick="setSort(\''+k+'\')">'+label+'<span style="opacity:.4;font-size:11px">'+ar+'</span></th>';}
 function render(){
   if(VIEW==='board')return renderBoard();
   const all=baseList();
-  const list=VIEW==='offen'?all.filter(t=>t.status!=='Erledigt').sort((a,b)=>(a.faellig||'9999')<(b.faellig||'9999')?-1:1):all;
+  let list=VIEW==='offen'?all.filter(t=>t.status!=='Erledigt'):all;
+  list=SORT?applySort(list):list.slice().sort((a,b)=>(a.faellig||'9999')<(b.faellig||'9999')?-1:1);
   $('main').innerHTML=kpis()+`<div class="card"><div class="card-hd"><span>${VIEW==='offen'?'Offene ToDos':'Alle Tickets'} <span style="color:var(--muted);font-weight:400">· ${list.length}</span></span></div>
    <div class="card-bd">${filterBar()}
-   ${list.length?`<div class="tablewrap"><table><thead><tr><th>Nr</th><th>Titel</th><th>Status</th><th>Prio</th><th>Bereich</th><th>Bezug</th><th>Verantwortlich</th><th>Fällig</th><th>Asana</th><th></th></tr></thead><tbody>${rows(list)}</tbody></table></div>`
+   ${list.length?`<div class="tablewrap"><table><thead><tr>${thS('nr','Nr')}${thS('titel','Titel')}${thS('status','Status')}${thS('prio','Prio')}${thS('bereich','Bereich')}${thS('bezug','Bezug')}${thS('verantwortlich','Verantwortlich')}${thS('faellig','Fällig')}<th>Asana</th><th></th></tr></thead><tbody>${rows(list)}</tbody></table></div>`
    :'<div class="empty">Keine Tickets — oben „+ Ticket".</div>'}</div></div>`;
 }
 function renderBoard(){
