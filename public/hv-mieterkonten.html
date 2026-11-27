@@ -165,6 +165,7 @@ input.zsel{width:240px}
 .adot{display:inline-block;width:11px;height:11px;border-radius:50%;vertical-align:-1px}.adot.big{width:16px;height:16px;vertical-align:-2px}
 .ov{position:fixed;inset:0;background:rgba(15,20,30,.45);z-index:20;overflow:auto;padding:24px 16px}
 .ov2{position:fixed;inset:0;background:rgba(15,20,30,.45);z-index:30;display:flex;align-items:center;justify-content:center;padding:16px}.ov2 .box{background:var(--bg);border-radius:14px;padding:18px 20px;max-width:460px;width:100%;box-shadow:0 20px 60px rgba(0,0,0,.3)}.ov2 .box h3{margin:0 0 8px;font-size:16px}.ov2 .acts{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px}
+.dlg.breit{max-width:none;width:calc(100vw - 40px)}.bkpill{display:inline-block;border-radius:999px;padding:2px 10px;font-size:12px;font-weight:700}.bkpill.nz{background:#fbeaea;color:#b3261e}.bkpill.gh{background:#e3f2e8;color:#1f7a4d}tr.bkgh td{background:#f3faf5}.bkgut{color:#1f7a4d;font-weight:700}.kpi.on{border-color:var(--accent);box-shadow:inset 0 0 0 1px var(--accent)}.bkst{cursor:pointer}.bkst:hover{text-decoration:underline}
 .dlg{max-width:1250px;margin:0 auto;background:var(--bg);border-radius:16px;padding:18px 20px;box-shadow:0 20px 60px rgba(0,0,0,.3)}
 .dtop{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;margin-bottom:12px}
 .dname{font-size:22px;font-weight:800}
@@ -568,8 +569,8 @@ let MAHN={}; let SL={}, slAuto=false, loadedSL=false, ZV=[], ZVload=false, DOCS=
 const ed=mk=>Object.assign({},mk,EDIT[mk.pid]||{});
 /* eindeutiger Schlüssel einer Zeile im Mieterkonto (für Korrekturen) */
 const rowKey=r=>r.id?'s:'+r.id:r.key?'b:'+r.key+(r.k?':k':''):r.mz?'m:'+r.mz:r.nh?'n:'+(r.nhid||(r.d+'|'+r.h+'|'+r.t)):null;
-/* Auszug (Mietende) kann im OS eingetragen werden (EDIT.bis) und gilt dann vor dem Wert aus Nahaus */
-function applyBis(){ for(const mk of Object.values(MK)){ if(!('bisNH' in mk)) mk.bisNH=mk.bis||null; const e=EDIT[mk.pid]; mk.bis=(e&&e.bis)?e.bis:mk.bisNH;
+/* Auszug (Mietende) kann im OS eingetragen werden (EDIT.bis) und gilt dann vor dem Wert aus Nahaus. EDIT.bis='offen': Auszug aus Nahaus im OS entfernt (z. B. Kündigung zurückgenommen) */
+function applyBis(){ for(const mk of Object.values(MK)){ if(!('bisNH' in mk)) mk.bisNH=mk.bis||null; const e=EDIT[mk.pid]; mk.bis=(e&&e.bis)?(e.bis==='offen'?null:e.bis):mk.bisNH;
   /* Einzug im OS geändert: Beginn, erste Mietstufe und Kautions-Sollstellung wandern mit, die Monatsmieten werden ab dem neuen Datum (anteilig) berechnet */
   if(!('vonNH' in mk)){ mk.vonNH=mk.von||null; mk.stufe0NH=(mk.stufen&&mk.stufen[0])?mk.stufen[0].ab:null; }
   const nv=(e&&e.von)?e.von:mk.vonNH; mk.von=nv;
@@ -712,7 +713,7 @@ function compute(opt){ opt=opt||{}; const ZMAP={}, BU={};
 const STN={ok:['ok','ausgeglichen'],rueckstand:['mid','Rückstand'],mahnen:['bad','≥ 1 Monatsmiete'],kuendigung:['bad','≥ 2 Monatsmieten'],guthaben:['src','Guthaben'],extern:['src','nicht von uns verwaltet'],faellig:['src','fällig, Zahlung noch offen']};
 
 /* ---------- Sammelmahnung (Mahnlauf am 07. und 20.; am 07. wird die Miete des laufenden Monats mitgemahnt) ---------- */
-var mahnOpen=false, MR={sel:{},stufe:{},datum:'',frist:'',min:10,busy:false,done:null,q:''}, REGM=[], REGload=false;
+var mahnOpen=false, MR={sel:{},stufe:{},vs:{},datum:'',frist:'',min:10,busy:false,done:null,q:''}, REGM=[], REGload=false;
 const STUFEN=['Zahlungserinnerung','1. Mahnung','2. Mahnung','3. Mahnung'];
 const MAHNGEB=5;
 const ADR={V11:'Vorstädter Straße 11|55276 Oppenheim',A14:'Abtweilerstraße 14|55568 Lauschied',E4:'Eiermarkt 4|55545 Bad Kreuznach',H3:'Hammer Straße 3|67575 Eich',H44:'Hochstraße 44|55545 Bad Kreuznach',K6:'Kreuzstraße 6|55546 Fürfeld',K7:'In den Kirchgärten 7|55278 Dexheim',K28:'Krämerstraße 28|55276 Oppenheim',Kw30:'Kellerweg 30|67583 Guntersblum',M8:'Mannheimer Straße 8|55545 Bad Kreuznach',R6:'Am Römer 6|67598 Gundersheim',S16:'St.-Georgen-Straße 16|55232 Alzey',S58:'Schlossgasse 58|55232 Alzey',U6:'Uhlandstraße 6|55543 Bad Kreuznach',Rh24:'Rheinstraße 24|55283 Nierstein'};
@@ -781,14 +782,121 @@ function monBox(all){ const L=all.filter(x=>x.aktiv).map(x=>({x,m:monOffen(x)}))
   return '<button class="kpi kbtn'+(M.st==='monat'?' on':'')+'" data-mst="'+(M.st==='monat'?'aktiv':'monat')+'" title="Klick zeigt die Mieter, deren Miete für '+esc(monName())+' noch offen ist"><div class="l">Mieten '+esc(monName())+' offen</div><div class="v">'+O.length+' von '+L.length+'</div><div class="s">zusammen '+eur(sum)+'</div></button>'; }
 function mahnBox(){ const lt=laufTermin(), ll=letzterLauf(), faellig=!ll||ll<lt;
   return '<button class="kpi kbtn'+(faellig?' kueber':'')+'" data-mahnopen="1"><div class="l">Sammelmahnung</div><div class="v">'+esc(dmy(faellig?lt:naechsterTermin()))+'</div></button>'; }
-function mahnInit(art){ MR.art=art||'miete'; MR.datum=MR.datum&&art?MR.datum:today; MR.frist=MR.frist&&art?MR.frist:addD(today,10); MR.sel={}; MR.stufe={}; MR.done=null; MR.q='';
+/* Versandart der Mahnung: E-Mail, Post, Einwurf-Einschreiben, Bote */
+const MVERSAND=['E-Mail','Post','Einwurf-Einschreiben','Bote / Briefkasten'];
+const mrVersand=x=>MR.vs[x.mk.pid]||(mieterMails(x.mk).length?'E-Mail':'Post');
+const mVermerk=v=>v==='E-Mail'?'Per E-Mail':v==='Einwurf-Einschreiben'?'Einwurf-Einschreiben':/bote/i.test(v||'')?'Durch Boten':'';
+/* ---------- Betriebskostenabrechnungen: Übersicht Nachzahlungen und Guthaben ---------- */
+var bkaOpen=false, BKA={jahr:'',obj:'',st:'',q:'',abr:null,mvs:null,busy:false,sk:'',sab:false};
+const bkaStPasst=(y,st)=>!st||(st==='offen'?(y.typ==='Nachzahlung'&&y.offen>0.005):st==='erledigt'?/bezahlt|ausgezahlt|verrechnet/.test(y.st):y.st===st);
+async function bkaLaden(){ const sb=window.osSupabase; if(!sb||BKA.busy) return; BKA.busy=true;
+  try{ const [a,m]=await Promise.all([sb.from('bk_abrechnungen').select('id,kennung,jahr'),sb.from('bk_mietverhaeltnisse').select('id,abrechnung_id,mieter,zustellung,schreiben_datei,schreiben_am')]); BKA.abr={}; for(const r of a.data||[]) BKA.abr[r.id]=r; BKA.mvs={}; for(const r of m.data||[]) BKA.mvs[r.id]=r; }
+  catch(e){ BKA.abr=BKA.abr||{}; BKA.mvs=BKA.mvs||{}; } BKA.busy=false; render(); }
+/* ausgehende Zahlungen (Guthaben-Auszahlung) in den Kontoauszügen, die dem Guthaben oder dem Mieter zugeordnet sind */
+function bkaAuszahlung(mk,r,am){ const ab=am?String(am).slice(0,10):r.d, ziel=r.h; let best=null;
+  for(const id in buch){ const d=buch[id]; if(!d||d.konto===MANKEY) continue; for(const t of d.tx||[]){ if(!(t.b<0)||!t.d||t.d<addD(ab,-5)) continue; const op=t.op||{};
+    const zu=(op.a||[]).some(a=>a.id===r.id), ib=t.i&&(mk.ibans||[]).includes(t.i), txt=norm((t.z||'')+' '+(t.n||'')), pass=Math.abs(Math.abs(t.b)-ziel)<0.02;
+    if(zu||(op.pid===mk.pid&&pass)||(pass&&(ib||/guthaben|betriebskosten|nebenkosten|bka|abrechnung/.test(txt)))){ if(!best||t.d<best.d) best={d:t.d,b:-t.b,zu}; } } } return best; }
+function bkaZeilen(){ const out=[]; if(!calc) calc=compute();
+  for(const x of Object.values(calc.res)){ const mk=x.mk, E=ed(mk).bka||{};
+    for(const r of x.rows){ if(!/^bka:/.test(r.id||'')) continue; const pa=String(r.id).split(':'), abr=(BKA.abr||{})[pa[1]]||{}, mv=(BKA.mvs||{})[pa[2]]||{}, z=mv.zustellung||{}, man=E[r.id]||{}, so=(mk.sollOS||[]).find(q=>q.id===r.id)||{};
+      const y={x,r,id:r.id,pid:mk.pid,obj:mk.obj,einheit:uName(mk.einheit),mieter:ed(mk).mieter||'',jahr:abr.jahr?String(abr.jahr):'',typ:r.s>0?'Nachzahlung':'Guthaben',betrag:r.s>0?r.s:r.h,faellig:r.d,pdf:(mv.schreiben_datei&&mv.schreiben_datei.od)||'',pdfAm:mv.schreiben_am||'',vers:z.art&&!/nicht/i.test(z.art)?z.art+(z.datum?' am '+dmy(z.datum):''):(z.art||''),man};
+      if(y.typ==='Nachzahlung'){ y.offen=r.offen==null?r.s:r.offen; y.bez=r2(r.s-y.offen);
+        const lm=(x.mahn||[]).filter(m=>m.d>=r.d&&m.art!=='kaution').sort((a,b)=>a.d.localeCompare(b.d)).pop(); y.lm=lm||null;
+        if(y.offen<=0.005){ y.st='bezahlt'; y.stx='bezahlt'; }
+        else if(r.fut){ y.st='nicht faellig'; y.stx='noch nicht fällig'; }
+        else if(lm&&lm.frist&&lm.frist>=today){ y.st='gemahnt'; y.stx=lm.stufe+' am '+dmy(lm.d)+', Frist '+dmy(lm.frist); }
+        else if(mahnsperre(mk)){ y.st='gesperrt'; y.stx='Mahnsperre'; }
+        else { y.st='mahnbar'; y.stx=lm?'mahnbar (zuletzt '+lm.stufe+' am '+dmy(lm.d)+')':'fällig, mahnbar'; } }
+      else { const a=man.ausgezahlt?null:bkaAuszahlung(mk,r,so.am); y.offen=0; y.bez=0;
+        if(man.ausgezahlt){ y.st='ausgezahlt'; y.stx='ausgezahlt am '+dmy(man.ausgezahlt)+(man.von?' (eingetragen von '+man.von+')':''); }
+        else if(man.verrechnet){ y.st='verrechnet'; y.stx='mit offenen Posten verrechnet am '+dmy(man.verrechnet); }
+        else if(a){ y.st='ausgezahlt'; y.stx='ausgezahlt am '+dmy(a.d)+' ('+eur(a.b)+(a.zu?', zugeordnet':', laut Kontoauszug')+')'; }
+        else { y.st='auszuzahlen'; y.stx='noch auszuzahlen'; y.offen=y.betrag; } }
+      out.push(y); } }
+  return out.sort((a,b)=>String(a.obj).localeCompare(String(b.obj),'de',{numeric:true})||String(a.einheit).localeCompare(String(b.einheit),'de',{numeric:true})||String(a.mieter).localeCompare(String(b.mieter),'de')); }
+const BKA_ST=[['','alle'],['offen','Nachzahlung offen'],['erledigt','bezahlt / ausgezahlt / verrechnet'],['mahnbar','fällig, mahnbar'],['gemahnt','gemahnt'],['nicht faellig','noch nicht fällig'],['bezahlt','bezahlt'],['auszuzahlen','Guthaben noch auszuzahlen'],['ausgezahlt','Guthaben ausgezahlt'],['verrechnet','Guthaben verrechnet'],['gesperrt','Mahnsperre']];
+function bkaBox(){ if(!BKA.abr) return ''; let L=[]; try{ L=bkaZeilen(); }catch(e){ return ''; } const m=L.filter(y=>y.st==='mahnbar').length, g=L.filter(y=>y.st==='auszuzahlen').length;
+  return '<button class="kpi kbtn'+(m||g?' kueber':'')+'" data-bkaopen="1"><div class="l">Betriebskostenabrechnungen</div><div class="v">'+m+' mahnbar</div><div class="s">'+g+' Guthaben auszuzahlen</div></button>'; }
+function renderBka(){ if(!BKA.abr){ return '<div class="dtop"><div><div class="dname">Betriebskostenabrechnungen</div></div><button data-bkaclose="1">Schließen</button></div><div class="sub">Lade Abrechnungen …</div>'; }
+  const A=bkaZeilen(), jahre=[...new Set(A.map(y=>y.jahr).filter(Boolean))].sort().reverse(), objs=[...new Set(A.map(y=>y.obj))].sort((a,b)=>a.localeCompare(b,'de',{numeric:true})), q=norm(BKA.q);
+  const L=A.filter(y=>(!BKA.jahr||y.jahr===BKA.jahr)&&(!BKA.obj||y.obj===BKA.obj)&&bkaStPasst(y,BKA.st)&&(!q||norm(y.obj+' '+y.einheit+' '+y.mieter).includes(q)));
+  if(BKA.sk){ const v=y=>BKA.sk==='faellig'?y.faellig:BKA.sk==='betrag'?y.betrag:BKA.sk==='bez'?(y.bez||0):BKA.sk==='offen'?y.offen:BKA.sk==='status'?y.stx:BKA.sk==='mieter'?y.mieter:BKA.sk==='typ'?y.typ:BKA.sk==='vers'?y.vers:BKA.sk==='jahr'?y.jahr:y.obj+' '+y.einheit;
+    L.sort((a,b)=>{ const x=v(a),z=v(b); const c=typeof x==='number'?x-z:String(x||'').localeCompare(String(z||''),'de',{numeric:true}); return BKA.sab?-c:c; }); }
+  const sum=f=>L.filter(f).reduce((s2,y)=>s2+y.offen,0);
+  const kp=(st,l,v,sub)=>'<button class="kpi kbtn'+(BKA.st===st?' on':'')+'" data-bkafil="'+st+'" title="Klick filtert die Tabelle"><div class="l">'+l+'</div><div class="v">'+v+'</div><div class="s">'+sub+'</div></button>';
+  const th=(k,l,c)=>'<th class="'+(c||'')+'" data-bkasort="'+k+'" style="cursor:pointer;white-space:nowrap" title="Klick sortiert">'+l+(BKA.sk===k?(BKA.sab?' (absteigend)':' (aufsteigend)'):'')+'</th>';
+  let h='<div class="dtop"><div><div class="dname">Betriebskostenabrechnungen</div><div class="sub">Nachzahlungen und Guthaben aus den Abrechnungen im OS · Zahlungen bis '+esc(dmy(calc.stich))+'</div></div><button data-bkaclose="1">Schließen</button></div>';
+  { const B=A.filter(y=>(!BKA.jahr||y.jahr===BKA.jahr)&&(!BKA.obj||y.obj===BKA.obj)), su=f=>B.filter(f).reduce((s2,y)=>s2+y.offen,0);
+    h+='<div class="kpis" style="grid-template-columns:repeat(5,minmax(0,1fr))">'+kp('offen','Nachzahlungen offen',eur(su(y=>y.typ==='Nachzahlung')),B.filter(y=>y.typ==='Nachzahlung'&&y.offen>0.005).length+' Mieter')
+      +kp('nicht faellig','noch nicht fällig',eur(su(y=>y.st==='nicht faellig')),B.filter(y=>y.st==='nicht faellig').length+' Mieter')
+      +kp('mahnbar','fällig und mahnbar',eur(su(y=>y.st==='mahnbar')),B.filter(y=>y.st==='mahnbar').length+' Mieter')
+      +kp('auszuzahlen','Guthaben noch auszuzahlen',eur(su(y=>y.st==='auszuzahlen')),B.filter(y=>y.st==='auszuzahlen').length+' Mieter')
+      +kp('erledigt','bezahlt / ausgezahlt / verrechnet',String(B.filter(y=>/bezahlt|ausgezahlt|verrechnet/.test(y.st)).length),'von '+B.length+(BKA.st?' · Klick auf eine aktive Kachel zeigt wieder alle':''))+'</div>'; }
+  h+='<div class="tbar"><label class="fl inl">Jahr<input list="bka-dlj" id="bka-jahr" value="'+esc(BKA.jahr||'')+'" placeholder="alle" autocomplete="off" style="width:90px"></label><datalist id="bka-dlj"><option value="alle">'+jahre.map(j=>'<option value="'+esc(j)+'">').join('')+'</datalist>'
+    +'<label class="fl inl">Objekt<input list="bka-dlo" id="bka-obj" value="'+esc(BKA.obj||'')+'" placeholder="alle" autocomplete="off" style="width:110px"></label><datalist id="bka-dlo"><option value="alle">'+objs.map(o=>'<option value="'+esc(o)+'">').join('')+'</datalist>'
+    +'<label class="fl inl">Status<input list="bka-dls" id="bka-st" value="'+esc(BKA.st?(BKA_ST.find(z=>z[0]===BKA.st)||['',''])[1]:'')+'" placeholder="alle" autocomplete="off" style="width:260px"></label><datalist id="bka-dls">'+BKA_ST.map(z=>'<option value="'+esc(z[1])+'">').join('')+'</datalist>'
+    +'<input type="search" id="bka-q" placeholder="Mieter, Objekt, Einheit" value="'+esc(BKA.q)+'" autocomplete="off"></div>';
+  h+='<div class="tablewrap"><table class="mlist"><thead><tr>'+th('jahr','Jahr')+th('obj','Objekt')+'<th>Einheit</th>'+th('mieter','Mieter')+th('typ','Ergebnis')+th('betrag','Betrag','n')+th('vers','versendet')+th('faellig','fällig')+th('bez','bezahlt','n')+th('offen','offen','n')+th('status','Status')+'<th>Schreiben</th><th></th></tr></thead><tbody>';
+  for(const y of L){ const gh=y.typ==='Guthaben', cls=y.st==='mahnbar'?'neg':y.st==='auszuzahlen'?'bkgut':/bezahlt|ausgezahlt|verrechnet/.test(y.st)?'pos':''; const k=esc(y.pid+'|'+y.id);
+    let akt='<button class="ghost small" data-bkakonto="'+esc(y.pid)+'">Mieterkonto</button>';
+    if(y.st==='mahnbar') akt='<button class="primary small" data-bkamahn="'+esc(y.pid)+'">Mahnen</button> '+akt;
+    if(y.typ==='Guthaben'){ if(y.st==='auszuzahlen') akt+=' <input type="date" data-bkaausd="'+k+'" title="ausgezahlt am" style="width:135px"> <button class="ghost small" data-bkaaus="'+k+'">ausgezahlt</button> <button class="ghost small" data-bkaverr="'+k+'">verrechnet</button>';
+      else if(y.man.ausgezahlt||y.man.verrechnet) akt+=' <button class="ghost small" data-bkareset="'+k+'">zurücksetzen</button>'; }
+    h+='<tr'+(gh?' class="bkgh"':'')+'><td>'+esc(y.jahr)+'</td><td><b>'+esc(y.obj)+'</b></td><td>'+esc(y.einheit)+'</td><td class="wrapc">'+esc(y.mieter)+'</td><td><span class="bkpill '+(gh?'gh':'nz')+'">'+esc(y.typ)+'</span></td><td class="n'+(gh?' bkgut':'')+'">'+(gh?'+ ':'')+eur(y.betrag)+'</td><td class="sub">'+esc(y.vers||'–')+'</td><td>'+esc(dmy(y.faellig))+'</td><td class="n">'+(y.typ==='Nachzahlung'?eur(y.bez):'–')+'</td><td class="n '+cls+'">'+(y.offen>0.005?eur(y.offen):'–')+'</td><td class="'+cls+' bkst" data-bkastz="'+esc(y.st)+'" title="Klick filtert nach diesem Status">'+esc(y.stx)+'</td><td>'+(y.pdf?'<button class="ghost small" data-bkapdf="'+esc(y.pdf)+'" title="Schreiben vom '+esc(dmy(String(y.pdfAm).slice(0,10)))+'">PDF öffnen</button>':'<span class="sub">kein PDF</span>')+'</td><td style="white-space:nowrap">'+akt+'</td></tr>'; }
+  if(!L.length) h+='<tr><td colspan="13" class="empty">Keine Abrechnungen für diesen Filter.</td></tr>';
+  h+='</tbody></table></div><div class="note">Mahnen öffnet den Mahnlauf nur für diesen Mieter. Dort wählst du Mahnstufe und Versand (E-Mail, Post, Einwurf-Einschreiben, Bote). Die Mahnung enthält alle überfälligen Posten des Mieters und steht danach im Mahnregister und im Mieterkonto. Guthaben gelten als ausgezahlt, wenn eine passende Auszahlung in den Kontoauszügen gefunden wird oder ihr sie hier eintragt.</div>';
+  return h; }
+function bkaMarke(k,feld,datum){ const i=k.indexOf('|'), pid=k.slice(0,i), id=k.slice(i+1), mk=MK[pid]; if(!mk) return; const neu=Object.assign({},ed(mk).bka||{});
+  if(feld==='reset') delete neu[id]; else neu[id]={[feld]:datum||today,von:ICH||''};
+  saveEdit(pid,{bka:neu},feld==='reset'?'Vermerk entfernt.':'Gespeichert.',feld==='reset'?'BK-Guthaben: Vermerk entfernt':'BK-Guthaben '+(feld==='ausgezahlt'?'ausgezahlt am ':'verrechnet am ')+dmy(datum||today)); }
+function bkaMahnen(pid){ mahnOpen=true; modal=false; mahnInit(); if(MR.sel[pid]===undefined){ mahnOpen=false; toast('Für diesen Mieter ist zurzeit nichts überfällig (Zahlungen bis '+dmy(calc.stich)+').',6000); render(); return; }
+  for(const k in MR.sel) MR.sel[k]=false; MR.sel[pid]=true; MR.q=ed(MK[pid]).mieter||''; if(!REGload) loadRegM(); render(); }
+document.addEventListener('click',e=>{ const c=e.target.closest('th[data-bkasort],td[data-bkastz]'); if(!c) return; if(c.dataset.bkasort){ if(BKA.sk===c.dataset.bkasort) BKA.sab=!BKA.sab; else { BKA.sk=c.dataset.bkasort; BKA.sab=false; } } else { BKA.st=BKA.st===c.dataset.bkastz?'':c.dataset.bkastz; } render(); });
+document.addEventListener('click',e=>{ const t=e.target.closest('button'); if(!t) return; const d=t.dataset;
+  if(d.bkafil!=null){ BKA.st=BKA.st===d.bkafil?'':d.bkafil; render(); return; }
+  if(d.bkasort){ if(BKA.sk===d.bkasort) BKA.sab=!BKA.sab; else { BKA.sk=d.bkasort; BKA.sab=false; } render(); return; }
+  if(d.bkapdf){ odOeffnen(d.bkapdf); return; }
+  if(d.bkaopen){ bkaOpen=true; if(!BKA.abr) bkaLaden(); render(); return; }
+  if(d.bkaclose){ if(/[?&]nur=1/.test(location.search)&&window.parent!==window){ window.parent.postMessage({bkaClose:1},'*'); return; } bkaOpen=false; render(); return; }
+  if(d.bkamahn){ bkaMahnen(d.bkamahn); return; }
+  if(d.bkakonto){ M.sel=d.bkakonto; modal=true; render(); return; }
+  if(d.bkaaus){ const i=[...document.querySelectorAll('input[data-bkaausd]')].find(z=>z.dataset.bkaausd===d.bkaaus); if(!i||!i.value){ toast('Bitte das Datum der Auszahlung eintragen.'); return; } bkaMarke(d.bkaaus,'ausgezahlt',i.value); return; }
+  if(d.bkaverr){ bkaMarke(d.bkaverr,'verrechnet',today); return; }
+  if(d.bkareset){ bkaMarke(d.bkareset,'reset'); return; }
+  if(d.mzust){ mahnZustellnachweis(d.mzust); return; } });
+document.addEventListener('change',e=>{ const t=e.target; if(!t||!t.id) return;
+  if(t.id==='bka-jahr'){ const v=t.value.trim(); BKA.jahr=/^\d{4}$/.test(v)?v:''; render(); }
+  else if(t.id==='bka-obj'){ const v=t.value.trim().toLowerCase(); const m=Object.values(MK).find(z=>String(z.obj).toLowerCase()===v); BKA.obj=m?m.obj:''; render(); }
+  else if(t.id==='bka-st'){ const z=BKA_ST.find(x=>x[1].toLowerCase()===t.value.trim().toLowerCase()); BKA.st=z?z[0]:''; render(); } });
+/* Auswahlfelder der Übersicht: beim Anklicken leeren, damit alle Einträge zur Auswahl stehen; ohne Auswahl bleibt der alte Wert */
+document.addEventListener('focusin',e=>{ const t=e.target; if(t&&/^bka-(jahr|obj|st)$/.test(t.id)){ t.dataset.alt=t.value; t.value=''; } });
+document.addEventListener('focusout',e=>{ const t=e.target; if(t&&/^bka-(jahr|obj|st)$/.test(t.id)&&t.value===''&&t.dataset.alt){ t.value=t.dataset.alt; } });
+document.addEventListener('input',e=>{ if(e.target.id==='bka-q'){ BKA.q=e.target.value; clearTimeout(window.__bq); window.__bq=setTimeout(render,200); } });
+/* Sendungsnummer eines Einwurf-Einschreibens an der Mahnung speichern */
+async function mahnSendung(k,v){ const i=k.indexOf('|'), datum=k.slice(0,i), nr=k.slice(i+1), lauf=MAHN[datum], p=lauf&&(lauf.posten||{})[nr]; if(!p) return; const sn=String(v||'').trim();
+  const neu=Object.assign({},lauf); neu.posten=Object.assign({},neu.posten,{[nr]:Object.assign({},p,{sendung:sn})}); MAHN=Object.assign({},MAHN,{[datum]:neu});
+  try{ await queue('mahnlaeufe/'+datum,()=>db.doc('mahnlaeufe/'+datum).set(neu)); if(MK[p.pid]) histLog(p.pid,'Änderung','Mahnung '+nr+' per Einwurf-Einschreiben, Sendungsnummer '+sn); toast('Sendungsnummer gespeichert.'); }catch(e){ toast('Nicht gespeichert: '+(e.message||e)); } }
+/* Zustellnachweis für den Boten (Einwurf in den Briefkasten) */
+function mahnZustellnachweis(k){ const i=k.indexOf('|'), datum=k.slice(0,i), nr=k.slice(i+1), lauf=MAHN[datum], p=lauf&&(lauf.posten||{})[nr], mk=p&&MK[p.pid]; if(!mk||!window.jspdf){ toast('Mahnung nicht gefunden.'); return; }
+  const o=objekte.find(q=>q.kz===mk.obj)||{}, inh=INHABER[o.ges||mk.ges]||INHABER.WT, adr=(ADR[mk.obj]||'|').split('|'), doc=new window.jspdf.jsPDF({unit:'mm',format:'a4'}), L=25, R=185; let y=22;
+  doc.setFont('helvetica','bold'); doc.setFontSize(13); doc.setTextColor(20); doc.text(inh,R,y,{align:'right'});
+  y=48; doc.setFontSize(15); doc.text('Zustellnachweis',L,y); y+=7; doc.setFont('helvetica','normal'); doc.setFontSize(10.5); doc.text('Einwurf in den Briefkasten durch Boten',L,y); y+=12;
+  const zeile=(a,b)=>{ doc.setFont('helvetica','bold'); doc.text(a,L,y); doc.setFont('helvetica','normal'); const ls=doc.splitTextToSize(String(b||''),R-L-48); doc.text(ls,L+48,y); y+=5.5*Math.max(1,ls.length)+1.5; };
+  zeile('Empfänger',ed(mk).mieter||''); zeile('Anschrift',[adr[0]+(mk.einheit&&!/efh/i.test(mk.einheit)?', '+uName(mk.einheit):''),adr[1]].filter(Boolean).join(', ')); zeile('Schreiben',p.stufe+' Nr. '+nr+' ('+eur(p.betrag)+')'); zeile('Datum des Schreibens',dmy(datum)); zeile('Absender',inh);
+  y+=6; doc.splitTextToSize('Hiermit bestätige ich, dass ich den Inhalt des oben genannten Schreibens vor dem Verschließen des Umschlags gesehen habe und den verschlossenen Umschlag persönlich in den Briefkasten des Empfängers eingeworfen habe. Der Briefkasten war mit dem Namen des Empfängers beschriftet.',R-L).forEach(l=>{ doc.text(l,L,y); y+=5.4; });
+  y+=12; const feld=(a,w)=>{ doc.setFont('helvetica','bold'); doc.text(a,L,y); doc.setDrawColor(120); doc.setLineWidth(0.3); doc.line(L+48,y+1,L+48+w,y+1); y+=14; };
+  feld('Name des Boten',112); feld('Datum',50); feld('Uhrzeit',35); feld('Ort des Einwurfs',112); y+=6; feld('Unterschrift Bote',112);
+  window.open(URL.createObjectURL(doc.output('blob')),'_blank'); }
+
+function mahnInit(art){ MR.art=art||'miete'; MR.datum=MR.datum&&art?MR.datum:today; MR.frist=MR.frist&&art?MR.frist:addD(today,10); MR.sel={}; MR.stufe={}; MR.vs={}; MR.done=null; MR.q='';
   for(const x of mahnListe()){ const v=mahnVorschlag(x); MR.sel[x.mk.pid]=!v.grund; MR.stufe[x.mk.pid]=v.st; } }
 function renderMahn(){ const L=mahnListe(); const q=norm(MR.q);
   let h='<div class="dtop"><div><div class="dname">Mahnlauf</div></div></div><button data-mahnclose="1">Schließen</button></div>';
   if(MR.done){ const D=MR.done; h+='<div class="card"><div class="ch">Mahnlauf vom '+esc(dmy(D.datum))+' erstellt</div><div class="sub" style="margin-bottom:8px">'+D.list.length+' Schreiben, zusammen '+eur(D.list.reduce((a,y)=>a+y.betrag,0))+'.'+(D.fehler.length?' Fehler: '+esc(D.fehler.join('; ')):'')+'</div>'
       +'<div class="acts"><button class="primary small" data-mahnall="1">Alle Schreiben als ein PDF herunterladen</button><a class="ghost small btnlink" href="/mahnprozess/generator" target="_top">Mahnregister öffnen</a></div>'
       +'<table class="mini"><thead><tr><th>Nr.</th><th>Mieter</th><th>Stufe</th><th class="n">Betrag</th><th></th><th>E-Mail</th></tr></thead><tbody>'+D.list.map(y=>{ const p=((MAHN[D.datum]||{}).posten||{})[y.nr]; return '<tr><td>'+esc(y.nr)+'</td><td>'+esc(y.obj+' '+uName(y.einheit)+' · '+y.name)+'</td><td>'+esc(y.stufe)+'</td><td class="n">'+eur(y.betrag)+'</td><td>'+(y.url?'<a href="'+esc(y.url)+'" target="_blank">PDF</a>':'')+'</td><td>'+(p?mahnMailZelle(D.datum,p):'')+'</td></tr>'; }).join('')+'</tbody></table>'
-      +'<div class="acts" style="margin-top:8px"><button class="primary small" data-mmailalle="'+esc(D.datum)+'"'+(MR.busy?' disabled':'')+'>'+(MR.busy?esc(MR.busy):'Alle mit E-Mail-Adresse per Mail senden')+'</button><span class="sub">Mieter ohne E-Mail-Adresse bekommen das Schreiben per Post.</span></div></div>';
+      +'<div class="acts" style="margin-top:8px"><button class="primary small" data-mmailalle="'+esc(D.datum)+'"'+(MR.busy?' disabled':'')+'>'+(MR.busy?esc(MR.busy):'Alle mit Versand per E-Mail senden')+'</button><span class="sub">Schreiben per Post, Einschreiben oder Bote über „PDF“ drucken.</span></div></div>';
     return h; }
   { const all=Object.values(calc.res).filter(x=>x.aktiv), nM=all.filter(x=>x.ueber>0.5).length, nK=all.filter(x=>(x.ueberK||0)>0.5).length;
     h+='<div class="seg" style="display:inline-flex;margin:0 0 10px"><button data-mrart="miete" class="'+(mrKaution()?'':'on')+'">Mieten ('+nM+')</button><button data-mrart="kaution" class="'+(mrKaution()?'on':'')+'">Kautionen ('+nK+')</button></div>'; }
@@ -802,13 +910,14 @@ function renderMahn(){ const L=mahnListe(); const q=norm(MR.q);
     +'<details><summary>Neuen Basiszinssatz eintragen</summary><div class="sub">Die Bundesbank gibt ihn zum 1. Januar und 1. Juli bekannt. Zuletzt hinterlegt: ab '+esc(dmy(bzl[0]))+' '+fnum.format(bzl[1])+' %.</div><label class="fl inl">gültig ab<input type="date" id="bz-ab"></label><label class="fl inl">Satz in %<input type="text" id="bz-satz" style="width:80px"></label><button class="ghost small" data-bzsave="1">Speichern</button></details></div>';
   h+='<div class="tbar"><label class="fl inl">Briefdatum<input type="date" id="mr-datum" value="'+esc(MR.datum)+'"></label><label class="fl inl">Zahlungsfrist<input type="date" id="mr-frist" value="'+esc(MR.frist)+'"></label><label class="fl inl">Mindestbetrag (€)<input type="text" id="mr-min" value="'+esc(fnum.format(MR.min))+'" style="width:80px"></label>'
     +'<input type="search" id="mr-q" placeholder="Mieter, Objekt" value="'+esc(MR.q)+'" autocomplete="off"><button class="ghost small" data-mrall="1">alle auswählen</button><button class="ghost small" data-mrnone="1">keine</button></div>';
-  h+='<div class="tablewrap"><table class="mlist"><thead><tr><th></th><th>Objekt</th><th>Einheit</th><th>Mieter</th><th>Zahler</th><th class="n">'+(mrKaution()?'Kaution offen':'Miete überfällig')+'</th><th>ältester Posten</th><th>letzte Mahnung</th><th>Mahnstufe</th><th class="n">Zinsen + Gebühr</th><th>Hinweis</th></tr></thead><tbody>';
+  h+='<div class="tablewrap"><table class="mlist"><thead><tr><th></th><th>Objekt</th><th>Einheit</th><th>Mieter</th><th>Zahler</th><th class="n">'+(mrKaution()?'Kaution offen':'Miete überfällig')+'</th><th>ältester Posten</th><th>letzte Mahnung</th><th>Mahnstufe</th><th>Versand</th><th class="n">Zinsen + Gebühr</th><th>Hinweis</th></tr></thead><tbody>';
   let n=0,sum=0;
   for(const x of L){ const pid=x.mk.pid, v=mahnVorschlag(x), on=!!MR.sel[pid]; if(q&&!norm(ed(x.mk).mieter+' '+x.mk.obj+' '+x.mk.einheit).includes(q)) continue;
     const st=MR.stufe[pid]||v.st, geb=st===STUFEN[0]?0:MAHNGEB, Z=(st===STUFEN[0]||mrKaution())?null:zinsBerechnung(x,MR.datum), zs=Z?Z.sum:0; if(on){ n++; sum+=mrUeber(x)+geb+zs; }
     h+='<tr class="'+(on?'':'mut')+'"><td><input type="checkbox" data-mrsel="'+esc(pid)+'"'+(on?' checked':'')+'></td><td><b>'+esc(x.mk.obj)+'</b></td><td>'+esc(uName(x.mk.einheit))+'</td><td class="wrapc">'+esc(ed(x.mk).mieter||'')+'</td><td class="sub">'+esc(String(ed(x.mk).zahler||x.zahlerAuto||'').replace(/ \(.*\)$/,''))+'</td><td class="n neg"><b>'+eur(mrUeber(x))+'</b></td><td>'+esc(dmy(v.aelt))+'</td><td class="sub">'+(v.lm?esc(v.lm.stufe+' · '+dmy(v.lm.d))+(v.lm.b?'<div>'+eur(v.lm.b)+'</div>':''):'–')+'</td>'
-      +'<td><select data-mrst="'+esc(pid)+'">'+STUFEN.map(s=>'<option'+(s===st?' selected':'')+'>'+s+'</option>').join('')+'</select></td><td class="n" title="'+esc(Z?Z.det.map(d=>d.t+': '+eur(d.b)+' × '+d.tage+' Tage = '+eur(d.z)).join('\n'):'')+'">'+(geb?eur(zs)+' + '+eur(geb):'–')+'</td><td class="sub">'+esc(v.grund)+'</td></tr>'; }
-  if(!L.length) h+='<tr><td colspan="11" class="empty">'+(mrKaution()?'Keine offenen Kautionen.':'Keine überfälligen Mieten – kein Mahnlauf nötig.')+'</td></tr>';
+      +'<td><select data-mrst="'+esc(pid)+'">'+STUFEN.map(s=>'<option'+(s===st?' selected':'')+'>'+s+'</option>').join('')+'</select></td><td><input list="dl-mvs" data-mrvs="'+esc(pid)+'" value="'+esc(mrVersand(x))+'" style="width:170px"></td><td class="n" title="'+esc(Z?Z.det.map(d=>d.t+': '+eur(d.b)+' × '+d.tage+' Tage = '+eur(d.z)).join('\n'):'')+'">'+(geb?eur(zs)+' + '+eur(geb):'–')+'</td><td class="sub">'+esc(v.grund)+'</td></tr>'; }
+  h+='<datalist id="dl-mvs">'+MVERSAND.map(v=>'<option value="'+esc(v)+'">').join('')+'</datalist>';
+  if(!L.length) h+='<tr><td colspan="12" class="empty">'+(mrKaution()?'Keine offenen Kautionen.':'Keine überfälligen Mieten – kein Mahnlauf nötig.')+'</td></tr>';
   h+='</tbody></table></div><div class="acts" style="margin-top:10px"><button class="primary" data-mrgo="1"'+(n&&!MR.busy?'':' disabled')+'>'+(MR.busy?esc(MR.busy):n+' Mahnung'+(n===1?'':'en')+' erstellen ('+eur(sum)+')')+'</button><span class="sub">'+(mrKaution()?'Ab der 1. Mahnung ist die Mahngebühr im Betrag enthalten und wird als Sollstellung gebucht.':'Ab der 1. Mahnung sind Mahngebühr und Verzugszinsen im Betrag enthalten und werden als Sollstellung gebucht.')+'</span></div>';
   return h; }
 /* Brief */
@@ -835,7 +944,8 @@ function mahnBrief(x,st,nr){ const mk=ed(x.mk), o=objekte.find(q=>q.kz===x.mk.ob
   if(st===STUFEN[3]) tail+='\n\nSollte der Betrag nicht fristgerecht bei uns eingehen, sehen wir uns gezwungen, ohne weitere Ankündigung rechtliche Schritte einzuleiten, insbesondere die Kündigung des Mietverhältnisses und die gerichtliche Geltendmachung unserer Forderung. Die dadurch entstehenden Kosten gehen zu Ihren Lasten.';
   return {nr,st,inh,name,anschrift:[adr[0]+(x.mk.einheit&&!/efh/i.test(x.mk.einheit)?', '+uName(x.mk.einheit):''),adr[1]].filter(Boolean),betreff:st+' · '+x.mk.obj+' '+uName(x.mk.einheit)+(kau?' · offene Mietkaution':' · offene Mietforderungen'),kopf,a,posten,sum,b,konto,tail,gl,gruss:'Mit freundlichen Grüßen\n'+inh,geb,zins:Z&&Z.sum>0?Z:null}; }
 function drawBrief(doc,B){ const L=25,R=185; let y=22;
-  doc.setFont('helvetica','normal'); doc.setFontSize(8); doc.setTextColor(120); doc.text(B.inh+ABS,L,y); y+=12;
+  doc.setFont('helvetica','normal'); doc.setFontSize(8); doc.setTextColor(120); doc.text(B.inh+ABS,L,y); y+=7;
+  { const vv=mVermerk(B.versand); if(vv){ doc.setFont('helvetica','bold'); doc.setFontSize(9.5); doc.setTextColor(20); doc.text(vv,L,y); doc.setFont('helvetica','normal'); if(vv==='Per E-Mail'&&B.mailAn) doc.text(B.mailAn,L+doc.getTextWidth(vv+'  ')+1,y); } } y+=5;
   doc.setTextColor(20); doc.setFontSize(11); doc.text(B.name,L,y); y+=5; B.anschrift.forEach(l=>{ doc.text(l,L,y); y+=5; });
   y+=8; doc.setFontSize(9); doc.setTextColor(90); doc.text('Dexheim, '+dmy(MR.datum),R,y,{align:'right'}); doc.text('Mahnung Nr. '+B.nr,R,y+4,{align:'right'});
   y+=14; doc.setTextColor(20); doc.setFontSize(12); doc.setFont('helvetica','bold'); doc.text(B.betreff,L,y); doc.setFont('helvetica','normal'); y+=9; doc.setFontSize(10.5);
@@ -870,7 +980,7 @@ async function mahnMail(datum,nr,still){ const lauf=MAHN[datum], p=lauf&&(lauf.p
     histLog(p.pid,'Änderung','Mahnung '+nr+' per Mail an '+an.join(', ')+' gesendet');
     if(!still){ toast('Mahnung '+nr+' per Mail gesendet.'); render(); } return true; }
   catch(e){ if(!still) toast('Senden fehlgeschlagen: '+(e.message||e),9000); else throw e; return false; } }
-async function mahnMailAlle(datum){ const lauf=MAHN[datum]; if(!lauf) return; const L=Object.values(lauf.posten||{}).filter(p=>!p.mail&&MK[p.pid]&&mieterMails(MK[p.pid]).length);
+async function mahnMailAlle(datum){ const lauf=MAHN[datum]; if(!lauf) return; const L=Object.values(lauf.posten||{}).filter(p=>!p.mail&&(!p.versand||p.versand==='E-Mail')&&MK[p.pid]&&mieterMails(MK[p.pid]).length);
   if(!L.length){ toast('Keine offenen Mahnungen mit E-Mail-Adresse.'); return; } let ok=0; const f=[];
   for(let i=0;i<L.length;i++){ MR.busy='Sende '+(i+1)+' von '+L.length+' …'; render(); try{ if(await mahnMail(datum,L[i].nr,true)) ok++; }catch(e){ f.push(L[i].nr+': '+(e.message||e)); } }
   MR.busy=false; render(); toast(ok+' Mahnung'+(ok===1?'':'en')+' per Mail gesendet.'+(f.length?' Fehler: '+f.join('; '):''),9000); }
@@ -879,7 +989,12 @@ async function mahnPdfLaden(datum,nr){ const lauf=MAHN[datum], p=lauf&&(lauf.pos
   if(p.akte&&p.akte.od){ odOeffnen(p.akte.od.id,true); return; }
   const w=window.open('','_blank'); const {data,error}=await window.osSupabase.storage.from('mieterakten').createSignedUrl((p.akte&&p.akte.pfad)||mahnAkte(mk,datum,p),3600,{download:p.datei||true});
   if(error){ if(w) w.close(); toast('PDF nicht gefunden: '+error.message,7000); return; } if(w) w.location.href=data.signedUrl; else window.open(data.signedUrl,'_blank'); }
-const mahnMailZelle=(datum,p)=>{ const mk=MK[p.pid]; if(p.mail) return '<span class="sub">per Mail '+esc(dmy(String(p.mail.am||'').slice(0,10)))+'</span>'; if(!mk||!mieterMails(mk).length) return '<span class="sub">keine E-Mail</span> <button class="ghost small" data-mpdf="'+esc(datum+'|'+p.nr)+'">PDF herunterladen</button>'; return '<button class="ghost small" data-mmail="'+esc(datum+'|'+p.nr)+'"'+(MR.busy?' disabled':'')+'>per Mail senden</button>'; };
+const mahnMailZelle=(datum,p)=>{ const mk=MK[p.pid], k=esc(datum+'|'+p.nr);
+  if(p.versand&&p.versand!=='E-Mail'){ let h='<span class="sub">'+esc(p.versand)+'</span> <button class="ghost small" data-mpdf="'+k+'">PDF</button>';
+    if(p.versand==='Einwurf-Einschreiben') h+=' <input placeholder="Sendungsnummer" data-msend="'+k+'" value="'+esc(p.sendung||'')+'" style="width:150px">';
+    if(/bote/i.test(p.versand)) h+=' <button class="ghost small" data-mzust="'+k+'">Zustellnachweis</button>';
+    return h; }
+  if(p.mail) return '<span class="sub">per Mail '+esc(dmy(String(p.mail.am||'').slice(0,10)))+'</span>'; if(!mk||!mieterMails(mk).length) return '<span class="sub">keine E-Mail</span> <button class="ghost small" data-mpdf="'+esc(datum+'|'+p.nr)+'">PDF herunterladen</button>'; return '<button class="ghost small" data-mmail="'+esc(datum+'|'+p.nr)+'"'+(MR.busy?' disabled':'')+'>per Mail senden</button>'; };
 async function mahnungEntfernen(datum,p,fehler){ const sb=window.osSupabase;
   try{ if(p.url){ const i=String(p.url).indexOf('/mahnungen/'); if(i>=0){ const {error}=await sb.storage.from('mahnungen').remove([decodeURIComponent(p.url.slice(i+11))]); if(error) fehler.push(p.nr+' PDF: '+error.message); } } }catch(e){ fehler.push(p.nr+' PDF: '+e.message); }
   const mk=MK[p.pid]; if(p.akte&&p.akte.od){ try{ await odApi({aktion:'loeschen',id:p.akte.od.id}); }catch(e){ fehler.push(p.nr+' OneDrive: '+(e.message||e)); } }
@@ -906,7 +1021,7 @@ async function mahnlaufStarten(){ const sb=window.osSupabase; if(!sb||!db||!canW
   const lauf=Object.assign({datum:MR.datum,frist:MR.frist,posten:{}},MAHN[MR.datum]?{posten:Object.assign({},MAHN[MR.datum].posten)}:{}); lauf.datum=MR.datum; lauf.frist=MR.frist; lauf.erstellt=new Date().toISOString();
   const done={datum:MR.datum,list:[],fehler:[]}; MRPDF=[];
   for(let i=0;i<L.length;i++){ const x=L[i], st=MR.stufe[x.mk.pid]||STUFEN[0]; MR.busy='Erstelle '+(i+1)+' von '+L.length+' …'; render();
-    nummer++; const nr='MA-'+String(nummer).padStart(4,'0'); const B=mahnBrief(x,st,nr); MRPDF.push(B);
+    nummer++; const nr='MA-'+String(nummer).padStart(4,'0'); const B=mahnBrief(x,st,nr); B.versand=mrVersand(x); B.mailAn=B.versand==='E-Mail'?mieterMails(x.mk).join(', '):''; MRPDF.push(B);
     const doc=new window.jspdf.jsPDF({unit:'mm',format:'a4'}); drawBrief(doc,B); const blob=doc.output('blob');
     const fn=mahnDatei(x.mk,MR.datum,st,mrKaution()?'kaution':'miete',B.sum); let url=null;
     const up=await sb.storage.from('mahnungen').upload(Date.now()+'_'+enc(fn).replace(/\//g,'_'),blob,{contentType:'application/pdf',upsert:true});
@@ -916,7 +1031,7 @@ async function mahnlaufStarten(){ const sb=window.osSupabase; if(!sb||!db||!canW
     const row={nummer,datum:MR.datum,empfaenger:B.name,anschrift:B.anschrift.join('\n'),objekt:x.mk.obj,we:uName(x.mk.einheit),betrag:B.sum,mahnstufe:st,ausstand_art:mrKaution()?'Kaution':'Miete',eigentum_status:'Eigentümer',ampel:{gruen:'grün',gelb:'gelb',rot:'rot'}[ampel(x)]||'gelb',in_zv:!!(ed(x.mk).raten||[]).length,betreff:B.betreff,text:briefText(B),frist:MR.frist,status:'Erstellt',pdf_url:url,pdf_name:fn};
     const res=await sb.from('mahn_register').insert(row).select(); let regId=null;
     if(res.error) done.fehler.push(nr+': Register '+res.error.message); else { regId=res.data&&res.data[0]&&res.data[0].id; if(regId) await sb.from('mahn_historie').insert({register_id:regId,typ:'Erstellt',notiz:'Sammelmahnung '+nr+' vom '+dmy(MR.datum)+' ('+eur(B.sum)+')',mahnstufe:st}); }
-    lauf.posten[nr]={pid:x.mk.pid,art:mrKaution()?'kaution':'miete',nr,nummer,stufe:st,betrag:B.sum,gebuehr:B.geb,zinsen:B.zins?B.zins.sum:0,zinsVon:B.zins?B.zins.von:'',zinsBis:B.zins?B.zins.bis:'',zinsSatz:B.zins?B.zins.satz:0,regId,url,datei:fn,akte};
+    lauf.posten[nr]={pid:x.mk.pid,art:mrKaution()?'kaution':'miete',nr,nummer,stufe:st,betrag:B.sum,gebuehr:B.geb,zinsen:B.zins?B.zins.sum:0,zinsVon:B.zins?B.zins.von:'',zinsBis:B.zins?B.zins.bis:'',zinsSatz:B.zins?B.zins.satz:0,regId,url,datei:fn,akte,versand:B.versand};
     done.list.push({nr,obj:x.mk.obj,einheit:x.mk.einheit,name:B.name,stufe:st,betrag:B.sum,url}); }
   MAHN=Object.assign({},MAHN,{[MR.datum]:lauf}); calc=null;
   await queue('mahnlaeufe/'+MR.datum,()=>db.doc('mahnlaeufe/'+MR.datum).set(lauf));
@@ -1595,10 +1710,12 @@ async function snapshotOP(){
 }
 /* ---------- Render ---------- */
 /* Aufruf mit ?mahnlauf=1 (Menüpunkt Mahnläufe): Mahnlauf direkt öffnen, sobald die Daten geladen sind */
-window.__mlAuto=/[?&]mahnlauf=1/.test(location.search);
+window.__mlAuto=/[?&]mahnlauf=1/.test(location.search); window.__bkaAuto=/[?&]bka=1/.test(location.search);
 /* Direkt ein Mieterkonto öffnen, z. B. aus der Objektseite: ?pid=... */
 let __dlDone=false; function deepLink(){ if(__dlDone) return; const pid=new URLSearchParams(location.search).get('pid'); if(!pid){ __dlDone=true; return; } if(!MK[pid]) return; __dlDone=true; M.sel=pid; modal=true; showDone=false; saveM(); render(); }
 function render(){
+  if(window.__bkaAuto&&loadedMK&&EDITload&&loaded.b){ window.__bkaAuto=false; bkaOpen=true; }
+  if(loadedMK&&!BKA.abr&&!BKA.busy&&window.osSupabase) bkaLaden();
   if(window.__mlAuto&&loadedMK&&EDITload&&loaded.b){ window.__mlAuto=false; mahnOpen=true; try{ mahnInit(); }catch(e){} if(!REGload) loadRegM(); }
   const ready=loaded.o&&loaded.k&&loaded.r&&loaded.e&&loaded.b&&loadedMK;
   if(!ready){ $('view').innerHTML='<div class="loading">'+(dbState==='none'?'Bitte im Wohntraum OS einloggen.':'Lade Daten …')+'</div>'; return; }
@@ -1619,7 +1736,7 @@ function render(){
   let h='<div class="kpis"><div class="kpi"><div class="l">Mietverhältnisse seit 2025</div><div class="v">'+all.length+'</div><div class="s">'+all.filter(x=>x.aktiv).length+' laufend</div></div>'
     +'<div class="kpi"><div class="l">Mieter mit Rückstand (überfällig)</div><div class="v neg">'+nR+'</div><div class="s">zusammen '+eur(sumR)+'</div></div>'
     +'<div class="kpi"><div class="l">Rückstand ≥ 2 Monatsmieten</div><div class="v '+(n2?'neg':'')+'">'+n2+'</div></div>'
-    +'<div class="kpi"><div class="l">Kaution offen</div><div class="v">'+eur(all.reduce((a,x)=>a+Math.max(0,x.kOffen),0))+'</div><div class="s">'+all.filter(x=>x.kOffen>0.5).length+' Mietverhältnisse</div></div></div><div class="kpis kpis2">'+monBox(all)+sollBox()+mahnBox()+'</div>';
+    +'<div class="kpi"><div class="l">Kaution offen</div><div class="v">'+eur(all.reduce((a,x)=>a+Math.max(0,x.kOffen),0))+'</div><div class="s">'+all.filter(x=>x.kOffen>0.5).length+' Mietverhältnisse</div></div></div><div class="kpis kpis2">'+monBox(all)+sollBox()+mahnBox()+bkaBox()+'</div>';
   /* Filterleiste: oben die Suche, darunter Filterknöpfe (Status, Mahnstufe, Ratenzahlung, Mahnsperre), darunter Gesellschaft, Objekt, Betreuer */
   h+='<div class="tbar tbar3"><div class="trow"><input type="search" id="m-q" class="msuche" placeholder="Mieter, Objekt oder Einheit suchen" value="'+esc(M.q)+'" autocomplete="off"></div>'
     +'<div class="trow"><div class="seg">'+[['alle','Alle'],['aktiv','Laufend'],['rueck','Rückstand'],['rueck2','Mehr als 2 Monatsmieten offen'],['guthaben','Guthaben'],['kaution','Kaution offen'],['beendet','Beendet']].map(([k,l])=>'<button data-mst="'+k+'" class="'+(M.st===k?'on':'')+'">'+l+'</button>').join('')+'</div>'
@@ -1647,9 +1764,10 @@ function render(){
   h+='</tbody></table></div>';
   if(mahnOpen) h+='<div class="ov" id="ov"><div class="dlg">'+renderMahn()+'</div></div>';
   else if(modal&&calc.res[M.sel]) h+='<div class="ov" id="ov"><div class="dlg">'+renderDash(calc.res[M.sel])+'</div></div>';
+  else if(bkaOpen) h+='<div class="ov" id="ov"><div class="dlg breit">'+renderBka()+'</div></div>';
   if(BFRAGE) h+='<div class="ov2"><div class="box"><h3>Betreuer wechselt</h3><div>Der Betreuer wird von <b>'+esc(BFRAGE.altB)+'</b> auf <b>'+esc(BFRAGE.neuB||'(leer)')+'</b> geändert.</div><div style="margin-top:8px">Soll der bisherige Betreuer archiviert werden? Er bleibt dann im Mieterkonto unter „Frühere Betreuer“ sichtbar.</div><div class="acts"><button class="primary small" data-bfrage="ja">Ja, archivieren</button><button class="ghost small" data-bfrage="nein">Nein, nur ändern</button><button class="ghost small" data-bfrage="abbr">Abbrechen</button></div></div></div>';
   h+='<div style="margin:10px 0"></div>'+'<label class="sub"><input type="checkbox" id="m-alle"'+(M.alle?' checked':'')+'> auch nicht aktive / verkaufte Objekte zeigen</label>'+inboxCard();
-  const keep=f&&(f.id==='inb-von'||f.id==='m-q'||f.id==='m-betr'||f.id==='mr-q'||f.id==='n-text'||f.id==='ne-text')?f:null; const sc=$('ov')?$('ov').scrollTop:0;
+  const keep=f&&(f.id==='inb-von'||f.id==='bka-q'||f.id==='m-q'||f.id==='m-betr'||f.id==='mr-q'||f.id==='n-text'||f.id==='ne-text')?f:null; const sc=$('ov')?$('ov').scrollTop:0;
   $('view').innerHTML='<div class="pad">'+h+'</div>'; if($('ov')) $('ov').scrollTop=sc; document.body.style.overflow=(modal||mahnOpen)?'hidden':'';
   if(keep){ const n=$(keep.id); if(n){ n.replaceWith(keep); keep.focus({preventScroll:true}); } }
   else if(fid){ const el=$(fid); if(el&&el.tagName==='INPUT'){ el.focus({preventScroll:true}); if(fv!=null) el.value=fv; } }
@@ -1911,13 +2029,13 @@ function renderDash(x){ const mk=ed(x.mk), sn=STN[x.status], a=ampel(x), K=mk.ko
   /* Mieterinformationen */
   h+='<div class="card"><div class="ch">Mieterinformationen'+(editOpen?'':'<button class="ghost small" data-edit="1">Bearbeiten</button>')+'</div>';
   if(editOpen){ const f=(id,l,v)=>'<label class="fl">'+l+'<input type="text" id="'+id+'" value="'+esc(v??'')+'"></label>';
-    h+=f('e-mieter','Name(n)',mk.mieter)+'<label class="fl">Einzug / Mietbeginn<input type="date" id="e-von" value="'+esc(x.mk.von||'')+'"><span class="sub">'+(x.mk.vonNH&&x.mk.vonNH!==x.mk.von?'ursprünglich: '+esc(dmy(x.mk.vonNH)):'')+'</span></label><label class="fl">Auszug / Mietende<input type="date" id="e-bis" value="'+esc(x.mk.bis||'')+'"><span class="sub">'+(x.mk.bisNH?'laut Nahaus: '+esc(dmy(x.mk.bisNH)):'')+'</span></label>'+f('e-anrede','Anrede für Briefe',mk.anrede)+f('e-email','E-Mail',mk.email!=null?mk.email:K.map(k=>k.email).filter(Boolean).join(', '))+f('e-tel','Telefon',mk.tel!=null?mk.tel:K.map(k=>k.tel).filter(Boolean).join(', '))+f('e-personen','Personen im Haushalt (für die Betriebskostenabrechnung)',mk.personen!=null?mk.personen:'')
+    h+=f('e-mieter','Name(n)',mk.mieter)+'<label class="fl">Einzug / Mietbeginn<input type="date" id="e-von" value="'+esc(x.mk.von||'')+'"><span class="sub">'+(x.mk.vonNH&&x.mk.vonNH!==x.mk.von?'ursprünglich: '+esc(dmy(x.mk.vonNH)):'')+'</span></label><label class="fl">Auszug / Mietende<input type="date" id="e-bis" value="'+esc(x.mk.bis||'')+'"><span class="sub">'+(x.mk.bisNH?'laut Nahaus: '+esc(dmy(x.mk.bisNH))+(mk.bis==='offen'?' – im OS entfernt':' – Feld leeren, um den Auszug zu entfernen'):'')+'</span></label>'+f('e-anrede','Anrede für Briefe',mk.anrede)+f('e-email','E-Mail',mk.email!=null?mk.email:K.map(k=>k.email).filter(Boolean).join(', '))+f('e-tel','Telefon',mk.tel!=null?mk.tel:K.map(k=>k.tel).filter(Boolean).join(', '))+f('e-geburt','Geburtsdatum (bei mehreren Mietern: Name und Datum, z. B. Max 01.02.1980, Erika 03.04.1985)',mk.geburt)+f('e-personen','Personen im Haushalt (für die Betriebskostenabrechnung)',mk.personen!=null?mk.personen:'')
       +f('e-kaution','Kaution vereinbart (€)',fnum.format(mk.kaution||0))+f('e-kbez','Kaution bezahlt (€) – leer = aus Nahaus',mk.kautionBezahlt!=null&&mk.kautionBezahlt!==''?fnum.format(mk.kautionBezahlt):'')+'<label class="fl">Betreuer (immer erst Name, dann Gesellschaft, z. B. Caroline Müller - DRK Alzey)<textarea id="e-betreuer" rows="2" style="width:100%;resize:vertical;font:inherit">'+esc(mk.betreuer??'')+'</textarea><input type="search" class="mfsel" id="e-betrwahl" list="e-betrl" placeholder="oder aus hinterlegten Kontakten übernehmen" autocomplete="off" style="margin-top:6px"></label>'+'<datalist id="e-betrl">'+BK.slice().sort((a,b)=>(b.vermittler-a.vermittler)||a.voll.localeCompare(b.voll,'de')).map(k=>'<option value="'+esc(betrLabel(k))+'"></option>').join('')+'</datalist>'+f('e-zahler','Wer zahlt die Miete? (leer = automatisch)',mk.zahler)+f('e-ref','Verwendungszweck',mk.ref)
       +'<label class="fl">Mieterranking<select id="e-ampel"><option value="">automatisch ('+AMPEL[x.ampelAuto][1]+')</option>'+Object.entries(AMPEL).map(([k,v])=>'<option value="'+k+'"'+(mk.ampel===k?' selected':'')+'>'+({gruen:'🟢 grün',gelb:'🟡 gelb',rot:'🔴 rot'}[k])+' – '+v[1]+'</option>').join('')+'</select></label>'
       +'<div class="acts"><button class="primary small" data-esave="1">Speichern</button><button class="ghost small" data-ecancel="1">Abbrechen</button></div>';
   } else {
     h+=kv('Name',esc(mk.mieter||'–'))+kv('E-Mail',(mk.email!=null?mk.email:K.map(k=>k.email).filter(Boolean).join(', '))?esc(mk.email!=null?mk.email:K.map(k=>k.email).filter(Boolean).join(', ')):'<span class="mut">–</span>')
-      +kv('Telefon',esc((mk.tel!=null?mk.tel:K.map(k=>k.tel).filter(Boolean).join(', '))||'–'))+kv('Personen',mk.personen!=null&&mk.personen!==''?esc(mk.personen):'<span class="mut">–</span>')+kv('Betreuer',betrHtml(mk.betreuer)+(mk.betreuerSeit?' <span class="mut">seit '+esc(dmy(mk.betreuerSeit))+'</span>':''))+((mk.betreuerAlt||[]).length?kv('Frühere Betreuer',(mk.betreuerAlt||[]).map(b=>betrHtml(b.name)+' <span class="mut">('+(b.von?esc(dmy(b.von))+' – ':'bis ')+esc(dmy(b.bis))+')</span>').join('<br>')):'')
+      +kv('Telefon',esc((mk.tel!=null?mk.tel:K.map(k=>k.tel).filter(Boolean).join(', '))||'–'))+kv('Geburtsdatum',mk.geburt?esc(mk.geburt):'<span class="mut">–</span>')+kv('Personen',mk.personen!=null&&mk.personen!==''?esc(mk.personen):'<span class="mut">–</span>')+kv('Betreuer',betrHtml(mk.betreuer)+(mk.betreuerSeit?' <span class="mut">seit '+esc(dmy(mk.betreuerSeit))+'</span>':''))+((mk.betreuerAlt||[]).length?kv('Frühere Betreuer',(mk.betreuerAlt||[]).map(b=>betrHtml(b.name)+' <span class="mut">('+(b.von?esc(dmy(b.von))+' – ':'bis ')+esc(dmy(b.bis))+')</span>').join('<br>')):'')
       +kv('Wer zahlt',esc(mk.zahler||x.zahlerAuto||'–')+(mk.zahler?'':' <span class="pill src">aus Zahlungen</span>'))
       +kv('Mieterranking',ampelDot(a)+' '+AMPEL[a][1]+(mk.ampel?' <span class="pill src">manuell</span>':' <span class="pill src" title="Automatisch aus Rückstand, Kaution und Zahlungseingang">auto</span>'))+(x.spaet?'<div class="sub">'+x.spaet+' verspätete Zahlung'+(x.spaet>1?'en':'')+' in den letzten 6 Monaten (nach dem 10.)</div>':''); }
   h+='</div>';
@@ -2040,13 +2158,13 @@ document.addEventListener('click',async e=>{ const t=e.target.closest('button,tr
   if(t.dataset.mfodel){ MF.others.splice(+t.dataset.mfodel,1); render(); return; }
   if(t.dataset.mfweg){ if(t.dataset.sure!=='1'){ t.dataset.sure='1'; t.textContent='wirklich entfernen?'; return; } const mk=MK[M.sel]; if(mk) mfEntfernen(mk,t.dataset.mfweg); return; }
   if(t.dataset.ecancel){ editOpen=false; render(); return; }
-  if(t.dataset.esave){ const g=id=>$(id).value.trim(); editOpen=false; const kz=parseNum(g('e-kaution')), kbz=parseNum(g('e-kbez')); const alt=ed(MK[M.sel]), neu={kaution:(kz==null||isNaN(kz))?(alt.kaution||0):kz,kautionBezahlt:(kbz==null||isNaN(kbz))?'':kbz,mieter:g('e-mieter'),anrede:g('e-anrede'),email:g('e-email'),tel:g('e-tel'),betreuer:g('e-betreuer'),zahler:g('e-zahler'),ref:g('e-ref'),ampel:$('e-ampel').value,bis:g('e-bis'),von:g('e-von')};
+  if(t.dataset.esave){ const g=id=>$(id).value.trim(); editOpen=false; const kz=parseNum(g('e-kaution')), kbz=parseNum(g('e-kbez')); const alt=ed(MK[M.sel]), neu={kaution:(kz==null||isNaN(kz))?(alt.kaution||0):kz,kautionBezahlt:(kbz==null||isNaN(kbz))?'':kbz,mieter:g('e-mieter'),anrede:g('e-anrede'),email:g('e-email'),tel:g('e-tel'),geburt:g('e-geburt'),betreuer:g('e-betreuer'),zahler:g('e-zahler'),ref:g('e-ref'),ampel:$('e-ampel').value,bis:g('e-bis'),von:g('e-von')};
     { const pv=g('e-personen'); if(pv===''){ if(alt.personen!=null) neu.personen=null; } else { const pz=parseNum(pv); if(pz==null||isNaN(pz)||pz<0||pz!==Math.round(pz)){ toast('Bitte bei Personen eine ganze Zahl eintragen.'); editOpen=true; return; } neu.personen=pz; } }
-    if(String(neu.bis||'')===String(MK[M.sel].bisNH||'')) neu.bis=''; if(!neu.bis&&!(EDIT[M.sel]||{}).bis) delete neu.bis;
+    if(!neu.bis&&MK[M.sel].bisNH) neu.bis='offen'; else if(String(neu.bis||'')===String(MK[M.sel].bisNH||'')) neu.bis=''; if(!neu.bis&&!(EDIT[M.sel]||{}).bis) delete neu.bis;
     if(neu.von&&!/^(19|20)\d\d-\d\d-\d\d$/.test(neu.von)){ toast('Bitte beim Einzug ein vollständiges Datum eintragen.'); editOpen=true; return; }
     if(String(neu.von||'')===String(MK[M.sel].vonNH||'')) neu.von=''; if(!neu.von&&!(EDIT[M.sel]||{}).von) delete neu.von;
-    const NAM={kaution:'Kaution vereinbart',kautionBezahlt:'Kaution bezahlt',mieter:'Name',anrede:'Anrede',email:'E-Mail',tel:'Telefon',betreuer:'Betreuer',zahler:'Wer zahlt',ref:'Verwendungszweck',ampel:'Mieterranking',bis:'Auszug',von:'Einzug',personen:'Personen'};
-    const eff=Object.assign({},neu); if('bis' in neu) eff.bis=neu.bis||MK[M.sel].bisNH||''; else eff.bis=alt.bis||''; if('von' in neu) eff.von=neu.von||MK[M.sel].vonNH||''; else eff.von=alt.von||''; const fmt=(k,v)=>(k==='bis'||k==='von')?dmy(v):v;
+    const NAM={kaution:'Kaution vereinbart',kautionBezahlt:'Kaution bezahlt',mieter:'Name',anrede:'Anrede',email:'E-Mail',tel:'Telefon',geburt:'Geburtsdatum',betreuer:'Betreuer',zahler:'Wer zahlt',ref:'Verwendungszweck',ampel:'Mieterranking',bis:'Auszug',von:'Einzug',personen:'Personen'};
+    const eff=Object.assign({},neu); if('bis' in neu) eff.bis=neu.bis==='offen'?'offen (Auszug entfernt)':(neu.bis||MK[M.sel].bisNH||''); else eff.bis=alt.bis||''; if('von' in neu) eff.von=neu.von||MK[M.sel].vonNH||''; else eff.von=alt.von||''; const fmt=(k,v)=>(k==='bis'||k==='von')?dmy(v):v;
     const diff=Object.keys(eff).filter(k=>String(alt[k]??'')!==String(eff[k]??'')).map(k=>NAM[k]+': '+(String(fmt(k,alt[k]??''))||'–')+' → '+(String(fmt(k,eff[k]??''))||'–'));
     const altB=String(alt.betreuer||'').trim(), neuB=String(neu.betreuer||'').trim(); if(altB!==neuB) neu.betreuerSeit=neuB?isoHeute():'';
     const log=diff.length?'Mieterdaten geändert – '+diff.join('; '):false;
@@ -2072,6 +2190,8 @@ document.addEventListener('change',async e=>{ const t=e.target;
   if(t.dataset.zkey){ const v=ZLAB[t.value]; if(!v){ if(t.value) toast('Bitte einen Eintrag aus der Liste wählen.'); return; } const z=Object.assign({},ZUORD); if(v==='~') delete z[t.dataset.zkey]; else z[t.dataset.zkey]=v; ZUORD=z; calc=null; render(); saveStamm('mietzuordnung',{map:ZUORD}).then(()=>toast(v==='-'?'Zahlung keinem Mieter zugeordnet.':'Zahlung umgebucht.')); return; }
   if(t.dataset.mrsel){ MR.sel[t.dataset.mrsel]=t.checked; render(); return; }
   if(t.dataset.mrst){ MR.stufe[t.dataset.mrst]=t.value; render(); return; }
+  if(t.dataset.mrvs){ const v=MVERSAND.find(z=>z.toLowerCase()===String(t.value).trim().toLowerCase()); if(v) MR.vs[t.dataset.mrvs]=v; else toast('Bitte eine Versandart aus der Liste wählen.'); render(); return; }
+  if(t.dataset.msend){ mahnSendung(t.dataset.msend,t.value); return; }
   if(t.id==='mr-datum'){ if(t.value){ MR.datum=t.value; } render(); return; }
   if(t.id==='mr-frist'){ if(t.value) MR.frist=t.value; render(); return; }
   if(t.id==='mr-min'){ const v=parseNum(t.value); if(v!=null&&!isNaN(v)){ MR.min=v; for(const x of mahnListe()){ const g=mahnVorschlag(x).grund; MR.sel[x.mk.pid]=!g; } } render(); return; }

@@ -30,7 +30,7 @@ button:disabled{opacity:.6;cursor:default}
 .tab{width:100%;border-collapse:collapse;font-size:13px;background:var(--card)}
 .tab th{text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:.03em;color:var(--muted);font-weight:600;padding:7px 8px;border-bottom:1px solid var(--line);white-space:nowrap}
 .tab td{padding:9px 12px;border-bottom:1px solid var(--line);vertical-align:middle}
-.ue .tab{font-size:14px}.ue .tab td{padding:12px 14px}.ue .tab th{padding:10px 14px}
+.ue .tab{font-size:13.5px}.ue .tab td{padding:11px 9px}.ue .tab th{padding:9px 9px;white-space:normal!important;vertical-align:bottom}
 .tab td.n,.tab th.n{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
 .tab tr.kl td{cursor:pointer}.tab tr.kl:hover td{background:var(--accent-soft)}
 .tbox{background:var(--card);border:1px solid var(--line);border-radius:12px;overflow:auto}
@@ -151,7 +151,9 @@ const abrVon=kz=>ABR.find(x=>x.kennung===kz&&Number(x.jahr)===JAHR);
 function einheitenVon(o){ const L=EIN.filter(e=>e.objekt_id===o.id), A=L.filter(e=>e.aktiv!==false); return A.length?A:L; }
 
 /* ---------- Übersicht ---------- */
+let KZS={};
 async function uebersichtDaten(){ const ids=ABR.filter(a=>Number(a.jahr)===JAHR).map(a=>a.id); if(!ids.length) return {};
+  try{ const {data}=await sb.from('os_docs').select('data').eq('app','oc').like('pfad','bka-summen/%'); KZS={}; for(const r of data||[]) if(r.data&&r.data.abr) KZS[r.data.abr]=r.data; }catch(e){}
   const [k,c]=await Promise.all([sb.from('bk_kostenarten').select('abrechnung_id,erledigt,ausgeblendet').in('abrechnung_id',ids),sb.from('bk_kosten').select('abrechnung_id,betrag,anteil').in('abrechnung_id',ids)]);
   const out={}; for(const x of (k.data||[]).filter(x=>!x.ausgeblendet)){ const o=out[x.abrechnung_id]=out[x.abrechnung_id]||{n:0,f:0,s:0}; o.n++; if(x.erledigt) o.f++; }
   for(const x of (c.data||[])){ const o=out[x.abrechnung_id]=out[x.abrechnung_id]||{n:0,f:0,s:0}; o.s+=Number(x.anteil!=null?x.anteil:x.betrag)||0; } return out; }
@@ -164,9 +166,16 @@ function ueSortieren(L){ const wert=o=>{ const a=abrVon(o.kz), u=a&&UE[a.id];
     if(UESORT.k==='stand') return a?BK_STATUS.findIndex(y=>y[0]===a.status)+1:0;
     if(UESORT.k==='fertig') return u&&u.n?u.f/u.n:-1;
     if(UESORT.k==='kosten') return u?u.s:-1;
+    if(/^k_/.test(UESORT.k)){ const z=a&&KZS[a.id]; return z?Number(z[UESORT.k.slice(2)])||0:-1e12; }
     return null; };
   const kz=(a,b)=>a.kz.localeCompare(b.kz,'de',{numeric:true});
   return L.slice().sort((a,b)=>{ let r=UESORT.k==='kz'?kz(a,b):(wert(a)-wert(b))||kz(a,b); return UESORT.ab&&UESORT.k!=='kz'?(wert(b)-wert(a))||kz(a,b):UESORT.ab?-r:r; }); }
+/* Kachel „Zahlungen & Mahnungen“: Übersicht aus den Mieterkonten (Nachzahlungen, Guthaben, Mahnlauf) als Fenster über der Seite */
+function zahlungenOeffnen(){ if(document.getElementById('bka-ov')) return; const w=document.createElement('div'); w.id='bka-ov';
+  w.style.cssText='position:fixed;inset:0;z-index:80;background:var(--bg,#f6f7f9)';
+  w.innerHTML='<iframe src="/hv-mieterkonten.html?v=20261127a&bka=1&nur=1" title="Zahlungen und Mahnungen" style="width:100%;height:100%;border:0;display:block"></iframe>';
+  document.body.appendChild(w); }
+window.addEventListener('message',e=>{ if(e.data&&e.data.bkaClose){ const w=document.getElementById('bka-ov'); if(w) w.remove(); } });
 function render(){ if(CUR) return renderObjekt();
   const L=ueSortieren(jahrObjekte());
   const rest=Math.ceil((new Date(frist(JAHR)+'T23:59:59')-new Date())/864e5);
@@ -174,10 +183,11 @@ function render(){ if(CUR) return renderObjekt();
     +'<div class="acts" style="margin-top:0"><button onclick="JAHR--;UE={};uebersicht()">Vorjahr</button><b style="padding:0 6px">'+JAHR+'</b><button onclick="JAHR++;UE={};uebersicht()">Folgejahr</button></div></div>';
   const ang=L.filter(o=>abrVon(o.kz)).length;
   h+='<div class="kpis"><div class="kpi"><div class="l">Objekte</div><div class="v">'+L.length+'</div></div><div class="kpi"><div class="l">Abrechnung angelegt</div><div class="v">'+ang+'</div></div>'
-    +'<div class="kpi"><div class="l">Kostenarten fertig</div><div class="v">'+Object.values(UE).reduce((a,x)=>a+x.f,0)+' / '+Object.values(UE).reduce((a,x)=>a+x.n,0)+'</div></div></div>';
-  h+='<div class="tbox"><table class="tab"><thead><tr>'+[['kz','Objekt',''],['ein','Einheiten',''],['stand','Stand',''],['fertig','Kostenarten fertig',''],['kosten','Kosten '+JAHR,'n']].map(([k,l,c])=>'<th class="'+c+'" style="cursor:pointer;white-space:nowrap" onclick="ueSort(\''+k+'\')" title="Sortieren">'+(UESORT.k===k?'<span style="color:var(--ink);text-decoration:underline">'+l+'</span> <span style="font-weight:400;text-transform:none;letter-spacing:0">'+(UESORT.ab?'absteigend':'aufsteigend')+'</span>':l)+'</th>').join('')+'<th></th></tr></thead><tbody>'
+    +'<div class="kpi"><div class="l">Kostenarten fertig</div><div class="v">'+Object.values(UE).reduce((a,x)=>a+x.f,0)+' / '+Object.values(UE).reduce((a,x)=>a+x.n,0)+'</div></div>'
+    +'<div class="kpi" style="cursor:pointer;border-color:var(--accent)" onclick="zahlungenOeffnen()" title="Nachzahlungen und Guthaben je Mieter: offen, fällig, mahnbar, bezahlt, ausgezahlt"><div class="l">Zahlungen &amp; Mahnungen</div><div class="v" style="font-size:15px">Übersicht öffnen</div></div></div>';
+  h+='<div class="tbox"><table class="tab"><thead><tr>'+[['kz','Objekt',''],['ein','Einheiten',''],['stand','Stand',''],['fertig','Kostenarten fertig',''],['kosten','Belege '+JAHR,'n'],['k_gesamt','Gesamtkosten Haus','n'],['k_uml','umlagefähig','n'],['k_vz','Vorauszahlungen','n'],['k_pGezahlt','Pauschalen (BK/HK)','n'],['k_mieter','Abrechnung Mieter','n'],['k_ergebnis','Ergebnis','n'],['k_vermieter','Vermieter trägt','n']].map(([k,l,c])=>'<th class="'+c+'" style="cursor:pointer;white-space:nowrap" onclick="ueSort(\''+k+'\')" title="Sortieren">'+(UESORT.k===k?'<span style="color:var(--ink);text-decoration:underline">'+l+'</span> <span style="font-weight:400;text-transform:none;letter-spacing:0">'+(UESORT.ab?'absteigend':'aufsteigend')+'</span>':l)+'</th>').join('')+'<th></th></tr></thead><tbody>'
     +L.map(o=>{ const a=abrVon(o.kz), u=a&&UE[a.id]; const n=einheitenVon(o).length, hw=hinweisVon(o.kz);
-      return '<tr class="kl" onclick="if(!event.target.closest(\'button\'))oeffnen(\''+esc(o.kz)+'\')"><td><b>'+esc(o.kz)+'</b> <span class="sub">'+esc(o.name||'')+'</span>'+(o.status==='Verkauft'?' <span class="pill">verkauft – letzte Abrechnung</span>':'')+(hw?'<div class="sub" style="color:var(--warn)">'+esc(hw)+'</div>':'')+'</td><td>'+n+'</td><td>'+(a?statusPill(a.status):'<span class="pill">noch nicht angelegt</span>')+'</td><td>'+(u?u.f+' / '+u.n:'–')+'</td><td class="n">'+(u?eur(u.s):'–')+'</td>'
+      return '<tr class="kl" onclick="if(!event.target.closest(\'button\'))oeffnen(\''+esc(o.kz)+'\')"><td><b>'+esc(o.kz)+'</b> <span class="sub">'+esc(o.name||'')+'</span>'+(o.status==='Verkauft'?' <span class="pill">verkauft – letzte Abrechnung</span>':'')+(hw?'<div class="sub" style="color:var(--warn)">'+esc(hw)+'</div>':'')+'</td><td>'+n+'</td><td>'+(a?statusPill(a.status):'<span class="pill">noch nicht angelegt</span>')+'</td><td>'+(u?u.f+' / '+u.n:'–')+'</td><td class="n">'+(u?eur(u.s):'–')+'</td>'+(()=>{ const z=a&&KZS[a.id]; if(!z) return '<td class="n sub" colspan="7" style="text-align:center">Ergebnis noch nicht geöffnet</td>'; return ['gesamt','uml','vz','pGezahlt','mieter','ergebnis','vermieter'].map(f=>'<td class="n"'+(f==='vermieter'?' style="color:var(--warn);font-weight:700"':'')+' title="Stand '+esc(dmy(String(z.am).slice(0,10)))+'">'+(f==='ergebnis'&&z[f]<0?'− '+eur(-z[f]):eur(z[f]))+'</td>').join(''); })()
         +'<td class="n"><button class="ghost small" onclick="hinweisSetzen(\''+esc(o.kz)+'\')">Hinweis</button><button class="ghost small" onclick="objRaus(\''+esc(o.kz)+'\',this)">herausnehmen</button></td></tr>'; }).join('')+'</tbody></table></div>';
   h+='<div class="acts"><input class="inp" list="dl-objdazu" data-wahl="1" placeholder="Objekt für '+JAHR+' aufnehmen, z. B. Rh24" onchange="objDazu(this)" style="width:320px"><datalist id="dl-objdazu">'+OBJ.filter(o=>!L.includes(o)).sort((a,b)=>a.kz.localeCompare(b.kz,'de',{numeric:true})).map(o=>'<option value="'+esc(o.kz+' · '+o.name)+'">').join('')+'</datalist></div>';
   $('app').innerHTML='<div class="ue">'+h+'</div>'; }
@@ -240,7 +250,7 @@ function ergebnis(){ const pv=D.a.zeitraum_von, pb=D.a.zeitraum_bis, T=tage(pv,p
     if(ka.umlagefaehig===false||ka.schluessel==='nicht_umlegen'){ R.nichtUml+=s; R.vermieter+=s; continue; }
     const k=kObj(ka), V=verteilung(k), sv=Object.values(V).reduce((a,b)=>a+b,0), heiz=istHeiz(ka), GL=kaGruppen(ka,k,V);
     if(SZ&&heiz){ R.heizOS+=s; continue; }
-    if(sv<1e-9&&GL.some(g=>!g.E.length)){ R.nichtVerteilt.push(ka.name); R.vermieter+=s; continue; }
+    if(sv<1e-9&&GL.some(g=>!g.E.length)){ R.nichtVerteilt.push(ka.name); R.nv=(R.nv||0)+s; R.vermieter+=s; continue; }
     R.gesamt+=s; if(heiz) R.heiz+=s;
     const lohnGes=kostenVon(ka).reduce((a,c)=>a+(Number(c.lohnanteil)||0)*(Number(c.betrag)?(Number(c.anteil!=null?c.anteil:c.betrag))/Number(c.betrag):1),0);
     const tl=D.ein.filter(e=>k.ein[e.id].teil), sumFl=tl.reduce((a,e)=>a+(Number(e.flaeche)||0),0);
@@ -322,7 +332,10 @@ async function zustMail(id){ const R=ergebnis(), x=R.mv[id]; if(!x||x.saldo==nul
     +'<div class="sub" style="margin-top:8px">Anhang: '+esc(dateiNameMv(m))+' (wird beim Senden neu erstellt, mit Schütz-Einzelabrechnung, und in OneDrive abgelegt)</div>'
     +'<div class="acts" style="margin-top:14px;justify-content:flex-end"><button onclick="document.getElementById(\'mail-dlg\').remove()">Abbrechen</button><button class="primary" id="md-send" onclick="zustMailSenden(\''+id+'\',this)">Senden</button></div></section>';
   document.body.appendChild(w); w.querySelector('.ov').onclick=()=>w.remove(); }
-async function zustMailSenden(id,btn){ const an=document.getElementById('md-an').value.trim(), betreff=document.getElementById('md-betr').value.trim(), text=document.getElementById('md-text').value;
+/* Mailadresse für den Vermerk „Per E-Mail“ im Schreiben: beim Senden die eingegebene Adresse, sonst die gespeicherte oder die aus dem Mieterkonto */
+const MAIL_AN={};
+function mailAnVon(x){ const m=x.m; if(MAIL_AN[m.id]) return MAIL_AN[m.id]; const n=String((m.zustellung||{}).notiz||'').match(/^an\s+(.+@.+)$/i); if(n) return n[1]; try{ return mailAdressen(x).join(', '); }catch(e){ return ''; } }
+async function zustMailSenden(id,btn){ const an=document.getElementById('md-an').value.trim(), betreff=document.getElementById('md-betr').value.trim(), text=document.getElementById('md-text').value; MAIL_AN[id]=an;
   if(!/@/.test(an)){ toast('Bitte eine E-Mail-Adresse eintragen.'); return; }
   btn.disabled=true; btn.textContent='Schreiben wird erstellt …';
   try{ const R=ergebnis(), x=R.mv[id]; if(!(await schreibenErstellen(id,false,R))) throw new Error('Schreiben konnte nicht erstellt werden.');
@@ -377,14 +390,32 @@ async function zustBildWeg(id,i,a){ if(a.dataset.sure!=='1'){ a.dataset.sure='1'
   if(await zustSpeichern(m,z)){ if(b&&b.sb) await sb.storage.from('bk-belege').remove([b.sb]); toast('Bild entfernt.'); setTimeout(render,0); } }
 async function mvFeld(id,feld,wert){ const m=D.mvs.find(x=>x.id===id); if(!m) return; let v=wert; if(feld==='vz_neu_bk'||feld==='vz_neu_hk'){ v=String(wert).trim()===''?null:parseNum(wert); if(String(wert).trim()!==''&&v==null){ toast('Bitte eine Zahl eintragen.'); return; } }
   const {error}=await sb.from('bk_mietverhaeltnisse').update({[feld]:v}).eq('id',id); if(error){ toast('Nicht gespeichert: '+error.message); return; } m[feld]=v; setTimeout(render,0); }
+/* Kennzahlen einer Abrechnung: Gesamtkosten Haus, umlagefähig, Vorauszahlungen und Abrechnung der Mieter, was der Vermieter trägt */
+function kennzahlen(R){ const V=Object.values(R.mv).filter(x=>x.saldo!=null), r=n=>Math.round(n*100)/100;
+  const k={gesamt:r(R.gesamt+R.nichtUml+(R.nv||0)),uml:r(R.gesamt+(R.nv||0)),nichtUml:r(R.nichtUml),vz:r(V.reduce((a,x)=>a+x.vzb+x.vzh,0)),mieter:r(V.reduce((a,x)=>a+x.bk+x.hk,0)),
+    nach:r(V.filter(x=>x.saldo>0).reduce((a,x)=>a+x.saldo,0)),gut:r(V.filter(x=>x.saldo<0).reduce((a,x)=>a-x.saldo,0))};
+  /* Pauschalmieter: Kostenanteil und der in der Pauschale enthaltene BK-/HK-Anteil (gezahlt) */
+  const P=Object.values(R.mv).filter(x=>x.m.art==='pauschale'); k.pKosten=r(P.reduce((a,x)=>a+x.bk+x.hk,0)); k.pGezahlt=r(P.reduce((a,x)=>a+(num(x.m.vz_bk_gezahlt)||0)+(num(x.m.vz_hk_gezahlt)||0),0));
+  k.ergebnis=r(k.nach-k.gut); k.vermieter=r(k.gesamt-k.mieter-k.pGezahlt); k.pDiff=r(k.pKosten-k.pGezahlt); k.leer=r(k.uml-k.mieter-k.pKosten); return k; }
+let KZ_GESPEICHERT={};
+async function kennzahlenSpeichern(k){ if(!D||!D.a) return; const j=JSON.stringify(k); if(KZ_GESPEICHERT[D.a.id]===j) return; KZ_GESPEICHERT[D.a.id]=j;
+  try{ await sb.from('os_docs').upsert({app:'oc',pfad:'bka-summen/'+D.a.id,data:Object.assign({},k,{abr:D.a.id,kz:D.o.kz,jahr:JAHR,am:new Date().toISOString()}),updated_at:new Date().toISOString()},{onConflict:'app,pfad'}); }catch(e){} }
 function ergHtml(){ if(ABSD===null){ absLaden(); } if(KONTEN===null) kontenLaden();
   if(!D.mvs.length) return '<div class="empty">Bitte zuerst in Schritt 2 die Mietverhältnisse übernehmen.</div>';
   const R=ergebnis(), pb=D.a.zeitraum_bis, frist=(Number(pb.slice(0,4))+1)+'-12-31', rest=Math.round((Date.parse(frist)-Date.parse(new Date().toISOString().slice(0,10)))/864e5);
   const L=Object.values(R.mv).sort((a,b)=>{ const ea=D.ein.findIndex(e=>e.id===a.m.einheit_id), eb=D.ein.findIndex(e=>e.id===b.m.einheit_id); return ea-eb||String(a.m.von).localeCompare(String(b.m.von)); });
   const VA=L.filter(x=>x.saldo!=null), nach=VA.filter(x=>x.saldo>0).reduce((a,x)=>a+x.saldo,0), gut=VA.filter(x=>x.saldo<0).reduce((a,x)=>a-x.saldo,0);
   const offen=D.kas.filter(k=>!k.erledigt&&!k.ausgeblendet).length, B=briefE(), A=absenderVon(gesVon());
-  let h='<div class="kpis" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px;margin-bottom:12px">'
-    +[['Umlagefähige Kosten',eur(R.gesamt)],['davon Vermieter',eur(R.vermieter)],['Nachzahlungen',eur(nach)],['Guthaben',eur(gut)],['Frist','bis '+dmy(frist)+' · noch '+rest+' Tage']].map(([l,v])=>'<div class="card" style="margin:0"><div class="sub">'+l+'</div><div style="font-size:18px;font-weight:800">'+v+'</div></div>').join('')+'</div>';
+  const KZ=kennzahlen(R); kennzahlenSpeichern(KZ);
+  let h='<div class="kpis" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px;margin-bottom:12px">'
+    +[['Gesamtkosten Haus',eur(KZ.gesamt),'alle Kosten inkl. Heizung'+(KZ.nichtUml?', davon nicht umlagefähig '+eur(KZ.nichtUml):'')],
+      ['Umlagefähige Kosten',eur(KZ.uml),'auf alle Einheiten verteilt'],
+      ['Vorauszahlungen Mieter',eur(KZ.vz),'von den abgerechneten Mietern gezahlt'],
+      ['Abrechnung an Mieter',eur(KZ.mieter),'Kostenanteil der abgerechneten Mieter'],
+      ['Pauschalmieter',eur(KZ.pGezahlt),'BK-/HK-Anteil der Pauschalen gezahlt · Kostenanteil '+eur(KZ.pKosten)],
+      ['Ergebnis Abrechnungen',(KZ.ergebnis<0?'− ':'')+eur(Math.abs(KZ.ergebnis)),'Nachzahlungen '+eur(KZ.nach)+' · Guthaben '+eur(KZ.gut)],
+      ['Vermieter trägt',eur(KZ.vermieter),'nicht umlagefähig '+eur(KZ.nichtUml)+' · Leerstand/Eigennutzung '+eur(KZ.leer)+' · Pauschalen '+(KZ.pDiff<0?'Überschuss '+eur(-KZ.pDiff):'nicht gedeckt '+eur(KZ.pDiff))],
+      ['Frist','bis '+dmy(frist),'noch '+rest+' Tage']].map(([l,v,u])=>'<div class="card" style="margin:0"><div class="sub">'+l+'</div><div style="font-size:18px;font-weight:800">'+v+'</div><div class="sub" style="font-size:11.5px;margin-top:2px">'+esc(u)+'</div></div>').join('')+'</div>';
   const W=[]; if(offen) W.push(offen+' Kostenart'+(offen===1?' ist':'en sind')+' noch nicht als fertig markiert.'); if(R.nichtVerteilt.length) W.push('Nicht verteilt (Schlüssel ohne Werte, z. B. fehlende Zählerstände): '+R.nichtVerteilt.join(', ')+'. Diese Kosten trägt bis zur Korrektur der Vermieter.');
   if(R.ohneMv.size) W.push('Ohne Mietverhältnis in Schritt 2: '+[...R.ohneMv].join(', ')+'.'); if(R.schuetz){ if(R.szOhne.length) W.push('Schütz-Nutzer ohne Zuordnung (trägt der Vermieter): '+R.szOhne.join(', ')+'. Bitte in Schritt 3 prüfen.'); }
   else if(R.heiz) W.push('Heizkosten werden vorläufig nach dem Schlüssel im OS verteilt. Mit der Schütz-Abrechnung (Schritt 3) werden sie ersetzt.');
@@ -422,7 +453,8 @@ function schreibenPdf(x){ const m=x.m, e=D.ein.find(z=>z.id===m.einheit_id)||{},
   doc.setFont('helvetica','bold'); doc.setFontSize(13); doc.setTextColor(20); doc.text(A.name||'',R,y,{align:'right'});
   doc.setFont('helvetica','normal'); doc.setFontSize(8.5); doc.setTextColor(90); doc.text([A.strasse,A.ort].filter(Boolean).join(' · '),R,y+5,{align:'right'}); doc.text('E-Mail: '+(A.mail||'hausverwaltung@andersmacher.info'),R,y+9,{align:'right'});
   y=45; doc.setFontSize(7.5); doc.setTextColor(110); doc.text([A.name,A.strasse,A.ort].filter(Boolean).join(' · '),L,y);
-  const vv=versandVermerk(m); if(vv){ y+=5; doc.setFont('helvetica','bold'); doc.setFontSize(9.5); doc.setTextColor(20); doc.text(vv,L,y); doc.setFont('helvetica','normal'); }
+  const vv=versandVermerk(m); if(vv){ y+=5; doc.setFont('helvetica','bold'); doc.setFontSize(9.5); doc.setTextColor(20); doc.text(vv,L,y); doc.setFont('helvetica','normal');
+    if(vv==='Per E-Mail'){ const ma=mailAnVon(x); if(ma) doc.text(ma,L+doc.getTextWidth(vv+'  ')+1,y); } }
   y+=6; doc.setFontSize(11); doc.setTextColor(20); const adr=m.anschrift&&String(m.anschrift).trim()?[m.mieter].concat(String(m.anschrift).split(/\n|,\s*(?=\d{5})/)):[m.mieter,o.strasse,[o.plz,o.ort].filter(Boolean).join(' ')];
   for(const l of adr.filter(Boolean)){ doc.text(String(l).trim(),L,y); y+=5; }
   y=Math.max(y,90)+6; doc.setFontSize(10); doc.setTextColor(60); doc.text((A.datumOrt?A.datumOrt+', ':'')+dmy(heute),R,y,{align:'right'});
@@ -538,6 +570,14 @@ async function alleSchreiben(btn){ const R0=ergebnis(); if((R0.nichtVerteilt.len
   toast(n+' von '+L.length+' Schreiben in OneDrive gespeichert (04 Betriebskosten/BK-Abrechnungen/'+JAHR+').',7000); render(); }
 
 /* ---------- Schritt 2: Mietverhältnisse und Vorauszahlungen ---------- */
+/* Einheit nur aus dieser Abrechnung entfernen (z. B. nach Umbau gab es sie im Abrechnungsjahr noch nicht). Die Einheit im Objekt bleibt unverändert. */
+async function einheitAusAbr(id,btn){ const be=D.ein.find(e=>e.id===id); if(!be) return;
+  const n=D.mvs.filter(m=>m.einheit_id===id&&m.art!=='leerstand').length;
+  if(btn.dataset.sure!=='1'){ btn.dataset.sure='1'; btn.textContent=n?'Achtung: '+n+' Mietverhältnis(se) mit Mietern – trotzdem entfernen?':'Wirklich entfernen? Nur aus der Abrechnung '+JAHR; return; }
+  btn.disabled=true; btn.textContent='Wird entfernt …';
+  const {error}=await sb.from('bk_einheiten').delete().eq('id',id).eq('abrechnung_id',D.a.id);
+  if(error){ btn.disabled=false; btn.dataset.sure=''; btn.textContent='Einheit aus dieser Abrechnung entfernen'; toast('Nicht entfernt: '+error.message,6000); return; }
+  toast(be.bezeichnung+' aus der Abrechnung '+JAHR+' entfernt. Die Einheit im Objekt bleibt unverändert.',6000); await objLaden(); }
 const MV_ARTEN=[['vorauszahlung','Vorauszahlung'],['pauschale','Pauschale'],['leerstand','Leerstand'],['eigennutzung','Eigennutzung']];
 const mvArtLabel=v=>(MV_ARTEN.find(x=>x[0]===v)||[,v||''])[1];
 const tagPlus=(d,n)=>new Date(Date.parse(d+'T00:00:00Z')+n*864e5).toISOString().slice(0,10);
@@ -593,7 +633,7 @@ function mvHtml(){ const pv=D.a.zeitraum_von, pb=D.a.zeitraum_bis, T=tage(pv,pb)
   for(const be of D.ein){ const L=D.mvs.filter(m=>m.einheit_id===be.id).sort((a,b)=>String(a.von).localeCompare(String(b.von)));
     let td=0, ueber=false, cur=pv; for(const m of L){ const v=m.von>pv?m.von:pv, b=(m.bis||pb)<pb?m.bis:pb; if(b>=v){ td+=tage(v,b); if(v<cur) ueber=true; if(tagPlus(b,1)>cur) cur=tagPlus(b,1); } }
     const ok=td===T&&!ueber; if(!ok) warn.push(be.bezeichnung);
-    h+='<tr class="gr"><td colspan="11" style="background:var(--bg)"><b>'+esc(be.bezeichnung)+'</b> <span class="sub">'+(be.flaeche?fnum.format(be.flaeche)+' m²':'')+'</span>'+(ok?'':' <span class="pill p-warn">'+(ueber?'Zeiträume überschneiden sich':'Zeitraum nicht vollständig: '+td+' von '+T+' Tagen')+'</span>')+' <button class="small ghost" onclick="mvNeu(\''+be.id+'\')">Mietverhältnis hinzufügen</button></td></tr>';
+    h+='<tr class="gr"><td colspan="11" style="background:var(--bg)"><b>'+esc(be.bezeichnung)+'</b> <span class="sub">'+(be.flaeche?fnum.format(be.flaeche)+' m²':'')+'</span>'+(ok?'':' <span class="pill p-warn">'+(ueber?'Zeiträume überschneiden sich':'Zeitraum nicht vollständig: '+td+' von '+T+' Tagen')+'</span>')+' <button class="small ghost" onclick="mvNeu(\''+be.id+'\')">Mietverhältnis hinzufügen</button> <button class="small ghost" onclick="einheitAusAbr(\''+be.id+'\',this)">Einheit aus dieser Abrechnung entfernen</button></td></tr>';
     for(const m of L){ const ls=m.art==='leerstand', ausz=!ls; /* Anschrift bei jedem Mieter eintragbar, z. B. wenn er erst nach dem Abrechnungsjahr ausgezogen ist */ if(m.art==='vorauszahlung'){ sBk+=Number(m.vz_bk_gezahlt)||0; sHk+=Number(m.vz_hk_gezahlt)||0; }
       const z=(f,w)=>'<input class="zahl" style="width:100px" inputmode="decimal" value="'+(m[f]!=null?esc(fnum.format(m[f])):'')+'" onchange="mvSetzen(\''+m.id+'\',\''+f+'\',this.value)"'+(w?'':' disabled')+'>';
       h+='<tr><td><input value="'+esc(m.mieter||'')+'" style="width:190px" onchange="mvSetzen(\''+m.id+'\',\'mieter\',this.value)">'+(m.notiz?'<div class="sub">'+esc(m.notiz)+'</div>':'')+(m.geaendert?'<div class="sub">von Hand angepasst</div>':'')+'</td>'
